@@ -35,6 +35,7 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, sign
 	slog.Info("processing webhook event", "type", event.Type, "id", event.ID)
 
 	switch event.Type {
+	// Payment events
 	case "payment_intent.succeeded":
 		return s.handlePaymentIntentSucceeded(ctx, event)
 	case "payment_intent.payment_failed":
@@ -48,6 +49,14 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, sign
 	case "account.updated":
 		slog.Info("stripe connect account updated", "event_id", event.ID)
 		return nil
+
+	// Subscription events — delegate to SubscriptionService
+	case "customer.subscription.updated",
+		"customer.subscription.deleted",
+		"invoice.payment_failed",
+		"invoice.paid":
+		return s.handleSubscriptionEvent(ctx, event)
+
 	default:
 		slog.Info("unhandled webhook event type", "type", event.Type)
 		return nil
@@ -133,14 +142,35 @@ func (s *PaymentService) handleTransferCreated(ctx context.Context, event stripe
 		return fmt.Errorf("parse transfer.created: %w", err)
 	}
 
-	if t.SourceTransaction == nil {
-		slog.Info("transfer has no source_transaction, skipping", "transfer_id", t.ID)
+	// Look up the payment by metadata if available, otherwise by the PaymentIntent
+	// attached to the transfer's source transaction.
+	piID := ""
+	if t.Metadata != nil {
+		piID = t.Metadata["payment_intent_id"]
+	}
+
+	if piID == "" {
+		slog.Info("transfer has no payment_intent_id metadata, skipping", "transfer_id", t.ID)
 		return nil
 	}
 
-	// Try to find the payment by looking up via source transaction (charge ID).
-	// The source_transaction on a transfer is typically a charge ID.
-	slog.Info("transfer created", "transfer_id", t.ID, "source_transaction", t.SourceTransaction.ID)
+	payment, err := s.repo.FindByStripePaymentIntentID(ctx, piID)
+	if err != nil {
+		slog.Warn("payment not found for transfer.created", "transfer_id", t.ID, "pi_id", piID, "error", err)
+		return nil
+	}
+
+	// Record the transfer ID on the payment and move to released status.
+	if err := s.repo.UpdateStripeFields(ctx, payment.ID, "", "", t.ID); err != nil {
+		return fmt.Errorf("update transfer id: %w", err)
+	}
+
+	if payment.Status == "escrow" || payment.Status == "processing" {
+		if err := s.repo.UpdatePaymentStatus(ctx, payment.ID, "released"); err != nil {
+			return fmt.Errorf("update status to released: %w", err)
+		}
+		slog.Info("payment released via transfer", "payment_id", payment.ID, "transfer_id", t.ID)
+	}
 
 	return nil
 }
@@ -180,4 +210,52 @@ func (s *PaymentService) handleChargeRefunded(ctx context.Context, event stripe.
 	slog.Info("payment refunded via webhook", "payment_id", payment.ID, "amount", refundAmount)
 
 	return nil
+}
+
+// webhookSubscriptionData is a minimal struct for extracting subscription and
+// period data from Stripe webhook event payloads across different event types.
+type webhookSubscriptionData struct {
+	ID           string `json:"id"`
+	Subscription string `json:"subscription"`
+	PeriodStart  int64  `json:"period_start"`
+	PeriodEnd    int64  `json:"period_end"`
+}
+
+// handleSubscriptionEvent delegates subscription-related webhook events to the
+// subscription service. It extracts the subscription ID and period from the event
+// using minimal JSON parsing to avoid SDK type compatibility issues.
+func (s *PaymentService) handleSubscriptionEvent(ctx context.Context, event stripe.Event) error {
+	if s.subHook == nil {
+		slog.Warn("subscription webhook handler not configured, skipping", "event_type", event.Type)
+		return nil
+	}
+
+	var data webhookSubscriptionData
+	if err := json.Unmarshal(event.Data.Raw, &data); err != nil {
+		return fmt.Errorf("parse %s: %w", event.Type, err)
+	}
+
+	// For subscription events (customer.subscription.*), the top-level ID is the
+	// subscription ID. For invoice events, the subscription field holds it.
+	subID := data.Subscription
+	if subID == "" {
+		subID = data.ID
+	}
+
+	if subID == "" {
+		slog.Warn("subscription event has no subscription ID", "event_type", event.Type)
+		return nil
+	}
+
+	var periodStart, periodEnd *time.Time
+	if data.PeriodStart > 0 {
+		t := time.Unix(data.PeriodStart, 0)
+		periodStart = &t
+	}
+	if data.PeriodEnd > 0 {
+		t := time.Unix(data.PeriodEnd, 0)
+		periodEnd = &t
+	}
+
+	return s.subHook.HandleSubscriptionWebhook(ctx, string(event.Type), subID, periodStart, periodEnd)
 }

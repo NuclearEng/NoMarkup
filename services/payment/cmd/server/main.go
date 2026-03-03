@@ -68,6 +68,10 @@ func main() {
 	subscriptionSvc := service.NewSubscriptionService(repo, stripeSvc)
 	subscriptionGRPCServer := paymentgrpc.NewSubscriptionServer(subscriptionSvc)
 
+	// Wire subscription webhook delegation so payment webhooks route subscription
+	// events (customer.subscription.*, invoice.*) to the subscription service.
+	paymentSvc.SetSubscriptionWebhookHandler(subscriptionSvc)
+
 	// Create and register gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {

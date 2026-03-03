@@ -9,15 +9,28 @@ import (
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
+// SubscriptionWebhookHandler allows the payment service to delegate subscription
+// webhook events to the subscription service without creating a circular dependency.
+type SubscriptionWebhookHandler interface {
+	HandleSubscriptionWebhook(ctx context.Context, eventType, stripeSubscriptionID string, periodStart, periodEnd *time.Time) error
+}
+
 // PaymentService implements payment business logic.
 type PaymentService struct {
-	repo   domain.PaymentRepository
-	stripe *StripeService
+	repo    domain.PaymentRepository
+	stripe  *StripeService
+	subHook SubscriptionWebhookHandler
 }
 
 // NewPaymentService creates a new payment service.
 func NewPaymentService(repo domain.PaymentRepository, stripe *StripeService) *PaymentService {
 	return &PaymentService{repo: repo, stripe: stripe}
+}
+
+// SetSubscriptionWebhookHandler sets the subscription webhook handler for
+// delegating subscription-related Stripe events.
+func (s *PaymentService) SetSubscriptionWebhookHandler(h SubscriptionWebhookHandler) {
+	s.subHook = h
 }
 
 // CalculateFees computes the fee breakdown for a given amount.
