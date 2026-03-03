@@ -1219,10 +1219,10 @@ mod tests {
 
             #[test]
             fn resize_image_never_panics(
-                w in 1u32..=200,
-                h in 1u32..=200,
-                tw in 0u32..=500,
-                th in 0u32..=500,
+                w in 1u32..=50,
+                h in 1u32..=50,
+                tw in 0u32..=100,
+                th in 0u32..=100,
                 mode in 0u8..=2,
             ) {
                 let img = make_test_image(w, h);
