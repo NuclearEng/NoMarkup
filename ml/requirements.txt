@@ -1,0 +1,9 @@
+# ML training dependencies (not deployed as services)
+# Models are exported as ONNX and loaded by Rust engines via ort
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.4.0
+onnx>=1.16.0
+onnxruntime>=1.18.0
+matplotlib>=3.9.0
+jupyter>=1.0.0

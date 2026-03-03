@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package nomarkup.trust.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/trust/v1;trustv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Trust Service (Rust) — Composite trust score computation
+// 4 dimensions: Feedback (35%), Volume (20%), Risk (25%), Fraud (20%)
+// ============================================================
+
+service TrustService {
+  // Score computation
+  rpc ComputeTrustScore(ComputeTrustScoreRequest) returns (ComputeTrustScoreResponse);
+  rpc BatchComputeTrustScores(BatchComputeTrustScoresRequest) returns (BatchComputeTrustScoresResponse);
+
+  // Score queries
+  rpc GetTrustScore(GetTrustScoreRequest) returns (GetTrustScoreResponse);
+  rpc GetTrustScoreHistory(GetTrustScoreHistoryRequest) returns (GetTrustScoreHistoryResponse);
+
+  // Tier management
+  rpc GetTierRequirements(GetTierRequirementsRequest) returns (GetTierRequirementsResponse);
+
+  // Score inputs (called by other services to feed data)
+  rpc RecordFeedbackSignal(RecordFeedbackSignalRequest) returns (RecordFeedbackSignalResponse);
+  rpc RecordVolumeSignal(RecordVolumeSignalRequest) returns (RecordVolumeSignalResponse);
+  rpc RecordRiskSignal(RecordRiskSignalRequest) returns (RecordRiskSignalResponse);
+
+  // Admin
+  rpc AdminOverrideTrustScore(AdminOverrideTrustScoreRequest) returns (AdminOverrideTrustScoreResponse);
+  rpc AdminGetTrustBreakdown(AdminGetTrustBreakdownRequest) returns (AdminGetTrustBreakdownResponse);
+}
+
+// ============================================================
+// Trust Score Messages
+// ============================================================
+
+message TrustScore {
+  string user_id = 1;
+  double overall_score = 2;          // 0.0 - 1.0
+  nomarkup.common.v1.TrustTier tier = 3;
+  double feedback_score = 4;          // 0.0 - 1.0, weight 35%
+  double volume_score = 5;            // 0.0 - 1.0, weight 20%
+  double risk_score = 6;              // 0.0 - 1.0, weight 25% (inverted: lower risk = higher score)
+  double fraud_score = 7;             // 0.0 - 1.0, weight 20% (inverted: lower fraud = higher score)
+  int32 data_points = 8;             // total signals used in computation
+  google.protobuf.Timestamp computed_at = 9;
+}
+
+message TrustScoreSnapshot {
+  TrustScore score = 1;
+  string change_reason = 2;          // what triggered recomputation
+  double previous_overall = 3;
+  nomarkup.common.v1.TrustTier previous_tier = 4;
+  google.protobuf.Timestamp recorded_at = 5;
+}
+
+message TierRequirement {
+  nomarkup.common.v1.TrustTier tier = 1;
+  double min_overall_score = 2;
+  int32 min_completed_jobs = 3;
+  int32 min_reviews = 4;
+  double min_rating = 5;
+  bool requires_verification = 6;
+  string description = 7;
+}
+
+// ============================================================
+// Computation RPCs
+// ============================================================
+
+message ComputeTrustScoreRequest {
+  string user_id = 1;
+  string trigger_reason = 2;         // "review_received", "job_completed", "dispute_resolved", "scheduled"
+}
+
+message ComputeTrustScoreResponse {
+  TrustScore score = 1;
+  bool tier_changed = 2;
+  nomarkup.common.v1.TrustTier previous_tier = 3;
+}
+
+message BatchComputeTrustScoresRequest {
+  repeated string user_ids = 1;      // for scheduled batch recomputation
+}
+
+message BatchComputeTrustScoresResponse {
+  int32 computed = 1;
+  int32 tier_changes = 2;
+}
+
+// ============================================================
+// Query RPCs
+// ============================================================
+
+message GetTrustScoreRequest {
+  string user_id = 1;
+}
+
+message GetTrustScoreResponse {
+  TrustScore score = 1;
+}
+
+message GetTrustScoreHistoryRequest {
+  string user_id = 1;
+  nomarkup.common.v1.DateRange date_range = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message GetTrustScoreHistoryResponse {
+  repeated TrustScoreSnapshot snapshots = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message GetTierRequirementsRequest {}
+
+message GetTierRequirementsResponse {
+  repeated TierRequirement tiers = 1;
+}
+
+// ============================================================
+// Signal Input RPCs
+// ============================================================
+
+message RecordFeedbackSignalRequest {
+  string user_id = 1;
+  string source = 2;                 // "review", "dispute_outcome", "milestone_approval"
+  double value = 3;                   // normalized 0.0 - 1.0
+  string reference_id = 4;           // review_id, dispute_id, etc.
+}
+
+message RecordFeedbackSignalResponse {}
+
+message RecordVolumeSignalRequest {
+  string user_id = 1;
+  string signal_type = 2;            // "job_completed", "on_time_delivery", "repeat_customer"
+  string reference_id = 3;
+}
+
+message RecordVolumeSignalResponse {}
+
+message RecordRiskSignalRequest {
+  string user_id = 1;
+  string signal_type = 2;            // "cancellation", "dispute_filed", "late_delivery", "no_show"
+  double severity = 3;                // 0.0 - 1.0
+  string reference_id = 4;
+}
+
+message RecordRiskSignalResponse {}
+
+// ============================================================
+// Admin RPCs
+// ============================================================
+
+message AdminOverrideTrustScoreRequest {
+  string user_id = 1;
+  string admin_id = 2;
+  nomarkup.common.v1.TrustTier new_tier = 3;
+  string reason = 4;
+}
+
+message AdminOverrideTrustScoreResponse {
+  TrustScore score = 1;
+}
+
+message AdminGetTrustBreakdownRequest {
+  string user_id = 1;
+}
+
+message AdminGetTrustBreakdownResponse {
+  TrustScore score = 1;
+  // Detailed breakdown of each dimension
+  FeedbackBreakdown feedback = 2;
+  VolumeBreakdown volume = 3;
+  RiskBreakdown risk = 4;
+  FraudBreakdown fraud = 5;
+}
+
+message FeedbackBreakdown {
+  double average_rating = 1;
+  int32 total_reviews = 2;
+  int32 five_star_count = 3;
+  int32 one_star_count = 4;
+  double rating_trend = 5;           // positive = improving
+  int32 disputes_lost = 6;
+}
+
+message VolumeBreakdown {
+  int32 total_jobs_completed = 1;
+  int32 jobs_last_90_days = 2;
+  int32 repeat_customers = 3;
+  double on_time_rate = 4;
+  int32 total_gmv_cents = 5;
+}
+
+message RiskBreakdown {
+  int32 cancellations = 1;
+  int32 disputes_filed = 2;
+  int32 late_deliveries = 3;
+  int32 no_shows = 4;
+  double cancellation_rate = 5;
+  double dispute_rate = 6;
+}
+
+message FraudBreakdown {
+  int32 fraud_signals_detected = 1;
+  double fraud_probability = 2;
+  bool has_active_flags = 3;
+  string last_review_outcome = 4;    // "cleared", "warning", "restricted"
+}

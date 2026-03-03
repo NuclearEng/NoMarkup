@@ -1,0 +1,226 @@
+syntax = "proto3";
+
+package nomarkup.review.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/review/v1;reviewv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Review Service — Two-way reviews, responses, flagging
+// ============================================================
+
+service ReviewService {
+  // Reviews
+  rpc CreateReview(CreateReviewRequest) returns (CreateReviewResponse);
+  rpc GetReview(GetReviewRequest) returns (GetReviewResponse);
+  rpc ListReviewsForUser(ListReviewsForUserRequest) returns (ListReviewsForUserResponse);
+  rpc ListReviewsByUser(ListReviewsByUserRequest) returns (ListReviewsByUserResponse);
+
+  // Review responses
+  rpc RespondToReview(RespondToReviewRequest) returns (RespondToReviewResponse);
+
+  // Flagging
+  rpc FlagReview(FlagReviewRequest) returns (FlagReviewResponse);
+
+  // Review window
+  rpc GetReviewEligibility(GetReviewEligibilityRequest) returns (GetReviewEligibilityResponse);
+
+  // Admin
+  rpc AdminRemoveReview(AdminRemoveReviewRequest) returns (AdminRemoveReviewResponse);
+  rpc AdminListFlaggedReviews(AdminListFlaggedReviewsRequest) returns (AdminListFlaggedReviewsResponse);
+  rpc AdminResolveFlag(AdminResolveFlagRequest) returns (AdminResolveFlagResponse);
+}
+
+// ============================================================
+// Review Messages
+// ============================================================
+
+enum ReviewDirection {
+  REVIEW_DIRECTION_UNSPECIFIED = 0;
+  REVIEW_DIRECTION_CUSTOMER_TO_PROVIDER = 1;
+  REVIEW_DIRECTION_PROVIDER_TO_CUSTOMER = 2;
+}
+
+enum FlagReason {
+  FLAG_REASON_UNSPECIFIED = 0;
+  FLAG_REASON_INAPPROPRIATE = 1;
+  FLAG_REASON_FAKE = 2;
+  FLAG_REASON_HARASSMENT = 3;
+  FLAG_REASON_SPAM = 4;
+  FLAG_REASON_IRRELEVANT = 5;
+}
+
+enum FlagStatus {
+  FLAG_STATUS_UNSPECIFIED = 0;
+  FLAG_STATUS_PENDING = 1;
+  FLAG_STATUS_UPHELD = 2;      // review removed
+  FLAG_STATUS_DISMISSED = 3;   // review stays
+}
+
+message Review {
+  string id = 1;
+  string contract_id = 2;
+  string reviewer_id = 3;
+  string reviewee_id = 4;
+  ReviewDirection direction = 5;
+  int32 overall_rating = 6;     // 1-5
+  int32 quality_rating = 7;     // 1-5, customer→provider only
+  int32 communication_rating = 8;  // 1-5
+  int32 timeliness_rating = 9;  // 1-5
+  int32 value_rating = 10;      // 1-5, customer→provider only
+  string comment = 11;
+  repeated string photo_urls = 12;
+  ReviewResponse response = 13;
+  bool is_flagged = 14;
+  google.protobuf.Timestamp created_at = 15;
+}
+
+message ReviewResponse {
+  string id = 1;
+  string review_id = 2;
+  string responder_id = 3;
+  string comment = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// ============================================================
+// Review RPCs
+// ============================================================
+
+message CreateReviewRequest {
+  string contract_id = 1;
+  string reviewer_id = 2;
+  int32 overall_rating = 3;
+  optional int32 quality_rating = 4;
+  optional int32 communication_rating = 5;
+  optional int32 timeliness_rating = 6;
+  optional int32 value_rating = 7;
+  string comment = 8;           // 50 char minimum
+  repeated string photo_urls = 9;
+}
+
+message CreateReviewResponse {
+  Review review = 1;
+}
+
+message GetReviewRequest {
+  string review_id = 1;
+}
+
+message GetReviewResponse {
+  Review review = 1;
+}
+
+message ListReviewsForUserRequest {
+  string user_id = 1;
+  optional ReviewDirection direction_filter = 2;
+  optional int32 min_rating = 3;
+  nomarkup.common.v1.SortRequest sort = 4;
+  nomarkup.common.v1.PaginationRequest pagination = 5;
+}
+
+message ListReviewsForUserResponse {
+  repeated Review reviews = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+  double average_rating = 3;
+  int32 total_reviews = 4;
+}
+
+message ListReviewsByUserRequest {
+  string user_id = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message ListReviewsByUserResponse {
+  repeated Review reviews = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+// ============================================================
+// Response RPCs
+// ============================================================
+
+message RespondToReviewRequest {
+  string review_id = 1;
+  string responder_id = 2;
+  string comment = 3;
+}
+
+message RespondToReviewResponse {
+  ReviewResponse response = 1;
+}
+
+// ============================================================
+// Flag RPCs
+// ============================================================
+
+message FlagReviewRequest {
+  string review_id = 1;
+  string flagged_by = 2;
+  FlagReason reason = 3;
+  string details = 4;
+}
+
+message FlagReviewResponse {
+  string flag_id = 1;
+}
+
+// ============================================================
+// Eligibility RPCs
+// ============================================================
+
+message GetReviewEligibilityRequest {
+  string contract_id = 1;
+  string user_id = 2;
+}
+
+message GetReviewEligibilityResponse {
+  bool eligible = 1;
+  bool already_reviewed = 2;
+  google.protobuf.Timestamp review_window_closes_at = 3;  // 14 days after completion
+}
+
+// ============================================================
+// Admin RPCs
+// ============================================================
+
+message AdminRemoveReviewRequest {
+  string review_id = 1;
+  string admin_id = 2;
+  string reason = 3;
+}
+
+message AdminRemoveReviewResponse {}
+
+message AdminListFlaggedReviewsRequest {
+  optional FlagStatus status_filter = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message AdminListFlaggedReviewsResponse {
+  repeated FlaggedReview flagged_reviews = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message FlaggedReview {
+  string flag_id = 1;
+  Review review = 2;
+  string flagged_by = 3;
+  FlagReason reason = 4;
+  string details = 5;
+  FlagStatus status = 6;
+  google.protobuf.Timestamp flagged_at = 7;
+}
+
+message AdminResolveFlagRequest {
+  string flag_id = 1;
+  string admin_id = 2;
+  bool uphold = 3;             // true = remove review, false = dismiss flag
+  string resolution_notes = 4;
+}
+
+message AdminResolveFlagResponse {
+  FlagStatus status = 1;
+}

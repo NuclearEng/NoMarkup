@@ -1,0 +1,293 @@
+syntax = "proto3";
+
+package nomarkup.fraud.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/fraud/v1;fraudv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Fraud Service (Rust) — Real-time fraud detection, session
+// tracking, risk scoring, shill-bid detection
+// ============================================================
+
+service FraudService {
+  // Real-time checks
+  rpc CheckTransaction(CheckTransactionRequest) returns (CheckTransactionResponse);
+  rpc CheckRegistration(CheckRegistrationRequest) returns (CheckRegistrationResponse);
+  rpc CheckBid(CheckBidRequest) returns (CheckBidResponse);
+
+  // Signal recording
+  rpc RecordSignal(RecordSignalRequest) returns (RecordSignalResponse);
+  rpc BatchRecordSignals(BatchRecordSignalsRequest) returns (BatchRecordSignalsResponse);
+
+  // Session tracking
+  rpc RecordSession(RecordSessionRequest) returns (RecordSessionResponse);
+  rpc GetSessionHistory(GetSessionHistoryRequest) returns (GetSessionHistoryResponse);
+
+  // User risk profile
+  rpc GetUserRiskProfile(GetUserRiskProfileRequest) returns (GetUserRiskProfileResponse);
+
+  // Admin review
+  rpc AdminListFraudAlerts(AdminListFraudAlertsRequest) returns (AdminListFraudAlertsResponse);
+  rpc AdminReviewFraudAlert(AdminReviewFraudAlertRequest) returns (AdminReviewFraudAlertResponse);
+  rpc AdminGetFraudDashboard(AdminGetFraudDashboardRequest) returns (AdminGetFraudDashboardResponse);
+}
+
+// ============================================================
+// Fraud Messages
+// ============================================================
+
+enum FraudSignalType {
+  FRAUD_SIGNAL_TYPE_UNSPECIFIED = 0;
+  FRAUD_SIGNAL_TYPE_VELOCITY = 1;          // too many actions in short time
+  FRAUD_SIGNAL_TYPE_GEO_MISMATCH = 2;      // IP location doesn't match profile
+  FRAUD_SIGNAL_TYPE_DEVICE_FINGERPRINT = 3; // known fraudulent device
+  FRAUD_SIGNAL_TYPE_SHILL_BID = 4;         // bid collusion pattern
+  FRAUD_SIGNAL_TYPE_ACCOUNT_TAKEOVER = 5;  // unusual login pattern
+  FRAUD_SIGNAL_TYPE_PAYMENT_FRAUD = 6;     // payment anomaly
+  FRAUD_SIGNAL_TYPE_FAKE_REVIEW = 7;       // review manipulation
+  FRAUD_SIGNAL_TYPE_MULTI_ACCOUNT = 8;     // same person, multiple accounts
+  FRAUD_SIGNAL_TYPE_BOT_BEHAVIOR = 9;      // automated actions
+}
+
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  RISK_LEVEL_LOW = 1;
+  RISK_LEVEL_MEDIUM = 2;
+  RISK_LEVEL_HIGH = 3;
+  RISK_LEVEL_CRITICAL = 4;
+}
+
+enum FraudDecision {
+  FRAUD_DECISION_UNSPECIFIED = 0;
+  FRAUD_DECISION_ALLOW = 1;
+  FRAUD_DECISION_ALLOW_WITH_REVIEW = 2;   // proceed but flag for manual review
+  FRAUD_DECISION_CHALLENGE = 3;           // require additional verification
+  FRAUD_DECISION_BLOCK = 4;
+}
+
+enum AlertStatus {
+  ALERT_STATUS_UNSPECIFIED = 0;
+  ALERT_STATUS_OPEN = 1;
+  ALERT_STATUS_INVESTIGATING = 2;
+  ALERT_STATUS_RESOLVED_FRAUD = 3;
+  ALERT_STATUS_RESOLVED_LEGITIMATE = 4;
+  ALERT_STATUS_DISMISSED = 5;
+}
+
+message FraudSignal {
+  string id = 1;
+  string user_id = 2;
+  FraudSignalType signal_type = 3;
+  double confidence = 4;                   // 0.0 - 1.0
+  RiskLevel risk_level = 5;
+  string details = 6;                      // JSON-encoded signal-specific data
+  string ip_address = 7;
+  string device_fingerprint = 8;
+  string reference_type = 9;              // "bid", "payment", "review", "login"
+  string reference_id = 10;
+  google.protobuf.Timestamp detected_at = 11;
+}
+
+message FraudAlert {
+  string id = 1;
+  string user_id = 2;
+  repeated FraudSignal signals = 3;
+  RiskLevel aggregate_risk = 4;
+  AlertStatus status = 5;
+  string assigned_to = 6;                  // admin_id
+  string resolution_notes = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp resolved_at = 9;
+}
+
+message UserRiskProfile {
+  string user_id = 1;
+  double risk_score = 2;                   // 0.0 - 1.0
+  RiskLevel risk_level = 3;
+  int32 total_signals = 4;
+  int32 active_alerts = 5;
+  repeated FraudSignalType recent_signal_types = 6;
+  bool is_restricted = 7;
+  google.protobuf.Timestamp last_signal_at = 8;
+  google.protobuf.Timestamp last_reviewed_at = 9;
+}
+
+// ============================================================
+// Real-time Check RPCs
+// ============================================================
+
+message CheckTransactionRequest {
+  string user_id = 1;
+  string payment_id = 2;
+  int64 amount_cents = 3;
+  string ip_address = 4;
+  string device_fingerprint = 5;
+}
+
+message CheckTransactionResponse {
+  FraudDecision decision = 1;
+  RiskLevel risk_level = 2;
+  double risk_score = 3;
+  repeated string reasons = 4;            // human-readable explanations
+}
+
+message CheckRegistrationRequest {
+  string email = 1;
+  string ip_address = 2;
+  string device_fingerprint = 3;
+  string phone = 4;
+}
+
+message CheckRegistrationResponse {
+  FraudDecision decision = 1;
+  RiskLevel risk_level = 2;
+  repeated string reasons = 3;
+}
+
+message CheckBidRequest {
+  string provider_id = 1;
+  string job_id = 2;
+  string customer_id = 3;
+  int64 amount_cents = 4;
+  string ip_address = 5;
+  string device_fingerprint = 6;
+}
+
+message CheckBidResponse {
+  FraudDecision decision = 1;
+  RiskLevel risk_level = 2;
+  bool shill_bid_detected = 3;
+  repeated string reasons = 4;
+}
+
+// ============================================================
+// Signal Recording RPCs
+// ============================================================
+
+message RecordSignalRequest {
+  string user_id = 1;
+  FraudSignalType signal_type = 2;
+  double confidence = 3;
+  string details = 4;
+  string ip_address = 5;
+  string device_fingerprint = 6;
+  string reference_type = 7;
+  string reference_id = 8;
+}
+
+message RecordSignalResponse {
+  FraudSignal signal = 1;
+  bool alert_created = 2;                 // true if this signal triggered an alert
+}
+
+message BatchRecordSignalsRequest {
+  repeated RecordSignalRequest signals = 1;
+}
+
+message BatchRecordSignalsResponse {
+  int32 recorded = 1;
+  int32 alerts_created = 2;
+}
+
+// ============================================================
+// Session Tracking RPCs
+// ============================================================
+
+message RecordSessionRequest {
+  string user_id = 1;
+  string ip_address = 2;
+  string user_agent = 3;
+  string device_fingerprint = 4;
+  nomarkup.common.v1.Location location = 5;
+  string action = 6;                      // "login", "bid", "payment", etc.
+}
+
+message RecordSessionResponse {
+  bool anomaly_detected = 1;
+  repeated string anomaly_reasons = 2;
+}
+
+message GetSessionHistoryRequest {
+  string user_id = 1;
+  nomarkup.common.v1.DateRange date_range = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message GetSessionHistoryResponse {
+  repeated SessionRecord sessions = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message SessionRecord {
+  string id = 1;
+  string user_id = 2;
+  string ip_address = 3;
+  string user_agent = 4;
+  string device_fingerprint = 5;
+  nomarkup.common.v1.Location location = 6;
+  string action = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// ============================================================
+// User Risk RPCs
+// ============================================================
+
+message GetUserRiskProfileRequest {
+  string user_id = 1;
+}
+
+message GetUserRiskProfileResponse {
+  UserRiskProfile profile = 1;
+}
+
+// ============================================================
+// Admin RPCs
+// ============================================================
+
+message AdminListFraudAlertsRequest {
+  optional AlertStatus status_filter = 1;
+  optional RiskLevel risk_filter = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message AdminListFraudAlertsResponse {
+  repeated FraudAlert alerts = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message AdminReviewFraudAlertRequest {
+  string alert_id = 1;
+  string admin_id = 2;
+  AlertStatus new_status = 3;
+  string resolution_notes = 4;
+  bool restrict_user = 5;                 // apply account restriction
+  bool ban_user = 6;                      // ban the account
+}
+
+message AdminReviewFraudAlertResponse {
+  FraudAlert alert = 1;
+}
+
+message AdminGetFraudDashboardRequest {
+  nomarkup.common.v1.DateRange date_range = 1;
+}
+
+message AdminGetFraudDashboardResponse {
+  int32 total_alerts = 1;
+  int32 open_alerts = 2;
+  int32 critical_alerts = 3;
+  int32 users_restricted = 4;
+  int32 users_banned = 5;
+  repeated FraudSignalBreakdown signal_breakdown = 6;
+  double false_positive_rate = 7;
+}
+
+message FraudSignalBreakdown {
+  FraudSignalType signal_type = 1;
+  int32 count = 2;
+  double percentage = 3;
+}

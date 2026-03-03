@@ -1,0 +1,268 @@
+syntax = "proto3";
+
+package nomarkup.subscription.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/subscription/v1;subscriptionv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Subscription Service — Provider subscription tiers, billing,
+// featured placement, reduced fees
+// ============================================================
+
+service SubscriptionService {
+  // Tier info
+  rpc ListTiers(ListTiersRequest) returns (ListTiersResponse);
+  rpc GetTier(GetTierRequest) returns (GetTierResponse);
+
+  // Subscriptions
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (CreateSubscriptionResponse);
+  rpc GetSubscription(GetSubscriptionRequest) returns (GetSubscriptionResponse);
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
+  rpc ChangeSubscriptionTier(ChangeSubscriptionTierRequest) returns (ChangeSubscriptionTierResponse);
+
+  // Usage tracking
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
+  rpc CheckFeatureAccess(CheckFeatureAccessRequest) returns (CheckFeatureAccessResponse);
+
+  // Billing
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+
+  // Webhooks (Stripe subscription events)
+  rpc HandleSubscriptionWebhook(HandleSubscriptionWebhookRequest) returns (HandleSubscriptionWebhookResponse);
+
+  // Admin
+  rpc AdminListSubscriptions(AdminListSubscriptionsRequest) returns (AdminListSubscriptionsResponse);
+  rpc AdminUpdateTier(AdminUpdateTierRequest) returns (AdminUpdateTierResponse);
+  rpc AdminGrantSubscription(AdminGrantSubscriptionRequest) returns (AdminGrantSubscriptionResponse);
+}
+
+// ============================================================
+// Subscription Messages
+// ============================================================
+
+enum SubscriptionStatus {
+  SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
+  SUBSCRIPTION_STATUS_ACTIVE = 1;
+  SUBSCRIPTION_STATUS_PAST_DUE = 2;
+  SUBSCRIPTION_STATUS_CANCELLED = 3;
+  SUBSCRIPTION_STATUS_EXPIRED = 4;
+  SUBSCRIPTION_STATUS_TRIALING = 5;
+}
+
+enum BillingInterval {
+  BILLING_INTERVAL_UNSPECIFIED = 0;
+  BILLING_INTERVAL_MONTHLY = 1;
+  BILLING_INTERVAL_ANNUAL = 2;
+}
+
+message SubscriptionTier {
+  string id = 1;
+  string name = 2;                     // "Free", "Pro", "Business"
+  string slug = 3;
+  int64 monthly_price_cents = 4;
+  int64 annual_price_cents = 5;        // annual total (discounted)
+  double fee_discount_percentage = 6;  // reduction in platform fee (e.g., 0.02 = 2% off)
+  int32 max_active_bids = 7;          // 0 = unlimited
+  int32 max_service_categories = 8;
+  bool featured_placement = 9;         // boosted in search results
+  bool analytics_access = 10;          // market insights
+  bool priority_support = 11;
+  bool verified_badge_boost = 12;      // faster verification review
+  int32 portfolio_image_limit = 13;
+  bool instant_enabled = 14;           // can use NoMarkup Instant
+  int32 sort_order = 15;
+  bool is_active = 16;
+  google.protobuf.Timestamp created_at = 17;
+}
+
+message Subscription {
+  string id = 1;
+  string user_id = 2;
+  string tier_id = 3;
+  SubscriptionTier tier = 4;
+  SubscriptionStatus status = 5;
+  BillingInterval billing_interval = 6;
+  int64 current_price_cents = 7;       // locked-in price at time of subscription
+  string stripe_subscription_id = 8;
+  google.protobuf.Timestamp current_period_start = 9;
+  google.protobuf.Timestamp current_period_end = 10;
+  google.protobuf.Timestamp trial_end = 11;
+  google.protobuf.Timestamp cancelled_at = 12;
+  google.protobuf.Timestamp created_at = 13;
+}
+
+message Invoice {
+  string id = 1;
+  string subscription_id = 2;
+  string stripe_invoice_id = 3;
+  int64 amount_cents = 4;
+  string status = 5;                   // "paid", "open", "void", "uncollectible"
+  string pdf_url = 6;
+  google.protobuf.Timestamp period_start = 7;
+  google.protobuf.Timestamp period_end = 8;
+  google.protobuf.Timestamp paid_at = 9;
+}
+
+// ============================================================
+// Tier RPCs
+// ============================================================
+
+message ListTiersRequest {}
+
+message ListTiersResponse {
+  repeated SubscriptionTier tiers = 1;
+}
+
+message GetTierRequest {
+  string tier_id = 1;
+}
+
+message GetTierResponse {
+  SubscriptionTier tier = 1;
+}
+
+// ============================================================
+// Subscription RPCs
+// ============================================================
+
+message CreateSubscriptionRequest {
+  string user_id = 1;
+  string tier_id = 2;
+  BillingInterval billing_interval = 3;
+  string payment_method_id = 4;       // Stripe payment method
+}
+
+message CreateSubscriptionResponse {
+  Subscription subscription = 1;
+  string client_secret = 2;           // for SCA/3DS confirmation if needed
+}
+
+message GetSubscriptionRequest {
+  string user_id = 1;
+}
+
+message GetSubscriptionResponse {
+  Subscription subscription = 1;      // null if no active subscription (free tier)
+}
+
+message CancelSubscriptionRequest {
+  string user_id = 1;
+  string reason = 2;
+  bool cancel_immediately = 3;        // false = cancel at end of period
+}
+
+message CancelSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message ChangeSubscriptionTierRequest {
+  string user_id = 1;
+  string new_tier_id = 2;
+  BillingInterval billing_interval = 3;
+}
+
+message ChangeSubscriptionTierResponse {
+  Subscription subscription = 1;
+  int64 proration_amount_cents = 2;   // positive = charge, negative = credit
+}
+
+// ============================================================
+// Usage RPCs
+// ============================================================
+
+message GetUsageRequest {
+  string user_id = 1;
+}
+
+message GetUsageResponse {
+  int32 active_bids = 1;
+  int32 max_active_bids = 2;
+  int32 service_categories = 3;
+  int32 max_service_categories = 4;
+  int32 portfolio_images = 5;
+  int32 max_portfolio_images = 6;
+  double current_fee_percentage = 7;   // effective fee after discount
+}
+
+message CheckFeatureAccessRequest {
+  string user_id = 1;
+  string feature = 2;                 // "instant", "analytics", "featured_placement", etc.
+}
+
+message CheckFeatureAccessResponse {
+  bool has_access = 1;
+  string required_tier = 2;           // if no access, which tier unlocks it
+}
+
+// ============================================================
+// Billing RPCs
+// ============================================================
+
+message ListInvoicesRequest {
+  string user_id = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+// ============================================================
+// Webhook RPCs
+// ============================================================
+
+message HandleSubscriptionWebhookRequest {
+  string payload = 1;
+  string signature = 2;
+}
+
+message HandleSubscriptionWebhookResponse {
+  bool processed = 1;
+}
+
+// ============================================================
+// Admin RPCs
+// ============================================================
+
+message AdminListSubscriptionsRequest {
+  optional SubscriptionStatus status_filter = 1;
+  optional string tier_id = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message AdminListSubscriptionsResponse {
+  repeated Subscription subscriptions = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+  int64 total_mrr_cents = 3;          // monthly recurring revenue
+}
+
+message AdminUpdateTierRequest {
+  string tier_id = 1;
+  string admin_id = 2;
+  optional string name = 3;
+  optional int64 monthly_price_cents = 4;
+  optional int64 annual_price_cents = 5;
+  optional double fee_discount_percentage = 6;
+  optional int32 max_active_bids = 7;
+  optional bool is_active = 8;
+}
+
+message AdminUpdateTierResponse {
+  SubscriptionTier tier = 1;
+}
+
+message AdminGrantSubscriptionRequest {
+  string user_id = 1;
+  string tier_id = 2;
+  string admin_id = 3;
+  int32 duration_days = 4;            // how long to grant
+  string reason = 5;
+}
+
+message AdminGrantSubscriptionResponse {
+  Subscription subscription = 1;
+}

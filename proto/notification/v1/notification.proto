@@ -1,0 +1,260 @@
+syntax = "proto3";
+
+package nomarkup.notification.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/notification/v1;notificationv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Notification Service — Multi-channel notifications, preferences
+// Channels: push (APNs/FCM), email, SMS, in-app
+// ============================================================
+
+service NotificationService {
+  // Send notifications
+  rpc SendNotification(SendNotificationRequest) returns (SendNotificationResponse);
+  rpc SendBulkNotification(SendBulkNotificationRequest) returns (SendBulkNotificationResponse);
+
+  // In-app notifications
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc MarkAsRead(MarkAsReadRequest) returns (MarkAsReadResponse);
+  rpc MarkAllAsRead(MarkAllAsReadRequest) returns (MarkAllAsReadResponse);
+  rpc GetUnreadCount(GetUnreadCountRequest) returns (GetUnreadCountResponse);
+
+  // Device tokens (push notifications)
+  rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
+  rpc UnregisterDevice(UnregisterDeviceRequest) returns (UnregisterDeviceResponse);
+
+  // Preferences
+  rpc GetPreferences(GetPreferencesRequest) returns (GetPreferencesResponse);
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UpdatePreferencesResponse);
+
+  // Email unsubscribe
+  rpc Unsubscribe(UnsubscribeRequest) returns (UnsubscribeResponse);
+}
+
+// ============================================================
+// Notification Messages
+// ============================================================
+
+enum NotificationChannel {
+  NOTIFICATION_CHANNEL_UNSPECIFIED = 0;
+  NOTIFICATION_CHANNEL_PUSH = 1;
+  NOTIFICATION_CHANNEL_EMAIL = 2;
+  NOTIFICATION_CHANNEL_SMS = 3;
+  NOTIFICATION_CHANNEL_IN_APP = 4;
+}
+
+enum NotificationType {
+  NOTIFICATION_TYPE_UNSPECIFIED = 0;
+  // Bidding
+  NOTIFICATION_TYPE_NEW_BID = 1;
+  NOTIFICATION_TYPE_BID_AWARDED = 2;
+  NOTIFICATION_TYPE_BID_NOT_SELECTED = 3;
+  NOTIFICATION_TYPE_AUCTION_CLOSING_SOON = 4;
+  NOTIFICATION_TYPE_AUCTION_CLOSED = 5;
+  NOTIFICATION_TYPE_OFFER_ACCEPTED = 6;
+  // Contract
+  NOTIFICATION_TYPE_CONTRACT_CREATED = 7;
+  NOTIFICATION_TYPE_CONTRACT_ACCEPTED = 8;
+  NOTIFICATION_TYPE_WORK_STARTED = 9;
+  NOTIFICATION_TYPE_MILESTONE_SUBMITTED = 10;
+  NOTIFICATION_TYPE_MILESTONE_APPROVED = 11;
+  NOTIFICATION_TYPE_REVISION_REQUESTED = 12;
+  NOTIFICATION_TYPE_WORK_COMPLETED = 13;
+  NOTIFICATION_TYPE_COMPLETION_APPROVED = 14;
+  // Payment
+  NOTIFICATION_TYPE_PAYMENT_RECEIVED = 15;
+  NOTIFICATION_TYPE_PAYMENT_RELEASED = 16;
+  NOTIFICATION_TYPE_PAYMENT_FAILED = 17;
+  NOTIFICATION_TYPE_PAYOUT_SENT = 18;
+  // Chat
+  NOTIFICATION_TYPE_NEW_MESSAGE = 19;
+  // Review
+  NOTIFICATION_TYPE_REVIEW_RECEIVED = 20;
+  NOTIFICATION_TYPE_REVIEW_REMINDER = 21;
+  // Dispute
+  NOTIFICATION_TYPE_DISPUTE_OPENED = 22;
+  NOTIFICATION_TYPE_DISPUTE_RESOLVED = 23;
+  // Trust
+  NOTIFICATION_TYPE_TIER_UPGRADE = 24;
+  NOTIFICATION_TYPE_TIER_DOWNGRADE = 25;
+  // Verification
+  NOTIFICATION_TYPE_DOCUMENT_APPROVED = 26;
+  NOTIFICATION_TYPE_DOCUMENT_REJECTED = 27;
+  NOTIFICATION_TYPE_DOCUMENT_EXPIRING = 28;
+  // Change order
+  NOTIFICATION_TYPE_CHANGE_ORDER_PROPOSED = 29;
+  NOTIFICATION_TYPE_CHANGE_ORDER_RESPONDED = 30;
+  // Recurring
+  NOTIFICATION_TYPE_RECURRING_UPCOMING = 31;
+  NOTIFICATION_TYPE_RECURRING_INSTANCE_READY = 32;
+}
+
+message Notification {
+  string id = 1;
+  string user_id = 2;
+  NotificationType notification_type = 3;
+  string title = 4;
+  string body = 5;
+  string action_url = 6;              // deep link / relative URL
+  map<string, string> data = 7;       // type-specific payload (job_id, contract_id, etc.)
+  bool is_read = 8;
+  repeated NotificationChannel channels_sent = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp read_at = 11;
+}
+
+// ============================================================
+// Send RPCs
+// ============================================================
+
+message SendNotificationRequest {
+  string user_id = 1;
+  NotificationType notification_type = 2;
+  string title = 3;
+  string body = 4;
+  string action_url = 5;
+  map<string, string> data = 6;
+  repeated NotificationChannel channels = 7;  // empty = use user preferences
+}
+
+message SendNotificationResponse {
+  Notification notification = 1;
+  repeated ChannelDeliveryStatus delivery_status = 2;
+}
+
+message ChannelDeliveryStatus {
+  NotificationChannel channel = 1;
+  bool delivered = 2;
+  string failure_reason = 3;
+}
+
+message SendBulkNotificationRequest {
+  repeated string user_ids = 1;
+  NotificationType notification_type = 2;
+  string title = 3;
+  string body = 4;
+  string action_url = 5;
+  map<string, string> data = 6;
+}
+
+message SendBulkNotificationResponse {
+  int32 sent = 1;
+  int32 failed = 2;
+}
+
+// ============================================================
+// In-App RPCs
+// ============================================================
+
+message ListNotificationsRequest {
+  string user_id = 1;
+  optional bool unread_only = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message MarkAsReadRequest {
+  string notification_id = 1;
+  string user_id = 2;
+}
+
+message MarkAsReadResponse {}
+
+message MarkAllAsReadRequest {
+  string user_id = 1;
+}
+
+message MarkAllAsReadResponse {
+  int32 marked_count = 1;
+}
+
+message GetUnreadCountRequest {
+  string user_id = 1;
+}
+
+message GetUnreadCountResponse {
+  int32 count = 1;
+}
+
+// ============================================================
+// Device Token RPCs
+// ============================================================
+
+enum DevicePlatform {
+  DEVICE_PLATFORM_UNSPECIFIED = 0;
+  DEVICE_PLATFORM_IOS = 1;
+  DEVICE_PLATFORM_ANDROID = 2;
+  DEVICE_PLATFORM_WEB = 3;
+}
+
+message RegisterDeviceRequest {
+  string user_id = 1;
+  string device_token = 2;
+  DevicePlatform platform = 3;
+  string device_id = 4;               // unique device identifier
+}
+
+message RegisterDeviceResponse {}
+
+message UnregisterDeviceRequest {
+  string user_id = 1;
+  string device_id = 2;
+}
+
+message UnregisterDeviceResponse {}
+
+// ============================================================
+// Preference RPCs
+// ============================================================
+
+message NotificationPreference {
+  NotificationType notification_type = 1;
+  bool push_enabled = 2;
+  bool email_enabled = 3;
+  bool sms_enabled = 4;
+  bool in_app_enabled = 5;
+}
+
+message GetPreferencesRequest {
+  string user_id = 1;
+}
+
+message GetPreferencesResponse {
+  repeated NotificationPreference preferences = 1;
+  bool global_push_enabled = 2;
+  bool global_email_enabled = 3;
+  bool global_sms_enabled = 4;
+}
+
+message UpdatePreferencesRequest {
+  string user_id = 1;
+  repeated NotificationPreference preferences = 2;
+  optional bool global_push_enabled = 3;
+  optional bool global_email_enabled = 4;
+  optional bool global_sms_enabled = 5;
+}
+
+message UpdatePreferencesResponse {
+  repeated NotificationPreference preferences = 1;
+}
+
+// ============================================================
+// Unsubscribe RPCs
+// ============================================================
+
+message UnsubscribeRequest {
+  string token = 1;                    // signed unsubscribe token from email footer
+}
+
+message UnsubscribeResponse {
+  bool success = 1;
+  string user_email = 2;
+}

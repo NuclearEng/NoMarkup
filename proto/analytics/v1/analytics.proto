@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package nomarkup.analytics.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/analytics/v1;analyticsv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Analytics Service — Market pricing intelligence, platform
+// metrics, provider analytics, pricing guidance
+// ============================================================
+
+service AnalyticsService {
+  // Market pricing
+  rpc GetMarketRange(GetMarketRangeRequest) returns (GetMarketRangeResponse);
+  rpc GetMarketTrends(GetMarketTrendsRequest) returns (GetMarketTrendsResponse);
+
+  // Provider analytics
+  rpc GetProviderAnalytics(GetProviderAnalyticsRequest) returns (GetProviderAnalyticsResponse);
+  rpc GetProviderEarnings(GetProviderEarningsRequest) returns (GetProviderEarningsResponse);
+
+  // Customer analytics
+  rpc GetCustomerSpending(GetCustomerSpendingRequest) returns (GetCustomerSpendingResponse);
+
+  // Platform analytics (admin)
+  rpc GetPlatformMetrics(GetPlatformMetricsRequest) returns (GetPlatformMetricsResponse);
+  rpc GetGrowthMetrics(GetGrowthMetricsRequest) returns (GetGrowthMetricsResponse);
+  rpc GetCategoryMetrics(GetCategoryMetricsRequest) returns (GetCategoryMetricsResponse);
+  rpc GetGeographicMetrics(GetGeographicMetricsRequest) returns (GetGeographicMetricsResponse);
+
+  // Data ingestion (called by other services)
+  rpc RecordTransaction(RecordTransactionRequest) returns (RecordTransactionResponse);
+  rpc RecordEvent(RecordEventRequest) returns (RecordEventResponse);
+}
+
+// ============================================================
+// Market Pricing Messages
+// ============================================================
+
+message MarketRange {
+  string category_id = 1;
+  string subcategory_id = 2;
+  string service_type_id = 3;
+  string region = 4;                   // metro area or state
+  int64 low_cents = 5;
+  int64 median_cents = 6;
+  int64 high_cents = 7;
+  int32 data_points = 8;
+  string source = 9;                   // "seeded", "platform", "blended"
+  double confidence = 10;              // 0.0 - 1.0
+  google.protobuf.Timestamp computed_at = 11;
+}
+
+message PriceTrend {
+  google.protobuf.Timestamp period_start = 1;
+  int64 median_cents = 2;
+  int32 transaction_count = 3;
+  double change_percentage = 4;        // vs previous period
+}
+
+// ============================================================
+// Market Pricing RPCs
+// ============================================================
+
+message GetMarketRangeRequest {
+  string category_id = 1;
+  optional string subcategory_id = 2;
+  optional string service_type_id = 3;
+  optional nomarkup.common.v1.Location location = 4;
+  optional double radius_km = 5;
+}
+
+message GetMarketRangeResponse {
+  MarketRange range = 1;
+}
+
+message GetMarketTrendsRequest {
+  string category_id = 1;
+  optional string subcategory_id = 2;
+  optional string region = 3;
+  nomarkup.common.v1.DateRange date_range = 4;
+  string group_by = 5;                 // "day", "week", "month"
+}
+
+message GetMarketTrendsResponse {
+  repeated PriceTrend trends = 1;
+  double overall_change_percentage = 2;
+}
+
+// ============================================================
+// Provider Analytics RPCs
+// ============================================================
+
+message GetProviderAnalyticsRequest {
+  string provider_id = 1;
+  nomarkup.common.v1.DateRange date_range = 2;
+}
+
+message GetProviderAnalyticsResponse {
+  // Bidding performance
+  int32 total_bids = 1;
+  int32 bids_won = 2;
+  double win_rate = 3;
+  int64 average_bid_cents = 4;
+  // Job performance
+  int32 jobs_completed = 5;
+  int32 jobs_in_progress = 6;
+  double on_time_rate = 7;
+  double completion_rate = 8;
+  // Financial
+  int64 total_earnings_cents = 9;
+  int64 average_job_value_cents = 10;
+  // Ratings
+  double average_rating = 11;
+  int32 total_reviews = 12;
+  double rating_trend = 13;           // positive = improving
+  // Response time
+  int32 avg_response_time_minutes = 14;
+  // Category breakdown
+  repeated CategoryEarnings category_breakdown = 15;
+}
+
+message CategoryEarnings {
+  string category_id = 1;
+  string category_name = 2;
+  int32 jobs_completed = 3;
+  int64 total_earnings_cents = 4;
+  double average_rating = 5;
+}
+
+message GetProviderEarningsRequest {
+  string provider_id = 1;
+  nomarkup.common.v1.DateRange date_range = 2;
+  string group_by = 3;                 // "day", "week", "month"
+}
+
+message GetProviderEarningsResponse {
+  repeated EarningsDataPoint data_points = 1;
+  int64 total_earnings_cents = 2;
+  int64 total_fees_cents = 3;
+  int64 net_earnings_cents = 4;
+  int32 total_jobs = 5;
+}
+
+message EarningsDataPoint {
+  google.protobuf.Timestamp period_start = 1;
+  int64 earnings_cents = 2;
+  int64 fees_cents = 3;
+  int32 job_count = 4;
+}
+
+// ============================================================
+// Customer Analytics RPCs
+// ============================================================
+
+message GetCustomerSpendingRequest {
+  string customer_id = 1;
+  nomarkup.common.v1.DateRange date_range = 2;
+  string group_by = 3;                 // "day", "week", "month"
+}
+
+message GetCustomerSpendingResponse {
+  repeated SpendingDataPoint data_points = 1;
+  int64 total_spent_cents = 2;
+  int32 total_jobs = 3;
+  int64 average_job_cost_cents = 4;
+  int64 total_savings_cents = 5;       // vs market median
+  repeated CategorySpending category_breakdown = 6;
+}
+
+message SpendingDataPoint {
+  google.protobuf.Timestamp period_start = 1;
+  int64 amount_cents = 2;
+  int32 job_count = 3;
+}
+
+message CategorySpending {
+  string category_id = 1;
+  string category_name = 2;
+  int64 total_spent_cents = 3;
+  int32 job_count = 4;
+}
+
+// ============================================================
+// Platform Analytics RPCs (Admin)
+// ============================================================
+
+message GetPlatformMetricsRequest {
+  nomarkup.common.v1.DateRange date_range = 1;
+}
+
+message GetPlatformMetricsResponse {
+  // GMV & Revenue
+  int64 total_gmv_cents = 1;
+  int64 total_revenue_cents = 2;
+  int64 total_guarantee_fund_cents = 3;
+  double effective_take_rate = 4;
+  // Users
+  int32 total_users = 5;
+  int32 active_users = 6;             // active in date range
+  int32 new_users = 7;
+  // Jobs
+  int32 total_jobs_posted = 8;
+  int32 total_jobs_completed = 9;
+  double job_fill_rate = 10;           // % of jobs that get at least 1 bid
+  double job_completion_rate = 11;
+  // Bids
+  int32 total_bids = 12;
+  double avg_bids_per_job = 13;
+  // Trust
+  int32 disputes_opened = 14;
+  int32 disputes_resolved = 15;
+  double dispute_rate = 16;
+  int32 guarantee_claims = 17;
+  int64 guarantee_payouts_cents = 18;
+}
+
+message GetGrowthMetricsRequest {
+  nomarkup.common.v1.DateRange date_range = 1;
+  string group_by = 2;                 // "day", "week", "month"
+}
+
+message GetGrowthMetricsResponse {
+  repeated GrowthDataPoint data_points = 1;
+  // Period-over-period changes
+  double gmv_growth_rate = 2;
+  double user_growth_rate = 3;
+  double job_growth_rate = 4;
+}
+
+message GrowthDataPoint {
+  google.protobuf.Timestamp period_start = 1;
+  int32 new_users = 2;
+  int32 new_providers = 3;
+  int32 jobs_posted = 4;
+  int32 jobs_completed = 5;
+  int64 gmv_cents = 6;
+  int64 revenue_cents = 7;
+}
+
+message GetCategoryMetricsRequest {
+  nomarkup.common.v1.DateRange date_range = 1;
+}
+
+message GetCategoryMetricsResponse {
+  repeated CategoryMetrics categories = 1;
+}
+
+message CategoryMetrics {
+  string category_id = 1;
+  string category_name = 2;
+  int32 jobs_posted = 3;
+  int32 jobs_completed = 4;
+  int64 gmv_cents = 5;
+  double avg_bids_per_job = 6;
+  int64 avg_job_value_cents = 7;
+  double fill_rate = 8;
+  int32 active_providers = 9;
+}
+
+message GetGeographicMetricsRequest {
+  nomarkup.common.v1.DateRange date_range = 1;
+}
+
+message GetGeographicMetricsResponse {
+  repeated RegionMetrics regions = 1;
+}
+
+message RegionMetrics {
+  string region = 1;                   // metro area or state
+  nomarkup.common.v1.Location center = 2;
+  int32 active_users = 3;
+  int32 active_providers = 4;
+  int32 jobs_posted = 5;
+  int64 gmv_cents = 6;
+  double supply_demand_ratio = 7;      // providers/jobs — >1 means oversupply
+}
+
+// ============================================================
+// Data Ingestion RPCs
+// ============================================================
+
+message RecordTransactionRequest {
+  string transaction_id = 1;          // payment_id or contract_id
+  string category_id = 2;
+  string subcategory_id = 3;
+  string service_type_id = 4;
+  string region = 5;
+  int64 amount_cents = 6;
+  int64 platform_fee_cents = 7;
+  string customer_id = 8;
+  string provider_id = 9;
+  google.protobuf.Timestamp completed_at = 10;
+}
+
+message RecordTransactionResponse {}
+
+message RecordEventRequest {
+  string event_type = 1;              // "user_registered", "job_posted", "bid_placed", etc.
+  string user_id = 2;
+  map<string, string> properties = 3; // event-specific data
+  google.protobuf.Timestamp occurred_at = 4;
+}
+
+message RecordEventResponse {}

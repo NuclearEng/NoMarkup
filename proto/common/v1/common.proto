@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package nomarkup.common.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/common/v1;commonv1";
+
+import "google/protobuf/timestamp.proto";
+
+// ============================================================
+// Shared types used across all services
+// ============================================================
+
+// Pagination
+message PaginationRequest {
+  int32 page = 1;       // 1-indexed
+  int32 page_size = 2;  // max 100
+}
+
+message PaginationResponse {
+  int32 total_count = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  int32 total_pages = 4;
+  bool has_next = 5;
+}
+
+// Sorting
+message SortRequest {
+  string field = 1;
+  SortDirection direction = 2;
+}
+
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  SORT_DIRECTION_ASC = 1;
+  SORT_DIRECTION_DESC = 2;
+}
+
+// Geographic location
+message Location {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+message Address {
+  string street = 1;
+  string city = 2;
+  string state = 3;
+  string zip_code = 4;
+  Location location = 5;
+}
+
+// Money (always in cents)
+message Money {
+  int64 amount_cents = 1;
+  string currency = 2;  // "USD"
+}
+
+// Date range
+message DateRange {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}
+
+// File upload reference
+message FileReference {
+  string url = 1;
+  string name = 2;
+  string mime_type = 3;
+  int32 size_bytes = 4;
+}
+
+// Generic error detail
+message ErrorDetail {
+  string field = 1;
+  string message = 2;
+  string code = 3;
+}
+
+// User role
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  USER_ROLE_CUSTOMER = 1;
+  USER_ROLE_PROVIDER = 2;
+  USER_ROLE_ADMIN = 3;
+  USER_ROLE_SUPPORT = 4;
+  USER_ROLE_ANALYST = 5;
+}
+
+// User status
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_SUSPENDED = 2;
+  USER_STATUS_BANNED = 3;
+  USER_STATUS_DEACTIVATED = 4;
+}
+
+// Trust tier
+enum TrustTier {
+  TRUST_TIER_UNSPECIFIED = 0;
+  TRUST_TIER_UNDER_REVIEW = 1;
+  TRUST_TIER_NEW = 2;
+  TRUST_TIER_RISING = 3;
+  TRUST_TIER_TRUSTED = 4;
+  TRUST_TIER_TOP_RATED = 5;
+}
+
+// Verification badge status
+enum VerificationStatus {
+  VERIFICATION_STATUS_UNSPECIFIED = 0;
+  VERIFICATION_STATUS_NOT_UPLOADED = 1;
+  VERIFICATION_STATUS_PENDING = 2;
+  VERIFICATION_STATUS_VERIFIED = 3;
+  VERIFICATION_STATUS_REJECTED = 4;
+  VERIFICATION_STATUS_EXPIRED = 5;
+}
+
+// Schedule type
+enum ScheduleType {
+  SCHEDULE_TYPE_UNSPECIFIED = 0;
+  SCHEDULE_TYPE_SPECIFIC_DATE = 1;
+  SCHEDULE_TYPE_DATE_RANGE = 2;
+  SCHEDULE_TYPE_FLEXIBLE = 3;
+}
+
+// Recurrence frequency
+enum RecurrenceFrequency {
+  RECURRENCE_FREQUENCY_UNSPECIFIED = 0;
+  RECURRENCE_FREQUENCY_WEEKLY = 1;
+  RECURRENCE_FREQUENCY_BIWEEKLY = 2;
+  RECURRENCE_FREQUENCY_MONTHLY = 3;
+}
+
+// Payment timing
+enum PaymentTiming {
+  PAYMENT_TIMING_UNSPECIFIED = 0;
+  PAYMENT_TIMING_UPFRONT = 1;
+  PAYMENT_TIMING_MILESTONE = 2;
+  PAYMENT_TIMING_COMPLETION = 3;
+  PAYMENT_TIMING_PAYMENT_PLAN = 4;
+  PAYMENT_TIMING_RECURRING = 5;
+}

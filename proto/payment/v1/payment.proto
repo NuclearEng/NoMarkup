@@ -1,0 +1,362 @@
+syntax = "proto3";
+
+package nomarkup.payment.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/payment/v1;paymentv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Payment Service — Stripe Connect, escrow, payouts, refunds
+// ============================================================
+
+service PaymentService {
+  // Stripe onboarding
+  rpc CreateStripeAccount(CreateStripeAccountRequest) returns (CreateStripeAccountResponse);
+  rpc GetStripeOnboardingLink(GetStripeOnboardingLinkRequest) returns (GetStripeOnboardingLinkResponse);
+  rpc GetStripeAccountStatus(GetStripeAccountStatusRequest) returns (GetStripeAccountStatusResponse);
+  rpc GetStripeDashboardLink(GetStripeDashboardLinkRequest) returns (GetStripeDashboardLinkResponse);
+
+  // Customer payment methods
+  rpc CreateSetupIntent(CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
+  rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
+  rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (DeletePaymentMethodResponse);
+
+  // Payments
+  rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
+  rpc ProcessPayment(ProcessPaymentRequest) returns (ProcessPaymentResponse);
+  rpc ReleaseEscrow(ReleaseEscrowRequest) returns (ReleaseEscrowResponse);
+  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
+  rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
+
+  // Refunds
+  rpc CreateRefund(CreateRefundRequest) returns (CreateRefundResponse);
+
+  // Webhooks
+  rpc HandleStripeWebhook(HandleStripeWebhookRequest) returns (HandleStripeWebhookResponse);
+
+  // Platform fees
+  rpc CalculateFees(CalculateFeesRequest) returns (CalculateFeesResponse);
+  rpc GetFeeConfig(GetFeeConfigRequest) returns (GetFeeConfigResponse);
+
+  // Admin
+  rpc AdminGetPaymentDetails(AdminGetPaymentDetailsRequest) returns (AdminGetPaymentDetailsResponse);
+  rpc AdminListPayments(AdminListPaymentsRequest) returns (AdminListPaymentsResponse);
+  rpc AdminUpdateFeeConfig(AdminUpdateFeeConfigRequest) returns (AdminUpdateFeeConfigResponse);
+
+  // Revenue reporting
+  rpc GetRevenueReport(GetRevenueReportRequest) returns (GetRevenueReportResponse);
+}
+
+// ============================================================
+// Payment Messages
+// ============================================================
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PENDING = 1;
+  PAYMENT_STATUS_PROCESSING = 2;
+  PAYMENT_STATUS_ESCROW = 3;
+  PAYMENT_STATUS_RELEASED = 4;
+  PAYMENT_STATUS_COMPLETED = 5;
+  PAYMENT_STATUS_FAILED = 6;
+  PAYMENT_STATUS_REFUNDED = 7;
+  PAYMENT_STATUS_PARTIALLY_REFUNDED = 8;
+  PAYMENT_STATUS_DISPUTED = 9;
+  PAYMENT_STATUS_CHARGEBACK = 10;
+}
+
+message Payment {
+  string id = 1;
+  string contract_id = 2;
+  string milestone_id = 3;
+  string recurring_instance_id = 4;
+  string customer_id = 5;
+  string provider_id = 6;
+  int64 amount_cents = 7;
+  int64 platform_fee_cents = 8;
+  int64 guarantee_fee_cents = 9;
+  int64 provider_payout_cents = 10;
+  PaymentStatus status = 11;
+  string failure_reason = 12;
+  int64 refund_amount_cents = 13;
+  string refund_reason = 14;
+  int32 installment_number = 15;
+  int32 total_installments = 16;
+  int32 retry_count = 17;
+  google.protobuf.Timestamp escrow_at = 18;
+  google.protobuf.Timestamp released_at = 19;
+  google.protobuf.Timestamp completed_at = 20;
+  google.protobuf.Timestamp created_at = 21;
+}
+
+message PaymentBreakdown {
+  int64 subtotal_cents = 1;
+  int64 platform_fee_cents = 2;
+  int64 guarantee_fee_cents = 3;
+  int64 total_cents = 4;
+  int64 provider_payout_cents = 5;
+  double fee_percentage = 6;
+  double guarantee_percentage = 7;
+}
+
+// ============================================================
+// Stripe Onboarding RPCs
+// ============================================================
+
+message CreateStripeAccountRequest {
+  string user_id = 1;
+  string email = 2;
+  string business_name = 3;
+}
+
+message CreateStripeAccountResponse {
+  string stripe_account_id = 1;
+}
+
+message GetStripeOnboardingLinkRequest {
+  string user_id = 1;
+  string return_url = 2;
+  string refresh_url = 3;
+}
+
+message GetStripeOnboardingLinkResponse {
+  string onboarding_url = 1;
+}
+
+message GetStripeAccountStatusRequest {
+  string user_id = 1;
+}
+
+message GetStripeAccountStatusResponse {
+  bool charges_enabled = 1;
+  bool payouts_enabled = 2;
+  bool details_submitted = 3;
+  repeated string requirements = 4;
+}
+
+message GetStripeDashboardLinkRequest {
+  string user_id = 1;
+}
+
+message GetStripeDashboardLinkResponse {
+  string dashboard_url = 1;
+}
+
+// ============================================================
+// Payment Method RPCs
+// ============================================================
+
+message CreateSetupIntentRequest {
+  string customer_id = 1;
+}
+
+message CreateSetupIntentResponse {
+  string client_secret = 1;
+}
+
+message PaymentMethod {
+  string id = 1;
+  string type = 2;  // "card", "apple_pay", "google_pay"
+  string last_four = 3;
+  string brand = 4;
+  int32 exp_month = 5;
+  int32 exp_year = 6;
+  bool is_default = 7;
+}
+
+message ListPaymentMethodsRequest {
+  string customer_id = 1;
+}
+
+message ListPaymentMethodsResponse {
+  repeated PaymentMethod methods = 1;
+}
+
+message DeletePaymentMethodRequest {
+  string payment_method_id = 1;
+  string customer_id = 2;
+}
+
+message DeletePaymentMethodResponse {}
+
+// ============================================================
+// Payment RPCs
+// ============================================================
+
+message CreatePaymentRequest {
+  string contract_id = 1;
+  string milestone_id = 2;
+  string recurring_instance_id = 3;
+  string customer_id = 4;
+  string provider_id = 5;
+  int64 amount_cents = 6;
+  nomarkup.common.v1.PaymentTiming payment_timing = 7;
+  int32 installment_number = 8;
+  int32 total_installments = 9;
+  string idempotency_key = 10;
+}
+
+message CreatePaymentResponse {
+  Payment payment = 1;
+  string client_secret = 2;  // for client-side confirmation
+}
+
+message ProcessPaymentRequest {
+  string payment_id = 1;
+  string payment_method_id = 2;
+}
+
+message ProcessPaymentResponse {
+  Payment payment = 1;
+}
+
+message ReleaseEscrowRequest {
+  string payment_id = 1;
+  string reason = 2;  // "milestone_approved", "completion_approved", "auto_release"
+}
+
+message ReleaseEscrowResponse {
+  Payment payment = 1;
+}
+
+message GetPaymentRequest {
+  string payment_id = 1;
+}
+
+message GetPaymentResponse {
+  Payment payment = 1;
+  PaymentBreakdown breakdown = 2;
+}
+
+message ListPaymentsRequest {
+  string user_id = 1;
+  optional string contract_id = 2;
+  optional PaymentStatus status_filter = 3;
+  nomarkup.common.v1.PaginationRequest pagination = 4;
+}
+
+message ListPaymentsResponse {
+  repeated Payment payments = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+// ============================================================
+// Refund RPCs
+// ============================================================
+
+message CreateRefundRequest {
+  string payment_id = 1;
+  int64 amount_cents = 2;  // 0 = full refund
+  string reason = 3;
+  string initiated_by = 4;  // admin or dispute resolution
+}
+
+message CreateRefundResponse {
+  Payment payment = 1;
+}
+
+// ============================================================
+// Webhook RPCs
+// ============================================================
+
+message HandleStripeWebhookRequest {
+  string payload = 1;
+  string signature = 2;
+}
+
+message HandleStripeWebhookResponse {
+  bool processed = 1;
+}
+
+// ============================================================
+// Fee RPCs
+// ============================================================
+
+message CalculateFeesRequest {
+  int64 amount_cents = 1;
+  string category_id = 2;
+}
+
+message CalculateFeesResponse {
+  PaymentBreakdown breakdown = 1;
+}
+
+message GetFeeConfigRequest {
+  optional string category_id = 1;
+}
+
+message GetFeeConfigResponse {
+  double fee_percentage = 1;
+  double guarantee_percentage = 2;
+  int64 min_fee_cents = 3;
+  int64 max_fee_cents = 4;
+}
+
+// ============================================================
+// Admin RPCs
+// ============================================================
+
+message AdminGetPaymentDetailsRequest {
+  string payment_id = 1;
+}
+
+message AdminGetPaymentDetailsResponse {
+  Payment payment = 1;
+  PaymentBreakdown breakdown = 2;
+  string stripe_payment_intent_id = 3;
+  string stripe_charge_id = 4;
+  string stripe_transfer_id = 5;
+}
+
+message AdminListPaymentsRequest {
+  optional string user_id = 1;
+  optional PaymentStatus status_filter = 2;
+  nomarkup.common.v1.DateRange date_range = 3;
+  nomarkup.common.v1.PaginationRequest pagination = 4;
+}
+
+message AdminListPaymentsResponse {
+  repeated Payment payments = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+  int64 total_amount_cents = 3;
+  int64 total_fees_cents = 4;
+}
+
+message AdminUpdateFeeConfigRequest {
+  string admin_id = 1;
+  optional string category_id = 2;
+  double fee_percentage = 3;
+  double guarantee_percentage = 4;
+  int64 min_fee_cents = 5;
+  optional int64 max_fee_cents = 6;
+}
+
+message AdminUpdateFeeConfigResponse {
+  GetFeeConfigResponse config = 1;
+}
+
+// ============================================================
+// Revenue RPCs
+// ============================================================
+
+message GetRevenueReportRequest {
+  nomarkup.common.v1.DateRange date_range = 1;
+  string group_by = 2;  // "day", "week", "month"
+}
+
+message GetRevenueReportResponse {
+  repeated RevenueDataPoint data_points = 1;
+  int64 total_gmv_cents = 2;
+  int64 total_revenue_cents = 3;
+  int64 total_guarantee_fund_cents = 4;
+  double effective_take_rate = 5;
+}
+
+message RevenueDataPoint {
+  google.protobuf.Timestamp period_start = 1;
+  int64 gmv_cents = 2;
+  int64 revenue_cents = 3;
+  int32 transaction_count = 4;
+}

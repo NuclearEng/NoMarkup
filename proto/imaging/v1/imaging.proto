@@ -1,0 +1,218 @@
+syntax = "proto3";
+
+package nomarkup.imaging.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/imaging/v1;imagingv1";
+
+import "google/protobuf/timestamp.proto";
+
+// ============================================================
+// Imaging Service (Rust) — Image processing pipeline
+// Uses libvips via FFI for high-performance image operations
+// ============================================================
+
+service ImagingService {
+  // Single image operations
+  rpc ProcessImage(ProcessImageRequest) returns (ProcessImageResponse);
+  rpc GenerateThumbnail(GenerateThumbnailRequest) returns (GenerateThumbnailResponse);
+
+  // Batch operations
+  rpc BatchProcessImages(BatchProcessImagesRequest) returns (BatchProcessImagesResponse);
+
+  // Job photo processing (resize, optimize, strip EXIF for privacy)
+  rpc ProcessJobPhotos(ProcessJobPhotosRequest) returns (ProcessJobPhotosResponse);
+
+  // Portfolio image processing
+  rpc ProcessPortfolioImage(ProcessPortfolioImageRequest) returns (ProcessPortfolioImageResponse);
+
+  // Avatar processing
+  rpc ProcessAvatar(ProcessAvatarRequest) returns (ProcessAvatarResponse);
+
+  // Document image processing (for verification uploads)
+  rpc ProcessDocument(ProcessDocumentRequest) returns (ProcessDocumentResponse);
+
+  // Signed upload URLs
+  rpc GetUploadURL(GetUploadURLRequest) returns (GetUploadURLResponse);
+  rpc ConfirmUpload(ConfirmUploadRequest) returns (ConfirmUploadResponse);
+}
+
+// ============================================================
+// Image Messages
+// ============================================================
+
+enum ImageFormat {
+  IMAGE_FORMAT_UNSPECIFIED = 0;
+  IMAGE_FORMAT_JPEG = 1;
+  IMAGE_FORMAT_PNG = 2;
+  IMAGE_FORMAT_WEBP = 3;
+  IMAGE_FORMAT_AVIF = 4;
+}
+
+enum ResizeMode {
+  RESIZE_MODE_UNSPECIFIED = 0;
+  RESIZE_MODE_FIT = 1;       // fit within bounds, maintain aspect ratio
+  RESIZE_MODE_FILL = 2;      // fill bounds, crop excess
+  RESIZE_MODE_EXACT = 3;     // stretch to exact dimensions
+}
+
+message ImageVariant {
+  string url = 1;
+  int32 width = 2;
+  int32 height = 3;
+  ImageFormat format = 4;
+  int32 size_bytes = 5;
+  string variant_name = 6;    // "original", "large", "medium", "thumbnail", "blur"
+}
+
+message ProcessingOptions {
+  int32 max_width = 1;
+  int32 max_height = 2;
+  ResizeMode resize_mode = 3;
+  int32 quality = 4;           // 1-100, default 85
+  ImageFormat output_format = 5;
+  bool strip_exif = 6;        // remove EXIF metadata (privacy)
+  bool auto_orient = 7;       // apply EXIF orientation then strip
+  bool generate_blur_hash = 8; // generate BlurHash for progressive loading
+}
+
+// ============================================================
+// Single Image RPCs
+// ============================================================
+
+message ProcessImageRequest {
+  string source_url = 1;       // S3/GCS URL of uploaded image
+  ProcessingOptions options = 2;
+  string context = 3;          // "job_photo", "portfolio", "avatar", "document"
+}
+
+message ProcessImageResponse {
+  ImageVariant result = 1;
+  string blur_hash = 2;        // BlurHash string if requested
+  int32 original_width = 3;
+  int32 original_height = 4;
+}
+
+message GenerateThumbnailRequest {
+  string source_url = 1;
+  int32 width = 2;             // default 200
+  int32 height = 3;            // default 200
+  ResizeMode resize_mode = 4;
+}
+
+message GenerateThumbnailResponse {
+  ImageVariant thumbnail = 1;
+}
+
+// ============================================================
+// Batch RPCs
+// ============================================================
+
+message BatchProcessImagesRequest {
+  repeated ProcessImageRequest images = 1;
+}
+
+message BatchProcessImagesResponse {
+  repeated BatchImageResult results = 1;
+  int32 succeeded = 2;
+  int32 failed = 3;
+}
+
+message BatchImageResult {
+  int32 index = 1;
+  bool success = 2;
+  ImageVariant result = 3;
+  string error = 4;
+}
+
+// ============================================================
+// Context-specific RPCs
+// ============================================================
+
+// Job photos: generates multiple sizes, strips EXIF, creates blur hash
+message ProcessJobPhotosRequest {
+  string job_id = 1;
+  repeated string source_urls = 2;  // raw uploaded URLs
+}
+
+message ProcessJobPhotosResponse {
+  repeated ProcessedJobPhoto photos = 1;
+}
+
+message ProcessedJobPhoto {
+  string original_url = 1;
+  ImageVariant large = 2;      // 1200px wide
+  ImageVariant medium = 3;     // 600px wide
+  ImageVariant thumbnail = 4;  // 200px wide
+  string blur_hash = 5;
+}
+
+// Portfolio: high-quality processing with multiple variants
+message ProcessPortfolioImageRequest {
+  string user_id = 1;
+  string source_url = 2;
+  string caption = 3;
+}
+
+message ProcessPortfolioImageResponse {
+  ImageVariant full = 1;       // 1600px wide, high quality
+  ImageVariant display = 2;    // 800px wide
+  ImageVariant thumbnail = 3;  // 300px wide
+  string blur_hash = 4;
+}
+
+// Avatar: square crop, multiple sizes
+message ProcessAvatarRequest {
+  string user_id = 1;
+  string source_url = 2;
+}
+
+message ProcessAvatarResponse {
+  ImageVariant large = 1;      // 400x400
+  ImageVariant medium = 2;     // 200x200
+  ImageVariant small = 3;      // 80x80
+  string avatar_url = 4;       // primary URL to store on user profile (medium)
+}
+
+// Document: preserve quality, minimal processing, keep for admin review
+message ProcessDocumentRequest {
+  string user_id = 1;
+  string source_url = 2;
+  string document_type = 3;    // "license", "insurance", "identity"
+}
+
+message ProcessDocumentResponse {
+  ImageVariant processed = 1;  // orientation-corrected, not resized
+  ImageVariant thumbnail = 2;  // for admin review UI
+  int32 original_width = 3;
+  int32 original_height = 4;
+}
+
+// ============================================================
+// Upload URL RPCs
+// ============================================================
+
+message GetUploadURLRequest {
+  string user_id = 1;
+  string filename = 2;
+  string mime_type = 3;         // "image/jpeg", "image/png", etc.
+  int32 file_size_bytes = 4;    // for pre-validation (max 10MB)
+  string context = 5;           // "job_photo", "portfolio", "avatar", "document"
+}
+
+message GetUploadURLResponse {
+  string upload_url = 1;        // pre-signed S3/GCS PUT URL
+  string object_key = 2;        // the storage key for confirmation
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message ConfirmUploadRequest {
+  string object_key = 1;
+  string user_id = 2;
+  string context = 3;
+}
+
+message ConfirmUploadResponse {
+  string source_url = 1;        // confirmed URL to use for processing
+  bool valid = 2;
+  string error = 3;             // if invalid (wrong type, too large, etc.)
+}

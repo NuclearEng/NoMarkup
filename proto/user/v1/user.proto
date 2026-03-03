@@ -1,0 +1,573 @@
+syntax = "proto3";
+
+package nomarkup.user.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/user/v1;userv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// User Service — Registration, profiles, auth, verification
+// ============================================================
+
+service UserService {
+  // Auth
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc VerifyPhone(VerifyPhoneRequest) returns (VerifyPhoneResponse);
+  rpc SendPhoneOTP(SendPhoneOTPRequest) returns (SendPhoneOTPResponse);
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+
+  // MFA
+  rpc EnableMFA(EnableMFARequest) returns (EnableMFAResponse);
+  rpc VerifyMFA(VerifyMFARequest) returns (VerifyMFAResponse);
+  rpc DisableMFA(DisableMFARequest) returns (DisableMFAResponse);
+
+  // User profile
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc EnableRole(EnableRoleRequest) returns (EnableRoleResponse);
+  rpc DeactivateAccount(DeactivateAccountRequest) returns (DeactivateAccountResponse);
+
+  // Provider profile
+  rpc GetProviderProfile(GetProviderProfileRequest) returns (GetProviderProfileResponse);
+  rpc UpdateProviderProfile(UpdateProviderProfileRequest) returns (UpdateProviderProfileResponse);
+  rpc SetGlobalTerms(SetGlobalTermsRequest) returns (SetGlobalTermsResponse);
+  rpc UpdateServiceCategories(UpdateServiceCategoriesRequest) returns (UpdateServiceCategoriesResponse);
+  rpc UpdatePortfolio(UpdatePortfolioRequest) returns (UpdatePortfolioResponse);
+  rpc SetInstantAvailability(SetInstantAvailabilityRequest) returns (SetInstantAvailabilityResponse);
+
+  // Properties
+  rpc CreateProperty(CreatePropertyRequest) returns (CreatePropertyResponse);
+  rpc UpdateProperty(UpdatePropertyRequest) returns (UpdatePropertyResponse);
+  rpc DeleteProperty(DeletePropertyRequest) returns (DeletePropertyResponse);
+  rpc ListProperties(ListPropertiesRequest) returns (ListPropertiesResponse);
+
+  // Verification
+  rpc UploadDocument(UploadDocumentRequest) returns (UploadDocumentResponse);
+  rpc GetDocumentStatus(GetDocumentStatusRequest) returns (GetDocumentStatusResponse);
+  rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse);
+
+  // Admin — user management
+  rpc AdminGetUser(AdminGetUserRequest) returns (AdminGetUserResponse);
+  rpc AdminSearchUsers(AdminSearchUsersRequest) returns (AdminSearchUsersResponse);
+  rpc AdminSuspendUser(AdminSuspendUserRequest) returns (AdminSuspendUserResponse);
+  rpc AdminBanUser(AdminBanUserRequest) returns (AdminBanUserResponse);
+  rpc AdminReviewDocument(AdminReviewDocumentRequest) returns (AdminReviewDocumentResponse);
+
+  // Search
+  rpc SearchProviders(SearchProvidersRequest) returns (SearchProvidersResponse);
+}
+
+// ============================================================
+// Auth Messages
+// ============================================================
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+  repeated nomarkup.common.v1.UserRole roles = 4;  // initial roles
+  string referral_code = 5;  // optional
+}
+
+message RegisterResponse {
+  string user_id = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  google.protobuf.Timestamp access_token_expires_at = 4;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+  string device_info = 3;
+  string ip_address = 4;
+}
+
+message LoginResponse {
+  string user_id = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  google.protobuf.Timestamp access_token_expires_at = 4;
+  bool mfa_required = 5;
+  string mfa_challenge_token = 6;  // set if mfa_required
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  google.protobuf.Timestamp access_token_expires_at = 3;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {}
+
+message VerifyEmailRequest {
+  string token = 1;
+}
+
+message VerifyEmailResponse {
+  bool verified = 1;
+}
+
+message VerifyPhoneRequest {
+  string user_id = 1;
+  string otp_code = 2;
+}
+
+message VerifyPhoneResponse {
+  bool verified = 1;
+}
+
+message SendPhoneOTPRequest {
+  string user_id = 1;
+  string phone = 2;
+}
+
+message SendPhoneOTPResponse {
+  bool sent = 1;
+}
+
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+message RequestPasswordResetResponse {}
+
+message ResetPasswordRequest {
+  string token = 1;
+  string new_password = 2;
+}
+
+message ResetPasswordResponse {
+  bool success = 1;
+}
+
+// ============================================================
+// MFA Messages
+// ============================================================
+
+message EnableMFARequest {
+  string user_id = 1;
+}
+
+message EnableMFAResponse {
+  string secret = 1;
+  string qr_code_url = 2;
+  repeated string backup_codes = 3;
+}
+
+message VerifyMFARequest {
+  string mfa_challenge_token = 1;
+  string totp_code = 2;
+}
+
+message VerifyMFAResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  google.protobuf.Timestamp access_token_expires_at = 3;
+}
+
+message DisableMFARequest {
+  string user_id = 1;
+  string totp_code = 2;
+}
+
+message DisableMFAResponse {
+  bool success = 1;
+}
+
+// ============================================================
+// User Profile Messages
+// ============================================================
+
+message User {
+  string id = 1;
+  string email = 2;
+  bool email_verified = 3;
+  string phone = 4;
+  bool phone_verified = 5;
+  string display_name = 6;
+  string avatar_url = 7;
+  repeated nomarkup.common.v1.UserRole roles = 8;
+  nomarkup.common.v1.UserStatus status = 9;
+  bool mfa_enabled = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp last_active_at = 12;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message UpdateUserRequest {
+  string user_id = 1;
+  optional string display_name = 2;
+  optional string phone = 3;
+  optional string avatar_url = 4;
+  optional string timezone = 5;
+}
+
+message UpdateUserResponse {
+  User user = 1;
+}
+
+message EnableRoleRequest {
+  string user_id = 1;
+  nomarkup.common.v1.UserRole role = 2;
+}
+
+message EnableRoleResponse {
+  User user = 1;
+}
+
+message DeactivateAccountRequest {
+  string user_id = 1;
+  string password = 2;  // confirm
+}
+
+message DeactivateAccountResponse {}
+
+// ============================================================
+// Provider Profile Messages
+// ============================================================
+
+message ProviderProfile {
+  string id = 1;
+  string user_id = 2;
+  string business_name = 3;
+  string bio = 4;
+  string service_address = 5;
+  nomarkup.common.v1.Location service_location = 6;
+  double service_radius_km = 7;
+  // Global terms
+  nomarkup.common.v1.PaymentTiming default_payment_timing = 8;
+  repeated MilestoneTemplate default_milestones = 9;
+  string cancellation_policy = 10;
+  string warranty_terms = 11;
+  // Instant
+  bool instant_enabled = 12;
+  bool instant_available = 13;
+  // Metrics
+  int32 jobs_completed = 14;
+  int32 avg_response_time_minutes = 15;
+  double on_time_rate = 16;
+  int32 profile_completeness = 17;
+  // Stripe
+  bool stripe_onboarding_complete = 18;
+  // Related
+  repeated ServiceCategorySummary service_categories = 19;
+  repeated PortfolioImage portfolio = 20;
+  repeated VerificationBadge verification_badges = 21;
+  TrustScoreSummary trust_score = 22;
+  ReviewSummary review_summary = 23;
+  google.protobuf.Timestamp member_since = 24;
+}
+
+message MilestoneTemplate {
+  string description = 1;
+  int32 percentage = 2;
+}
+
+message ServiceCategorySummary {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  int32 level = 4;
+  string parent_name = 5;
+}
+
+message PortfolioImage {
+  string id = 1;
+  string image_url = 2;
+  string caption = 3;
+  int32 sort_order = 4;
+}
+
+message VerificationBadge {
+  string document_type = 1;
+  nomarkup.common.v1.VerificationStatus status = 2;
+  google.protobuf.Timestamp verified_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message TrustScoreSummary {
+  double overall_score = 1;
+  nomarkup.common.v1.TrustTier tier = 2;
+  double feedback_score = 3;
+  double volume_score = 4;
+  double risk_score = 5;
+  double fraud_score = 6;
+}
+
+message ReviewSummary {
+  double average_rating = 1;
+  int32 review_count = 2;
+  double on_time_rate = 3;
+}
+
+message GetProviderProfileRequest {
+  string user_id = 1;
+}
+
+message GetProviderProfileResponse {
+  ProviderProfile profile = 1;
+}
+
+message UpdateProviderProfileRequest {
+  string user_id = 1;
+  optional string business_name = 2;
+  optional string bio = 3;
+  optional string service_address = 4;
+  optional nomarkup.common.v1.Location service_location = 5;
+  optional double service_radius_km = 6;
+}
+
+message UpdateProviderProfileResponse {
+  ProviderProfile profile = 1;
+}
+
+message SetGlobalTermsRequest {
+  string user_id = 1;
+  nomarkup.common.v1.PaymentTiming payment_timing = 2;
+  repeated MilestoneTemplate milestones = 3;
+  string cancellation_policy = 4;
+  string warranty_terms = 5;
+}
+
+message SetGlobalTermsResponse {
+  ProviderProfile profile = 1;
+}
+
+message UpdateServiceCategoriesRequest {
+  string user_id = 1;
+  repeated string category_ids = 2;
+}
+
+message UpdateServiceCategoriesResponse {
+  repeated ServiceCategorySummary categories = 1;
+}
+
+message UpdatePortfolioRequest {
+  string user_id = 1;
+  repeated PortfolioImage images = 2;
+}
+
+message UpdatePortfolioResponse {
+  repeated PortfolioImage images = 1;
+}
+
+message SetInstantAvailabilityRequest {
+  string user_id = 1;
+  bool enabled = 2;
+  bool available_now = 3;
+  repeated AvailabilityWindow schedule = 4;
+}
+
+message AvailabilityWindow {
+  string day = 1;  // mon, tue, wed, thu, fri, sat, sun
+  string start_time = 2;  // HH:MM
+  string end_time = 3;
+}
+
+message SetInstantAvailabilityResponse {
+  bool instant_enabled = 1;
+  bool instant_available = 2;
+}
+
+// ============================================================
+// Property Messages
+// ============================================================
+
+message Property {
+  string id = 1;
+  string user_id = 2;
+  string nickname = 3;
+  nomarkup.common.v1.Address address = 4;
+  string notes = 5;
+  bool is_primary = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message CreatePropertyRequest {
+  string user_id = 1;
+  string nickname = 2;
+  nomarkup.common.v1.Address address = 3;
+  string notes = 4;
+  bool is_primary = 5;
+}
+
+message CreatePropertyResponse {
+  Property property = 1;
+}
+
+message UpdatePropertyRequest {
+  string property_id = 1;
+  optional string nickname = 2;
+  optional string notes = 3;
+  optional bool is_primary = 4;
+}
+
+message UpdatePropertyResponse {
+  Property property = 1;
+}
+
+message DeletePropertyRequest {
+  string property_id = 1;
+}
+
+message DeletePropertyResponse {}
+
+message ListPropertiesRequest {
+  string user_id = 1;
+}
+
+message ListPropertiesResponse {
+  repeated Property properties = 1;
+}
+
+// ============================================================
+// Verification Messages
+// ============================================================
+
+message UploadDocumentRequest {
+  string user_id = 1;
+  string document_type = 2;
+  nomarkup.common.v1.FileReference file = 3;
+  google.protobuf.Timestamp expires_at = 4;  // for licenses, insurance
+}
+
+message UploadDocumentResponse {
+  string document_id = 1;
+  nomarkup.common.v1.VerificationStatus status = 2;
+}
+
+message GetDocumentStatusRequest {
+  string document_id = 1;
+}
+
+message GetDocumentStatusResponse {
+  string id = 1;
+  string document_type = 2;
+  nomarkup.common.v1.VerificationStatus status = 3;
+  string rejection_reason = 4;
+  int32 resubmission_count = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+message ListDocumentsRequest {
+  string user_id = 1;
+}
+
+message ListDocumentsResponse {
+  repeated GetDocumentStatusResponse documents = 1;
+}
+
+// ============================================================
+// Admin Messages
+// ============================================================
+
+message AdminGetUserRequest {
+  string user_id = 1;
+}
+
+message AdminGetUserResponse {
+  User user = 1;
+  ProviderProfile provider_profile = 2;
+  repeated GetDocumentStatusResponse documents = 3;
+  TrustScoreSummary trust_score = 4;
+}
+
+message AdminSearchUsersRequest {
+  string query = 1;  // email, name, phone
+  optional nomarkup.common.v1.UserStatus status_filter = 2;
+  optional nomarkup.common.v1.UserRole role_filter = 3;
+  nomarkup.common.v1.PaginationRequest pagination = 4;
+}
+
+message AdminSearchUsersResponse {
+  repeated User users = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message AdminSuspendUserRequest {
+  string user_id = 1;
+  string reason = 2;
+  string admin_id = 3;
+}
+
+message AdminSuspendUserResponse {
+  User user = 1;
+}
+
+message AdminBanUserRequest {
+  string user_id = 1;
+  string reason = 2;
+  string admin_id = 3;
+}
+
+message AdminBanUserResponse {
+  User user = 1;
+}
+
+message AdminReviewDocumentRequest {
+  string document_id = 1;
+  bool approved = 2;
+  string rejection_reason = 3;  // required if not approved
+  string admin_id = 4;
+}
+
+message AdminReviewDocumentResponse {
+  nomarkup.common.v1.VerificationStatus status = 1;
+}
+
+// ============================================================
+// Search Messages
+// ============================================================
+
+message SearchProvidersRequest {
+  repeated string category_ids = 1;
+  nomarkup.common.v1.Location location = 2;
+  double radius_km = 3;
+  optional double min_rating = 4;
+  optional nomarkup.common.v1.TrustTier min_trust_tier = 5;
+  optional bool verified_only = 6;
+  optional bool instant_available = 7;
+  nomarkup.common.v1.SortRequest sort = 8;
+  nomarkup.common.v1.PaginationRequest pagination = 9;
+}
+
+message SearchProvidersResponse {
+  repeated ProviderSearchResult providers = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message ProviderSearchResult {
+  string user_id = 1;
+  string display_name = 2;
+  string business_name = 3;
+  string avatar_url = 4;
+  double distance_km = 5;
+  ReviewSummary review_summary = 6;
+  TrustScoreSummary trust_score = 7;
+  repeated VerificationBadge badges = 8;
+  repeated ServiceCategorySummary categories = 9;
+  bool instant_available = 10;
+}

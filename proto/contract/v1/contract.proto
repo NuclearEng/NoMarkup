@@ -1,0 +1,485 @@
+syntax = "proto3";
+
+package nomarkup.contract.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/contract/v1;contractv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Contract Service — Contracts, milestones, change orders, completion
+// ============================================================
+
+service ContractService {
+  // Contract lifecycle
+  rpc GetContract(GetContractRequest) returns (GetContractResponse);
+  rpc AcceptContract(AcceptContractRequest) returns (AcceptContractResponse);
+  rpc StartWork(StartWorkRequest) returns (StartWorkResponse);
+  rpc ExportContractPDF(ExportContractPDFRequest) returns (ExportContractPDFResponse);
+  rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
+
+  // Milestones
+  rpc SubmitMilestone(SubmitMilestoneRequest) returns (SubmitMilestoneResponse);
+  rpc ApproveMilestone(ApproveMilestoneRequest) returns (ApproveMilestoneResponse);
+  rpc RequestRevision(RequestRevisionRequest) returns (RequestRevisionResponse);
+
+  // Completion
+  rpc MarkComplete(MarkCompleteRequest) returns (MarkCompleteResponse);
+  rpc ApproveCompletion(ApproveCompletionRequest) returns (ApproveCompletionResponse);
+
+  // Change orders
+  rpc ProposeChangeOrder(ProposeChangeOrderRequest) returns (ProposeChangeOrderResponse);
+  rpc RespondToChangeOrder(RespondToChangeOrderRequest) returns (RespondToChangeOrderResponse);
+
+  // Cancellation
+  rpc CancelContract(CancelContractRequest) returns (CancelContractResponse);
+
+  // Recurring
+  rpc GetRecurringConfig(GetRecurringConfigRequest) returns (GetRecurringConfigResponse);
+  rpc UpdateRecurringConfig(UpdateRecurringConfigRequest) returns (UpdateRecurringConfigResponse);
+  rpc PauseRecurring(PauseRecurringRequest) returns (PauseRecurringResponse);
+  rpc ResumeRecurring(ResumeRecurringRequest) returns (ResumeRecurringResponse);
+  rpc CancelRecurring(CancelRecurringRequest) returns (CancelRecurringResponse);
+  rpc ListRecurringInstances(ListRecurringInstancesRequest) returns (ListRecurringInstancesResponse);
+  rpc CompleteRecurringInstance(CompleteRecurringInstanceRequest) returns (CompleteRecurringInstanceResponse);
+  rpc ApproveRecurringInstance(ApproveRecurringInstanceRequest) returns (ApproveRecurringInstanceResponse);
+
+  // Dispute
+  rpc OpenDispute(OpenDisputeRequest) returns (OpenDisputeResponse);
+  rpc GetDispute(GetDisputeRequest) returns (GetDisputeResponse);
+  rpc ListDisputes(ListDisputesRequest) returns (ListDisputesResponse);
+
+  // Admin dispute resolution
+  rpc AdminResolveDispute(AdminResolveDisputeRequest) returns (AdminResolveDisputeResponse);
+
+  // Provider abandonment / no-show
+  rpc ReportNoShow(ReportNoShowRequest) returns (ReportNoShowResponse);
+  rpc ReportAbandonment(ReportAbandonmentRequest) returns (ReportAbandonmentResponse);
+}
+
+// ============================================================
+// Contract Messages
+// ============================================================
+
+enum ContractStatus {
+  CONTRACT_STATUS_UNSPECIFIED = 0;
+  CONTRACT_STATUS_PENDING_ACCEPTANCE = 1;
+  CONTRACT_STATUS_ACTIVE = 2;
+  CONTRACT_STATUS_COMPLETED = 3;
+  CONTRACT_STATUS_CANCELLED = 4;
+  CONTRACT_STATUS_VOIDED = 5;
+  CONTRACT_STATUS_DISPUTED = 6;
+  CONTRACT_STATUS_ABANDONED = 7;
+  CONTRACT_STATUS_SUSPENDED = 8;
+}
+
+enum MilestoneStatus {
+  MILESTONE_STATUS_UNSPECIFIED = 0;
+  MILESTONE_STATUS_PENDING = 1;
+  MILESTONE_STATUS_IN_PROGRESS = 2;
+  MILESTONE_STATUS_SUBMITTED = 3;
+  MILESTONE_STATUS_APPROVED = 4;
+  MILESTONE_STATUS_DISPUTED = 5;
+  MILESTONE_STATUS_REVISION_REQUESTED = 6;
+}
+
+message Contract {
+  string id = 1;
+  string contract_number = 2;
+  string job_id = 3;
+  string customer_id = 4;
+  string provider_id = 5;
+  string bid_id = 6;
+  int64 amount_cents = 7;
+  nomarkup.common.v1.PaymentTiming payment_timing = 8;
+  ContractStatus status = 9;
+  bool customer_accepted = 10;
+  bool provider_accepted = 11;
+  google.protobuf.Timestamp acceptance_deadline = 12;
+  repeated Milestone milestones = 13;
+  RecurringConfig recurring = 14;
+  google.protobuf.Timestamp accepted_at = 15;
+  google.protobuf.Timestamp started_at = 16;
+  google.protobuf.Timestamp completed_at = 17;
+  google.protobuf.Timestamp created_at = 18;
+}
+
+message Milestone {
+  string id = 1;
+  string contract_id = 2;
+  string description = 3;
+  int64 amount_cents = 4;
+  int32 sort_order = 5;
+  MilestoneStatus status = 6;
+  int32 revision_count = 7;
+  string revision_notes = 8;
+  google.protobuf.Timestamp submitted_at = 9;
+  google.protobuf.Timestamp approved_at = 10;
+}
+
+message ChangeOrder {
+  string id = 1;
+  string contract_id = 2;
+  string proposed_by = 3;
+  string description = 4;
+  int64 amount_delta_cents = 5;
+  string status = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message RecurringConfig {
+  string id = 1;
+  string contract_id = 2;
+  nomarkup.common.v1.RecurrenceFrequency frequency = 3;
+  int64 rate_cents = 4;
+  bool auto_approve = 5;
+  string status = 6;  // active, paused, cancelled
+  google.protobuf.Timestamp next_occurrence = 7;
+}
+
+message RecurringInstance {
+  string id = 1;
+  string recurring_id = 2;
+  google.protobuf.Timestamp occurrence_date = 3;
+  string status = 4;
+  int64 amount_cents = 5;
+  bool auto_approved = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}
+
+// ============================================================
+// Contract Lifecycle RPCs
+// ============================================================
+
+message GetContractRequest {
+  string contract_id = 1;
+  string requesting_user_id = 2;
+}
+
+message GetContractResponse {
+  Contract contract = 1;
+  repeated ChangeOrder change_orders = 2;
+}
+
+message AcceptContractRequest {
+  string contract_id = 1;
+  string user_id = 2;
+}
+
+message AcceptContractResponse {
+  Contract contract = 1;
+}
+
+message StartWorkRequest {
+  string contract_id = 1;
+  string provider_id = 2;
+}
+
+message StartWorkResponse {
+  Contract contract = 1;
+}
+
+message ExportContractPDFRequest {
+  string contract_id = 1;
+}
+
+message ExportContractPDFResponse {
+  string pdf_url = 1;
+}
+
+message ListContractsRequest {
+  string user_id = 1;
+  optional ContractStatus status_filter = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message ListContractsResponse {
+  repeated Contract contracts = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+// ============================================================
+// Milestone RPCs
+// ============================================================
+
+message SubmitMilestoneRequest {
+  string milestone_id = 1;
+  string provider_id = 2;
+}
+
+message SubmitMilestoneResponse {
+  Milestone milestone = 1;
+}
+
+message ApproveMilestoneRequest {
+  string milestone_id = 1;
+  string customer_id = 2;
+}
+
+message ApproveMilestoneResponse {
+  Milestone milestone = 1;
+  string payment_id = 2;  // triggered payment
+}
+
+message RequestRevisionRequest {
+  string milestone_id = 1;
+  string customer_id = 2;
+  string revision_notes = 3;  // 200 char min
+}
+
+message RequestRevisionResponse {
+  Milestone milestone = 1;
+}
+
+// ============================================================
+// Completion RPCs
+// ============================================================
+
+message MarkCompleteRequest {
+  string contract_id = 1;
+  string provider_id = 2;
+}
+
+message MarkCompleteResponse {
+  Contract contract = 1;
+}
+
+message ApproveCompletionRequest {
+  string contract_id = 1;
+  string customer_id = 2;
+}
+
+message ApproveCompletionResponse {
+  Contract contract = 1;
+  string payment_id = 2;
+}
+
+// ============================================================
+// Change Order RPCs
+// ============================================================
+
+message ProposeChangeOrderRequest {
+  string contract_id = 1;
+  string proposed_by = 2;
+  string description = 3;
+  repeated Milestone added_milestones = 4;
+  repeated string removed_milestone_ids = 5;
+  int64 amount_delta_cents = 6;
+}
+
+message ProposeChangeOrderResponse {
+  ChangeOrder change_order = 1;
+}
+
+message RespondToChangeOrderRequest {
+  string change_order_id = 1;
+  string user_id = 2;
+  bool accepted = 3;
+}
+
+message RespondToChangeOrderResponse {
+  ChangeOrder change_order = 1;
+}
+
+// ============================================================
+// Cancellation RPCs
+// ============================================================
+
+message CancelContractRequest {
+  string contract_id = 1;
+  string user_id = 2;
+  string reason = 3;
+}
+
+message CancelContractResponse {
+  Contract contract = 1;
+}
+
+// ============================================================
+// Recurring RPCs
+// ============================================================
+
+message GetRecurringConfigRequest {
+  string contract_id = 1;
+}
+
+message GetRecurringConfigResponse {
+  RecurringConfig config = 1;
+}
+
+message UpdateRecurringConfigRequest {
+  string recurring_id = 1;
+  string user_id = 2;
+  optional int64 proposed_rate_cents = 3;
+  optional bool auto_approve = 4;
+}
+
+message UpdateRecurringConfigResponse {
+  RecurringConfig config = 1;
+}
+
+message PauseRecurringRequest {
+  string recurring_id = 1;
+  string user_id = 2;
+}
+
+message PauseRecurringResponse {
+  RecurringConfig config = 1;
+}
+
+message ResumeRecurringRequest {
+  string recurring_id = 1;
+  string user_id = 2;
+}
+
+message ResumeRecurringResponse {
+  RecurringConfig config = 1;
+}
+
+message CancelRecurringRequest {
+  string recurring_id = 1;
+  string user_id = 2;
+}
+
+message CancelRecurringResponse {
+  RecurringConfig config = 1;
+}
+
+message ListRecurringInstancesRequest {
+  string recurring_id = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message ListRecurringInstancesResponse {
+  repeated RecurringInstance instances = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message CompleteRecurringInstanceRequest {
+  string instance_id = 1;
+  string provider_id = 2;
+}
+
+message CompleteRecurringInstanceResponse {
+  RecurringInstance instance = 1;
+}
+
+message ApproveRecurringInstanceRequest {
+  string instance_id = 1;
+  string customer_id = 2;
+}
+
+message ApproveRecurringInstanceResponse {
+  RecurringInstance instance = 1;
+  string payment_id = 2;
+}
+
+// ============================================================
+// Dispute RPCs
+// ============================================================
+
+enum DisputeType {
+  DISPUTE_TYPE_UNSPECIFIED = 0;
+  DISPUTE_TYPE_QUALITY = 1;
+  DISPUTE_TYPE_INCOMPLETE_WORK = 2;
+  DISPUTE_TYPE_NO_SHOW = 3;
+  DISPUTE_TYPE_ABANDONMENT = 4;
+  DISPUTE_TYPE_PAYMENT = 5;
+  DISPUTE_TYPE_SCOPE_DISAGREEMENT = 6;
+  DISPUTE_TYPE_GUARANTEE_CLAIM = 7;
+  DISPUTE_TYPE_OTHER = 8;
+}
+
+enum DisputeStatus {
+  DISPUTE_STATUS_UNSPECIFIED = 0;
+  DISPUTE_STATUS_OPEN = 1;
+  DISPUTE_STATUS_UNDER_REVIEW = 2;
+  DISPUTE_STATUS_RESOLVED = 3;
+  DISPUTE_STATUS_ESCALATED = 4;
+  DISPUTE_STATUS_CLOSED = 5;
+}
+
+message Dispute {
+  string id = 1;
+  string contract_id = 2;
+  string opened_by = 3;
+  DisputeType dispute_type = 4;
+  string description = 5;
+  repeated string evidence_urls = 6;
+  DisputeStatus status = 7;
+  string resolution_type = 8;
+  string resolution_notes = 9;
+  int64 refund_amount_cents = 10;
+  bool is_guarantee_claim = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp resolved_at = 13;
+}
+
+message OpenDisputeRequest {
+  string contract_id = 1;
+  string user_id = 2;
+  DisputeType dispute_type = 3;
+  string description = 4;
+  repeated string evidence_urls = 5;
+  bool is_guarantee_claim = 6;
+}
+
+message OpenDisputeResponse {
+  Dispute dispute = 1;
+}
+
+message GetDisputeRequest {
+  string dispute_id = 1;
+}
+
+message GetDisputeResponse {
+  Dispute dispute = 1;
+}
+
+message ListDisputesRequest {
+  optional string contract_id = 1;
+  optional string user_id = 2;
+  optional DisputeStatus status_filter = 3;
+  nomarkup.common.v1.PaginationRequest pagination = 4;
+}
+
+message ListDisputesResponse {
+  repeated Dispute disputes = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message AdminResolveDisputeRequest {
+  string dispute_id = 1;
+  string admin_id = 2;
+  string resolution_type = 3;
+  string resolution_notes = 4;
+  int64 refund_amount_cents = 5;
+  string guarantee_outcome = 6;
+}
+
+message AdminResolveDisputeResponse {
+  Dispute dispute = 1;
+}
+
+// ============================================================
+// No-Show / Abandonment RPCs
+// ============================================================
+
+message ReportNoShowRequest {
+  string contract_id = 1;
+  string customer_id = 2;
+}
+
+message ReportNoShowResponse {
+  Contract contract = 1;
+}
+
+message ReportAbandonmentRequest {
+  string contract_id = 1;
+  string customer_id = 2;
+}
+
+message ReportAbandonmentResponse {
+  Contract contract = 1;
+}

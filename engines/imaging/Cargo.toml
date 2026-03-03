@@ -1,0 +1,28 @@
+[package]
+name = "nomarkup-imaging-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+tonic.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+image = "0.25"
+
+[build-dependencies]
+tonic-build.workspace = true
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "imaging_bench"
+harness = false

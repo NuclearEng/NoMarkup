@@ -1,0 +1,221 @@
+syntax = "proto3";
+
+package nomarkup.chat.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/chat/v1;chatv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Chat Service — Real-time messaging, channels, contact sharing
+// ============================================================
+
+service ChatService {
+  // Channels
+  rpc CreateChannel(CreateChannelRequest) returns (CreateChannelResponse);
+  rpc GetChannel(GetChannelRequest) returns (GetChannelResponse);
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
+
+  // Messages
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+  rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
+
+  // Contact sharing (post-award)
+  rpc ShareContactInfo(ShareContactInfoRequest) returns (ShareContactInfoResponse);
+  rpc GetSharedContacts(GetSharedContactsRequest) returns (GetSharedContactsResponse);
+
+  // Typing indicators (WebSocket, but define for completeness)
+  rpc SendTypingIndicator(SendTypingIndicatorRequest) returns (SendTypingIndicatorResponse);
+
+  // Unread counts
+  rpc GetUnreadCount(GetUnreadCountRequest) returns (GetUnreadCountResponse);
+
+  // Admin
+  rpc AdminGetChannelMessages(AdminGetChannelMessagesRequest) returns (AdminGetChannelMessagesResponse);
+}
+
+// ============================================================
+// Chat Messages
+// ============================================================
+
+enum ChannelType {
+  CHANNEL_TYPE_UNSPECIFIED = 0;
+  CHANNEL_TYPE_PRE_AWARD = 1;   // limited messaging before bid award
+  CHANNEL_TYPE_CONTRACT = 2;     // full messaging during active contract
+  CHANNEL_TYPE_SUPPORT = 3;      // customer support channel
+}
+
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_TEXT = 1;
+  MESSAGE_TYPE_IMAGE = 2;
+  MESSAGE_TYPE_FILE = 3;
+  MESSAGE_TYPE_SYSTEM = 4;       // "Contract accepted", "Milestone approved", etc.
+  MESSAGE_TYPE_CONTACT_SHARE = 5;
+}
+
+message Channel {
+  string id = 1;
+  string job_id = 2;
+  string contract_id = 3;
+  string customer_id = 4;
+  string provider_id = 5;
+  ChannelType channel_type = 6;
+  Message last_message = 7;
+  int32 unread_count = 8;       // relative to requesting user
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message Message {
+  string id = 1;
+  string channel_id = 2;
+  string sender_id = 3;
+  MessageType message_type = 4;
+  string content = 5;
+  repeated nomarkup.common.v1.FileReference attachments = 6;
+  bool is_read = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message SharedContact {
+  string user_id = 1;
+  string phone = 2;
+  string email = 3;
+  google.protobuf.Timestamp shared_at = 4;
+}
+
+// ============================================================
+// Channel RPCs
+// ============================================================
+
+message CreateChannelRequest {
+  string job_id = 1;
+  string customer_id = 2;
+  string provider_id = 3;
+  ChannelType channel_type = 4;
+}
+
+message CreateChannelResponse {
+  Channel channel = 1;
+}
+
+message GetChannelRequest {
+  string channel_id = 1;
+  string user_id = 2;
+}
+
+message GetChannelResponse {
+  Channel channel = 1;
+}
+
+message ListChannelsRequest {
+  string user_id = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message ListChannelsResponse {
+  repeated Channel channels = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+// ============================================================
+// Message RPCs
+// ============================================================
+
+message SendMessageRequest {
+  string channel_id = 1;
+  string sender_id = 2;
+  MessageType message_type = 3;
+  string content = 4;
+  repeated nomarkup.common.v1.FileReference attachments = 5;
+}
+
+message SendMessageResponse {
+  Message message = 1;
+}
+
+message ListMessagesRequest {
+  string channel_id = 1;
+  string user_id = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+  optional google.protobuf.Timestamp before = 4;  // cursor-based: messages before this timestamp
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message MarkReadRequest {
+  string channel_id = 1;
+  string user_id = 2;
+  string last_read_message_id = 3;
+}
+
+message MarkReadResponse {}
+
+// ============================================================
+// Contact Sharing RPCs
+// ============================================================
+
+message ShareContactInfoRequest {
+  string channel_id = 1;
+  string user_id = 2;
+  string phone = 3;
+  string email = 4;
+}
+
+message ShareContactInfoResponse {
+  SharedContact contact = 1;
+}
+
+message GetSharedContactsRequest {
+  string channel_id = 1;
+  string user_id = 2;
+}
+
+message GetSharedContactsResponse {
+  repeated SharedContact contacts = 1;
+}
+
+// ============================================================
+// Typing / Unread RPCs
+// ============================================================
+
+message SendTypingIndicatorRequest {
+  string channel_id = 1;
+  string user_id = 2;
+}
+
+message SendTypingIndicatorResponse {}
+
+message GetUnreadCountRequest {
+  string user_id = 1;
+}
+
+message GetUnreadCountResponse {
+  int32 total_unread = 1;
+  repeated ChannelUnreadCount channels = 2;
+}
+
+message ChannelUnreadCount {
+  string channel_id = 1;
+  int32 unread_count = 2;
+}
+
+// ============================================================
+// Admin RPCs
+// ============================================================
+
+message AdminGetChannelMessagesRequest {
+  string channel_id = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message AdminGetChannelMessagesResponse {
+  repeated Message messages = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}

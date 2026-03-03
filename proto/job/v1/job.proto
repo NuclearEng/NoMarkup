@@ -1,0 +1,420 @@
+syntax = "proto3";
+
+package nomarkup.job.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/job/v1;jobv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "user/v1/user.proto";
+
+// ============================================================
+// Job Service — Job posting, lifecycle, search, taxonomy
+// ============================================================
+
+service JobService {
+  // Job CRUD
+  rpc CreateJob(CreateJobRequest) returns (CreateJobResponse);
+  rpc UpdateJob(UpdateJobRequest) returns (UpdateJobResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc DeleteDraft(DeleteDraftRequest) returns (DeleteDraftResponse);
+  rpc PublishJob(PublishJobRequest) returns (PublishJobResponse);
+  rpc CloseAuction(CloseAuctionRequest) returns (CloseAuctionResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc RepostJob(RepostJobRequest) returns (RepostJobResponse);
+
+  // Job search & discovery
+  rpc SearchJobs(SearchJobsRequest) returns (SearchJobsResponse);
+  rpc GetJobsOnMap(GetJobsOnMapRequest) returns (GetJobsOnMapResponse);
+  rpc ListCustomerJobs(ListCustomerJobsRequest) returns (ListCustomerJobsResponse);
+  rpc ListProviderBiddedJobs(ListProviderBiddedJobsRequest) returns (ListProviderBiddedJobsResponse);
+  rpc ListDrafts(ListDraftsRequest) returns (ListDraftsResponse);
+
+  // Taxonomy
+  rpc GetServiceCategories(GetServiceCategoriesRequest) returns (GetServiceCategoriesResponse);
+  rpc GetCategoryTree(GetCategoryTreeRequest) returns (GetCategoryTreeResponse);
+
+  // Admin
+  rpc AdminListJobs(AdminListJobsRequest) returns (AdminListJobsResponse);
+  rpc AdminSuspendJob(AdminSuspendJobRequest) returns (AdminSuspendJobResponse);
+  rpc AdminRemoveJob(AdminRemoveJobRequest) returns (AdminRemoveJobResponse);
+
+  // Taxonomy admin
+  rpc AdminCreateCategory(AdminCreateCategoryRequest) returns (AdminCreateCategoryResponse);
+  rpc AdminUpdateCategory(AdminUpdateCategoryRequest) returns (AdminUpdateCategoryResponse);
+  rpc AdminDeleteCategory(AdminDeleteCategoryRequest) returns (AdminDeleteCategoryResponse);
+}
+
+// ============================================================
+// Job Messages
+// ============================================================
+
+// Job status enum
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_DRAFT = 1;
+  JOB_STATUS_ACTIVE = 2;
+  JOB_STATUS_CLOSED = 3;
+  JOB_STATUS_CLOSED_ZERO_BIDS = 4;
+  JOB_STATUS_AWARDED = 5;
+  JOB_STATUS_CONTRACT_PENDING = 6;
+  JOB_STATUS_IN_PROGRESS = 7;
+  JOB_STATUS_COMPLETED = 8;
+  JOB_STATUS_REVIEWED = 9;
+  JOB_STATUS_CANCELLED = 10;
+  JOB_STATUS_REPOSTED = 11;
+  JOB_STATUS_EXPIRED = 12;
+  JOB_STATUS_SUSPENDED = 13;
+}
+
+message Job {
+  string id = 1;
+  string customer_id = 2;
+  string property_id = 3;
+  // Details
+  string title = 4;
+  string description = 5;
+  // Category
+  ServiceCategory category = 6;
+  ServiceCategory subcategory = 7;
+  ServiceCategory service_type = 8;
+  // Location (approximate for non-awarded)
+  nomarkup.common.v1.Address approximate_address = 9;
+  // Schedule
+  nomarkup.common.v1.ScheduleType schedule_type = 10;
+  google.protobuf.Timestamp scheduled_date = 11;
+  nomarkup.common.v1.DateRange schedule_range = 12;
+  // Recurrence
+  bool is_recurring = 13;
+  nomarkup.common.v1.RecurrenceFrequency recurrence_frequency = 14;
+  // Auction
+  optional int64 starting_bid_cents = 15;
+  optional int64 offer_accepted_cents = 16;
+  int32 auction_duration_hours = 17;
+  google.protobuf.Timestamp auction_ends_at = 18;
+  optional double min_provider_rating = 19;
+  // Status
+  JobStatus status = 20;
+  int32 bid_count = 21;
+  // Photos
+  repeated string photo_urls = 22;
+  // Relationships
+  string awarded_provider_id = 23;
+  string reposted_from_id = 24;
+  int32 repost_count = 25;
+  // Market range (included for display)
+  MarketRange market_range = 26;
+  // Timestamps
+  google.protobuf.Timestamp created_at = 27;
+  google.protobuf.Timestamp auction_closed_at = 28;
+  google.protobuf.Timestamp awarded_at = 29;
+  google.protobuf.Timestamp completed_at = 30;
+}
+
+// Full job detail (includes exact address for awarded provider)
+message JobDetail {
+  Job job = 1;
+  nomarkup.common.v1.Address exact_address = 2;  // only populated for awarded provider
+  nomarkup.user.v1.User customer = 3;
+  nomarkup.user.v1.TrustScoreSummary customer_trust = 4;
+}
+
+message ServiceCategory {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  int32 level = 4;
+  string parent_id = 5;
+  string icon = 6;
+}
+
+message MarketRange {
+  int64 low_cents = 1;
+  int64 median_cents = 2;
+  int64 high_cents = 3;
+  int32 data_points = 4;
+  string source = 5;  // "seeded", "platform", "blended"
+  double confidence = 6;
+}
+
+// ============================================================
+// CRUD Messages
+// ============================================================
+
+message CreateJobRequest {
+  string customer_id = 1;
+  string property_id = 2;
+  string title = 3;
+  string description = 4;
+  string category_id = 5;
+  string subcategory_id = 6;
+  string service_type_id = 7;
+  nomarkup.common.v1.ScheduleType schedule_type = 8;
+  google.protobuf.Timestamp scheduled_date = 9;
+  nomarkup.common.v1.DateRange schedule_range = 10;
+  bool is_recurring = 11;
+  nomarkup.common.v1.RecurrenceFrequency recurrence_frequency = 12;
+  optional int64 starting_bid_cents = 13;
+  optional int64 offer_accepted_cents = 14;
+  int32 auction_duration_hours = 15;
+  optional double min_provider_rating = 16;
+  repeated string photo_urls = 17;
+  repeated string tag_category_ids = 18;
+  bool publish = 19;  // true = skip draft, go straight to active
+}
+
+message CreateJobResponse {
+  Job job = 1;
+}
+
+message UpdateJobRequest {
+  string job_id = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional string category_id = 4;
+  optional string subcategory_id = 5;
+  optional string service_type_id = 6;
+  optional nomarkup.common.v1.ScheduleType schedule_type = 7;
+  optional int64 starting_bid_cents = 8;
+  optional int64 offer_accepted_cents = 9;
+  optional int32 auction_duration_hours = 10;
+  repeated string photo_urls = 11;
+}
+
+message UpdateJobResponse {
+  Job job = 1;
+}
+
+message GetJobRequest {
+  string job_id = 1;
+  string requesting_user_id = 2;  // for permission checks and address visibility
+}
+
+message GetJobResponse {
+  JobDetail job = 1;
+}
+
+message DeleteDraftRequest {
+  string job_id = 1;
+}
+
+message DeleteDraftResponse {}
+
+message PublishJobRequest {
+  string job_id = 1;
+}
+
+message PublishJobResponse {
+  Job job = 1;
+}
+
+message CloseAuctionRequest {
+  string job_id = 1;
+  string customer_id = 2;
+}
+
+message CloseAuctionResponse {
+  Job job = 1;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+  string customer_id = 2;
+  string reason = 3;
+}
+
+message CancelJobResponse {
+  Job job = 1;
+}
+
+message RepostJobRequest {
+  string original_job_id = 1;
+  string customer_id = 2;
+  // Override fields
+  optional string title = 3;
+  optional string description = 4;
+  optional int64 starting_bid_cents = 5;
+  optional int64 offer_accepted_cents = 6;
+  optional int32 auction_duration_hours = 7;
+}
+
+message RepostJobResponse {
+  Job new_job = 1;
+}
+
+// ============================================================
+// Search Messages
+// ============================================================
+
+message SearchJobsRequest {
+  repeated string category_ids = 1;
+  nomarkup.common.v1.Location location = 2;
+  double radius_km = 3;
+  optional int64 min_price_cents = 4;
+  optional int64 max_price_cents = 5;
+  optional nomarkup.common.v1.ScheduleType schedule_type = 6;
+  optional bool recurring_only = 7;
+  string text_query = 8;
+  nomarkup.common.v1.SortRequest sort = 9;
+  nomarkup.common.v1.PaginationRequest pagination = 10;
+}
+
+message SearchJobsResponse {
+  repeated Job jobs = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message GetJobsOnMapRequest {
+  nomarkup.common.v1.Location center = 1;
+  double radius_km = 2;
+  repeated string category_ids = 3;
+  optional int64 max_price_cents = 4;
+}
+
+message GetJobsOnMapResponse {
+  repeated JobMapPin pins = 1;
+}
+
+message JobMapPin {
+  string job_id = 1;
+  nomarkup.common.v1.Location location = 2;  // approximate
+  string title = 3;
+  string category_name = 4;
+  optional int64 starting_bid_cents = 5;
+  int32 bid_count = 6;
+  google.protobuf.Timestamp auction_ends_at = 7;
+}
+
+message ListCustomerJobsRequest {
+  string customer_id = 1;
+  optional JobStatus status_filter = 2;
+  optional string property_id = 3;
+  nomarkup.common.v1.PaginationRequest pagination = 4;
+}
+
+message ListCustomerJobsResponse {
+  repeated Job jobs = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message ListProviderBiddedJobsRequest {
+  string provider_id = 1;
+  optional string bid_status = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message ListProviderBiddedJobsResponse {
+  repeated JobWithBid jobs = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message JobWithBid {
+  Job job = 1;
+  BidSummary my_bid = 2;
+}
+
+message BidSummary {
+  string id = 1;
+  int64 amount_cents = 2;
+  string status = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message ListDraftsRequest {
+  string customer_id = 1;
+}
+
+message ListDraftsResponse {
+  repeated Job drafts = 1;
+}
+
+// ============================================================
+// Taxonomy Messages
+// ============================================================
+
+message GetServiceCategoriesRequest {
+  optional int32 level = 1;  // 1, 2, or 3
+  optional string parent_id = 2;
+}
+
+message GetServiceCategoriesResponse {
+  repeated ServiceCategory categories = 1;
+}
+
+message GetCategoryTreeRequest {}
+
+message GetCategoryTreeResponse {
+  repeated CategoryTreeNode tree = 1;
+}
+
+message CategoryTreeNode {
+  ServiceCategory category = 1;
+  repeated CategoryTreeNode children = 2;
+}
+
+// ============================================================
+// Admin Messages
+// ============================================================
+
+message AdminListJobsRequest {
+  optional JobStatus status_filter = 1;
+  optional string category_id = 2;
+  optional string customer_id = 3;
+  nomarkup.common.v1.PaginationRequest pagination = 4;
+}
+
+message AdminListJobsResponse {
+  repeated Job jobs = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message AdminSuspendJobRequest {
+  string job_id = 1;
+  string reason = 2;
+  string admin_id = 3;
+}
+
+message AdminSuspendJobResponse {
+  Job job = 1;
+}
+
+message AdminRemoveJobRequest {
+  string job_id = 1;
+  string reason = 2;
+  string admin_id = 3;
+}
+
+message AdminRemoveJobResponse {}
+
+message AdminCreateCategoryRequest {
+  string name = 1;
+  string slug = 2;
+  int32 level = 3;
+  string parent_id = 4;
+  string description = 5;
+  string icon = 6;
+  int32 sort_order = 7;
+}
+
+message AdminCreateCategoryResponse {
+  ServiceCategory category = 1;
+}
+
+message AdminUpdateCategoryRequest {
+  string category_id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string icon = 4;
+  optional int32 sort_order = 5;
+  optional bool active = 6;
+}
+
+message AdminUpdateCategoryResponse {
+  ServiceCategory category = 1;
+}
+
+message AdminDeleteCategoryRequest {
+  string category_id = 1;
+}
+
+message AdminDeleteCategoryResponse {}

@@ -1,0 +1,16 @@
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let proto_root = "../../proto";
+
+    tonic_build::configure()
+        .build_server(true)
+        .build_client(false)
+        .compile_protos(
+            &[
+                &format!("{proto_root}/common/v1/common.proto"),
+                &format!("{proto_root}/trust/v1/trust.proto"),
+            ],
+            &[proto_root],
+        )?;
+
+    Ok(())
+}
