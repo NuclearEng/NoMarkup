@@ -478,3 +478,72 @@ export interface ContractsResponse {
   contracts: Contract[];
   pagination: PaginationResponse;
 }
+
+// Payment types
+export interface Payment {
+  id: string;
+  contract_id: string;
+  milestone_id?: string;
+  recurring_instance_id?: string;
+  customer_id: string;
+  provider_id: string;
+  amount_cents: number;
+  platform_fee_cents: number;
+  guarantee_fee_cents: number;
+  provider_payout_cents: number;
+  status: string;
+  failure_reason?: string;
+  refund_amount_cents: number;
+  refund_reason?: string;
+  installment_number?: number;
+  total_installments?: number;
+  escrow_at?: string;
+  released_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface PaymentBreakdown {
+  subtotal_cents: number;
+  platform_fee_cents: number;
+  guarantee_fee_cents: number;
+  total_cents: number;
+  provider_payout_cents: number;
+  fee_percentage: number;
+  guarantee_percentage: number;
+}
+
+export interface PaymentMethod {
+  id: string;
+  type: string;
+  last_four: string;
+  brand: string;
+  exp_month: number;
+  exp_year: number;
+  is_default: boolean;
+}
+
+export interface StripeAccountStatus {
+  account_id: string;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  requirements: string[];
+}
+
+export interface PaymentsResponse {
+  payments: Payment[];
+  pagination: PaginationResponse;
+}
+
+export interface CreatePaymentInput {
+  contract_id: string;
+  milestone_id?: string;
+  amount_cents: number;
+  payment_method_id: string;
+}
+
+export interface FeeCalculationInput {
+  amount_cents: number;
+  category_id?: string;
+}

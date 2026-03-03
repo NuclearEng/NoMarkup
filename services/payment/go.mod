@@ -3,8 +3,12 @@ module github.com/nomarkup/nomarkup/services/payment
 go 1.25.0
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.1
+	github.com/nomarkup/nomarkup/proto v0.0.0-00010101000000-000000000000
+	github.com/stripe/stripe-go/v82 v82.5.1
 	google.golang.org/grpc v1.79.1
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -17,7 +21,6 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/nomarkup/nomarkup/proto => ../../proto/gen/go

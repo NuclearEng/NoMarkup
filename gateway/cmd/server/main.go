@@ -16,6 +16,7 @@ import (
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -78,6 +79,16 @@ func main() {
 
 	bidClient := bidv1.NewBidServiceClient(bidConn)
 
+	// Connect to Payment Service via gRPC.
+	paymentConn, err := grpc.NewClient(cfg.PaymentServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to payment service", "addr", cfg.PaymentServiceAddr, "error", err)
+		os.Exit(1)
+	}
+	defer paymentConn.Close()
+
+	paymentClient := paymentv1.NewPaymentServiceClient(paymentConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -90,8 +101,10 @@ func main() {
 	jobHandler := handler.NewJobHandler(jobClient)
 	bidHandler := handler.NewBidHandler(bidClient)
 	contractHandler := handler.NewContractHandler(contractClient)
+	paymentHandler := handler.NewPaymentHandler(paymentClient)
+	webhookHandler := handler.NewWebhookHandler(paymentClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

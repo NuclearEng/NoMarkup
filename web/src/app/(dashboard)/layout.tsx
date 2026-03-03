@@ -1,6 +1,6 @@
 'use client';
 
-import { Briefcase, FileText, Gavel, Home, LayoutDashboard, PlusCircle, User } from 'lucide-react';
+import { Briefcase, CreditCard, FileText, Gavel, Home, LayoutDashboard, PlusCircle, User } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -85,6 +85,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           >
             <FileText className="h-4 w-4" aria-hidden="true" />
             Contracts
+          </Link>
+
+          <Link
+            href={'/payments' as Route}
+            className={cn(
+              'flex min-h-[44px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
+              pathname.startsWith('/payments')
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            <CreditCard className="h-4 w-4" aria-hidden="true" />
+            Payments
           </Link>
 
           <Link

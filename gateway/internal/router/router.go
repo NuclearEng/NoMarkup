@@ -19,6 +19,8 @@ func New(
 	jobHandler *handler.JobHandler,
 	bidHandler *handler.BidHandler,
 	contractHandler *handler.ContractHandler,
+	paymentHandler *handler.PaymentHandler,
+	webhookHandler *handler.WebhookHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -53,6 +55,11 @@ func New(
 		r.Get("/{id}", optionalAuth(authMW, jobHandler.GetJob))
 	})
 
+	// Public webhook routes (no auth, verified by Stripe signature)
+	r.Route("/api/v1/webhooks", func(r chi.Router) {
+		r.Post("/stripe", webhookHandler.HandleStripeWebhook)
+	})
+
 	// Protected API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMW.Handler)
@@ -72,6 +79,11 @@ func New(
 			r.Put("/me/portfolio", providerHandler.UpdatePortfolio)
 			r.Put("/me/availability", providerHandler.SetAvailability)
 			r.Get("/{id}", providerHandler.GetProvider)
+
+			// Stripe Connect routes for providers
+			r.Post("/me/stripe/account", paymentHandler.CreateStripeAccount)
+			r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
+			r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
 		})
 
 		r.Route("/jobs", func(r chi.Router) {
@@ -115,6 +127,18 @@ func New(
 			r.Post("/{id}/submit", contractHandler.SubmitMilestone)
 			r.Post("/{id}/approve", contractHandler.ApproveMilestone)
 			r.Post("/{id}/revision", contractHandler.RequestRevision)
+		})
+
+		// Payment routes
+		r.Route("/payments", func(r chi.Router) {
+			r.Post("/", paymentHandler.CreatePayment)
+			r.Get("/", paymentHandler.ListPayments)
+			r.Post("/setup-intent", paymentHandler.CreateSetupIntent)
+			r.Get("/methods", paymentHandler.ListPaymentMethods)
+			r.Delete("/methods/{id}", paymentHandler.DeletePaymentMethod)
+			r.Post("/calculate-fees", paymentHandler.CalculateFees)
+			r.Get("/{id}", paymentHandler.GetPayment)
+			r.Post("/{id}/process", paymentHandler.ProcessPayment)
 		})
 	})
 
