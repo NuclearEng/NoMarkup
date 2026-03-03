@@ -42,6 +42,10 @@ service UserService {
   rpc UpdatePortfolio(UpdatePortfolioRequest) returns (UpdatePortfolioResponse);
   rpc SetInstantAvailability(SetInstantAvailabilityRequest) returns (SetInstantAvailabilityResponse);
 
+  // Service categories
+  rpc GetServiceCategories(GetServiceCategoriesRequest) returns (GetServiceCategoriesResponse);
+  rpc GetCategoryTree(GetCategoryTreeRequest) returns (GetCategoryTreeResponse);
+
   // Properties
   rpc CreateProperty(CreatePropertyRequest) returns (CreatePropertyResponse);
   rpc UpdateProperty(UpdatePropertyRequest) returns (UpdatePropertyResponse);
@@ -390,6 +394,38 @@ message AvailabilityWindow {
 message SetInstantAvailabilityResponse {
   bool instant_enabled = 1;
   bool instant_available = 2;
+}
+
+// ============================================================
+// Service Category Messages
+// ============================================================
+
+message ServiceCategory {
+  string id = 1;
+  string parent_id = 2;
+  string name = 3;
+  string slug = 4;
+  int32 level = 5;
+  string description = 6;
+  string icon = 7;
+  int32 sort_order = 8;
+  bool active = 9;
+  repeated ServiceCategory children = 10;
+}
+
+message GetServiceCategoriesRequest {
+  optional int32 level = 1;
+  optional string parent_id = 2;
+}
+
+message GetServiceCategoriesResponse {
+  repeated ServiceCategory categories = 1;
+}
+
+message GetCategoryTreeRequest {}
+
+message GetCategoryTreeResponse {
+  repeated ServiceCategory categories = 1;
 }
 
 // ============================================================

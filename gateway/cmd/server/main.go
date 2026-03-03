@@ -58,8 +58,11 @@ func main() {
 	// Wire up handlers and middleware.
 	authMW := middleware.NewAuthMiddleware(publicKey)
 	authHandler := handler.NewAuthHandler(userClient, secureCookie)
+	userHandler := handler.NewUserHandler(userClient)
+	providerHandler := handler.NewProviderHandler(userClient)
+	categoriesHandler := handler.NewCategoriesHandler(userClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

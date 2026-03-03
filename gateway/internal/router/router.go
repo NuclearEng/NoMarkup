@@ -9,7 +9,14 @@ import (
 )
 
 // New creates and configures the HTTP router with all middleware and routes.
-func New(allowedOrigins []string, authMW *middleware.AuthMiddleware, authHandler *handler.AuthHandler) *chi.Mux {
+func New(
+	allowedOrigins []string,
+	authMW *middleware.AuthMiddleware,
+	authHandler *handler.AuthHandler,
+	userHandler *handler.UserHandler,
+	providerHandler *handler.ProviderHandler,
+	categoriesHandler *handler.CategoriesHandler,
+) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware stack
@@ -30,19 +37,32 @@ func New(allowedOrigins []string, authMW *middleware.AuthMiddleware, authHandler
 		r.Post("/verify-email", authHandler.VerifyEmail)
 	})
 
+	// Public category routes (no auth required)
+	r.Route("/api/v1/categories", func(r chi.Router) {
+		r.Get("/", categoriesHandler.List)
+		r.Get("/tree", categoriesHandler.Tree)
+	})
+
 	// Protected API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMW.Handler)
 
-		// Protected route groups will be registered here as handlers are implemented.
-		// r.Route("/users", userRoutes)
-		// r.Route("/jobs", jobRoutes)
-		// r.Route("/bids", bidRoutes)
-		// r.Route("/contracts", contractRoutes)
-		// r.Route("/payments", paymentRoutes)
-		// r.Route("/chat", chatRoutes)
-		// r.Route("/reviews", reviewRoutes)
-		// r.Route("/notifications", notificationRoutes)
+		r.Route("/users", func(r chi.Router) {
+			r.Get("/me", userHandler.GetMe)
+			r.Patch("/me", userHandler.UpdateMe)
+			r.Post("/me/roles", userHandler.EnableRole)
+			r.Get("/{id}", userHandler.GetUser)
+		})
+
+		r.Route("/providers", func(r chi.Router) {
+			r.Get("/me", providerHandler.GetMe)
+			r.Patch("/me", providerHandler.UpdateMe)
+			r.Put("/me/terms", providerHandler.SetGlobalTerms)
+			r.Put("/me/categories", providerHandler.UpdateCategories)
+			r.Put("/me/portfolio", providerHandler.UpdatePortfolio)
+			r.Put("/me/availability", providerHandler.SetAvailability)
+			r.Get("/{id}", providerHandler.GetProvider)
+		})
 	})
 
 	return r

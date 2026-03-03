@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import '@/styles/globals.css';
 
+import { QueryProvider } from '@/components/providers/QueryProvider';
+
 export const metadata: Metadata = {
   title: { default: 'NoMarkup', template: '%s | NoMarkup' },
   description: 'Reverse-auction marketplace for home services. Fair prices, verified providers.',
@@ -16,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to main content
         </a>
-        <div id="main-content">{children}</div>
+        <QueryProvider>
+          <div id="main-content">{children}</div>
+        </QueryProvider>
       </body>
     </html>
   );

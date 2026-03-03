@@ -68,7 +68,8 @@ func main() {
 	repo := repository.NewPostgresRepository(pool)
 	jwtManager := service.NewJWTManager(privateKey)
 	authService := service.NewAuth(repo, jwtManager)
-	srv := grpcserver.NewServer(authService)
+	profileService := service.NewProfile(repo)
+	srv := grpcserver.NewServer(authService, profileService)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))

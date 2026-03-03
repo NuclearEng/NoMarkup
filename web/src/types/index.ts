@@ -153,3 +153,82 @@ export interface LoginInput {
 export interface VerifyEmailResponse {
   verified: boolean;
 }
+
+// Profile & Provider types
+export interface MilestoneTemplate {
+  description: string;
+  percentage: number;
+}
+
+export interface ServiceCategorySummary {
+  id: string;
+  name: string;
+  slug: string;
+  level: number;
+  parentName: string | null;
+}
+
+export interface PortfolioImage {
+  id: string;
+  imageUrl: string;
+  caption: string | null;
+  sortOrder: number;
+}
+
+export interface ProviderProfile {
+  id: string;
+  userId: string;
+  businessName: string | null;
+  bio: string | null;
+  serviceAddress: string | null;
+  serviceLocation: { latitude: number; longitude: number } | null;
+  serviceRadiusKm: number;
+  defaultPaymentTiming: PaymentTiming;
+  defaultMilestones: MilestoneTemplate[];
+  cancellationPolicy: string | null;
+  warrantyTerms: string | null;
+  instantEnabled: boolean;
+  instantAvailable: boolean;
+  jobsCompleted: number;
+  avgResponseTimeMinutes: number | null;
+  onTimeRate: number | null;
+  profileCompleteness: number;
+  stripeOnboardingComplete: boolean;
+  serviceCategories: ServiceCategorySummary[];
+  portfolio: PortfolioImage[];
+  memberSince: string;
+}
+
+export interface ServiceCategory {
+  id: string;
+  parentId: string | null;
+  name: string;
+  slug: string;
+  level: number;
+  description: string | null;
+  icon: string | null;
+  sortOrder: number;
+  children?: ServiceCategory[];
+}
+
+export interface UpdateUserInput {
+  display_name?: string;
+  phone?: string;
+  avatar_url?: string;
+  timezone?: string;
+}
+
+export interface UpdateProviderInput {
+  business_name?: string;
+  bio?: string;
+  service_address?: string;
+  service_location?: { latitude: number; longitude: number };
+  service_radius_km?: number;
+}
+
+export interface GlobalTermsInput {
+  payment_timing: string;
+  milestones: MilestoneTemplate[];
+  cancellation_policy: string;
+  warranty_terms: string;
+}

@@ -58,3 +58,56 @@ export const reviewCommentSchema = z
   .max(2000, 'Review must be at most 2000 characters');
 
 export const ratingSchema = z.number().int().min(1).max(5);
+
+// Profile schemas
+export const timezoneSchema = z.string().min(1, 'Timezone is required');
+
+export const profileSchema = z.object({
+  displayName: displayNameSchema,
+  phone: phoneSchema.optional().or(z.literal('')),
+  timezone: timezoneSchema,
+  avatarUrl: z.string().url('Must be a valid URL').optional().or(z.literal('')),
+});
+
+export type ProfileFormValues = z.infer<typeof profileSchema>;
+
+// Provider schemas
+export const businessInfoSchema = z.object({
+  businessName: z
+    .string()
+    .min(2, 'Business name must be at least 2 characters')
+    .max(100, 'Business name must be at most 100 characters'),
+  bio: z.string().max(500, 'Bio must be at most 500 characters').optional().or(z.literal('')),
+  serviceAddress: z.string().optional().or(z.literal('')),
+});
+
+export type BusinessInfoFormValues = z.infer<typeof businessInfoSchema>;
+
+const milestoneSchema = z.object({
+  description: z.string().min(1, 'Description is required'),
+  percentage: z.number().min(1, 'Must be at least 1%').max(100, 'Must be at most 100%'),
+});
+
+export const globalTermsSchema = z
+  .object({
+    paymentTiming: z.enum(['upfront', 'milestone', 'completion', 'payment_plan', 'recurring'], {
+      required_error: 'Payment timing is required',
+    }),
+    milestones: z.array(milestoneSchema).optional(),
+    cancellationPolicy: z.string().optional().or(z.literal('')),
+    warrantyTerms: z.string().optional().or(z.literal('')),
+  })
+  .refine(
+    (data) => {
+      if (data.paymentTiming !== 'milestone') return true;
+      if (!data.milestones || data.milestones.length === 0) return false;
+      const sum = data.milestones.reduce((acc, m) => acc + m.percentage, 0);
+      return sum === 100;
+    },
+    {
+      message: 'Milestone percentages must sum to 100',
+      path: ['milestones'],
+    },
+  );
+
+export type GlobalTermsFormValues = z.infer<typeof globalTermsSchema>;

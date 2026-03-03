@@ -2,13 +2,10 @@ package handler
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -239,39 +236,7 @@ func parseRoles(roles []string) []commonv1.UserRole {
 	return result
 }
 
-func writeJSON(w http.ResponseWriter, code int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("failed to encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]string{"error": msg})
-}
-
-func writeGRPCError(w http.ResponseWriter, err error) {
-	st, ok := status.FromError(err)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	switch st.Code() {
-	case codes.AlreadyExists:
-		writeError(w, http.StatusConflict, st.Message())
-	case codes.Unauthenticated:
-		writeError(w, http.StatusUnauthorized, st.Message())
-	case codes.NotFound:
-		writeError(w, http.StatusNotFound, st.Message())
-	case codes.PermissionDenied:
-		writeError(w, http.StatusForbidden, st.Message())
-	case codes.InvalidArgument:
-		writeError(w, http.StatusBadRequest, st.Message())
-	default:
-		writeError(w, http.StatusInternalServerError, "internal error")
-	}
-}
+// writeJSON, writeError, writeGRPCError are defined in response.go
 
 func extractIP(r *http.Request) string {
 	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
