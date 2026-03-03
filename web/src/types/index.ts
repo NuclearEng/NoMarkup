@@ -932,3 +932,168 @@ export interface ProcessImageResponse {
   variant: ImageVariant;
   blur_hash: string | null;
 }
+
+// Subscription types
+export const SUBSCRIPTION_STATUS = {
+  ACTIVE: 'active',
+  PAST_DUE: 'past_due',
+  CANCELLED: 'cancelled',
+  EXPIRED: 'expired',
+  TRIALING: 'trialing',
+} as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
+
+export const BILLING_INTERVAL = {
+  MONTHLY: 'monthly',
+  ANNUAL: 'annual',
+} as const;
+export type BillingInterval = (typeof BILLING_INTERVAL)[keyof typeof BILLING_INTERVAL];
+
+export interface SubscriptionTier {
+  id: string;
+  name: string;
+  slug: string;
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  fee_discount_percentage: number;
+  max_active_bids: number;
+  max_service_categories: number;
+  portfolio_image_limit: number;
+  featured_placement: boolean;
+  analytics_access: boolean;
+  priority_support: boolean;
+  verified_badge_boost: boolean;
+  instant_enabled: boolean;
+  sort_order: number;
+}
+
+export interface Subscription {
+  id: string;
+  user_id: string;
+  tier_id: string;
+  tier: SubscriptionTier;
+  status: SubscriptionStatus;
+  billing_interval: BillingInterval;
+  current_price_cents: number;
+  current_period_start: string;
+  current_period_end: string;
+  trial_end?: string;
+  cancelled_at?: string;
+  created_at: string;
+}
+
+export interface Invoice {
+  id: string;
+  subscription_id: string;
+  stripe_invoice_id: string;
+  amount_cents: number;
+  status: string;
+  pdf_url: string;
+  period_start: string;
+  period_end: string;
+  paid_at?: string;
+}
+
+export interface SubscriptionUsage {
+  active_bids: number;
+  max_active_bids: number;
+  service_categories: number;
+  max_service_categories: number;
+  portfolio_images: number;
+  max_portfolio_images: number;
+  current_fee_percentage: number;
+}
+
+export interface CreateSubscriptionInput {
+  tier_id: string;
+  billing_interval: BillingInterval;
+  payment_method_id: string;
+}
+
+export interface CancelSubscriptionInput {
+  reason: string;
+  cancel_immediately: boolean;
+}
+
+export interface ChangeTierInput {
+  new_tier_id: string;
+  billing_interval: BillingInterval;
+}
+
+// Analytics types
+export interface AnalyticsMarketRange {
+  category_id: string;
+  subcategory_id: string;
+  service_type_id: string;
+  region: string;
+  low_cents: number;
+  median_cents: number;
+  high_cents: number;
+  data_points: number;
+  source: string;
+  confidence: number;
+  computed_at: string;
+}
+
+export interface ProviderAnalytics {
+  total_bids: number;
+  bids_won: number;
+  win_rate: number;
+  average_bid_cents: number;
+  jobs_completed: number;
+  jobs_in_progress: number;
+  on_time_rate: number;
+  completion_rate: number;
+  total_earnings_cents: number;
+  average_job_value_cents: number;
+  average_rating: number;
+  total_reviews: number;
+  rating_trend: number;
+  avg_response_time_minutes: number;
+  category_breakdown: CategoryEarnings[];
+}
+
+export interface CategoryEarnings {
+  category_id: string;
+  category_name: string;
+  jobs_completed: number;
+  total_earnings_cents: number;
+  average_rating: number;
+}
+
+export interface EarningsDataPoint {
+  period_start: string;
+  earnings_cents: number;
+  fees_cents: number;
+  job_count: number;
+}
+
+export interface ProviderEarningsResponse {
+  data_points: EarningsDataPoint[];
+  total_earnings_cents: number;
+  total_fees_cents: number;
+  net_earnings_cents: number;
+  total_jobs: number;
+}
+
+export interface SpendingDataPoint {
+  period_start: string;
+  amount_cents: number;
+  job_count: number;
+}
+
+export interface CategorySpending {
+  category_id: string;
+  category_name: string;
+  total_spent_cents: number;
+  job_count: number;
+}
+
+export interface CustomerSpendingResponse {
+  data_points: SpendingDataPoint[];
+  total_spent_cents: number;
+  total_jobs: number;
+  average_job_cost_cents: number;
+  total_savings_cents: number;
+  category_breakdown: CategorySpending[];
+}

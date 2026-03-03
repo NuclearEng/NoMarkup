@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
@@ -22,6 +23,7 @@ import (
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
+	subscriptionv1 "github.com/nomarkup/nomarkup/proto/subscription/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
@@ -162,6 +164,14 @@ func main() {
 	reviewClient := reviewv1.NewReviewServiceClient(jobConn)
 	reviewHandler := handler.NewReviewHandler(reviewClient)
 
+	// Subscription service lives on the same gRPC server as the payment service.
+	subscriptionClient := subscriptionv1.NewSubscriptionServiceClient(paymentConn)
+	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionClient)
+
+	// Analytics service lives on the same gRPC server as the job service.
+	analyticsClient := analyticsv1.NewAnalyticsServiceClient(jobConn)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient)
+
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
 	webhookHandler := handler.NewWebhookHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient)
@@ -170,7 +180,7 @@ func main() {
 	notificationHandler := handler.NewNotificationHandler(notifClient)
 	imageHandler := handler.NewImageHandler(imagingClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

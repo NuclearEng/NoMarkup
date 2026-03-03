@@ -5,16 +5,19 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/account"
 	"github.com/stripe/stripe-go/v82/accountlink"
+	"github.com/stripe/stripe-go/v82/invoice"
 	"github.com/stripe/stripe-go/v82/loginlink"
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/paymentmethod"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/setupintent"
+	stripesub "github.com/stripe/stripe-go/v82/subscription"
 	"github.com/stripe/stripe-go/v82/transfer"
 )
 
@@ -286,4 +289,150 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 		return "", fmt.Errorf("create refund: %w", err)
 	}
 	return r.ID, nil
+}
+
+// --- Subscription Stripe methods ---
+
+// CreateStripeSubscription creates a Stripe subscription for a customer.
+// Returns the Stripe subscription ID and client secret (for SCA confirmation if needed).
+func (s *StripeService) CreateStripeSubscription(ctx context.Context, customerID, stripePriceID, paymentMethodID string) (string, string, error) {
+	if s.devMode {
+		slog.Info("dev mode: stub CreateStripeSubscription", "customerID", customerID, "priceID", stripePriceID)
+		return "sub_dev_" + customerID, "", nil
+	}
+
+	params := &stripe.SubscriptionParams{
+		Items: []*stripe.SubscriptionItemsParams{
+			{
+				Price: stripe.String(stripePriceID),
+			},
+		},
+		PaymentBehavior:      stripe.String("default_incomplete"),
+		DefaultPaymentMethod: stripe.String(paymentMethodID),
+	}
+	params.AddExpand("latest_invoice.payment_intent")
+	params.AddMetadata("platform_customer_id", customerID)
+
+	sub, err := stripesub.New(params)
+	if err != nil {
+		return "", "", fmt.Errorf("create stripe subscription: %w", err)
+	}
+
+	var clientSecret string
+	if sub.LatestInvoice != nil && sub.LatestInvoice.ConfirmationSecret != nil {
+		clientSecret = sub.LatestInvoice.ConfirmationSecret.ClientSecret
+	}
+
+	return sub.ID, clientSecret, nil
+}
+
+// CancelStripeSubscription cancels a Stripe subscription.
+func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubscriptionID string, cancelImmediately bool) error {
+	if s.devMode {
+		slog.Info("dev mode: stub CancelStripeSubscription", "subscriptionID", stripeSubscriptionID, "immediately", cancelImmediately)
+		return nil
+	}
+
+	if cancelImmediately {
+		_, err := stripesub.Cancel(stripeSubscriptionID, nil)
+		if err != nil {
+			return fmt.Errorf("cancel stripe subscription: %w", err)
+		}
+	} else {
+		params := &stripe.SubscriptionParams{
+			CancelAtPeriodEnd: stripe.Bool(true),
+		}
+		_, err := stripesub.Update(stripeSubscriptionID, params)
+		if err != nil {
+			return fmt.Errorf("cancel stripe subscription at period end: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// UpdateStripeSubscription updates a Stripe subscription to a new price.
+// Returns the updated subscription ID and the proration amount in cents.
+func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubscriptionID, newStripePriceID string) (string, int64, error) {
+	if s.devMode {
+		slog.Info("dev mode: stub UpdateStripeSubscription", "subscriptionID", stripeSubscriptionID, "newPriceID", newStripePriceID)
+		return stripeSubscriptionID, 0, nil
+	}
+
+	// Get current subscription to find the item ID.
+	sub, err := stripesub.Get(stripeSubscriptionID, nil)
+	if err != nil {
+		return "", 0, fmt.Errorf("get stripe subscription for update: %w", err)
+	}
+
+	if len(sub.Items.Data) == 0 {
+		return "", 0, fmt.Errorf("update stripe subscription: no items found")
+	}
+
+	itemID := sub.Items.Data[0].ID
+
+	params := &stripe.SubscriptionParams{
+		Items: []*stripe.SubscriptionItemsParams{
+			{
+				ID:    stripe.String(itemID),
+				Price: stripe.String(newStripePriceID),
+			},
+		},
+		ProrationBehavior: stripe.String("create_prorations"),
+	}
+
+	updated, err := stripesub.Update(stripeSubscriptionID, params)
+	if err != nil {
+		return "", 0, fmt.Errorf("update stripe subscription: %w", err)
+	}
+
+	return updated.ID, 0, nil
+}
+
+// ListStripeInvoices lists invoices for a Stripe subscription.
+func (s *StripeService) ListStripeInvoices(ctx context.Context, stripeSubscriptionID string) ([]*domain.Invoice, error) {
+	if s.devMode {
+		slog.Info("dev mode: stub ListStripeInvoices", "subscriptionID", stripeSubscriptionID)
+		return []*domain.Invoice{}, nil
+	}
+
+	params := &stripe.InvoiceListParams{
+		Subscription: stripe.String(stripeSubscriptionID),
+	}
+	params.Filters.AddFilter("limit", "", "50")
+
+	var invoices []*domain.Invoice
+	i := invoice.List(params)
+	for i.Next() {
+		inv := i.Invoice()
+
+		di := &domain.Invoice{
+			ID:              inv.ID,
+			SubscriptionID:  stripeSubscriptionID,
+			StripeInvoiceID: inv.ID,
+			AmountCents:     inv.AmountDue,
+			Status:          string(inv.Status),
+			PDFURL:          inv.InvoicePDF,
+		}
+
+		if inv.PeriodStart > 0 {
+			t := time.Unix(inv.PeriodStart, 0)
+			di.PeriodStart = &t
+		}
+		if inv.PeriodEnd > 0 {
+			t := time.Unix(inv.PeriodEnd, 0)
+			di.PeriodEnd = &t
+		}
+		if inv.StatusTransitions != nil && inv.StatusTransitions.PaidAt > 0 {
+			t := time.Unix(inv.StatusTransitions.PaidAt, 0)
+			di.PaidAt = &t
+		}
+
+		invoices = append(invoices, di)
+	}
+	if err := i.Err(); err != nil {
+		return nil, fmt.Errorf("list stripe invoices: %w", err)
+	}
+
+	return invoices, nil
 }

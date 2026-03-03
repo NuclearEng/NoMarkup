@@ -77,6 +77,10 @@ func main() {
 	reviewService := service.NewReviewService(repo, repo)
 	reviewSrv := grpcserver.NewReviewServer(reviewService)
 
+	// Wire up analytics service (shares same repo/pool).
+	analyticsService := service.NewAnalyticsService(repo)
+	analyticsSrv := grpcserver.NewAnalyticsServer(analyticsService)
+
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
@@ -88,6 +92,7 @@ func main() {
 	grpcserver.Register(s, srv)
 	grpcserver.RegisterContract(s, contractSrv)
 	grpcserver.RegisterReview(s, reviewSrv)
+	grpcserver.RegisterAnalytics(s, analyticsSrv)
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

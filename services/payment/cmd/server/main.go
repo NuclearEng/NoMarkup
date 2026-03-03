@@ -64,6 +64,10 @@ func main() {
 	paymentSvc := service.NewPaymentService(repo, stripeSvc)
 	grpcServer := paymentgrpc.NewServer(paymentSvc)
 
+	// Wire up subscription service (shares same repo and stripe service).
+	subscriptionSvc := service.NewSubscriptionService(repo, stripeSvc)
+	subscriptionGRPCServer := paymentgrpc.NewSubscriptionServer(subscriptionSvc)
+
 	// Create and register gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
@@ -73,6 +77,7 @@ func main() {
 
 	s := grpclib.NewServer()
 	paymentgrpc.Register(s, grpcServer)
+	paymentgrpc.RegisterSubscription(s, subscriptionGRPCServer)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

@@ -27,6 +27,8 @@ func New(
 	fraudHandler *handler.FraudHandler,
 	notificationHandler *handler.NotificationHandler,
 	imageHandler *handler.ImageHandler,
+	subscriptionHandler *handler.SubscriptionHandler,
+	analyticsHandler *handler.AnalyticsHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -69,6 +71,18 @@ func New(
 	// Public webhook routes (no auth, verified by Stripe signature)
 	r.Route("/api/v1/webhooks", func(r chi.Router) {
 		r.Post("/stripe", webhookHandler.HandleStripeWebhook)
+	})
+
+	// Public subscription tier routes (no auth required)
+	r.Route("/api/v1/subscriptions/tiers", func(r chi.Router) {
+		r.Get("/", subscriptionHandler.ListTiers)
+		r.Get("/{id}", subscriptionHandler.GetTier)
+	})
+
+	// Public market analytics routes (no auth required)
+	r.Route("/api/v1/analytics/market", func(r chi.Router) {
+		r.Get("/range", analyticsHandler.GetMarketRange)
+		r.Get("/trends", analyticsHandler.GetMarketTrends)
 	})
 
 	// Protected API v1 routes
@@ -197,6 +211,24 @@ func New(
 			r.Get("/unread-count", notificationHandler.GetUnreadCount)
 			r.Get("/preferences", notificationHandler.GetPreferences)
 			r.Put("/preferences", notificationHandler.UpdatePreferences)
+		})
+
+		// Subscription routes (authenticated)
+		r.Route("/subscriptions", func(r chi.Router) {
+			r.Get("/me", subscriptionHandler.GetSubscription)
+			r.Post("/", subscriptionHandler.CreateSubscription)
+			r.Post("/cancel", subscriptionHandler.CancelSubscription)
+			r.Post("/change-tier", subscriptionHandler.ChangeTier)
+			r.Get("/usage", subscriptionHandler.GetUsage)
+			r.Get("/features/{feature}", subscriptionHandler.CheckFeatureAccess)
+			r.Get("/invoices", subscriptionHandler.ListInvoices)
+		})
+
+		// Analytics routes (authenticated)
+		r.Route("/analytics", func(r chi.Router) {
+			r.Get("/providers/{id}", analyticsHandler.GetProviderAnalytics)
+			r.Get("/providers/{id}/earnings", analyticsHandler.GetProviderEarnings)
+			r.Get("/customers/me/spending", analyticsHandler.GetCustomerSpending)
 		})
 	})
 
