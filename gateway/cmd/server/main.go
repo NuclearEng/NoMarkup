@@ -180,7 +180,16 @@ func main() {
 	notificationHandler := handler.NewNotificationHandler(notifClient)
 	imageHandler := handler.NewImageHandler(imagingClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler)
+	// Admin handlers — use existing gRPC clients.
+	adminUsersHandler := handler.NewAdminUsersHandler(userClient)
+	adminVerificationHandler := handler.NewAdminVerificationHandler(userClient)
+	adminJobsHandler := handler.NewAdminJobsHandler(jobClient)
+	adminDisputesHandler := handler.NewAdminDisputesHandler(contractClient)
+	adminReviewsHandler := handler.NewAdminReviewsHandler(reviewClient)
+	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
+	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
+
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler, adminUsersHandler, adminVerificationHandler, adminJobsHandler, adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler, adminPlatformHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

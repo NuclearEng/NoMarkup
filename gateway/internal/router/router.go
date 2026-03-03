@@ -29,6 +29,13 @@ func New(
 	imageHandler *handler.ImageHandler,
 	subscriptionHandler *handler.SubscriptionHandler,
 	analyticsHandler *handler.AnalyticsHandler,
+	adminUsersHandler *handler.AdminUsersHandler,
+	adminVerificationHandler *handler.AdminVerificationHandler,
+	adminJobsHandler *handler.AdminJobsHandler,
+	adminDisputesHandler *handler.AdminDisputesHandler,
+	adminReviewsHandler *handler.AdminReviewsHandler,
+	adminPaymentsHandler *handler.AdminPaymentsHandler,
+	adminPlatformHandler *handler.AdminPlatformHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -195,12 +202,68 @@ func New(
 			r.Post("/process", imageHandler.ProcessImage)
 		})
 
-		// Admin fraud routes
-		r.Route("/admin/fraud", func(r chi.Router) {
-			// TODO: Add admin role check middleware later
-			r.Get("/alerts", fraudHandler.ListAlerts)
-			r.Post("/alerts/{id}/review", fraudHandler.ReviewAlert)
-			r.Get("/users/{id}/risk", fraudHandler.GetUserRiskProfile)
+		// Admin routes with role enforcement
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+
+			// Fraud (moved from standalone block, now with admin role check)
+			r.Route("/fraud", func(r chi.Router) {
+				r.Get("/alerts", fraudHandler.ListAlerts)
+				r.Post("/alerts/{id}/review", fraudHandler.ReviewAlert)
+				r.Get("/users/{id}/risk", fraudHandler.GetUserRiskProfile)
+			})
+
+			// Users
+			r.Route("/users", func(r chi.Router) {
+				r.Get("/", adminUsersHandler.SearchUsers)
+				r.Get("/{id}", adminUsersHandler.GetUser)
+				r.Post("/{id}/suspend", adminUsersHandler.SuspendUser)
+				r.Post("/{id}/ban", adminUsersHandler.BanUser)
+			})
+
+			// Verification
+			r.Route("/verification", func(r chi.Router) {
+				r.Get("/queue", adminVerificationHandler.ListPendingDocuments)
+				r.Post("/{id}/review", adminVerificationHandler.ReviewDocument)
+			})
+
+			// Jobs
+			r.Route("/jobs", func(r chi.Router) {
+				r.Get("/", adminJobsHandler.ListJobs)
+				r.Post("/{id}/suspend", adminJobsHandler.SuspendJob)
+				r.Post("/{id}/remove", adminJobsHandler.RemoveJob)
+			})
+
+			// Disputes
+			r.Route("/disputes", func(r chi.Router) {
+				r.Get("/", adminDisputesHandler.ListDisputes)
+				r.Get("/{id}", adminDisputesHandler.GetDispute)
+				r.Post("/{id}/resolve", adminDisputesHandler.ResolveDispute)
+			})
+
+			// Reviews
+			r.Route("/reviews", func(r chi.Router) {
+				r.Get("/flagged", adminReviewsHandler.ListFlaggedReviews)
+				r.Post("/flags/{id}/resolve", adminReviewsHandler.ResolveFlag)
+				r.Delete("/{id}", adminReviewsHandler.RemoveReview)
+			})
+
+			// Payments
+			r.Route("/payments", func(r chi.Router) {
+				r.Get("/", adminPaymentsHandler.ListPayments)
+				r.Get("/{id}", adminPaymentsHandler.GetPaymentDetails)
+			})
+			r.Get("/revenue", adminPaymentsHandler.GetRevenueReport)
+			r.Put("/fees", adminPaymentsHandler.UpdateFeeConfig)
+
+			// Platform
+			r.Route("/platform", func(r chi.Router) {
+				r.Get("/metrics", adminPlatformHandler.GetPlatformMetrics)
+				r.Get("/growth", adminPlatformHandler.GetGrowthMetrics)
+				r.Get("/categories", adminPlatformHandler.GetCategoryMetrics)
+				r.Get("/geographic", adminPlatformHandler.GetGeographicMetrics)
+			})
+			r.Get("/subscriptions", adminPlatformHandler.ListSubscriptions)
 		})
 
 		// Notification routes

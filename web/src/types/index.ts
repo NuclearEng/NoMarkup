@@ -1097,3 +1097,221 @@ export interface CustomerSpendingResponse {
   total_savings_cents: number;
   category_breakdown: CategorySpending[];
 }
+
+// ────────────────────────────────────────
+// Admin Dashboard types
+// ────────────────────────────────────────
+
+export const DISPUTE_STATUS = {
+  OPEN: 'open',
+  INVESTIGATING: 'investigating',
+  RESOLVED: 'resolved',
+  ESCALATED: 'escalated',
+} as const;
+export type DisputeStatus = (typeof DISPUTE_STATUS)[keyof typeof DISPUTE_STATUS];
+
+export const DISPUTE_RESOLUTION_TYPE = {
+  FAVOR_CUSTOMER: 'favor_customer',
+  FAVOR_PROVIDER: 'favor_provider',
+  SPLIT: 'split',
+  DISMISSED: 'dismissed',
+} as const;
+export type DisputeResolutionType =
+  (typeof DISPUTE_RESOLUTION_TYPE)[keyof typeof DISPUTE_RESOLUTION_TYPE];
+
+export const FLAG_STATUS = {
+  PENDING: 'pending',
+  UPHELD: 'upheld',
+  DISMISSED: 'dismissed',
+} as const;
+export type FlagStatus = (typeof FLAG_STATUS)[keyof typeof FLAG_STATUS];
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  roles: string[];
+  status: UserStatus;
+  avatar_url: string;
+  email_verified: boolean;
+  phone_verified: boolean;
+  created_at: string;
+  last_login_at?: string;
+  provider_profile?: AdminProviderProfile;
+}
+
+export interface AdminProviderProfile {
+  display_name: string;
+  business_name: string;
+  bio: string;
+  trust_score?: number;
+  trust_tier?: string;
+  jobs_completed: number;
+  average_rating: number;
+  total_reviews: number;
+}
+
+export interface VerificationDocument {
+  id: string;
+  user_id: string;
+  user_name: string;
+  document_type: string;
+  status: string;
+  submitted_at: string;
+  reviewed_at?: string;
+  reviewer_notes?: string;
+}
+
+export interface Dispute {
+  id: string;
+  contract_id: string;
+  initiated_by: string;
+  initiator_name?: string;
+  respondent_name?: string;
+  reason: string;
+  status: DisputeStatus;
+  resolution_type?: DisputeResolutionType;
+  resolution_notes?: string;
+  refund_amount_cents?: number;
+  created_at: string;
+  resolved_at?: string;
+}
+
+export interface FlaggedReview {
+  id: string;
+  review_id: string;
+  flagged_by: string;
+  reason: string;
+  status: FlagStatus;
+  review_content: string;
+  reviewer_name: string;
+  review_rating: number;
+  created_at: string;
+}
+
+export interface RevenueReport {
+  data_points: RevenueDataPoint[];
+  total_gmv_cents: number;
+  total_revenue_cents: number;
+  total_guarantee_fund_cents: number;
+  effective_take_rate: number;
+}
+
+export interface RevenueDataPoint {
+  period_start: string;
+  gmv_cents: number;
+  revenue_cents: number;
+  transaction_count: number;
+}
+
+export interface PlatformMetrics {
+  total_gmv_cents: number;
+  total_revenue_cents: number;
+  total_guarantee_fund_cents: number;
+  effective_take_rate: number;
+  total_users: number;
+  active_users: number;
+  new_users: number;
+  total_jobs_posted: number;
+  total_jobs_completed: number;
+  job_fill_rate: number;
+  job_completion_rate: number;
+  total_bids: number;
+  avg_bids_per_job: number;
+  disputes_opened: number;
+  disputes_resolved: number;
+  dispute_rate: number;
+  guarantee_claims: number;
+  guarantee_payouts_cents: number;
+}
+
+export interface GrowthDataPoint {
+  period_start: string;
+  new_users: number;
+  new_providers: number;
+  jobs_posted: number;
+  jobs_completed: number;
+  gmv_cents: number;
+  revenue_cents: number;
+}
+
+export interface GrowthMetrics {
+  data_points: GrowthDataPoint[];
+  gmv_growth_rate: number;
+  user_growth_rate: number;
+  job_growth_rate: number;
+}
+
+export interface CategoryMetric {
+  category_id: string;
+  category_name: string;
+  jobs_posted: number;
+  jobs_completed: number;
+  total_gmv_cents: number;
+  avg_bid_cents: number;
+  avg_bids_per_job: number;
+}
+
+export interface AdminSearchParams {
+  query?: string;
+  status?: string;
+  role?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AdminJobSearchParams {
+  status?: string;
+  customer_id?: string;
+  category_id?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AdminPaymentSearchParams {
+  user_id?: string;
+  status?: string;
+  start_date?: string;
+  end_date?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUser[];
+  pagination: PaginationResponse;
+}
+
+export interface AdminJobsResponse {
+  jobs: Job[];
+  pagination: PaginationResponse;
+}
+
+export interface AdminDisputesResponse {
+  disputes: Dispute[];
+  pagination: PaginationResponse;
+}
+
+export interface AdminFlaggedReviewsResponse {
+  flags: FlaggedReview[];
+  pagination: PaginationResponse;
+}
+
+export interface AdminPaymentsResponse {
+  payments: Payment[];
+  pagination: PaginationResponse;
+}
+
+export interface FeeConfig {
+  category_id: string;
+  fee_percentage: number;
+  guarantee_percentage: number;
+  min_fee_cents: number;
+  max_fee_cents: number;
+}
+
+export interface CategoryMetricsResponse {
+  categories: CategoryMetric[];
+}
