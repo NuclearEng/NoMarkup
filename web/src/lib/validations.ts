@@ -188,5 +188,18 @@ export type BidFormValues = z.infer<typeof bidSchema>;
 // Contract schemas
 export const revisionNotesSchema = z.string().min(10, 'Revision notes must be at least 10 characters').max(2000);
 
+// Review schemas
+export const reviewSchema = z.object({
+  overallRating: z.number().int().min(1).max(5),
+  qualityRating: z.number().int().min(1).max(5).optional(),
+  communicationRating: z.number().int().min(1).max(5).optional(),
+  timelinessRating: z.number().int().min(1).max(5).optional(),
+  valueRating: z.number().int().min(1).max(5).optional(),
+  comment: z.string().min(50, 'Comment must be at least 50 characters').max(2000, 'Comment must be at most 2000 characters'),
+});
+export type ReviewFormValues = z.infer<typeof reviewSchema>;
+
+export const reviewResponseSchema = z.string().min(10, 'Response must be at least 10 characters').max(2000, 'Response must be at most 2000 characters');
+
 // Chat schemas
 export const chatMessageSchema = z.string().min(1, 'Message cannot be empty').max(2000, 'Message too long');

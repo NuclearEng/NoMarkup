@@ -1,11 +1,12 @@
 'use client';
 
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Star } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
+import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
 import { getPaymentTimingLabel, getStatusLabel, getStatusVariant } from '@/components/contracts/ContractCard';
 import { MilestoneTracker } from '@/components/contracts/MilestoneTracker';
@@ -20,9 +21,10 @@ import {
   useMarkComplete,
   useStartWork,
 } from '@/hooks/useContracts';
+import { useReviewEligibility } from '@/hooks/useReviews';
 import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
-import { CHANGE_ORDER_STATUS, CONTRACT_STATUS } from '@/types';
+import { CHANGE_ORDER_STATUS, CONTRACT_STATUS, MILESTONE_STATUS } from '@/types';
 
 function ChangeOrderStatusBadge({ status }: { status: string }) {
   let variant: 'default' | 'secondary' | 'destructive' | 'outline' = 'outline';
@@ -254,6 +256,15 @@ export default function ContractDetailPage() {
         />
       ) : null}
 
+      {/* Completion Flow */}
+      {contract.status === CONTRACT_STATUS.ACTIVE && (
+        contract.milestones.length > 0 &&
+        contract.milestones.every((m) => m.status === MILESTONE_STATUS.APPROVED) ||
+        !!contract.completed_at
+      ) ? (
+        <CompletionFlow contract={contract} />
+      ) : null}
+
       {/* Action buttons based on status and role */}
       {contract.status === CONTRACT_STATUS.ACTIVE && (isCustomer || isProvider) ? (
         <Card>
@@ -397,6 +408,58 @@ export default function ContractDetailPage() {
           </div>
         </div>
       ) : null}
+
+      {/* Reviews section (for completed contracts) */}
+      {contract.status === CONTRACT_STATUS.COMPLETED && (isCustomer || isProvider) ? (
+        <ReviewSection contractId={contract.id} />
+      ) : null}
     </div>
+  );
+}
+
+function ReviewSection({ contractId }: { contractId: string }) {
+  const { data: eligibility, isLoading } = useReviewEligibility(contractId);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!eligibility) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="text-lg font-semibold">Reviews</h3>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {eligibility.eligible && !eligibility.already_reviewed ? (
+          <Link
+            href={`/contracts/${contractId}/review` as Route}
+            className="block"
+          >
+            <Button className="min-h-[44px] w-full gap-2">
+              <Star className="h-4 w-4" aria-hidden="true" />
+              Leave a Review
+            </Button>
+          </Link>
+        ) : eligibility.already_reviewed ? (
+          <div className="flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm text-green-700">
+            <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
+            You have already reviewed this contract.
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-lg border bg-muted p-3 text-sm text-muted-foreground">
+            <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
+            The review window for this contract has closed.
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

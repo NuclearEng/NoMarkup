@@ -306,6 +306,32 @@ func (s *ContractService) ApproveCompletion(ctx context.Context, contractID, cus
 	return updated, nil
 }
 
+// AutoReleaseCompletedContracts finds contracts where the provider marked complete
+// more than 7 days ago without customer action and auto-approves them.
+func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) error {
+	contracts, err := s.contractRepo.GetContractsAwaitingApproval(ctx, 7*24*time.Hour)
+	if err != nil {
+		return fmt.Errorf("auto release: %w", err)
+	}
+
+	for _, c := range contracts {
+		if err := s.contractRepo.UpdateJobCompleted(ctx, c.JobID); err != nil {
+			slog.Warn("auto release: failed to update job completed",
+				"contract_id", c.ID,
+				"job_id", c.JobID,
+				"error", err,
+			)
+			continue
+		}
+		slog.Info("auto released contract",
+			"contract_id", c.ID,
+			"job_id", c.JobID,
+		)
+	}
+
+	return nil
+}
+
 // CancelContract cancels a contract.
 func (s *ContractService) CancelContract(ctx context.Context, contractID, userID, reason string) (*domain.Contract, error) {
 	contract, err := s.contractRepo.GetContract(ctx, contractID)

@@ -548,6 +548,71 @@ export interface FeeCalculationInput {
   category_id?: string;
 }
 
+// Review types
+export const REVIEW_DIRECTION = {
+  CUSTOMER_TO_PROVIDER: 'customer_to_provider',
+  PROVIDER_TO_CUSTOMER: 'provider_to_customer',
+} as const;
+export type ReviewDirection = (typeof REVIEW_DIRECTION)[keyof typeof REVIEW_DIRECTION];
+
+export const FLAG_REASON = {
+  INAPPROPRIATE: 'inappropriate',
+  FAKE: 'fake',
+  HARASSMENT: 'harassment',
+  SPAM: 'spam',
+  IRRELEVANT: 'irrelevant',
+} as const;
+export type FlagReason = (typeof FLAG_REASON)[keyof typeof FLAG_REASON];
+
+export interface Review {
+  id: string;
+  contract_id: string;
+  reviewer_id: string;
+  reviewee_id: string;
+  direction: string;
+  overall_rating: number;
+  quality_rating?: number;
+  communication_rating?: number;
+  timeliness_rating?: number;
+  value_rating?: number;
+  comment: string;
+  photo_urls: string[];
+  response?: ReviewResponseData;
+  is_flagged: boolean;
+  created_at: string;
+}
+
+export interface ReviewResponseData {
+  id: string;
+  review_id: string;
+  responder_id: string;
+  comment: string;
+  created_at: string;
+}
+
+export interface ReviewEligibility {
+  eligible: boolean;
+  already_reviewed: boolean;
+  review_window_closes_at: string;
+}
+
+export interface ReviewsForUserResponse {
+  reviews: Review[];
+  pagination: PaginationResponse;
+  average_rating: number;
+  total_reviews: number;
+}
+
+export interface CreateReviewInput {
+  overall_rating: number;
+  quality_rating?: number;
+  communication_rating?: number;
+  timeliness_rating?: number;
+  value_rating?: number;
+  comment: string;
+  photo_urls?: string[];
+}
+
 // Chat types
 export const CHANNEL_TYPE = {
   INQUIRY: 'inquiry',

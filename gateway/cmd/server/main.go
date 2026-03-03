@@ -18,6 +18,7 @@ import (
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -112,11 +113,16 @@ func main() {
 	jobHandler := handler.NewJobHandler(jobClient)
 	bidHandler := handler.NewBidHandler(bidClient)
 	contractHandler := handler.NewContractHandler(contractClient)
+
+	// Review service lives on the same gRPC server as the job service.
+	reviewClient := reviewv1.NewReviewServiceClient(jobConn)
+	reviewHandler := handler.NewReviewHandler(reviewClient)
+
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
 	webhookHandler := handler.NewWebhookHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

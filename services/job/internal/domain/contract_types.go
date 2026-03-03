@@ -100,4 +100,6 @@ type ContractRepository interface {
 	UpdateJobStatus(ctx context.Context, jobID string, status string) error
 	CancelContract(ctx context.Context, contractID string, userID string, reason string) (*Contract, error)
 	ApproveCompletion(ctx context.Context, contractID string) (*Contract, error)
+	GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]Contract, error)
+	UpdateJobCompleted(ctx context.Context, jobID string) error
 }

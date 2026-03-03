@@ -22,6 +22,7 @@ func New(
 	paymentHandler *handler.PaymentHandler,
 	webhookHandler *handler.WebhookHandler,
 	chatHandler *handler.ChatHandler,
+	reviewHandler *handler.ReviewHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -70,6 +71,7 @@ func New(
 			r.Patch("/me", userHandler.UpdateMe)
 			r.Post("/me/roles", userHandler.EnableRole)
 			r.Get("/{id}", userHandler.GetUser)
+			r.Get("/{id}/reviews", reviewHandler.ListReviewsForUser)
 		})
 
 		r.Route("/providers", func(r chi.Router) {
@@ -121,6 +123,15 @@ func New(
 			r.Post("/{id}/complete", contractHandler.MarkComplete)
 			r.Post("/{id}/approve-completion", contractHandler.ApproveCompletion)
 			r.Post("/{id}/cancel", contractHandler.CancelContract)
+			r.Post("/{id}/reviews", reviewHandler.CreateReview)
+			r.Get("/{id}/reviews/eligibility", reviewHandler.GetReviewEligibility)
+		})
+
+		// Review routes
+		r.Route("/reviews", func(r chi.Router) {
+			r.Get("/{id}", reviewHandler.GetReview)
+			r.Post("/{id}/respond", reviewHandler.RespondToReview)
+			r.Post("/{id}/flag", reviewHandler.FlagReview)
 		})
 
 		// Milestone routes

@@ -501,6 +501,56 @@ func (r *PostgresRepository) UpdateJobStatus(ctx context.Context, jobID string, 
 	return nil
 }
 
+// GetContractsAwaitingApproval returns contracts where the provider marked complete
+// and the completed_at timestamp is older than the specified duration.
+// This supports the auto-release scheduled job for Slice 8.
+func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]domain.Contract, error) {
+	cutoff := time.Now().Add(-olderThan)
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, contract_number, job_id, customer_id, provider_id, bid_id,
+		       amount_cents, payment_timing, status,
+		       customer_accepted, provider_accepted,
+		       acceptance_deadline, accepted_at, started_at, completed_at,
+		       cancelled_at, created_at, updated_at
+		FROM contracts
+		WHERE status = 'completed' AND completed_at IS NOT NULL AND completed_at <= $1`, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("get contracts awaiting approval: %w", err)
+	}
+	defer rows.Close()
+
+	var contracts []domain.Contract
+	for rows.Next() {
+		var c domain.Contract
+		err := rows.Scan(
+			&c.ID, &c.ContractNumber, &c.JobID, &c.CustomerID, &c.ProviderID, &c.BidID,
+			&c.AmountCents, &c.PaymentTiming, &c.Status,
+			&c.CustomerAccepted, &c.ProviderAccepted,
+			&c.AcceptanceDeadline, &c.AcceptedAt, &c.StartedAt, &c.CompletedAt,
+			&c.CancelledAt, &c.CreatedAt, &c.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("get contracts awaiting approval scan: %w", err)
+		}
+		contracts = append(contracts, c)
+	}
+	return contracts, nil
+}
+
+// UpdateJobCompleted updates a job's status to completed and sets its completed_at timestamp.
+func (r *PostgresRepository) UpdateJobCompleted(ctx context.Context, jobID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE jobs SET status = 'completed', completed_at = now(), updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`, jobID)
+	if err != nil {
+		return fmt.Errorf("update job completed: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update job completed: %w", domain.ErrJobNotFound)
+	}
+	return nil
+}
+
 // getContractMilestones loads milestones for a contract.
 func (r *PostgresRepository) getContractMilestones(ctx context.Context, contractID string) ([]domain.Milestone, error) {
 	rows, err := r.pool.Query(ctx, `
