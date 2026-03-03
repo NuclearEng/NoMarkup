@@ -16,6 +16,7 @@ func New(
 	userHandler *handler.UserHandler,
 	providerHandler *handler.ProviderHandler,
 	categoriesHandler *handler.CategoriesHandler,
+	jobHandler *handler.JobHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -43,6 +44,13 @@ func New(
 		r.Get("/tree", categoriesHandler.Tree)
 	})
 
+	// Public job routes (no auth required for search and view)
+	r.Route("/api/v1/jobs", func(r chi.Router) {
+		r.Get("/", jobHandler.Search)
+		// GET /api/v1/jobs/{id} - public with optional auth for address visibility
+		r.Get("/{id}", optionalAuth(authMW, jobHandler.GetJob))
+	})
+
 	// Protected API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMW.Handler)
@@ -63,6 +71,17 @@ func New(
 			r.Put("/me/availability", providerHandler.SetAvailability)
 			r.Get("/{id}", providerHandler.GetProvider)
 		})
+
+		r.Route("/jobs", func(r chi.Router) {
+			r.Post("/", jobHandler.Create)
+			r.Get("/mine", jobHandler.ListMine)
+			r.Get("/drafts", jobHandler.ListDrafts)
+			r.Patch("/{id}", jobHandler.Update)
+			r.Delete("/{id}", jobHandler.Delete)
+			r.Post("/{id}/publish", jobHandler.Publish)
+			r.Post("/{id}/close", jobHandler.Close)
+			r.Post("/{id}/cancel", jobHandler.Cancel)
+		})
 	})
 
 	return r
@@ -72,4 +91,21 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// optionalAuth tries to extract auth claims if an Authorization header is present,
+// but allows the request to proceed even without authentication.
+func optionalAuth(authMW *middleware.AuthMiddleware, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			// Try to authenticate but don't fail if it doesn't work.
+			// Use the middleware's handler logic wrapped to not reject unauthenticated requests.
+			handler := authMW.Handler(http.HandlerFunc(next))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		// No auth header, proceed without claims.
+		next.ServeHTTP(w, r)
+	}
 }

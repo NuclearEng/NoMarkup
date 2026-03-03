@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -52,6 +53,16 @@ func main() {
 
 	userClient := userv1.NewUserServiceClient(userConn)
 
+	// Connect to Job Service via gRPC.
+	jobConn, err := grpc.NewClient(cfg.JobServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to job service", "addr", cfg.JobServiceAddr, "error", err)
+		os.Exit(1)
+	}
+	defer jobConn.Close()
+
+	jobClient := jobv1.NewJobServiceClient(jobConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -61,8 +72,9 @@ func main() {
 	userHandler := handler.NewUserHandler(userClient)
 	providerHandler := handler.NewProviderHandler(userClient)
 	categoriesHandler := handler.NewCategoriesHandler(userClient)
+	jobHandler := handler.NewJobHandler(jobClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

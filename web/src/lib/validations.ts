@@ -111,3 +111,69 @@ export const globalTermsSchema = z
   );
 
 export type GlobalTermsFormValues = z.infer<typeof globalTermsSchema>;
+
+// Job posting schema
+export const jobPostingSchema = z
+  .object({
+    categoryId: z.string().min(1, 'Category is required'),
+    title: jobTitleSchema,
+    description: jobDescriptionSchema,
+    scheduleType: z.union(
+      [z.literal('specific_date'), z.literal('date_range'), z.literal('flexible')],
+      { required_error: 'Schedule type is required' },
+    ),
+    scheduledDate: z.string().optional(),
+    isRecurring: z.boolean(),
+    recurrenceFrequency: z
+      .union([
+        z.literal('weekly'),
+        z.literal('biweekly'),
+        z.literal('monthly'),
+        z.literal('quarterly'),
+      ])
+      .optional(),
+    locationAddress: z.string().optional(),
+    locationLat: z.number().optional(),
+    locationLng: z.number().optional(),
+    startingBidDollars: z
+      .number()
+      .positive('Starting bid must be positive')
+      .optional()
+      .or(z.literal(0).transform(() => undefined)),
+    offerAcceptedDollars: z
+      .number()
+      .positive('Accepted offer must be positive')
+      .optional()
+      .or(z.literal(0).transform(() => undefined)),
+    auctionDurationHours: z
+      .number()
+      .int('Duration must be a whole number')
+      .min(24, 'Minimum auction duration is 24 hours')
+      .max(168, 'Maximum auction duration is 168 hours (7 days)'),
+  })
+  .refine(
+    (data) => {
+      if (data.scheduleType === 'specific_date') {
+        return !!data.scheduledDate;
+      }
+      return true;
+    },
+    {
+      message: 'Scheduled date is required for specific date jobs',
+      path: ['scheduledDate'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.isRecurring) {
+        return !!data.recurrenceFrequency;
+      }
+      return true;
+    },
+    {
+      message: 'Recurrence frequency is required for recurring jobs',
+      path: ['recurrenceFrequency'],
+    },
+  );
+
+export type JobPostingFormValues = z.infer<typeof jobPostingSchema>;

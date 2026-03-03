@@ -232,3 +232,106 @@ export interface GlobalTermsInput {
   cancellation_policy: string;
   warranty_terms: string;
 }
+
+// Job types
+export const RECURRENCE_FREQUENCY = {
+  WEEKLY: 'weekly',
+  BIWEEKLY: 'biweekly',
+  MONTHLY: 'monthly',
+  QUARTERLY: 'quarterly',
+} as const;
+export type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCY)[keyof typeof RECURRENCE_FREQUENCY];
+
+export interface MarketRange {
+  low_cents: number;
+  median_cents: number;
+  high_cents: number;
+  sample_size: number;
+}
+
+export interface Job {
+  id: string;
+  customer_id: string;
+  category_id: string;
+  category_name: string;
+  category_slug: string;
+  title: string;
+  description: string;
+  status: JobStatus;
+  schedule_type: ScheduleType;
+  scheduled_date: string | null;
+  is_recurring: boolean;
+  recurrence_frequency: RecurrenceFrequency | null;
+  location_address: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
+  starting_bid_cents: number | null;
+  offer_accepted_cents: number | null;
+  auction_duration_hours: number;
+  auction_ends_at: string | null;
+  bid_count: number;
+  lowest_bid_cents: number | null;
+  market_range: MarketRange | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobDetail extends Job {
+  customer_display_name: string;
+  customer_avatar_url: string | null;
+  customer_member_since: string;
+  customer_jobs_posted: number;
+}
+
+export interface CreateJobInput {
+  category_id: string;
+  title: string;
+  description: string;
+  schedule_type: ScheduleType;
+  scheduled_date?: string;
+  is_recurring: boolean;
+  recurrence_frequency?: RecurrenceFrequency;
+  location_address?: string;
+  location_lat?: number;
+  location_lng?: number;
+  starting_bid_cents?: number;
+  offer_accepted_cents?: number;
+  auction_duration_hours: number;
+}
+
+export interface UpdateJobInput {
+  title?: string;
+  description?: string;
+  schedule_type?: ScheduleType;
+  scheduled_date?: string;
+  is_recurring?: boolean;
+  recurrence_frequency?: RecurrenceFrequency;
+  location_address?: string;
+  location_lat?: number;
+  location_lng?: number;
+  starting_bid_cents?: number;
+  offer_accepted_cents?: number;
+  auction_duration_hours?: number;
+}
+
+export interface SearchJobsParams {
+  category_id?: string;
+  query?: string;
+  schedule_type?: ScheduleType;
+  is_recurring?: boolean;
+  min_price_cents?: number;
+  max_price_cents?: number;
+  location_lat?: number;
+  location_lng?: number;
+  radius_km?: number;
+  status?: JobStatus;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+  page?: number;
+  page_size?: number;
+}
+
+export interface JobsResponse {
+  jobs: Job[];
+  pagination: PaginationResponse;
+}
