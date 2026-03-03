@@ -763,3 +763,476 @@ fn encode_ac(r: f64, g: f64, b: f64, max_ac: f64) -> u32 {
     let quant_b = ((sign_pow(b / max_ac, 0.5) * 9.0 + 9.5).floor() as u32).clamp(0, 18);
     quant_r * 19 * 19 + quant_g * 19 + quant_b
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{
+        ImageFormat, ImagingError, ProcessingOptions, ResizeMode, UploadContext,
+        ALLOWED_MIME_TYPES, DEFAULT_QUALITY, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
+    };
+    use image::{DynamicImage, RgbaImage};
+
+    /// Helper: create a solid-color test image of the given dimensions.
+    fn make_test_image(w: u32, h: u32) -> DynamicImage {
+        let img = RgbaImage::from_fn(w, h, |_x, _y| image::Rgba([128, 64, 192, 255]));
+        DynamicImage::ImageRgba8(img)
+    }
+
+    // ------------------------------------------------------------------
+    // ImageFormat
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn image_format_extension() {
+        assert_eq!(ImageFormat::Jpeg.extension(), "jpg");
+        assert_eq!(ImageFormat::Png.extension(), "png");
+        assert_eq!(ImageFormat::WebP.extension(), "webp");
+    }
+
+    #[test]
+    fn image_format_mime_type() {
+        assert_eq!(ImageFormat::Jpeg.mime_type(), "image/jpeg");
+        assert_eq!(ImageFormat::Png.mime_type(), "image/png");
+        assert_eq!(ImageFormat::WebP.mime_type(), "image/webp");
+    }
+
+    #[test]
+    fn image_format_from_mime() {
+        assert_eq!(ImageFormat::from_mime("image/jpeg"), Some(ImageFormat::Jpeg));
+        assert_eq!(ImageFormat::from_mime("image/jpg"), Some(ImageFormat::Jpeg));
+        assert_eq!(ImageFormat::from_mime("image/png"), Some(ImageFormat::Png));
+        assert_eq!(ImageFormat::from_mime("image/webp"), Some(ImageFormat::WebP));
+        assert_eq!(ImageFormat::from_mime("image/gif"), None);
+        assert_eq!(ImageFormat::from_mime("text/html"), None);
+    }
+
+    #[test]
+    fn image_format_to_image_format() {
+        assert_eq!(
+            ImageFormat::Jpeg.to_image_format(),
+            image::ImageFormat::Jpeg
+        );
+        assert_eq!(ImageFormat::Png.to_image_format(), image::ImageFormat::Png);
+        assert_eq!(
+            ImageFormat::WebP.to_image_format(),
+            image::ImageFormat::WebP
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // ResizeMode + ProcessingOptions
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn processing_options_default() {
+        let opts = ProcessingOptions::default();
+        assert_eq!(opts.max_width, 1600);
+        assert_eq!(opts.max_height, 1600);
+        assert_eq!(opts.resize_mode, ResizeMode::Fit);
+        assert_eq!(opts.quality, 85);
+        assert_eq!(opts.format, ImageFormat::Jpeg);
+        assert!(opts.strip_exif);
+        assert!(opts.auto_orient);
+        assert!(!opts.generate_blur_hash);
+    }
+
+    // ------------------------------------------------------------------
+    // UploadContext
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn upload_context_from_str() {
+        assert_eq!(UploadContext::from_str_context("avatar"), Some(UploadContext::Avatar));
+        assert_eq!(UploadContext::from_str_context("portfolio"), Some(UploadContext::Portfolio));
+        assert_eq!(UploadContext::from_str_context("job_photo"), Some(UploadContext::JobPhoto));
+        assert_eq!(UploadContext::from_str_context("document"), Some(UploadContext::Document));
+        assert_eq!(
+            UploadContext::from_str_context("review_photo"),
+            Some(UploadContext::ReviewPhoto)
+        );
+        assert_eq!(UploadContext::from_str_context("unknown"), None);
+    }
+
+    #[test]
+    fn upload_context_path_prefix() {
+        assert_eq!(UploadContext::Avatar.path_prefix(), "avatars");
+        assert_eq!(UploadContext::Portfolio.path_prefix(), "portfolio");
+        assert_eq!(UploadContext::JobPhoto.path_prefix(), "job-photos");
+        assert_eq!(UploadContext::Document.path_prefix(), "documents");
+        assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
+    }
+
+    // ------------------------------------------------------------------
+    // Constants
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn allowed_mime_types_contains_core_formats() {
+        assert!(ALLOWED_MIME_TYPES.contains(&"image/jpeg"));
+        assert!(ALLOWED_MIME_TYPES.contains(&"image/png"));
+        assert!(ALLOWED_MIME_TYPES.contains(&"image/webp"));
+        assert!(!ALLOWED_MIME_TYPES.contains(&"image/gif"));
+    }
+
+    #[test]
+    fn max_file_size_is_10mb() {
+        assert_eq!(MAX_FILE_SIZE_BYTES, 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn default_quality_is_85() {
+        assert_eq!(DEFAULT_QUALITY, 85);
+    }
+
+    #[test]
+    fn presign_expiry_is_15_minutes() {
+        assert_eq!(PRESIGN_EXPIRY_SECS, 900);
+    }
+
+    // ------------------------------------------------------------------
+    // resize_image
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn resize_fit_downscales() {
+        let img = make_test_image(800, 600);
+        let resized = resize_image(&img, 400, 300, ResizeMode::Fit);
+        let (w, h) = resized.dimensions();
+        assert!(w <= 400);
+        assert!(h <= 300);
+    }
+
+    #[test]
+    fn resize_fit_does_not_upscale() {
+        let img = make_test_image(200, 150);
+        let resized = resize_image(&img, 400, 300, ResizeMode::Fit);
+        let (w, h) = resized.dimensions();
+        // Should return original dimensions since image is smaller than target.
+        assert_eq!(w, 200);
+        assert_eq!(h, 150);
+    }
+
+    #[test]
+    fn resize_exact_stretches() {
+        let img = make_test_image(800, 600);
+        let resized = resize_image(&img, 100, 200, ResizeMode::Exact);
+        let (w, h) = resized.dimensions();
+        assert_eq!(w, 100);
+        assert_eq!(h, 200);
+    }
+
+    #[test]
+    fn resize_fill_center_crops() {
+        let img = make_test_image(800, 600);
+        let resized = resize_image(&img, 200, 200, ResizeMode::Fill);
+        let (w, h) = resized.dimensions();
+        assert_eq!(w, 200);
+        assert_eq!(h, 200);
+    }
+
+    #[test]
+    fn resize_zero_width_returns_clone() {
+        let img = make_test_image(100, 100);
+        let resized = resize_image(&img, 0, 100, ResizeMode::Fit);
+        assert_eq!(resized.dimensions(), (100, 100));
+    }
+
+    #[test]
+    fn resize_zero_height_returns_clone() {
+        let img = make_test_image(100, 100);
+        let resized = resize_image(&img, 100, 0, ResizeMode::Fit);
+        assert_eq!(resized.dimensions(), (100, 100));
+    }
+
+    // ------------------------------------------------------------------
+    // crop_center_square
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn crop_center_square_landscape() {
+        let img = make_test_image(800, 400);
+        let cropped = crop_center_square(&img);
+        let (w, h) = cropped.dimensions();
+        assert_eq!(w, 400);
+        assert_eq!(h, 400);
+    }
+
+    #[test]
+    fn crop_center_square_portrait() {
+        let img = make_test_image(400, 800);
+        let cropped = crop_center_square(&img);
+        let (w, h) = cropped.dimensions();
+        assert_eq!(w, 400);
+        assert_eq!(h, 400);
+    }
+
+    #[test]
+    fn crop_center_square_already_square() {
+        let img = make_test_image(500, 500);
+        let cropped = crop_center_square(&img);
+        let (w, h) = cropped.dimensions();
+        assert_eq!(w, 500);
+        assert_eq!(h, 500);
+    }
+
+    // ------------------------------------------------------------------
+    // encode_image / decode_image round-trip
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn encode_jpeg_produces_bytes() {
+        let img = make_test_image(100, 100);
+        let encoded = encode_image(&img, ImageFormat::Jpeg, 85).expect("encode JPEG");
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn encode_png_produces_bytes() {
+        let img = make_test_image(100, 100);
+        let encoded = encode_image(&img, ImageFormat::Png, 85).expect("encode PNG");
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn encode_webp_produces_bytes() {
+        let img = make_test_image(100, 100);
+        let encoded = encode_image(&img, ImageFormat::WebP, 85).expect("encode WebP");
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn encode_decode_roundtrip_jpeg() {
+        let img = make_test_image(50, 50);
+        let encoded = encode_image(&img, ImageFormat::Jpeg, 90).expect("encode");
+        let decoded = decode_image(&encoded).expect("decode");
+        let (w, h) = decoded.dimensions();
+        assert_eq!(w, 50);
+        assert_eq!(h, 50);
+    }
+
+    #[test]
+    fn encode_decode_roundtrip_png() {
+        let img = make_test_image(50, 50);
+        let encoded = encode_image(&img, ImageFormat::Png, 90).expect("encode");
+        let decoded = decode_image(&encoded).expect("decode");
+        let (w, h) = decoded.dimensions();
+        assert_eq!(w, 50);
+        assert_eq!(h, 50);
+    }
+
+    #[test]
+    fn decode_invalid_bytes_returns_error() {
+        let result = decode_image(&[0, 1, 2, 3]);
+        assert!(result.is_err());
+    }
+
+    // ------------------------------------------------------------------
+    // srgb_to_linear / linear_to_srgb
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn srgb_linear_black() {
+        assert!((srgb_to_linear(0) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn srgb_linear_white() {
+        assert!((srgb_to_linear(255) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn linear_srgb_black() {
+        assert_eq!(linear_to_srgb(0.0), 0);
+    }
+
+    #[test]
+    fn linear_srgb_white() {
+        assert_eq!(linear_to_srgb(1.0), 255);
+    }
+
+    #[test]
+    fn srgb_linear_roundtrip_midtones() {
+        // Not a perfect roundtrip due to quantization but should be close.
+        for v in [50u8, 100, 128, 200] {
+            let linear = srgb_to_linear(v);
+            let back = linear_to_srgb(linear);
+            assert!(
+                (back as i32 - i32::from(v)).unsigned_abs() <= 1,
+                "roundtrip failed for {v}: got {back}"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // sign_pow
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn sign_pow_positive() {
+        let result = sign_pow(4.0, 0.5);
+        assert!((result - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sign_pow_negative() {
+        let result = sign_pow(-4.0, 0.5);
+        assert!((result - (-2.0)).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sign_pow_zero() {
+        let result = sign_pow(0.0, 0.5);
+        assert!((result).abs() < f64::EPSILON);
+    }
+
+    // ------------------------------------------------------------------
+    // base83_encode
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn base83_encode_zero() {
+        let encoded = base83_encode(0, 1);
+        assert_eq!(encoded, "0");
+    }
+
+    #[test]
+    fn base83_encode_length_respected() {
+        let encoded = base83_encode(42, 4);
+        assert_eq!(encoded.len(), 4);
+    }
+
+    #[test]
+    fn base83_encode_uses_valid_chars() {
+        let encoded = base83_encode(1234, 3);
+        for c in encoded.chars() {
+            assert!(
+                BASE83_CHARS.contains(&(c as u8)),
+                "invalid base83 char: {c}"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // compute_blur_hash
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn blur_hash_produces_nonempty_string() {
+        let img = make_test_image(100, 100);
+        let hash = compute_blur_hash(&img);
+        assert!(!hash.is_empty());
+    }
+
+    #[test]
+    fn blur_hash_length_for_4x3_components() {
+        // BlurHash format: 1 (size flag) + 1 (max AC) + 4 (DC) + (4*3-1)*2 (AC) = 28
+        let img = make_test_image(64, 64);
+        let hash = compute_blur_hash(&img);
+        assert_eq!(hash.len(), 28, "4x3 BlurHash should be 28 chars, got {}", hash.len());
+    }
+
+    #[test]
+    fn blur_hash_deterministic() {
+        let img = make_test_image(50, 50);
+        let hash1 = compute_blur_hash(&img);
+        let hash2 = compute_blur_hash(&img);
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn blur_hash_uses_valid_base83_chars() {
+        let img = make_test_image(80, 60);
+        let hash = compute_blur_hash(&img);
+        for c in hash.chars() {
+            assert!(
+                BASE83_CHARS.contains(&(c as u8)),
+                "invalid base83 char in blur hash: {c}"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // ImagingError display messages
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn imaging_error_display() {
+        let err = ImagingError::FileTooLarge {
+            size: 20_000_000,
+            limit: 10_485_760,
+        };
+        assert!(err.to_string().contains("too large"));
+
+        let err = ImagingError::UnsupportedMimeType("image/gif".into());
+        assert!(err.to_string().contains("image/gif"));
+    }
+
+    // ------------------------------------------------------------------
+    // Pipeline variant_key helper
+    // ------------------------------------------------------------------
+    // variant_key is a private method on ImagePipeline, but we can test the
+    // public models that feed into it.
+
+    #[test]
+    fn image_variant_construction() {
+        let v = ImageVariant {
+            url: "http://example.com/img.jpg".into(),
+            width: 800,
+            height: 600,
+            format: ImageFormat::Jpeg,
+            size_bytes: 50_000,
+            variant_name: "large".into(),
+        };
+        assert_eq!(v.width, 800);
+        assert_eq!(v.height, 600);
+        assert_eq!(v.format, ImageFormat::Jpeg);
+    }
+
+    // ------------------------------------------------------------------
+    // proptest
+    // ------------------------------------------------------------------
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn srgb_to_linear_in_0_to_1(v in 0u8..=255) {
+                let linear = srgb_to_linear(v);
+                prop_assert!(linear >= 0.0);
+                prop_assert!(linear <= 1.0);
+            }
+
+            #[test]
+            fn linear_to_srgb_in_0_to_255(v in 0.0..=1.0_f64) {
+                let srgb = linear_to_srgb(v);
+                prop_assert!(srgb <= 255);
+            }
+
+            #[test]
+            fn base83_encode_never_panics(value in 0u32..100_000, length in 1usize..=6) {
+                let encoded = base83_encode(value, length);
+                prop_assert_eq!(encoded.len(), length);
+            }
+
+            #[test]
+            fn resize_image_never_panics(
+                w in 1u32..=200,
+                h in 1u32..=200,
+                tw in 0u32..=500,
+                th in 0u32..=500,
+                mode in 0u8..=2,
+            ) {
+                let img = make_test_image(w, h);
+                let resize_mode = match mode {
+                    0 => ResizeMode::Fit,
+                    1 => ResizeMode::Fill,
+                    _ => ResizeMode::Exact,
+                };
+                let _ = resize_image(&img, tw, th, resize_mode);
+            }
+        }
+    }
+}

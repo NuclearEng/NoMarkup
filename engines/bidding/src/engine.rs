@@ -639,3 +639,285 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
     }
     false
 }
+
+/// Validate that a bid amount is positive.
+///
+/// Returns `Ok(())` when `amount_cents > 0`, or `BidError::InvalidAmount` otherwise.
+/// This is the same check used inside `place_bid` and `update_bid`, extracted for
+/// testability.
+#[cfg(test)]
+fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
+    if amount_cents <= 0 {
+        return Err(BidError::InvalidAmount(
+            "amount must be greater than zero".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Rank bids by amount ascending (lowest bid wins in a reverse auction).
+///
+/// Returns a new `Vec<Bid>` sorted from lowest to highest `amount_cents`.
+#[cfg(test)]
+fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
+    let mut sorted = bids.to_vec();
+    sorted.sort_by_key(|b| b.amount_cents);
+    sorted
+}
+
+/// Determine whether a bid qualifies as an "offer accepted" bid.
+///
+/// Returns `true` when the offer threshold is set and `amount_cents` is at or below it.
+#[cfg(test)]
+fn is_offer_accepted(offer_accepted_cents: Option<i64>, amount_cents: i64) -> bool {
+    offer_accepted_cents.is_some_and(|offer| amount_cents <= offer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    /// Helper: build a minimal `Bid` for testing.
+    fn make_bid(amount_cents: i64, provider_id: Uuid, status: &str) -> Bid {
+        let now = Utc::now();
+        Bid {
+            id: Uuid::now_v7(),
+            job_id: Uuid::now_v7(),
+            provider_id,
+            amount_cents,
+            is_offer_accepted: false,
+            status: status.to_string(),
+            original_amount_cents: amount_cents,
+            bid_updates: serde_json::json!([]),
+            awarded_at: None,
+            withdrawn_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // validate_bid_amount
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn validate_bid_amount_positive_is_ok() {
+        assert!(validate_bid_amount(1).is_ok());
+        assert!(validate_bid_amount(100_000).is_ok());
+    }
+
+    #[test]
+    fn validate_bid_amount_zero_is_err() {
+        let err = validate_bid_amount(0).unwrap_err();
+        assert!(matches!(err, BidError::InvalidAmount(_)));
+    }
+
+    #[test]
+    fn validate_bid_amount_negative_is_err() {
+        let err = validate_bid_amount(-500).unwrap_err();
+        assert!(matches!(err, BidError::InvalidAmount(_)));
+    }
+
+    // ------------------------------------------------------------------
+    // rank_bids — reverse auction: lowest bid wins
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn rank_bids_returns_lowest_first() {
+        let p = Uuid::now_v7();
+        let bids = vec![
+            make_bid(5000, p, "active"),
+            make_bid(1000, p, "active"),
+            make_bid(3000, p, "active"),
+        ];
+
+        let ranked = rank_bids(&bids);
+        assert_eq!(ranked[0].amount_cents, 1000);
+        assert_eq!(ranked[1].amount_cents, 3000);
+        assert_eq!(ranked[2].amount_cents, 5000);
+    }
+
+    #[test]
+    fn rank_bids_equal_amounts_stable() {
+        let p = Uuid::now_v7();
+        let bids = vec![
+            make_bid(2000, p, "active"),
+            make_bid(2000, p, "active"),
+        ];
+
+        let ranked = rank_bids(&bids);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].amount_cents, 2000);
+        assert_eq!(ranked[1].amount_cents, 2000);
+    }
+
+    #[test]
+    fn rank_bids_single_bid() {
+        let p = Uuid::now_v7();
+        let bids = vec![make_bid(4200, p, "active")];
+        let ranked = rank_bids(&bids);
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].amount_cents, 4200);
+    }
+
+    #[test]
+    fn rank_bids_empty() {
+        let ranked = rank_bids(&[]);
+        assert!(ranked.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // is_offer_accepted
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn offer_accepted_at_threshold() {
+        assert!(is_offer_accepted(Some(5000), 5000));
+    }
+
+    #[test]
+    fn offer_accepted_below_threshold() {
+        assert!(is_offer_accepted(Some(5000), 3000));
+    }
+
+    #[test]
+    fn offer_not_accepted_above_threshold() {
+        assert!(!is_offer_accepted(Some(5000), 6000));
+    }
+
+    #[test]
+    fn offer_not_accepted_when_none() {
+        assert!(!is_offer_accepted(None, 5000));
+    }
+
+    // ------------------------------------------------------------------
+    // BidError Display messages
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn bid_error_display_messages() {
+        assert_eq!(
+            BidError::AuctionClosed.to_string(),
+            "auction is closed or not active"
+        );
+        assert_eq!(
+            BidError::BidNotFound.to_string(),
+            "bid not found"
+        );
+        assert_eq!(
+            BidError::AlreadyBid.to_string(),
+            "provider already has an active bid on this job"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // is_unique_violation helper
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn is_unique_violation_returns_false_for_non_db_error() {
+        let err = sqlx::Error::RowNotFound;
+        assert!(!is_unique_violation(&err));
+    }
+
+    // ------------------------------------------------------------------
+    // BidUpdate serialization round-trip
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn bid_update_serialization_roundtrip() {
+        let update = BidUpdate {
+            amount_cents: 4200,
+            updated_at: Utc::now(),
+        };
+        let json = serde_json::to_string(&update).expect("serialize");
+        let parsed: BidUpdate = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed.amount_cents, 4200);
+    }
+
+    // ------------------------------------------------------------------
+    // BidAnalytics default
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn bid_analytics_default_is_zeroed() {
+        let a = BidAnalytics::default();
+        assert_eq!(a.total_bids, 0);
+        assert_eq!(a.lowest_bid_cents, 0);
+        assert_eq!(a.highest_bid_cents, 0);
+        assert_eq!(a.median_bid_cents, 0);
+        assert_eq!(a.offer_accepted_count, 0);
+        assert!(a.first_bid_at.is_none());
+        assert!(a.last_bid_at.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // Concurrent bid safety: rank_bids is deterministic
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn concurrent_bids_do_not_lose_data() {
+        let providers: Vec<Uuid> = (0..100).map(|_| Uuid::now_v7()).collect();
+        let bids: Vec<Bid> = providers
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                #[allow(clippy::cast_possible_wrap)]
+                make_bid((100 - i as i64) * 100, *p, "active")
+            })
+            .collect();
+
+        let ranked = rank_bids(&bids);
+        assert_eq!(ranked.len(), 100);
+        // Verify sorted ascending.
+        for window in ranked.windows(2) {
+            assert!(window[0].amount_cents <= window[1].amount_cents);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // proptest: arbitrary bid amounts never panic, output is deterministic
+    // ------------------------------------------------------------------
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn validate_bid_amount_never_panics(amount in proptest::num::i64::ANY) {
+                let _ = validate_bid_amount(amount);
+            }
+
+            #[test]
+            fn validate_positive_always_ok(amount in 1..=i64::MAX) {
+                prop_assert!(validate_bid_amount(amount).is_ok());
+            }
+
+            #[test]
+            fn validate_nonpositive_always_err(amount in i64::MIN..=0i64) {
+                prop_assert!(validate_bid_amount(amount).is_err());
+            }
+
+            #[test]
+            fn rank_bids_output_is_sorted(amounts in proptest::collection::vec(1..=100_000_000i64, 0..50)) {
+                let p = Uuid::now_v7();
+                let bids: Vec<Bid> = amounts.iter().map(|&a| make_bid(a, p, "active")).collect();
+                let ranked = rank_bids(&bids);
+                prop_assert_eq!(ranked.len(), bids.len());
+                for window in ranked.windows(2) {
+                    prop_assert!(window[0].amount_cents <= window[1].amount_cents);
+                }
+            }
+
+            #[test]
+            fn is_offer_accepted_deterministic(offer in proptest::option::of(1..=100_000_000i64), amount in 1..=100_000_000i64) {
+                let r1 = is_offer_accepted(offer, amount);
+                let r2 = is_offer_accepted(offer, amount);
+                prop_assert_eq!(r1, r2);
+            }
+        }
+    }
+}

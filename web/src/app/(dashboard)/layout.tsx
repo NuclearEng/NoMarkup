@@ -5,6 +5,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { Header } from '@/components/layout/Header';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
@@ -26,7 +27,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen flex-col">
+      <Header />
+      <div className="flex flex-1">
       <aside className="hidden w-64 border-r lg:block">
         <nav className="space-y-1 p-4" aria-label="Dashboard navigation">
           {NAV_ITEMS.map((item) => (
@@ -141,6 +144,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
       </aside>
       <main className="flex-1 p-6">{children}</main>
+      </div>
     </div>
   );
 }

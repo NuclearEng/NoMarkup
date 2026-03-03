@@ -23,6 +23,7 @@ tonic-build.workspace = true
 
 [dev-dependencies]
 criterion = "0.5"
+proptest = "1"
 
 [[bench]]
 name = "fraud_bench"

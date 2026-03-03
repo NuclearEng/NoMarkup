@@ -915,3 +915,322 @@ const RETURNING_COLS: &str = "\
 fn i32_from_i64(v: i64) -> i32 {
     v.min(i64::from(i32::MAX)) as i32
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{CheckResult, FraudDecision, RiskLevel, SignalType};
+
+    // ------------------------------------------------------------------
+    // is_disposable_email
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn detects_disposable_domains() {
+        assert!(is_disposable_email("user@mailinator.com"));
+        assert!(is_disposable_email("user@yopmail.com"));
+        assert!(is_disposable_email("user@guerrillamail.com"));
+        assert!(is_disposable_email("foo@tempmail.com"));
+        assert!(is_disposable_email("bar@10minutemail.com"));
+    }
+
+    #[test]
+    fn allows_legitimate_domains() {
+        assert!(!is_disposable_email("user@gmail.com"));
+        assert!(!is_disposable_email("user@company.com"));
+        assert!(!is_disposable_email("user@outlook.com"));
+        assert!(!is_disposable_email("user@yahoo.com"));
+    }
+
+    #[test]
+    fn disposable_email_case_insensitive() {
+        assert!(is_disposable_email("user@Mailinator.COM"));
+        assert!(is_disposable_email("USER@YOPMAIL.COM"));
+    }
+
+    #[test]
+    fn disposable_email_no_at_sign() {
+        // Invalid email format, should not crash.
+        assert!(!is_disposable_email("no-at-sign-here"));
+    }
+
+    #[test]
+    fn disposable_email_empty() {
+        assert!(!is_disposable_email(""));
+    }
+
+    #[test]
+    fn disposable_email_multiple_at_signs() {
+        // rsplit('@').next() gets the last part after the last '@'.
+        assert!(is_disposable_email("user@something@mailinator.com"));
+    }
+
+    // ------------------------------------------------------------------
+    // RiskLevel::from_score
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn risk_level_low() {
+        assert_eq!(RiskLevel::from_score(0.0), RiskLevel::Low);
+        assert_eq!(RiskLevel::from_score(0.1), RiskLevel::Low);
+        assert_eq!(RiskLevel::from_score(0.3), RiskLevel::Low);
+    }
+
+    #[test]
+    fn risk_level_medium() {
+        assert_eq!(RiskLevel::from_score(0.31), RiskLevel::Medium);
+        assert_eq!(RiskLevel::from_score(0.5), RiskLevel::Medium);
+        assert_eq!(RiskLevel::from_score(0.6), RiskLevel::Medium);
+    }
+
+    #[test]
+    fn risk_level_high() {
+        assert_eq!(RiskLevel::from_score(0.61), RiskLevel::High);
+        assert_eq!(RiskLevel::from_score(0.8), RiskLevel::High);
+    }
+
+    #[test]
+    fn risk_level_critical() {
+        assert_eq!(RiskLevel::from_score(0.81), RiskLevel::Critical);
+        assert_eq!(RiskLevel::from_score(1.0), RiskLevel::Critical);
+    }
+
+    // ------------------------------------------------------------------
+    // RiskLevel DB severity mapping
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn risk_level_db_severity() {
+        assert_eq!(RiskLevel::Low.as_db_severity(), "low");
+        assert_eq!(RiskLevel::Medium.as_db_severity(), "medium");
+        assert_eq!(RiskLevel::High.as_db_severity(), "high");
+        assert_eq!(RiskLevel::Critical.as_db_severity(), "high");
+    }
+
+    #[test]
+    fn risk_level_from_db_severity() {
+        assert_eq!(RiskLevel::from_db_severity("low"), RiskLevel::Low);
+        assert_eq!(RiskLevel::from_db_severity("medium"), RiskLevel::Medium);
+        assert_eq!(RiskLevel::from_db_severity("high"), RiskLevel::High);
+        assert_eq!(RiskLevel::from_db_severity("unknown"), RiskLevel::Low);
+    }
+
+    // ------------------------------------------------------------------
+    // RiskLevel proto i32 conversion
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn risk_level_proto_values() {
+        assert_eq!(RiskLevel::Low.to_proto_i32(), 1);
+        assert_eq!(RiskLevel::Medium.to_proto_i32(), 2);
+        assert_eq!(RiskLevel::High.to_proto_i32(), 3);
+        assert_eq!(RiskLevel::Critical.to_proto_i32(), 4);
+    }
+
+    // ------------------------------------------------------------------
+    // FraudDecision::from_risk_level
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn fraud_decision_from_risk_levels() {
+        assert_eq!(FraudDecision::from_risk_level(RiskLevel::Low), FraudDecision::Allow);
+        assert_eq!(
+            FraudDecision::from_risk_level(RiskLevel::Medium),
+            FraudDecision::AllowWithReview
+        );
+        assert_eq!(FraudDecision::from_risk_level(RiskLevel::High), FraudDecision::Challenge);
+        assert_eq!(FraudDecision::from_risk_level(RiskLevel::Critical), FraudDecision::Block);
+    }
+
+    #[test]
+    fn fraud_decision_proto_values() {
+        assert_eq!(FraudDecision::Allow.to_proto_i32(), 1);
+        assert_eq!(FraudDecision::AllowWithReview.to_proto_i32(), 2);
+        assert_eq!(FraudDecision::Challenge.to_proto_i32(), 3);
+        assert_eq!(FraudDecision::Block.to_proto_i32(), 4);
+    }
+
+    // ------------------------------------------------------------------
+    // CheckResult::from_score
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn check_result_from_zero_score_allows() {
+        let result = CheckResult::from_score(0.0);
+        assert_eq!(result.decision, FraudDecision::Allow);
+        assert_eq!(result.risk_level, RiskLevel::Low);
+        assert!((result.risk_score).abs() < f64::EPSILON);
+        assert!(result.reasons.is_empty());
+        assert!(!result.shill_bid_detected);
+    }
+
+    #[test]
+    fn check_result_from_high_score_blocks() {
+        let result = CheckResult::from_score(0.95);
+        assert_eq!(result.decision, FraudDecision::Block);
+        assert_eq!(result.risk_level, RiskLevel::Critical);
+    }
+
+    #[test]
+    fn check_result_medium_score() {
+        let result = CheckResult::from_score(0.5);
+        assert_eq!(result.decision, FraudDecision::AllowWithReview);
+        assert_eq!(result.risk_level, RiskLevel::Medium);
+    }
+
+    // ------------------------------------------------------------------
+    // SignalType conversions
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn signal_type_from_proto_i32_valid() {
+        assert_eq!(SignalType::from_proto_i32(1), Some(SignalType::Velocity));
+        assert_eq!(SignalType::from_proto_i32(4), Some(SignalType::ShillBid));
+        assert_eq!(SignalType::from_proto_i32(9), Some(SignalType::BotBehavior));
+    }
+
+    #[test]
+    fn signal_type_from_proto_i32_invalid() {
+        assert_eq!(SignalType::from_proto_i32(0), None);
+        assert_eq!(SignalType::from_proto_i32(10), None);
+        assert_eq!(SignalType::from_proto_i32(-1), None);
+    }
+
+    #[test]
+    fn signal_type_proto_roundtrip() {
+        for i in 1..=9 {
+            let st = SignalType::from_proto_i32(i).unwrap();
+            assert_eq!(st.to_proto_i32(), i);
+        }
+    }
+
+    #[test]
+    fn signal_type_db_str_mapping() {
+        assert_eq!(SignalType::ShillBid.as_db_str(), "bid_manipulation");
+        assert_eq!(SignalType::PaymentFraud.as_db_str(), "transaction_fraud");
+        assert_eq!(SignalType::FakeReview.as_db_str(), "review_manipulation");
+        assert_eq!(SignalType::AccountTakeover.as_db_str(), "account_fraud");
+        assert_eq!(SignalType::Velocity.as_db_str(), "bad_actor_behavior");
+    }
+
+    #[test]
+    fn signal_type_subtype_str() {
+        assert_eq!(SignalType::ShillBid.as_subtype_str(), "shill_bid");
+        assert_eq!(SignalType::Velocity.as_subtype_str(), "velocity");
+        assert_eq!(SignalType::MultiAccount.as_subtype_str(), "multi_account");
+    }
+
+    #[test]
+    fn signal_type_from_db_str_account_fraud_subtypes() {
+        assert_eq!(
+            SignalType::from_db_str("account_fraud", "geo_mismatch"),
+            SignalType::GeoMismatch
+        );
+        assert_eq!(
+            SignalType::from_db_str("account_fraud", "device_fingerprint"),
+            SignalType::DeviceFingerprint
+        );
+        assert_eq!(
+            SignalType::from_db_str("account_fraud", "multi_account"),
+            SignalType::MultiAccount
+        );
+        assert_eq!(
+            SignalType::from_db_str("account_fraud", "unknown"),
+            SignalType::AccountTakeover
+        );
+    }
+
+    #[test]
+    fn signal_type_from_db_str_bad_actor_subtypes() {
+        assert_eq!(
+            SignalType::from_db_str("bad_actor_behavior", "velocity"),
+            SignalType::Velocity
+        );
+        assert_eq!(
+            SignalType::from_db_str("bad_actor_behavior", "bot_behavior"),
+            SignalType::BotBehavior
+        );
+        assert_eq!(
+            SignalType::from_db_str("bad_actor_behavior", "unknown"),
+            SignalType::Velocity
+        );
+    }
+
+    #[test]
+    fn signal_type_from_db_str_unknown_type() {
+        assert_eq!(
+            SignalType::from_db_str("completely_unknown", "whatever"),
+            SignalType::Velocity
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // FraudError display messages
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn fraud_error_display() {
+        let err = FraudError::InvalidArgument("bad input".into());
+        assert_eq!(err.to_string(), "invalid argument: bad input");
+    }
+
+    // ------------------------------------------------------------------
+    // Edge cases: empty fingerprint, all zeros, maximum values
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn check_result_score_clamped_at_boundaries() {
+        let zero = CheckResult::from_score(0.0);
+        assert!((zero.risk_score).abs() < f64::EPSILON);
+
+        let one = CheckResult::from_score(1.0);
+        assert!((one.risk_score - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn i32_from_i64_overflow_clamped() {
+        assert_eq!(i32_from_i64(i64::MAX), i32::MAX);
+        assert_eq!(i32_from_i64(0), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // proptest
+    // ------------------------------------------------------------------
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn risk_level_from_score_never_panics(score in proptest::num::f64::ANY) {
+                let _ = RiskLevel::from_score(score);
+            }
+
+            #[test]
+            fn check_result_from_score_never_panics(score in proptest::num::f64::ANY) {
+                let _ = CheckResult::from_score(score);
+            }
+
+            #[test]
+            fn risk_level_valid_range(score in 0.0..=1.0_f64) {
+                let level = RiskLevel::from_score(score);
+                let proto = level.to_proto_i32();
+                prop_assert!(proto >= 1 && proto <= 4);
+            }
+
+            #[test]
+            fn fraud_decision_always_valid(score in 0.0..=1.0_f64) {
+                let level = RiskLevel::from_score(score);
+                let decision = FraudDecision::from_risk_level(level);
+                let proto = decision.to_proto_i32();
+                prop_assert!(proto >= 1 && proto <= 4);
+            }
+
+            #[test]
+            fn is_disposable_email_never_panics(email in ".*") {
+                let _ = is_disposable_email(&email);
+            }
+        }
+    }
+}

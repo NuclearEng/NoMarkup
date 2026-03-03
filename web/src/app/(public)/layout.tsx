@@ -1,11 +1,13 @@
+import { Header } from '@/components/layout/Header';
+
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b px-6 py-4">
-        <nav aria-label="Main navigation">{/* Header navigation placeholder */}</nav>
-      </header>
+      <Header />
       <main className="flex-1">{children}</main>
-      <footer className="border-t px-6 py-4">{/* Footer placeholder */}</footer>
+      <footer className="border-t px-6 py-6 text-center text-sm text-muted-foreground">
+        &copy; {new Date().getFullYear()} NoMarkup. All rights reserved.
+      </footer>
     </div>
   );
 }

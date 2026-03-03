@@ -814,3 +814,35 @@ struct OutcomeRow {
 fn i32_from_i64(v: i64) -> i32 {
     v.min(i64::from(i32::MAX)) as i32
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i32_from_i64_small_value() {
+        assert_eq!(i32_from_i64(42), 42);
+    }
+
+    #[test]
+    fn i32_from_i64_zero() {
+        assert_eq!(i32_from_i64(0), 0);
+    }
+
+    #[test]
+    fn i32_from_i64_at_max() {
+        assert_eq!(i32_from_i64(i64::from(i32::MAX)), i32::MAX);
+    }
+
+    #[test]
+    fn i32_from_i64_above_max_clamps() {
+        assert_eq!(i32_from_i64(i64::from(i32::MAX) + 1), i32::MAX);
+        assert_eq!(i32_from_i64(i64::MAX), i32::MAX);
+    }
+
+    #[test]
+    fn i32_from_i64_negative() {
+        assert_eq!(i32_from_i64(-1), -1);
+        assert_eq!(i32_from_i64(-100), -100);
+    }
+}
