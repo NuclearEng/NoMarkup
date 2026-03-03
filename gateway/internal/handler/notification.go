@@ -249,6 +249,79 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 	})
 }
 
+// --- Device registration ---
+
+type registerDeviceRequest struct {
+	DeviceToken string `json:"device_token"`
+	Platform    string `json:"platform"`
+	DeviceID    string `json:"device_id"`
+}
+
+// RegisterDevice handles POST /api/v1/notifications/devices.
+func (h *NotificationHandler) RegisterDevice(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req registerDeviceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.DeviceToken == "" {
+		writeError(w, http.StatusBadRequest, "device_token is required")
+		return
+	}
+	if req.Platform == "" {
+		writeError(w, http.StatusBadRequest, "platform is required")
+		return
+	}
+
+	platform := stringToDevicePlatform(req.Platform)
+
+	_, err := h.notifClient.RegisterDevice(r.Context(), &notificationv1.RegisterDeviceRequest{
+		UserId:      claims.UserID,
+		DeviceToken: req.DeviceToken,
+		Platform:    platform,
+		DeviceId:    req.DeviceID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+}
+
+// UnregisterDevice handles DELETE /api/v1/notifications/devices/{token}.
+func (h *NotificationHandler) UnregisterDevice(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	deviceID := chi.URLParam(r, "token")
+	if deviceID == "" {
+		writeError(w, http.StatusBadRequest, "device id required")
+		return
+	}
+
+	_, err := h.notifClient.UnregisterDevice(r.Context(), &notificationv1.UnregisterDeviceRequest{
+		UserId:   claims.UserID,
+		DeviceId: deviceID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // --- Proto to JSON conversion helpers ---
 
 func protoNotificationToJSON(n *notificationv1.Notification) map[string]interface{} {
@@ -440,5 +513,18 @@ func notificationChannelToString(ch notificationv1.NotificationChannel) string {
 		return "in_app"
 	default:
 		return "unspecified"
+	}
+}
+
+func stringToDevicePlatform(s string) notificationv1.DevicePlatform {
+	switch s {
+	case "ios":
+		return notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS
+	case "android":
+		return notificationv1.DevicePlatform_DEVICE_PLATFORM_ANDROID
+	case "web":
+		return notificationv1.DevicePlatform_DEVICE_PLATFORM_WEB
+	default:
+		return notificationv1.DevicePlatform_DEVICE_PLATFORM_UNSPECIFIED
 	}
 }

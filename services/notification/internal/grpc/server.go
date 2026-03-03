@@ -160,12 +160,24 @@ func (s *Server) GetUnreadCount(ctx context.Context, req *notificationv1.GetUnre
 	}, nil
 }
 
-func (s *Server) RegisterDevice(_ context.Context, _ *notificationv1.RegisterDeviceRequest) (*notificationv1.RegisterDeviceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "RegisterDevice not yet implemented")
+func (s *Server) RegisterDevice(ctx context.Context, req *notificationv1.RegisterDeviceRequest) (*notificationv1.RegisterDeviceResponse, error) {
+	platform := protoPlatformToString(req.GetPlatform())
+
+	err := s.svc.RegisterDevice(ctx, req.GetUserId(), req.GetDeviceToken(), platform, req.GetDeviceId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &notificationv1.RegisterDeviceResponse{}, nil
 }
 
-func (s *Server) UnregisterDevice(_ context.Context, _ *notificationv1.UnregisterDeviceRequest) (*notificationv1.UnregisterDeviceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "UnregisterDevice not yet implemented")
+func (s *Server) UnregisterDevice(ctx context.Context, req *notificationv1.UnregisterDeviceRequest) (*notificationv1.UnregisterDeviceResponse, error) {
+	err := s.svc.UnregisterDevice(ctx, req.GetUserId(), req.GetDeviceId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &notificationv1.UnregisterDeviceResponse{}, nil
 }
 
 func (s *Server) GetPreferences(ctx context.Context, req *notificationv1.GetPreferencesRequest) (*notificationv1.GetPreferencesResponse, error) {
@@ -438,6 +450,20 @@ func stringToProtoChannel(s string) notificationv1.NotificationChannel {
 	}
 }
 
+// protoPlatformToString converts a proto DevicePlatform to a string.
+func protoPlatformToString(p notificationv1.DevicePlatform) string {
+	switch p {
+	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS:
+		return "ios"
+	case notificationv1.DevicePlatform_DEVICE_PLATFORM_ANDROID:
+		return "android"
+	case notificationv1.DevicePlatform_DEVICE_PLATFORM_WEB:
+		return "web"
+	default:
+		return "unknown"
+	}
+}
+
 // mapDomainError maps domain errors to gRPC status errors.
 func mapDomainError(err error) error {
 	if err == nil {
@@ -451,6 +477,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "notification not found")
 	case errors.Is(err, domain.ErrPreferencesNotFound):
 		return status.Error(codes.NotFound, "preferences not found")
+	case errors.Is(err, domain.ErrDeviceTokenNotFound):
+		return status.Error(codes.NotFound, "device token not found")
 	case strings.Contains(msg, "is required"):
 		return status.Error(codes.InvalidArgument, msg)
 	default:

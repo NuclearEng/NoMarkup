@@ -11,18 +11,29 @@ import (
 
 // Service implements notification business logic.
 type Service struct {
-	repo domain.NotificationRepository
+	repo      domain.NotificationRepository
+	deviceRepo domain.DeviceTokenRepository
+	email     *EmailDispatcher
+	push      *PushDispatcher
+	sms       *SMSDispatcher
 }
 
 // New creates a new notification service.
-func New(repo domain.NotificationRepository) *Service {
-	return &Service{repo: repo}
+func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenRepository, email *EmailDispatcher, push *PushDispatcher, sms *SMSDispatcher) *Service {
+	return &Service{
+		repo:       repo,
+		deviceRepo: deviceRepo,
+		email:      email,
+		push:       push,
+		sms:        sms,
+	}
 }
 
 // SendNotification checks user preferences for enabled channels (using defaults if the
 // channels param is empty), creates the notification record, and dispatches to each
-// enabled channel. For now, email/push/SMS dispatchers are stubs that log but set
-// delivered=true. In-app always dispatches by creating the DB record.
+// enabled channel. Email/push/SMS dispatchers send real messages when API keys are
+// configured, otherwise they log in dev mode. In-app always dispatches by creating the
+// DB record.
 func (s *Service) SendNotification(ctx context.Context, userID, notifType, title, body, actionURL string, data map[string]string, requestedChannels []string) (*domain.Notification, []ChannelDelivery, error) {
 	if userID == "" {
 		return nil, nil, fmt.Errorf("send notification: user_id is required")
@@ -82,19 +93,20 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 			// In-app is always delivered via the DB insert below.
 			deliveries = append(deliveries, ChannelDelivery{Channel: "in_app", Delivered: true})
 		case "email":
-			// Stub: log and mark delivered.
-			slog.Info("stub: would send email notification", "user_id", userID, "type", notifType, "title", title)
-			notif.EmailSent = true
-			deliveries = append(deliveries, ChannelDelivery{Channel: "email", Delivered: true})
+			delivery := s.dispatchEmail(ctx, userID, notifType, title, body, actionURL, data)
+			if delivery.Delivered {
+				notif.EmailSent = true
+			}
+			deliveries = append(deliveries, delivery)
 		case "push":
-			// Stub: log and mark delivered.
-			slog.Info("stub: would send push notification", "user_id", userID, "type", notifType, "title", title)
-			notif.PushSent = true
-			deliveries = append(deliveries, ChannelDelivery{Channel: "push", Delivered: true})
+			delivery := s.dispatchPush(ctx, userID, title, body, actionURL)
+			if delivery.Delivered {
+				notif.PushSent = true
+			}
+			deliveries = append(deliveries, delivery)
 		case "sms":
-			// Stub: log and mark delivered.
-			slog.Info("stub: would send SMS notification", "user_id", userID, "type", notifType, "title", title)
-			deliveries = append(deliveries, ChannelDelivery{Channel: "sms", Delivered: true})
+			delivery := s.dispatchSMS(ctx, userID, title, body, data)
+			deliveries = append(deliveries, delivery)
 		default:
 			deliveries = append(deliveries, ChannelDelivery{Channel: ch, Delivered: false, FailureReason: "unknown channel"})
 		}
@@ -106,6 +118,108 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 	}
 
 	return created, deliveries, nil
+}
+
+// dispatchEmail sends an email notification for the given user.
+func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, body, actionURL string, data map[string]string) ChannelDelivery {
+	// Extract email from data map. Callers should populate data["user_email"] when
+	// requesting email delivery, since the notification service does not own the user
+	// table and cannot query it directly without a cross-service call.
+	email := ""
+	if data != nil {
+		email = data["user_email"]
+	}
+	if email == "" {
+		slog.Warn("email dispatch skipped: no user_email in data",
+			"user_id", userID,
+			"type", notifType,
+		)
+		return ChannelDelivery{Channel: "email", Delivered: false, FailureReason: "no email address available"}
+	}
+
+	htmlBody, textBody := renderEmailHTML(notifType, title, body, actionURL)
+
+	subject := title
+	if err := s.email.Send(ctx, email, subject, htmlBody, textBody); err != nil {
+		slog.Warn("email dispatch failed",
+			"user_id", userID,
+			"type", notifType,
+			"error", err,
+		)
+		return ChannelDelivery{Channel: "email", Delivered: false, FailureReason: err.Error()}
+	}
+
+	return ChannelDelivery{Channel: "email", Delivered: true}
+}
+
+// dispatchPush sends push notifications to all of the user's registered devices.
+func (s *Service) dispatchPush(ctx context.Context, userID, title, body, actionURL string) ChannelDelivery {
+	tokens, err := s.deviceRepo.GetDeviceTokens(ctx, userID)
+	if err != nil {
+		slog.Warn("push dispatch: failed to get device tokens",
+			"user_id", userID,
+			"error", err,
+		)
+		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("get device tokens: %s", err.Error())}
+	}
+
+	if len(tokens) == 0 {
+		slog.Info("push dispatch skipped: no device tokens registered",
+			"user_id", userID,
+		)
+		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: "no device tokens registered"}
+	}
+
+	deviceTokenStrings := make([]string, 0, len(tokens))
+	for _, dt := range tokens {
+		deviceTokenStrings = append(deviceTokenStrings, dt.Token)
+	}
+
+	sent, errs := s.push.SendMultiple(ctx, deviceTokenStrings, title, body, actionURL)
+	if sent == 0 && len(errs) > 0 {
+		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("all %d sends failed", len(errs))}
+	}
+
+	if len(errs) > 0 {
+		slog.Warn("push dispatch: partial failure",
+			"user_id", userID,
+			"sent", sent,
+			"failed", len(errs),
+		)
+	}
+
+	return ChannelDelivery{Channel: "push", Delivered: true}
+}
+
+// dispatchSMS sends an SMS notification for the given user.
+func (s *Service) dispatchSMS(ctx context.Context, userID, title, body string, data map[string]string) ChannelDelivery {
+	// Extract phone from data map, similar to email.
+	phone := ""
+	if data != nil {
+		phone = data["user_phone"]
+	}
+	if phone == "" {
+		slog.Warn("sms dispatch skipped: no user_phone in data",
+			"user_id", userID,
+		)
+		return ChannelDelivery{Channel: "sms", Delivered: false, FailureReason: "no phone number available"}
+	}
+
+	// SMS body: combine title and body, keep it concise for SMS limits.
+	smsBody := fmt.Sprintf("NoMarkup: %s - %s", title, body)
+	if len(smsBody) > 160 {
+		smsBody = smsBody[:157] + "..."
+	}
+
+	if err := s.sms.Send(ctx, phone, smsBody); err != nil {
+		slog.Warn("sms dispatch failed",
+			"user_id", userID,
+			"error", err,
+		)
+		return ChannelDelivery{Channel: "sms", Delivered: false, FailureReason: err.Error()}
+	}
+
+	return ChannelDelivery{Channel: "sms", Delivered: true}
 }
 
 // SendBulkNotification sends the same notification to multiple users.
@@ -161,6 +275,31 @@ func (s *Service) UpdatePreferences(ctx context.Context, prefs *domain.Notificat
 		prefs.EmailDigest = "daily"
 	}
 	return s.repo.UpsertPreferences(ctx, prefs)
+}
+
+// RegisterDevice saves a device token for push notifications.
+func (s *Service) RegisterDevice(ctx context.Context, userID, token, platform, deviceID string) error {
+	if userID == "" {
+		return fmt.Errorf("register device: user_id is required")
+	}
+	if token == "" {
+		return fmt.Errorf("register device: device_token is required")
+	}
+	if platform == "" {
+		return fmt.Errorf("register device: platform is required")
+	}
+	return s.deviceRepo.SaveDeviceToken(ctx, userID, token, platform, deviceID)
+}
+
+// UnregisterDevice removes a device token for push notifications.
+func (s *Service) UnregisterDevice(ctx context.Context, userID, deviceID string) error {
+	if userID == "" {
+		return fmt.Errorf("unregister device: user_id is required")
+	}
+	if deviceID == "" {
+		return fmt.Errorf("unregister device: device_id is required")
+	}
+	return s.deviceRepo.DeleteDeviceToken(ctx, userID, deviceID)
 }
 
 // ChannelDelivery represents the delivery status for a single channel.

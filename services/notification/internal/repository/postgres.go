@@ -200,3 +200,58 @@ func (r *PostgresRepository) UpsertPreferences(ctx context.Context, prefs *domai
 
 	return prefs, nil
 }
+
+// --- Device Token Repository ---
+
+func (r *PostgresRepository) SaveDeviceToken(ctx context.Context, userID, token, platform, deviceID string) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO device_tokens (user_id, token, platform, device_id)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, token) DO UPDATE
+		SET platform = $3, device_id = $4`,
+		userID, token, platform, deviceID,
+	)
+	if err != nil {
+		return fmt.Errorf("save device token: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) DeleteDeviceToken(ctx context.Context, userID, deviceID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		DELETE FROM device_tokens WHERE user_id = $1 AND device_id = $2`,
+		userID, deviceID,
+	)
+	if err != nil {
+		return fmt.Errorf("delete device token: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("delete device token: %w", domain.ErrDeviceTokenNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetDeviceTokens(ctx context.Context, userID string) ([]domain.DeviceToken, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, user_id, token, platform, COALESCE(device_id, ''), created_at
+		FROM device_tokens
+		WHERE user_id = $1
+		ORDER BY created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get device tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []domain.DeviceToken
+	for rows.Next() {
+		var dt domain.DeviceToken
+		if err := rows.Scan(&dt.ID, &dt.UserID, &dt.Token, &dt.Platform, &dt.DeviceID, &dt.CreatedAt); err != nil {
+			return nil, fmt.Errorf("get device tokens scan: %w", err)
+		}
+		tokens = append(tokens, dt)
+	}
+
+	return tokens, nil
+}

@@ -10,6 +10,7 @@ import (
 var (
 	ErrNotificationNotFound = errors.New("notification not found")
 	ErrPreferencesNotFound  = errors.New("preferences not found")
+	ErrDeviceTokenNotFound  = errors.New("device token not found")
 )
 
 // Notification represents an in-app notification record.
@@ -45,6 +46,16 @@ type ChannelPrefs struct {
 	SMS   bool `json:"sms"`
 }
 
+// DeviceToken represents a registered push notification device.
+type DeviceToken struct {
+	ID         string
+	UserID     string
+	Token      string
+	Platform   string // "ios", "android", "web"
+	DeviceID   string // unique device identifier
+	CreatedAt  time.Time
+}
+
 // NotificationRepository defines persistence operations for notifications and preferences.
 type NotificationRepository interface {
 	CreateNotification(ctx context.Context, n *Notification) (*Notification, error)
@@ -54,4 +65,11 @@ type NotificationRepository interface {
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
 	GetPreferences(ctx context.Context, userID string) (*NotificationPreferences, error)
 	UpsertPreferences(ctx context.Context, prefs *NotificationPreferences) (*NotificationPreferences, error)
+}
+
+// DeviceTokenRepository defines persistence operations for device tokens.
+type DeviceTokenRepository interface {
+	SaveDeviceToken(ctx context.Context, userID, token, platform, deviceID string) error
+	DeleteDeviceToken(ctx context.Context, userID, deviceID string) error
+	GetDeviceTokens(ctx context.Context, userID string) ([]DeviceToken, error)
 }

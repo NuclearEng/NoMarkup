@@ -50,9 +50,38 @@ func main() {
 	}
 	slog.Info("connected to database")
 
+	// Initialize dispatchers from environment variables.
+	emailDispatcher := service.NewEmailDispatcher(
+		os.Getenv("SENDGRID_API_KEY"),
+		os.Getenv("SENDGRID_FROM_EMAIL"),
+		os.Getenv("SENDGRID_FROM_NAME"),
+	)
+
+	pushDispatcher := service.NewPushDispatcher(
+		os.Getenv("FCM_SERVER_KEY"),
+		os.Getenv("FCM_PROJECT_ID"),
+	)
+
+	smsDispatcher := service.NewSMSDispatcher(
+		os.Getenv("TWILIO_ACCOUNT_SID"),
+		os.Getenv("TWILIO_AUTH_TOKEN"),
+		os.Getenv("TWILIO_FROM_NUMBER"),
+	)
+
+	// Log dispatcher modes.
+	if os.Getenv("SENDGRID_API_KEY") == "" {
+		slog.Info("email dispatcher running in dev mode (SENDGRID_API_KEY not set)")
+	}
+	if os.Getenv("FCM_SERVER_KEY") == "" {
+		slog.Info("push dispatcher running in dev mode (FCM_SERVER_KEY not set)")
+	}
+	if os.Getenv("TWILIO_ACCOUNT_SID") == "" {
+		slog.Info("sms dispatcher running in dev mode (TWILIO_ACCOUNT_SID not set)")
+	}
+
 	// Wire up dependencies.
 	repo := repository.New(pool)
-	svc := service.New(repo)
+	svc := service.New(repo, repo, emailDispatcher, pushDispatcher, smsDispatcher)
 	srv := notificationgrpc.NewServer(svc)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))

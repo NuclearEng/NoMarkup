@@ -274,6 +274,8 @@ func New(
 			r.Get("/unread-count", notificationHandler.GetUnreadCount)
 			r.Get("/preferences", notificationHandler.GetPreferences)
 			r.Put("/preferences", notificationHandler.UpdatePreferences)
+			r.Post("/devices", notificationHandler.RegisterDevice)
+			r.Delete("/devices/{token}", notificationHandler.UnregisterDevice)
 		})
 
 		// Subscription routes (authenticated)
