@@ -17,6 +17,7 @@ import (
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
+	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
@@ -134,6 +135,16 @@ func main() {
 
 	notifClient := notificationv1.NewNotificationServiceClient(notifConn)
 
+	// Connect to Imaging Service via gRPC.
+	imagingConn, err := grpc.NewClient(cfg.ImagingServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to imaging service", "addr", cfg.ImagingServiceAddr, "error", err)
+		os.Exit(1)
+	}
+	defer imagingConn.Close()
+
+	imagingClient := imagingv1.NewImagingServiceClient(imagingConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -157,8 +168,9 @@ func main() {
 	trustHandler := handler.NewTrustHandler(trustClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
 	notificationHandler := handler.NewNotificationHandler(notifClient)
+	imageHandler := handler.NewImageHandler(imagingClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

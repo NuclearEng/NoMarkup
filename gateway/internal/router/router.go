@@ -26,6 +26,7 @@ func New(
 	trustHandler *handler.TrustHandler,
 	fraudHandler *handler.FraudHandler,
 	notificationHandler *handler.NotificationHandler,
+	imageHandler *handler.ImageHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -171,6 +172,13 @@ func New(
 			r.Get("/{id}/messages", chatHandler.ListMessages)
 			r.Post("/{id}/messages", chatHandler.SendMessage)
 			r.Post("/{id}/read", chatHandler.MarkRead)
+		})
+
+		// Image pipeline routes
+		r.Route("/images", func(r chi.Router) {
+			r.Post("/upload-url", imageHandler.GetUploadURL)
+			r.Post("/confirm", imageHandler.ConfirmUpload)
+			r.Post("/process", imageHandler.ProcessImage)
 		})
 
 		// Admin fraud routes

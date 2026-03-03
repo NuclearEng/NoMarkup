@@ -15,7 +15,10 @@ anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+chrono.workspace = true
 image = "0.25"
+aws-sdk-s3 = "1"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
 
 [build-dependencies]
 tonic-build.workspace = true

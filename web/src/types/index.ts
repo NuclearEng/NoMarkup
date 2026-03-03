@@ -896,3 +896,39 @@ export interface UpdatePreferencesInput {
   global_email_enabled?: boolean;
   global_sms_enabled?: boolean;
 }
+
+// Image Pipeline types
+export const UPLOAD_CONTEXT = {
+  AVATAR: 'avatar',
+  PORTFOLIO: 'portfolio',
+  JOB_PHOTO: 'job_photo',
+  DOCUMENT: 'document',
+  REVIEW_PHOTO: 'review_photo',
+} as const;
+export type UploadContext = (typeof UPLOAD_CONTEXT)[keyof typeof UPLOAD_CONTEXT];
+
+export interface ImageVariant {
+  url: string;
+  width: number;
+  height: number;
+  format: string;
+  size_bytes: number;
+  variant_name: string;
+}
+
+export interface UploadURLResponse {
+  upload_url: string;
+  object_key: string;
+  expires_at: string;
+}
+
+export interface ConfirmUploadResponse {
+  confirmed_url: string;
+  content_type_valid: boolean;
+  actual_content_type: string;
+}
+
+export interface ProcessImageResponse {
+  variant: ImageVariant;
+  blur_hash: string | null;
+}
