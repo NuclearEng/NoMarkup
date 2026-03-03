@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { Header } from '@/components/layout/Header';
+import { WebSocketProvider } from '@/components/providers/WebSocketProvider';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
@@ -143,7 +144,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Link>
         </nav>
       </aside>
-      <main className="flex-1 p-6">{children}</main>
+      <WebSocketProvider>
+        <main className="flex-1 p-6">{children}</main>
+      </WebSocketProvider>
       </div>
     </div>
   );

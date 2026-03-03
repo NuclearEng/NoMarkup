@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -16,6 +18,7 @@ import (
 	chatgrpc "github.com/nomarkup/nomarkup/services/chat/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/chat/internal/repository"
 	"github.com/nomarkup/nomarkup/services/chat/internal/service"
+	"github.com/nomarkup/nomarkup/services/chat/internal/ws"
 )
 
 func main() {
@@ -27,6 +30,11 @@ func main() {
 	port := os.Getenv("CHAT_SERVICE_PORT")
 	if port == "" {
 		port = "50055"
+	}
+
+	wsPort := os.Getenv("CHAT_WS_PORT")
+	if wsPort == "" {
+		wsPort = "50065"
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -78,6 +86,11 @@ func main() {
 	svc := service.New(repo, pubsub)
 	srv := chatgrpc.NewServer(svc)
 
+	// Create WebSocket hub and handler.
+	hub := ws.NewHub()
+	wsHandler := ws.NewHandler(hub, pubsub)
+
+	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		slog.Error("failed to listen", "error", err)
@@ -88,15 +101,47 @@ func main() {
 	chatgrpc.Register(s, srv)
 
 	go func() {
-		slog.Info("chat service starting", "port", port)
+		slog.Info("chat gRPC service starting", "port", port)
 		if err := s.Serve(lis); err != nil {
 			slog.Error("grpc server error", "error", err)
 			os.Exit(1)
 		}
 	}()
 
+	// Start HTTP server for WebSocket connections.
+	mux := http.NewServeMux()
+	mux.Handle("/ws", wsHandler)
+
+	httpSrv := &http.Server{
+		Addr:         fmt.Sprintf(":%s", wsPort),
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 0, // No write timeout for WebSocket connections.
+		IdleTimeout:  120 * time.Second,
+	}
+
+	go func() {
+		slog.Info("chat WebSocket server starting", "port", wsPort)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("websocket server error", "error", err)
+			os.Exit(1)
+		}
+	}()
+
 	<-ctx.Done()
 	slog.Info("shutting down chat service")
+
+	// Close all WebSocket connections gracefully.
+	hub.CloseAll()
+
+	// Shut down HTTP server.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("failed to shutdown websocket server", "error", err)
+	}
+
+	// Stop gRPC server.
 	s.GracefulStop()
 	slog.Info("chat service stopped")
 }

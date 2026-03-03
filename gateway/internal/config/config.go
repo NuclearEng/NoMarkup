@@ -18,6 +18,7 @@ type Config struct {
 	BidEngineAddr      string
 	PaymentServiceAddr string
 	ChatServiceAddr    string
+	ChatWSAddr         string
 	FraudEngineAddr    string
 	TrustEngineAddr    string
 	ImagingServiceAddr      string
@@ -45,6 +46,7 @@ func Load() (*Config, error) {
 		BidEngineAddr:      getEnv("BID_ENGINE_ADDR", "localhost:50053"),
 		PaymentServiceAddr: getEnv("PAYMENT_SERVICE_ADDR", "localhost:50054"),
 		ChatServiceAddr:    getEnv("CHAT_SERVICE_ADDR", "localhost:50055"),
+		ChatWSAddr:         getEnv("CHAT_WS_ADDR", "localhost:50065"),
 		FraudEngineAddr:    getEnv("FRAUD_ENGINE_ADDR", "localhost:50056"),
 		TrustEngineAddr:    getEnv("TRUST_ENGINE_ADDR", "localhost:50057"),
 		ImagingServiceAddr:      getEnv("IMAGING_SERVICE_ADDR", "localhost:50058"),

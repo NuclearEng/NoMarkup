@@ -37,6 +37,11 @@ func (ps *PubSub) Subscribe(ctx context.Context, channelID string) *redis.PubSub
 	return ps.rdb.Subscribe(ctx, topic)
 }
 
+// SubscribeTopics subscribes to multiple Redis topics and returns the subscription handle.
+func (ps *PubSub) SubscribeTopics(ctx context.Context, topics ...string) *redis.PubSub {
+	return ps.rdb.Subscribe(ctx, topics...)
+}
+
 // PublishTyping publishes a typing indicator for a user in a channel.
 func (ps *PubSub) PublishTyping(ctx context.Context, channelID string, userID string) error {
 	payload, err := json.Marshal(map[string]string{

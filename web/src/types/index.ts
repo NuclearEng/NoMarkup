@@ -615,9 +615,9 @@ export interface CreateReviewInput {
 
 // Chat types
 export const CHANNEL_TYPE = {
-  INQUIRY: 'inquiry',
-  BID: 'bid',
+  PRE_AWARD: 'pre_award',
   CONTRACT: 'contract',
+  SUPPORT: 'support',
 } as const;
 export type ChannelType = (typeof CHANNEL_TYPE)[keyof typeof CHANNEL_TYPE];
 

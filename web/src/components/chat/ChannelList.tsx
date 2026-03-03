@@ -14,12 +14,12 @@ import type { Channel } from '@/types';
 
 function channelTypeLabel(channelType: string): string {
   switch (channelType) {
-    case CHANNEL_TYPE.BID:
-      return 'Bid';
+    case CHANNEL_TYPE.PRE_AWARD:
+      return 'Pre-Award';
     case CHANNEL_TYPE.CONTRACT:
       return 'Contract';
-    case CHANNEL_TYPE.INQUIRY:
-      return 'Inquiry';
+    case CHANNEL_TYPE.SUPPORT:
+      return 'Support';
     default:
       return channelType;
   }

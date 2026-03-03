@@ -8,8 +8,37 @@ import { MessageThread } from '@/components/chat/MessageThread';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { Button } from '@/components/ui/button';
 import { useChannel } from '@/hooks/useChannels';
+import { CONNECTION_STATUS } from '@/lib/websocket';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chat-store';
+
+const STATUS_LABEL: Record<string, string> = {
+  [CONNECTION_STATUS.CONNECTED]: 'Connected',
+  [CONNECTION_STATUS.CONNECTING]: 'Connecting',
+  [CONNECTION_STATUS.DISCONNECTED]: 'Disconnected',
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  [CONNECTION_STATUS.CONNECTED]: 'bg-green-500',
+  [CONNECTION_STATUS.CONNECTING]: 'bg-yellow-500',
+  [CONNECTION_STATUS.DISCONNECTED]: 'bg-red-500',
+};
+
+function ConnectionStatusDot() {
+  const connectionStatus = useChatStore((s) => s.connectionStatus);
+  const label = STATUS_LABEL[connectionStatus] ?? 'Unknown';
+  const color = STATUS_COLOR[connectionStatus] ?? 'bg-gray-400';
+
+  return (
+    <span className="inline-flex items-center gap-1.5" title={label}>
+      <span
+        className={cn('inline-block h-2 w-2 rounded-full', color)}
+        aria-hidden="true"
+      />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
 
 function ActiveThread({ channelId }: { channelId: string }) {
   const { data } = useChannel(channelId);
@@ -42,11 +71,16 @@ export default function MessagesPage() {
 
   return (
     <div className="flex h-[calc(100vh-theme(spacing.24))] flex-col">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Messages</h1>
-        <p className="mt-1 text-muted-foreground">
-          Communicate with customers and providers.
-        </p>
+      <div className="mb-4 flex items-center gap-2">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Messages</h1>
+          <p className="mt-1 text-muted-foreground">
+            Communicate with customers and providers.
+          </p>
+        </div>
+        <div className="ml-auto">
+          <ConnectionStatusDot />
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-lg border">

@@ -295,8 +295,8 @@ func New(
 		})
 	})
 
-	// WebSocket stub (outside protected routes, auth via query param in the future)
-	r.Get("/ws/chat", chatHandler.WebSocketStub)
+	// WebSocket chat endpoint (auth via query param, header, or cookie — validated in handler)
+	r.Get("/ws/chat", chatHandler.WebSocket)
 
 	return r
 }

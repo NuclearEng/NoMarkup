@@ -67,6 +67,11 @@ type tokenClaims struct {
 	Roles []string `json:"roles"`
 }
 
+// ValidateToken parses and validates a JWT token string, returning the extracted claims.
+func (m *AuthMiddleware) ValidateToken(tokenStr string) (*Claims, error) {
+	return m.validateToken(tokenStr)
+}
+
 func (m *AuthMiddleware) validateToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &tokenClaims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {

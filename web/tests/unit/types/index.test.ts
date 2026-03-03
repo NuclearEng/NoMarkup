@@ -340,9 +340,9 @@ describe('FLAG_REASON', () => {
 
 describe('CHANNEL_TYPE', () => {
   it('has expected values', () => {
-    expect(CHANNEL_TYPE.INQUIRY).toBe('inquiry');
-    expect(CHANNEL_TYPE.BID).toBe('bid');
+    expect(CHANNEL_TYPE.PRE_AWARD).toBe('pre_award');
     expect(CHANNEL_TYPE.CONTRACT).toBe('contract');
+    expect(CHANNEL_TYPE.SUPPORT).toBe('support');
   });
 
   it('has exactly 3 types', () => {
@@ -350,8 +350,8 @@ describe('CHANNEL_TYPE', () => {
   });
 
   it('produces the correct type', () => {
-    const channelType: ChannelType = CHANNEL_TYPE.INQUIRY;
-    expect(channelType).toBe('inquiry');
+    const channelType: ChannelType = CHANNEL_TYPE.PRE_AWARD;
+    expect(channelType).toBe('pre_award');
   });
 });
 

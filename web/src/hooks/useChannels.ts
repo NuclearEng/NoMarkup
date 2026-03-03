@@ -90,6 +90,6 @@ export function useUnreadCount() {
   return useQuery({
     queryKey: ['unread-count'],
     queryFn: () => api.get<UnreadCountResponse>('/api/v1/channels/unread'),
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 }

@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useSendMessage } from '@/hooks/useChannels';
+import { useSendTypingIndicator } from '@/hooks/useWebSocket';
 import { chatMessageSchema } from '@/lib/validations';
 import { CHANNEL_STATUS } from '@/types';
 
@@ -21,6 +22,7 @@ export function MessageInput({
   const [content, setContent] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMessage = useSendMessage();
+  const sendTypingIndicator = useSendTypingIndicator(channelId);
 
   const isDisabled =
     channelStatus === CHANNEL_STATUS.READ_ONLY || channelStatus === CHANNEL_STATUS.CLOSED;
@@ -42,6 +44,7 @@ export function MessageInput({
     if (value.length <= MAX_CHAR_COUNT) {
       setContent(value);
       resizeTextarea();
+      sendTypingIndicator();
     }
   }
 

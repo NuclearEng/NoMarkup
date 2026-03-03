@@ -10,6 +10,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
+	nhooyr.io/websocket v1.8.17
 )
 
 require (

@@ -174,7 +174,7 @@ func main() {
 
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
 	webhookHandler := handler.NewWebhookHandler(paymentClient)
-	chatHandler := handler.NewChatHandler(chatClient)
+	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
 	trustHandler := handler.NewTrustHandler(trustClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
 	notificationHandler := handler.NewNotificationHandler(notifClient)

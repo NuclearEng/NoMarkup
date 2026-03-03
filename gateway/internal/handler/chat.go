@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,16 +14,23 @@ import (
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"nhooyr.io/websocket"
 )
 
 // ChatHandler handles HTTP endpoints for chat channels and messages.
 type ChatHandler struct {
 	chatClient chatv1.ChatServiceClient
+	authMW     *middleware.AuthMiddleware
+	chatWSAddr string
 }
 
 // NewChatHandler creates a new ChatHandler.
-func NewChatHandler(chatClient chatv1.ChatServiceClient) *ChatHandler {
-	return &ChatHandler{chatClient: chatClient}
+func NewChatHandler(chatClient chatv1.ChatServiceClient, authMW *middleware.AuthMiddleware, chatWSAddr string) *ChatHandler {
+	return &ChatHandler{
+		chatClient: chatClient,
+		authMW:     authMW,
+		chatWSAddr: chatWSAddr,
+	}
 }
 
 // ListChannels handles GET /api/v1/channels.
@@ -256,9 +266,117 @@ func (h *ChatHandler) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// WebSocketStub handles GET /ws/chat with a 501 response.
-func (h *ChatHandler) WebSocketStub(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "WebSocket support coming soon")
+// WebSocket handles GET /ws/chat by upgrading the connection and proxying to the chat service.
+// Authentication is done via ?token= query parameter or Authorization header.
+func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
+	// Extract token from query param or Authorization header.
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		authHeader := r.Header.Get("Authorization")
+		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+			token = authHeader[7:]
+		}
+	}
+	if token == "" {
+		// Try reading from cookie.
+		if cookie, err := r.Cookie("access_token"); err == nil {
+			token = cookie.Value
+		}
+	}
+
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing authentication token")
+		return
+	}
+
+	// Validate the token.
+	claims, err := h.authMW.ValidateToken(token)
+	if err != nil {
+		slog.Warn("ws auth failed", "error", err, "remote_addr", r.RemoteAddr)
+		writeError(w, http.StatusUnauthorized, "invalid or expired token")
+		return
+	}
+
+	// Accept the WebSocket upgrade from the client.
+	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		// Allow configured origins. The CORS middleware handles preflight,
+		// but websocket.Accept also checks the Origin header.
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		slog.Error("failed to accept client websocket", "error", err)
+		return
+	}
+	defer clientConn.CloseNow()
+
+	// Connect to the chat service WebSocket endpoint, passing the validated user ID.
+	backendURL := fmt.Sprintf("ws://%s/ws?user_id=%s", h.chatWSAddr, claims.UserID)
+
+	backendCtx, backendCancel := context.WithTimeout(r.Context(), 10*time.Second)
+	backendConn, _, err := websocket.Dial(backendCtx, backendURL, nil)
+	backendCancel()
+	if err != nil {
+		slog.Error("failed to connect to chat service websocket",
+			"addr", h.chatWSAddr,
+			"user_id", claims.UserID,
+			"error", err,
+		)
+		clientConn.Close(websocket.StatusInternalError, "failed to connect to chat service")
+		return
+	}
+	defer backendConn.CloseNow()
+
+	slog.Info("ws proxy established",
+		"user_id", claims.UserID,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Proxy messages bidirectionally.
+	errc := make(chan error, 2)
+
+	// Client -> Backend
+	go func() {
+		errc <- proxyWebSocket(ctx, clientConn, backendConn)
+	}()
+
+	// Backend -> Client
+	go func() {
+		errc <- proxyWebSocket(ctx, backendConn, clientConn)
+	}()
+
+	// Wait for either direction to finish.
+	proxyErr := <-errc
+	cancel()
+
+	// Determine the close reason.
+	closeStatus := websocket.StatusNormalClosure
+	closeReason := "connection closed"
+	if proxyErr != nil {
+		closeStatus = websocket.StatusInternalError
+		closeReason = "proxy error"
+	}
+
+	clientConn.Close(closeStatus, closeReason)
+	backendConn.Close(closeStatus, closeReason)
+}
+
+// proxyWebSocket copies messages from src to dst until an error occurs or ctx is cancelled.
+func proxyWebSocket(ctx context.Context, src, dst *websocket.Conn) error {
+	for {
+		msgType, data, err := src.Read(ctx)
+		if err != nil {
+			return err
+		}
+		writeCtx, writeCancel := context.WithTimeout(ctx, 10*time.Second)
+		err = dst.Write(writeCtx, msgType, data)
+		writeCancel()
+		if err != nil {
+			return err
+		}
+	}
 }
 
 // --- Proto to JSON conversion helpers ---
