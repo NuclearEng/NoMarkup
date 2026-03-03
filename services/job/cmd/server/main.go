@@ -69,6 +69,10 @@ func main() {
 	jobService := service.NewJobService(repo, searchEngine)
 	srv := grpcserver.NewServer(jobService)
 
+	// Wire up contract service (shares same repo/pool).
+	contractService := service.NewContractService(repo, repo)
+	contractSrv := grpcserver.NewContractServer(contractService)
+
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
@@ -78,6 +82,7 @@ func main() {
 
 	s := grpclib.NewServer()
 	grpcserver.Register(s, srv)
+	grpcserver.RegisterContract(s, contractSrv)
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

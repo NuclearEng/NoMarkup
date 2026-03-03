@@ -14,6 +14,7 @@ import (
 	"time"
 
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
+	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
@@ -64,6 +65,9 @@ func main() {
 
 	jobClient := jobv1.NewJobServiceClient(jobConn)
 
+	// Contract service lives on the same gRPC server as the job service.
+	contractClient := contractv1.NewContractServiceClient(jobConn)
+
 	// Connect to Bid Engine via gRPC.
 	bidConn, err := grpc.NewClient(cfg.BidEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -85,8 +89,9 @@ func main() {
 	categoriesHandler := handler.NewCategoriesHandler(userClient)
 	jobHandler := handler.NewJobHandler(jobClient)
 	bidHandler := handler.NewBidHandler(bidClient)
+	contractHandler := handler.NewContractHandler(contractClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

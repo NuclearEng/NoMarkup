@@ -406,3 +406,75 @@ export interface MyBidsResponse {
 export interface BidCountResponse {
   count: number;
 }
+
+// Contract types
+export const MILESTONE_STATUS = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'in_progress',
+  SUBMITTED: 'submitted',
+  APPROVED: 'approved',
+  DISPUTED: 'disputed',
+  REVISION_REQUESTED: 'revision_requested',
+} as const;
+export type MilestoneStatus = (typeof MILESTONE_STATUS)[keyof typeof MILESTONE_STATUS];
+
+export const CHANGE_ORDER_STATUS = {
+  PROPOSED: 'proposed',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected',
+  EXPIRED: 'expired',
+} as const;
+export type ChangeOrderStatus = (typeof CHANGE_ORDER_STATUS)[keyof typeof CHANGE_ORDER_STATUS];
+
+export interface Milestone {
+  id: string;
+  contract_id: string;
+  description: string;
+  amount_cents: number;
+  sort_order: number;
+  status: string;
+  revision_count: number;
+  revision_notes: string;
+  submitted_at?: string;
+  approved_at?: string;
+}
+
+export interface Contract {
+  id: string;
+  contract_number: string;
+  job_id: string;
+  customer_id: string;
+  provider_id: string;
+  bid_id: string;
+  amount_cents: number;
+  payment_timing: string;
+  status: string;
+  customer_accepted: boolean;
+  provider_accepted: boolean;
+  acceptance_deadline: string;
+  milestones: Milestone[];
+  accepted_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface ChangeOrder {
+  id: string;
+  contract_id: string;
+  proposed_by: string;
+  description: string;
+  amount_delta_cents: number;
+  status: string;
+  created_at: string;
+}
+
+export interface ContractDetail {
+  contract: Contract;
+  change_orders: ChangeOrder[];
+}
+
+export interface ContractsResponse {
+  contracts: Contract[];
+  pagination: PaginationResponse;
+}

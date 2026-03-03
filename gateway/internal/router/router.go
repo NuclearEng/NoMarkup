@@ -18,6 +18,7 @@ func New(
 	categoriesHandler *handler.CategoriesHandler,
 	jobHandler *handler.JobHandler,
 	bidHandler *handler.BidHandler,
+	contractHandler *handler.ContractHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -96,6 +97,24 @@ func New(
 			r.Get("/mine", bidHandler.ListMyBids)
 			r.Patch("/{id}", bidHandler.UpdateBid)
 			r.Delete("/{id}", bidHandler.WithdrawBid)
+		})
+
+		// Contract routes
+		r.Route("/contracts", func(r chi.Router) {
+			r.Get("/", contractHandler.ListContracts)
+			r.Get("/{id}", contractHandler.GetContract)
+			r.Post("/{id}/accept", contractHandler.AcceptContract)
+			r.Post("/{id}/start", contractHandler.StartWork)
+			r.Post("/{id}/complete", contractHandler.MarkComplete)
+			r.Post("/{id}/approve-completion", contractHandler.ApproveCompletion)
+			r.Post("/{id}/cancel", contractHandler.CancelContract)
+		})
+
+		// Milestone routes
+		r.Route("/milestones", func(r chi.Router) {
+			r.Post("/{id}/submit", contractHandler.SubmitMilestone)
+			r.Post("/{id}/approve", contractHandler.ApproveMilestone)
+			r.Post("/{id}/revision", contractHandler.RequestRevision)
 		})
 	})
 
