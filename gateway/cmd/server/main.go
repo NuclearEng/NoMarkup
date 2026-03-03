@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
@@ -63,6 +64,16 @@ func main() {
 
 	jobClient := jobv1.NewJobServiceClient(jobConn)
 
+	// Connect to Bid Engine via gRPC.
+	bidConn, err := grpc.NewClient(cfg.BidEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to bid engine", "addr", cfg.BidEngineAddr, "error", err)
+		os.Exit(1)
+	}
+	defer bidConn.Close()
+
+	bidClient := bidv1.NewBidServiceClient(bidConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -73,8 +84,9 @@ func main() {
 	providerHandler := handler.NewProviderHandler(userClient)
 	categoriesHandler := handler.NewCategoriesHandler(userClient)
 	jobHandler := handler.NewJobHandler(jobClient)
+	bidHandler := handler.NewBidHandler(bidClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

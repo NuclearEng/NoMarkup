@@ -177,3 +177,10 @@ export const jobPostingSchema = z
   );
 
 export type JobPostingFormValues = z.infer<typeof jobPostingSchema>;
+
+// Bid schemas
+export const bidSchema = z.object({
+  amountDollars: z.number().positive('Bid amount must be positive'),
+});
+
+export type BidFormValues = z.infer<typeof bidSchema>;

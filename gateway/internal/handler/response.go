@@ -38,6 +38,8 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, st.Message())
 	case codes.InvalidArgument:
 		writeError(w, http.StatusBadRequest, st.Message())
+	case codes.FailedPrecondition:
+		writeError(w, http.StatusUnprocessableEntity, st.Message())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}

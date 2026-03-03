@@ -17,6 +17,7 @@ func New(
 	providerHandler *handler.ProviderHandler,
 	categoriesHandler *handler.CategoriesHandler,
 	jobHandler *handler.JobHandler,
+	bidHandler *handler.BidHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -81,6 +82,20 @@ func New(
 			r.Post("/{id}/publish", jobHandler.Publish)
 			r.Post("/{id}/close", jobHandler.Close)
 			r.Post("/{id}/cancel", jobHandler.Cancel)
+
+			// Bid routes nested under jobs
+			r.Post("/{jobID}/bids", bidHandler.PlaceBid)
+			r.Post("/{jobID}/bids/accept-offer", bidHandler.AcceptOffer)
+			r.Post("/{jobID}/bids/{bidID}/award", bidHandler.AwardBid)
+			r.Get("/{jobID}/bids", bidHandler.ListBidsForJob)
+			r.Get("/{jobID}/bids/count", bidHandler.GetBidCount)
+		})
+
+		// Bid routes not nested under a specific job
+		r.Route("/bids", func(r chi.Router) {
+			r.Get("/mine", bidHandler.ListMyBids)
+			r.Patch("/{id}", bidHandler.UpdateBid)
+			r.Delete("/{id}", bidHandler.WithdrawBid)
 		})
 	})
 

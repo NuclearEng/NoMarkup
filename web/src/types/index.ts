@@ -335,3 +335,74 @@ export interface JobsResponse {
   jobs: Job[];
   pagination: PaginationResponse;
 }
+
+// Bid types
+export interface BidUpdate {
+  amount_cents: number;
+  updated_at: string;
+}
+
+export interface Bid {
+  id: string;
+  job_id: string;
+  provider_id: string;
+  amount_cents: number;
+  is_offer_accepted: boolean;
+  status: BidStatus;
+  original_amount_cents: number;
+  bid_history: BidUpdate[];
+  created_at: string;
+  updated_at: string;
+  awarded_at: string | null;
+  withdrawn_at: string | null;
+}
+
+export interface TrustScoreSummary {
+  overall_score: number;
+  tier: TrustTier;
+}
+
+export interface ReviewSummary {
+  average_rating: number;
+  review_count: number;
+  on_time_rate: number;
+}
+
+export interface BidWithProvider {
+  bid: Bid;
+  provider_display_name: string;
+  provider_business_name: string;
+  provider_avatar_url: string | null;
+  trust_score: TrustScoreSummary | null;
+  review_summary: ReviewSummary | null;
+  jobs_completed: number;
+}
+
+export interface PlaceBidInput {
+  amount_cents: number;
+}
+
+export interface UpdateBidInput {
+  new_amount_cents: number;
+}
+
+export interface BidAnalytics {
+  total_bids: number;
+  lowest_bid_cents: number;
+  highest_bid_cents: number;
+  median_bid_cents: number;
+  offer_accepted_count: number;
+}
+
+export interface BidsForJobResponse {
+  bids: BidWithProvider[];
+}
+
+export interface MyBidsResponse {
+  bids: Bid[];
+  pagination: PaginationResponse;
+}
+
+export interface BidCountResponse {
+  count: number;
+}

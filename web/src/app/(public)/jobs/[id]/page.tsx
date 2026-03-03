@@ -1,23 +1,44 @@
 'use client';
 
-import { Calendar, ChevronRight, Clock, MapPin, Tag, Users } from 'lucide-react';
+import { Calendar, ChevronRight, Clock, LogIn, MapPin, Tag, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useParams } from 'next/navigation';
 
+import { BidForm } from '@/components/bids/BidForm';
+import { BidList } from '@/components/bids/BidList';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { useBidCount } from '@/hooks/useBids';
 import { useJob } from '@/hooks/useJobs';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
+import { JOB_STATUS, USER_ROLE } from '@/types';
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
   const jobId = params.id;
   const { data: job, isLoading, isError } = useJob(jobId);
+  const { data: bidCount } = useBidCount(jobId);
+  const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
+  const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
+  const isJobOwner = user !== null && job !== undefined && user.id === job.customer_id;
+
+  // Determine if the job is in a state where bidding/awarding is possible
+  const canBid =
+    job?.status === JOB_STATUS.ACTIVE &&
+    isProvider &&
+    !isJobOwner;
+
+  const canAward =
+    isJobOwner &&
+    (job.status === JOB_STATUS.ACTIVE || job.status === JOB_STATUS.CLOSED);
 
   if (isLoading) {
     return (
@@ -53,6 +74,8 @@ export default function JobDetailPage() {
       : job.schedule_type === 'date_range'
         ? 'Date Range'
         : 'Flexible';
+
+  const displayBidCount = bidCount ?? job.bid_count;
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
@@ -149,7 +172,7 @@ export default function JobDetailPage() {
               <div>
                 <h3 className="text-sm font-medium">Bids</h3>
                 <p className="text-sm text-muted-foreground">
-                  {String(job.bid_count)} bid{job.bid_count !== 1 ? 's' : ''} placed
+                  {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''} placed
                 </p>
                 {job.lowest_bid_cents ? (
                   <p className="text-sm font-medium text-green-600">
@@ -176,6 +199,19 @@ export default function JobDetailPage() {
             <>
               <Separator />
               <MarketRangeDisplay marketRange={job.market_range} />
+            </>
+          ) : null}
+
+          {/* Bids section for job owner */}
+          {isJobOwner ? (
+            <>
+              <Separator />
+              <div>
+                <h2 className="mb-4 text-lg font-semibold">
+                  Bids ({String(displayBidCount)})
+                </h2>
+                <BidList jobId={jobId} canAward={canAward} />
+              </div>
             </>
           ) : null}
         </div>
@@ -210,7 +246,36 @@ export default function JobDetailPage() {
                 </div>
               ) : null}
 
-              <Button className="min-h-[44px] w-full">Place a Bid</Button>
+              {/* Bid count badge */}
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <span className="text-sm text-muted-foreground">
+                  {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {/* Bidding section based on user role */}
+              {canBid ? (
+                <BidForm
+                  jobId={jobId}
+                  existingBid={null}
+                  startingBidCents={job.starting_bid_cents}
+                  offerAcceptedCents={job.offer_accepted_cents}
+                  marketRange={job.market_range}
+                  auctionEndsAt={job.auction_ends_at}
+                />
+              ) : !isAuthenticated ? (
+                <Link href={'/login' as Route}>
+                  <Button variant="outline" className="min-h-[44px] w-full">
+                    <LogIn className="h-4 w-4" aria-hidden="true" />
+                    Sign in to bid
+                  </Button>
+                </Link>
+              ) : !isProvider && !isJobOwner ? (
+                <p className="text-sm text-muted-foreground">
+                  Only providers can place bids on jobs.
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 

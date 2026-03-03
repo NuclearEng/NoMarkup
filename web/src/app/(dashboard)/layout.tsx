@@ -1,6 +1,6 @@
 'use client';
 
-import { Briefcase, Home, LayoutDashboard, PlusCircle, User } from 'lucide-react';
+import { Briefcase, Gavel, Home, LayoutDashboard, PlusCircle, User } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -46,18 +46,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
 
           {isProvider ? (
-            <Link
-              href={'/provider' as Route}
-              className={cn(
-                'flex min-h-[44px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
-                pathname.startsWith('/provider')
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-            >
-              <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-              Provider Dashboard
-            </Link>
+            <>
+              <Link
+                href={'/provider' as Route}
+                className={cn(
+                  'flex min-h-[44px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
+                  pathname.startsWith('/provider')
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+              >
+                <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                Provider Dashboard
+              </Link>
+              <Link
+                href={'/bids' as Route}
+                className={cn(
+                  'flex min-h-[44px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
+                  pathname === '/bids'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+              >
+                <Gavel className="h-4 w-4" aria-hidden="true" />
+                My Bids
+              </Link>
+            </>
           ) : null}
 
           <Link
