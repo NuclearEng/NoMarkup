@@ -684,3 +684,43 @@ export interface SendMessageInput {
   content: string;
   message_type?: string;
 }
+
+// Trust Score types
+export interface TrustScore {
+  user_id: string;
+  overall_score: number; // 0.0-1.0
+  tier: TrustTier;
+  feedback_score: number; // 0.0-1.0
+  volume_score: number;
+  risk_score: number;
+  fraud_score: number;
+  data_points: number;
+  computed_at: string;
+}
+
+export interface TrustScoreSnapshot {
+  score: TrustScore;
+  change_reason: string;
+  previous_overall: number;
+  previous_tier: TrustTier;
+  recorded_at: string;
+}
+
+export interface TierRequirement {
+  tier: TrustTier;
+  min_overall_score: number;
+  min_completed_jobs: number;
+  min_reviews: number;
+  min_rating: number;
+  requires_verification: boolean;
+  description: string;
+}
+
+export interface TrustScoreHistoryResponse {
+  snapshots: TrustScoreSnapshot[];
+  pagination: PaginationResponse;
+}
+
+export interface TierRequirementsResponse {
+  tiers: TierRequirement[];
+}

@@ -23,6 +23,7 @@ func New(
 	webhookHandler *handler.WebhookHandler,
 	chatHandler *handler.ChatHandler,
 	reviewHandler *handler.ReviewHandler,
+	trustHandler *handler.TrustHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -57,6 +58,11 @@ func New(
 		r.Get("/{id}", optionalAuth(authMW, jobHandler.GetJob))
 	})
 
+	// Public trust tier requirements (no auth required)
+	r.Route("/api/v1/trust", func(r chi.Router) {
+		r.Get("/tiers", trustHandler.GetTierRequirements)
+	})
+
 	// Public webhook routes (no auth, verified by Stripe signature)
 	r.Route("/api/v1/webhooks", func(r chi.Router) {
 		r.Post("/stripe", webhookHandler.HandleStripeWebhook)
@@ -72,6 +78,8 @@ func New(
 			r.Post("/me/roles", userHandler.EnableRole)
 			r.Get("/{id}", userHandler.GetUser)
 			r.Get("/{id}/reviews", reviewHandler.ListReviewsForUser)
+			r.Get("/{id}/trust-score", trustHandler.GetTrustScore)
+			r.Get("/{id}/trust-history", trustHandler.GetTrustScoreHistory)
 		})
 
 		r.Route("/providers", func(r chi.Router) {

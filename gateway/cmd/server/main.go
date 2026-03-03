@@ -19,6 +19,7 @@ import (
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -101,6 +102,16 @@ func main() {
 
 	chatClient := chatv1.NewChatServiceClient(chatConn)
 
+	// Connect to Trust Engine via gRPC.
+	trustConn, err := grpc.NewClient(cfg.TrustEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to trust engine", "addr", cfg.TrustEngineAddr, "error", err)
+		os.Exit(1)
+	}
+	defer trustConn.Close()
+
+	trustClient := trustv1.NewTrustServiceClient(trustConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -121,8 +132,9 @@ func main() {
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
 	webhookHandler := handler.NewWebhookHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient)
+	trustHandler := handler.NewTrustHandler(trustClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
