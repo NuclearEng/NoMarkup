@@ -547,3 +547,75 @@ export interface FeeCalculationInput {
   amount_cents: number;
   category_id?: string;
 }
+
+// Chat types
+export const CHANNEL_TYPE = {
+  INQUIRY: 'inquiry',
+  BID: 'bid',
+  CONTRACT: 'contract',
+} as const;
+export type ChannelType = (typeof CHANNEL_TYPE)[keyof typeof CHANNEL_TYPE];
+
+export const CHANNEL_STATUS = {
+  PENDING_APPROVAL: 'pending_approval',
+  ACTIVE: 'active',
+  READ_ONLY: 'read_only',
+  CLOSED: 'closed',
+} as const;
+export type ChannelStatus = (typeof CHANNEL_STATUS)[keyof typeof CHANNEL_STATUS];
+
+export const MESSAGE_TYPE = {
+  TEXT: 'text',
+  IMAGE: 'image',
+  FILE: 'file',
+  SYSTEM: 'system',
+  CONTACT_SHARE: 'contact_share',
+} as const;
+export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
+
+export interface Channel {
+  id: string;
+  job_id: string;
+  customer_id: string;
+  provider_id: string;
+  status: string;
+  channel_type: string;
+  last_message?: ChatMessage;
+  unread_count: number;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  channel_id: string;
+  sender_id: string;
+  message_type: string;
+  content: string;
+  attachment_url?: string;
+  attachment_name?: string;
+  flagged_contact_info: boolean;
+  is_deleted: boolean;
+  created_at: string;
+}
+
+export interface ChannelsResponse {
+  channels: Channel[];
+  pagination: PaginationResponse;
+}
+
+export interface MessagesResponse {
+  messages: ChatMessage[];
+  has_more: boolean;
+}
+
+export interface UnreadCountResponse {
+  total_unread: number;
+  channels: { channel_id: string; unread_count: number }[];
+}
+
+export interface SendMessageInput {
+  content: string;
+  message_type?: string;
+}

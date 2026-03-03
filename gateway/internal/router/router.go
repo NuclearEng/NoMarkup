@@ -21,6 +21,7 @@ func New(
 	contractHandler *handler.ContractHandler,
 	paymentHandler *handler.PaymentHandler,
 	webhookHandler *handler.WebhookHandler,
+	chatHandler *handler.ChatHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -140,7 +141,20 @@ func New(
 			r.Get("/{id}", paymentHandler.GetPayment)
 			r.Post("/{id}/process", paymentHandler.ProcessPayment)
 		})
+
+		// Chat routes
+		r.Route("/channels", func(r chi.Router) {
+			r.Get("/", chatHandler.ListChannels)
+			r.Get("/unread", chatHandler.GetUnreadCount)
+			r.Get("/{id}", chatHandler.GetChannel)
+			r.Get("/{id}/messages", chatHandler.ListMessages)
+			r.Post("/{id}/messages", chatHandler.SendMessage)
+			r.Post("/{id}/read", chatHandler.MarkRead)
+		})
 	})
+
+	// WebSocket stub (outside protected routes, auth via query param in the future)
+	r.Get("/ws/chat", chatHandler.WebSocketStub)
 
 	return r
 }

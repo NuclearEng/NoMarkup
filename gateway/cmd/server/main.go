@@ -14,6 +14,7 @@ import (
 	"time"
 
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
+	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
@@ -89,6 +90,16 @@ func main() {
 
 	paymentClient := paymentv1.NewPaymentServiceClient(paymentConn)
 
+	// Connect to Chat Service via gRPC.
+	chatConn, err := grpc.NewClient(cfg.ChatServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to chat service", "addr", cfg.ChatServiceAddr, "error", err)
+		os.Exit(1)
+	}
+	defer chatConn.Close()
+
+	chatClient := chatv1.NewChatServiceClient(chatConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -103,8 +114,9 @@ func main() {
 	contractHandler := handler.NewContractHandler(contractClient)
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
 	webhookHandler := handler.NewWebhookHandler(paymentClient)
+	chatHandler := handler.NewChatHandler(chatClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

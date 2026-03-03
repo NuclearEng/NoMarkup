@@ -187,3 +187,6 @@ export type BidFormValues = z.infer<typeof bidSchema>;
 
 // Contract schemas
 export const revisionNotesSchema = z.string().min(10, 'Revision notes must be at least 10 characters').max(2000);
+
+// Chat schemas
+export const chatMessageSchema = z.string().min(1, 'Message cannot be empty').max(2000, 'Message too long');
