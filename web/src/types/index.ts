@@ -120,3 +120,36 @@ export interface PaginationResponse {
   totalPages: number;
   hasNext: boolean;
 }
+
+// Auth types
+export interface AuthResponse {
+  user_id: string;
+  access_token: string;
+  access_token_expires_at: string;
+}
+
+export interface LoginResponse extends AuthResponse {
+  mfa_required: boolean;
+  mfa_challenge_token: string | null;
+}
+
+export interface TokenPair {
+  access_token: string;
+  refresh_token: string;
+  access_token_expires_at: string;
+}
+
+export interface RegisterInput {
+  email: string;
+  password: string;
+  display_name: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface VerifyEmailResponse {
+  verified: boolean;
+}

@@ -4,11 +4,12 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/nomarkup/nomarkup/gateway/internal/handler"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // New creates and configures the HTTP router with all middleware and routes.
-func New(allowedOrigins []string) *chi.Mux {
+func New(allowedOrigins []string, authMW *middleware.AuthMiddleware, authHandler *handler.AuthHandler) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware stack
@@ -20,12 +21,20 @@ func New(allowedOrigins []string) *chi.Mux {
 	// Health check (public, no auth)
 	r.Get("/health", healthHandler)
 
-	// API v1 routes
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(middleware.Auth)
+	// Public auth routes (no auth middleware)
+	r.Route("/api/v1/auth", func(r chi.Router) {
+		r.Post("/register", authHandler.Register)
+		r.Post("/login", authHandler.Login)
+		r.Post("/refresh", authHandler.Refresh)
+		r.Post("/logout", authHandler.Logout)
+		r.Post("/verify-email", authHandler.VerifyEmail)
+	})
 
-		// Route groups will be registered here as handlers are implemented
-		// r.Route("/auth", authRoutes)
+	// Protected API v1 routes
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(authMW.Handler)
+
+		// Protected route groups will be registered here as handlers are implemented.
 		// r.Route("/users", userRoutes)
 		// r.Route("/jobs", jobRoutes)
 		// r.Route("/bids", bidRoutes)
