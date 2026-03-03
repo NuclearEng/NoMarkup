@@ -1,0 +1,37 @@
+.git
+.env*
+!.env.example
+
+# Node
+**/node_modules
+**/.next
+
+# Rust
+engines/target
+
+# Go binaries
+gateway/bin
+services/*/bin
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Testing / CI
+coverage
+**/coverage
+**/.nyc_output
+
+# Documentation
+*.md
+!proto/**/*.md
+
+# Keys (mounted as volumes, not baked into images)
+keys/
+
+# Deploy configs not needed in build context
+deploy/k8s
+deploy/terraform

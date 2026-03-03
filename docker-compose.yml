@@ -1,4 +1,6 @@
 services:
+  # ── Infrastructure ─────────────────────────────────────────
+
   postgres:
     image: postgis/postgis:16-3.4
     ports:
@@ -59,6 +61,193 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # ── Go Microservices ───────────────────────────────────────
+
+  user:
+    build:
+      context: .
+      dockerfile: deploy/docker/user.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      USER_SERVICE_PORT: "50051"
+      JWT_PRIVATE_KEY_PATH: "/keys/private.pem"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  job:
+    build:
+      context: .
+      dockerfile: deploy/docker/job.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      JOB_SERVICE_PORT: "50052"
+      MEILISEARCH_HOST: "http://meilisearch:7700"
+      MEILISEARCH_API_KEY: "masterKey"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+
+  payment:
+    build:
+      context: .
+      dockerfile: deploy/docker/payment.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      PAYMENT_SERVICE_PORT: "50054"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  chat:
+    build:
+      context: .
+      dockerfile: deploy/docker/chat.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      CHAT_SERVICE_PORT: "50055"
+      CHAT_WS_PORT: "50065"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification:
+    build:
+      context: .
+      dockerfile: deploy/docker/notification.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      NOTIFICATION_SERVICE_PORT: "50059"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Rust Engines ───────────────────────────────────────────
+
+  bidding:
+    build:
+      context: .
+      dockerfile: deploy/docker/bidding.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      BID_ENGINE_PORT: "50053"
+      RUST_LOG: "info"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  fraud:
+    build:
+      context: .
+      dockerfile: deploy/docker/fraud.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      FRAUD_ENGINE_PORT: "50056"
+      RUST_LOG: "info"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  trust:
+    build:
+      context: .
+      dockerfile: deploy/docker/trust.Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      TRUST_ENGINE_PORT: "50057"
+      RUST_LOG: "info"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  imaging:
+    build:
+      context: .
+      dockerfile: deploy/docker/imaging.Dockerfile
+    environment:
+      IMAGING_SERVICE_PORT: "50058"
+      S3_BUCKET: "nomarkup-dev"
+      S3_ENDPOINT: "http://minio:9000"
+      S3_PUBLIC_URL: "http://localhost:9000/nomarkup-dev"
+      AWS_ACCESS_KEY_ID: "minioadmin"
+      AWS_SECRET_ACCESS_KEY: "minioadmin"
+      AWS_REGION: "us-east-1"
+      RUST_LOG: "info"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # ── API Gateway ────────────────────────────────────────────
+
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/docker/gateway.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      GATEWAY_PORT: "8080"
+      JWT_PUBLIC_KEY_PATH: "/keys/public.pem"
+      ALLOWED_ORIGINS: "http://localhost:3000"
+      SECURE_COOKIES: "false"
+      USER_SERVICE_ADDR: "user:50051"
+      JOB_SERVICE_ADDR: "job:50052"
+      BID_ENGINE_ADDR: "bidding:50053"
+      PAYMENT_SERVICE_ADDR: "payment:50054"
+      CHAT_SERVICE_ADDR: "chat:50055"
+      CHAT_WS_ADDR: "chat:50065"
+      FRAUD_ENGINE_ADDR: "fraud:50056"
+      TRUST_ENGINE_ADDR: "trust:50057"
+      IMAGING_SERVICE_ADDR: "imaging:50058"
+      NOTIFICATION_SERVICE_ADDR: "notification:50059"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      - user
+      - job
+      - payment
+      - chat
+      - notification
+      - bidding
+      - fraud
+      - trust
+      - imaging
+
+  # ── Frontend ───────────────────────────────────────────────
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/web.Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:8080"
+      NEXT_PUBLIC_WS_URL: "ws://localhost:8080"
+    depends_on:
+      - gateway
 
 volumes:
   pgdata:

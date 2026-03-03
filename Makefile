@@ -1,4 +1,4 @@
-.PHONY: up down migrate-up migrate-down proto-gen proto-gen-go proto-gen-rust \
+.PHONY: up down dev-full dev-infra migrate-up migrate-down proto-gen proto-gen-go proto-gen-rust \
        setup-tools test lint fmt build-gateway build-web build-engines clean
 
 # ── Infrastructure ────────────────────────────────────────────
@@ -8,6 +8,12 @@ up:
 
 down:
 	docker compose down
+
+dev-full:
+	docker compose up --build
+
+dev-infra:
+	docker compose up postgres redis meilisearch minio
 
 # ── Database ──────────────────────────────────────────────────
 
