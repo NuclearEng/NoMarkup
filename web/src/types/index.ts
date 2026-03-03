@@ -813,3 +813,86 @@ export interface ReviewAlertInput {
   resolution_notes: string;
   restrict_user: boolean;
 }
+
+// Notification types
+export const NOTIFICATION_TYPE = {
+  NEW_BID: 'new_bid',
+  BID_AWARDED: 'bid_awarded',
+  BID_NOT_SELECTED: 'bid_not_selected',
+  AUCTION_CLOSING_SOON: 'auction_closing_soon',
+  AUCTION_CLOSED: 'auction_closed',
+  OFFER_ACCEPTED: 'offer_accepted',
+  CONTRACT_CREATED: 'contract_created',
+  CONTRACT_ACCEPTED: 'contract_accepted',
+  WORK_STARTED: 'work_started',
+  MILESTONE_SUBMITTED: 'milestone_submitted',
+  MILESTONE_APPROVED: 'milestone_approved',
+  REVISION_REQUESTED: 'revision_requested',
+  WORK_COMPLETED: 'work_completed',
+  COMPLETION_APPROVED: 'completion_approved',
+  PAYMENT_RECEIVED: 'payment_received',
+  PAYMENT_RELEASED: 'payment_released',
+  PAYMENT_FAILED: 'payment_failed',
+  PAYOUT_SENT: 'payout_sent',
+  NEW_MESSAGE: 'new_message',
+  REVIEW_RECEIVED: 'review_received',
+  REVIEW_REMINDER: 'review_reminder',
+  DISPUTE_OPENED: 'dispute_opened',
+  DISPUTE_RESOLVED: 'dispute_resolved',
+  TIER_UPGRADE: 'tier_upgrade',
+  TIER_DOWNGRADE: 'tier_downgrade',
+} as const;
+export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
+
+export const NOTIFICATION_CHANNEL = {
+  PUSH: 'push',
+  EMAIL: 'email',
+  SMS: 'sms',
+  IN_APP: 'in_app',
+} as const;
+export type NotificationChannel = (typeof NOTIFICATION_CHANNEL)[keyof typeof NOTIFICATION_CHANNEL];
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  notification_type: NotificationType;
+  title: string;
+  body: string;
+  action_url: string;
+  data: Record<string, string>;
+  is_read: boolean;
+  channels_sent: NotificationChannel[];
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationPreference {
+  notification_type: NotificationType;
+  push_enabled: boolean;
+  email_enabled: boolean;
+  sms_enabled: boolean;
+  in_app_enabled: boolean;
+}
+
+export interface NotificationsResponse {
+  notifications: Notification[];
+  pagination: PaginationResponse;
+}
+
+export interface NotificationUnreadCountResponse {
+  count: number;
+}
+
+export interface PreferencesResponse {
+  preferences: NotificationPreference[];
+  global_push_enabled: boolean;
+  global_email_enabled: boolean;
+  global_sms_enabled: boolean;
+}
+
+export interface UpdatePreferencesInput {
+  preferences: NotificationPreference[];
+  global_push_enabled?: boolean;
+  global_email_enabled?: boolean;
+  global_sms_enabled?: boolean;
+}

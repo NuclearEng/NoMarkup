@@ -20,8 +20,9 @@ type Config struct {
 	ChatServiceAddr    string
 	FraudEngineAddr    string
 	TrustEngineAddr    string
-	ImagingServiceAddr string
-	AllowedOrigins     []string
+	ImagingServiceAddr      string
+	NotificationServiceAddr string
+	AllowedOrigins          []string
 }
 
 // Load reads configuration from environment variables.
@@ -46,8 +47,9 @@ func Load() (*Config, error) {
 		ChatServiceAddr:    getEnv("CHAT_SERVICE_ADDR", "localhost:50055"),
 		FraudEngineAddr:    getEnv("FRAUD_ENGINE_ADDR", "localhost:50056"),
 		TrustEngineAddr:    getEnv("TRUST_ENGINE_ADDR", "localhost:50057"),
-		ImagingServiceAddr: getEnv("IMAGING_SERVICE_ADDR", "localhost:50058"),
-		AllowedOrigins:     strings.Split(origins, ","),
+		ImagingServiceAddr:      getEnv("IMAGING_SERVICE_ADDR", "localhost:50058"),
+		NotificationServiceAddr: getEnv("NOTIFICATION_SERVICE_ADDR", "localhost:50059"),
+		AllowedOrigins:          strings.Split(origins, ","),
 	}
 
 	return cfg, nil

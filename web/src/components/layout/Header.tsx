@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { APP_NAME } from '@/lib/constants';
 import { useAuthStore } from '@/stores/auth-store';
 
+import { NotificationBell } from './NotificationBell';
+
 export function Header() {
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -38,6 +40,7 @@ export function Header() {
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
           {isAuthenticated ? (
             <>
+              <NotificationBell />
               <span className="text-sm text-muted-foreground">
                 {user?.displayName ?? user?.email}
               </span>
@@ -111,9 +114,12 @@ export function Header() {
           <div className="flex flex-col gap-3">
             {isAuthenticated ? (
               <>
-                <span className="text-sm text-muted-foreground">
-                  {user?.displayName ?? user?.email}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">
+                    {user?.displayName ?? user?.email}
+                  </span>
+                  <NotificationBell />
+                </div>
                 <Button
                   variant="outline"
                   className="min-h-[44px] w-full"

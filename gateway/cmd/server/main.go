@@ -17,6 +17,7 @@ import (
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
@@ -123,6 +124,16 @@ func main() {
 
 	fraudClient := fraudv1.NewFraudServiceClient(fraudConn)
 
+	// Connect to Notification Service via gRPC.
+	notifConn, err := grpc.NewClient(cfg.NotificationServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to notification service", "addr", cfg.NotificationServiceAddr, "error", err)
+		os.Exit(1)
+	}
+	defer notifConn.Close()
+
+	notifClient := notificationv1.NewNotificationServiceClient(notifConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -145,8 +156,9 @@ func main() {
 	chatHandler := handler.NewChatHandler(chatClient)
 	trustHandler := handler.NewTrustHandler(trustClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
+	notificationHandler := handler.NewNotificationHandler(notifClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

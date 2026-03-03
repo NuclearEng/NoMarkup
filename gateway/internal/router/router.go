@@ -25,6 +25,7 @@ func New(
 	reviewHandler *handler.ReviewHandler,
 	trustHandler *handler.TrustHandler,
 	fraudHandler *handler.FraudHandler,
+	notificationHandler *handler.NotificationHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -178,6 +179,16 @@ func New(
 			r.Get("/alerts", fraudHandler.ListAlerts)
 			r.Post("/alerts/{id}/review", fraudHandler.ReviewAlert)
 			r.Get("/users/{id}/risk", fraudHandler.GetUserRiskProfile)
+		})
+
+		// Notification routes
+		r.Route("/notifications", func(r chi.Router) {
+			r.Get("/", notificationHandler.ListNotifications)
+			r.Post("/{id}/read", notificationHandler.MarkAsRead)
+			r.Post("/read-all", notificationHandler.MarkAllAsRead)
+			r.Get("/unread-count", notificationHandler.GetUnreadCount)
+			r.Get("/preferences", notificationHandler.GetPreferences)
+			r.Put("/preferences", notificationHandler.UpdatePreferences)
 		})
 	})
 
