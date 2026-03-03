@@ -16,6 +16,7 @@ import (
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
@@ -112,6 +113,16 @@ func main() {
 
 	trustClient := trustv1.NewTrustServiceClient(trustConn)
 
+	// Connect to Fraud Engine via gRPC.
+	fraudConn, err := grpc.NewClient(cfg.FraudEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to connect to fraud engine", "addr", cfg.FraudEngineAddr, "error", err)
+		os.Exit(1)
+	}
+	defer fraudConn.Close()
+
+	fraudClient := fraudv1.NewFraudServiceClient(fraudConn)
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -133,8 +144,9 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient)
 	trustHandler := handler.NewTrustHandler(trustClient)
+	fraudHandler := handler.NewFraudHandler(fraudClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler)
+	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

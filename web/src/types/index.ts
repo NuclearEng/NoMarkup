@@ -724,3 +724,92 @@ export interface TrustScoreHistoryResponse {
 export interface TierRequirementsResponse {
   tiers: TierRequirement[];
 }
+
+// Fraud Detection types
+export const FRAUD_SIGNAL_TYPE = {
+  VELOCITY: 'velocity',
+  GEO_MISMATCH: 'geo_mismatch',
+  DEVICE_FINGERPRINT: 'device_fingerprint',
+  SHILL_BID: 'shill_bid',
+  ACCOUNT_TAKEOVER: 'account_takeover',
+  PAYMENT_FRAUD: 'payment_fraud',
+  FAKE_REVIEW: 'fake_review',
+  MULTI_ACCOUNT: 'multi_account',
+  BOT_BEHAVIOR: 'bot_behavior',
+} as const;
+export type FraudSignalType = (typeof FRAUD_SIGNAL_TYPE)[keyof typeof FRAUD_SIGNAL_TYPE];
+
+export const RISK_LEVEL = {
+  LOW: 'low',
+  MEDIUM: 'medium',
+  HIGH: 'high',
+  CRITICAL: 'critical',
+} as const;
+export type RiskLevel = (typeof RISK_LEVEL)[keyof typeof RISK_LEVEL];
+
+export const FRAUD_DECISION = {
+  ALLOW: 'allow',
+  ALLOW_WITH_REVIEW: 'allow_with_review',
+  CHALLENGE: 'challenge',
+  BLOCK: 'block',
+} as const;
+export type FraudDecision = (typeof FRAUD_DECISION)[keyof typeof FRAUD_DECISION];
+
+export const ALERT_STATUS = {
+  OPEN: 'open',
+  INVESTIGATING: 'investigating',
+  RESOLVED_FRAUD: 'resolved_fraud',
+  RESOLVED_LEGITIMATE: 'resolved_legitimate',
+  DISMISSED: 'dismissed',
+} as const;
+export type AlertStatus = (typeof ALERT_STATUS)[keyof typeof ALERT_STATUS];
+
+export interface FraudSignal {
+  id: string;
+  user_id: string;
+  signal_type: FraudSignalType;
+  confidence: number;
+  risk_level: RiskLevel;
+  ip_address: string;
+  device_fingerprint: string;
+  description: string;
+  reference_entity_type: string;
+  reference_entity_id: string;
+  created_at: string;
+}
+
+export interface FraudAlert {
+  id: string;
+  user_id: string;
+  signals: FraudSignal[];
+  aggregate_risk_level: RiskLevel;
+  status: AlertStatus;
+  assigned_admin_id: string;
+  resolution_notes: string;
+  auto_resolved: boolean;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+}
+
+export interface UserRiskProfile {
+  user_id: string;
+  overall_risk_score: number;
+  risk_level: RiskLevel;
+  total_signals: number;
+  active_alerts: number;
+  recent_signal_types: FraudSignalType[];
+  is_restricted: boolean;
+  last_checked_at: string;
+}
+
+export interface FraudAlertsResponse {
+  alerts: FraudAlert[];
+  pagination: PaginationResponse;
+}
+
+export interface ReviewAlertInput {
+  status: AlertStatus;
+  resolution_notes: string;
+  restrict_user: boolean;
+}

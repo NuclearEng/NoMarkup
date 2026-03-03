@@ -24,6 +24,7 @@ func New(
 	chatHandler *handler.ChatHandler,
 	reviewHandler *handler.ReviewHandler,
 	trustHandler *handler.TrustHandler,
+	fraudHandler *handler.FraudHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -169,6 +170,14 @@ func New(
 			r.Get("/{id}/messages", chatHandler.ListMessages)
 			r.Post("/{id}/messages", chatHandler.SendMessage)
 			r.Post("/{id}/read", chatHandler.MarkRead)
+		})
+
+		// Admin fraud routes
+		r.Route("/admin/fraud", func(r chi.Router) {
+			// TODO: Add admin role check middleware later
+			r.Get("/alerts", fraudHandler.ListAlerts)
+			r.Post("/alerts/{id}/review", fraudHandler.ReviewAlert)
+			r.Get("/users/{id}/risk", fraudHandler.GetUserRiskProfile)
 		})
 	})
 
