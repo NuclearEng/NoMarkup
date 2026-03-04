@@ -644,9 +644,9 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 ///
 /// Returns `Ok(())` when `amount_cents > 0`, or `BidError::InvalidAmount` otherwise.
 /// This is the same check used inside `place_bid` and `update_bid`, extracted for
-/// testability.
-#[cfg(test)]
-fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
+/// testability and benchmarking.
+#[must_use]
+pub fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
     if amount_cents <= 0 {
         return Err(BidError::InvalidAmount(
             "amount must be greater than zero".into(),
@@ -658,8 +658,8 @@ fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
 /// Rank bids by amount ascending (lowest bid wins in a reverse auction).
 ///
 /// Returns a new `Vec<Bid>` sorted from lowest to highest `amount_cents`.
-#[cfg(test)]
-fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
+#[must_use]
+pub fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
     let mut sorted = bids.to_vec();
     sorted.sort_by_key(|b| b.amount_cents);
     sorted
@@ -668,8 +668,8 @@ fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
 /// Determine whether a bid qualifies as an "offer accepted" bid.
 ///
 /// Returns `true` when the offer threshold is set and `amount_cents` is at or below it.
-#[cfg(test)]
-fn is_offer_accepted(offer_accepted_cents: Option<i64>, amount_cents: i64) -> bool {
+#[must_use]
+pub fn is_offer_accepted(offer_accepted_cents: Option<i64>, amount_cents: i64) -> bool {
     offer_accepted_cents.is_some_and(|offer| amount_cents <= offer)
 }
 
