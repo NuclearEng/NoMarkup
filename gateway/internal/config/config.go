@@ -10,6 +10,7 @@ import (
 // Config holds all gateway configuration loaded from environment variables.
 type Config struct {
 	Port               int
+	Environment        string // "production", "staging", or "development" (default)
 	DatabaseURL        string
 	RedisURL           string
 	JWTPublicKeyPath   string
@@ -26,6 +27,11 @@ type Config struct {
 	AllowedOrigins          []string
 }
 
+// IsProduction returns true when the gateway is running in a production environment.
+func (c *Config) IsProduction() bool {
+	return c.Environment == "production"
+}
+
 // Load reads configuration from environment variables.
 // Returns an error if required variables are missing.
 func Load() (*Config, error) {
@@ -38,6 +44,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Port:               port,
+		Environment:        getEnv("ENVIRONMENT", "development"),
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTPublicKeyPath:   getEnv("JWT_PUBLIC_KEY_PATH", ""),

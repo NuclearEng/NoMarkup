@@ -189,7 +189,7 @@ func main() {
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
 
-	r := router.New(cfg.AllowedOrigins, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler, adminUsersHandler, adminVerificationHandler, adminJobsHandler, adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler, adminPlatformHandler)
+	r := router.New(cfg.AllowedOrigins, cfg.IsProduction(), authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler, adminUsersHandler, adminVerificationHandler, adminJobsHandler, adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler, adminPlatformHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

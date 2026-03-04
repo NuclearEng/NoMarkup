@@ -1,16 +1,22 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/nomarkup/nomarkup/gateway/internal/handler"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // New creates and configures the HTTP router with all middleware and routes.
+// When production is true, HSTS headers are applied and wildcard CORS origins are rejected.
 func New(
 	allowedOrigins []string,
+	production bool,
 	authMW *middleware.AuthMiddleware,
 	authHandler *handler.AuthHandler,
 	userHandler *handler.UserHandler,
@@ -41,12 +47,15 @@ func New(
 
 	// Global middleware stack
 	r.Use(middleware.Recovery)
+	r.Use(middleware.Metrics)
 	r.Use(middleware.Logging)
-	r.Use(middleware.CORS(allowedOrigins))
+	r.Use(middleware.CORS(allowedOrigins, production))
+	r.Use(middleware.SecurityHeaders(production))
 	r.Use(middleware.RateLimit)
 
-	// Health check (public, no auth)
+	// Observability endpoints (public, no auth)
 	r.Get("/health", healthHandler)
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Public auth routes (no auth middleware)
 	r.Route("/api/v1/auth", func(r chi.Router) {
@@ -308,9 +317,19 @@ func New(
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	version := os.Getenv("BUILD_VERSION")
+	if version == "" {
+		version = "dev"
+	}
+
+	resp := map[string]string{
+		"status":  "ok",
+		"version": version,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // optionalAuth tries to extract auth claims if an Authorization header is present,

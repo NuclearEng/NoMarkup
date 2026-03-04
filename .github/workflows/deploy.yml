@@ -1,0 +1,76 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Deployment instructions
+        run: |
+          echo "============================================="
+          echo "  NoMarkup Production Deployment"
+          echo "  Version: ${{ steps.version.outputs.VERSION }}"
+          echo "  Commit:  ${GITHUB_SHA}"
+          echo "============================================="
+          echo ""
+          echo "Deployment steps (to be automated):"
+          echo ""
+          echo "1. Build and push Docker images:"
+          echo "   docker build -f deploy/docker/web.Dockerfile -t nomarkup/web:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/gateway.Dockerfile -t nomarkup/gateway:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/user.Dockerfile -t nomarkup/user:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/job.Dockerfile -t nomarkup/job:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/payment.Dockerfile -t nomarkup/payment:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/chat.Dockerfile -t nomarkup/chat:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/notification.Dockerfile -t nomarkup/notification:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/bidding.Dockerfile -t nomarkup/bidding:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/fraud.Dockerfile -t nomarkup/fraud:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/trust.Dockerfile -t nomarkup/trust:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/imaging.Dockerfile -t nomarkup/imaging:${{ steps.version.outputs.VERSION }} ."
+          echo ""
+          echo "2. Push images to container registry:"
+          echo "   docker push nomarkup/*:${{ steps.version.outputs.VERSION }}"
+          echo ""
+          echo "3. Run database migrations:"
+          echo "   kubectl exec -it deploy/migration-job -- migrate -path /migrations -database \$DATABASE_URL up"
+          echo ""
+          echo "4. Apply Kubernetes manifests:"
+          echo "   kubectl apply -f deploy/k8s/ --namespace=nomarkup"
+          echo ""
+          echo "5. Update image tags in deployments:"
+          echo "   kubectl set image deployment/gateway gateway=nomarkup/gateway:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/web web=nomarkup/web:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/user user=nomarkup/user:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/job job=nomarkup/job:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/payment payment=nomarkup/payment:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/chat chat=nomarkup/chat:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/notification notification=nomarkup/notification:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/bidding bidding=nomarkup/bidding:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/fraud fraud=nomarkup/fraud:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/trust trust=nomarkup/trust:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   kubectl set image deployment/imaging imaging=nomarkup/imaging:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo ""
+          echo "6. Verify rollout:"
+          echo "   kubectl rollout status deployment --namespace=nomarkup --timeout=300s"
+          echo ""
+          echo "7. Run smoke tests:"
+          echo "   curl -f https://api.nomarkup.com/health"
+          echo "   curl -f https://nomarkup.com"
+          echo ""
+          echo "============================================="
+          echo "  Deployment placeholder complete."
+          echo "  Replace this job with actual CI/CD steps"
+          echo "  when Kubernetes cluster is provisioned."
+          echo "============================================="
