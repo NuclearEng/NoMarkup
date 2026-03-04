@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -251,6 +252,161 @@ func (r *PostgresRepository) UpdateSubscriptionPeriod(ctx context.Context, id st
 		return fmt.Errorf("update subscription period: %w", domain.ErrSubscriptionNotFound)
 	}
 	return nil
+}
+
+func (r *PostgresRepository) UpdateTier(ctx context.Context, tierID string, updates map[string]interface{}) (*domain.SubscriptionTier, error) {
+	setClauses := []string{}
+	args := []interface{}{}
+	argIdx := 1
+
+	for col, val := range updates {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, argIdx))
+		args = append(args, val)
+		argIdx++
+	}
+
+	if len(setClauses) == 0 {
+		return r.GetTier(ctx, tierID)
+	}
+
+	setClauses = append(setClauses, "updated_at = now()")
+	args = append(args, tierID)
+
+	query := fmt.Sprintf(`UPDATE subscription_tiers SET %s WHERE id = $%d`,
+		strings.Join(setClauses, ", "), argIdx)
+
+	tag, err := r.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("update tier: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("update tier: %w", domain.ErrTierNotFound)
+	}
+
+	return r.GetTier(ctx, tierID)
+}
+
+func (r *PostgresRepository) AdminListSubscriptions(ctx context.Context, statusFilter string, tierID string, page, pageSize int) ([]*domain.Subscription, int, int64, error) {
+	where := []string{}
+	args := []interface{}{}
+	argIdx := 1
+
+	if statusFilter != "" {
+		where = append(where, fmt.Sprintf("s.status = $%d", argIdx))
+		args = append(args, statusFilter)
+		argIdx++
+	}
+
+	if tierID != "" {
+		where = append(where, fmt.Sprintf("s.tier_id = $%d", argIdx))
+		args = append(args, tierID)
+		argIdx++
+	}
+
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	// Count total.
+	var totalCount int
+	err := r.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM subscriptions s %s`, whereClause), args...).Scan(&totalCount)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("admin list subscriptions count: %w", err)
+	}
+
+	// Calculate MRR: sum of monthly-equivalent prices for active subscriptions.
+	var totalMRR int64
+	mrrArgs := make([]interface{}, len(args))
+	copy(mrrArgs, args)
+	err = r.pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT COALESCE(SUM(
+			CASE WHEN s.billing_interval = 'annual' THEN s.current_price_cents / 12
+			     ELSE s.current_price_cents
+			END
+		), 0)::bigint
+		FROM subscriptions s
+		%s AND s.status IN ('active', 'trialing')`, func() string {
+		if whereClause == "" {
+			return "WHERE 1=1"
+		}
+		return whereClause
+	}()), mrrArgs...).Scan(&totalMRR)
+	if err != nil {
+		// MRR calculation is best-effort; don't fail the whole query.
+		totalMRR = 0
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+
+	selectQuery := fmt.Sprintf(`
+		SELECT s.id, s.user_id, s.tier_id, s.status, s.billing_interval,
+		       s.current_price_cents,
+		       COALESCE(s.stripe_subscription_id, ''), COALESCE(s.stripe_customer_id, ''),
+		       s.current_period_start, s.current_period_end, s.trial_end,
+		       s.cancelled_at, s.expires_at,
+		       s.created_at, s.updated_at,
+		       t.id, t.name, t.slug,
+		       t.monthly_price_cents, t.annual_price_cents,
+		       t.fee_discount_percentage,
+		       t.max_active_bids, t.max_service_categories,
+		       t.featured_placement, t.analytics_access, t.priority_support,
+		       t.verified_badge_boost, t.portfolio_image_limit, t.instant_enabled,
+		       t.sort_order, t.is_active,
+		       COALESCE(t.stripe_price_id_monthly, ''), COALESCE(t.stripe_price_id_annual, ''),
+		       t.created_at, t.updated_at
+		FROM subscriptions s
+		JOIN subscription_tiers t ON t.id = s.tier_id
+		%s
+		ORDER BY s.created_at DESC
+		LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1)
+
+	args = append(args, pageSize, offset)
+
+	rows, err := r.pool.Query(ctx, selectQuery, args...)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("admin list subscriptions query: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []*domain.Subscription
+	for rows.Next() {
+		sub := &domain.Subscription{}
+		tier := &domain.SubscriptionTier{}
+		err := rows.Scan(
+			&sub.ID, &sub.UserID, &sub.TierID, &sub.Status, &sub.BillingInterval,
+			&sub.CurrentPriceCents,
+			&sub.StripeSubscriptionID, &sub.StripeCustomerID,
+			&sub.CurrentPeriodStart, &sub.CurrentPeriodEnd, &sub.TrialEnd,
+			&sub.CancelledAt, &sub.ExpiresAt,
+			&sub.CreatedAt, &sub.UpdatedAt,
+			&tier.ID, &tier.Name, &tier.Slug,
+			&tier.MonthlyPriceCents, &tier.AnnualPriceCents,
+			&tier.FeeDiscountPercentage,
+			&tier.MaxActiveBids, &tier.MaxServiceCategories,
+			&tier.FeaturedPlacement, &tier.AnalyticsAccess, &tier.PrioritySupport,
+			&tier.VerifiedBadgeBoost, &tier.PortfolioImageLimit, &tier.InstantEnabled,
+			&tier.SortOrder, &tier.IsActive,
+			&tier.StripePriceIDMonthly, &tier.StripePriceIDAnnual,
+			&tier.CreatedAt, &tier.UpdatedAt,
+		)
+		if err != nil {
+			return nil, 0, 0, fmt.Errorf("admin list subscriptions scan: %w", err)
+		}
+		sub.Tier = tier
+		subs = append(subs, sub)
+	}
+
+	return subs, totalCount, totalMRR, nil
 }
 
 func (r *PostgresRepository) GetUsage(ctx context.Context, userID string) (activeBids int32, serviceCategories int32, portfolioImages int32, err error) {

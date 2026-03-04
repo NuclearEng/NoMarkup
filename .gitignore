@@ -12,6 +12,7 @@ gateway/server
 gateway/bin/
 services/*/server
 services/*/bin/
+database/seed
 
 # Coverage & test
 coverage/

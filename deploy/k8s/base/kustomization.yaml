@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: nomarkup
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: nomarkup
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  # Gateway
+  - gateway/deployment.yaml
+  - gateway/service.yaml
+  # Frontend
+  - web/deployment.yaml
+  - web/service.yaml
+  # Go Services
+  - user/deployment.yaml
+  - user/service.yaml
+  - job/deployment.yaml
+  - job/service.yaml
+  - payment/deployment.yaml
+  - payment/service.yaml
+  - chat/deployment.yaml
+  - chat/service.yaml
+  - notification/deployment.yaml
+  - notification/service.yaml
+  # Rust Engines
+  - bidding/deployment.yaml
+  - bidding/service.yaml
+  - fraud/deployment.yaml
+  - fraud/service.yaml
+  - trust/deployment.yaml
+  - trust/service.yaml
+  - imaging/deployment.yaml
+  - imaging/service.yaml
+  # Ingress
+  - ingress.yaml

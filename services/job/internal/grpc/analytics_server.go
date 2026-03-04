@@ -277,22 +277,141 @@ func (s *AnalyticsServer) RecordEvent(ctx context.Context, req *analyticsv1.Reco
 	return &analyticsv1.RecordEventResponse{}, nil
 }
 
-// --- Admin RPCs (return Unimplemented for now) ---
+// --- Admin RPCs ---
 
 func (s *AnalyticsServer) GetPlatformMetrics(ctx context.Context, req *analyticsv1.GetPlatformMetricsRequest) (*analyticsv1.GetPlatformMetricsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "platform metrics not implemented")
+	startDate, endDate := parseDateRange(req.GetDateRange())
+
+	metrics, err := s.svc.GetPlatformMetrics(ctx, startDate, endDate)
+	if err != nil {
+		return nil, mapAnalyticsError(err)
+	}
+
+	return &analyticsv1.GetPlatformMetricsResponse{
+		TotalGmvCents:           metrics.TotalGMVCents,
+		TotalRevenueCents:       metrics.TotalRevenueCents,
+		TotalGuaranteeFundCents: metrics.TotalGuaranteeFundCents,
+		EffectiveTakeRate:       metrics.EffectiveTakeRate,
+		TotalUsers:              metrics.TotalUsers,
+		ActiveUsers:             metrics.ActiveUsers,
+		NewUsers:                metrics.NewUsers,
+		TotalJobsPosted:         metrics.TotalJobsPosted,
+		TotalJobsCompleted:      metrics.TotalJobsCompleted,
+		JobFillRate:             metrics.JobFillRate,
+		JobCompletionRate:       metrics.JobCompletionRate,
+		TotalBids:               metrics.TotalBids,
+		AvgBidsPerJob:           metrics.AvgBidsPerJob,
+		DisputesOpened:          metrics.DisputesOpened,
+		DisputesResolved:        metrics.DisputesResolved,
+		DisputeRate:             metrics.DisputeRate,
+		GuaranteeClaims:         metrics.GuaranteeClaims,
+		GuaranteePayoutsCents:   metrics.GuaranteePayoutsCents,
+	}, nil
 }
 
 func (s *AnalyticsServer) GetGrowthMetrics(ctx context.Context, req *analyticsv1.GetGrowthMetricsRequest) (*analyticsv1.GetGrowthMetricsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "growth metrics not implemented")
+	startDate, endDate := parseDateRange(req.GetDateRange())
+
+	points, err := s.svc.GetGrowthMetrics(ctx, startDate, endDate, req.GetGroupBy())
+	if err != nil {
+		return nil, mapAnalyticsError(err)
+	}
+
+	protoPoints := make([]*analyticsv1.GrowthDataPoint, 0, len(points))
+	for _, p := range points {
+		protoPoints = append(protoPoints, &analyticsv1.GrowthDataPoint{
+			PeriodStart:    timestamppb.New(p.PeriodStart),
+			NewUsers:       p.NewUsers,
+			NewProviders:   p.NewProviders,
+			JobsPosted:     p.JobsPosted,
+			JobsCompleted:  p.JobsCompleted,
+			GmvCents:       p.GMVCents,
+			RevenueCents:   p.RevenueCents,
+		})
+	}
+
+	// Calculate growth rates from first and last periods.
+	var gmvGrowth, userGrowth, jobGrowth float64
+	if len(points) >= 2 {
+		first := points[0]
+		last := points[len(points)-1]
+		if first.GMVCents > 0 {
+			gmvGrowth = float64(last.GMVCents-first.GMVCents) / float64(first.GMVCents) * 100.0
+		}
+		if first.NewUsers > 0 {
+			userGrowth = float64(last.NewUsers-first.NewUsers) / float64(first.NewUsers) * 100.0
+		}
+		if first.JobsPosted > 0 {
+			jobGrowth = float64(last.JobsPosted-first.JobsPosted) / float64(first.JobsPosted) * 100.0
+		}
+	}
+
+	return &analyticsv1.GetGrowthMetricsResponse{
+		DataPoints:     protoPoints,
+		GmvGrowthRate:  gmvGrowth,
+		UserGrowthRate: userGrowth,
+		JobGrowthRate:  jobGrowth,
+	}, nil
 }
 
 func (s *AnalyticsServer) GetCategoryMetrics(ctx context.Context, req *analyticsv1.GetCategoryMetricsRequest) (*analyticsv1.GetCategoryMetricsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "category metrics not implemented")
+	startDate, endDate := parseDateRange(req.GetDateRange())
+
+	categories, err := s.svc.GetCategoryMetrics(ctx, startDate, endDate)
+	if err != nil {
+		return nil, mapAnalyticsError(err)
+	}
+
+	protoCategories := make([]*analyticsv1.CategoryMetrics, 0, len(categories))
+	for _, c := range categories {
+		protoCategories = append(protoCategories, &analyticsv1.CategoryMetrics{
+			CategoryId:       c.CategoryID,
+			CategoryName:     c.CategoryName,
+			JobsPosted:       c.JobsPosted,
+			JobsCompleted:    c.JobsCompleted,
+			GmvCents:         c.GMVCents,
+			AvgBidsPerJob:    c.AvgBidsPerJob,
+			AvgJobValueCents: c.AvgJobValueCents,
+			FillRate:         c.FillRate,
+			ActiveProviders:  c.ActiveProviders,
+		})
+	}
+
+	return &analyticsv1.GetCategoryMetricsResponse{
+		Categories: protoCategories,
+	}, nil
 }
 
 func (s *AnalyticsServer) GetGeographicMetrics(ctx context.Context, req *analyticsv1.GetGeographicMetricsRequest) (*analyticsv1.GetGeographicMetricsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "geographic metrics not implemented")
+	startDate, endDate := parseDateRange(req.GetDateRange())
+
+	regions, err := s.svc.GetGeographicMetrics(ctx, startDate, endDate)
+	if err != nil {
+		return nil, mapAnalyticsError(err)
+	}
+
+	protoRegions := make([]*analyticsv1.RegionMetrics, 0, len(regions))
+	for _, r := range regions {
+		rm := &analyticsv1.RegionMetrics{
+			Region:            r.Region,
+			ActiveUsers:       r.ActiveUsers,
+			ActiveProviders:   r.ActiveProviders,
+			JobsPosted:        r.JobsPosted,
+			GmvCents:          r.GMVCents,
+			SupplyDemandRatio: r.SupplyDemandRatio,
+		}
+		if r.CenterLat != 0 || r.CenterLng != 0 {
+			rm.Center = &commonv1.Location{
+				Latitude:  r.CenterLat,
+				Longitude: r.CenterLng,
+			}
+		}
+		protoRegions = append(protoRegions, rm)
+	}
+
+	return &analyticsv1.GetGeographicMetricsResponse{
+		Regions: protoRegions,
+	}, nil
 }
 
 // --- Helpers ---

@@ -11,8 +11,16 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
 
 	grpcserver "github.com/nomarkup/nomarkup/services/user/internal/grpc"
@@ -36,6 +44,14 @@ func main() {
 		slog.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
+
+	// Initialize OpenTelemetry tracing.
+	tracerShutdown, err := initTracer(context.Background(), "user-service")
+	if err != nil {
+		slog.Error("failed to initialize tracer", "error", err)
+		os.Exit(1)
+	}
+	defer tracerShutdown()
 
 	jwtPrivateKeyPath := os.Getenv("JWT_PRIVATE_KEY_PATH")
 	if jwtPrivateKeyPath == "" {
@@ -79,7 +95,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpclib.NewServer()
+	s := grpclib.NewServer(
+		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
+	)
 	grpcserver.Register(s, srv)
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -97,6 +115,46 @@ func main() {
 	slog.Info("shutting down user service")
 	s.GracefulStop()
 	slog.Info("user service stopped")
+}
+
+// initTracer initializes an OpenTelemetry trace exporter. If OTEL_EXPORTER_OTLP_ENDPOINT
+// is not set, tracing is silently disabled and a no-op shutdown function is returned.
+func initTracer(ctx context.Context, serviceName string) (func(), error) {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		slog.Info("OTEL_EXPORTER_OTLP_ENDPOINT not set, tracing disabled")
+		return func() {}, nil
+	}
+
+	exporter, err := otlptracegrpc.New(ctx,
+		otlptracegrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp exporter: %w", err)
+	}
+
+	name := os.Getenv("OTEL_SERVICE_NAME")
+	if name == "" {
+		name = serviceName
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(name),
+		)),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	slog.Info("tracing enabled", "service", name, "endpoint", endpoint)
+
+	return func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tp.Shutdown(shutdownCtx)
+	}, nil
 }
 
 // loadRSAPrivateKey reads and parses a PEM-encoded RSA private key from disk.

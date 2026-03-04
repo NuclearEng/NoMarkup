@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
 import type {
@@ -54,7 +55,11 @@ export function useCreateJob() {
     mutationFn: (input: CreateJobInput) =>
       api.post<{ job: Job }>('/api/v1/jobs', input).then((res) => res.job),
     onSuccess: () => {
+      toast.success('Job created');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => {
+      toast.error('Failed to create job');
     },
   });
 }
@@ -66,7 +71,11 @@ export function useUpdateJob() {
     mutationFn: ({ id, input }: { id: string; input: UpdateJobInput }) =>
       api.patch<{ job: Job }>(`/api/v1/jobs/${id}`, input).then((res) => res.job),
     onSuccess: () => {
+      toast.success('Job updated');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => {
+      toast.error('Failed to update job');
     },
   });
 }
@@ -78,7 +87,11 @@ export function usePublishJob() {
     mutationFn: (id: string) =>
       api.post<{ job: Job }>(`/api/v1/jobs/${id}/publish`).then((res) => res.job),
     onSuccess: () => {
+      toast.success('Job published — providers can now bid');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => {
+      toast.error('Failed to publish job');
     },
   });
 }
@@ -89,7 +102,11 @@ export function useDeleteDraft() {
   return useMutation({
     mutationFn: (id: string) => api.delete<Record<string, never>>(`/api/v1/jobs/${id}`),
     onSuccess: () => {
+      toast.success('Draft deleted');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => {
+      toast.error('Failed to delete draft');
     },
   });
 }
@@ -101,7 +118,11 @@ export function useCloseAuction() {
     mutationFn: (id: string) =>
       api.post<{ job: Job }>(`/api/v1/jobs/${id}/close`).then((res) => res.job),
     onSuccess: () => {
+      toast.success('Auction closed');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => {
+      toast.error('Failed to close auction');
     },
   });
 }
@@ -113,7 +134,11 @@ export function useCancelJob() {
     mutationFn: (id: string) =>
       api.post<{ job: Job }>(`/api/v1/jobs/${id}/cancel`).then((res) => res.job),
     onSuccess: () => {
+      toast.success('Job cancelled');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => {
+      toast.error('Failed to cancel job');
     },
   });
 }

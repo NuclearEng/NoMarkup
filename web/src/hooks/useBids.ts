@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
 import type {
@@ -17,10 +18,14 @@ export function usePlaceBid() {
     mutationFn: ({ jobId, input }: { jobId: string; input: PlaceBidInput }) =>
       api.post<{ bid: Bid }>(`/api/v1/jobs/${jobId}/bids`, input).then((res) => res.bid),
     onSuccess: (_data, variables) => {
+      toast.success('Bid placed successfully');
       void queryClient.invalidateQueries({ queryKey: ['jobs', variables.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['bidCount', variables.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['bidsForJob', variables.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['myBids'] });
+    },
+    onError: () => {
+      toast.error('Failed to place bid');
     },
   });
 }
@@ -32,10 +37,14 @@ export function useUpdateBid() {
     mutationFn: ({ bidId, input }: { bidId: string; input: UpdateBidInput }) =>
       api.patch<{ bid: Bid }>(`/api/v1/bids/${bidId}`, input).then((res) => res.bid),
     onSuccess: () => {
+      toast.success('Bid updated');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
       void queryClient.invalidateQueries({ queryKey: ['bidCount'] });
       void queryClient.invalidateQueries({ queryKey: ['bidsForJob'] });
       void queryClient.invalidateQueries({ queryKey: ['myBids'] });
+    },
+    onError: () => {
+      toast.error('Failed to update bid');
     },
   });
 }
@@ -47,10 +56,14 @@ export function useWithdrawBid() {
     mutationFn: (bidId: string) =>
       api.delete<{ bid: Bid }>(`/api/v1/bids/${bidId}`).then((res) => res.bid),
     onSuccess: () => {
+      toast.success('Bid withdrawn');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
       void queryClient.invalidateQueries({ queryKey: ['bidCount'] });
       void queryClient.invalidateQueries({ queryKey: ['bidsForJob'] });
       void queryClient.invalidateQueries({ queryKey: ['myBids'] });
+    },
+    onError: () => {
+      toast.error('Failed to withdraw bid');
     },
   });
 }
@@ -64,10 +77,14 @@ export function useAcceptOffer() {
         .post<{ bid: Bid }>(`/api/v1/jobs/${jobId}/bids/accept-offer`)
         .then((res) => res.bid),
     onSuccess: (_data, jobId) => {
+      toast.success('Offer accepted');
       void queryClient.invalidateQueries({ queryKey: ['jobs', jobId] });
       void queryClient.invalidateQueries({ queryKey: ['bidCount', jobId] });
       void queryClient.invalidateQueries({ queryKey: ['bidsForJob', jobId] });
       void queryClient.invalidateQueries({ queryKey: ['myBids'] });
+    },
+    onError: () => {
+      toast.error('Failed to accept offer');
     },
   });
 }
@@ -81,9 +98,13 @@ export function useAwardBid() {
         .post<{ bid: Bid }>(`/api/v1/jobs/${jobId}/bids/${bidId}/award`)
         .then((res) => res.bid),
     onSuccess: (_data, variables) => {
+      toast.success('Bid awarded — contract created');
       void queryClient.invalidateQueries({ queryKey: ['jobs', variables.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['bidsForJob', variables.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['myBids'] });
+    },
+    onError: () => {
+      toast.error('Failed to award bid');
     },
   });
 }

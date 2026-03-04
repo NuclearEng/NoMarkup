@@ -51,6 +51,29 @@ func (s *AnalyticsService) GetCustomerSpending(ctx context.Context, customerID s
 	return s.repo.GetCustomerSpending(ctx, customerID, startDate, endDate, groupBy)
 }
 
+// GetPlatformMetrics returns aggregated platform-wide metrics for admin dashboards.
+func (s *AnalyticsService) GetPlatformMetrics(ctx context.Context, startDate, endDate time.Time) (*domain.PlatformMetrics, error) {
+	return s.repo.GetPlatformMetrics(ctx, startDate, endDate)
+}
+
+// GetGrowthMetrics returns growth time series data for admin dashboards.
+func (s *AnalyticsService) GetGrowthMetrics(ctx context.Context, startDate, endDate time.Time, groupBy string) ([]domain.GrowthDataPoint, error) {
+	if groupBy == "" {
+		groupBy = "month"
+	}
+	return s.repo.GetGrowthMetrics(ctx, startDate, endDate, groupBy)
+}
+
+// GetCategoryMetrics returns per-category analytics for admin dashboards.
+func (s *AnalyticsService) GetCategoryMetrics(ctx context.Context, startDate, endDate time.Time) ([]domain.CategoryMetrics, error) {
+	return s.repo.GetCategoryMetrics(ctx, startDate, endDate)
+}
+
+// GetGeographicMetrics returns per-region analytics for admin dashboards.
+func (s *AnalyticsService) GetGeographicMetrics(ctx context.Context, startDate, endDate time.Time) ([]domain.RegionMetrics, error) {
+	return s.repo.GetGeographicMetrics(ctx, startDate, endDate)
+}
+
 // RecordTransaction records an analytics transaction event.
 func (s *AnalyticsService) RecordTransaction(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error {
 	return s.repo.RecordTransaction(ctx, transactionID, categoryID, subcategoryID, serviceTypeID, region, amountCents, platformFeeCents, customerID, providerID, completedAt)

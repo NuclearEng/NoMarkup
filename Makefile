@@ -1,4 +1,4 @@
-.PHONY: up down dev-full dev-infra migrate-up migrate-down proto-gen proto-gen-go proto-gen-rust \
+.PHONY: up down dev-full dev-infra migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
        setup-tools test lint fmt build-gateway build-web build-engines clean
 
 # ── Infrastructure ────────────────────────────────────────────
@@ -24,6 +24,10 @@ migrate-up:
 migrate-down:
 	@echo "Rolling back last migration..."
 	migrate -path database/migrations -database "$(DATABASE_URL)" down 1
+
+seed:
+	@echo "Seeding database with dev data..."
+	cd database && go run ./cmd/seed
 
 # ── Toolchain Setup ───────────────────────────────────────────
 

@@ -7,18 +7,68 @@ mod models;
 
 use std::sync::Arc;
 
+use opentelemetry::global;
+use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_otlp::SpanExporter;
+use opentelemetry_sdk::runtime::Tokio;
+use opentelemetry_sdk::trace::TracerProvider;
+use opentelemetry_sdk::Resource;
 use sqlx::postgres::PgPoolOptions;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::engine::FraudDetector;
 use crate::grpc::{FraudServiceImpl, FraudServiceServer};
 
+fn init_tracing(service_name: &str) {
+    let env_filter = EnvFilter::from_default_env();
+    let fmt_layer = fmt::layer().json();
+
+    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok();
+
+    if let Some(endpoint) = endpoint {
+        let exporter = SpanExporter::builder()
+            .with_tonic()
+            .with_endpoint(&endpoint)
+            .build()
+            .expect("failed to create OTLP exporter");
+
+        let name = std::env::var("OTEL_SERVICE_NAME")
+            .unwrap_or_else(|_| service_name.to_string());
+
+        let provider = TracerProvider::builder()
+            .with_batch_exporter(exporter, Tokio)
+            .with_resource(
+                Resource::new([KeyValue::new("service.name", name.clone())]),
+            )
+            .build();
+
+        global::set_tracer_provider(provider.clone());
+
+        let otel_layer = OpenTelemetryLayer::new(provider.tracer(name));
+
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt_layer)
+            .with(otel_layer)
+            .init();
+
+        tracing::info!("tracing enabled with OTLP exporter");
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt_layer)
+            .init();
+
+        tracing::info!("tracing enabled (local only, no OTLP exporter)");
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    fmt()
-        .json()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    init_tracing("fraud-engine");
 
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://localhost:5433/nomarkup".into());
@@ -44,5 +94,6 @@ async fn main() -> anyhow::Result<()> {
         })
         .await?;
 
+    global::shutdown_tracer_provider();
     Ok(())
 }

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import '@/styles/globals.css';
 
 import { QueryProvider } from '@/components/providers/QueryProvider';
+import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
   title: { default: 'NoMarkup', template: '%s | NoMarkup' },
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <QueryProvider>
           <div id="main-content">{children}</div>
+          <Toaster position="bottom-right" richColors closeButton />
         </QueryProvider>
       </body>
     </html>

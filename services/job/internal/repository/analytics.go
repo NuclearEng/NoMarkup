@@ -348,6 +348,262 @@ func (r *PostgresRepository) RecordTransaction(ctx context.Context, transactionI
 	return nil
 }
 
+func (r *PostgresRepository) GetPlatformMetrics(ctx context.Context, startDate, endDate time.Time) (*domain.PlatformMetrics, error) {
+	m := &domain.PlatformMetrics{}
+
+	// GMV and revenue from analytics_transactions.
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)::bigint,
+		       COALESCE(SUM(platform_fee_cents), 0)::bigint
+		FROM analytics_transactions
+		WHERE completed_at >= $1 AND completed_at <= $2`,
+		startDate, endDate).Scan(&m.TotalGMVCents, &m.TotalRevenueCents)
+	if err != nil {
+		return nil, fmt.Errorf("platform metrics gmv: %w", err)
+	}
+
+	if m.TotalGMVCents > 0 {
+		m.EffectiveTakeRate = float64(m.TotalRevenueCents) / float64(m.TotalGMVCents)
+	}
+
+	// User counts.
+	err = r.pool.QueryRow(ctx, `
+		SELECT COUNT(*)::int,
+		       COUNT(*) FILTER (WHERE last_active_at >= $1)::int,
+		       COUNT(*) FILTER (WHERE created_at >= $1 AND created_at <= $2)::int
+		FROM users`,
+		startDate, endDate).Scan(&m.TotalUsers, &m.ActiveUsers, &m.NewUsers)
+	if err != nil {
+		return nil, fmt.Errorf("platform metrics users: %w", err)
+	}
+
+	// Job stats.
+	err = r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FILTER (WHERE created_at >= $1 AND created_at <= $2)::int,
+		       COUNT(*) FILTER (WHERE status = 'completed' AND updated_at >= $1 AND updated_at <= $2)::int
+		FROM jobs`,
+		startDate, endDate).Scan(&m.TotalJobsPosted, &m.TotalJobsCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("platform metrics jobs: %w", err)
+	}
+
+	// Job fill rate: jobs that received at least 1 bid / total jobs in range.
+	var jobsWithBids int32
+	err = r.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT j.id)::int
+		FROM jobs j
+		JOIN bids b ON b.job_id = j.id
+		WHERE j.created_at >= $1 AND j.created_at <= $2`,
+		startDate, endDate).Scan(&jobsWithBids)
+	if err != nil {
+		return nil, fmt.Errorf("platform metrics fill rate: %w", err)
+	}
+	if m.TotalJobsPosted > 0 {
+		m.JobFillRate = float64(jobsWithBids) / float64(m.TotalJobsPosted)
+		m.JobCompletionRate = float64(m.TotalJobsCompleted) / float64(m.TotalJobsPosted)
+	}
+
+	// Bid stats.
+	err = r.pool.QueryRow(ctx, `
+		SELECT COUNT(*)::int
+		FROM bids
+		WHERE created_at >= $1 AND created_at <= $2`,
+		startDate, endDate).Scan(&m.TotalBids)
+	if err != nil {
+		return nil, fmt.Errorf("platform metrics bids: %w", err)
+	}
+	if m.TotalJobsPosted > 0 {
+		m.AvgBidsPerJob = float64(m.TotalBids) / float64(m.TotalJobsPosted)
+	}
+
+	// Dispute stats.
+	err = r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FILTER (WHERE created_at >= $1 AND created_at <= $2)::int,
+		       COUNT(*) FILTER (WHERE status = 'resolved' AND updated_at >= $1 AND updated_at <= $2)::int
+		FROM disputes`,
+		startDate, endDate).Scan(&m.DisputesOpened, &m.DisputesResolved)
+	if err != nil {
+		// Disputes table may not exist yet; treat as zero.
+		m.DisputesOpened = 0
+		m.DisputesResolved = 0
+	}
+	if m.TotalJobsCompleted > 0 {
+		m.DisputeRate = float64(m.DisputesOpened) / float64(m.TotalJobsCompleted)
+	}
+
+	return m, nil
+}
+
+func (r *PostgresRepository) GetGrowthMetrics(ctx context.Context, startDate, endDate time.Time, groupBy string) ([]domain.GrowthDataPoint, error) {
+	truncUnit := "month"
+	switch groupBy {
+	case "day":
+		truncUnit = "day"
+	case "week":
+		truncUnit = "week"
+	case "month":
+		truncUnit = "month"
+	}
+
+	query := fmt.Sprintf(`
+		WITH periods AS (
+			SELECT date_trunc('%s', gs) AS period_start
+			FROM generate_series($1::timestamptz, $2::timestamptz, '1 %s'::interval) gs
+		),
+		user_counts AS (
+			SELECT date_trunc('%s', created_at) AS period,
+			       COUNT(*)::int AS new_users,
+			       COUNT(*) FILTER (WHERE role = 'provider')::int AS new_providers
+			FROM users
+			WHERE created_at >= $1 AND created_at <= $2
+			GROUP BY period
+		),
+		job_counts AS (
+			SELECT date_trunc('%s', created_at) AS period,
+			       COUNT(*)::int AS jobs_posted
+			FROM jobs
+			WHERE created_at >= $1 AND created_at <= $2
+			GROUP BY period
+		),
+		completion_counts AS (
+			SELECT date_trunc('%s', updated_at) AS period,
+			       COUNT(*)::int AS jobs_completed
+			FROM jobs
+			WHERE status = 'completed' AND updated_at >= $1 AND updated_at <= $2
+			GROUP BY period
+		),
+		transaction_sums AS (
+			SELECT date_trunc('%s', completed_at) AS period,
+			       COALESCE(SUM(amount_cents), 0)::bigint AS gmv_cents,
+			       COALESCE(SUM(platform_fee_cents), 0)::bigint AS revenue_cents
+			FROM analytics_transactions
+			WHERE completed_at >= $1 AND completed_at <= $2
+			GROUP BY period
+		)
+		SELECT p.period_start,
+		       COALESCE(u.new_users, 0)::int,
+		       COALESCE(u.new_providers, 0)::int,
+		       COALESCE(j.jobs_posted, 0)::int,
+		       COALESCE(cc.jobs_completed, 0)::int,
+		       COALESCE(t.gmv_cents, 0)::bigint,
+		       COALESCE(t.revenue_cents, 0)::bigint
+		FROM periods p
+		LEFT JOIN user_counts u ON u.period = p.period_start
+		LEFT JOIN job_counts j ON j.period = p.period_start
+		LEFT JOIN completion_counts cc ON cc.period = p.period_start
+		LEFT JOIN transaction_sums t ON t.period = p.period_start
+		ORDER BY p.period_start ASC`,
+		truncUnit, truncUnit, truncUnit, truncUnit, truncUnit, truncUnit)
+
+	rows, err := r.pool.Query(ctx, query, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("growth metrics: %w", err)
+	}
+	defer rows.Close()
+
+	var points []domain.GrowthDataPoint
+	for rows.Next() {
+		var dp domain.GrowthDataPoint
+		err := rows.Scan(
+			&dp.PeriodStart, &dp.NewUsers, &dp.NewProviders,
+			&dp.JobsPosted, &dp.JobsCompleted,
+			&dp.GMVCents, &dp.RevenueCents,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("growth metrics scan: %w", err)
+		}
+		points = append(points, dp)
+	}
+
+	return points, nil
+}
+
+func (r *PostgresRepository) GetCategoryMetrics(ctx context.Context, startDate, endDate time.Time) ([]domain.CategoryMetrics, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT sc.id AS category_id,
+		       COALESCE(sc.name, '') AS category_name,
+		       COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::int AS jobs_posted,
+		       COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2)::int AS jobs_completed,
+		       COALESCE(SUM(at.amount_cents) FILTER (WHERE at.completed_at >= $1 AND at.completed_at <= $2), 0)::bigint AS gmv_cents,
+		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
+		            THEN COUNT(DISTINCT b.id) FILTER (WHERE b.created_at >= $1 AND b.created_at <= $2)::float / COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float
+		            ELSE 0 END AS avg_bids_per_job,
+		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2) > 0
+		            THEN COALESCE(SUM(at.amount_cents) FILTER (WHERE at.completed_at >= $1 AND at.completed_at <= $2), 0)::bigint / COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2)::bigint
+		            ELSE 0 END AS avg_job_value_cents,
+		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
+		            THEN COUNT(DISTINCT j.id) FILTER (WHERE j.status IN ('bidding','awarded','in_progress','completed') AND j.created_at >= $1 AND j.created_at <= $2)::float / COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float
+		            ELSE 0 END AS fill_rate,
+		       COUNT(DISTINCT b.provider_id) FILTER (WHERE b.created_at >= $1 AND b.created_at <= $2)::int AS active_providers
+		FROM service_categories sc
+		LEFT JOIN jobs j ON j.category_id = sc.id
+		LEFT JOIN bids b ON b.job_id = j.id
+		LEFT JOIN analytics_transactions at ON at.category_id = sc.id
+		GROUP BY sc.id, sc.name
+		HAVING COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
+		ORDER BY gmv_cents DESC`,
+		startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("category metrics: %w", err)
+	}
+	defer rows.Close()
+
+	var categories []domain.CategoryMetrics
+	for rows.Next() {
+		var cm domain.CategoryMetrics
+		err := rows.Scan(
+			&cm.CategoryID, &cm.CategoryName,
+			&cm.JobsPosted, &cm.JobsCompleted,
+			&cm.GMVCents, &cm.AvgBidsPerJob, &cm.AvgJobValueCents,
+			&cm.FillRate, &cm.ActiveProviders,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("category metrics scan: %w", err)
+		}
+		categories = append(categories, cm)
+	}
+
+	return categories, nil
+}
+
+func (r *PostgresRepository) GetGeographicMetrics(ctx context.Context, startDate, endDate time.Time) ([]domain.RegionMetrics, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT at.region,
+		       COUNT(DISTINCT at.customer_id)::int AS active_users,
+		       COUNT(DISTINCT at.provider_id)::int AS active_providers,
+		       COUNT(*)::int AS jobs_posted,
+		       COALESCE(SUM(at.amount_cents), 0)::bigint AS gmv_cents
+		FROM analytics_transactions at
+		WHERE at.completed_at >= $1 AND at.completed_at <= $2
+		  AND at.region != ''
+		GROUP BY at.region
+		ORDER BY gmv_cents DESC`,
+		startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("geographic metrics: %w", err)
+	}
+	defer rows.Close()
+
+	var regions []domain.RegionMetrics
+	for rows.Next() {
+		var rm domain.RegionMetrics
+		err := rows.Scan(
+			&rm.Region, &rm.ActiveUsers, &rm.ActiveProviders,
+			&rm.JobsPosted, &rm.GMVCents,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("geographic metrics scan: %w", err)
+		}
+		// Supply/demand ratio: providers per job.
+		if rm.JobsPosted > 0 {
+			rm.SupplyDemandRatio = float64(rm.ActiveProviders) / float64(rm.JobsPosted)
+		}
+		regions = append(regions, rm)
+	}
+
+	return regions, nil
+}
+
 func (r *PostgresRepository) RecordEvent(ctx context.Context, eventType, userID string, properties map[string]string, occurredAt time.Time) error {
 	propsJSON, err := json.Marshal(properties)
 	if err != nil {

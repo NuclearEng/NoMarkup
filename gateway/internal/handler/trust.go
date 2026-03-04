@@ -1,22 +1,28 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 )
 
+const trustScoreCacheTTL = 5 * time.Minute
+
 // TrustHandler handles HTTP endpoints for trust scores.
 type TrustHandler struct {
 	trustClient trustv1.TrustServiceClient
+	cache       *cache.Client
 }
 
 // NewTrustHandler creates a new TrustHandler.
-func NewTrustHandler(trustClient trustv1.TrustServiceClient) *TrustHandler {
-	return &TrustHandler{trustClient: trustClient}
+func NewTrustHandler(trustClient trustv1.TrustServiceClient, cacheClient *cache.Client) *TrustHandler {
+	return &TrustHandler{trustClient: trustClient, cache: cacheClient}
 }
 
 // GetTrustScore handles GET /api/v1/users/{id}/trust-score.
@@ -24,6 +30,16 @@ func (h *TrustHandler) GetTrustScore(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 	if userID == "" {
 		writeError(w, http.StatusBadRequest, "user id required")
+		return
+	}
+
+	cacheKey := cache.Key("trust", "score", userID)
+
+	// Try cache first.
+	var cached map[string]interface{}
+	if h.cache.GetJSON(r.Context(), cacheKey, &cached) {
+		slog.Debug("cache hit", "key", cacheKey)
+		writeJSON(w, http.StatusOK, cached)
 		return
 	}
 
@@ -35,7 +51,12 @@ func (h *TrustHandler) GetTrustScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoTrustScoreToJSON(resp.GetScore()))
+	result := protoTrustScoreToJSON(resp.GetScore())
+
+	// Store in cache.
+	h.cache.SetJSON(r.Context(), cacheKey, result, trustScoreCacheTTL)
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // GetTrustScoreHistory handles GET /api/v1/users/{id}/trust-history.

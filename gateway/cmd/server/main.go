@@ -26,9 +26,17 @@ import (
 	subscriptionv1 "github.com/nomarkup/nomarkup/proto/subscription/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/config"
 	"github.com/nomarkup/nomarkup/gateway/internal/handler"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -47,6 +55,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize OpenTelemetry tracing.
+	tracerShutdown, err := initTracer(context.Background(), "api-gateway")
+	if err != nil {
+		slog.Error("failed to initialize tracer", "error", err)
+		os.Exit(1)
+	}
+	defer tracerShutdown()
+
 	// Load JWT public key for token verification.
 	publicKey, err := loadRSAPublicKey(cfg.JWTPublicKeyPath)
 	if err != nil {
@@ -55,7 +71,7 @@ func main() {
 	}
 
 	// Connect to User Service via gRPC.
-	userConn, err := grpc.NewClient(cfg.UserServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	userConn, err := grpc.NewClient(cfg.UserServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to user service", "addr", cfg.UserServiceAddr, "error", err)
 		os.Exit(1)
@@ -65,7 +81,7 @@ func main() {
 	userClient := userv1.NewUserServiceClient(userConn)
 
 	// Connect to Job Service via gRPC.
-	jobConn, err := grpc.NewClient(cfg.JobServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	jobConn, err := grpc.NewClient(cfg.JobServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to job service", "addr", cfg.JobServiceAddr, "error", err)
 		os.Exit(1)
@@ -78,7 +94,7 @@ func main() {
 	contractClient := contractv1.NewContractServiceClient(jobConn)
 
 	// Connect to Bid Engine via gRPC.
-	bidConn, err := grpc.NewClient(cfg.BidEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	bidConn, err := grpc.NewClient(cfg.BidEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to bid engine", "addr", cfg.BidEngineAddr, "error", err)
 		os.Exit(1)
@@ -88,7 +104,7 @@ func main() {
 	bidClient := bidv1.NewBidServiceClient(bidConn)
 
 	// Connect to Payment Service via gRPC.
-	paymentConn, err := grpc.NewClient(cfg.PaymentServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	paymentConn, err := grpc.NewClient(cfg.PaymentServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to payment service", "addr", cfg.PaymentServiceAddr, "error", err)
 		os.Exit(1)
@@ -98,7 +114,7 @@ func main() {
 	paymentClient := paymentv1.NewPaymentServiceClient(paymentConn)
 
 	// Connect to Chat Service via gRPC.
-	chatConn, err := grpc.NewClient(cfg.ChatServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	chatConn, err := grpc.NewClient(cfg.ChatServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to chat service", "addr", cfg.ChatServiceAddr, "error", err)
 		os.Exit(1)
@@ -108,7 +124,7 @@ func main() {
 	chatClient := chatv1.NewChatServiceClient(chatConn)
 
 	// Connect to Trust Engine via gRPC.
-	trustConn, err := grpc.NewClient(cfg.TrustEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	trustConn, err := grpc.NewClient(cfg.TrustEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to trust engine", "addr", cfg.TrustEngineAddr, "error", err)
 		os.Exit(1)
@@ -118,7 +134,7 @@ func main() {
 	trustClient := trustv1.NewTrustServiceClient(trustConn)
 
 	// Connect to Fraud Engine via gRPC.
-	fraudConn, err := grpc.NewClient(cfg.FraudEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	fraudConn, err := grpc.NewClient(cfg.FraudEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to fraud engine", "addr", cfg.FraudEngineAddr, "error", err)
 		os.Exit(1)
@@ -128,7 +144,7 @@ func main() {
 	fraudClient := fraudv1.NewFraudServiceClient(fraudConn)
 
 	// Connect to Notification Service via gRPC.
-	notifConn, err := grpc.NewClient(cfg.NotificationServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	notifConn, err := grpc.NewClient(cfg.NotificationServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to notification service", "addr", cfg.NotificationServiceAddr, "error", err)
 		os.Exit(1)
@@ -138,7 +154,7 @@ func main() {
 	notifClient := notificationv1.NewNotificationServiceClient(notifConn)
 
 	// Connect to Imaging Service via gRPC.
-	imagingConn, err := grpc.NewClient(cfg.ImagingServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	imagingConn, err := grpc.NewClient(cfg.ImagingServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		slog.Error("failed to connect to imaging service", "addr", cfg.ImagingServiceAddr, "error", err)
 		os.Exit(1)
@@ -147,15 +163,24 @@ func main() {
 
 	imagingClient := imagingv1.NewImagingServiceClient(imagingConn)
 
+	// Initialize Redis cache (nil-safe — caching disabled if Redis unavailable).
+	cacheClient := cache.New(cfg.RedisURL)
+	if cacheClient != nil {
+		defer cacheClient.Close()
+	}
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
+
+	// Rate limiter (Redis-backed if cache available, in-memory fallback).
+	rateLimiter := middleware.NewRateLimiter(cacheClient)
 
 	// Wire up handlers and middleware.
 	authMW := middleware.NewAuthMiddleware(publicKey)
 	authHandler := handler.NewAuthHandler(userClient, secureCookie)
 	userHandler := handler.NewUserHandler(userClient)
 	providerHandler := handler.NewProviderHandler(userClient)
-	categoriesHandler := handler.NewCategoriesHandler(userClient)
+	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)
 	jobHandler := handler.NewJobHandler(jobClient)
 	bidHandler := handler.NewBidHandler(bidClient)
 	contractHandler := handler.NewContractHandler(contractClient)
@@ -175,7 +200,7 @@ func main() {
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
 	webhookHandler := handler.NewWebhookHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
-	trustHandler := handler.NewTrustHandler(trustClient)
+	trustHandler := handler.NewTrustHandler(trustClient, cacheClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
 	notificationHandler := handler.NewNotificationHandler(notifClient)
 	imageHandler := handler.NewImageHandler(imagingClient)
@@ -189,7 +214,7 @@ func main() {
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
 
-	r := router.New(cfg.AllowedOrigins, cfg.IsProduction(), authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler, adminUsersHandler, adminVerificationHandler, adminJobsHandler, adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler, adminPlatformHandler)
+	r := router.New(cfg.AllowedOrigins, cfg.IsProduction(), rateLimiter, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler, adminUsersHandler, adminVerificationHandler, adminJobsHandler, adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler, adminPlatformHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
@@ -220,6 +245,46 @@ func main() {
 		slog.Error("forced shutdown", "error", err)
 	}
 	slog.Info("gateway stopped")
+}
+
+// initTracer initializes an OpenTelemetry trace exporter. If OTEL_EXPORTER_OTLP_ENDPOINT
+// is not set, tracing is silently disabled and a no-op shutdown function is returned.
+func initTracer(ctx context.Context, serviceName string) (func(), error) {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		slog.Info("OTEL_EXPORTER_OTLP_ENDPOINT not set, tracing disabled")
+		return func() {}, nil
+	}
+
+	exporter, err := otlptracegrpc.New(ctx,
+		otlptracegrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp exporter: %w", err)
+	}
+
+	name := os.Getenv("OTEL_SERVICE_NAME")
+	if name == "" {
+		name = serviceName
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(name),
+		)),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	slog.Info("tracing enabled", "service", name, "endpoint", endpoint)
+
+	return func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tp.Shutdown(shutdownCtx)
+	}, nil
 }
 
 // loadRSAPublicKey reads and parses a PEM-encoded RSA public key from disk.

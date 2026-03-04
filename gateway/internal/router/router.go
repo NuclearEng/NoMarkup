@@ -17,6 +17,7 @@ import (
 func New(
 	allowedOrigins []string,
 	production bool,
+	rateLimiter *middleware.RateLimiter,
 	authMW *middleware.AuthMiddleware,
 	authHandler *handler.AuthHandler,
 	userHandler *handler.UserHandler,
@@ -51,7 +52,7 @@ func New(
 	r.Use(middleware.Logging)
 	r.Use(middleware.CORS(allowedOrigins, production))
 	r.Use(middleware.SecurityHeaders(production))
-	r.Use(middleware.RateLimit)
+	r.Use(rateLimiter.Middleware)
 
 	// Observability endpoints (public, no auth)
 	r.Get("/health", healthHandler)

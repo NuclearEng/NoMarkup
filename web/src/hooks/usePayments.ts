@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
 import type {
@@ -46,7 +47,11 @@ export function useCreatePayment() {
     mutationFn: (input: CreatePaymentInput) =>
       api.post<{ payment: Payment }>('/api/v1/payments', input).then((res) => res.payment),
     onSuccess: () => {
+      toast.success('Payment created');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
+    },
+    onError: () => {
+      toast.error('Failed to create payment');
     },
   });
 }
@@ -62,8 +67,12 @@ export function useProcessPayment() {
         })
         .then((res) => res.payment),
     onSuccess: (_data, variables) => {
+      toast.success('Payment processed');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
       void queryClient.invalidateQueries({ queryKey: ['payment', variables.paymentId] });
+    },
+    onError: () => {
+      toast.error('Payment failed — please try again');
     },
   });
 }
@@ -81,7 +90,11 @@ export function useDeletePaymentMethod() {
   return useMutation({
     mutationFn: (id: string) => api.delete<{ success: boolean }>(`/api/v1/payments/methods/${id}`),
     onSuccess: () => {
+      toast.success('Payment method removed');
       void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+    },
+    onError: () => {
+      toast.error('Failed to remove payment method');
     },
   });
 }
@@ -90,6 +103,9 @@ export function useCreateSetupIntent() {
   return useMutation({
     mutationFn: () =>
       api.post<{ client_secret: string }>('/api/v1/payments/setup-intent'),
+    onError: () => {
+      toast.error('Failed to initialize payment setup');
+    },
   });
 }
 
@@ -114,12 +130,16 @@ export function useCreateStripeAccount() {
     mutationFn: () =>
       api.post<{ account_id: string }>('/api/v1/providers/me/stripe/account'),
     onSuccess: () => {
+      toast.success('Stripe account created');
       void queryClient.invalidateQueries({ queryKey: ['stripe-account-status'] });
+    },
+    onError: () => {
+      toast.error('Failed to create Stripe account');
     },
   });
 }
 
-interface StripeOnboardingLinkParams {
+export interface StripeOnboardingLinkParams {
   return_url: string;
   refresh_url: string;
 }

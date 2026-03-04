@@ -269,6 +269,57 @@ func (s *SubscriptionService) ListInvoices(ctx context.Context, userID string) (
 	return s.stripe.ListStripeInvoices(ctx, sub.StripeSubscriptionID)
 }
 
+// AdminListSubscriptions returns a paginated list of subscriptions with optional filters.
+func (s *SubscriptionService) AdminListSubscriptions(ctx context.Context, statusFilter, tierID string, page, pageSize int) ([]*domain.Subscription, int, int64, error) {
+	return s.repo.AdminListSubscriptions(ctx, statusFilter, tierID, page, pageSize)
+}
+
+// AdminUpdateTier updates a subscription tier's properties.
+func (s *SubscriptionService) AdminUpdateTier(ctx context.Context, tierID string, updates map[string]interface{}) (*domain.SubscriptionTier, error) {
+	// Verify the tier exists.
+	_, err := s.repo.GetTier(ctx, tierID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.UpdateTier(ctx, tierID, updates)
+}
+
+// AdminGrantSubscription grants a subscription to a user without requiring payment.
+func (s *SubscriptionService) AdminGrantSubscription(ctx context.Context, userID, tierID string, durationDays int32, reason string) (*domain.Subscription, error) {
+	// Verify the tier exists.
+	tier, err := s.repo.GetTier(ctx, tierID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for existing active subscription.
+	existing, err := s.repo.GetSubscription(ctx, userID)
+	if err == nil && existing != nil {
+		return nil, fmt.Errorf("admin grant subscription: %w", domain.ErrAlreadySubscribed)
+	}
+
+	now := time.Now()
+	periodEnd := now.AddDate(0, 0, int(durationDays))
+
+	sub := &domain.Subscription{
+		ID:                 uuid.New().String(),
+		UserID:             userID,
+		TierID:             tierID,
+		Tier:               tier,
+		Status:             "active",
+		BillingInterval:    "monthly",
+		CurrentPriceCents:  0, // Granted for free by admin.
+		CurrentPeriodStart: &now,
+		CurrentPeriodEnd:   &periodEnd,
+	}
+
+	if err := s.repo.CreateSubscription(ctx, sub); err != nil {
+		return nil, err
+	}
+
+	return sub, nil
+}
+
 // HandleSubscriptionWebhook processes Stripe subscription webhook events.
 func (s *SubscriptionService) HandleSubscriptionWebhook(ctx context.Context, eventType, stripeSubscriptionID string, periodStart, periodEnd *time.Time) error {
 	switch eventType {

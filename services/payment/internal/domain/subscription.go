@@ -87,6 +87,7 @@ type SubscriptionUsage struct {
 type SubscriptionRepository interface {
 	ListTiers(ctx context.Context) ([]*SubscriptionTier, error)
 	GetTier(ctx context.Context, tierID string) (*SubscriptionTier, error)
+	UpdateTier(ctx context.Context, tierID string, updates map[string]interface{}) (*SubscriptionTier, error)
 	CreateSubscription(ctx context.Context, sub *Subscription) error
 	GetSubscription(ctx context.Context, userID string) (*Subscription, error)
 	GetSubscriptionByStripeID(ctx context.Context, stripeSubscriptionID string) (*Subscription, error)
@@ -95,4 +96,5 @@ type SubscriptionRepository interface {
 	CancelSubscription(ctx context.Context, id string, cancelledAt time.Time, status string) error
 	UpdateSubscriptionPeriod(ctx context.Context, id string, periodStart, periodEnd time.Time) error
 	GetUsage(ctx context.Context, userID string) (activeBids int32, serviceCategories int32, portfolioImages int32, err error)
+	AdminListSubscriptions(ctx context.Context, statusFilter string, tierID string, page, pageSize int) ([]*Subscription, int, int64, error)
 }

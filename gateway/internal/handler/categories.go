@@ -1,20 +1,26 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 )
+
+const categoryTreeCacheTTL = 1 * time.Hour
 
 // CategoriesHandler handles HTTP endpoints for service categories.
 type CategoriesHandler struct {
 	userClient userv1.UserServiceClient
+	cache      *cache.Client
 }
 
 // NewCategoriesHandler creates a new CategoriesHandler.
-func NewCategoriesHandler(userClient userv1.UserServiceClient) *CategoriesHandler {
-	return &CategoriesHandler{userClient: userClient}
+func NewCategoriesHandler(userClient userv1.UserServiceClient, cacheClient *cache.Client) *CategoriesHandler {
+	return &CategoriesHandler{userClient: userClient, cache: cacheClient}
 }
 
 // List handles GET /api/v1/categories.
@@ -50,6 +56,16 @@ func (h *CategoriesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Tree handles GET /api/v1/categories/tree.
 func (h *CategoriesHandler) Tree(w http.ResponseWriter, r *http.Request) {
+	cacheKey := cache.Key("categories", "tree")
+
+	// Try cache first.
+	var cached map[string]interface{}
+	if h.cache.GetJSON(r.Context(), cacheKey, &cached) {
+		slog.Debug("cache hit", "key", cacheKey)
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+
 	resp, err := h.userClient.GetCategoryTree(r.Context(), &userv1.GetCategoryTreeRequest{})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -60,7 +76,13 @@ func (h *CategoriesHandler) Tree(w http.ResponseWriter, r *http.Request) {
 	for _, c := range resp.GetCategories() {
 		cats = append(cats, protoCategoryTreeToJSON(c))
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"categories": cats})
+	result := map[string]interface{}{"categories": cats}
+
+	// Store in cache.
+	h.cache.SetJSON(r.Context(), cacheKey, result, categoryTreeCacheTTL)
+	slog.Debug("cache miss, stored", "key", cacheKey, "ttl", categoryTreeCacheTTL)
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func protoCategoryToJSON(c *userv1.ServiceCategory) map[string]interface{} {

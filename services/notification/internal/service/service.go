@@ -302,6 +302,25 @@ func (s *Service) UnregisterDevice(ctx context.Context, userID, deviceID string)
 	return s.deviceRepo.DeleteDeviceToken(ctx, userID, deviceID)
 }
 
+// Unsubscribe processes an email unsubscribe token, disabling email notifications
+// for the associated user and returning their email address.
+func (s *Service) Unsubscribe(ctx context.Context, token string) (string, error) {
+	if token == "" {
+		return "", fmt.Errorf("unsubscribe: token is required")
+	}
+
+	userEmail, err := s.repo.DisableEmailByToken(ctx, token)
+	if err != nil {
+		return "", err
+	}
+
+	slog.Info("user unsubscribed from email notifications",
+		"email", userEmail,
+	)
+
+	return userEmail, nil
+}
+
 // ChannelDelivery represents the delivery status for a single channel.
 type ChannelDelivery struct {
 	Channel       string

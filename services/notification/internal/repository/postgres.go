@@ -201,6 +201,63 @@ func (r *PostgresRepository) UpsertPreferences(ctx context.Context, prefs *domai
 	return prefs, nil
 }
 
+func (r *PostgresRepository) DisableEmailByToken(ctx context.Context, token string) (string, error) {
+	// Look up the unsubscribe token to find the user and their email.
+	var userID, userEmail string
+	err := r.pool.QueryRow(ctx, `
+		SELECT ut.user_id, COALESCE(u.email, '')
+		FROM email_unsubscribe_tokens ut
+		JOIN users u ON u.id = ut.user_id
+		WHERE ut.token = $1 AND ut.used_at IS NULL`,
+		token,
+	).Scan(&userID, &userEmail)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("disable email by token: %w", domain.ErrInvalidUnsubscribeToken)
+		}
+		return "", fmt.Errorf("disable email by token lookup: %w", err)
+	}
+
+	// Mark the token as used.
+	_, err = r.pool.Exec(ctx, `
+		UPDATE email_unsubscribe_tokens SET used_at = now() WHERE token = $1`,
+		token,
+	)
+	if err != nil {
+		return "", fmt.Errorf("disable email by token mark used: %w", err)
+	}
+
+	// Disable all email channels in the user's notification preferences.
+	// Load current preferences, update them, then save.
+	prefs, err := r.GetPreferences(ctx, userID)
+	if err != nil {
+		if errors.Is(err, domain.ErrPreferencesNotFound) {
+			// No prefs exist; create default with all email disabled.
+			prefs = &domain.NotificationPreferences{
+				UserID:      userID,
+				EmailDigest: "off",
+				Preferences: make(map[string]domain.ChannelPrefs),
+			}
+		} else {
+			return "", fmt.Errorf("disable email by token get prefs: %w", err)
+		}
+	}
+
+	// Set email_digest to "off" and disable email on all notification types.
+	prefs.EmailDigest = "off"
+	for k, cp := range prefs.Preferences {
+		cp.Email = false
+		prefs.Preferences[k] = cp
+	}
+
+	_, err = r.UpsertPreferences(ctx, prefs)
+	if err != nil {
+		return "", fmt.Errorf("disable email by token upsert prefs: %w", err)
+	}
+
+	return userEmail, nil
+}
+
 // --- Device Token Repository ---
 
 func (r *PostgresRepository) SaveDeviceToken(ctx context.Context, userID, token, platform, deviceID string) error {

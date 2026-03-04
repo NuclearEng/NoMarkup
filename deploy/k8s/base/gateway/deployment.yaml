@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway
+        app.kubernetes.io/component: gateway
+        app.kubernetes.io/part-of: nomarkup
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/nomarkup/gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: GATEWAY_PORT
+              value: "8080"
+            - name: USER_SERVICE_ADDR
+              value: "user:50051"
+            - name: JOB_SERVICE_ADDR
+              value: "job:50052"
+            - name: BID_ENGINE_ADDR
+              value: "bidding:50053"
+            - name: PAYMENT_SERVICE_ADDR
+              value: "payment:50054"
+            - name: CHAT_SERVICE_ADDR
+              value: "chat:50055"
+            - name: CHAT_WS_ADDR
+              value: "chat:50065"
+            - name: FRAUD_ENGINE_ADDR
+              value: "fraud:50056"
+            - name: TRUST_ENGINE_ADDR
+              value: "trust:50057"
+            - name: IMAGING_SERVICE_ADDR
+              value: "imaging:50058"
+            - name: NOTIFICATION_SERVICE_ADDR
+              value: "notification:50059"
+          envFrom:
+            - configMapRef:
+                name: nomarkup-config
+            - secretRef:
+                name: nomarkup-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

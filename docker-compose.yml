@@ -45,6 +45,19 @@ services:
       timeout: 5s
       retries: 5
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:14269/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   minio:
     image: minio/minio:latest
     ports:
@@ -73,6 +86,8 @@ services:
       REDIS_URL: "redis://redis:6379"
       USER_SERVICE_PORT: "50051"
       JWT_PRIVATE_KEY_PATH: "/keys/private.pem"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "user-service"
     volumes:
       - ./keys:/keys:ro
     depends_on:
@@ -89,6 +104,8 @@ services:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       JOB_SERVICE_PORT: "50052"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "job-service"
       MEILISEARCH_HOST: "http://meilisearch:7700"
       MEILISEARCH_API_KEY: "masterKey"
     depends_on:
@@ -107,6 +124,8 @@ services:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       PAYMENT_SERVICE_PORT: "50054"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "payment-service"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
     depends_on:
@@ -124,6 +143,8 @@ services:
       REDIS_URL: "redis://redis:6379"
       CHAT_SERVICE_PORT: "50055"
       CHAT_WS_PORT: "50065"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "chat-service"
     depends_on:
       postgres:
         condition: service_healthy
@@ -138,6 +159,8 @@ services:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       NOTIFICATION_SERVICE_PORT: "50059"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "notification-service"
     depends_on:
       postgres:
         condition: service_healthy
@@ -154,6 +177,8 @@ services:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       BID_ENGINE_PORT: "50053"
       RUST_LOG: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "bidding-engine"
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,6 +191,8 @@ services:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       FRAUD_ENGINE_PORT: "50056"
       RUST_LOG: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "fraud-engine"
     depends_on:
       postgres:
         condition: service_healthy
@@ -178,6 +205,8 @@ services:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       TRUST_ENGINE_PORT: "50057"
       RUST_LOG: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "trust-engine"
     depends_on:
       postgres:
         condition: service_healthy
@@ -188,6 +217,8 @@ services:
       dockerfile: deploy/docker/imaging.Dockerfile
     environment:
       IMAGING_SERVICE_PORT: "50058"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "imaging-service"
       S3_BUCKET: "nomarkup-dev"
       S3_ENDPOINT: "http://minio:9000"
       S3_PUBLIC_URL: "http://localhost:9000/nomarkup-dev"
@@ -222,6 +253,9 @@ services:
       TRUST_ENGINE_ADDR: "trust:50057"
       IMAGING_SERVICE_ADDR: "imaging:50058"
       NOTIFICATION_SERVICE_ADDR: "notification:50059"
+      REDIS_URL: "redis://redis:6379"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "api-gateway"
     volumes:
       - ./keys:/keys:ro
     depends_on:

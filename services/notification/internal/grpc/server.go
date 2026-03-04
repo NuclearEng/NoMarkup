@@ -245,8 +245,20 @@ func (s *Server) UpdatePreferences(ctx context.Context, req *notificationv1.Upda
 	}, nil
 }
 
-func (s *Server) Unsubscribe(_ context.Context, _ *notificationv1.UnsubscribeRequest) (*notificationv1.UnsubscribeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "Unsubscribe not yet implemented")
+func (s *Server) Unsubscribe(ctx context.Context, req *notificationv1.UnsubscribeRequest) (*notificationv1.UnsubscribeResponse, error) {
+	if req.GetToken() == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+
+	userEmail, err := s.svc.Unsubscribe(ctx, req.GetToken())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &notificationv1.UnsubscribeResponse{
+		Success:   true,
+		UserEmail: userEmail,
+	}, nil
 }
 
 // --- Proto-to-domain and domain-to-proto helpers ---
@@ -479,6 +491,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "preferences not found")
 	case errors.Is(err, domain.ErrDeviceTokenNotFound):
 		return status.Error(codes.NotFound, "device token not found")
+	case errors.Is(err, domain.ErrInvalidUnsubscribeToken):
+		return status.Error(codes.NotFound, "invalid or expired unsubscribe token")
 	case strings.Contains(msg, "is required"):
 		return status.Error(codes.InvalidArgument, msg)
 	default:

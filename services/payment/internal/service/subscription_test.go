@@ -56,6 +56,15 @@ func (m *mockSubRepo) UpdateSubscriptionPeriod(ctx context.Context, id string, p
 func (m *mockSubRepo) GetUsage(ctx context.Context, userID string) (int32, int32, int32, error) {
 	return m.getUsageFn(ctx, userID)
 }
+func (m *mockSubRepo) UpdateTier(_ context.Context, tierID string, _ map[string]interface{}) (*domain.SubscriptionTier, error) {
+	if m.getTierFn != nil {
+		return m.getTierFn(context.Background(), tierID)
+	}
+	return nil, domain.ErrTierNotFound
+}
+func (m *mockSubRepo) AdminListSubscriptions(_ context.Context, _ string, _ string, _, _ int) ([]*domain.Subscription, int, int64, error) {
+	return nil, 0, 0, nil
+}
 
 // --- helpers ---
 

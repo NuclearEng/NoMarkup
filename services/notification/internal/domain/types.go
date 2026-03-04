@@ -8,9 +8,10 @@ import (
 
 // Sentinel errors for the notification domain.
 var (
-	ErrNotificationNotFound = errors.New("notification not found")
-	ErrPreferencesNotFound  = errors.New("preferences not found")
-	ErrDeviceTokenNotFound  = errors.New("device token not found")
+	ErrNotificationNotFound     = errors.New("notification not found")
+	ErrPreferencesNotFound      = errors.New("preferences not found")
+	ErrDeviceTokenNotFound      = errors.New("device token not found")
+	ErrInvalidUnsubscribeToken  = errors.New("invalid unsubscribe token")
 )
 
 // Notification represents an in-app notification record.
@@ -65,6 +66,7 @@ type NotificationRepository interface {
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
 	GetPreferences(ctx context.Context, userID string) (*NotificationPreferences, error)
 	UpsertPreferences(ctx context.Context, prefs *NotificationPreferences) (*NotificationPreferences, error)
+	DisableEmailByToken(ctx context.Context, token string) (userEmail string, err error)
 }
 
 // DeviceTokenRepository defines persistence operations for device tokens.

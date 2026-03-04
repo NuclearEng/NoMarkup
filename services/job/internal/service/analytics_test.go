@@ -44,6 +44,18 @@ func (m *mockAnalyticsRepo) RecordTransaction(ctx context.Context, transactionID
 func (m *mockAnalyticsRepo) RecordEvent(ctx context.Context, eventType, userID string, properties map[string]string, occurredAt time.Time) error {
 	return m.recordEventFn(ctx, eventType, userID, properties, occurredAt)
 }
+func (m *mockAnalyticsRepo) GetPlatformMetrics(_ context.Context, _, _ time.Time) (*domain.PlatformMetrics, error) {
+	return &domain.PlatformMetrics{}, nil
+}
+func (m *mockAnalyticsRepo) GetGrowthMetrics(_ context.Context, _, _ time.Time, _ string) ([]domain.GrowthDataPoint, error) {
+	return nil, nil
+}
+func (m *mockAnalyticsRepo) GetCategoryMetrics(_ context.Context, _, _ time.Time) ([]domain.CategoryMetrics, error) {
+	return nil, nil
+}
+func (m *mockAnalyticsRepo) GetGeographicMetrics(_ context.Context, _, _ time.Time) ([]domain.RegionMetrics, error) {
+	return nil, nil
+}
 
 // --- GetMarketRange tests ---
 
