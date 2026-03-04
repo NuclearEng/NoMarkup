@@ -215,14 +215,14 @@ func main() {
 		log.Fatalf("insert active job: %v", err)
 	}
 
-	// Awarded job
+	// Awarded job (awarded_bid_id set after bids are inserted)
 	_, err = tx.Exec(ctx, `
 		INSERT INTO jobs (id, customer_id, property_id, title, description,
 			category_id,
 			service_city, service_state, service_zip,
 			service_location, approximate_location,
 			schedule_type, starting_bid_cents, auction_duration_hours,
-			status, bid_count, awarded_provider_id, awarded_bid_id, awarded_at)
+			status, bid_count, awarded_provider_id, awarded_at)
 		VALUES ($1, $2, $3,
 			'Kitchen Sink Leaking',
 			'The kitchen sink has a slow leak under the cabinet. Water pools on the floor overnight. Need repair ASAP.',
@@ -231,11 +231,11 @@ func main() {
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			'specific_date', 30000, 72,
-			'in_progress', 1, $5, $6, $7)
+			'in_progress', 1, $5, $6)
 		ON CONFLICT (id) DO NOTHING`,
 		awardedJobID, customerUserID, propertyID,
 		plumbingCatID,
-		providerUserID, bid3ID, pastAwarded,
+		providerUserID, pastAwarded,
 	)
 	if err != nil {
 		log.Fatalf("insert awarded job: %v", err)
@@ -300,6 +300,14 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("insert bid on completed job: %v", err)
+	}
+
+	// Back-fill awarded_bid_id on the awarded job now that bids exist.
+	_, err = tx.Exec(ctx, `UPDATE jobs SET awarded_bid_id = $1 WHERE id = $2 AND awarded_bid_id IS NULL`,
+		bid3ID, awardedJobID,
+	)
+	if err != nil {
+		log.Fatalf("update awarded job bid: %v", err)
 	}
 
 	// ── 7. Contracts ──────────────────────────────────────────────
