@@ -185,6 +185,194 @@ func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// ProcessJobPhotos handles POST /api/v1/images/process/job-photos.
+func (h *ImageHandler) ProcessJobPhotos(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var body struct {
+		JobID      string   `json:"job_id"`
+		SourceURLs []string `json:"source_urls"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.JobID == "" {
+		writeError(w, http.StatusBadRequest, "job_id is required")
+		return
+	}
+	if len(body.SourceURLs) == 0 {
+		writeError(w, http.StatusBadRequest, "source_urls is required")
+		return
+	}
+
+	resp, err := h.imagingClient.ProcessJobPhotos(r.Context(), &imagingv1.ProcessJobPhotosRequest{
+		JobId:      body.JobID,
+		SourceUrls: body.SourceURLs,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	photos := make([]map[string]interface{}, 0, len(resp.GetPhotos()))
+	for _, p := range resp.GetPhotos() {
+		photo := map[string]interface{}{
+			"original_url": p.GetOriginalUrl(),
+			"blur_hash":    p.GetBlurHash(),
+		}
+		if p.GetLarge() != nil {
+			photo["large"] = imageVariantToJSON(p.GetLarge())
+		}
+		if p.GetMedium() != nil {
+			photo["medium"] = imageVariantToJSON(p.GetMedium())
+		}
+		if p.GetThumbnail() != nil {
+			photo["thumbnail"] = imageVariantToJSON(p.GetThumbnail())
+		}
+		photos = append(photos, photo)
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"photos": photos})
+}
+
+// ProcessAvatar handles POST /api/v1/images/process/avatar.
+func (h *ImageHandler) ProcessAvatar(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var body struct {
+		SourceURL string `json:"source_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.SourceURL == "" {
+		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	resp, err := h.imagingClient.ProcessAvatar(r.Context(), &imagingv1.ProcessAvatarRequest{
+		UserId:    claims.UserID,
+		SourceUrl: body.SourceURL,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	result := map[string]interface{}{
+		"avatar_url": resp.GetAvatarUrl(),
+	}
+	if resp.GetLarge() != nil {
+		result["large"] = imageVariantToJSON(resp.GetLarge())
+	}
+	if resp.GetMedium() != nil {
+		result["medium"] = imageVariantToJSON(resp.GetMedium())
+	}
+	if resp.GetSmall() != nil {
+		result["small"] = imageVariantToJSON(resp.GetSmall())
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ProcessPortfolio handles POST /api/v1/images/process/portfolio.
+func (h *ImageHandler) ProcessPortfolio(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var body struct {
+		SourceURL string `json:"source_url"`
+		Caption   string `json:"caption"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.SourceURL == "" {
+		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	resp, err := h.imagingClient.ProcessPortfolioImage(r.Context(), &imagingv1.ProcessPortfolioImageRequest{
+		UserId:    claims.UserID,
+		SourceUrl: body.SourceURL,
+		Caption:   body.Caption,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	result := map[string]interface{}{
+		"blur_hash": resp.GetBlurHash(),
+	}
+	if resp.GetFull() != nil {
+		result["full"] = imageVariantToJSON(resp.GetFull())
+	}
+	if resp.GetDisplay() != nil {
+		result["display"] = imageVariantToJSON(resp.GetDisplay())
+	}
+	if resp.GetThumbnail() != nil {
+		result["thumbnail"] = imageVariantToJSON(resp.GetThumbnail())
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ProcessDocument handles POST /api/v1/images/process/document.
+func (h *ImageHandler) ProcessDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var body struct {
+		SourceURL    string `json:"source_url"`
+		DocumentType string `json:"document_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.SourceURL == "" {
+		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	resp, err := h.imagingClient.ProcessDocument(r.Context(), &imagingv1.ProcessDocumentRequest{
+		UserId:       claims.UserID,
+		SourceUrl:    body.SourceURL,
+		DocumentType: body.DocumentType,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	result := map[string]interface{}{
+		"original_width":  resp.GetOriginalWidth(),
+		"original_height": resp.GetOriginalHeight(),
+	}
+	if resp.GetProcessed() != nil {
+		result["processed"] = imageVariantToJSON(resp.GetProcessed())
+	}
+	if resp.GetThumbnail() != nil {
+		result["thumbnail"] = imageVariantToJSON(resp.GetThumbnail())
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // ---------------------------------------------------------------------------
 // DTO and conversion helpers
 // ---------------------------------------------------------------------------

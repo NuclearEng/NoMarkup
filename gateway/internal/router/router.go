@@ -200,6 +200,10 @@ func New(
 			r.Post("/upload-url", imageHandler.GetUploadURL)
 			r.Post("/confirm", imageHandler.ConfirmUpload)
 			r.Post("/process", imageHandler.ProcessImage)
+			r.Post("/process/job-photos", imageHandler.ProcessJobPhotos)
+			r.Post("/process/avatar", imageHandler.ProcessAvatar)
+			r.Post("/process/portfolio", imageHandler.ProcessPortfolio)
+			r.Post("/process/document", imageHandler.ProcessDocument)
 		})
 
 		// Admin routes with role enforcement
