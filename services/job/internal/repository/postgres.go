@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -766,6 +767,157 @@ func (r *PostgresRepository) LookupMarketRange(ctx context.Context, serviceTypeI
 		mr.State = *state
 	}
 	return &mr, nil
+}
+
+// AdminListJobs lists jobs for admin with optional filters.
+func (r *PostgresRepository) AdminListJobs(ctx context.Context, statusFilter *string, categoryID *string, customerID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+	where := []string{"j.deleted_at IS NULL"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if statusFilter != nil && *statusFilter != "" {
+		where = append(where, fmt.Sprintf("j.status = $%d", argIdx))
+		args = append(args, *statusFilter)
+		argIdx++
+	}
+	if categoryID != nil && *categoryID != "" {
+		where = append(where, fmt.Sprintf("(j.category_id = $%d OR j.subcategory_id = $%d OR j.service_type_id = $%d)", argIdx, argIdx, argIdx))
+		args = append(args, *categoryID)
+		argIdx++
+	}
+	if customerID != nil && *customerID != "" {
+		where = append(where, fmt.Sprintf("j.customer_id = $%d", argIdx))
+		args = append(args, *customerID)
+		argIdx++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	var totalCount int
+	err := r.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM jobs j WHERE %s`, whereClause), args...).Scan(&totalCount)
+	if err != nil {
+		return nil, nil, fmt.Errorf("admin list jobs count: %w", err)
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	totalPages := 0
+	if totalCount > 0 {
+		totalPages = (totalCount + pageSize - 1) / pageSize
+	}
+	offset := (page - 1) * pageSize
+
+	selectQuery := fmt.Sprintf(`
+		SELECT j.id, j.customer_id, COALESCE(j.property_id::text, ''), j.title, j.description,
+		       j.category_id, COALESCE(j.subcategory_id::text, ''), COALESCE(j.service_type_id::text, ''),
+		       COALESCE(j.service_address, ''), j.service_city, j.service_state, j.service_zip,
+		       j.schedule_type, j.scheduled_date, j.schedule_range_start, j.schedule_range_end,
+		       j.is_recurring, j.recurrence_frequency,
+		       j.starting_bid_cents, j.offer_accepted_cents,
+		       j.auction_duration_hours, j.auction_ends_at, j.min_provider_rating,
+		       j.status, j.bid_count,
+		       COALESCE(j.awarded_provider_id::text, ''), COALESCE(j.awarded_bid_id::text, ''),
+		       COALESCE(j.reposted_from_id::text, ''), j.repost_count,
+		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
+		       j.created_at, j.updated_at, j.deleted_at,
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		FROM jobs j
+		LEFT JOIN service_categories c ON c.id = j.category_id
+		WHERE %s
+		ORDER BY j.created_at DESC
+		LIMIT $%d OFFSET $%d`,
+		whereClause, argIdx, argIdx+1)
+	args = append(args, pageSize, offset)
+
+	rows, err := r.pool.Query(ctx, selectQuery, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("admin list jobs query: %w", err)
+	}
+	defer rows.Close()
+
+	var jobs []*domain.Job
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, nil, fmt.Errorf("admin list jobs scan: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, &domain.Pagination{
+		TotalCount: totalCount,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+	}, nil
+}
+
+// AdminSuspendJob sets a job's status to 'suspended'.
+func (r *PostgresRepository) AdminSuspendJob(ctx context.Context, jobID, reason string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'suspended', updated_at = now()
+		 WHERE id = $1 AND deleted_at IS NULL AND status NOT IN ('suspended', 'cancelled')`,
+		jobID)
+	if err != nil {
+		return fmt.Errorf("admin suspend job: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		_ = r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1 AND deleted_at IS NULL)`, jobID).Scan(&exists)
+		if !exists {
+			return fmt.Errorf("admin suspend job: %w", domain.ErrJobNotFound)
+		}
+		return fmt.Errorf("admin suspend job: %w", domain.ErrInvalidStatus)
+	}
+	return nil
+}
+
+// AdminRemoveJob sets a job's status to 'cancelled' (soft removal by admin).
+func (r *PostgresRepository) AdminRemoveJob(ctx context.Context, jobID, reason string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+		 WHERE id = $1 AND deleted_at IS NULL AND status != 'cancelled'`,
+		jobID)
+	if err != nil {
+		return fmt.Errorf("admin remove job: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		_ = r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1 AND deleted_at IS NULL)`, jobID).Scan(&exists)
+		if !exists {
+			return fmt.Errorf("admin remove job: %w", domain.ErrJobNotFound)
+		}
+		return fmt.Errorf("admin remove job: %w", domain.ErrInvalidStatus)
+	}
+	return nil
+}
+
+// InsertAuditLog records an admin action in the admin_audit_log table.
+func (r *PostgresRepository) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error {
+	detailsJSON, err := json.Marshal(details)
+	if err != nil {
+		return fmt.Errorf("insert audit log marshal details: %w", err)
+	}
+
+	_, err = r.pool.Exec(ctx,
+		`INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		adminID, action, targetType, targetID, detailsJSON)
+	if err != nil {
+		return fmt.Errorf("insert audit log: %w", err)
+	}
+	return nil
 }
 
 // scanJobWithCategories loads a job with its category info.

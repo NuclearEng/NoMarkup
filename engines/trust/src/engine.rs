@@ -6,6 +6,10 @@
 /// - Risk: 25% (cancellations, disputes, late deliveries -- inverted)
 /// - Fraud: 20% (fraud signals, account flags -- inverted)
 ///
+/// The mathematical scoring logic lives in `crate::scoring` (pure functions,
+/// no I/O). This module is responsible for fetching data from PostgreSQL and
+/// feeding it into those functions.
+///
 /// Target: < 5ms p99 latency for score computation.
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -13,6 +17,9 @@ use uuid::Uuid;
 use crate::models::{
     all_tier_requirements, DimensionScores, FeedbackDetails, FraudDetails, RiskDetails,
     TrustError, TrustScoreHistoryRow, TrustScoreRow, TrustTier, VolumeDetails,
+};
+use crate::scoring::{
+    self, DecayConfig, FeedbackInput, FraudInput, ReviewDataPoint, RiskInput, VolumeInput,
 };
 
 /// SQL query to select all columns from trust_scores with NUMERIC casts to float8.
@@ -29,12 +36,16 @@ const TRUST_SCORE_SELECT_ALL: &str = "\
 
 pub struct TrustScorer {
     pool: PgPool,
+    decay_config: DecayConfig,
 }
 
 impl TrustScorer {
     #[must_use]
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            decay_config: DecayConfig::default(),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -148,7 +159,7 @@ impl TrustScorer {
             .as_ref()
             .map_or("new".to_string(), |r| r.tier.clone());
 
-        // Compute each dimension.
+        // Compute each dimension using pure scoring functions.
         let feedback = self.compute_feedback(user_id).await?;
         let volume = self.compute_volume(user_id).await?;
         let risk = self.compute_risk(user_id).await?;
@@ -161,7 +172,12 @@ impl TrustScorer {
             fraud: fraud.0,
         };
 
-        let overall = dimensions.overall();
+        let overall = scoring::composite_score(
+            dimensions.feedback,
+            dimensions.volume,
+            dimensions.risk,
+            dimensions.fraud,
+        );
 
         // Determine tier from overall score and volume/feedback data.
         let new_tier = self
@@ -381,13 +397,14 @@ impl TrustScorer {
     }
 
     // -----------------------------------------------------------------------
-    // Dimension computation
+    // Dimension computation (DB fetch -> pure scoring function)
     // -----------------------------------------------------------------------
 
     /// Compute the feedback dimension score (0.0-1.0).
     ///
-    /// Queries the reviews table for the user's reviews, computes average rating,
-    /// rating trend, and dispute impact.
+    /// Queries the reviews table for the user's reviews, computes recency-weighted
+    /// average rating, rating trend, and dispute impact, then delegates to the
+    /// pure scoring function.
     async fn compute_feedback(
         &self,
         user_id: Uuid,
@@ -405,6 +422,31 @@ impl TrustScorer {
         .bind(user_id)
         .fetch_one(&self.pool)
         .await?;
+
+        // Fetch individual review ratings + ages for recency-weighted averaging.
+        let review_rows: Vec<ReviewRatingRow> = sqlx::query_as(
+            "SELECT overall_rating::float8 as rating, \
+               EXTRACT(EPOCH FROM (now() - created_at))::float8 / 86400.0 as age_days \
+             FROM reviews \
+             WHERE reviewee_id = $1 AND status = 'published' \
+             ORDER BY created_at DESC \
+             LIMIT 500",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        // Build review data points for time-decay weighted averaging.
+        let review_data_points: Vec<ReviewDataPoint> = review_rows
+            .iter()
+            .map(|r| ReviewDataPoint {
+                rating: r.rating,
+                age_days: r.age_days.max(0.0),
+            })
+            .collect();
+
+        let weighted_avg =
+            scoring::recency_weighted_average(&review_data_points, &self.decay_config);
 
         // Get recent reviews (last 90 days) for trend calculation.
         let recent_stats: AvgRow = sqlx::query_as(
@@ -440,15 +482,16 @@ impl TrustScorer {
             disputes_lost: i32_from_i64(disputes_lost.count),
         };
 
-        // Score calculation:
-        // Base: normalize average rating from 1-5 scale to 0-1. No reviews = 0.5.
-        let score = if stats.total_reviews == 0 {
-            0.5
-        } else {
-            let rating_score = (stats.avg_rating - 1.0) / 4.0; // 1-5 -> 0-1
-            let dispute_penalty = (disputes_lost.count as f64 * 0.05).min(0.3);
-            (rating_score - dispute_penalty).clamp(0.0, 1.0)
-        };
+        // Delegate to pure scoring function.
+        let score = scoring::compute_feedback_score(&FeedbackInput {
+            average_rating: stats.avg_rating,
+            weighted_average_rating: weighted_avg,
+            total_reviews: i32_from_i64(stats.total_reviews),
+            five_star_count: i32_from_i64(stats.five_star),
+            one_star_count: i32_from_i64(stats.one_star),
+            rating_trend: recent_stats.avg_val - stats.avg_rating,
+            disputes_lost: i32_from_i64(disputes_lost.count),
+        });
 
         Ok((score, details))
     }
@@ -456,7 +499,7 @@ impl TrustScorer {
     /// Compute the volume dimension score (0.0-1.0).
     ///
     /// Queries contracts for completed count, recent activity, repeat customers,
-    /// and on-time rate.
+    /// completion rate, and response time, then delegates to the pure scoring function.
     #[allow(clippy::cast_possible_truncation)]
     async fn compute_volume(
         &self,
@@ -496,9 +539,8 @@ impl TrustScorer {
         .fetch_one(&self.pool)
         .await?;
 
-        // On-time rate: contracts completed before or at deadline.
-        // We approximate using cancellation_reason IS NULL (non-cancelled completions).
-        let total_with_deadline: CountRow = sqlx::query_as(
+        // Completion rate: completed / (completed + cancelled).
+        let total_terminal: CountRow = sqlx::query_as(
             "SELECT COUNT(*)::bigint as count FROM contracts \
              WHERE (provider_id = $1 OR customer_id = $1) \
                AND status IN ('completed', 'cancelled')",
@@ -507,11 +549,26 @@ impl TrustScorer {
         .fetch_one(&self.pool)
         .await?;
 
-        let on_time_rate = if total_with_deadline.count > 0 {
-            completed.count as f64 / total_with_deadline.count as f64
+        let completion_rate = if total_terminal.count > 0 {
+            completed.count as f64 / total_terminal.count as f64
         } else {
             1.0
         };
+
+        // Average response time in hours (from first message to first reply in chats
+        // related to contracts). Fall back to 0 if no data.
+        let response_time: AvgRow = sqlx::query_as(
+            "SELECT COALESCE(AVG(response_time_hours)::float8, 0) as avg_val \
+             FROM ( \
+               SELECT EXTRACT(EPOCH FROM (c.started_at - c.created_at))::float8 / 3600.0 \
+                 as response_time_hours \
+               FROM contracts c \
+               WHERE c.provider_id = $1 AND c.started_at IS NOT NULL \
+             ) sub",
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
 
         // Total GMV.
         let gmv: GmvRow = sqlx::query_as(
@@ -526,23 +583,18 @@ impl TrustScorer {
             total_jobs_completed: i32_from_i64(completed.count),
             jobs_last_90_days: i32_from_i64(recent.count),
             repeat_customers: i32_from_i64(repeat.count),
-            on_time_rate,
+            on_time_rate: completion_rate,
             total_gmv_cents: gmv.total_cents,
         };
 
-        // Score calculation:
-        // Completed jobs: 25 jobs = 1.0, scaled linearly.
-        let jobs_component = (completed.count as f64 / 25.0).min(1.0);
-        // Recent activity bonus (up to 0.2).
-        let recency_component = (recent.count as f64 / 10.0).min(1.0);
-        // Repeat customer bonus (up to 0.2).
-        let repeat_component = (repeat.count as f64 / 5.0).min(1.0);
-        // On-time rate component.
-        let ontime_component = on_time_rate;
-
-        let score =
-            (jobs_component * 0.4 + recency_component * 0.2 + repeat_component * 0.15 + ontime_component * 0.25)
-                .clamp(0.0, 1.0);
+        // Delegate to pure scoring function.
+        let score = scoring::compute_volume_score(&VolumeInput {
+            total_completed: completed.count,
+            recent_completed: recent.count,
+            repeat_customers: repeat.count,
+            completion_rate,
+            avg_response_time_hours: response_time.avg_val,
+        });
 
         Ok((score, details))
     }
@@ -550,7 +602,8 @@ impl TrustScorer {
     /// Compute the risk dimension score (0.0-1.0).
     /// INVERTED: lower risk = higher score.
     ///
-    /// Queries cancellations, disputes, late deliveries, no-shows.
+    /// Queries cancellations, disputes, late deliveries, no-shows, then delegates
+    /// to the pure scoring function.
     #[allow(clippy::cast_possible_truncation)]
     async fn compute_risk(
         &self,
@@ -630,15 +683,14 @@ impl TrustScorer {
             dispute_rate,
         };
 
-        // Score calculation (INVERTED: 1.0 = no risk, 0.0 = max risk).
-        // Each incident type contributes a penalty.
-        let cancel_penalty = (cancellation_rate * 2.0).min(0.5);
-        let dispute_penalty = (dispute_rate * 3.0).min(0.5);
-        let noshow_penalty = (no_shows.count as f64 * 0.1).min(0.3);
-        let late_penalty = (late.count as f64 * 0.05).min(0.2);
-
-        let score = (1.0 - cancel_penalty - dispute_penalty - noshow_penalty - late_penalty)
-            .clamp(0.0, 1.0);
+        // Delegate to pure scoring function.
+        let score = scoring::compute_risk_score(&RiskInput {
+            total_contracts: total.count,
+            cancellations: cancellations.count,
+            disputes_against: disputes.count,
+            no_shows: no_shows.count,
+            late_deliveries: late.count,
+        });
 
         Ok((score, details))
     }
@@ -646,8 +698,7 @@ impl TrustScorer {
     /// Compute the fraud dimension score (0.0-1.0).
     /// INVERTED: lower fraud = higher score.
     ///
-    /// Queries fraud_signals table. Since the fraud engine (Slice 11) is not yet
-    /// implemented, we provide sensible defaults based on available data.
+    /// Queries fraud_signals table, then delegates to the pure scoring function.
     #[allow(clippy::cast_possible_truncation)]
     async fn compute_fraud(
         &self,
@@ -697,11 +748,11 @@ impl TrustScorer {
                 .map_or_else(|| "cleared".to_string(), |r| r.outcome),
         };
 
-        // Score calculation (INVERTED: 1.0 = clean, 0.0 = fraudulent).
-        let signal_penalty = (signals.count as f64 * 0.1).min(0.5);
-        let active_flag_penalty = if has_active_flags { 0.3 } else { 0.0 };
-
-        let score = (1.0 - signal_penalty - active_flag_penalty).clamp(0.0, 1.0);
+        // Delegate to pure scoring function.
+        let score = scoring::compute_fraud_score(&FraudInput {
+            total_signals: signals.count,
+            active_flags: active_flags.count,
+        });
 
         Ok((score, details))
     }
@@ -792,6 +843,13 @@ struct ReviewStatsRow {
     total_reviews: i64,
     five_star: i64,
     one_star: i64,
+}
+
+/// Individual review row with rating and age for time-decay weighting.
+#[derive(sqlx::FromRow)]
+struct ReviewRatingRow {
+    rating: f64,
+    age_days: f64,
 }
 
 #[derive(sqlx::FromRow)]

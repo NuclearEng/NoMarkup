@@ -16,6 +16,8 @@ var (
 	ErrMilestoneNotFound       = errors.New("milestone not found")
 	ErrMaxRevisions            = errors.New("maximum revision count reached")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
+	ErrDisputeNotFound         = errors.New("dispute not found")
+	ErrDisputeAlreadyResolved  = errors.New("dispute is already resolved")
 )
 
 // Contract represents a contract between customer and provider.
@@ -79,6 +81,27 @@ type ChangeOrder struct {
 	UpdatedAt        time.Time
 }
 
+// Dispute represents a dispute opened against a contract.
+type Dispute struct {
+	ID                string
+	ContractID        string
+	OpenedBy          string
+	DisputeType       string // quality, incomplete_work, no_show, abandonment, payment, scope_disagreement, guarantee_claim, other
+	Description       string
+	EvidenceURLs      []string
+	Status            string // open, under_review, resolved, escalated, closed
+	ResolutionType    string // release_payment, partial_refund, full_refund, contract_terminated, dismissed, guarantee_invoked
+	ResolutionNotes   string
+	RefundAmountCents int64
+	ResolvedBy        string
+	FirstResponseAt   *time.Time
+	ResolvedAt        *time.Time
+	IsGuaranteeClaim  bool
+	GuaranteeOutcome  string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 // MilestoneInput holds input data for creating a milestone.
 type MilestoneInput struct {
 	Description string
@@ -102,4 +125,12 @@ type ContractRepository interface {
 	ApproveCompletion(ctx context.Context, contractID string) (*Contract, error)
 	GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]Contract, error)
 	UpdateJobCompleted(ctx context.Context, jobID string) error
+
+	// Disputes
+	CreateDispute(ctx context.Context, dispute *Dispute) (*Dispute, error)
+	GetDispute(ctx context.Context, disputeID string) (*Dispute, error)
+	ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, page, pageSize int) ([]*Dispute, *Pagination, error)
+	ResolveDispute(ctx context.Context, disputeID, resolutionType, notes, resolvedBy string, refundAmountCents int64, guaranteeOutcome string) (*Dispute, error)
+	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
+	UpdateContractStatus(ctx context.Context, contractID string, status string) error
 }

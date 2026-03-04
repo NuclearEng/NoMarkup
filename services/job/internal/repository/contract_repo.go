@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -611,4 +612,237 @@ func (r *PostgresRepository) getContractChangeOrders(ctx context.Context, contra
 		orders = append(orders, o)
 	}
 	return orders, nil
+}
+
+// --- Dispute Repository Methods ---
+
+// CreateDispute inserts a new dispute into the database.
+func (r *PostgresRepository) CreateDispute(ctx context.Context, dispute *domain.Dispute) (*domain.Dispute, error) {
+	var disputeID string
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO disputes (
+			contract_id, opened_by, dispute_type, description,
+			evidence_urls, status, is_guarantee_claim
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id`,
+		dispute.ContractID, dispute.OpenedBy, dispute.DisputeType, dispute.Description,
+		dispute.EvidenceURLs, dispute.Status, dispute.IsGuaranteeClaim,
+	).Scan(&disputeID)
+	if err != nil {
+		return nil, fmt.Errorf("create dispute insert: %w", err)
+	}
+
+	return r.GetDispute(ctx, disputeID)
+}
+
+// GetDispute retrieves a dispute by ID.
+func (r *PostgresRepository) GetDispute(ctx context.Context, disputeID string) (*domain.Dispute, error) {
+	var d domain.Dispute
+	var evidenceURLs []string
+	var resolutionType, resolutionNotes, resolvedBy, guaranteeOutcome *string
+	var refundAmountCents *int64
+
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, contract_id, opened_by, dispute_type, description,
+		       evidence_urls, status, resolution_type, resolution_notes,
+		       refund_amount_cents, resolved_by,
+		       first_response_at, resolved_at,
+		       is_guarantee_claim, guarantee_outcome,
+		       created_at, updated_at
+		FROM disputes
+		WHERE id = $1`, disputeID).Scan(
+		&d.ID, &d.ContractID, &d.OpenedBy, &d.DisputeType, &d.Description,
+		&evidenceURLs, &d.Status, &resolutionType, &resolutionNotes,
+		&refundAmountCents, &resolvedBy,
+		&d.FirstResponseAt, &d.ResolvedAt,
+		&d.IsGuaranteeClaim, &guaranteeOutcome,
+		&d.CreatedAt, &d.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get dispute: %w", domain.ErrDisputeNotFound)
+		}
+		return nil, fmt.Errorf("get dispute: %w", err)
+	}
+
+	d.EvidenceURLs = evidenceURLs
+	if resolutionType != nil {
+		d.ResolutionType = *resolutionType
+	}
+	if resolutionNotes != nil {
+		d.ResolutionNotes = *resolutionNotes
+	}
+	if refundAmountCents != nil {
+		d.RefundAmountCents = *refundAmountCents
+	}
+	if resolvedBy != nil {
+		d.ResolvedBy = *resolvedBy
+	}
+	if guaranteeOutcome != nil {
+		d.GuaranteeOutcome = *guaranteeOutcome
+	}
+
+	return &d, nil
+}
+
+// ListDisputes lists disputes with optional filters and pagination.
+func (r *PostgresRepository) ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, page, pageSize int) ([]*domain.Dispute, *domain.Pagination, error) {
+	where := []string{"1=1"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if contractID != nil && *contractID != "" {
+		where = append(where, fmt.Sprintf("d.contract_id = $%d", argIdx))
+		args = append(args, *contractID)
+		argIdx++
+	}
+
+	if userID != nil && *userID != "" {
+		where = append(where, fmt.Sprintf("d.opened_by = $%d", argIdx))
+		args = append(args, *userID)
+		argIdx++
+	}
+
+	if status != nil && *status != "" {
+		where = append(where, fmt.Sprintf("d.status = $%d", argIdx))
+		args = append(args, *status)
+		argIdx++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	// Count query.
+	var totalCount int
+	err := r.pool.QueryRow(ctx,
+		fmt.Sprintf(`SELECT COUNT(*) FROM disputes d WHERE %s`, whereClause), args...).Scan(&totalCount)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list disputes count: %w", err)
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	totalPages := 0
+	if totalCount > 0 {
+		totalPages = (totalCount + pageSize - 1) / pageSize
+	}
+	offset := (page - 1) * pageSize
+
+	args = append(args, pageSize, offset)
+
+	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
+		SELECT d.id, d.contract_id, d.opened_by, d.dispute_type, d.description,
+		       d.evidence_urls, d.status, d.resolution_type, d.resolution_notes,
+		       d.refund_amount_cents, d.resolved_by,
+		       d.first_response_at, d.resolved_at,
+		       d.is_guarantee_claim, d.guarantee_outcome,
+		       d.created_at, d.updated_at
+		FROM disputes d
+		WHERE %s
+		ORDER BY d.created_at DESC
+		LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1), args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list disputes query: %w", err)
+	}
+	defer rows.Close()
+
+	var disputes []*domain.Dispute
+	for rows.Next() {
+		var d domain.Dispute
+		var evidenceURLs []string
+		var resolutionType, resolutionNotes, resolvedBy, guaranteeOutcome *string
+		var refundAmountCents *int64
+
+		err := rows.Scan(
+			&d.ID, &d.ContractID, &d.OpenedBy, &d.DisputeType, &d.Description,
+			&evidenceURLs, &d.Status, &resolutionType, &resolutionNotes,
+			&refundAmountCents, &resolvedBy,
+			&d.FirstResponseAt, &d.ResolvedAt,
+			&d.IsGuaranteeClaim, &guaranteeOutcome,
+			&d.CreatedAt, &d.UpdatedAt,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("list disputes scan: %w", err)
+		}
+
+		d.EvidenceURLs = evidenceURLs
+		if resolutionType != nil {
+			d.ResolutionType = *resolutionType
+		}
+		if resolutionNotes != nil {
+			d.ResolutionNotes = *resolutionNotes
+		}
+		if refundAmountCents != nil {
+			d.RefundAmountCents = *refundAmountCents
+		}
+		if resolvedBy != nil {
+			d.ResolvedBy = *resolvedBy
+		}
+		if guaranteeOutcome != nil {
+			d.GuaranteeOutcome = *guaranteeOutcome
+		}
+
+		disputes = append(disputes, &d)
+	}
+
+	return disputes, &domain.Pagination{
+		TotalCount: totalCount,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+	}, nil
+}
+
+// ResolveDispute updates a dispute with resolution details.
+func (r *PostgresRepository) ResolveDispute(ctx context.Context, disputeID, resolutionType, notes, resolvedBy string, refundAmountCents int64, guaranteeOutcome string) (*domain.Dispute, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE disputes
+		SET status = 'resolved',
+		    resolution_type = $2,
+		    resolution_notes = $3,
+		    resolved_by = $4,
+		    refund_amount_cents = $5,
+		    guarantee_outcome = NULLIF($6, ''),
+		    resolved_at = now(),
+		    updated_at = now()
+		WHERE id = $1 AND status IN ('open', 'under_review', 'escalated')`,
+		disputeID, resolutionType, notes, resolvedBy, refundAmountCents, guaranteeOutcome)
+	if err != nil {
+		return nil, fmt.Errorf("resolve dispute: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Check if dispute exists.
+		d, err := r.GetDispute(ctx, disputeID)
+		if err != nil {
+			return nil, err
+		}
+		if d.Status == "resolved" || d.Status == "closed" {
+			return nil, fmt.Errorf("resolve dispute: %w", domain.ErrDisputeAlreadyResolved)
+		}
+		return nil, fmt.Errorf("resolve dispute: %w", domain.ErrInvalidStatusTransition)
+	}
+
+	return r.GetDispute(ctx, disputeID)
+}
+
+// UpdateContractStatus updates the status of a contract.
+func (r *PostgresRepository) UpdateContractStatus(ctx context.Context, contractID string, status string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE contracts SET status = $2, updated_at = now()
+		WHERE id = $1`, contractID, status)
+	if err != nil {
+		return fmt.Errorf("update contract status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update contract status: %w", domain.ErrContractNotFound)
+	}
+	return nil
 }

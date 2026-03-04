@@ -3,6 +3,7 @@
 mod engine;
 mod grpc;
 mod models;
+mod scoring;
 
 use std::sync::Arc;
 

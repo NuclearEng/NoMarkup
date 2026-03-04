@@ -8,12 +8,15 @@ import (
 
 // Sentinel errors for the review domain.
 var (
-	ErrReviewNotFound    = errors.New("review not found")
-	ErrNotEligible       = errors.New("not eligible to review")
-	ErrAlreadyReviewed   = errors.New("already reviewed this contract")
+	ErrReviewNotFound     = errors.New("review not found")
+	ErrNotEligible        = errors.New("not eligible to review")
+	ErrAlreadyReviewed    = errors.New("already reviewed this contract")
 	ErrReviewWindowClosed = errors.New("review window has closed")
-	ErrNotReviewee       = errors.New("only the reviewee can respond")
-	ErrAlreadyResponded  = errors.New("already responded to this review")
+	ErrNotReviewee        = errors.New("only the reviewee can respond")
+	ErrAlreadyResponded   = errors.New("already responded to this review")
+	ErrFlagNotFound       = errors.New("flag not found")
+	ErrFlagAlreadyResolved = errors.New("flag already resolved")
+	ErrReviewAlreadyRemoved = errors.New("review already removed")
 )
 
 // Review represents a review left by one party for another after a contract.
@@ -70,6 +73,12 @@ type ReviewEligibility struct {
 	WindowClosesAt  time.Time
 }
 
+// FlaggedReviewWithFlag represents a review flag together with its associated review.
+type FlaggedReviewWithFlag struct {
+	Flag   ReviewFlag
+	Review Review
+}
+
 // ReviewRepository defines persistence operations for reviews.
 type ReviewRepository interface {
 	CreateReview(ctx context.Context, review *Review) (*Review, error)
@@ -81,4 +90,11 @@ type ReviewRepository interface {
 	CheckReviewEligibility(ctx context.Context, contractID, userID string) (*ReviewEligibility, error)
 	PublishPendingReviews(ctx context.Context, contractID string) error
 	ComputeAverageRating(ctx context.Context, userID string) (float64, int, error)
+
+	// Admin operations
+	AdminListFlaggedReviews(ctx context.Context, statusFilter *string, page, pageSize int) ([]FlaggedReviewWithFlag, *Pagination, error)
+	AdminRemoveReview(ctx context.Context, reviewID, reason, adminID string) error
+	AdminResolveFlag(ctx context.Context, flagID, adminID string, uphold bool, resolutionNotes string) (string, error)
+	RecalculateProviderRating(ctx context.Context, providerID string) error
+	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
 }

@@ -630,6 +630,162 @@ func (r *PostgresRepository) GetCategoryTree(ctx context.Context) ([]domain.Serv
 	return r.ListServiceCategories(ctx, nil, nil)
 }
 
+func (r *PostgresRepository) SuspendUser(ctx context.Context, userID, reason, adminID string) error {
+	query := `
+		UPDATE users
+		SET status = 'suspended', suspension_reason = $2, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`
+
+	tag, err := r.pool.Exec(ctx, query, userID, reason)
+	if err != nil {
+		return fmt.Errorf("suspend user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("suspend user: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) BanUser(ctx context.Context, userID, reason, adminID string) error {
+	query := `
+		UPDATE users
+		SET status = 'banned', suspension_reason = $2, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`
+
+	tag, err := r.pool.Exec(ctx, query, userID, reason)
+	if err != nil {
+		return fmt.Errorf("ban user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("ban user: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error {
+	detailsJSON, err := json.Marshal(details)
+	if err != nil {
+		return fmt.Errorf("insert audit log marshal details: %w", err)
+	}
+
+	query := `
+		INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, ip_address)
+		VALUES ($1, $2, $3, $4, $5, $6)`
+
+	_, err = r.pool.Exec(ctx, query, adminID, action, targetType, targetID, detailsJSON, ipAddress)
+	if err != nil {
+		return fmt.Errorf("insert audit log: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error) {
+	whereClauses := []string{"deleted_at IS NULL"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if query != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(
+			"(email ILIKE $%d OR display_name ILIKE $%d OR phone ILIKE $%d)",
+			argIdx, argIdx, argIdx,
+		))
+		args = append(args, "%"+query+"%")
+		argIdx++
+	}
+	if status != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, status)
+		argIdx++
+	}
+
+	whereSQL := strings.Join(whereClauses, " AND ")
+
+	// Count total matching rows.
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM users WHERE %s", whereSQL)
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("admin search users count: %w", err)
+	}
+
+	// Fetch the page.
+	offset := (page - 1) * pageSize
+	dataQuery := fmt.Sprintf(`
+		SELECT id, email, email_verified, password_hash, phone, phone_verified,
+		       display_name, avatar_url, roles, status, suspension_reason,
+		       mfa_enabled, mfa_secret, mfa_backup_codes,
+		       last_login_at, last_active_at, timezone,
+		       created_at, updated_at, deleted_at
+		FROM users
+		WHERE %s
+		ORDER BY created_at DESC
+		LIMIT $%d OFFSET $%d`,
+		whereSQL, argIdx, argIdx+1)
+	args = append(args, pageSize, offset)
+
+	rows, err := r.pool.Query(ctx, dataQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("admin search users query: %w", err)
+	}
+	defer rows.Close()
+
+	var users []domain.User
+	for rows.Next() {
+		u, err := scanUserFromRows(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("admin search users scan: %w", err)
+		}
+		users = append(users, *u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("admin search users rows: %w", err)
+	}
+	return users, total, nil
+}
+
+// scanUserFromRows scans a single user from a pgx.Rows iterator.
+func scanUserFromRows(rows pgx.Rows) (*domain.User, error) {
+	var u domain.User
+	var phone, avatarURL, suspensionReason, mfaSecret *string
+	err := rows.Scan(
+		&u.ID,
+		&u.Email,
+		&u.EmailVerified,
+		&u.PasswordHash,
+		&phone,
+		&u.PhoneVerified,
+		&u.DisplayName,
+		&avatarURL,
+		&u.Roles,
+		&u.Status,
+		&suspensionReason,
+		&u.MFAEnabled,
+		&mfaSecret,
+		&u.MFABackupCodes,
+		&u.LastLoginAt,
+		&u.LastActiveAt,
+		&u.Timezone,
+		&u.CreatedAt,
+		&u.UpdatedAt,
+		&u.DeletedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if phone != nil {
+		u.Phone = *phone
+	}
+	if avatarURL != nil {
+		u.AvatarURL = *avatarURL
+	}
+	if suspensionReason != nil {
+		u.SuspensionReason = *suspensionReason
+	}
+	if mfaSecret != nil {
+		u.MFASecret = *mfaSecret
+	}
+	return &u, nil
+}
+
 func scanProviderProfile(row pgx.Row) (*domain.ProviderProfile, error) {
 	var p domain.ProviderProfile
 	var businessName, bio, serviceAddress, cancellationPolicy, warrantyTerms, stripeAccountID *string

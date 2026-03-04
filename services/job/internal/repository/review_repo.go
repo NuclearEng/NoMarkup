@@ -463,6 +463,229 @@ func (r *PostgresRepository) ComputeAverageRating(ctx context.Context, userID st
 	return avg, count, nil
 }
 
+// AdminListFlaggedReviews lists review flags with their associated reviews, with optional status filter.
+func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, statusFilter *string, page, pageSize int) ([]domain.FlaggedReviewWithFlag, *domain.Pagination, error) {
+	where := "1=1"
+	args := []interface{}{}
+	argIdx := 1
+
+	if statusFilter != nil && *statusFilter != "" {
+		where = fmt.Sprintf("rf.status = $%d", argIdx)
+		args = append(args, *statusFilter)
+		argIdx++
+	}
+
+	var totalCount int
+	err := r.pool.QueryRow(ctx,
+		fmt.Sprintf(`SELECT COUNT(*) FROM review_flags rf WHERE %s`, where), args...).Scan(&totalCount)
+	if err != nil {
+		return nil, nil, fmt.Errorf("admin list flagged reviews count: %w", err)
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	totalPages := 0
+	if totalCount > 0 {
+		totalPages = (totalCount + pageSize - 1) / pageSize
+	}
+	offset := (page - 1) * pageSize
+
+	args = append(args, pageSize, offset)
+
+	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
+		SELECT rf.id, rf.review_id, rf.flagged_by, rf.reason, rf.details, rf.status,
+		       rf.resolved_by, rf.resolution_notes, rf.created_at, rf.resolved_at,
+		       rev.id, rev.contract_id, rev.reviewer_id, rev.reviewee_id, rev.direction,
+		       rev.overall_rating, rev.quality_rating, rev.communication_rating,
+		       rev.timeliness_rating, rev.value_rating,
+		       rev.comment, rev.photo_urls, rev.status, rev.is_flagged,
+		       rev.review_window_ends_at, rev.created_at, rev.updated_at
+		FROM review_flags rf
+		JOIN reviews rev ON rev.id = rf.review_id
+		WHERE %s
+		ORDER BY rf.created_at DESC
+		LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1), args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("admin list flagged reviews query: %w", err)
+	}
+	defer rows.Close()
+
+	var results []domain.FlaggedReviewWithFlag
+	for rows.Next() {
+		var flag domain.ReviewFlag
+		var rev domain.Review
+		var qualityRating, communicationRating, timelinessRating, valueRating *int
+		var photoURLs []string
+
+		err := rows.Scan(
+			&flag.ID, &flag.ReviewID, &flag.FlaggedBy, &flag.Reason, &flag.Details, &flag.Status,
+			&flag.ResolvedBy, &flag.ResolutionNotes, &flag.FlaggedAt, &flag.ResolvedAt,
+			&rev.ID, &rev.ContractID, &rev.ReviewerID, &rev.RevieweeID, &rev.Direction,
+			&rev.OverallRating, &qualityRating, &communicationRating,
+			&timelinessRating, &valueRating,
+			&rev.Comment, &photoURLs, &rev.Status, &rev.IsFlagged,
+			&rev.ReviewWindowEndsAt, &rev.CreatedAt, &rev.UpdatedAt,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("admin list flagged reviews scan: %w", err)
+		}
+
+		rev.QualityRating = qualityRating
+		rev.CommunicationRating = communicationRating
+		rev.TimelinessRating = timelinessRating
+		rev.ValueRating = valueRating
+		rev.PhotoURLs = photoURLs
+
+		results = append(results, domain.FlaggedReviewWithFlag{
+			Flag:   flag,
+			Review: rev,
+		})
+	}
+
+	return results, &domain.Pagination{
+		TotalCount: totalCount,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+	}, nil
+}
+
+// AdminRemoveReview sets a review's status to 'removed' and records the admin action.
+func (r *PostgresRepository) AdminRemoveReview(ctx context.Context, reviewID, reason, adminID string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE reviews SET status = 'removed', updated_at = now()
+		 WHERE id = $1 AND status != 'removed'`,
+		reviewID)
+	if err != nil {
+		return fmt.Errorf("admin remove review: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		_ = r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM reviews WHERE id = $1)`, reviewID).Scan(&exists)
+		if !exists {
+			return fmt.Errorf("admin remove review: %w", domain.ErrReviewNotFound)
+		}
+		return fmt.Errorf("admin remove review: %w", domain.ErrReviewAlreadyRemoved)
+	}
+	return nil
+}
+
+// AdminResolveFlag resolves a review flag. If upheld, the associated review is removed.
+// Returns the resulting flag status string.
+func (r *PostgresRepository) AdminResolveFlag(ctx context.Context, flagID, adminID string, uphold bool, resolutionNotes string) (string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("admin resolve flag begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Get the flag and verify it's pending.
+	var reviewID, currentStatus string
+	err = tx.QueryRow(ctx,
+		`SELECT review_id, status FROM review_flags WHERE id = $1`, flagID).
+		Scan(&reviewID, &currentStatus)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("admin resolve flag: %w", domain.ErrFlagNotFound)
+		}
+		return "", fmt.Errorf("admin resolve flag lookup: %w", err)
+	}
+	if currentStatus != "pending" {
+		return "", fmt.Errorf("admin resolve flag: %w", domain.ErrFlagAlreadyResolved)
+	}
+
+	newStatus := "dismissed"
+	if uphold {
+		newStatus = "upheld"
+	}
+
+	// Update the flag.
+	_, err = tx.Exec(ctx,
+		`UPDATE review_flags SET status = $1, resolved_by = $2, resolution_notes = $3, resolved_at = now()
+		 WHERE id = $4`,
+		newStatus, adminID, resolutionNotes, flagID)
+	if err != nil {
+		return "", fmt.Errorf("admin resolve flag update: %w", err)
+	}
+
+	// If upheld, remove the review and recalculate the reviewee's rating.
+	if uphold {
+		// Get the reviewee before removing.
+		var revieweeID string
+		err = tx.QueryRow(ctx,
+			`SELECT reviewee_id FROM reviews WHERE id = $1`, reviewID).Scan(&revieweeID)
+		if err != nil {
+			return "", fmt.Errorf("admin resolve flag get reviewee: %w", err)
+		}
+
+		_, err = tx.Exec(ctx,
+			`UPDATE reviews SET status = 'removed', updated_at = now()
+			 WHERE id = $1 AND status != 'removed'`,
+			reviewID)
+		if err != nil {
+			return "", fmt.Errorf("admin resolve flag remove review: %w", err)
+		}
+
+		// Recalculate the reviewee's average rating within the transaction.
+		var avgRating float64
+		var count int
+		err = tx.QueryRow(ctx, `
+			SELECT COALESCE(AVG(overall_rating), 0), COUNT(*)
+			FROM reviews
+			WHERE reviewee_id = $1 AND status = 'published'`, revieweeID).Scan(&avgRating, &count)
+		if err != nil {
+			return "", fmt.Errorf("admin resolve flag recalculate rating: %w", err)
+		}
+
+		_, err = tx.Exec(ctx, `
+			UPDATE users SET average_rating = $1, total_reviews = $2, updated_at = now()
+			WHERE id = $3`, avgRating, count, revieweeID)
+		if err != nil {
+			return "", fmt.Errorf("admin resolve flag update user rating: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("admin resolve flag commit: %w", err)
+	}
+
+	return newStatus, nil
+}
+
+// RecalculateProviderRating recomputes the average rating for a provider
+// based on their remaining published reviews.
+func (r *PostgresRepository) RecalculateProviderRating(ctx context.Context, providerID string) error {
+	var avgRating float64
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(AVG(overall_rating), 0), COUNT(*)
+		FROM reviews
+		WHERE reviewee_id = $1 AND status = 'published'`, providerID).Scan(&avgRating, &count)
+	if err != nil {
+		return fmt.Errorf("recalculate provider rating query: %w", err)
+	}
+
+	_, err = r.pool.Exec(ctx, `
+		UPDATE users SET average_rating = $1, total_reviews = $2, updated_at = now()
+		WHERE id = $3`,
+		avgRating, count, providerID)
+	if err != nil {
+		return fmt.Errorf("recalculate provider rating update: %w", err)
+	}
+
+	return nil
+}
+
 // scanReviewRow scans a review row including optional LEFT JOIN review_responses columns.
 func scanReviewRow(rows pgx.Rows) (*domain.Review, error) {
 	var rev domain.Review

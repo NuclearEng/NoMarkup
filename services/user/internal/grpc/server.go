@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -21,11 +22,12 @@ type Server struct {
 	userv1.UnimplementedUserServiceServer
 	auth    *service.Auth
 	profile *service.Profile
+	admin   *service.Admin
 }
 
 // NewServer creates a new gRPC server for the user service.
-func NewServer(auth *service.Auth, profile *service.Profile) *Server {
-	return &Server{auth: auth, profile: profile}
+func NewServer(auth *service.Auth, profile *service.Profile, admin *service.Admin) *Server {
+	return &Server{auth: auth, profile: profile, admin: admin}
 }
 
 // Register registers the user service with a gRPC server.
@@ -353,6 +355,164 @@ func (s *Server) GetCategoryTree(ctx context.Context, _ *userv1.GetCategoryTreeR
 	}
 
 	return &userv1.GetCategoryTreeResponse{Categories: roots}, nil
+}
+
+func (s *Server) AdminSuspendUser(ctx context.Context, req *userv1.AdminSuspendUserRequest) (*userv1.AdminSuspendUserResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetReason() == "" {
+		return nil, status.Error(codes.InvalidArgument, "reason is required")
+	}
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	if err := s.admin.SuspendUser(ctx, req.GetUserId(), req.GetReason(), req.GetAdminId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	if err := s.admin.InsertAuditLog(ctx, req.GetAdminId(), "suspend_user", "user", req.GetUserId(), map[string]any{
+		"reason": req.GetReason(),
+	}, ""); err != nil {
+		slog.Warn("failed to insert audit log for suspend",
+			"user_id", req.GetUserId(),
+			"admin_id", req.GetAdminId(),
+			"error", err,
+		)
+	}
+
+	user, err := s.admin.AdminGetUser(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.AdminSuspendUserResponse{
+		User: domainUserToProto(user),
+	}, nil
+}
+
+func (s *Server) AdminBanUser(ctx context.Context, req *userv1.AdminBanUserRequest) (*userv1.AdminBanUserResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetReason() == "" {
+		return nil, status.Error(codes.InvalidArgument, "reason is required")
+	}
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	if err := s.admin.BanUser(ctx, req.GetUserId(), req.GetReason(), req.GetAdminId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	if err := s.admin.InsertAuditLog(ctx, req.GetAdminId(), "ban_user", "user", req.GetUserId(), map[string]any{
+		"reason": req.GetReason(),
+	}, ""); err != nil {
+		slog.Warn("failed to insert audit log for ban",
+			"user_id", req.GetUserId(),
+			"admin_id", req.GetAdminId(),
+			"error", err,
+		)
+	}
+
+	user, err := s.admin.AdminGetUser(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.AdminBanUserResponse{
+		User: domainUserToProto(user),
+	}, nil
+}
+
+func (s *Server) AdminSearchUsers(ctx context.Context, req *userv1.AdminSearchUsersRequest) (*userv1.AdminSearchUsersResponse, error) {
+	page := int(req.GetPagination().GetPage())
+	pageSize := int(req.GetPagination().GetPageSize())
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	statusFilter := ""
+	if req.StatusFilter != nil {
+		statusFilter = protoUserStatusToString(*req.StatusFilter)
+	}
+
+	users, total, err := s.admin.AdminSearchUsers(ctx, req.GetQuery(), statusFilter, page, pageSize)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoUsers := make([]*userv1.User, 0, len(users))
+	for i := range users {
+		protoUsers = append(protoUsers, domainUserToProto(&users[i]))
+	}
+
+	totalPages := int32(total) / int32(pageSize)
+	if int32(total)%int32(pageSize) > 0 {
+		totalPages++
+	}
+
+	return &userv1.AdminSearchUsersResponse{
+		Users: protoUsers,
+		Pagination: &commonv1.PaginationResponse{
+			TotalCount: int32(total),
+			Page:       int32(page),
+			PageSize:   int32(pageSize),
+			TotalPages: totalPages,
+			HasNext:    int32(page) < totalPages,
+		},
+	}, nil
+}
+
+func (s *Server) AdminGetUser(ctx context.Context, req *userv1.AdminGetUserRequest) (*userv1.AdminGetUserResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	user, err := s.admin.AdminGetUser(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	resp := &userv1.AdminGetUserResponse{
+		User: domainUserToProto(user),
+	}
+
+	// Attempt to load provider profile if the user has the provider role.
+	for _, role := range user.Roles {
+		if role == "provider" {
+			p, err := s.profile.GetProviderProfile(ctx, user.ID)
+			if err == nil {
+				resp.ProviderProfile = domainProviderToProto(p)
+			}
+			break
+		}
+	}
+
+	return resp, nil
+}
+
+func protoUserStatusToString(s commonv1.UserStatus) string {
+	switch s {
+	case commonv1.UserStatus_USER_STATUS_ACTIVE:
+		return "active"
+	case commonv1.UserStatus_USER_STATUS_SUSPENDED:
+		return "suspended"
+	case commonv1.UserStatus_USER_STATUS_BANNED:
+		return "banned"
+	case commonv1.UserStatus_USER_STATUS_DEACTIVATED:
+		return "deactivated"
+	default:
+		return ""
+	}
 }
 
 func domainUserToProto(u *domain.User) *userv1.User {

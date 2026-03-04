@@ -205,4 +205,10 @@ type UserRepository interface {
 	GetPortfolioImages(ctx context.Context, providerID string) ([]PortfolioImage, error)
 	ListServiceCategories(ctx context.Context, level *int, parentID *string) ([]ServiceCategory, error)
 	GetCategoryTree(ctx context.Context) ([]ServiceCategory, error)
+
+	// Admin operations
+	SuspendUser(ctx context.Context, userID, reason, adminID string) error
+	BanUser(ctx context.Context, userID, reason, adminID string) error
+	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
+	AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]User, int, error)
 }

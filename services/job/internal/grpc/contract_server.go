@@ -167,6 +167,134 @@ func (s *ContractServer) CancelContract(ctx context.Context, req *contractv1.Can
 	}, nil
 }
 
+// --- Dispute RPCs ---
+
+func (s *ContractServer) OpenDispute(ctx context.Context, req *contractv1.OpenDisputeRequest) (*contractv1.OpenDisputeResponse, error) {
+	disputeType := protoDisputeTypeToString(req.GetDisputeType())
+	if disputeType == "" {
+		return nil, status.Error(codes.InvalidArgument, "dispute type is required")
+	}
+
+	if req.GetDescription() == "" {
+		return nil, status.Error(codes.InvalidArgument, "description is required")
+	}
+
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract id is required")
+	}
+
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user id is required")
+	}
+
+	dispute, err := s.svc.OpenDispute(
+		ctx,
+		req.GetContractId(),
+		req.GetUserId(),
+		disputeType,
+		req.GetDescription(),
+		req.GetEvidenceUrls(),
+		req.GetIsGuaranteeClaim(),
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.OpenDisputeResponse{
+		Dispute: domainDisputeToProto(dispute),
+	}, nil
+}
+
+func (s *ContractServer) GetDispute(ctx context.Context, req *contractv1.GetDisputeRequest) (*contractv1.GetDisputeResponse, error) {
+	if req.GetDisputeId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "dispute id is required")
+	}
+
+	dispute, err := s.svc.GetDispute(ctx, req.GetDisputeId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.GetDisputeResponse{
+		Dispute: domainDisputeToProto(dispute),
+	}, nil
+}
+
+func (s *ContractServer) ListDisputes(ctx context.Context, req *contractv1.ListDisputesRequest) (*contractv1.ListDisputesResponse, error) {
+	var contractID *string
+	if req.ContractId != nil && *req.ContractId != "" {
+		contractID = req.ContractId
+	}
+
+	var userID *string
+	if req.UserId != nil && *req.UserId != "" {
+		userID = req.UserId
+	}
+
+	var statusFilter *string
+	if req.StatusFilter != nil && *req.StatusFilter != contractv1.DisputeStatus_DISPUTE_STATUS_UNSPECIFIED {
+		sf := protoDisputeStatusToString(*req.StatusFilter)
+		statusFilter = &sf
+	}
+
+	page := int32(1)
+	pageSize := int32(20)
+	if pg := req.GetPagination(); pg != nil {
+		if pg.GetPage() > 0 {
+			page = pg.GetPage()
+		}
+		if pg.GetPageSize() > 0 {
+			pageSize = pg.GetPageSize()
+		}
+	}
+
+	disputes, pagination, err := s.svc.ListDisputes(ctx, contractID, userID, statusFilter, int(page), int(pageSize))
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	protoDisputes := make([]*contractv1.Dispute, 0, len(disputes))
+	for _, d := range disputes {
+		protoDisputes = append(protoDisputes, domainDisputeToProto(d))
+	}
+
+	return &contractv1.ListDisputesResponse{
+		Disputes:   protoDisputes,
+		Pagination: domainPaginationToProto(pagination),
+	}, nil
+}
+
+func (s *ContractServer) AdminResolveDispute(ctx context.Context, req *contractv1.AdminResolveDisputeRequest) (*contractv1.AdminResolveDisputeResponse, error) {
+	if req.GetDisputeId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "dispute id is required")
+	}
+
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin id is required")
+	}
+
+	if req.GetResolutionType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "resolution type is required")
+	}
+
+	dispute, err := s.svc.AdminResolveDispute(
+		ctx,
+		req.GetDisputeId(),
+		req.GetResolutionType(),
+		req.GetResolutionNotes(),
+		req.GetAdminId(),
+		req.GetRefundAmountCents(),
+		req.GetGuaranteeOutcome(),
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.AdminResolveDisputeResponse{
+		Dispute: domainDisputeToProto(dispute),
+	}, nil
+}
+
 // --- Proto conversion helpers ---
 
 func domainContractToProto(c *domain.Contract) *contractv1.Contract {
@@ -309,6 +437,111 @@ func stringToProtoPaymentTiming(s string) commonv1.PaymentTiming {
 	}
 }
 
+// --- Dispute conversion helpers ---
+
+func domainDisputeToProto(d *domain.Dispute) *contractv1.Dispute {
+	pb := &contractv1.Dispute{
+		Id:               d.ID,
+		ContractId:       d.ContractID,
+		OpenedBy:         d.OpenedBy,
+		DisputeType:      stringToProtoDisputeType(d.DisputeType),
+		Description:      d.Description,
+		EvidenceUrls:     d.EvidenceURLs,
+		Status:           stringToProtoDisputeStatus(d.Status),
+		ResolutionType:   d.ResolutionType,
+		ResolutionNotes:  d.ResolutionNotes,
+		RefundAmountCents: d.RefundAmountCents,
+		IsGuaranteeClaim: d.IsGuaranteeClaim,
+		CreatedAt:        timestamppb.New(d.CreatedAt),
+	}
+
+	if d.ResolvedAt != nil {
+		pb.ResolvedAt = timestamppb.New(*d.ResolvedAt)
+	}
+
+	return pb
+}
+
+func protoDisputeTypeToString(dt contractv1.DisputeType) string {
+	switch dt {
+	case contractv1.DisputeType_DISPUTE_TYPE_QUALITY:
+		return "quality"
+	case contractv1.DisputeType_DISPUTE_TYPE_INCOMPLETE_WORK:
+		return "incomplete_work"
+	case contractv1.DisputeType_DISPUTE_TYPE_NO_SHOW:
+		return "no_show"
+	case contractv1.DisputeType_DISPUTE_TYPE_ABANDONMENT:
+		return "abandonment"
+	case contractv1.DisputeType_DISPUTE_TYPE_PAYMENT:
+		return "payment"
+	case contractv1.DisputeType_DISPUTE_TYPE_SCOPE_DISAGREEMENT:
+		return "scope_disagreement"
+	case contractv1.DisputeType_DISPUTE_TYPE_GUARANTEE_CLAIM:
+		return "guarantee_claim"
+	case contractv1.DisputeType_DISPUTE_TYPE_OTHER:
+		return "other"
+	default:
+		return ""
+	}
+}
+
+func stringToProtoDisputeType(s string) contractv1.DisputeType {
+	switch s {
+	case "quality":
+		return contractv1.DisputeType_DISPUTE_TYPE_QUALITY
+	case "incomplete_work":
+		return contractv1.DisputeType_DISPUTE_TYPE_INCOMPLETE_WORK
+	case "no_show":
+		return contractv1.DisputeType_DISPUTE_TYPE_NO_SHOW
+	case "abandonment":
+		return contractv1.DisputeType_DISPUTE_TYPE_ABANDONMENT
+	case "payment":
+		return contractv1.DisputeType_DISPUTE_TYPE_PAYMENT
+	case "scope_disagreement":
+		return contractv1.DisputeType_DISPUTE_TYPE_SCOPE_DISAGREEMENT
+	case "guarantee_claim":
+		return contractv1.DisputeType_DISPUTE_TYPE_GUARANTEE_CLAIM
+	case "other":
+		return contractv1.DisputeType_DISPUTE_TYPE_OTHER
+	default:
+		return contractv1.DisputeType_DISPUTE_TYPE_UNSPECIFIED
+	}
+}
+
+func protoDisputeStatusToString(s contractv1.DisputeStatus) string {
+	switch s {
+	case contractv1.DisputeStatus_DISPUTE_STATUS_OPEN:
+		return "open"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_UNDER_REVIEW:
+		return "under_review"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_RESOLVED:
+		return "resolved"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_ESCALATED:
+		return "escalated"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_CLOSED:
+		return "closed"
+	default:
+		return ""
+	}
+}
+
+func stringToProtoDisputeStatus(s string) contractv1.DisputeStatus {
+	switch s {
+	case "open":
+		return contractv1.DisputeStatus_DISPUTE_STATUS_OPEN
+	case "under_review":
+		return contractv1.DisputeStatus_DISPUTE_STATUS_UNDER_REVIEW
+	case "resolved":
+		return contractv1.DisputeStatus_DISPUTE_STATUS_RESOLVED
+	case "escalated":
+		return contractv1.DisputeStatus_DISPUTE_STATUS_ESCALATED
+	case "closed":
+		return contractv1.DisputeStatus_DISPUTE_STATUS_CLOSED
+	default:
+		return contractv1.DisputeStatus_DISPUTE_STATUS_UNSPECIFIED
+	}
+}
+
 // mapContractDomainError maps contract domain errors to gRPC status errors.
 func mapContractDomainError(err error) error {
 	switch {
@@ -330,6 +563,10 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "invalid status transition")
 	case errors.Is(err, domain.ErrJobNotFound):
 		return status.Error(codes.NotFound, "job not found")
+	case errors.Is(err, domain.ErrDisputeNotFound):
+		return status.Error(codes.NotFound, "dispute not found")
+	case errors.Is(err, domain.ErrDisputeAlreadyResolved):
+		return status.Error(codes.FailedPrecondition, "dispute is already resolved")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

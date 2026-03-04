@@ -69,7 +69,8 @@ func main() {
 	jwtManager := service.NewJWTManager(privateKey)
 	authService := service.NewAuth(repo, jwtManager)
 	profileService := service.NewProfile(repo)
-	srv := grpcserver.NewServer(authService, profileService)
+	adminService := service.NewAdmin(repo)
+	srv := grpcserver.NewServer(authService, profileService, adminService)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))

@@ -181,3 +181,56 @@ func (s *JobService) GetCategoryTree(ctx context.Context) ([]domain.ServiceCateg
 	}
 	return cats, nil
 }
+
+// AdminListJobs lists jobs for admin with optional filters.
+func (s *JobService) AdminListJobs(ctx context.Context, statusFilter *string, categoryID *string, customerID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+	jobs, pagination, err := s.repo.AdminListJobs(ctx, statusFilter, categoryID, customerID, page, pageSize)
+	if err != nil {
+		return nil, nil, fmt.Errorf("admin list jobs: %w", err)
+	}
+	return jobs, pagination, nil
+}
+
+// AdminSuspendJob suspends a job and records an audit log entry.
+func (s *JobService) AdminSuspendJob(ctx context.Context, jobID, reason, adminID string) error {
+	if err := s.repo.AdminSuspendJob(ctx, jobID, reason); err != nil {
+		return fmt.Errorf("admin suspend job: %w", err)
+	}
+
+	if s.search != nil {
+		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
+			slog.Warn("failed to remove suspended job from search", "job_id", jobID, "error", removeErr)
+		}
+	}
+
+	if err := s.repo.InsertAuditLog(ctx, adminID, "suspend_job", "job", jobID, map[string]any{
+		"reason": reason,
+	}); err != nil {
+		slog.Error("failed to insert audit log for job suspension", "job_id", jobID, "admin_id", adminID, "error", err)
+	}
+
+	slog.Info("job suspended by admin", "job_id", jobID, "admin_id", adminID, "reason", reason)
+	return nil
+}
+
+// AdminRemoveJob removes a job (sets status to cancelled) and records an audit log entry.
+func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID string) error {
+	if err := s.repo.AdminRemoveJob(ctx, jobID, reason); err != nil {
+		return fmt.Errorf("admin remove job: %w", err)
+	}
+
+	if s.search != nil {
+		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
+			slog.Warn("failed to remove job from search", "job_id", jobID, "error", removeErr)
+		}
+	}
+
+	if err := s.repo.InsertAuditLog(ctx, adminID, "remove_job", "job", jobID, map[string]any{
+		"reason": reason,
+	}); err != nil {
+		slog.Error("failed to insert audit log for job removal", "job_id", jobID, "admin_id", adminID, "error", err)
+	}
+
+	slog.Info("job removed by admin", "job_id", jobID, "admin_id", adminID, "reason", reason)
+	return nil
+}

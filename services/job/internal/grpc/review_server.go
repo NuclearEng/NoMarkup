@@ -185,6 +185,59 @@ func (s *ReviewServer) GetReviewEligibility(ctx context.Context, req *reviewv1.G
 	return resp, nil
 }
 
+func (s *ReviewServer) AdminRemoveReview(ctx context.Context, req *reviewv1.AdminRemoveReviewRequest) (*reviewv1.AdminRemoveReviewResponse, error) {
+	if err := s.svc.AdminRemoveReview(ctx, req.GetReviewId(), req.GetReason(), req.GetAdminId()); err != nil {
+		return nil, mapReviewDomainError(err)
+	}
+
+	return &reviewv1.AdminRemoveReviewResponse{}, nil
+}
+
+func (s *ReviewServer) AdminListFlaggedReviews(ctx context.Context, req *reviewv1.AdminListFlaggedReviewsRequest) (*reviewv1.AdminListFlaggedReviewsResponse, error) {
+	var statusFilter *string
+	if req.StatusFilter != nil {
+		sf := protoFlagStatusToString(req.GetStatusFilter())
+		statusFilter = &sf
+	}
+
+	page := 1
+	pageSize := 20
+	if pg := req.GetPagination(); pg != nil {
+		if pg.GetPage() > 0 {
+			page = int(pg.GetPage())
+		}
+		if pg.GetPageSize() > 0 {
+			pageSize = int(pg.GetPageSize())
+		}
+	}
+
+	flagged, pagination, err := s.svc.AdminListFlaggedReviews(ctx, statusFilter, page, pageSize)
+	if err != nil {
+		return nil, mapReviewDomainError(err)
+	}
+
+	protoFlagged := make([]*reviewv1.FlaggedReview, 0, len(flagged))
+	for _, f := range flagged {
+		protoFlagged = append(protoFlagged, domainFlaggedReviewToProto(&f))
+	}
+
+	return &reviewv1.AdminListFlaggedReviewsResponse{
+		FlaggedReviews: protoFlagged,
+		Pagination:     domainReviewPaginationToProto(pagination),
+	}, nil
+}
+
+func (s *ReviewServer) AdminResolveFlag(ctx context.Context, req *reviewv1.AdminResolveFlagRequest) (*reviewv1.AdminResolveFlagResponse, error) {
+	resultStatus, err := s.svc.AdminResolveFlag(ctx, req.GetFlagId(), req.GetAdminId(), req.GetUphold(), req.GetResolutionNotes())
+	if err != nil {
+		return nil, mapReviewDomainError(err)
+	}
+
+	return &reviewv1.AdminResolveFlagResponse{
+		Status: stringToProtoFlagStatus(resultStatus),
+	}, nil
+}
+
 // --- Proto conversion helpers ---
 
 func domainReviewToProto(r *domain.Review) *reviewv1.Review {
@@ -281,6 +334,66 @@ func protoFlagReasonToString(r reviewv1.FlagReason) string {
 	return strings.ToLower(name)
 }
 
+func domainFlaggedReviewToProto(f *domain.FlaggedReviewWithFlag) *reviewv1.FlaggedReview {
+	if f == nil {
+		return nil
+	}
+
+	review := f.Review
+	return &reviewv1.FlaggedReview{
+		FlagId:    f.Flag.ID,
+		Review:    domainReviewToProto(&review),
+		FlaggedBy: f.Flag.FlaggedBy,
+		Reason:    stringToProtoFlagReason(f.Flag.Reason),
+		Details:   f.Flag.Details,
+		Status:    stringToProtoFlagStatus(f.Flag.Status),
+		FlaggedAt: timestamppb.New(f.Flag.FlaggedAt),
+	}
+}
+
+func protoFlagStatusToString(s reviewv1.FlagStatus) string {
+	switch s {
+	case reviewv1.FlagStatus_FLAG_STATUS_PENDING:
+		return "pending"
+	case reviewv1.FlagStatus_FLAG_STATUS_UPHELD:
+		return "upheld"
+	case reviewv1.FlagStatus_FLAG_STATUS_DISMISSED:
+		return "dismissed"
+	default:
+		return ""
+	}
+}
+
+func stringToProtoFlagStatus(s string) reviewv1.FlagStatus {
+	switch s {
+	case "pending":
+		return reviewv1.FlagStatus_FLAG_STATUS_PENDING
+	case "upheld":
+		return reviewv1.FlagStatus_FLAG_STATUS_UPHELD
+	case "dismissed":
+		return reviewv1.FlagStatus_FLAG_STATUS_DISMISSED
+	default:
+		return reviewv1.FlagStatus_FLAG_STATUS_UNSPECIFIED
+	}
+}
+
+func stringToProtoFlagReason(s string) reviewv1.FlagReason {
+	switch s {
+	case "inappropriate":
+		return reviewv1.FlagReason_FLAG_REASON_INAPPROPRIATE
+	case "fake":
+		return reviewv1.FlagReason_FLAG_REASON_FAKE
+	case "harassment":
+		return reviewv1.FlagReason_FLAG_REASON_HARASSMENT
+	case "spam":
+		return reviewv1.FlagReason_FLAG_REASON_SPAM
+	case "irrelevant":
+		return reviewv1.FlagReason_FLAG_REASON_IRRELEVANT
+	default:
+		return reviewv1.FlagReason_FLAG_REASON_UNSPECIFIED
+	}
+}
+
 // mapReviewDomainError maps review domain errors to gRPC status errors.
 func mapReviewDomainError(err error) error {
 	switch {
@@ -298,6 +411,12 @@ func mapReviewDomainError(err error) error {
 		return status.Error(codes.AlreadyExists, "already responded to this review")
 	case errors.Is(err, domain.ErrContractNotFound):
 		return status.Error(codes.NotFound, "contract not found")
+	case errors.Is(err, domain.ErrFlagNotFound):
+		return status.Error(codes.NotFound, "flag not found")
+	case errors.Is(err, domain.ErrFlagAlreadyResolved):
+		return status.Error(codes.FailedPrecondition, "flag already resolved")
+	case errors.Is(err, domain.ErrReviewAlreadyRemoved):
+		return status.Error(codes.FailedPrecondition, "review already removed")
 	default:
 		// Check for validation errors (contain known messages).
 		msg := err.Error()

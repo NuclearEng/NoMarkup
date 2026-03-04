@@ -28,6 +28,10 @@ type mockJobRepo struct {
 	listServiceCatsFn   func(ctx context.Context, level *int, parentID *string) ([]domain.ServiceCategory, error)
 	getCategoryTreeFn   func(ctx context.Context) ([]domain.ServiceCategory, error)
 	lookupMarketRangeFn func(ctx context.Context, serviceTypeID string, zipCode string) (*domain.MarketRange, error)
+	adminListJobsFn     func(ctx context.Context, statusFilter *string, categoryID *string, customerID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error)
+	adminSuspendJobFn   func(ctx context.Context, jobID, reason string) error
+	adminRemoveJobFn    func(ctx context.Context, jobID, reason string) error
+	insertAuditLogFn    func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
 }
 
 func (m *mockJobRepo) CreateJob(ctx context.Context, input domain.CreateJobInput) (*domain.Job, error) {
@@ -71,6 +75,30 @@ func (m *mockJobRepo) GetCategoryTree(ctx context.Context) ([]domain.ServiceCate
 }
 func (m *mockJobRepo) LookupMarketRange(ctx context.Context, serviceTypeID string, zipCode string) (*domain.MarketRange, error) {
 	return m.lookupMarketRangeFn(ctx, serviceTypeID, zipCode)
+}
+func (m *mockJobRepo) AdminListJobs(ctx context.Context, statusFilter *string, categoryID *string, customerID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+	if m.adminListJobsFn != nil {
+		return m.adminListJobsFn(ctx, statusFilter, categoryID, customerID, page, pageSize)
+	}
+	return nil, nil, nil
+}
+func (m *mockJobRepo) AdminSuspendJob(ctx context.Context, jobID, reason string) error {
+	if m.adminSuspendJobFn != nil {
+		return m.adminSuspendJobFn(ctx, jobID, reason)
+	}
+	return nil
+}
+func (m *mockJobRepo) AdminRemoveJob(ctx context.Context, jobID, reason string) error {
+	if m.adminRemoveJobFn != nil {
+		return m.adminRemoveJobFn(ctx, jobID, reason)
+	}
+	return nil
+}
+func (m *mockJobRepo) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error {
+	if m.insertAuditLogFn != nil {
+		return m.insertAuditLogFn(ctx, adminID, action, targetType, targetID, details)
+	}
+	return nil
 }
 
 // --- helpers ---

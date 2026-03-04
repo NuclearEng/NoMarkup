@@ -8,7 +8,9 @@ out/
 .turbo/
 target/
 */cmd/*/server
+gateway/server
 gateway/bin/
+services/*/server
 services/*/bin/
 
 # Coverage & test

@@ -5,6 +5,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::behavioral;
 use crate::models::{
     CheckResult, CountRow, FraudError, FraudSignalRow, RecordedSignal, RiskLevel, SignalType,
     SignalTypeRow, TimestampRow, UserRiskProfileData, UserSessionRow,
@@ -131,6 +132,17 @@ impl FraudDetector {
             if ip_fraud.count > 0 {
                 score += 0.3;
                 reasons.push("IP address associated with recent fraud".into());
+            }
+        }
+
+        // 5. Behavioral fingerprint analysis.
+        if !device_fingerprint.is_empty() {
+            let fp_score = Self::score_device_fingerprint(device_fingerprint, "");
+            if fp_score > 0.1 {
+                score += fp_score * 0.3; // Weighted contribution.
+                reasons.push(format!(
+                    "Device fingerprint behavioral score: {fp_score:.2}"
+                ));
             }
         }
 
@@ -857,6 +869,140 @@ impl FraudDetector {
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| FraudError::SignalNotFound(signal_id.to_string()))
+    }
+
+    // -----------------------------------------------------------------------
+    // Behavioral scoring helpers (pure computation delegated to behavioral module)
+    // -----------------------------------------------------------------------
+
+    /// Score a device fingerprint using heuristic analysis from the behavioral
+    /// module.  Returns a risk score in 0.0..=1.0.
+    ///
+    /// The `fingerprint_json` is parsed from the device_fingerprint field
+    /// (which may be a JSON blob or an opaque hash).  If parsing fails, a
+    /// default mid-range score is returned to avoid blocking legitimate users.
+    #[must_use]
+    pub fn score_device_fingerprint(
+        device_fingerprint: &str,
+        user_agent: &str,
+    ) -> f64 {
+        let attrs = parse_fingerprint_attributes(device_fingerprint, user_agent);
+        behavioral::score_fingerprint(&attrs)
+    }
+
+    /// Compute composite risk from multiple dimensions using the behavioral
+    /// module.
+    ///
+    /// This is a convenience wrapper around [`behavioral::compute_composite_risk`]
+    /// that uses the default risk thresholds.
+    #[must_use]
+    pub fn compute_composite_score(
+        fingerprint_score: f64,
+        bid_pattern_score: f64,
+        ip_geo_score: f64,
+        historical_score: f64,
+    ) -> behavioral::CompositeRiskResult {
+        behavioral::compute_composite_risk(
+            fingerprint_score,
+            bid_pattern_score,
+            ip_geo_score,
+            historical_score,
+            &behavioral::RiskThresholds::default(),
+        )
+    }
+}
+
+/// Parse a device fingerprint string (potentially JSON) into
+/// [`behavioral::FingerprintAttributes`].
+///
+/// If the string is valid JSON with expected fields, those are extracted.
+/// Otherwise, sane defaults are used and only the user-agent is scored.
+fn parse_fingerprint_attributes(
+    device_fingerprint: &str,
+    user_agent: &str,
+) -> behavioral::FingerprintAttributes {
+    // Attempt to parse as JSON.
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(device_fingerprint) {
+        let ua = val
+            .get("userAgent")
+            .and_then(|v| v.as_str())
+            .unwrap_or(user_agent)
+            .to_string();
+        let canvas_hash = val
+            .get("canvasHash")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let webgl_renderer = val
+            .get("webglRenderer")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let plugin_count = val
+            .get("pluginCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let font_count = val
+            .get("fontCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let screen_w = val
+            .get("screenWidth")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let screen_h = val
+            .get("screenHeight")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let tz_offset = val
+            .get("timezoneOffset")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        let dnt = val
+            .get("doNotTrack")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let cores = val
+            .get("hardwareConcurrency")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let mem = val
+            .get("deviceMemory")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let attr_count = val
+            .get("attributeCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        behavioral::FingerprintAttributes {
+            user_agent: ua,
+            canvas_hash,
+            webgl_renderer,
+            plugin_count,
+            font_count,
+            screen_resolution: (screen_w, screen_h),
+            timezone_offset: tz_offset,
+            do_not_track: dnt,
+            hardware_concurrency: cores,
+            device_memory_gb: mem,
+            attribute_count: attr_count,
+        }
+    } else {
+        // Opaque fingerprint string -- only score the user-agent.
+        behavioral::FingerprintAttributes {
+            user_agent: user_agent.to_string(),
+            canvas_hash: String::new(),
+            webgl_renderer: String::new(),
+            plugin_count: u32::MAX, // Unknown, assume present.
+            font_count: u32::MAX,
+            screen_resolution: (1920, 1080), // Assume normal.
+            timezone_offset: 0,
+            do_not_track: false,
+            hardware_concurrency: 4,
+            device_memory_gb: 4,
+            attribute_count: 0, // Skip entropy scoring.
+        }
     }
 }
 

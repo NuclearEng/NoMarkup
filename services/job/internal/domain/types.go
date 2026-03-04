@@ -192,4 +192,10 @@ type JobRepository interface {
 	ListServiceCategories(ctx context.Context, level *int, parentID *string) ([]ServiceCategory, error)
 	GetCategoryTree(ctx context.Context) ([]ServiceCategory, error)
 	LookupMarketRange(ctx context.Context, serviceTypeID string, zipCode string) (*MarketRange, error)
+
+	// Admin operations
+	AdminListJobs(ctx context.Context, statusFilter *string, categoryID *string, customerID *string, page, pageSize int) ([]*Job, *Pagination, error)
+	AdminSuspendJob(ctx context.Context, jobID, reason string) error
+	AdminRemoveJob(ctx context.Context, jobID, reason string) error
+	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
 }

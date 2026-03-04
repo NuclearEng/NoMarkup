@@ -373,6 +373,63 @@ func (s *Server) GetCategoryTree(ctx context.Context, _ *jobv1.GetCategoryTreeRe
 	return &jobv1.GetCategoryTreeResponse{Tree: roots}, nil
 }
 
+func (s *Server) AdminListJobs(ctx context.Context, req *jobv1.AdminListJobsRequest) (*jobv1.AdminListJobsResponse, error) {
+	var statusFilter *string
+	if req.StatusFilter != nil {
+		sf := protoJobStatusToString(req.GetStatusFilter())
+		statusFilter = &sf
+	}
+
+	page := 1
+	pageSize := 20
+	if pg := req.GetPagination(); pg != nil {
+		if pg.GetPage() > 0 {
+			page = int(pg.GetPage())
+		}
+		if pg.GetPageSize() > 0 {
+			pageSize = int(pg.GetPageSize())
+		}
+	}
+
+	jobs, pagination, err := s.svc.AdminListJobs(ctx, statusFilter, req.CategoryId, req.CustomerId, page, pageSize)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoJobs := make([]*jobv1.Job, 0, len(jobs))
+	for _, j := range jobs {
+		protoJobs = append(protoJobs, domainJobToProto(j))
+	}
+
+	return &jobv1.AdminListJobsResponse{
+		Jobs:       protoJobs,
+		Pagination: domainPaginationToProto(pagination),
+	}, nil
+}
+
+func (s *Server) AdminSuspendJob(ctx context.Context, req *jobv1.AdminSuspendJobRequest) (*jobv1.AdminSuspendJobResponse, error) {
+	if err := s.svc.AdminSuspendJob(ctx, req.GetJobId(), req.GetReason(), req.GetAdminId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	job, err := s.svc.GetJob(ctx, req.GetJobId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &jobv1.AdminSuspendJobResponse{
+		Job: domainJobToProto(job),
+	}, nil
+}
+
+func (s *Server) AdminRemoveJob(ctx context.Context, req *jobv1.AdminRemoveJobRequest) (*jobv1.AdminRemoveJobResponse, error) {
+	if err := s.svc.AdminRemoveJob(ctx, req.GetJobId(), req.GetReason(), req.GetAdminId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &jobv1.AdminRemoveJobResponse{}, nil
+}
+
 // domainJobToProto converts a domain Job to a proto Job.
 func domainJobToProto(j *domain.Job) *jobv1.Job {
 	pb := &jobv1.Job{

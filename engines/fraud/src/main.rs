@@ -1,5 +1,6 @@
 #![deny(clippy::all, clippy::pedantic)]
 
+pub mod behavioral;
 mod engine;
 mod grpc;
 mod models;

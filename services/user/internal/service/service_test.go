@@ -40,6 +40,10 @@ type mockUserRepo struct {
 	getPortfolioImagesFn    func(ctx context.Context, providerID string) ([]domain.PortfolioImage, error)
 	listServiceCatsFn       func(ctx context.Context, level *int, parentID *string) ([]domain.ServiceCategory, error)
 	getCategoryTreeFn       func(ctx context.Context) ([]domain.ServiceCategory, error)
+	suspendUserFn           func(ctx context.Context, userID, reason, adminID string) error
+	banUserFn               func(ctx context.Context, userID, reason, adminID string) error
+	insertAuditLogFn        func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
+	adminSearchUsersFn      func(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error)
 }
 
 func (m *mockUserRepo) CreateUser(ctx context.Context, user *domain.User) error {
@@ -116,6 +120,30 @@ func (m *mockUserRepo) ListServiceCategories(ctx context.Context, level *int, pa
 }
 func (m *mockUserRepo) GetCategoryTree(ctx context.Context) ([]domain.ServiceCategory, error) {
 	return m.getCategoryTreeFn(ctx)
+}
+func (m *mockUserRepo) SuspendUser(ctx context.Context, userID, reason, adminID string) error {
+	if m.suspendUserFn != nil {
+		return m.suspendUserFn(ctx, userID, reason, adminID)
+	}
+	return nil
+}
+func (m *mockUserRepo) BanUser(ctx context.Context, userID, reason, adminID string) error {
+	if m.banUserFn != nil {
+		return m.banUserFn(ctx, userID, reason, adminID)
+	}
+	return nil
+}
+func (m *mockUserRepo) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error {
+	if m.insertAuditLogFn != nil {
+		return m.insertAuditLogFn(ctx, adminID, action, targetType, targetID, details, ipAddress)
+	}
+	return nil
+}
+func (m *mockUserRepo) AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error) {
+	if m.adminSearchUsersFn != nil {
+		return m.adminSearchUsersFn(ctx, query, status, page, pageSize)
+	}
+	return nil, 0, nil
 }
 
 // --- helpers ---

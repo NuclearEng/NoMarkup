@@ -332,6 +332,134 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 	return nil
 }
 
+// --- Dispute Methods ---
+
+// OpenDispute creates a new dispute against a contract.
+func (s *ContractService) OpenDispute(
+	ctx context.Context,
+	contractID, openedBy, disputeType, description string,
+	evidenceURLs []string,
+	isGuaranteeClaim bool,
+) (*domain.Dispute, error) {
+	// Validate that the contract exists.
+	contract, err := s.contractRepo.GetContract(ctx, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("open dispute: %w", err)
+	}
+
+	// Validate the user is a party to the contract.
+	if contract.CustomerID != openedBy && contract.ProviderID != openedBy {
+		return nil, fmt.Errorf("open dispute: %w", domain.ErrNotContractParty)
+	}
+
+	// Validate the contract is in a disputable status.
+	if contract.Status != "active" && contract.Status != "completed" {
+		return nil, fmt.Errorf("open dispute: %w", domain.ErrInvalidStatusTransition)
+	}
+
+	dispute := &domain.Dispute{
+		ContractID:       contractID,
+		OpenedBy:         openedBy,
+		DisputeType:      disputeType,
+		Description:      description,
+		EvidenceURLs:     evidenceURLs,
+		Status:           "open",
+		IsGuaranteeClaim: isGuaranteeClaim,
+	}
+
+	created, err := s.contractRepo.CreateDispute(ctx, dispute)
+	if err != nil {
+		return nil, fmt.Errorf("open dispute: %w", err)
+	}
+
+	// Update contract status to "disputed".
+	if err := s.contractRepo.UpdateContractStatus(ctx, contractID, "disputed"); err != nil {
+		slog.Warn("failed to update contract status to disputed",
+			"contract_id", contractID,
+			"error", err,
+		)
+	}
+
+	slog.Info("dispute opened",
+		"dispute_id", created.ID,
+		"contract_id", contractID,
+		"opened_by", openedBy,
+		"dispute_type", disputeType,
+		"is_guarantee_claim", isGuaranteeClaim,
+	)
+
+	return created, nil
+}
+
+// GetDispute retrieves a dispute by ID.
+func (s *ContractService) GetDispute(ctx context.Context, disputeID string) (*domain.Dispute, error) {
+	dispute, err := s.contractRepo.GetDispute(ctx, disputeID)
+	if err != nil {
+		return nil, fmt.Errorf("get dispute: %w", err)
+	}
+	return dispute, nil
+}
+
+// ListDisputes lists disputes with optional filters.
+func (s *ContractService) ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, page, pageSize int) ([]*domain.Dispute, *domain.Pagination, error) {
+	disputes, pagination, err := s.contractRepo.ListDisputes(ctx, contractID, userID, status, page, pageSize)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list disputes: %w", err)
+	}
+	return disputes, pagination, nil
+}
+
+// AdminResolveDispute resolves a dispute and logs an audit entry.
+func (s *ContractService) AdminResolveDispute(
+	ctx context.Context,
+	disputeID, resolutionType, notes, adminID string,
+	refundAmountCents int64,
+	guaranteeOutcome string,
+) (*domain.Dispute, error) {
+	// Validate the dispute exists before resolving.
+	existingDispute, err := s.contractRepo.GetDispute(ctx, disputeID)
+	if err != nil {
+		return nil, fmt.Errorf("admin resolve dispute: %w", err)
+	}
+
+	if existingDispute.Status == "resolved" || existingDispute.Status == "closed" {
+		return nil, fmt.Errorf("admin resolve dispute: %w", domain.ErrDisputeAlreadyResolved)
+	}
+
+	resolved, err := s.contractRepo.ResolveDispute(ctx, disputeID, resolutionType, notes, adminID, refundAmountCents, guaranteeOutcome)
+	if err != nil {
+		return nil, fmt.Errorf("admin resolve dispute: %w", err)
+	}
+
+	// Log audit entry.
+	auditDetails := map[string]any{
+		"dispute_id":         disputeID,
+		"contract_id":        resolved.ContractID,
+		"resolution_type":    resolutionType,
+		"refund_amount_cents": refundAmountCents,
+	}
+	if guaranteeOutcome != "" {
+		auditDetails["guarantee_outcome"] = guaranteeOutcome
+	}
+
+	if err := s.contractRepo.InsertAuditLog(ctx, adminID, "dispute_resolved", "dispute", disputeID, auditDetails); err != nil {
+		slog.Warn("failed to insert audit log for dispute resolution",
+			"dispute_id", disputeID,
+			"admin_id", adminID,
+			"error", err,
+		)
+	}
+
+	slog.Info("dispute resolved by admin",
+		"dispute_id", disputeID,
+		"admin_id", adminID,
+		"resolution_type", resolutionType,
+		"refund_amount_cents", refundAmountCents,
+	)
+
+	return resolved, nil
+}
+
 // CancelContract cancels a contract.
 func (s *ContractService) CancelContract(ctx context.Context, contractID, userID, reason string) (*domain.Contract, error) {
 	contract, err := s.contractRepo.GetContract(ctx, contractID)
