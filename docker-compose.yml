@@ -172,7 +172,8 @@ services:
   bidding:
     build:
       context: .
-      dockerfile: deploy/docker/bidding.Dockerfile
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: bidding
     environment:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       BID_ENGINE_PORT: "50053"
@@ -186,7 +187,8 @@ services:
   fraud:
     build:
       context: .
-      dockerfile: deploy/docker/fraud.Dockerfile
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: fraud
     environment:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       FRAUD_ENGINE_PORT: "50056"
@@ -200,7 +202,8 @@ services:
   trust:
     build:
       context: .
-      dockerfile: deploy/docker/trust.Dockerfile
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: trust
     environment:
       DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
       TRUST_ENGINE_PORT: "50057"
@@ -214,7 +217,8 @@ services:
   imaging:
     build:
       context: .
-      dockerfile: deploy/docker/imaging.Dockerfile
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: imaging
     environment:
       IMAGING_SERVICE_PORT: "50058"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"

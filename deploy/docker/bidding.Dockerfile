@@ -4,7 +4,7 @@
 # The build.rs files reference ../../proto relative to the engine crate,
 # so we replicate the repo layout: /app/proto + /app/engines.
 
-FROM rust:1.82-bookworm AS builder
+FROM rust:1.93-bookworm AS builder
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
