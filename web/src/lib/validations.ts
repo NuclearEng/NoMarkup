@@ -203,3 +203,47 @@ export const reviewResponseSchema = z.string().min(10, 'Response must be at leas
 
 // Chat schemas
 export const chatMessageSchema = z.string().min(1, 'Message cannot be empty').max(2000, 'Message too long');
+
+// Auth flow schemas
+export const forgotPasswordSchema = z.object({
+  email: emailSchema,
+});
+
+export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
+export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: passwordSchema,
+    confirmNewPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmNewPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmNewPassword'],
+  });
+
+export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
+
+// Property schemas
+export const propertySchema = z.object({
+  nickname: z.string().min(1, 'Nickname is required').max(100),
+  address: z.string().min(1, 'Address is required'),
+  city: z.string().min(1, 'City is required'),
+  state: z.string().min(1, 'State is required').max(2),
+  zip_code: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid zip code'),
+  notes: z.string().max(500).optional(),
+});
+
+export type PropertyFormValues = z.infer<typeof propertySchema>;

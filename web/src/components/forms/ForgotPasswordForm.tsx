@@ -1,11 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import type { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -25,41 +23,62 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { loginSchema } from '@/lib/validations';
-import { useAuthStore } from '@/stores/auth-store';
+import { api } from '@/lib/api';
+import { forgotPasswordSchema } from '@/lib/validations';
+import type { ForgotPasswordFormValues } from '@/lib/validations';
 
-type LoginFormValues = z.infer<typeof loginSchema>;
-
-export function LoginForm() {
-  const router = useRouter();
-  const login = useAuthStore((s) => s.login);
+export function ForgotPasswordForm() {
   const [formError, setFormError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
-  const form = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
+  const form = useForm<ForgotPasswordFormValues>({
+    resolver: zodResolver(forgotPasswordSchema),
     defaultValues: {
       email: '',
-      password: '',
     },
   });
 
-  async function onSubmit(values: LoginFormValues) {
+  async function onSubmit(values: ForgotPasswordFormValues) {
     setFormError(null);
     try {
-      await login(values.email, values.password);
-      router.push('/');
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Login failed';
-      setFormError(message);
+      await api.postUnauthed('/api/v1/auth/forgot-password', {
+        email: values.email,
+      });
+      setSubmitted(true);
+    } catch {
+      setFormError('Failed to send reset link. Please try again.');
     }
+  }
+
+  if (submitted) {
+    return (
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Check your email</CardTitle>
+          <CardDescription>
+            If an account exists with that email address, we sent a password
+            reset link. Check your inbox and follow the instructions.
+          </CardDescription>
+        </CardHeader>
+        <CardFooter className="justify-center">
+          <Link
+            href="/login"
+            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Back to sign in
+          </Link>
+        </CardFooter>
+      </Card>
+    );
   }
 
   return (
     <Card>
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to your account</CardDescription>
+        <CardTitle className="text-2xl">Forgot your password?</CardTitle>
+        <CardDescription>
+          Enter your email and we&apos;ll send you a reset link
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -68,7 +87,7 @@ export function LoginForm() {
             className="space-y-4"
             noValidate
           >
-            {formError && (
+            {formError ? (
               <div
                 role="alert"
                 aria-live="assertive"
@@ -76,7 +95,7 @@ export function LoginForm() {
               >
                 {formError}
               </div>
-            )}
+            ) : null}
 
             <FormField
               control={form.control}
@@ -97,52 +116,24 @@ export function LoginForm() {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <div className="flex items-center justify-between">
-                    <FormLabel>Password</FormLabel>
-                    <Link
-                      href="/forgot-password"
-                      className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                      tabIndex={-1}
-                    >
-                      Forgot password?
-                    </Link>
-                  </div>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder="Enter your password"
-                      autoComplete="current-password"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             <Button
               type="submit"
               className="min-h-[44px] w-full"
               disabled={form.formState.isSubmitting}
             >
-              {form.formState.isSubmitting ? 'Signing in...' : 'Sign in'}
+              {form.formState.isSubmitting ? 'Sending...' : 'Send reset link'}
             </Button>
           </form>
         </Form>
       </CardContent>
       <CardFooter className="justify-center">
         <p className="text-sm text-muted-foreground">
-          Don&apos;t have an account?{' '}
+          Remember your password?{' '}
           <Link
-            href="/register"
+            href="/login"
             className="font-medium text-primary underline-offset-4 hover:underline"
           >
-            Create one
+            Sign in
           </Link>
         </p>
       </CardFooter>
