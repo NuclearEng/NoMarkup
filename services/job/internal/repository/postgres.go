@@ -936,8 +936,8 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
-		       COALESCE(sc.id, ''), COALESCE(sc.name, ''), COALESCE(sc.slug, ''), COALESCE(sc.icon, ''),
-		       COALESCE(st.id, ''), COALESCE(st.name, ''), COALESCE(st.slug, ''), COALESCE(st.icon, '')
+		       COALESCE(sc.id::text, ''), COALESCE(sc.name, ''), COALESCE(sc.slug, ''), COALESCE(sc.icon, ''),
+		       COALESCE(st.id::text, ''), COALESCE(st.name, ''), COALESCE(st.slug, ''), COALESCE(st.icon, '')
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		LEFT JOIN service_categories sc ON sc.id = j.subcategory_id

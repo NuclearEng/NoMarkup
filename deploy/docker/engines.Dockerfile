@@ -48,7 +48,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     echo "  [3/5] ✔ Dependencies compiled in ${ELAPSED}s"
 
 # Copy real source and build all workspace members
-COPY engines/ engines/
+COPY engines/ .
 RUN echo "══════════════════════════════════════════════════════════" && \
     echo "  [4/5] BUILD · Compiling all engine binaries"             && \
     echo "        bidding · fraud · trust · imaging"                  && \
