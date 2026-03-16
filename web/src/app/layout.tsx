@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Syne } from 'next/font/google';
 import '@/styles/globals.css';
 
+import { AuthRestorer } from '@/components/providers/AuthRestorer';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { Toaster } from 'sonner';
 
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to main content
         </a>
         <QueryProvider>
+          <AuthRestorer />
           <div id="main-content">{children}</div>
           <Toaster position="bottom-right" richColors closeButton />
         </QueryProvider>

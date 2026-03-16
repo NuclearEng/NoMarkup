@@ -28,6 +28,12 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+
+	slog.Warn("grpc call failed",
+		"code", st.Code().String(),
+		"message", st.Message(),
+	)
+
 	switch st.Code() {
 	case codes.AlreadyExists:
 		writeError(w, http.StatusConflict, st.Message())
@@ -42,7 +48,6 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 	case codes.FailedPrecondition:
 		writeError(w, http.StatusUnprocessableEntity, st.Message())
 	default:
-		slog.Error("grpc error", "code", st.Code(), "message", st.Message())
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}
 }

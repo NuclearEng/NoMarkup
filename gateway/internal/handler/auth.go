@@ -184,7 +184,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/api/v1/auth",
 		HttpOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 
@@ -217,7 +217,7 @@ func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string)
 		Path:     "/api/v1/auth",
 		HttpOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   7 * 24 * 60 * 60,
 	})
 }

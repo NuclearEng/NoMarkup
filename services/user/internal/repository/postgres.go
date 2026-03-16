@@ -140,7 +140,7 @@ func (r *PostgresRepository) CreateRefreshToken(ctx context.Context, token *doma
 
 func (r *PostgresRepository) GetRefreshToken(ctx context.Context, tokenHash string) (*domain.RefreshToken, error) {
 	query := `
-		SELECT id, user_id, token_hash, device_info, ip_address,
+		SELECT id, user_id, token_hash, device_info, ip_address::text,
 		       expires_at, revoked_at, created_at
 		FROM refresh_tokens
 		WHERE token_hash = $1`

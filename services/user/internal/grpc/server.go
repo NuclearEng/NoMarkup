@@ -97,6 +97,7 @@ func (s *Server) Login(ctx context.Context, req *userv1.LoginRequest) (*userv1.L
 func (s *Server) RefreshToken(ctx context.Context, req *userv1.RefreshTokenRequest) (*userv1.RefreshTokenResponse, error) {
 	pair, err := s.auth.RefreshToken(ctx, req.GetRefreshToken())
 	if err != nil {
+		slog.Error("refresh token failed", "error", err)
 		return nil, mapDomainError(err)
 	}
 
