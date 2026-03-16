@@ -21,6 +21,7 @@ import type { Job, JobDetail, JobsResponse } from '@/types';
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
+    getPublic: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
@@ -106,8 +107,8 @@ describe('useSearchJobs', () => {
     queryClient.clear();
   });
 
-  it('fetches jobs with search params', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(mockJobsResponse);
+  it('fetches jobs with search params via public endpoint', async () => {
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockJobsResponse);
 
     const { result } = renderHook(
       () => useSearchJobs({ category_id: 'cat-1', page: 1 }),
@@ -118,13 +119,13 @@ describe('useSearchJobs', () => {
 
     expect(result.current.data?.jobs).toHaveLength(1);
     expect(result.current.data?.jobs[0]?.id).toBe('job-1');
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/jobs?category_id=cat-1&page=1',
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
+      '/api/v1/jobs?category_ids=cat-1&page=1',
     );
   });
 
   it('handles empty search params', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(mockJobsResponse);
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockJobsResponse);
 
     const { result } = renderHook(() => useSearchJobs({}), {
       wrapper: createWrapper(queryClient),
@@ -132,11 +133,11 @@ describe('useSearchJobs', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/jobs');
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/jobs');
   });
 
   it('handles API errors', async () => {
-    vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'));
+    vi.mocked(api.getPublic).mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(() => useSearchJobs({}), {
       wrapper: createWrapper(queryClient),
@@ -148,7 +149,7 @@ describe('useSearchJobs', () => {
   });
 
   it('starts in loading state', () => {
-    vi.mocked(api.get).mockReturnValueOnce(new Promise(() => {}));
+    vi.mocked(api.getPublic).mockReturnValueOnce(new Promise(() => {}));
 
     const { result } = renderHook(() => useSearchJobs({}), {
       wrapper: createWrapper(queryClient),

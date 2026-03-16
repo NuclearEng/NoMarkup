@@ -12,7 +12,7 @@ import { NotificationBell } from './NotificationBell';
 
 export function Header() {
   const router = useRouter();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, isHydrating, logout } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   async function handleLogout() {
@@ -33,7 +33,7 @@ export function Header() {
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
-          {isAuthenticated ? (
+          {isHydrating ? null : isAuthenticated ? (
             <>
               <NotificationBell />
               <span className="text-sm text-muted-foreground">
@@ -107,7 +107,7 @@ export function Header() {
           aria-label="Mobile"
         >
           <div className="flex flex-col gap-3">
-            {isAuthenticated ? (
+            {isHydrating ? null : isAuthenticated ? (
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">

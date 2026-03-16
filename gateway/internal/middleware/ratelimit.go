@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	// generalRateLimit is the maximum number of requests per minute for general endpoints.
-	generalRateLimit = 100
-	// authRateLimit is the maximum number of requests per minute for auth endpoints.
-	authRateLimit = 10
+	// defaultGeneralRateLimit is the maximum number of requests per minute for general endpoints.
+	defaultGeneralRateLimit = 100
+	// defaultAuthRateLimit is the maximum number of requests per minute for auth endpoints (production).
+	defaultAuthRateLimit = 10
+	// devAuthRateLimit is the more permissive auth rate limit for development environments.
+	devAuthRateLimit = 100
 	// rateLimitWindow is the duration of the sliding window.
 	rateLimitWindow = 1 * time.Minute
 	// cleanupInterval is how often stale entries are removed from the in-memory fallback map.
@@ -117,15 +119,37 @@ func pruneOld(timestamps []time.Time, cutoff time.Time) []time.Time {
 // RateLimiter performs per-IP rate limiting. When a cache.Client is provided,
 // limits are enforced in Redis (distributed). Otherwise falls back to in-memory.
 type RateLimiter struct {
-	cache    *cache.Client
-	fallback *memoryLimiter
+	cache            *cache.Client
+	fallback         *memoryLimiter
+	generalRateLimit int
+	authRateLimit    int
 }
 
 // NewRateLimiter creates a RateLimiter. Pass nil for cacheClient to use in-memory only.
-func NewRateLimiter(cacheClient *cache.Client) *RateLimiter {
+// When production is false, auth rate limits are 10x more permissive to allow
+// multi-profile testing in development. The authLimitOverride, if > 0, takes
+// precedence over the default/dev values (set via RATE_LIMIT_AUTH env var).
+func NewRateLimiter(cacheClient *cache.Client, production bool, authLimitOverride int) *RateLimiter {
+	authLimit := defaultAuthRateLimit
+	if !production {
+		authLimit = devAuthRateLimit
+	}
+	if authLimitOverride > 0 {
+		authLimit = authLimitOverride
+	}
+
+	slog.Info("rate limiter initialized",
+		"production", production,
+		"general_limit", defaultGeneralRateLimit,
+		"auth_limit", authLimit,
+		"window", rateLimitWindow,
+	)
+
 	return &RateLimiter{
-		cache:    cacheClient,
-		fallback: newMemoryLimiter(),
+		cache:            cacheClient,
+		fallback:         newMemoryLimiter(),
+		generalRateLimit: defaultGeneralRateLimit,
+		authRateLimit:    authLimit,
 	}
 }
 
@@ -143,10 +167,10 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		ip := extractIP(r)
 		path := r.URL.Path
 
-		limit := generalRateLimit
+		limit := rl.generalRateLimit
 		key := "general:" + ip
 		if isAuthPath(path) {
-			limit = authRateLimit
+			limit = rl.authRateLimit
 			key = "auth:" + ip
 		}
 

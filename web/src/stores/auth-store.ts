@@ -16,6 +16,8 @@ interface AuthState {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
+  /** True until the first auth check (refreshToken) completes (success or failure). */
+  isHydrating: boolean;
 }
 
 interface AuthActions {
@@ -35,6 +37,7 @@ const initialState: AuthState = {
   user: null,
   accessToken: null,
   isAuthenticated: false,
+  isHydrating: true,
 };
 
 function userFromJwt(
@@ -76,6 +79,7 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       user,
       accessToken: data.access_token,
       isAuthenticated: true,
+      isHydrating: false,
     });
   },
 
@@ -106,6 +110,7 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       user,
       accessToken: data.access_token,
       isAuthenticated: true,
+      isHydrating: false,
     });
   },
 
@@ -119,7 +124,7 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       }
     }
     clearTokens();
-    set(initialState);
+    set({ ...initialState, isHydrating: false });
   },
 
   refreshToken: async () => {
@@ -141,11 +146,12 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
         user,
         accessToken: data.access_token,
         isAuthenticated: true,
+        isHydrating: false,
       });
       return true;
     } catch {
       clearTokens();
-      set(initialState);
+      set({ ...initialState, isHydrating: false });
       return false;
     }
   },
@@ -156,6 +162,6 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
 
   reset: () => {
     clearTokens();
-    set(initialState);
+    set({ ...initialState, isHydrating: false });
   },
 }));

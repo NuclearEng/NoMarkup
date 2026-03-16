@@ -400,7 +400,7 @@ func TestRateLimit_passthrough(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	rec := httptest.NewRecorder()
 
-	rl := NewRateLimiter(nil) // in-memory fallback
+	rl := NewRateLimiter(nil, false, 0) // in-memory fallback, dev mode
 	handler := rl.Middleware(okHandler())
 	handler.ServeHTTP(rec, req)
 

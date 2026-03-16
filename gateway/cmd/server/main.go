@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -173,7 +174,11 @@ func main() {
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
 	// Rate limiter (Redis-backed if cache available, in-memory fallback).
-	rateLimiter := middleware.NewRateLimiter(cacheClient)
+	// In development (ENVIRONMENT != "production"), auth rate limits are 10x
+	// more permissive to allow multi-profile testing. RATE_LIMIT_AUTH env var
+	// can override the auth limit in any environment.
+	authLimitOverride, _ := strconv.Atoi(os.Getenv("RATE_LIMIT_AUTH"))
+	rateLimiter := middleware.NewRateLimiter(cacheClient, cfg.IsProduction(), authLimitOverride)
 
 	// Wire up handlers and middleware.
 	authMW := middleware.NewAuthMiddleware(publicKey)

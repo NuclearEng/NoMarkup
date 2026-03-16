@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
@@ -38,7 +38,14 @@ function buildSearchParams(params: SearchJobsParams): string {
 export function useSearchJobs(params: SearchJobsParams) {
   return useQuery({
     queryKey: ['jobs', 'search', params],
-    queryFn: () => api.get<JobsResponse>(`/api/v1/jobs${buildSearchParams(params)}`),
+    // Use getPublic to skip auth headers and the 401 retry/redirect cycle.
+    // GET /api/v1/jobs is a public endpoint — attaching an auth token is
+    // unnecessary and creates a race with AuthRestorer's token refresh that
+    // can leave providers stuck in a permanent loading state.
+    queryFn: () => api.getPublic<JobsResponse>(`/api/v1/jobs${buildSearchParams(params)}`),
+    // Keep the previous page of results visible while fetching the next page
+    // or during background refetches so the skeleton loader never reappears.
+    placeholderData: keepPreviousData,
   });
 }
 

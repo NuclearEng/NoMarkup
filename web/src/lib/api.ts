@@ -105,4 +105,6 @@ export const api = {
   /** Post without attaching auth header (for login/register) */
   postUnauthed: <T>(path: string, body?: unknown) =>
     request<T>('POST', path, body, true),
+  /** GET without auth header or 401 retry (for public endpoints like job search) */
+  getPublic: <T>(path: string) => request<T>('GET', path, undefined, true),
 };

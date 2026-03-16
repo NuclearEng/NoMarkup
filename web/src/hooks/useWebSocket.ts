@@ -21,6 +21,7 @@ const TYPING_DEBOUNCE_MS = 300;
 export function useWebSocket(): void {
   const queryClient = useQueryClient();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isHydrating = useAuthStore((s) => s.isHydrating);
 
   const setConnectionStatus = useChatStore((s) => s.setConnectionStatus);
   const addTypingUser = useChatStore((s) => s.addTypingUser);
@@ -28,7 +29,12 @@ export function useWebSocket(): void {
   const disconnect = useChatStore((s) => s.disconnect);
 
   // ─── Connect / disconnect based on auth ─────────────────────────
+  // Wait until auth hydration completes before attempting to connect.
+  // This avoids a premature connect() when the token hasn't been
+  // restored yet, which would silently fail and not retry.
   useEffect(() => {
+    if (isHydrating) return;
+
     if (isAuthenticated) {
       connect();
     } else {
@@ -39,7 +45,7 @@ export function useWebSocket(): void {
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isHydrating]);
 
   // ─── Listen for connection status changes ───────────────────────
   useEffect(() => {
