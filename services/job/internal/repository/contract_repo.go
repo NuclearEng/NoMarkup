@@ -75,21 +75,25 @@ func (r *PostgresRepository) GetContract(ctx context.Context, contractID string)
 	var cancelledBy *string
 	var cancellationReason *string
 
+	var jobTitle *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, contract_number, job_id, customer_id, provider_id, bid_id,
-		       amount_cents, payment_timing, terms_json, schedule_json,
-		       status, customer_accepted, provider_accepted,
-		       acceptance_deadline, accepted_at, started_at, completed_at,
-		       cancelled_at, cancelled_by, cancellation_reason,
-		       created_at, updated_at
-		FROM contracts
-		WHERE id = $1`, contractID).Scan(
+		SELECT c.id, c.contract_number, c.job_id, c.customer_id, c.provider_id, c.bid_id,
+		       c.amount_cents, c.payment_timing, c.terms_json, c.schedule_json,
+		       c.status, c.customer_accepted, c.provider_accepted,
+		       c.acceptance_deadline, c.accepted_at, c.started_at, c.completed_at,
+		       c.cancelled_at, c.cancelled_by, c.cancellation_reason,
+		       c.created_at, c.updated_at,
+		       j.title
+		FROM contracts c
+		LEFT JOIN jobs j ON j.id = c.job_id
+		WHERE c.id = $1`, contractID).Scan(
 		&c.ID, &c.ContractNumber, &c.JobID, &c.CustomerID, &c.ProviderID, &c.BidID,
 		&c.AmountCents, &c.PaymentTiming, &c.TermsJSON, &c.ScheduleJSON,
 		&c.Status, &c.CustomerAccepted, &c.ProviderAccepted,
 		&c.AcceptanceDeadline, &c.AcceptedAt, &c.StartedAt, &c.CompletedAt,
 		&c.CancelledAt, &cancelledBy, &cancellationReason,
 		&c.CreatedAt, &c.UpdatedAt,
+		&jobTitle,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -102,6 +106,9 @@ func (r *PostgresRepository) GetContract(ctx context.Context, contractID string)
 	}
 	if cancellationReason != nil {
 		c.CancellationReason = *cancellationReason
+	}
+	if jobTitle != nil {
+		c.JobTitle = *jobTitle
 	}
 
 	// Load milestones.
@@ -212,12 +219,12 @@ func (r *PostgresRepository) StartWork(ctx context.Context, contractID string) (
 
 // ListContracts lists contracts for a user with optional status filter and pagination.
 func (r *PostgresRepository) ListContracts(ctx context.Context, userID string, statusFilter *string, page, pageSize int) ([]*domain.Contract, *domain.Pagination, error) {
-	where := "(customer_id = $1 OR provider_id = $1)"
+	where := "(c.customer_id = $1 OR c.provider_id = $1)"
 	args := []interface{}{userID}
 	argIdx := 2
 
 	if statusFilter != nil && *statusFilter != "" {
-		where += fmt.Sprintf(" AND status = $%d", argIdx)
+		where += fmt.Sprintf(" AND c.status = $%d", argIdx)
 		args = append(args, *statusFilter)
 		argIdx++
 	}
@@ -225,7 +232,7 @@ func (r *PostgresRepository) ListContracts(ctx context.Context, userID string, s
 	// Count.
 	var totalCount int
 	err := r.pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*) FROM contracts WHERE %s`, where), args...).Scan(&totalCount)
+		fmt.Sprintf(`SELECT COUNT(*) FROM contracts c WHERE %s`, where), args...).Scan(&totalCount)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list contracts count: %w", err)
 	}
@@ -249,14 +256,16 @@ func (r *PostgresRepository) ListContracts(ctx context.Context, userID string, s
 	args = append(args, pageSize, offset)
 
 	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
-		SELECT id, contract_number, job_id, customer_id, provider_id, bid_id,
-		       amount_cents, payment_timing, status,
-		       customer_accepted, provider_accepted,
-		       acceptance_deadline, accepted_at, started_at, completed_at,
-		       cancelled_at, created_at, updated_at
-		FROM contracts
+		SELECT c.id, c.contract_number, c.job_id, c.customer_id, c.provider_id, c.bid_id,
+		       c.amount_cents, c.payment_timing, c.status,
+		       c.customer_accepted, c.provider_accepted,
+		       c.acceptance_deadline, c.accepted_at, c.started_at, c.completed_at,
+		       c.cancelled_at, c.created_at, c.updated_at,
+		       j.title
+		FROM contracts c
+		LEFT JOIN jobs j ON j.id = c.job_id
 		WHERE %s
-		ORDER BY created_at DESC
+		ORDER BY c.created_at DESC
 		LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1), args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list contracts query: %w", err)
@@ -266,15 +275,20 @@ func (r *PostgresRepository) ListContracts(ctx context.Context, userID string, s
 	var contracts []*domain.Contract
 	for rows.Next() {
 		var c domain.Contract
+		var jobTitle *string
 		err := rows.Scan(
 			&c.ID, &c.ContractNumber, &c.JobID, &c.CustomerID, &c.ProviderID, &c.BidID,
 			&c.AmountCents, &c.PaymentTiming, &c.Status,
 			&c.CustomerAccepted, &c.ProviderAccepted,
 			&c.AcceptanceDeadline, &c.AcceptedAt, &c.StartedAt, &c.CompletedAt,
 			&c.CancelledAt, &c.CreatedAt, &c.UpdatedAt,
+			&jobTitle,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("list contracts scan: %w", err)
+		}
+		if jobTitle != nil {
+			c.JobTitle = *jobTitle
 		}
 		contracts = append(contracts, &c)
 	}

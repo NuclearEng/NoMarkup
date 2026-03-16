@@ -17,9 +17,7 @@ interface ContractCardProps {
   contract: Contract;
 }
 
-function getStatusVariant(
-  status: string,
-): 'default' | 'secondary' | 'destructive' | 'outline' {
+function getStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   switch (status) {
     case CONTRACT_STATUS.ACTIVE:
       return 'default';
@@ -84,15 +82,16 @@ export function ContractCard({ contract }: ContractCardProps) {
     (m) => m.status === MILESTONE_STATUS.APPROVED,
   ).length;
   const totalMilestones = contract.milestones.length;
-  const progressPercent = totalMilestones > 0 ? Math.round((approvedCount / totalMilestones) * 100) : 0;
+  const progressPercent =
+    totalMilestones > 0 ? Math.round((approvedCount / totalMilestones) * 100) : 0;
 
   return (
     <Link href={`/contracts/${contract.id}` as Route} className="block">
-      <Card className="transition-colors hover:bg-muted/50">
+      <Card className="hover:bg-muted/50 transition-colors">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <FileText className="text-muted-foreground h-4 w-4 shrink-0" aria-hidden="true" />
               <h3 className="truncate text-base font-semibold">{contract.contract_number}</h3>
             </div>
             <Badge variant={getStatusVariant(contract.status)} className="shrink-0">
@@ -104,7 +103,7 @@ export function ContractCard({ contract }: ContractCardProps) {
           {/* Amount and payment timing */}
           <div className="flex items-baseline justify-between">
             <p className="text-2xl font-bold">{formatCents(contract.amount_cents)}</p>
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-1 text-sm">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               {getPaymentTimingLabel(contract.payment_timing)}
             </div>
@@ -113,7 +112,7 @@ export function ContractCard({ contract }: ContractCardProps) {
           {/* Milestone progress */}
           {totalMilestones > 0 ? (
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <div className="text-muted-foreground flex items-center justify-between text-xs">
                 <span>Milestones</span>
                 <span>
                   {String(approvedCount)} / {String(totalMilestones)} completed
@@ -128,9 +127,9 @@ export function ContractCard({ contract }: ContractCardProps) {
             <AcceptanceCountdown deadline={contract.acceptance_deadline} />
           ) : null}
 
-          {/* Job ID reference */}
-          <p className="text-xs text-muted-foreground">
-            Job: {contract.job_id.slice(0, 8)}...
+          {/* Job title reference */}
+          <p className="text-muted-foreground truncate text-xs">
+            {contract.job_title || `Job: ${contract.job_id.slice(0, 8)}...`}
           </p>
         </CardContent>
       </Card>

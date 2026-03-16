@@ -103,6 +103,7 @@ message Contract {
   google.protobuf.Timestamp started_at = 16;
   google.protobuf.Timestamp completed_at = 17;
   google.protobuf.Timestamp created_at = 18;
+  string job_title = 19;
 }
 
 message Milestone {

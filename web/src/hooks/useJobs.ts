@@ -13,18 +13,22 @@ import type {
 
 function buildSearchParams(params: SearchJobsParams): string {
   const searchParams = new URLSearchParams();
-  if (params.category_id) searchParams.set('category_id', params.category_id);
-  if (params.query) searchParams.set('query', params.query);
+  // Parameter names must match what the Go gateway handler reads from r.URL.Query()
+  if (params.category_id) searchParams.set('category_ids', params.category_id);
+  if (params.query) searchParams.set('q', params.query);
   if (params.schedule_type) searchParams.set('schedule_type', params.schedule_type);
-  if (params.is_recurring !== undefined) searchParams.set('is_recurring', String(params.is_recurring));
-  if (params.min_price_cents !== undefined) searchParams.set('min_price_cents', String(params.min_price_cents));
-  if (params.max_price_cents !== undefined) searchParams.set('max_price_cents', String(params.max_price_cents));
-  if (params.location_lat !== undefined) searchParams.set('location_lat', String(params.location_lat));
-  if (params.location_lng !== undefined) searchParams.set('location_lng', String(params.location_lng));
+  if (params.is_recurring !== undefined && params.is_recurring)
+    searchParams.set('recurring_only', 'true');
+  if (params.min_price_cents !== undefined)
+    searchParams.set('min_price_cents', String(params.min_price_cents));
+  if (params.max_price_cents !== undefined)
+    searchParams.set('max_price_cents', String(params.max_price_cents));
+  if (params.location_lat !== undefined) searchParams.set('latitude', String(params.location_lat));
+  if (params.location_lng !== undefined) searchParams.set('longitude', String(params.location_lng));
   if (params.radius_km !== undefined) searchParams.set('radius_km', String(params.radius_km));
-  if (params.status) searchParams.set('status', params.status);
-  if (params.sort_by) searchParams.set('sort_by', params.sort_by);
-  if (params.sort_order) searchParams.set('sort_order', params.sort_order);
+  // Note: status is not sent — the backend always returns active jobs for public search
+  if (params.sort_by) searchParams.set('sort', params.sort_by);
+  if (params.sort_order) searchParams.set('sort_dir', params.sort_order);
   if (params.page !== undefined) searchParams.set('page', String(params.page));
   if (params.page_size !== undefined) searchParams.set('page_size', String(params.page_size));
   const queryString = searchParams.toString();
@@ -34,16 +38,14 @@ function buildSearchParams(params: SearchJobsParams): string {
 export function useSearchJobs(params: SearchJobsParams) {
   return useQuery({
     queryKey: ['jobs', 'search', params],
-    queryFn: () =>
-      api.get<JobsResponse>(`/api/v1/jobs${buildSearchParams(params)}`),
+    queryFn: () => api.get<JobsResponse>(`/api/v1/jobs${buildSearchParams(params)}`),
   });
 }
 
 export function useJob(id: string) {
   return useQuery({
     queryKey: ['jobs', id],
-    queryFn: () =>
-      api.get<{ job: JobDetail }>(`/api/v1/jobs/${id}`).then((res) => res.job),
+    queryFn: () => api.get<{ job: JobDetail }>(`/api/v1/jobs/${id}`).then((res) => res.job),
     enabled: !!id,
   });
 }

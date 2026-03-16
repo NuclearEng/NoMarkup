@@ -14,28 +14,25 @@ export default function JobsSearchPage() {
   const [filters, setFilters] = useState<SearchJobsParams>({
     page: 1,
     page_size: DEFAULT_PAGE_SIZE,
-    status: 'active',
   });
 
   const { data, isLoading, isError } = useSearchJobs(filters);
 
   const currentPage = filters.page ?? 1;
-  const totalPages = data?.pagination.totalPages ?? 1;
+  const totalPages = data?.pagination?.totalPages ?? 1;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Find Jobs</h1>
-        <p className="mt-1 text-muted-foreground">
-          Browse available jobs and place your bids
-        </p>
+        <p className="text-muted-foreground mt-1">Browse available jobs and place your bids</p>
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row">
         {/* Filters sidebar */}
         <aside className="w-full shrink-0 lg:w-72">
           <div className="sticky top-6 rounded-lg border p-4">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <h2 className="text-muted-foreground mb-4 text-sm font-semibold tracking-wide uppercase">
               Filters
             </h2>
             <JobSearchFilters filters={filters} onChange={setFilters} />
@@ -49,31 +46,31 @@ export default function JobsSearchPage() {
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={`skeleton-${String(i)}`}
-                  className="h-64 animate-pulse rounded-xl border bg-muted"
+                  className="bg-muted h-64 animate-pulse rounded-xl border"
                 />
               ))}
             </div>
           ) : isError ? (
-            <div className="rounded-lg border border-destructive/50 p-8 text-center">
+            <div className="border-destructive/50 rounded-lg border p-8 text-center">
               <p className="text-destructive">Failed to load jobs. Please try again.</p>
               <Button
                 variant="outline"
                 className="mt-4 min-h-[44px]"
-                onClick={() => { setFilters({ ...filters }); }}
+                onClick={() => {
+                  setFilters({ ...filters });
+                }}
               >
                 Retry
               </Button>
             </div>
           ) : !data?.jobs.length ? (
             <div className="rounded-lg border p-8 text-center">
-              <p className="text-muted-foreground">
-                No jobs found matching your criteria.
-              </p>
+              <p className="text-muted-foreground">No jobs found matching your criteria.</p>
               <Button
                 variant="outline"
                 className="mt-4 min-h-[44px]"
                 onClick={() => {
-                  setFilters({ page: 1, page_size: DEFAULT_PAGE_SIZE, status: 'active' });
+                  setFilters({ page: 1, page_size: DEFAULT_PAGE_SIZE });
                 }}
               >
                 Clear Filters
@@ -82,9 +79,9 @@ export default function JobsSearchPage() {
           ) : (
             <>
               {/* Results count */}
-              <p className="mb-4 text-sm text-muted-foreground">
-                {String(data.pagination.totalCount)} job{data.pagination.totalCount !== 1 ? 's' : ''}{' '}
-                found
+              <p className="text-muted-foreground mb-4 text-sm">
+                {String(data.pagination?.totalCount ?? 0)} job
+                {(data.pagination?.totalCount ?? 0) !== 1 ? 's' : ''} found
               </p>
 
               {/* Job cards grid */}
@@ -110,12 +107,12 @@ export default function JobsSearchPage() {
                   >
                     Previous
                   </Button>
-                  <span className="px-4 text-sm text-muted-foreground">
+                  <span className="text-muted-foreground px-4 text-sm">
                     Page {String(currentPage)} of {String(totalPages)}
                   </span>
                   <Button
                     variant="outline"
-                    disabled={!data.pagination.hasNext}
+                    disabled={!data.pagination?.hasNext}
                     onClick={() => {
                       setFilters({ ...filters, page: currentPage + 1 });
                     }}

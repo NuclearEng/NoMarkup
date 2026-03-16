@@ -52,11 +52,15 @@ impl ImagePipeline {
         opts: &ProcessingOptions,
     ) -> Result<(ImageVariant, Option<String>), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
+        validate_image_format(&raw)?;
         let img = decode_image(&raw)?;
         let (orig_w, orig_h) = img.dimensions();
 
         let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
         let encoded = encode_image(&resized, opts.format, opts.quality)?;
+        if encoded.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
 
         let (rw, rh) = resized.dimensions();
         let dest_key = self.variant_key(source_key, "processed", opts.format);
@@ -104,6 +108,9 @@ impl ImagePipeline {
         let img = decode_image(&raw)?;
         let resized = resize_image(&img, width, height, mode);
         let encoded = encode_image(&resized, ImageFormat::Jpeg, DEFAULT_QUALITY)?;
+        if encoded.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
 
         let (rw, rh) = resized.dimensions();
         let dest_key = self.variant_key(source_key, "thumbnail", ImageFormat::Jpeg);
@@ -533,6 +540,16 @@ impl ImagePipeline {
 // ---------------------------------------------------------------------------
 // Pure functions – no I/O
 // ---------------------------------------------------------------------------
+
+/// Validate that decoded image bytes are in a supported format.
+fn validate_image_format(data: &[u8]) -> Result<(), ImagingError> {
+    let guess = image::guess_format(data)
+        .map_err(|e| ImagingError::DecodeError(format!("cannot detect format: {e}")))?;
+    match guess {
+        ImgFmt::Jpeg | ImgFmt::Png | ImgFmt::WebP => Ok(()),
+        other => Err(ImagingError::UnsupportedFormat(format!("{other:?}"))),
+    }
+}
 
 /// Decode raw bytes into a `DynamicImage`.
 fn decode_image(data: &[u8]) -> Result<DynamicImage, ImagingError> {

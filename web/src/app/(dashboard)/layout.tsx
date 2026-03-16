@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { Header } from '@/components/layout/Header';
+import { AuthGuard } from '@/components/providers/AuthGuard';
 import { WebSocketProvider } from '@/components/providers/WebSocketProvider';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -28,8 +29,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <Header />
+    <AuthGuard>
+      <div className="flex min-h-screen flex-col">
+        <Header />
       <div className="flex flex-1">
       <aside className="hidden w-64 border-r lg:block">
         <nav className="space-y-1 p-4" aria-label="Dashboard navigation">
@@ -149,5 +151,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </WebSocketProvider>
       </div>
     </div>
+    </AuthGuard>
   );
 }

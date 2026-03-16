@@ -8,7 +8,11 @@ import { useState } from 'react';
 
 import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
-import { getPaymentTimingLabel, getStatusLabel, getStatusVariant } from '@/components/contracts/ContractCard';
+import {
+  getPaymentTimingLabel,
+  getStatusLabel,
+  getStatusVariant,
+} from '@/components/contracts/ContractCard';
 import { MilestoneTracker } from '@/components/contracts/MilestoneTracker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,7 +67,7 @@ export default function ContractDetailPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden="true" />
+        <Loader2 className="text-muted-foreground h-8 w-8 animate-spin" aria-hidden="true" />
       </div>
     );
   }
@@ -73,12 +77,12 @@ export default function ContractDetailPage() {
       <div className="space-y-4">
         <Link
           href={'/contracts' as Route}
-          className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground flex min-h-[44px] items-center gap-1 text-sm"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Contracts
         </Link>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
           Failed to load contract details. Please try again.
         </div>
       </div>
@@ -114,7 +118,7 @@ export default function ContractDetailPage() {
       {/* Back link */}
       <Link
         href={'/contracts' as Route}
-        className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground flex min-h-[44px] items-center gap-1 text-sm"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to Contracts
@@ -138,11 +142,11 @@ export default function ContractDetailPage() {
         {/* Party info */}
         <Card>
           <CardHeader>
-            <h3 className="text-sm font-medium text-muted-foreground">Parties</h3>
+            <h3 className="text-muted-foreground text-sm font-medium">Parties</h3>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Customer</span>
+              <span className="text-muted-foreground text-sm">Customer</span>
               <span className="text-sm font-medium">
                 {contract.customer_id.slice(0, 8)}...
                 {isCustomer ? ' (You)' : ''}
@@ -150,7 +154,7 @@ export default function ContractDetailPage() {
             </div>
             <Separator />
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Provider</span>
+              <span className="text-muted-foreground text-sm">Provider</span>
               <span className="text-sm font-medium">
                 {contract.provider_id.slice(0, 8)}...
                 {isProvider ? ' (You)' : ''}
@@ -162,28 +166,28 @@ export default function ContractDetailPage() {
         {/* Contract details */}
         <Card>
           <CardHeader>
-            <h3 className="text-sm font-medium text-muted-foreground">Details</h3>
+            <h3 className="text-muted-foreground text-sm font-medium">Details</h3>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Payment Timing</span>
+              <span className="text-muted-foreground text-sm">Payment Timing</span>
               <span className="text-sm font-medium">
                 {getPaymentTimingLabel(contract.payment_timing)}
               </span>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Job</span>
+              <span className="text-muted-foreground text-sm">Job</span>
               <Link
                 href={`/jobs/${contract.job_id}` as Route}
-                className="text-sm font-medium text-primary hover:underline"
+                className="text-primary text-sm font-medium hover:underline"
               >
-                {contract.job_id.slice(0, 8)}...
+                {contract.job_title || `${contract.job_id.slice(0, 8)}...`}
               </Link>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Created</span>
+              <span className="text-muted-foreground text-sm">Created</span>
               <span className="text-sm font-medium">
                 {new Date(contract.created_at).toLocaleDateString('en-US', {
                   month: 'short',
@@ -196,7 +200,7 @@ export default function ContractDetailPage() {
               <>
                 <Separator />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Accepted</span>
+                  <span className="text-muted-foreground text-sm">Accepted</span>
                   <span className="text-sm font-medium">
                     {new Date(contract.accepted_at).toLocaleDateString('en-US', {
                       month: 'short',
@@ -211,7 +215,7 @@ export default function ContractDetailPage() {
               <>
                 <Separator />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Started</span>
+                  <span className="text-muted-foreground text-sm">Started</span>
                   <span className="text-sm font-medium">
                     {new Date(contract.started_at).toLocaleDateString('en-US', {
                       month: 'short',
@@ -226,7 +230,7 @@ export default function ContractDetailPage() {
               <>
                 <Separator />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Completed</span>
+                  <span className="text-muted-foreground text-sm">Completed</span>
                   <span className="text-sm font-medium">
                     {new Date(contract.completed_at).toLocaleDateString('en-US', {
                       month: 'short',
@@ -257,11 +261,10 @@ export default function ContractDetailPage() {
       ) : null}
 
       {/* Completion Flow */}
-      {contract.status === CONTRACT_STATUS.ACTIVE && (
-        contract.milestones.length > 0 &&
-        contract.milestones.every((m) => m.status === MILESTONE_STATUS.APPROVED) ||
-        !!contract.completed_at
-      ) ? (
+      {contract.status === CONTRACT_STATUS.ACTIVE &&
+      ((contract.milestones.length > 0 &&
+        contract.milestones.every((m) => m.status === MILESTONE_STATUS.APPROVED)) ||
+        !!contract.completed_at) ? (
         <CompletionFlow contract={contract} />
       ) : null}
 
@@ -269,7 +272,7 @@ export default function ContractDetailPage() {
       {contract.status === CONTRACT_STATUS.ACTIVE && (isCustomer || isProvider) ? (
         <Card>
           <CardHeader>
-            <h3 className="text-sm font-medium text-muted-foreground">Actions</h3>
+            <h3 className="text-muted-foreground text-sm font-medium">Actions</h3>
           </CardHeader>
           <CardContent className="space-y-3">
             {/* Provider: Start Work */}
@@ -336,14 +339,16 @@ export default function ContractDetailPage() {
                   <Button
                     variant="outline"
                     className="min-h-[44px]"
-                    onClick={() => { setShowCancelConfirm(false); }}
+                    onClick={() => {
+                      setShowCancelConfirm(false);
+                    }}
                     disabled={cancelContract.isPending}
                   >
                     Keep Contract
                   </Button>
                 </div>
                 {cancelContract.isError ? (
-                  <p className="text-sm text-destructive">
+                  <p className="text-destructive text-sm">
                     Failed to cancel contract. Please try again.
                   </p>
                 ) : null}
@@ -351,8 +356,10 @@ export default function ContractDetailPage() {
             ) : (
               <Button
                 variant="outline"
-                className="min-h-[44px] w-full text-destructive hover:bg-destructive/10"
-                onClick={() => { setShowCancelConfirm(true); }}
+                className="text-destructive hover:bg-destructive/10 min-h-[44px] w-full"
+                onClick={() => {
+                  setShowCancelConfirm(true);
+                }}
               >
                 Cancel Contract
               </Button>
@@ -360,13 +367,15 @@ export default function ContractDetailPage() {
 
             {/* Error messages for other mutations */}
             {startWork.isError ? (
-              <p className="text-sm text-destructive">Failed to start work. Please try again.</p>
+              <p className="text-destructive text-sm">Failed to start work. Please try again.</p>
             ) : null}
             {markComplete.isError ? (
-              <p className="text-sm text-destructive">Failed to mark complete. Please try again.</p>
+              <p className="text-destructive text-sm">Failed to mark complete. Please try again.</p>
             ) : null}
             {approveCompletion.isError ? (
-              <p className="text-sm text-destructive">Failed to approve completion. Please try again.</p>
+              <p className="text-destructive text-sm">
+                Failed to approve completion. Please try again.
+              </p>
             ) : null}
           </CardContent>
         </Card>
@@ -383,10 +392,10 @@ export default function ContractDetailPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{order.description}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="text-muted-foreground mt-1 text-xs">
                         Proposed by: {order.proposed_by.slice(0, 8)}...
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         {new Date(order.created_at).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
@@ -424,7 +433,7 @@ function ReviewSection({ contractId }: { contractId: string }) {
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+          <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" aria-hidden="true" />
         </CardContent>
       </Card>
     );
@@ -439,10 +448,7 @@ function ReviewSection({ contractId }: { contractId: string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         {eligibility.eligible && !eligibility.already_reviewed ? (
-          <Link
-            href={`/contracts/${contractId}/review` as Route}
-            className="block"
-          >
+          <Link href={`/contracts/${contractId}/review` as Route} className="block">
             <Button className="min-h-[44px] w-full gap-2">
               <Star className="h-4 w-4" aria-hidden="true" />
               Leave a Review
@@ -454,7 +460,7 @@ function ReviewSection({ contractId }: { contractId: string }) {
             You have already reviewed this contract.
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-lg border bg-muted p-3 text-sm text-muted-foreground">
+          <div className="bg-muted text-muted-foreground flex items-center gap-2 rounded-lg border p-3 text-sm">
             <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
             The review window for this contract has closed.
           </div>

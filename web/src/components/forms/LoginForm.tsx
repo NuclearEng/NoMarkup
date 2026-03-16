@@ -47,7 +47,7 @@ export function LoginForm() {
     setFormError(null);
     try {
       await login(values.email, values.password);
-      router.push('/');
+      router.push('/dashboard');
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Login failed';

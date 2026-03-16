@@ -206,7 +206,14 @@ func main() {
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			'flexible', 50000, 72, $7,
 			'active', 2)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (id) DO UPDATE SET
+			status = 'active',
+			auction_ends_at = $7,
+			bid_count = 2,
+			awarded_provider_id = NULL,
+			awarded_bid_id = NULL,
+			awarded_at = NULL,
+			updated_at = now()`,
 		activeJobID, customerUserID, propertyID,
 		hvacCatID, hvacSubcatID, acRepairServiceID,
 		auctionEnd,
@@ -232,7 +239,12 @@ func main() {
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			'specific_date', 30000, 72,
 			'in_progress', 1, $5, $6)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (id) DO UPDATE SET
+			status = 'in_progress',
+			bid_count = 1,
+			awarded_provider_id = $5,
+			awarded_at = $6,
+			updated_at = now()`,
 		awardedJobID, customerUserID, propertyID,
 		plumbingCatID,
 		providerUserID, pastAwarded,
@@ -258,7 +270,12 @@ func main() {
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			'flexible', 25000, 72,
 			'completed', 1, $5, $6)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (id) DO UPDATE SET
+			status = 'completed',
+			bid_count = 1,
+			awarded_provider_id = $5,
+			completed_at = $6,
+			updated_at = now()`,
 		completedJobID, customerUserID, propertyID,
 		electricalCatID,
 		providerUserID, pastCompleted,

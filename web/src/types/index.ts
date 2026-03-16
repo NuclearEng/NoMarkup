@@ -443,6 +443,7 @@ export interface Contract {
   id: string;
   contract_number: string;
   job_id: string;
+  job_title: string;
   customer_id: string;
   provider_id: string;
   bid_id: string;

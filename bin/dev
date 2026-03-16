@@ -33,7 +33,7 @@ DATA="$DEV/data"
 DEVBIN="$DEV/bin"
 
 # ── Ports ────────────────────────────────────────────────────────
-PG_PORT=5432
+PG_PORT=5433
 REDIS_PORT=6379
 MEILI_PORT=7700
 MINIO_PORT=9000

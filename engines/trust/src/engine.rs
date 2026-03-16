@@ -58,6 +58,9 @@ impl TrustScorer {
     ///
     /// Returns `TrustError::ScoreNotFound` if no score record exists.
     pub async fn get_score(&self, user_id: Uuid) -> Result<TrustScoreRow, TrustError> {
+        if user_id.is_nil() {
+            return Err(TrustError::InvalidUserId("nil UUID".into()));
+        }
         sqlx::query_as::<_, TrustScoreRow>(TRUST_SCORE_SELECT_ALL)
             .bind(user_id)
             .fetch_optional(&self.pool)
@@ -77,6 +80,9 @@ impl TrustScorer {
         page: i32,
         page_size: i32,
     ) -> Result<(Vec<TrustScoreHistoryRow>, i64), TrustError> {
+        if user_id.is_nil() {
+            return Err(TrustError::InvalidUserId("nil UUID".into()));
+        }
         let offset = i64::from((page - 1).max(0)) * i64::from(page_size.max(1));
         let limit = i64::from(page_size.clamp(1, 100));
 
@@ -128,6 +134,10 @@ impl TrustScorer {
         user_id: Uuid,
         trigger_reason: &str,
     ) -> Result<(TrustScoreRow, bool, String), TrustError> {
+        if user_id.is_nil() {
+            return Err(TrustError::InvalidUserId("nil UUID".into()));
+        }
+
         // Look up user role from the existing trust record, or determine from
         // users table if this is the first computation.
         let existing = sqlx::query_as::<_, TrustScoreRow>(TRUST_SCORE_SELECT_ALL)
@@ -394,6 +404,69 @@ impl TrustScorer {
             .await?;
 
         Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Admin operations
+    // -----------------------------------------------------------------------
+
+    /// Override a user's trust score (admin only).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TrustError::PermissionDenied` if the requesting user is not an admin.
+    /// Returns `TrustError::InvalidUserId` if the user_id is nil.
+    pub async fn admin_override_score(
+        &self,
+        user_id: Uuid,
+        requesting_role: &str,
+        new_overall: f64,
+        reason: &str,
+    ) -> Result<TrustScoreRow, TrustError> {
+        if requesting_role != "admin" {
+            return Err(TrustError::PermissionDenied(
+                "only admins can override trust scores".into(),
+            ));
+        }
+        if user_id.is_nil() {
+            return Err(TrustError::InvalidUserId("nil UUID".into()));
+        }
+
+        let clamped = new_overall.clamp(0.0, 100.0);
+        let tier = if clamped >= 85.0 {
+            TrustTier::TopRated
+        } else if clamped >= 70.0 {
+            TrustTier::Trusted
+        } else if clamped >= 50.0 {
+            TrustTier::Rising
+        } else {
+            TrustTier::New
+        };
+
+        sqlx::query(
+            "UPDATE trust_scores SET overall_score = $1, tier = $2, updated_at = now() \
+             WHERE user_id = $3",
+        )
+        .bind(clamped)
+        .bind(tier.as_db_str())
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+
+        // Record history.
+        sqlx::query(
+            "INSERT INTO trust_score_history \
+             (user_id, role, overall_score, feedback_score, volume_score, risk_score, fraud_score, trigger_event) \
+             SELECT user_id, role, $1, feedback_score, volume_score, risk_score, fraud_score, $2 \
+             FROM trust_scores WHERE user_id = $3",
+        )
+        .bind(clamped)
+        .bind(reason)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_score(user_id).await
     }
 
     // -----------------------------------------------------------------------

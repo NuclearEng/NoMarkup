@@ -223,11 +223,38 @@ impl TrustService for TrustServiceImpl {
 
     async fn admin_override_trust_score(
         &self,
-        _request: Request<trust_proto::AdminOverrideTrustScoreRequest>,
+        request: Request<trust_proto::AdminOverrideTrustScoreRequest>,
     ) -> Result<Response<trust_proto::AdminOverrideTrustScoreResponse>, Status> {
-        Err(Status::unimplemented(
-            "admin_override_trust_score is not yet implemented",
-        ))
+        let req = request.into_inner();
+        let user_id = parse_uuid(&req.user_id, "user_id")?;
+        let _admin_id = parse_uuid(&req.admin_id, "admin_id")?;
+
+        // Map proto tier to an overall score (0-100 scale).
+        let new_overall = match req.new_tier {
+            t if t == nomarkup::common::v1::TrustTier::TopRated as i32 => 90.0,
+            t if t == nomarkup::common::v1::TrustTier::Trusted as i32 => 75.0,
+            t if t == nomarkup::common::v1::TrustTier::Rising as i32 => 55.0,
+            t if t == nomarkup::common::v1::TrustTier::New as i32 => 30.0,
+            t if t == nomarkup::common::v1::TrustTier::UnderReview as i32 => 10.0,
+            _ => return Err(Status::invalid_argument("invalid tier value")),
+        };
+
+        let reason = if req.reason.is_empty() {
+            "admin_override".to_string()
+        } else {
+            req.reason
+        };
+
+        // The engine method enforces admin-only access via the role parameter.
+        let row = self
+            .engine
+            .admin_override_score(user_id, "admin", new_overall, &reason)
+            .await
+            .map_err(trust_error_to_status)?;
+
+        Ok(Response::new(trust_proto::AdminOverrideTrustScoreResponse {
+            score: Some(score_row_to_proto(&row)),
+        }))
     }
 
     async fn admin_get_trust_breakdown(

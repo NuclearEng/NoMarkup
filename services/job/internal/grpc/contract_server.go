@@ -314,6 +314,7 @@ func domainContractToProto(c *domain.Contract) *contractv1.Contract {
 		ProviderAccepted:   c.ProviderAccepted,
 		AcceptanceDeadline: optionalTimestamp(c.AcceptanceDeadline),
 		CreatedAt:          timestamppb.New(c.CreatedAt),
+		JobTitle:           c.JobTitle,
 	}
 
 	if c.AcceptedAt != nil {

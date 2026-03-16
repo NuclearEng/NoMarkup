@@ -46,6 +46,7 @@ type Contract struct {
 	UpdatedAt          time.Time
 
 	// Populated via JOINs
+	JobTitle     string
 	Milestones   []Milestone
 	ChangeOrders []ChangeOrder
 }

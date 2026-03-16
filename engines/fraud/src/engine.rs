@@ -299,11 +299,10 @@ impl FraudDetector {
         ip_address: &str,
         device_fingerprint: &str,
     ) -> Result<CheckResult, FraudError> {
-        let mut score: f64 = 0.0;
         let mut reasons = Vec::new();
-        let mut shill_detected = false;
 
         // 1. Shared IP between bidder and job poster.
+        let mut ip_geo_score: f64 = 0.0;
         if !ip_address.is_empty() {
             let shared_ip: CountRow = sqlx::query_as(
                 "SELECT COUNT(*)::bigint AS count FROM user_sessions \
@@ -317,13 +316,13 @@ impl FraudDetector {
             .await?;
 
             if shared_ip.count > 0 {
-                score += 0.5;
-                shill_detected = true;
+                ip_geo_score = 0.5;
                 reasons.push("Bidder and job poster share the same IP address".into());
             }
         }
 
         // 1b. Shared device fingerprint between bidder and job poster.
+        let mut fingerprint_score: f64 = 0.0;
         if !device_fingerprint.is_empty() {
             let shared_device: CountRow = sqlx::query_as(
                 "SELECT COUNT(*)::bigint AS count FROM user_sessions \
@@ -336,12 +335,16 @@ impl FraudDetector {
             .fetch_one(&self.pool)
             .await?;
 
-            if shared_device.count > 0 {
-                score += 0.5;
-                shill_detected = true;
+            let shared_score: f64 = if shared_device.count > 0 {
                 reasons
                     .push("Bidder and job poster share the same device fingerprint".into());
-            }
+                0.5
+            } else {
+                0.0
+            };
+
+            let device_score = Self::score_device_fingerprint(device_fingerprint, "");
+            fingerprint_score = shared_score.max(device_score);
         }
 
         // 2. Velocity: bids from this provider in the last hour.
@@ -355,19 +358,21 @@ impl FraudDetector {
         .fetch_one(&self.pool)
         .await?;
 
-        if bid_velocity.count >= 10 {
-            score += 0.3;
+        let bid_pattern_score: f64 = if bid_velocity.count >= 10 {
             reasons.push(format!(
                 "High bid velocity: {} bid signals in last hour",
                 bid_velocity.count
             ));
+            0.3
         } else if bid_velocity.count >= 5 {
-            score += 0.15;
             reasons.push(format!(
                 "Elevated bid velocity: {} bid signals in last hour",
                 bid_velocity.count
             ));
-        }
+            0.15
+        } else {
+            0.0
+        };
 
         // 3. Existing shill-bid signals for this provider.
         let shill_history: CountRow = sqlx::query_as(
@@ -381,25 +386,36 @@ impl FraudDetector {
         .fetch_one(&self.pool)
         .await?;
 
-        if shill_history.count > 0 {
-            score += 0.2;
-            shill_detected = true;
+        let historical_score: f64 = if shill_history.count > 0 {
             reasons.push(format!(
                 "Provider has {} previous shill-bid signals",
                 shill_history.count
             ));
-        }
+            0.2
+        } else {
+            0.0
+        };
 
-        score = score.clamp(0.0, 1.0);
-        let mut result = CheckResult::from_score(score);
+        // Compute weighted composite risk score.
+        let composite = Self::compute_composite_score(
+            fingerprint_score,
+            bid_pattern_score,
+            ip_geo_score,
+            historical_score,
+        );
+
+        let mut result = CheckResult::from_score(composite.score);
         result.reasons = reasons;
-        result.shill_bid_detected = shill_detected;
+        result.shill_bid_detected = matches!(
+            composite.action,
+            behavioral::AutoAction::Block | behavioral::AutoAction::Challenge
+        );
 
         tracing::info!(
             provider_id = %provider_id,
             customer_id = %customer_id,
-            score = score,
-            shill_detected,
+            score = composite.score,
+            shill_detected = result.shill_bid_detected,
             decision = ?result.decision,
             "bid check completed"
         );

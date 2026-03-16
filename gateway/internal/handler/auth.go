@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -250,14 +251,12 @@ func extractIP(r *http.Request) string {
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
 	}
-	// Strip port from RemoteAddr.
-	addr := r.RemoteAddr
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[:i]
-		}
+	// Use net.SplitHostPort to correctly handle IPv6 addresses like [::1]:port.
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
-	return addr
+	return host
 }
 
 func formatTimestamp(ts *timestamppb.Timestamp) string {

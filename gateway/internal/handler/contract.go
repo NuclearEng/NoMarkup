@@ -359,6 +359,7 @@ func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
 		"id":                  c.GetId(),
 		"contract_number":     c.GetContractNumber(),
 		"job_id":              c.GetJobId(),
+		"job_title":           c.GetJobTitle(),
 		"customer_id":         c.GetCustomerId(),
 		"provider_id":         c.GetProviderId(),
 		"bid_id":              c.GetBidId(),

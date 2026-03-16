@@ -116,14 +116,20 @@ func (r *PostgresRepository) UpdateEmailVerified(ctx context.Context, userID str
 func (r *PostgresRepository) CreateRefreshToken(ctx context.Context, token *domain.RefreshToken) error {
 	query := `
 		INSERT INTO refresh_tokens (user_id, token_hash, device_info, ip_address, expires_at)
-		VALUES ($1, $2, $3, $4::inet, $5)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at`
+
+	var ipStr *string
+	if token.IPAddress != nil {
+		s := token.IPAddress.String()
+		ipStr = &s
+	}
 
 	err := r.pool.QueryRow(ctx, query,
 		token.UserID,
 		token.TokenHash,
 		token.DeviceInfo,
-		token.IPAddress.String(),
+		ipStr,
 		token.ExpiresAt,
 	).Scan(&token.ID, &token.CreatedAt)
 	if err != nil {

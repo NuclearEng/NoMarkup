@@ -163,7 +163,21 @@ pub fn compute_feedback_score(input: &FeedbackInput) -> f64 {
         0.0
     };
 
-    (base_score + trend_adjustment - dispute_penalty - distribution_penalty).clamp(0.0, 1.0)
+    // Rating distribution bonus: high proportion of 5-star reviews is a quality signal.
+    let five_star_ratio = if input.total_reviews > 0 {
+        f64::from(input.five_star_count) / f64::from(input.total_reviews)
+    } else {
+        0.0
+    };
+    // If more than 60% of reviews are 5-star, apply a small bonus.
+    let distribution_bonus = if five_star_ratio > 0.6 {
+        ((five_star_ratio - 0.6) * 0.25).min(0.05)
+    } else {
+        0.0
+    };
+
+    (base_score + trend_adjustment + distribution_bonus - dispute_penalty - distribution_penalty)
+        .clamp(0.0, 1.0)
 }
 
 /// Bayesian confidence factor based on number of reviews.
