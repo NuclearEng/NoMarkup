@@ -8,11 +8,24 @@ import (
 
 // Sentinel errors for the chat domain.
 var (
-	ErrChannelNotFound  = errors.New("channel not found")
-	ErrNotChannelMember = errors.New("user is not a member of this channel")
-	ErrChannelClosed    = errors.New("channel is closed")
-	ErrMessageNotFound  = errors.New("message not found")
-	ErrEmptyMessage     = errors.New("message content is empty")
+	ErrChannelNotFound     = errors.New("channel not found")
+	ErrNotChannelMember    = errors.New("user is not a member of this channel")
+	ErrChannelClosed       = errors.New("channel is closed")
+	ErrMessageNotFound     = errors.New("message not found")
+	ErrEmptyMessage        = errors.New("message content is empty")
+	ErrNoBidForChat        = errors.New("provider must have an active bid on the job to chat")
+	ErrChatNotApproved     = errors.New("customer has not approved this chat request")
+	ErrTermsAlreadyPending = errors.New("proposed terms already pending")
+)
+
+// Known message types.
+const (
+	MessageTypeText          = "text"
+	MessageTypeImage         = "image"
+	MessageTypeFile          = "file"
+	MessageTypeSystem        = "system"
+	MessageTypeContactShare  = "contact_share"
+	MessageTypeProposedTerms = "proposed_terms"
 )
 
 // Channel represents a chat channel between two users for a job.
@@ -65,6 +78,12 @@ type SharedContact struct {
 type ChannelUnread struct {
 	ChannelID   string
 	UnreadCount int
+}
+
+// BidChecker verifies whether a provider has an active bid on a job.
+// Implemented by the bid engine gRPC client.
+type BidChecker interface {
+	HasActiveBid(ctx context.Context, jobID, providerID string) (bool, error)
 }
 
 // ChannelRepository defines persistence operations for channels and messages.

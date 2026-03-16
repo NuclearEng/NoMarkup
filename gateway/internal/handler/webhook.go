@@ -5,16 +5,21 @@ import (
 	"net/http"
 
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	subscriptionv1 "github.com/nomarkup/nomarkup/proto/subscription/v1"
 )
 
 // WebhookHandler handles incoming webhook requests.
 type WebhookHandler struct {
-	paymentClient paymentv1.PaymentServiceClient
+	paymentClient      paymentv1.PaymentServiceClient
+	subscriptionClient subscriptionv1.SubscriptionServiceClient
 }
 
 // NewWebhookHandler creates a new WebhookHandler.
-func NewWebhookHandler(paymentClient paymentv1.PaymentServiceClient) *WebhookHandler {
-	return &WebhookHandler{paymentClient: paymentClient}
+func NewWebhookHandler(paymentClient paymentv1.PaymentServiceClient, subscriptionClient subscriptionv1.SubscriptionServiceClient) *WebhookHandler {
+	return &WebhookHandler{
+		paymentClient:      paymentClient,
+		subscriptionClient: subscriptionClient,
+	}
 }
 
 // HandleStripeWebhook handles POST /api/v1/webhooks/stripe.
@@ -29,9 +34,39 @@ func (h *WebhookHandler) HandleStripeWebhook(w http.ResponseWriter, r *http.Requ
 	}
 	defer r.Body.Close()
 
+	// Stripe-Signature header is required for webhook verification.
+	// The payment service calls stripe.webhooks.constructEvent() to verify webhook authenticity.
 	signature := r.Header.Get("Stripe-Signature")
 
 	_, err = h.paymentClient.HandleStripeWebhook(r.Context(), &paymentv1.HandleStripeWebhookRequest{
+		Payload:   string(body),
+		Signature: signature,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// HandleSubscriptionWebhook handles POST /api/v1/webhooks/subscription.
+// It reads the raw body and passes it to the subscription service for processing.
+// This endpoint has NO auth middleware -- verified by Stripe signature on the subscription service side.
+func (h *WebhookHandler) HandleSubscriptionWebhook(w http.ResponseWriter, r *http.Request) {
+	// Read raw body.
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+	defer r.Body.Close()
+
+	// Stripe-Signature header is required for webhook verification.
+	// The subscription service calls stripe.webhooks.constructEvent() to verify webhook authenticity.
+	signature := r.Header.Get("Stripe-Signature")
+
+	_, err = h.subscriptionClient.HandleSubscriptionWebhook(r.Context(), &subscriptionv1.HandleSubscriptionWebhookRequest{
 		Payload:   string(body),
 		Signature: signature,
 	})

@@ -13,6 +13,10 @@ func SecurityHeaders(production bool) func(http.Handler) http.Handler {
 
 			// Content-Security-Policy: restrict resource loading to same origin with
 			// specific exceptions for inline styles, data/blob images from S3, and WSS.
+			// NOTE: 'unsafe-inline' for style-src is required because Next.js injects
+			// inline <style> tags at runtime (e.g. for styled-jsx and loading states).
+			// A nonce-based approach would be preferable but requires per-request nonce
+			// generation coordinated with the Next.js rendering pipeline.
 			h.Set("Content-Security-Policy",
 				"default-src 'self'; "+
 					"script-src 'self'; "+

@@ -186,6 +186,81 @@ func (h *AdminPaymentsHandler) UpdateFeeConfig(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, result)
 }
 
+// GetFeeConfig handles GET /api/v1/admin/payments/fee-config.
+func (h *AdminPaymentsHandler) GetFeeConfig(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	grpcReq := &paymentv1.GetFeeConfigRequest{}
+	if catID := q.Get("category_id"); catID != "" {
+		grpcReq.CategoryId = &catID
+	}
+
+	resp, err := h.paymentClient.GetFeeConfig(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"fee_percentage":       resp.GetFeePercentage(),
+		"guarantee_percentage": resp.GetGuaranteePercentage(),
+		"min_fee_cents":        resp.GetMinFeeCents(),
+		"max_fee_cents":        resp.GetMaxFeeCents(),
+	})
+}
+
+// UpdateFeeConfigNested handles PUT /api/v1/admin/payments/fee-config.
+func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var body struct {
+		CategoryID          *string `json:"category_id"`
+		FeePercentage       float64 `json:"fee_percentage"`
+		GuaranteePercentage float64 `json:"guarantee_percentage"`
+		MinFeeCents         int64   `json:"min_fee_cents"`
+		MaxFeeCents         *int64  `json:"max_fee_cents"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	grpcReq := &paymentv1.AdminUpdateFeeConfigRequest{
+		AdminId:             claims.UserID,
+		FeePercentage:       body.FeePercentage,
+		GuaranteePercentage: body.GuaranteePercentage,
+		MinFeeCents:         body.MinFeeCents,
+	}
+	if body.CategoryID != nil {
+		grpcReq.CategoryId = body.CategoryID
+	}
+	if body.MaxFeeCents != nil {
+		grpcReq.MaxFeeCents = body.MaxFeeCents
+	}
+
+	resp, err := h.paymentClient.AdminUpdateFeeConfig(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	result := map[string]interface{}{}
+	if cfg := resp.GetConfig(); cfg != nil {
+		result["config"] = map[string]interface{}{
+			"fee_percentage":       cfg.GetFeePercentage(),
+			"guarantee_percentage": cfg.GetGuaranteePercentage(),
+			"min_fee_cents":        cfg.GetMinFeeCents(),
+			"max_fee_cents":        cfg.GetMaxFeeCents(),
+		}
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 // GetRevenueReport handles GET /api/v1/admin/revenue.
 // Query params: start_date, end_date, group_by.
 func (h *AdminPaymentsHandler) GetRevenueReport(w http.ResponseWriter, r *http.Request) {

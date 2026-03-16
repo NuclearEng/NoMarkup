@@ -902,6 +902,154 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 	return &u, nil
 }
 
+func (r *PostgresRepository) UpdatePhoneVerified(ctx context.Context, userID string, verified bool) error {
+	query := `UPDATE users SET phone_verified = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`
+	tag, err := r.pool.Exec(ctx, query, verified, userID)
+	if err != nil {
+		return fmt.Errorf("update phone verified: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update phone verified: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) CreateDocument(ctx context.Context, doc *domain.Document) error {
+	query := `
+		INSERT INTO verification_documents (user_id, document_type, status, file_name, storage_url, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, created_at, updated_at`
+
+	err := r.pool.QueryRow(ctx, query,
+		doc.UserID,
+		string(doc.Type),
+		string(doc.Status),
+		doc.FileName,
+		doc.StorageURL,
+		doc.ExpiresAt,
+	).Scan(&doc.ID, &doc.CreatedAt, &doc.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("create document: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetDocument(ctx context.Context, documentID string) (*domain.Document, error) {
+	query := `
+		SELECT id, user_id, document_type, status, file_name, storage_url,
+		       rejection_reason, expires_at, created_at, updated_at
+		FROM verification_documents
+		WHERE id = $1`
+
+	var doc domain.Document
+	var rejectionReason, storageURL *string
+	err := r.pool.QueryRow(ctx, query, documentID).Scan(
+		&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
+		&doc.FileName, &storageURL, &rejectionReason,
+		&doc.ExpiresAt, &doc.CreatedAt, &doc.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get document: %w", domain.ErrDocumentNotFound)
+		}
+		return nil, fmt.Errorf("get document: %w", err)
+	}
+	if rejectionReason != nil {
+		doc.RejectionReason = *rejectionReason
+	}
+	if storageURL != nil {
+		doc.StorageURL = *storageURL
+	}
+	return &doc, nil
+}
+
+func (r *PostgresRepository) GetDocumentByUserAndType(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error) {
+	query := `
+		SELECT id, user_id, document_type, status, file_name, storage_url,
+		       rejection_reason, expires_at, created_at, updated_at
+		FROM verification_documents
+		WHERE user_id = $1 AND document_type = $2
+		ORDER BY created_at DESC
+		LIMIT 1`
+
+	var doc domain.Document
+	var rejectionReason, storageURL *string
+	err := r.pool.QueryRow(ctx, query, userID, string(docType)).Scan(
+		&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
+		&doc.FileName, &storageURL, &rejectionReason,
+		&doc.ExpiresAt, &doc.CreatedAt, &doc.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get document by user and type: %w", domain.ErrDocumentNotFound)
+		}
+		return nil, fmt.Errorf("get document by user and type: %w", err)
+	}
+	if rejectionReason != nil {
+		doc.RejectionReason = *rejectionReason
+	}
+	if storageURL != nil {
+		doc.StorageURL = *storageURL
+	}
+	return &doc, nil
+}
+
+func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) ([]domain.Document, error) {
+	query := `
+		SELECT id, user_id, document_type, status, file_name, storage_url,
+		       rejection_reason, expires_at, created_at, updated_at
+		FROM verification_documents
+		WHERE user_id = $1
+		ORDER BY created_at DESC`
+
+	rows, err := r.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list documents: %w", err)
+	}
+	defer rows.Close()
+
+	var docs []domain.Document
+	for rows.Next() {
+		var doc domain.Document
+		var rejectionReason, storageURL *string
+		err := rows.Scan(
+			&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
+			&doc.FileName, &storageURL, &rejectionReason,
+			&doc.ExpiresAt, &doc.CreatedAt, &doc.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("list documents scan: %w", err)
+		}
+		if rejectionReason != nil {
+			doc.RejectionReason = *rejectionReason
+		}
+		if storageURL != nil {
+			doc.StorageURL = *storageURL
+		}
+		docs = append(docs, doc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list documents rows: %w", err)
+	}
+	return docs, nil
+}
+
+func (r *PostgresRepository) UpdateDocumentStatus(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error {
+	query := `
+		UPDATE verification_documents
+		SET status = $1, rejection_reason = $2, updated_at = now()
+		WHERE id = $3`
+
+	tag, err := r.pool.Exec(ctx, query, string(status), rejectionReason, documentID)
+	if err != nil {
+		return fmt.Errorf("update document status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update document status: %w", domain.ErrDocumentNotFound)
+	}
+	return nil
+}
+
 // parseIP parses an IP address string, stripping any CIDR suffix from PostgreSQL inet type.
 func parseIP(s string) net.IP {
 	// PostgreSQL inet may include /32 or /128 suffix

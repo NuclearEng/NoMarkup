@@ -43,6 +43,8 @@ func New(
 	adminReviewsHandler *handler.AdminReviewsHandler,
 	adminPaymentsHandler *handler.AdminPaymentsHandler,
 	adminPlatformHandler *handler.AdminPlatformHandler,
+	propertyHandler *handler.PropertyHandler,
+	verificationHandler *handler.VerificationHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -63,8 +65,21 @@ func New(
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.Refresh)
-		r.Post("/logout", authHandler.Logout)
 		r.Post("/verify-email", authHandler.VerifyEmail)
+		r.Post("/request-password-reset", authHandler.RequestPasswordReset)
+		r.Post("/reset-password", authHandler.ResetPassword)
+
+		// MFA verify does not require auth (uses challenge token from login).
+		r.Post("/mfa/verify", authHandler.VerifyMFA)
+
+		// Logout and phone verification require authentication.
+		r.With(authMW.Handler).Post("/logout", authHandler.Logout)
+		r.With(authMW.Handler).Post("/verify-phone", authHandler.VerifyPhone)
+		r.With(authMW.Handler).Post("/send-phone-otp", authHandler.SendPhoneOTP)
+
+		// MFA enable/disable require authentication.
+		r.With(authMW.Handler).Post("/mfa/enable", authHandler.EnableMFA)
+		r.With(authMW.Handler).Delete("/mfa/disable", authHandler.DisableMFA)
 	})
 
 	// Public category routes (no auth required)
@@ -77,8 +92,9 @@ func New(
 	r.Route("/api/v1/jobs", func(r chi.Router) {
 		// Public
 		r.Get("/", jobHandler.Search)
+		r.Get("/map", jobHandler.MapView)
 		r.Get("/{id}", optionalAuth(authMW, jobHandler.GetJob))
-		r.Get("/{id}/bids", optionalAuth(authMW, bidHandler.ListBidsForJob))
+		r.With(authMW.Handler).Get("/{id}/bids", bidHandler.ListBidsForJob)
 		r.Get("/{id}/bids/count", bidHandler.GetBidCount)
 
 		// Authenticated
@@ -100,9 +116,10 @@ func New(
 		r.Get("/tiers", trustHandler.GetTierRequirements)
 	})
 
-	// Public webhook routes (no auth, verified by Stripe signature)
+	// Public webhook routes (no auth, verified by Stripe signature via stripe.webhooks.constructEvent)
 	r.Route("/api/v1/webhooks", func(r chi.Router) {
 		r.Post("/stripe", webhookHandler.HandleStripeWebhook)
+		r.Post("/subscription", webhookHandler.HandleSubscriptionWebhook)
 	})
 
 	// Public subscription tier routes (no auth required)
@@ -111,8 +128,15 @@ func New(
 		r.Get("/{id}", subscriptionHandler.GetTier)
 	})
 
-	// Public market analytics routes (no auth required)
+	// Public notification unsubscribe (token-based, no auth required)
+	r.Post("/api/v1/notifications/unsubscribe", notificationHandler.Unsubscribe)
+
+	// Public provider search (no auth required)
+	r.Get("/api/v1/providers/search", providerHandler.SearchProviders)
+
+	// Market analytics routes (require authentication)
 	r.Route("/api/v1/analytics/market", func(r chi.Router) {
+		r.Use(authMW.Handler)
 		r.Get("/range", analyticsHandler.GetMarketRange)
 		r.Get("/trends", analyticsHandler.GetMarketTrends)
 	})
@@ -140,17 +164,30 @@ func New(
 			r.Put("/me/availability", providerHandler.SetAvailability)
 			r.Get("/{id}", providerHandler.GetProvider)
 
+			// Provider verification documents
+			r.Post("/me/documents", verificationHandler.UploadDocument)
+			r.Get("/me/documents", verificationHandler.ListDocuments)
+			r.Get("/me/documents/{type}/status", verificationHandler.GetDocumentStatus)
+
 			// Stripe Connect routes for providers
 			r.Post("/me/stripe/account", paymentHandler.CreateStripeAccount)
 			r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
 			r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
 		})
 
-		// Job write routes moved to public group with per-route auth
+		// Property routes
+		r.Route("/properties", func(r chi.Router) {
+			r.Get("/", propertyHandler.List)
+			r.Post("/", propertyHandler.Create)
+			r.Put("/{id}", propertyHandler.Update)
+			r.Delete("/{id}", propertyHandler.Delete)
+		})
 
 		// Bid routes not nested under a specific job
 		r.Route("/bids", func(r chi.Router) {
 			r.Get("/mine", bidHandler.ListMyBids)
+			r.Get("/analytics", bidHandler.GetBidAnalytics)
+			r.Get("/{id}", bidHandler.GetBid)
 			r.Patch("/{id}", bidHandler.UpdateBid)
 			r.Delete("/{id}", bidHandler.WithdrawBid)
 		})
@@ -166,6 +203,21 @@ func New(
 			r.Post("/{id}/cancel", contractHandler.CancelContract)
 			r.Post("/{id}/reviews", reviewHandler.CreateReview)
 			r.Get("/{id}/reviews/eligibility", reviewHandler.GetReviewEligibility)
+
+			// Change orders
+			r.Post("/{id}/change-orders", contractHandler.CreateChangeOrder)
+			r.Get("/{id}/change-orders", contractHandler.ListChangeOrders)
+			r.Put("/{id}/change-orders/{orderId}", contractHandler.RespondToChangeOrder)
+
+			// Disputes
+			r.Post("/{id}/disputes", contractHandler.OpenDispute)
+
+			// No-show / abandonment
+			r.Post("/{id}/report-noshow", contractHandler.ReportNoShow)
+			r.Post("/{id}/report-abandonment", contractHandler.ReportAbandonment)
+
+			// PDF export
+			r.Get("/{id}/pdf", contractHandler.ExportPDF)
 		})
 
 		// Review routes
@@ -192,6 +244,8 @@ func New(
 			r.Post("/calculate-fees", paymentHandler.CalculateFees)
 			r.Get("/{id}", paymentHandler.GetPayment)
 			r.Post("/{id}/process", paymentHandler.ProcessPayment)
+			r.Post("/{id}/refund", paymentHandler.RefundPayment)
+			r.Post("/{id}/release", paymentHandler.ReleasePayment)
 		})
 
 		// Chat routes
@@ -264,6 +318,8 @@ func New(
 			// Payments
 			r.Route("/payments", func(r chi.Router) {
 				r.Get("/", adminPaymentsHandler.ListPayments)
+				r.Get("/fee-config", adminPaymentsHandler.GetFeeConfig)
+				r.Put("/fee-config", adminPaymentsHandler.UpdateFeeConfigNested)
 				r.Get("/{id}", adminPaymentsHandler.GetPaymentDetails)
 			})
 			r.Get("/revenue", adminPaymentsHandler.GetRevenueReport)

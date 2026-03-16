@@ -322,6 +322,39 @@ func (h *NotificationHandler) UnregisterDevice(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// --- Unsubscribe (public, token-based) ---
+
+type unsubscribeRequest struct {
+	Token string `json:"token"`
+}
+
+// Unsubscribe handles POST /api/v1/notifications/unsubscribe.
+func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+	var req unsubscribeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Token == "" {
+		writeError(w, http.StatusBadRequest, "token is required")
+		return
+	}
+
+	resp, err := h.notifClient.Unsubscribe(r.Context(), &notificationv1.UnsubscribeRequest{
+		Token: req.Token,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":    resp.GetSuccess(),
+		"user_email": resp.GetUserEmail(),
+	})
+}
+
 // --- Proto to JSON conversion helpers ---
 
 func protoNotificationToJSON(n *notificationv1.Notification) map[string]interface{} {

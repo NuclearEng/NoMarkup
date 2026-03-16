@@ -39,7 +39,7 @@ impl BiddingEngine {
 
         // Validate auction is active and not expired.
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, auction_ends_at, customer_id \
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
              FROM jobs WHERE id = $1",
         )
         .bind(job_id)
@@ -57,12 +57,25 @@ impl BiddingEngine {
             }
         }
 
+        // Validate bid does not exceed the starting bid (maximum price cap).
+        if let Some(starting_bid) = job.starting_bid_cents {
+            if amount_cents > starting_bid {
+                return Err(BidError::AboveStartingBid {
+                    amount: amount_cents,
+                    starting_bid,
+                });
+            }
+        }
+
         // Check if bid amount meets the offer-accepted threshold for auto-accept.
         let is_offer_accepted = job
             .offer_accepted_cents
             .is_some_and(|offer| amount_cents <= offer);
 
-        // Insert bid.
+        // Insert bid and increment bid count in a single transaction to
+        // prevent race conditions where the count diverges from actual bids.
+        let mut tx = self.pool.begin().await?;
+
         let bid = sqlx::query_as::<_, Bid>(
             "INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents, is_offer_accepted) \
              VALUES ($1, $2, $3, $3, $4) \
@@ -72,7 +85,7 @@ impl BiddingEngine {
         .bind(provider_id)
         .bind(amount_cents)
         .bind(is_offer_accepted)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
             if is_unique_violation(&e) {
@@ -82,11 +95,12 @@ impl BiddingEngine {
             }
         })?;
 
-        // Increment job bid count.
         sqlx::query("UPDATE jobs SET bid_count = bid_count + 1 WHERE id = $1")
             .bind(job_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
 
         tracing::info!(
             bid_id = %bid.id,
@@ -214,7 +228,7 @@ impl BiddingEngine {
         provider_id: Uuid,
     ) -> Result<Bid, BidError> {
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, auction_ends_at, customer_id \
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
              FROM jobs WHERE id = $1",
         )
         .bind(job_id)
@@ -286,10 +300,10 @@ impl BiddingEngine {
     ) -> Result<Bid, BidError> {
         let mut tx = self.pool.begin().await?;
 
-        // Validate customer owns the job.
+        // Validate customer owns the job. Lock the row to prevent concurrent awards.
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, auction_ends_at, customer_id \
-             FROM jobs WHERE id = $1",
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
+             FROM jobs WHERE id = $1 FOR UPDATE",
         )
         .bind(job_id)
         .fetch_optional(&mut *tx)
@@ -303,7 +317,7 @@ impl BiddingEngine {
         }
 
         // Validate bid exists, is active, and belongs to this job.
-        let bid = sqlx::query_as::<_, Bid>("SELECT * FROM bids WHERE id = $1")
+        let bid = sqlx::query_as::<_, Bid>("SELECT * FROM bids WHERE id = $1 FOR UPDATE")
             .bind(bid_id)
             .fetch_optional(&mut *tx)
             .await?
@@ -363,6 +377,12 @@ impl BiddingEngine {
 
     /// List all bids for a job. Validates the requesting user owns the job (sealed bid).
     ///
+    /// The `sort_field` parameter controls ordering. Supported values:
+    /// - `"price"` or empty: order by `amount_cents ASC` (default, lowest bid first)
+    /// - `"created_at"`: order by `created_at DESC` (newest first)
+    ///
+    /// The `sort_direction` parameter: `"asc"` or `"desc"` (default depends on field).
+    ///
     /// # Errors
     ///
     /// Returns `BidError` if the job is not found or the user doesn't own it.
@@ -370,10 +390,12 @@ impl BiddingEngine {
         &self,
         job_id: Uuid,
         customer_id: Uuid,
+        sort_field: &str,
+        sort_direction: &str,
     ) -> Result<Vec<Bid>, BidError> {
         // Validate customer owns the job.
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, auction_ends_at, customer_id \
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
              FROM jobs WHERE id = $1",
         )
         .bind(job_id)
@@ -387,12 +409,30 @@ impl BiddingEngine {
             ));
         }
 
-        let bids = sqlx::query_as::<_, Bid>(
-            "SELECT * FROM bids WHERE job_id = $1 ORDER BY amount_cents ASC",
-        )
-        .bind(job_id)
-        .fetch_all(&self.pool)
-        .await?;
+        // Determine ORDER BY clause from sort parameters. Only allow
+        // whitelisted column names to prevent SQL injection.
+        let column = match sort_field {
+            "created_at" => "created_at",
+            // "price" or any unrecognized field defaults to amount_cents
+            _ => "amount_cents",
+        };
+        let direction = match sort_direction {
+            "desc" => "DESC",
+            "asc" => "ASC",
+            _ => {
+                // Default direction: ASC for price, DESC for created_at.
+                if column == "amount_cents" { "ASC" } else { "DESC" }
+            }
+        };
+
+        let query = format!(
+            "SELECT * FROM bids WHERE job_id = $1 ORDER BY {column} {direction}"
+        );
+
+        let bids = sqlx::query_as::<_, Bid>(&query)
+            .bind(job_id)
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(bids)
     }
@@ -607,6 +647,7 @@ struct JobRow {
     id: Uuid,
     status: String,
     offer_accepted_cents: Option<i64>,
+    starting_bid_cents: Option<i64>,
     auction_ends_at: Option<DateTime<Utc>>,
     customer_id: Uuid,
 }

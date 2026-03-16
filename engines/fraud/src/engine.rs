@@ -12,7 +12,6 @@ use crate::models::{
 };
 
 /// SQL fragment selecting fraud_signals columns with NUMERIC casts for f64.
-#[allow(dead_code)]
 const SIGNAL_SELECT: &str = "\
     SELECT id, user_id, signal_type, signal_subtype, severity, \
       confidence::float8 AS confidence, description, evidence_json, \
@@ -876,7 +875,6 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
-    #[allow(dead_code)]
     pub async fn get_signal(&self, signal_id: Uuid) -> Result<FraudSignalRow, FraudError> {
         sqlx::query_as::<_, FraudSignalRow>(&format!(
             "{SIGNAL_SELECT} WHERE id = $1"
@@ -904,6 +902,224 @@ impl FraudDetector {
     ) -> f64 {
         let attrs = parse_fingerprint_attributes(device_fingerprint, user_agent);
         behavioral::score_fingerprint(&attrs)
+    }
+
+    // -----------------------------------------------------------------------
+    // Admin operations
+    // -----------------------------------------------------------------------
+
+    /// List fraud alerts (signals) with optional status and severity filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FraudError` on database errors.
+    pub async fn admin_list_alerts(
+        &self,
+        status_filter: Option<&[&str]>,
+        severity_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<(Vec<FraudSignalRow>, i64), FraudError> {
+        let (rows, count) = if let Some(statuses) = status_filter {
+            if let Some(severity) = severity_filter {
+                let status_list: Vec<String> = statuses.iter().map(|s| (*s).to_string()).collect();
+                let rows = sqlx::query_as::<_, FraudSignalRow>(&format!(
+                    "{SIGNAL_SELECT} WHERE status = ANY($1) AND severity = $2 \
+                     ORDER BY created_at DESC LIMIT $3 OFFSET $4"
+                ))
+                .bind(&status_list)
+                .bind(severity)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await?;
+
+                let count: CountRow = sqlx::query_as(
+                    "SELECT COUNT(*)::bigint AS count FROM fraud_signals \
+                     WHERE status = ANY($1) AND severity = $2",
+                )
+                .bind(&status_list)
+                .bind(severity)
+                .fetch_one(&self.pool)
+                .await?;
+
+                (rows, count.count)
+            } else {
+                let status_list: Vec<String> = statuses.iter().map(|s| (*s).to_string()).collect();
+                let rows = sqlx::query_as::<_, FraudSignalRow>(&format!(
+                    "{SIGNAL_SELECT} WHERE status = ANY($1) \
+                     ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+                ))
+                .bind(&status_list)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await?;
+
+                let count: CountRow = sqlx::query_as(
+                    "SELECT COUNT(*)::bigint AS count FROM fraud_signals WHERE status = ANY($1)",
+                )
+                .bind(&status_list)
+                .fetch_one(&self.pool)
+                .await?;
+
+                (rows, count.count)
+            }
+        } else if let Some(severity) = severity_filter {
+            let rows = sqlx::query_as::<_, FraudSignalRow>(&format!(
+                "{SIGNAL_SELECT} WHERE severity = $1 \
+                 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+            ))
+            .bind(severity)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await?;
+
+            let count: CountRow = sqlx::query_as(
+                "SELECT COUNT(*)::bigint AS count FROM fraud_signals WHERE severity = $1",
+            )
+            .bind(severity)
+            .fetch_one(&self.pool)
+            .await?;
+
+            (rows, count.count)
+        } else {
+            let rows = sqlx::query_as::<_, FraudSignalRow>(&format!(
+                "{SIGNAL_SELECT} ORDER BY created_at DESC LIMIT $1 OFFSET $2"
+            ))
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await?;
+
+            let count: CountRow = sqlx::query_as(
+                "SELECT COUNT(*)::bigint AS count FROM fraud_signals",
+            )
+            .fetch_one(&self.pool)
+            .await?;
+
+            (rows, count.count)
+        };
+
+        Ok((rows, count))
+    }
+
+    /// Review a fraud alert: update status and optionally apply an action.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FraudError::SignalNotFound` if the signal does not exist.
+    pub async fn admin_review_alert(
+        &self,
+        signal_id: Uuid,
+        new_status: &str,
+        _resolution_notes: &str,
+        action: Option<&str>,
+    ) -> Result<FraudSignalRow, FraudError> {
+        let auto_actioned = action.is_some();
+        let auto_action = action.map(ToString::to_string);
+
+        sqlx::query(
+            "UPDATE fraud_signals \
+             SET status = $1, reviewed_at = now(), auto_actioned = $2, \
+                 auto_action = $3, updated_at = now() \
+             WHERE id = $4",
+        )
+        .bind(new_status)
+        .bind(auto_actioned)
+        .bind(&auto_action)
+        .bind(signal_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_signal(signal_id).await
+    }
+
+    /// Get aggregate dashboard statistics for fraud monitoring.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FraudError` on database errors.
+    #[allow(clippy::cast_possible_truncation)]
+    pub async fn admin_get_dashboard_stats(&self) -> Result<DashboardStats, FraudError> {
+        let total: CountRow = sqlx::query_as(
+            "SELECT COUNT(*)::bigint AS count FROM fraud_signals",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let open: CountRow = sqlx::query_as(
+            "SELECT COUNT(*)::bigint AS count FROM fraud_signals \
+             WHERE status IN ('pending', 'confirmed')",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let critical: CountRow = sqlx::query_as(
+            "SELECT COUNT(*)::bigint AS count FROM fraud_signals \
+             WHERE severity = 'high' AND status IN ('pending', 'confirmed')",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let restricted: CountRow = sqlx::query_as(
+            "SELECT COUNT(DISTINCT user_id)::bigint AS count FROM fraud_signals \
+             WHERE status = 'actioned' AND auto_action = 'restrict'",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let banned: CountRow = sqlx::query_as(
+            "SELECT COUNT(DISTINCT user_id)::bigint AS count FROM fraud_signals \
+             WHERE status = 'actioned' AND auto_action = 'ban'",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        // Signal type breakdown.
+        let type_counts: Vec<SignalTypeCountRow> = sqlx::query_as(
+            "SELECT signal_type, signal_subtype, COUNT(*)::bigint AS count \
+             FROM fraud_signals GROUP BY signal_type, signal_subtype",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let signal_breakdown: Vec<(SignalType, i32)> = type_counts
+            .iter()
+            .map(|r| {
+                let st = SignalType::from_db_str(&r.signal_type, &r.signal_subtype);
+                (st, i32_from_i64(r.count))
+            })
+            .collect();
+
+        // False positive rate: dismissed / (dismissed + actioned).
+        let dismissed: CountRow = sqlx::query_as(
+            "SELECT COUNT(*)::bigint AS count FROM fraud_signals WHERE status = 'dismissed'",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        let actioned: CountRow = sqlx::query_as(
+            "SELECT COUNT(*)::bigint AS count FROM fraud_signals WHERE status = 'actioned'",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        let reviewed_total = dismissed.count + actioned.count;
+        let false_positive_rate = if reviewed_total > 0 {
+            dismissed.count as f64 / reviewed_total as f64
+        } else {
+            0.0
+        };
+
+        Ok(DashboardStats {
+            total_alerts: i32_from_i64(total.count),
+            open_alerts: i32_from_i64(open.count),
+            critical_alerts: i32_from_i64(critical.count),
+            users_restricted: i32_from_i64(restricted.count),
+            users_banned: i32_from_i64(banned.count),
+            signal_breakdown,
+            false_positive_rate,
+        })
     }
 
     /// Compute composite risk from multiple dimensions using the behavioral
@@ -1071,6 +1287,25 @@ const RETURNING_COLS: &str = "\
     confidence::float8 AS confidence, description, evidence_json, \
     related_entity_id, related_entity_type, status, \
     auto_actioned, auto_action, created_at, updated_at";
+
+/// Row type for signal type counts in dashboard aggregation.
+#[derive(sqlx::FromRow)]
+struct SignalTypeCountRow {
+    signal_type: String,
+    signal_subtype: String,
+    count: i64,
+}
+
+/// Aggregate dashboard statistics for admin fraud monitoring.
+pub struct DashboardStats {
+    pub total_alerts: i32,
+    pub open_alerts: i32,
+    pub critical_alerts: i32,
+    pub users_restricted: i32,
+    pub users_banned: i32,
+    pub signal_breakdown: Vec<(SignalType, i32)>,
+    pub false_positive_rate: f64,
+}
 
 /// Safely truncate i64 to i32.
 #[allow(clippy::cast_possible_truncation)]

@@ -4,19 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/nomarkup/nomarkup/services/user/internal/domain"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
 )
 
+// TrustScoreGetter retrieves trust scores for users. Implemented by a gRPC
+// client wrapper so the profile service does not depend on protobuf directly.
+type TrustScoreGetter interface {
+	GetTrustScore(ctx context.Context, userID string) (*domain.TrustScore, error)
+}
+
 // Profile implements profile-related business logic.
 type Profile struct {
-	repo domain.UserRepository
+	repo  domain.UserRepository
+	trust TrustScoreGetter
 }
 
 // NewProfile creates a new Profile service.
 func NewProfile(repo domain.UserRepository) *Profile {
 	return &Profile{repo: repo}
+}
+
+// SetTrustClient sets the trust score client on the Profile service.
+// Called after construction once the gRPC connection is established.
+func (s *Profile) SetTrustClient(trust TrustScoreGetter) {
+	s.trust = trust
 }
 
 func (s *Profile) GetUser(ctx context.Context, userID string) (*domain.User, error) {
@@ -47,7 +61,25 @@ func (s *Profile) EnableRole(ctx context.Context, userID string, role string) (*
 }
 
 func (s *Profile) GetProviderProfile(ctx context.Context, userID string) (*domain.ProviderProfile, error) {
-	return s.repo.GetProviderProfile(ctx, userID)
+	profile, err := s.repo.GetProviderProfile(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enrich with trust score if the client is available.
+	if s.trust != nil {
+		ts, tsErr := s.trust.GetTrustScore(ctx, userID)
+		if tsErr != nil {
+			slog.Warn("failed to fetch trust score for provider profile",
+				"user_id", userID,
+				"error", tsErr,
+			)
+		} else {
+			profile.TrustScore = ts
+		}
+	}
+
+	return profile, nil
 }
 
 func (s *Profile) UpdateProviderProfile(ctx context.Context, userID string, input domain.UpdateProviderInput) (*domain.ProviderProfile, error) {

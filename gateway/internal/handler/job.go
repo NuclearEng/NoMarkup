@@ -526,6 +526,66 @@ func (h *JobHandler) ListDrafts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"drafts": drafts})
 }
 
+// MapView handles GET /api/v1/jobs/map.
+func (h *JobHandler) MapView(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	grpcReq := &jobv1.GetJobsOnMapRequest{}
+
+	if lat := q.Get("latitude"); lat != "" {
+		if lng := q.Get("longitude"); lng != "" {
+			latF, _ := strconv.ParseFloat(lat, 64)
+			lngF, _ := strconv.ParseFloat(lng, 64)
+			grpcReq.Center = &commonv1.Location{
+				Latitude:  latF,
+				Longitude: lngF,
+			}
+		}
+	}
+	if radius := q.Get("radius_km"); radius != "" {
+		v, _ := strconv.ParseFloat(radius, 64)
+		grpcReq.RadiusKm = v
+	}
+	if catIDs := q.Get("category_ids"); catIDs != "" {
+		grpcReq.CategoryIds = splitCommas(catIDs)
+	}
+	if maxPrice := q.Get("max_price_cents"); maxPrice != "" {
+		v, _ := strconv.ParseInt(maxPrice, 10, 64)
+		grpcReq.MaxPriceCents = &v
+	}
+
+	resp, err := h.jobClient.GetJobsOnMap(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	pins := make([]map[string]interface{}, 0, len(resp.GetPins()))
+	for _, pin := range resp.GetPins() {
+		entry := map[string]interface{}{
+			"job_id":        pin.GetJobId(),
+			"title":         pin.GetTitle(),
+			"category_name": pin.GetCategoryName(),
+			"bid_count":     pin.GetBidCount(),
+		}
+		if loc := pin.GetLocation(); loc != nil {
+			entry["latitude"] = loc.GetLatitude()
+			entry["longitude"] = loc.GetLongitude()
+		}
+		if pin.StartingBidCents != nil {
+			entry["starting_bid_cents"] = pin.GetStartingBidCents()
+		}
+		if pin.GetAuctionEndsAt() != nil {
+			entry["auction_ends_at"] = formatTimestamp(pin.GetAuctionEndsAt())
+		}
+		pins = append(pins, entry)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"pins": pins,
+	})
+}
+
 // protoJobToJSON converts a proto Job to a JSON-friendly map.
 func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 	if j == nil {

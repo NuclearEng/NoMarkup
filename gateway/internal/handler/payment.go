@@ -371,6 +371,80 @@ func (h *PaymentHandler) GetPayment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+type refundPaymentRequest struct {
+	AmountCents int64  `json:"amount_cents"`
+	Reason      string `json:"reason"`
+}
+
+// RefundPayment handles POST /api/v1/payments/{id}/refund.
+func (h *PaymentHandler) RefundPayment(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	paymentID := chi.URLParam(r, "id")
+	if paymentID == "" {
+		writeError(w, http.StatusBadRequest, "payment id required")
+		return
+	}
+
+	var req refundPaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.paymentClient.CreateRefund(r.Context(), &paymentv1.CreateRefundRequest{
+		PaymentId:   paymentID,
+		AmountCents: req.AmountCents,
+		Reason:      req.Reason,
+		InitiatedBy: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoPaymentToJSON(resp.GetPayment()))
+}
+
+type releasePaymentRequest struct {
+	Reason string `json:"reason"`
+}
+
+// ReleasePayment handles POST /api/v1/payments/{id}/release.
+func (h *PaymentHandler) ReleasePayment(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	paymentID := chi.URLParam(r, "id")
+	if paymentID == "" {
+		writeError(w, http.StatusBadRequest, "payment id required")
+		return
+	}
+
+	var req releasePaymentRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	resp, err := h.paymentClient.ReleaseEscrow(r.Context(), &paymentv1.ReleaseEscrowRequest{
+		PaymentId: paymentID,
+		Reason:    req.Reason,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoPaymentToJSON(resp.GetPayment()))
+}
+
 type calculateFeesRequest struct {
 	AmountCents int64  `json:"amount_cents"`
 	CategoryID  string `json:"category_id"`

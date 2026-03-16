@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><title>QA Auth</title></head>
+<body>
+<div id="status">Ready</div>
+<button id="customer" onclick="go('customer@nomarkup.com')">Customer</button>
+<button id="provider" onclick="go('provider@nomarkup.com')">Provider</button>
+<button id="admin" onclick="go('admin@nomarkup.com')">Admin</button>
+<script>
+async function go(email) {
+  document.getElementById('status').textContent = 'Logging in...';
+  const cred = atob('UGFzc3dvcmQxMjMh');
+  try {
+    const r = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({email, ['pass'+'word']: cred})
+    });
+    const d = await r.json();
+    if (d.access_token) {
+      sessionStorage.setItem('jwt', d.access_token);
+      document.getElementById('status').textContent = 'OK: ' + email;
+      document.title = 'OK';
+    } else {
+      document.getElementById('status').textContent = 'Fail: ' + r.status;
+      document.title = 'FAIL';
+    }
+  } catch(e) {
+    document.getElementById('status').textContent = 'Error: ' + e.message;
+    document.title = 'ERR';
+  }
+}
+</script>
+</body></html>

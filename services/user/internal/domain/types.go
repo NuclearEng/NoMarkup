@@ -20,6 +20,10 @@ var (
 	ErrProviderProfileNotFound = errors.New("provider profile not found")
 	ErrInvalidRole             = errors.New("invalid role")
 	ErrCategoryNotFound        = errors.New("category not found")
+	ErrInvalidToken            = errors.New("invalid or expired verification token")
+	ErrInvalidOTP              = errors.New("invalid OTP code")
+	ErrOTPExpired              = errors.New("OTP code expired")
+	ErrDocumentNotFound        = errors.New("document not found")
 )
 
 // User represents a platform user.
@@ -107,9 +111,10 @@ type ProviderProfile struct {
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 
-	// Populated via JOINs
-	Categories     []ServiceCategory
+	// Populated via JOINs or external calls
+	Categories      []ServiceCategory
 	PortfolioImages []PortfolioImage
+	TrustScore      *TrustScore
 }
 
 // PortfolioImage represents a provider portfolio image.
@@ -177,6 +182,51 @@ type AvailabilityInput struct {
 	Schedule     []byte
 }
 
+// TrustScore holds the trust score summary for a provider.
+type TrustScore struct {
+	OverallScore  float64
+	Tier          string
+	FeedbackScore float64
+	VolumeScore   float64
+	RiskScore     float64
+	FraudScore    float64
+}
+
+// DocumentType represents a type of verification document.
+type DocumentType string
+
+const (
+	DocDriversLicense  DocumentType = "drivers_license"
+	DocBusinessLicense DocumentType = "business_license"
+	DocEIN             DocumentType = "ein"
+	DocInsurance       DocumentType = "insurance"
+	DocTradeLicense    DocumentType = "trade_license"
+)
+
+// DocumentStatus represents the verification status of a document.
+type DocumentStatus string
+
+const (
+	DocStatusNotUploaded DocumentStatus = "not_uploaded"
+	DocStatusPending     DocumentStatus = "pending"
+	DocStatusVerified    DocumentStatus = "verified"
+	DocStatusRejected    DocumentStatus = "rejected"
+)
+
+// Document represents a verification document uploaded by a provider.
+type Document struct {
+	ID              string
+	UserID          string
+	Type            DocumentType
+	Status          DocumentStatus
+	FileName        string
+	StorageURL      string
+	RejectionReason string
+	ExpiresAt       *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 // UserRepository defines persistence operations for users.
 type UserRepository interface {
 	CreateUser(ctx context.Context, user *User) error
@@ -205,6 +255,16 @@ type UserRepository interface {
 	GetPortfolioImages(ctx context.Context, providerID string) ([]PortfolioImage, error)
 	ListServiceCategories(ctx context.Context, level *int, parentID *string) ([]ServiceCategory, error)
 	GetCategoryTree(ctx context.Context) ([]ServiceCategory, error)
+
+	// Phone verification
+	UpdatePhoneVerified(ctx context.Context, userID string, verified bool) error
+
+	// Document verification
+	CreateDocument(ctx context.Context, doc *Document) error
+	GetDocument(ctx context.Context, documentID string) (*Document, error)
+	GetDocumentByUserAndType(ctx context.Context, userID string, docType DocumentType) (*Document, error)
+	ListDocuments(ctx context.Context, userID string) ([]Document, error)
+	UpdateDocumentStatus(ctx context.Context, documentID string, status DocumentStatus, rejectionReason string) error
 
 	// Admin operations
 	SuspendUser(ctx context.Context, userID, reason, adminID string) error

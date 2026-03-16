@@ -2,7 +2,7 @@
 -- PostgreSQL 16 + PostGIS 3.4
 -- All monetary values in cents (BIGINT)
 -- All timestamps in UTC (TIMESTAMPTZ)
--- All IDs are UUID v7 (time-sortable)
+-- All IDs are UUID v4 (gen_random_uuid())
 -- Soft deletes via deleted_at column
 
 -- ============================================================

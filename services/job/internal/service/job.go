@@ -19,7 +19,7 @@ func NewJobService(repo domain.JobRepository, search *SearchEngine) *JobService 
 	return &JobService{repo: repo, search: search}
 }
 
-// CreateJob validates input and creates a new job.
+// CreateJob validates input, enforces the 10-draft limit (FR-3.11), and creates a new job.
 func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput) (*domain.Job, error) {
 	if input.Title == "" {
 		return nil, domain.ErrMissingTitle
@@ -35,6 +35,17 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 	}
 	if input.ScheduleType == "" {
 		input.ScheduleType = "flexible"
+	}
+
+	// FR-3.11: Enforce 10-draft limit.
+	if !input.Publish {
+		draftCount, err := s.repo.CountDrafts(ctx, input.CustomerID)
+		if err != nil {
+			return nil, fmt.Errorf("create job count drafts: %w", err)
+		}
+		if draftCount >= 10 {
+			return nil, fmt.Errorf("create job: %w", domain.ErrDraftLimitExceeded)
+		}
 	}
 
 	job, err := s.repo.CreateJob(ctx, input)
@@ -180,6 +191,119 @@ func (s *JobService) GetCategoryTree(ctx context.Context) ([]domain.ServiceCateg
 		return nil, fmt.Errorf("get category tree: %w", err)
 	}
 	return cats, nil
+}
+
+// RepostJob creates a new job from a closed/expired original (FR-3.10).
+func (s *JobService) RepostJob(ctx context.Context, jobID, customerID string, updates *domain.UpdateJobInput) (*domain.Job, error) {
+	original, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("repost job: %w", err)
+	}
+
+	if original.CustomerID != customerID {
+		return nil, fmt.Errorf("repost job: %w", domain.ErrNotOwner)
+	}
+
+	if original.Status != "closed" && original.Status != "closed_zero_bids" && original.Status != "expired" && original.Status != "cancelled" {
+		return nil, fmt.Errorf("repost job: %w", domain.ErrNotRepostable)
+	}
+
+	// Build create input from the original job, applying any updates.
+	input := domain.CreateJobInput{
+		CustomerID:           original.CustomerID,
+		PropertyID:           original.PropertyID,
+		Title:                original.Title,
+		Description:          original.Description,
+		CategoryID:           original.CategoryID,
+		SubcategoryID:        original.SubcategoryID,
+		ServiceTypeID:        original.ServiceTypeID,
+		ScheduleType:         original.ScheduleType,
+		ScheduledDate:        original.ScheduledDate,
+		ScheduleRangeStart:   original.ScheduleRangeStart,
+		ScheduleRangeEnd:     original.ScheduleRangeEnd,
+		IsRecurring:          original.IsRecurring,
+		RecurrenceFrequency:  original.RecurrenceFrequency,
+		StartingBidCents:     original.StartingBidCents,
+		OfferAcceptedCents:   original.OfferAcceptedCents,
+		AuctionDurationHours: original.AuctionDurationHours,
+		MinProviderRating:    original.MinProviderRating,
+		Publish:              true,
+	}
+
+	// Apply optional updates.
+	if updates != nil {
+		if updates.Title != nil {
+			input.Title = *updates.Title
+		}
+		if updates.Description != nil {
+			input.Description = *updates.Description
+		}
+		if updates.CategoryID != nil {
+			input.CategoryID = *updates.CategoryID
+		}
+		if updates.StartingBidCents != nil {
+			input.StartingBidCents = updates.StartingBidCents
+		}
+		if updates.AuctionDurationHours != nil {
+			input.AuctionDurationHours = *updates.AuctionDurationHours
+		}
+	}
+
+	newJob, err := s.repo.RepostJob(ctx, jobID, input)
+	if err != nil {
+		return nil, fmt.Errorf("repost job: %w", err)
+	}
+
+	// Increment the original job's repost count.
+	if err := s.repo.IncrementRepostCount(ctx, jobID); err != nil {
+		slog.Warn("failed to increment repost count", "job_id", jobID, "error", err)
+	}
+
+	if s.search != nil {
+		if indexErr := s.search.IndexJob(ctx, newJob); indexErr != nil {
+			slog.Warn("failed to index reposted job in search", "job_id", newJob.ID, "error", indexErr)
+		}
+	}
+
+	slog.Info("job reposted",
+		"original_job_id", jobID,
+		"new_job_id", newJob.ID,
+		"customer_id", customerID,
+	)
+	return newJob, nil
+}
+
+// AwardJob awards a job to a provider.
+func (s *JobService) AwardJob(ctx context.Context, jobID, customerID, providerID, bidID string) (*domain.Job, error) {
+	job, err := s.repo.AwardJob(ctx, jobID, customerID, providerID, bidID)
+	if err != nil {
+		return nil, fmt.Errorf("award job: %w", err)
+	}
+
+	if s.search != nil {
+		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
+			slog.Warn("failed to remove awarded job from search", "job_id", jobID, "error", removeErr)
+		}
+	}
+
+	slog.Info("job awarded",
+		"job_id", jobID,
+		"customer_id", customerID,
+		"provider_id", providerID,
+		"bid_id", bidID,
+	)
+	return job, nil
+}
+
+// MarkReviewed transitions a completed job to the reviewed state.
+func (s *JobService) MarkReviewed(ctx context.Context, jobID string) (*domain.Job, error) {
+	job, err := s.repo.MarkReviewed(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("mark reviewed: %w", err)
+	}
+
+	slog.Info("job marked reviewed", "job_id", jobID)
+	return job, nil
 }
 
 // AdminListJobs lists jobs for admin with optional filters.

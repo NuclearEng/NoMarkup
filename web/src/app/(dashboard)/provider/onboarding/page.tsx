@@ -3,11 +3,18 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, Trash2 } from 'lucide-react';
 import type { Route } from 'next';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 
 import { CategorySelector } from '@/components/providers/CategorySelector';
+
+const ServiceAreaMap = dynamic(
+  () => import('@/components/maps/ServiceAreaMap').then((mod) => mod.ServiceAreaMap),
+  { ssr: false },
+);
+import { ImageUpload } from '@/components/ui/ImageUpload';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -261,9 +268,8 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
           step={5}
           value={radius}
           onChange={(e) => { setRadius(Number(e.target.value)); }}
-          className="w-full accent-primary"
+          className="min-h-[44px] w-full accent-primary"
           aria-label={`Service radius: ${String(radius)} kilometers`}
-          style={{ minHeight: '44px' }}
         />
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>5 km</span>
@@ -271,8 +277,50 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
         </div>
       </div>
 
-      <div className="rounded-md border p-8 text-center text-sm text-muted-foreground">
-        Map placeholder - service area visualization will appear here
+      {/* Service area visualization */}
+      {process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ? (
+        <div className="space-y-2">
+          <ServiceAreaMap radiusKm={radius} />
+          <p className="text-center text-sm font-medium">
+            {String(radius)} km service radius
+            <span className="ml-1 text-xs text-muted-foreground">
+              (~{String(Math.round(radius * 0.621))} miles)
+            </span>
+          </p>
+        </div>
+      ) : (
+        <div className="relative flex items-center justify-center rounded-md border bg-muted/30 p-8">
+          <div className="relative">
+            <div
+              className="flex items-center justify-center rounded-full border-2 border-dashed border-primary/30 bg-primary/5"
+              style={{ width: `${String(Math.min(radius * 3, 250))}px`, height: `${String(Math.min(radius * 3, 250))}px` }}
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                You
+              </div>
+            </div>
+            <p className="mt-3 text-center text-sm font-medium">
+              {String(radius)} km service radius
+            </p>
+            <p className="text-center text-xs text-muted-foreground">
+              ~{String(Math.round(radius * 0.621))} miles
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label htmlFor="service-address" className="text-sm font-medium">
+          Service Base Address
+        </label>
+        <Input
+          id="service-address"
+          placeholder="Enter your base address for service area"
+          className="mt-1 min-h-[44px]"
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Your service area will be centered on this address.
+        </p>
       </div>
 
       <div className="flex gap-3">
@@ -475,28 +523,29 @@ function GlobalTermsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
 
 // -- Step 5: Portfolio --
 function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
-  const [images, setImages] = useState<{ url: string; caption: string }[]>([]);
+  const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
+  const [captions, setCaptions] = useState<Record<string, string>>({});
   const updatePortfolio = useUpdatePortfolio();
 
-  function addImage() {
-    setImages([...images, { url: '', caption: '' }]);
+  function handleUploadComplete(result: { confirmedUrl: string }) {
+    setUploadedUrls((prev) => [...prev, result.confirmedUrl]);
   }
 
-  function removeImage(index: number) {
-    setImages(images.filter((_, i) => i !== index));
-  }
-
-  function updateImage(index: number, field: 'url' | 'caption', value: string) {
-    setImages(images.map((img, i) => (i === index ? { ...img, [field]: value } : img)));
+  function handleRemove(url: string) {
+    setUploadedUrls((prev) => prev.filter((u) => u !== url));
+    setCaptions((prev) => {
+      const next = { ...prev };
+      delete next[url];
+      return next;
+    });
   }
 
   async function handleSave() {
-    const validImages = images.filter((img) => img.url.trim() !== '');
-    if (validImages.length > 0) {
+    if (uploadedUrls.length > 0) {
       await updatePortfolio.mutateAsync(
-        validImages.map((img, idx) => ({
-          image_url: img.url,
-          caption: img.caption || null,
+        uploadedUrls.map((url, idx) => ({
+          image_url: url,
+          caption: captions[url] || null,
           sort_order: idx,
         })),
       );
@@ -507,50 +556,37 @@ function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        Add URLs to images showcasing your work. Image upload will be available soon.
+        Upload images showcasing your best work. Up to 10 portfolio images.
       </p>
 
-      {images.map((img, index) => (
-        <div key={index} className="flex gap-3">
-          <div className="flex-1 space-y-2">
-            <Input
-              type="url"
-              placeholder="Image URL"
-              value={img.url}
-              onChange={(e) => { updateImage(index, 'url', e.target.value); }}
-              className="min-h-[44px]"
-              aria-label={`Image ${String(index + 1)} URL`}
-            />
-            <Input
-              placeholder="Caption (optional)"
-              value={img.caption}
-              onChange={(e) => { updateImage(index, 'caption', e.target.value); }}
-              className="min-h-[44px]"
-              aria-label={`Image ${String(index + 1)} caption`}
-            />
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => { removeImage(index); }}
-            className="mt-0 min-h-[44px] min-w-[44px]"
-            aria-label={`Remove image ${String(index + 1)}`}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </div>
-      ))}
+      <ImageUpload
+        context="portfolio"
+        onUploadComplete={handleUploadComplete}
+        multiple
+        maxFiles={10}
+        existingImages={uploadedUrls}
+        onRemove={handleRemove}
+        placeholder="Drop portfolio images here, or click to browse"
+      />
 
-      <Button
-        type="button"
-        variant="outline"
-        onClick={addImage}
-        className="min-h-[44px]"
-      >
-        <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
-        Add Image
-      </Button>
+      {/* Captions for uploaded images */}
+      {uploadedUrls.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Add captions (optional)</p>
+          {uploadedUrls.map((url, index) => (
+            <Input
+              key={url}
+              placeholder={`Caption for image ${String(index + 1)}`}
+              value={captions[url] ?? ''}
+              onChange={(e) => {
+                setCaptions((prev) => ({ ...prev, [url]: e.target.value }));
+              }}
+              className="min-h-[44px]"
+              aria-label={`Caption for image ${String(index + 1)}`}
+            />
+          ))}
+        </div>
+      ) : null}
 
       <div className="flex gap-3">
         <Button type="button" variant="outline" onClick={onPrev} className="min-h-[44px]">

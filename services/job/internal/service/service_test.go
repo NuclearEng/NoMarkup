@@ -100,6 +100,21 @@ func (m *mockJobRepo) InsertAuditLog(ctx context.Context, adminID, action, targe
 	}
 	return nil
 }
+func (m *mockJobRepo) CountDrafts(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
+func (m *mockJobRepo) RepostJob(_ context.Context, _ string, input domain.CreateJobInput) (*domain.Job, error) {
+	return &domain.Job{ID: "reposted-job", Status: "active", CustomerID: input.CustomerID}, nil
+}
+func (m *mockJobRepo) IncrementRepostCount(_ context.Context, _ string) error {
+	return nil
+}
+func (m *mockJobRepo) AwardJob(_ context.Context, jobID, _, providerID, bidID string) (*domain.Job, error) {
+	return &domain.Job{ID: jobID, Status: "awarded", AwardedProviderID: &providerID, AwardedBidID: &bidID}, nil
+}
+func (m *mockJobRepo) MarkReviewed(_ context.Context, jobID string) (*domain.Job, error) {
+	return &domain.Job{ID: jobID, Status: "reviewed"}, nil
+}
 
 // --- helpers ---
 

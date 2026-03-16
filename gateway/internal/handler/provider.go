@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -297,6 +298,143 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile()))
+}
+
+// SearchProviders handles GET /api/v1/providers/search.
+func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	grpcReq := &userv1.SearchProvidersRequest{}
+
+	if catIDs := q.Get("category_ids"); catIDs != "" {
+		grpcReq.CategoryIds = splitCommas(catIDs)
+	}
+
+	if lat := q.Get("latitude"); lat != "" {
+		if lng := q.Get("longitude"); lng != "" {
+			latF, _ := strconv.ParseFloat(lat, 64)
+			lngF, _ := strconv.ParseFloat(lng, 64)
+			grpcReq.Location = &commonv1.Location{
+				Latitude:  latF,
+				Longitude: lngF,
+			}
+		}
+	}
+	if radius := q.Get("radius_km"); radius != "" {
+		r, _ := strconv.ParseFloat(radius, 64)
+		grpcReq.RadiusKm = r
+	}
+
+	if minRating := q.Get("min_rating"); minRating != "" {
+		v, _ := strconv.ParseFloat(minRating, 64)
+		grpcReq.MinRating = &v
+	}
+
+	if verifiedOnly := q.Get("verified_only"); verifiedOnly == "true" {
+		v := true
+		grpcReq.VerifiedOnly = &v
+	}
+
+	if instantAvailable := q.Get("instant_available"); instantAvailable == "true" {
+		v := true
+		grpcReq.InstantAvailable = &v
+	}
+
+	if sortField := q.Get("sort"); sortField != "" {
+		dir := commonv1.SortDirection_SORT_DIRECTION_ASC
+		if q.Get("sort_dir") == "desc" {
+			dir = commonv1.SortDirection_SORT_DIRECTION_DESC
+		}
+		grpcReq.Sort = &commonv1.SortRequest{
+			Field:     sortField,
+			Direction: dir,
+		}
+	}
+
+	page := int32(1)
+	pageSize := int32(20)
+	if p := q.Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			page = int32(v)
+		}
+	}
+	if ps := q.Get("page_size"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil {
+			pageSize = int32(v)
+		}
+	}
+	grpcReq.Pagination = &commonv1.PaginationRequest{
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	resp, err := h.userClient.SearchProviders(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	providers := make([]map[string]interface{}, 0, len(resp.GetProviders()))
+	for _, p := range resp.GetProviders() {
+		providers = append(providers, protoProviderSearchResultToJSON(p))
+	}
+
+	result := map[string]interface{}{
+		"providers": providers,
+	}
+	if pg := resp.GetPagination(); pg != nil {
+		result["pagination"] = map[string]interface{}{
+			"totalCount": pg.GetTotalCount(),
+			"page":       pg.GetPage(),
+			"pageSize":   pg.GetPageSize(),
+			"totalPages": pg.GetTotalPages(),
+			"hasNext":    pg.GetHasNext(),
+		}
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]interface{} {
+	if p == nil {
+		return map[string]interface{}{}
+	}
+
+	result := map[string]interface{}{
+		"user_id":            p.GetUserId(),
+		"display_name":       p.GetDisplayName(),
+		"business_name":      p.GetBusinessName(),
+		"avatar_url":         p.GetAvatarUrl(),
+		"distance_km":        p.GetDistanceKm(),
+		"instant_available":  p.GetInstantAvailable(),
+	}
+
+	if rs := p.GetReviewSummary(); rs != nil {
+		result["review_summary"] = map[string]interface{}{
+			"average_rating": rs.GetAverageRating(),
+			"review_count":   rs.GetReviewCount(),
+			"on_time_rate":   rs.GetOnTimeRate(),
+		}
+	}
+
+	if ts := p.GetTrustScore(); ts != nil {
+		result["trust_score"] = map[string]interface{}{
+			"overall_score": ts.GetOverallScore(),
+			"tier":          ts.GetTier().String(),
+		}
+	}
+
+	cats := make([]map[string]interface{}, 0, len(p.GetCategories()))
+	for _, c := range p.GetCategories() {
+		cats = append(cats, map[string]interface{}{
+			"id":   c.GetId(),
+			"name": c.GetName(),
+			"slug": c.GetSlug(),
+		})
+	}
+	result["categories"] = cats
+
+	return result
 }
 
 func stringToPaymentTiming(s string) commonv1.PaymentTiming {

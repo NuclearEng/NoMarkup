@@ -20,6 +20,10 @@ var (
 	ErrMissingDescription  = errors.New("description is required")
 	ErrMissingCategory     = errors.New("category is required")
 	ErrInvalidDuration     = errors.New("auction duration must be between 1 and 168 hours")
+	ErrDraftLimitExceeded  = errors.New("maximum of 10 draft jobs allowed")
+	ErrNotRepostable       = errors.New("job must be in closed or expired status to repost")
+	ErrNotAwarded          = errors.New("job is not in awarded status")
+	ErrNotCompleted        = errors.New("job is not in completed status")
 )
 
 // Job represents a service job posting.
@@ -192,6 +196,17 @@ type JobRepository interface {
 	ListServiceCategories(ctx context.Context, level *int, parentID *string) ([]ServiceCategory, error)
 	GetCategoryTree(ctx context.Context) ([]ServiceCategory, error)
 	LookupMarketRange(ctx context.Context, serviceTypeID string, zipCode string) (*MarketRange, error)
+
+	// Draft limit
+	CountDrafts(ctx context.Context, customerID string) (int, error)
+
+	// Repost
+	RepostJob(ctx context.Context, originalJobID string, input CreateJobInput) (*Job, error)
+	IncrementRepostCount(ctx context.Context, jobID string) error
+
+	// Lifecycle transitions
+	AwardJob(ctx context.Context, jobID, customerID, providerID, bidID string) (*Job, error)
+	MarkReviewed(ctx context.Context, jobID string) (*Job, error)
 
 	// Admin operations
 	AdminListJobs(ctx context.Context, statusFilter *string, categoryID *string, customerID *string, page, pageSize int) ([]*Job, *Pagination, error)

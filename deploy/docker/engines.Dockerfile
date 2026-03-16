@@ -10,7 +10,7 @@
 #       target: bidding
 
 # ── Stage 1: cargo-chef planner ────────────────────────────────
-FROM rust:1.93-bookworm AS chef
+FROM rust:1.84-bookworm AS chef
 RUN echo "══════════════════════════════════════════════════════════" && \
     echo "  [1/5] TOOLCHAIN · Installing cargo-chef + protoc"       && \
     echo "══════════════════════════════════════════════════════════"

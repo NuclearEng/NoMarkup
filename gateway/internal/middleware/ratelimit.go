@@ -13,13 +13,28 @@ import (
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 )
 
+// RateLimitTier defines the rate-limiting tier for a route.
+type RateLimitTier int
+
 const (
-	// defaultGeneralRateLimit is the maximum number of requests per minute for general endpoints.
-	defaultGeneralRateLimit = 100
-	// defaultAuthRateLimit is the maximum number of requests per minute for auth endpoints (production).
-	defaultAuthRateLimit = 10
-	// devAuthRateLimit is the more permissive auth rate limit for development environments.
-	devAuthRateLimit = 100
+	// TierNone disables rate limiting (health, readiness).
+	TierNone RateLimitTier = iota
+	// TierStandard is the default for authenticated routes (60 req/min).
+	TierStandard
+	// TierStrict is for expensive operations (10 req/min).
+	TierStrict
+	// TierAuth is for unauthenticated auth endpoints (20 req/min).
+	TierAuth
+)
+
+const (
+	defaultStandardLimit = 60
+	defaultStrictLimit   = 10
+	defaultAuthLimit     = 20
+
+	// Development multiplier for all limits.
+	devMultiplier = 10
+
 	// rateLimitWindow is the duration of the sliding window.
 	rateLimitWindow = 1 * time.Minute
 	// cleanupInterval is how often stale entries are removed from the in-memory fallback map.
@@ -114,42 +129,114 @@ func pruneOld(timestamps []time.Time, cutoff time.Time) []time.Time {
 	return timestamps[:idx]
 }
 
+// --- Route-to-Tier mapping ---
+
+// routeTiers maps path prefixes to their rate limit tier.
+// Entries are checked in order; the first match wins.
+var routeTiers = []struct {
+	prefix string
+	tier   RateLimitTier
+}{
+	// Health endpoints — no limiting.
+	{"/healthz", TierNone},
+	{"/readyz", TierNone},
+
+	// Auth endpoints (unauthenticated) — auth tier.
+	{"/api/v1/auth/register", TierAuth},
+	{"/api/v1/auth/login", TierAuth},
+	{"/api/v1/auth/refresh", TierAuth},
+	{"/api/v1/auth/verify-email", TierAuth},
+	{"/api/v1/auth/verify-phone", TierAuth},
+	{"/api/v1/auth/reset-password", TierAuth},
+	{"/api/v1/auth/mfa/verify", TierAuth},
+
+	// Strict tier — expensive operations.
+	{"/api/v1/auth/send-phone-otp", TierStrict},
+	{"/api/v1/auth/request-password-reset", TierStrict},
+	{"/api/v1/auth/mfa/enable", TierStrict},
+	{"/api/v1/auth/mfa/disable", TierStrict},
+	{"/api/v1/users/me/enable-role", TierStrict},
+	{"/api/v1/users/me/deactivate", TierStrict},
+	{"/api/v1/verification/documents", TierStrict},
+	{"/api/v1/admin/", TierStrict},
+	{"/api/v1/bids/", TierStrict},
+	{"/api/v1/payments", TierStrict},
+	{"/api/v1/contracts/", TierStrict},
+	{"/api/v1/reviews", TierStrict},
+	{"/api/v1/subscriptions", TierStrict},
+}
+
+// tierForPath returns the rate limit tier for a given request path.
+func tierForPath(path string) RateLimitTier {
+	for _, rt := range routeTiers {
+		if strings.HasPrefix(path, rt.prefix) {
+			return rt.tier
+		}
+	}
+	// Default: standard tier for all authenticated routes.
+	return TierStandard
+}
+
 // --- Rate Limiter (Redis-backed with in-memory fallback) ---
 
-// RateLimiter performs per-IP rate limiting. When a cache.Client is provided,
-// limits are enforced in Redis (distributed). Otherwise falls back to in-memory.
+// RateLimiter performs per-IP and per-user rate limiting. When a cache.Client is
+// provided, limits are enforced in Redis (distributed). Otherwise it falls back
+// to in-memory sliding windows.
 type RateLimiter struct {
-	cache            *cache.Client
-	fallback         *memoryLimiter
-	generalRateLimit int
-	authRateLimit    int
+	cache    *cache.Client
+	fallback *memoryLimiter
+
+	standardLimit int
+	strictLimit   int
+	authLimit     int
 }
 
 // NewRateLimiter creates a RateLimiter. Pass nil for cacheClient to use in-memory only.
-// When production is false, auth rate limits are 10x more permissive to allow
-// multi-profile testing in development. The authLimitOverride, if > 0, takes
-// precedence over the default/dev values (set via RATE_LIMIT_AUTH env var).
+// When production is false, all rate limits are multiplied by 10 to allow
+// comfortable development testing. The authLimitOverride, if > 0, takes
+// precedence over the computed auth limit.
 func NewRateLimiter(cacheClient *cache.Client, production bool, authLimitOverride int) *RateLimiter {
-	authLimit := defaultAuthRateLimit
+	stdLimit := defaultStandardLimit
+	strictLimit := defaultStrictLimit
+	authLimit := defaultAuthLimit
+
 	if !production {
-		authLimit = devAuthRateLimit
+		stdLimit *= devMultiplier
+		strictLimit *= devMultiplier
+		authLimit *= devMultiplier
 	}
+
 	if authLimitOverride > 0 {
 		authLimit = authLimitOverride
 	}
 
 	slog.Info("rate limiter initialized",
 		"production", production,
-		"general_limit", defaultGeneralRateLimit,
+		"standard_limit", stdLimit,
+		"strict_limit", strictLimit,
 		"auth_limit", authLimit,
 		"window", rateLimitWindow,
 	)
 
 	return &RateLimiter{
-		cache:            cacheClient,
-		fallback:         newMemoryLimiter(),
-		generalRateLimit: defaultGeneralRateLimit,
-		authRateLimit:    authLimit,
+		cache:         cacheClient,
+		fallback:      newMemoryLimiter(),
+		standardLimit: stdLimit,
+		strictLimit:   strictLimit,
+		authLimit:     authLimit,
+	}
+}
+
+func (rl *RateLimiter) limitForTier(tier RateLimitTier) int {
+	switch tier {
+	case TierStandard:
+		return rl.standardLimit
+	case TierStrict:
+		return rl.strictLimit
+	case TierAuth:
+		return rl.authLimit
+	default:
+		return 0 // TierNone — no limiting
 	}
 }
 
@@ -162,36 +249,72 @@ func (rl *RateLimiter) allow(key string, limit int) (bool, int) {
 }
 
 // Middleware returns an http.Handler middleware that enforces rate limits.
+// It applies per-IP rate limiting to all requests, and additionally per-user
+// rate limiting when a JWT user ID is available in the request context.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := extractIP(r)
 		path := r.URL.Path
+		tier := tierForPath(path)
 
-		limit := rl.generalRateLimit
-		key := "general:" + ip
-		if isAuthPath(path) {
-			limit = rl.authRateLimit
-			key = "auth:" + ip
+		// TierNone — no rate limiting.
+		if tier == TierNone {
+			next.ServeHTTP(w, r)
+			return
 		}
 
-		allowed, retryAfter := rl.allow(key, limit)
-		if !allowed {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+		limit := rl.limitForTier(tier)
+		ip := extractIP(r)
+		tierName := tierString(tier)
 
-			slog.Warn("rate limit exceeded",
-				"ip", ip,
-				"path", path,
-				"limit", limit,
-				"retry_after", retryAfter,
-			)
+		// Per-IP check.
+		ipKey := tierName + ":ip:" + ip
+		allowed, retryAfter := rl.allow(ipKey, limit)
+		if !allowed {
+			writeRateLimitResponse(w, ip, path, limit, retryAfter)
 			return
+		}
+
+		// Per-user check: if the request has authenticated claims, also apply
+		// a per-user rate limit (same tier limits). This prevents a single
+		// user from consuming the entire IP bucket (e.g., shared office IP).
+		if claims, ok := GetClaims(r.Context()); ok && claims.UserID != "" {
+			userKey := tierName + ":user:" + claims.UserID
+			allowed, retryAfter = rl.allow(userKey, limit)
+			if !allowed {
+				writeRateLimitResponse(w, ip, path, limit, retryAfter)
+				return
+			}
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func writeRateLimitResponse(w http.ResponseWriter, ip, path string, limit, retryAfter int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
+	_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+
+	slog.Warn("rate limit exceeded",
+		"ip", ip,
+		"path", path,
+		"limit", limit,
+		"retry_after", retryAfter,
+	)
+}
+
+func tierString(tier RateLimitTier) string {
+	switch tier {
+	case TierStandard:
+		return "standard"
+	case TierStrict:
+		return "strict"
+	case TierAuth:
+		return "auth"
+	default:
+		return "none"
+	}
 }
 
 // extractIP extracts the client IP address from the request.
@@ -211,8 +334,4 @@ func extractIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
-}
-
-func isAuthPath(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/auth")
 }

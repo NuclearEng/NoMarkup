@@ -172,10 +172,9 @@ export function FraudAlertList() {
               <button
                 type="button"
                 className={cn(
-                  'w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/50',
+                  'min-h-[44px] w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/50',
                   expandedAlertId === alert.id && 'ring-2 ring-primary/20',
                 )}
-                style={{ minHeight: '44px' }}
                 onClick={() => { handleToggleExpand(alert); }}
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">

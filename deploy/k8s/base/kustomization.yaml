@@ -39,3 +39,7 @@ resources:
   - imaging/service.yaml
   # Ingress
   - ingress.yaml
+  # Storage
+  - pvc.yaml
+  # Network Policies
+  - network-policy.yaml

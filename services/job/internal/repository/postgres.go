@@ -920,6 +920,101 @@ func (r *PostgresRepository) InsertAuditLog(ctx context.Context, adminID, action
 	return nil
 }
 
+func (r *PostgresRepository) CountDrafts(ctx context.Context, customerID string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM jobs WHERE customer_id = $1 AND status = 'draft' AND deleted_at IS NULL`,
+		customerID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count drafts: %w", err)
+	}
+	return count, nil
+}
+
+func (r *PostgresRepository) RepostJob(ctx context.Context, originalJobID string, input domain.CreateJobInput) (*domain.Job, error) {
+	// Set the reposted_from_id in the input before creating.
+	// We use CreateJob and then update the reposted_from_id because CreateJob
+	// doesn't directly accept that field.
+	job, err := r.CreateJob(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("repost job create: %w", err)
+	}
+
+	// Set reposted_from_id on the new job.
+	_, err = r.pool.Exec(ctx,
+		`UPDATE jobs SET reposted_from_id = $1, updated_at = now() WHERE id = $2`,
+		originalJobID, job.ID)
+	if err != nil {
+		return nil, fmt.Errorf("repost job set parent: %w", err)
+	}
+
+	return r.GetJob(ctx, job.ID)
+}
+
+func (r *PostgresRepository) IncrementRepostCount(ctx context.Context, jobID string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE jobs SET repost_count = repost_count + 1, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`,
+		jobID)
+	if err != nil {
+		return fmt.Errorf("increment repost count: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("increment repost count: %w", domain.ErrJobNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) AwardJob(ctx context.Context, jobID, customerID, providerID, bidID string) (*domain.Job, error) {
+	now := time.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'awarded',
+		        awarded_provider_id = $1, awarded_bid_id = $2, awarded_at = $3,
+		        updated_at = now()
+		 WHERE id = $4 AND customer_id = $5
+		   AND status IN ('active', 'closed') AND deleted_at IS NULL`,
+		providerID, bidID, now, jobID, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("award job: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var job domain.Job
+		err := r.pool.QueryRow(ctx,
+			`SELECT customer_id, status FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).
+			Scan(&job.CustomerID, &job.Status)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("award job: %w", domain.ErrJobNotFound)
+			}
+			return nil, fmt.Errorf("award job check: %w", err)
+		}
+		if job.CustomerID != customerID {
+			return nil, fmt.Errorf("award job: %w", domain.ErrNotOwner)
+		}
+		return nil, fmt.Errorf("award job: %w", domain.ErrInvalidStatus)
+	}
+	return r.GetJob(ctx, jobID)
+}
+
+func (r *PostgresRepository) MarkReviewed(ctx context.Context, jobID string) (*domain.Job, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'reviewed', updated_at = now()
+		 WHERE id = $1 AND status = 'completed' AND deleted_at IS NULL`,
+		jobID)
+	if err != nil {
+		return nil, fmt.Errorf("mark reviewed: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		_ = r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1 AND deleted_at IS NULL)`, jobID).Scan(&exists)
+		if !exists {
+			return nil, fmt.Errorf("mark reviewed: %w", domain.ErrJobNotFound)
+		}
+		return nil, fmt.Errorf("mark reviewed: %w", domain.ErrNotCompleted)
+	}
+	return r.GetJob(ctx, jobID)
+}
+
 // scanJobWithCategories loads a job with its category info.
 func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID string) (*domain.Job, error) {
 	row := r.pool.QueryRow(ctx, `

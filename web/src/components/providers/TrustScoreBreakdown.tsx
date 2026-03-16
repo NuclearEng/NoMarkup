@@ -125,15 +125,14 @@ export function TrustScoreBreakdown({
         {/* Overall score display */}
         <div className="flex items-center gap-4">
           <div
-            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-4 border-current"
-            style={{
-              color:
-                score.overall_score >= 0.7
-                  ? 'var(--color-emerald-500, #10b981)'
-                  : score.overall_score >= 0.4
-                    ? 'var(--color-amber-500, #f59e0b)'
-                    : 'var(--color-red-500, #ef4444)',
-            }}
+            className={cn(
+              'flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-4',
+              score.overall_score >= 0.7
+                ? 'border-emerald-500'
+                : score.overall_score >= 0.4
+                  ? 'border-amber-500'
+                  : 'border-red-500',
+            )}
           >
             <span className="text-xl font-bold text-foreground">{String(overallPercent)}</span>
           </div>

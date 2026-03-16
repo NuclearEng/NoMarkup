@@ -1,18 +1,16 @@
-// Stripe client setup
-// Requires @stripe/stripe-js to be installed: npm install @stripe/stripe-js
-// Uncomment the code below after installing the package.
+import { loadStripe, type Stripe } from '@stripe/stripe-js';
 
-// import { loadStripe } from '@stripe/stripe-js';
-//
-// const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
-//
-// let stripePromise: ReturnType<typeof loadStripe> | null = null;
-//
-// export function getStripe() {
-//   if (!stripePromise) {
-//     stripePromise = loadStripe(stripePublishableKey);
-//   }
-//   return stripePromise;
-// }
+const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
-export {};
+let stripePromise: Promise<Stripe | null> | null = null;
+
+/**
+ * Lazily loads and returns the Stripe.js instance.
+ * Reuses the same promise on subsequent calls.
+ */
+export function getStripe(): Promise<Stripe | null> {
+  if (!stripePromise) {
+    stripePromise = loadStripe(stripePublishableKey);
+  }
+  return stripePromise;
+}

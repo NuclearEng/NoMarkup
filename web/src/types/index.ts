@@ -297,6 +297,7 @@ export interface CreateJobInput {
   starting_bid_cents?: number;
   offer_accepted_cents?: number;
   auction_duration_hours: number;
+  photo_urls?: string[];
 }
 
 export interface UpdateJobInput {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { MetricsCard } from '@/components/admin/MetricsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import {
   useCategoryMetrics,
   useGrowthMetrics,
@@ -23,6 +24,53 @@ const GROUP_BY_OPTIONS = [
   { value: 'week', label: 'Weekly' },
   { value: 'month', label: 'Monthly' },
 ] as const;
+
+// TODO: Wire analytics toggle to a dedicated admin API endpoint (e.g., PUT /api/v1/admin/settings)
+// when the backend supports platform-wide feature flags. For now, persisted in localStorage.
+const ANALYTICS_STORAGE_KEY = 'nomarkup_analytics_enabled';
+
+function AnalyticsToggle() {
+  const [enabled, setEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem(ANALYTICS_STORAGE_KEY) === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem(ANALYTICS_STORAGE_KEY, String(enabled));
+  }, [enabled]);
+
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between p-4">
+        <div>
+          <p className="font-medium">Enable analytics for all users</p>
+          <p className="text-sm text-muted-foreground">
+            When enabled, all users will see analytics dashboards with spending/earnings data.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => { setEnabled(!enabled); }}
+          className={cn(
+            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'min-h-[44px] min-w-[44px] items-center',
+            enabled ? 'bg-primary' : 'bg-muted',
+          )}
+        >
+          <span
+            className={cn(
+              'pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform',
+              enabled ? 'translate-x-5' : 'translate-x-0',
+            )}
+          />
+        </button>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function AdminPlatformPage() {
   const [groupBy, setGroupBy] = useState('month');
@@ -50,6 +98,11 @@ export default function AdminPlatformPage() {
           Comprehensive platform performance metrics and growth trends.
         </p>
       </div>
+
+      {/* Analytics Toggle */}
+      <AnalyticsToggle />
+
+      <Separator />
 
       {/* Key Metrics */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

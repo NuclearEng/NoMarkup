@@ -7,6 +7,7 @@ import (
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -208,6 +209,206 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"verified": resp.GetVerified()})
+}
+
+// --- Phone verification ---
+
+type verifyPhoneRequest struct {
+	OTPCode string `json:"otp_code"`
+}
+
+// VerifyPhone handles POST /api/v1/auth/verify-phone.
+func (h *AuthHandler) VerifyPhone(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req verifyPhoneRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.userClient.VerifyPhone(r.Context(), &userv1.VerifyPhoneRequest{
+		UserId:  claims.UserID,
+		OtpCode: req.OTPCode,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"verified": resp.GetVerified()})
+}
+
+type sendPhoneOTPRequest struct {
+	Phone string `json:"phone"`
+}
+
+// SendPhoneOTP handles POST /api/v1/auth/send-phone-otp.
+func (h *AuthHandler) SendPhoneOTP(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req sendPhoneOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.userClient.SendPhoneOTP(r.Context(), &userv1.SendPhoneOTPRequest{
+		UserId: claims.UserID,
+		Phone:  req.Phone,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"sent": resp.GetSent()})
+}
+
+// --- Password reset ---
+
+type requestPasswordResetRequest struct {
+	Email string `json:"email"`
+}
+
+// RequestPasswordReset handles POST /api/v1/auth/request-password-reset.
+func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	var req requestPasswordResetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	_, err := h.userClient.RequestPasswordReset(r.Context(), &userv1.RequestPasswordResetRequest{
+		Email: req.Email,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	// Always return 200 to avoid email enumeration.
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type resetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
+}
+
+// ResetPassword handles POST /api/v1/auth/reset-password.
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req resetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.userClient.ResetPassword(r.Context(), &userv1.ResetPasswordRequest{
+		Token:       req.Token,
+		NewPassword: req.NewPassword,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
+}
+
+// --- MFA ---
+
+// EnableMFA handles POST /api/v1/auth/mfa/enable.
+func (h *AuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	resp, err := h.userClient.EnableMFA(r.Context(), &userv1.EnableMFARequest{
+		UserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"secret":       resp.GetSecret(),
+		"qr_code_url":  resp.GetQrCodeUrl(),
+		"backup_codes": resp.GetBackupCodes(),
+	})
+}
+
+type verifyMFARequest struct {
+	MFAChallengeToken string `json:"mfa_challenge_token"`
+	TOTPCode          string `json:"totp_code"`
+}
+
+// VerifyMFA handles POST /api/v1/auth/mfa/verify.
+func (h *AuthHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) {
+	var req verifyMFARequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.userClient.VerifyMFA(r.Context(), &userv1.VerifyMFARequest{
+		MfaChallengeToken: req.MFAChallengeToken,
+		TotpCode:          req.TOTPCode,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	if resp.GetRefreshToken() != "" {
+		h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+	}
+
+	writeJSON(w, http.StatusOK, authResponse{
+		AccessToken:          resp.GetAccessToken(),
+		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
+	})
+}
+
+type disableMFARequest struct {
+	TOTPCode string `json:"totp_code"`
+}
+
+// DisableMFA handles DELETE /api/v1/auth/mfa/disable.
+func (h *AuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req disableMFARequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.userClient.DisableMFA(r.Context(), &userv1.DisableMFARequest{
+		UserId:   claims.UserID,
+		TotpCode: req.TOTPCode,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
 }
 
 func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string) {

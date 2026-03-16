@@ -129,9 +129,23 @@ impl TrustService for TrustServiceImpl {
             .await
             .map_err(trust_error_to_status)?;
 
+        // Build snapshots with previous_overall computed from adjacent rows.
+        // Rows are in descending order, so each row's "previous" is the next row.
         let snapshots: Vec<trust_proto::TrustScoreSnapshot> = rows
             .iter()
-            .map(history_row_to_proto)
+            .enumerate()
+            .map(|(i, row)| {
+                let previous_overall = rows
+                    .get(i + 1)
+                    .map_or(0.0, |prev| prev.overall_score / 100.0);
+                let previous_tier = rows
+                    .get(i + 1)
+                    .map_or(
+                        nomarkup::common::v1::TrustTier::Unspecified as i32,
+                        |_prev| nomarkup::common::v1::TrustTier::Unspecified as i32,
+                    );
+                history_row_to_proto(row, previous_overall, previous_tier)
+            })
             .collect();
 
         let total_pages = if page_size > 0 {
@@ -227,7 +241,15 @@ impl TrustService for TrustServiceImpl {
     ) -> Result<Response<trust_proto::AdminOverrideTrustScoreResponse>, Status> {
         let req = request.into_inner();
         let user_id = parse_uuid(&req.user_id, "user_id")?;
-        let _admin_id = parse_uuid(&req.admin_id, "admin_id")?;
+
+        // Validate admin_id is provided and is a valid UUID.
+        if req.admin_id.is_empty() {
+            return Err(Status::invalid_argument("admin_id is required"));
+        }
+        let admin_id = parse_uuid(&req.admin_id, "admin_id")?;
+        if admin_id.is_nil() {
+            return Err(Status::invalid_argument("admin_id must not be nil"));
+        }
 
         // Map proto tier to an overall score (0-100 scale).
         let new_overall = match req.new_tier {
@@ -259,11 +281,77 @@ impl TrustService for TrustServiceImpl {
 
     async fn admin_get_trust_breakdown(
         &self,
-        _request: Request<trust_proto::AdminGetTrustBreakdownRequest>,
+        request: Request<trust_proto::AdminGetTrustBreakdownRequest>,
     ) -> Result<Response<trust_proto::AdminGetTrustBreakdownResponse>, Status> {
-        Err(Status::unimplemented(
-            "admin_get_trust_breakdown is not yet implemented",
-        ))
+        let req = request.into_inner();
+        let user_id = parse_uuid(&req.user_id, "user_id")?;
+
+        let row = self
+            .engine
+            .get_score(user_id)
+            .await
+            .map_err(trust_error_to_status)?;
+
+        let score = score_row_to_proto(&row);
+
+        // Parse the JSONB detail columns into breakdown protos.
+        let feedback = row
+            .feedback_details
+            .as_ref()
+            .and_then(|v| serde_json::from_value::<FeedbackDetails>(v.clone()).ok())
+            .unwrap_or_default();
+
+        let volume = row
+            .volume_details
+            .as_ref()
+            .and_then(|v| serde_json::from_value::<VolumeDetails>(v.clone()).ok())
+            .unwrap_or_default();
+
+        let risk = row
+            .risk_details
+            .as_ref()
+            .and_then(|v| serde_json::from_value::<RiskDetails>(v.clone()).ok())
+            .unwrap_or_default();
+
+        let fraud = row
+            .fraud_details
+            .as_ref()
+            .and_then(|v| serde_json::from_value::<FraudDetails>(v.clone()).ok())
+            .unwrap_or_default();
+
+        #[allow(clippy::cast_possible_truncation)]
+        Ok(Response::new(trust_proto::AdminGetTrustBreakdownResponse {
+            score: Some(score),
+            feedback: Some(trust_proto::FeedbackBreakdown {
+                average_rating: feedback.average_rating,
+                total_reviews: feedback.total_reviews,
+                five_star_count: feedback.five_star_count,
+                one_star_count: feedback.one_star_count,
+                rating_trend: feedback.rating_trend,
+                disputes_lost: feedback.disputes_lost,
+            }),
+            volume: Some(trust_proto::VolumeBreakdown {
+                total_jobs_completed: volume.total_jobs_completed,
+                jobs_last_90_days: volume.jobs_last_90_days,
+                repeat_customers: volume.repeat_customers,
+                on_time_rate: volume.on_time_rate,
+                total_gmv_cents: volume.total_gmv_cents as i32,
+            }),
+            risk: Some(trust_proto::RiskBreakdown {
+                cancellations: risk.cancellations,
+                disputes_filed: risk.disputes_filed,
+                late_deliveries: risk.late_deliveries,
+                no_shows: risk.no_shows,
+                cancellation_rate: risk.cancellation_rate,
+                dispute_rate: risk.dispute_rate,
+            }),
+            fraud: Some(trust_proto::FraudBreakdown {
+                fraud_signals_detected: fraud.fraud_signals_detected,
+                fraud_probability: fraud.fraud_probability,
+                has_active_flags: fraud.has_active_flags,
+                last_review_outcome: fraud.last_review_outcome,
+            }),
+        }))
     }
 }
 
@@ -303,7 +391,14 @@ fn score_row_to_proto(row: &TrustScoreRow) -> trust_proto::TrustScore {
 }
 
 /// Convert a `TrustScoreHistoryRow` (DB: 0-100 as f64) to a proto `TrustScoreSnapshot`.
-fn history_row_to_proto(row: &TrustScoreHistoryRow) -> trust_proto::TrustScoreSnapshot {
+///
+/// `previous_overall` and `previous_tier` are computed from adjacent history rows
+/// by the caller.
+fn history_row_to_proto(
+    row: &TrustScoreHistoryRow,
+    previous_overall: f64,
+    previous_tier: i32,
+) -> trust_proto::TrustScoreSnapshot {
     let overall = row.overall_score / 100.0;
     let feedback = row.feedback_score / 100.0;
     let volume = row.volume_score / 100.0;
@@ -323,8 +418,8 @@ fn history_row_to_proto(row: &TrustScoreHistoryRow) -> trust_proto::TrustScoreSn
             computed_at: Some(datetime_to_proto(row.created_at)),
         }),
         change_reason: row.trigger_event.clone(),
-        previous_overall: 0.0,
-        previous_tier: nomarkup::common::v1::TrustTier::Unspecified as i32,
+        previous_overall,
+        previous_tier,
         recorded_at: Some(datetime_to_proto(row.created_at)),
     }
 }

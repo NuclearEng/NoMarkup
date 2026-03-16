@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +146,24 @@ func (m *mockUserRepo) AdminSearchUsers(ctx context.Context, query, status strin
 	}
 	return nil, 0, nil
 }
+func (m *mockUserRepo) UpdatePhoneVerified(_ context.Context, _ string, _ bool) error {
+	return nil
+}
+func (m *mockUserRepo) CreateDocument(_ context.Context, _ *domain.Document) error {
+	return nil
+}
+func (m *mockUserRepo) GetDocument(_ context.Context, _ string) (*domain.Document, error) {
+	return nil, domain.ErrDocumentNotFound
+}
+func (m *mockUserRepo) GetDocumentByUserAndType(_ context.Context, _ string, _ domain.DocumentType) (*domain.Document, error) {
+	return nil, domain.ErrDocumentNotFound
+}
+func (m *mockUserRepo) ListDocuments(_ context.Context, _ string) ([]domain.Document, error) {
+	return nil, nil
+}
+func (m *mockUserRepo) UpdateDocumentStatus(_ context.Context, _ string, _ domain.DocumentStatus, _ string) error {
+	return nil
+}
 
 // --- helpers ---
 
@@ -155,11 +174,16 @@ func testKeyPair(t *testing.T) *rsa.PrivateKey {
 	return key
 }
 
+// testHMACKey returns a deterministic key for signing verification tokens in tests.
+func testHMACKey() string {
+	return strings.Repeat("k", 32)
+}
+
 func newTestAuth(t *testing.T, repo *mockUserRepo) *Auth {
 	t.Helper()
 	key := testKeyPair(t)
 	jwtMgr := NewJWTManager(key)
-	return NewAuth(repo, jwtMgr)
+	return NewAuth(repo, jwtMgr, testHMACKey())
 }
 
 // --- Auth.Register tests ---
@@ -216,7 +240,7 @@ func TestAuth_Register(t *testing.T) {
 			}
 			auth := newTestAuth(t, repo)
 
-			userID, pair, err := auth.Register(context.Background(), tt.input)
+			userID, pair, verifyToken, err := auth.Register(context.Background(), tt.input)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -232,6 +256,7 @@ func TestAuth_Register(t *testing.T) {
 			assert.NotEmpty(t, pair.AccessToken)
 			assert.NotEmpty(t, pair.RefreshToken)
 			assert.True(t, pair.AccessTokenExpiresAt.After(time.Now()))
+			assert.NotEmpty(t, verifyToken, "verification token should be returned")
 		})
 	}
 }
@@ -530,6 +555,14 @@ func TestAuth_Logout(t *testing.T) {
 func TestAuth_VerifyEmail(t *testing.T) {
 	t.Parallel()
 
+	// Helper to create a valid signed token for a given user ID.
+	makeToken := func(userID string) string {
+		key := testKeyPair(t)
+		jwtMgr := NewJWTManager(key)
+		a := NewAuth(nil, jwtMgr, testHMACKey())
+		return a.GenerateVerificationToken(userID)
+	}
+
 	tests := []struct {
 		name         string
 		token        string
@@ -538,8 +571,8 @@ func TestAuth_VerifyEmail(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name:  "successful_verification",
-			token: "user-id-123",
+			name:  "successful_verification_with_signed_token",
+			token: makeToken("user-id-123"),
 			updateFn: func(_ context.Context, _ string, _ bool) error {
 				return nil
 			},
@@ -547,7 +580,7 @@ func TestAuth_VerifyEmail(t *testing.T) {
 		},
 		{
 			name:  "user_not_found_returns_false",
-			token: "nonexistent-user",
+			token: makeToken("nonexistent-user"),
 			updateFn: func(_ context.Context, _ string, _ bool) error {
 				return domain.ErrUserNotFound
 			},
@@ -555,9 +588,25 @@ func TestAuth_VerifyEmail(t *testing.T) {
 		},
 		{
 			name:  "db_error_returns_error",
-			token: "user-id-456",
+			token: makeToken("user-id-456"),
 			updateFn: func(_ context.Context, _ string, _ bool) error {
 				return errors.New("db connection lost")
+			},
+			wantErr: true,
+		},
+		{
+			name:  "invalid_token_returns_error",
+			token: "not-a-valid-token",
+			updateFn: func(_ context.Context, _ string, _ bool) error {
+				return nil
+			},
+			wantErr: true,
+		},
+		{
+			name:  "raw_user_id_rejected",
+			token: "user-id-123",
+			updateFn: func(_ context.Context, _ string, _ bool) error {
+				return nil
 			},
 			wantErr: true,
 		},
@@ -581,6 +630,26 @@ func TestAuth_VerifyEmail(t *testing.T) {
 			assert.Equal(t, tt.wantVerified, verified)
 		})
 	}
+}
+
+func TestGenerateAndValidateVerificationToken(t *testing.T) {
+	t.Parallel()
+
+	auth := newTestAuth(t, &mockUserRepo{})
+
+	token := auth.GenerateVerificationToken("user-abc-123")
+	assert.NotEmpty(t, token)
+
+	// Valid token returns the user ID.
+	userID, err := auth.ValidateVerificationToken(token)
+	require.NoError(t, err)
+	assert.Equal(t, "user-abc-123", userID)
+
+	// Token signed with a different key is rejected.
+	otherAuth := NewAuth(nil, nil, "different-hmac-key-value-here")
+	_, err = otherAuth.ValidateVerificationToken(token)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
 }
 
 // --- Profile tests ---
@@ -873,7 +942,7 @@ func TestAuth_generateTokenPair_stores_refresh_token(t *testing.T) {
 
 	key := testKeyPair(t)
 	jwtMgr := NewJWTManager(key)
-	auth := NewAuth(repo, jwtMgr)
+	auth := NewAuth(repo, jwtMgr, testHMACKey())
 
 	user := &domain.User{
 		ID:    "user-1",

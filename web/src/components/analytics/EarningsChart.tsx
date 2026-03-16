@@ -81,7 +81,7 @@ export function EarningsChart({
         ) : (
           <div className="space-y-2">
             {/* Y-axis labels + bars area */}
-            <div className="flex items-end gap-1" style={{ minHeight: '200px' }}>
+            <div className="flex min-h-[200px] items-end gap-1">
               {data.map((point) => {
                 const earningsHeight =
                   (point.earnings_cents / maxEarnings) * 100;
@@ -91,8 +91,7 @@ export function EarningsChart({
                 return (
                   <div
                     key={point.period_start}
-                    className="group relative flex flex-1 flex-col items-center justify-end"
-                    style={{ height: '200px' }}
+                    className="group relative flex h-[200px] flex-1 flex-col items-center justify-end"
                   >
                     {/* Tooltip on hover */}
                     <div

@@ -24,9 +24,12 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, sign
 		if err != nil {
 			return fmt.Errorf("webhook signature verification failed: %w", err)
 		}
+	} else if os.Getenv("ENVIRONMENT") == "production" {
+		slog.Error("STRIPE_WEBHOOK_SECRET is required in production, refusing unsigned webhook")
+		return fmt.Errorf("webhook signature verification failed: STRIPE_WEBHOOK_SECRET not configured in production")
 	} else {
 		// Dev mode: parse event without signature verification.
-		slog.Warn("STRIPE_WEBHOOK_SECRET not set, skipping signature verification")
+		slog.Warn("STRIPE_WEBHOOK_SECRET not set, skipping signature verification (non-production)")
 		if err := json.Unmarshal(payload, &event); err != nil {
 			return fmt.Errorf("webhook parse failed: %w", err)
 		}

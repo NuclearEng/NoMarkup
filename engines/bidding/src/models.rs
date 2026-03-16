@@ -70,6 +70,9 @@ pub enum BidError {
     #[error("invalid amount: {0}")]
     InvalidAmount(String),
 
+    #[error("bid amount {amount} exceeds starting bid of {starting_bid}")]
+    AboveStartingBid { amount: i64, starting_bid: i64 },
+
     #[error("permission denied: {0}")]
     PermissionDenied(String),
 

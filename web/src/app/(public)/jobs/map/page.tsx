@@ -1,23 +1,36 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useSearchJobs } from '@/hooks/useJobs';
 import { formatCents } from '@/lib/utils';
-import type { SearchJobsParams } from '@/types';
+import type { Job, SearchJobsParams } from '@/types';
+
+// Dynamic import with ssr: false — Mapbox GL needs browser APIs
+const JobMap = dynamic(
+  () => import('@/components/maps/JobMap').then((mod) => mod.JobMap),
+  { ssr: false },
+);
 
 export default function JobsMapPage() {
   const [filters] = useState<SearchJobsParams>({
     page: 1,
-    page_size: 20,
+    page_size: 50,
     status: 'active',
   });
 
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+
   const { data, isLoading, isError } = useSearchJobs(filters);
+
+  const handleJobSelect = useCallback((job: Job) => {
+    setSelectedJob(job);
+  }, []);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -35,17 +48,58 @@ export default function JobsMapPage() {
         </Link>
       </div>
 
-      {/* Map placeholder */}
-      <div className="mb-8 flex min-h-[400px] items-center justify-center rounded-xl border-2 border-dashed bg-muted/50">
-        <div className="text-center">
-          <p className="text-lg font-medium text-muted-foreground">
-            Interactive Map
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Configure NEXT_PUBLIC_MAPBOX_TOKEN to enable the interactive job map
-          </p>
+      {/* Map */}
+      {isLoading ? (
+        <div className="mb-8 flex min-h-[400px] items-center justify-center rounded-xl border bg-muted/50">
+          <div className="text-center">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <p className="mt-2 text-sm text-muted-foreground">Loading jobs...</p>
+          </div>
         </div>
-      </div>
+      ) : isError ? (
+        <div className="mb-8 flex min-h-[400px] items-center justify-center rounded-xl border border-destructive/50 bg-destructive/5">
+          <p className="text-destructive">Failed to load job data for the map.</p>
+        </div>
+      ) : (
+        <JobMap
+          jobs={data?.jobs ?? []}
+          className="mb-8"
+          onJobSelect={handleJobSelect}
+        />
+      )}
+
+      {/* Selected job detail */}
+      {selectedJob ? (
+        <div className="mb-6">
+          <h2 className="mb-2 text-lg font-semibold">Selected Job</h2>
+          <Link href={`/jobs/${selectedJob.id}`} className="block">
+            <Card className="transition-shadow hover:shadow-md">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg font-semibold">{selectedJob.title}</h3>
+                    <p className="text-sm text-muted-foreground">{selectedJob.category_name}</p>
+                    {selectedJob.location_address ? (
+                      <p className="mt-1 text-sm text-muted-foreground">{selectedJob.location_address}</p>
+                    ) : null}
+                    <p className="mt-2 line-clamp-2 text-sm">{selectedJob.description}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <Badge variant="secondary">
+                      {String(selectedJob.bid_count)} bid{selectedJob.bid_count !== 1 ? 's' : ''}
+                    </Badge>
+                    {selectedJob.starting_bid_cents ? (
+                      <span className="text-sm font-semibold">
+                        {formatCents(selectedJob.starting_bid_cents)}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      ) : null}
 
       {/* Job list fallback */}
       <h2 className="mb-4 text-xl font-bold">Jobs Near You</h2>

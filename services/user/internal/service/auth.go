@@ -2,13 +2,17 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,22 +30,32 @@ const (
 	argonKeyLength   = 32
 )
 
+// verificationTokenExpiry is the validity duration for email verification tokens.
+const verificationTokenExpiry = 24 * time.Hour
+
 // Auth implements authentication business logic.
 type Auth struct {
-	repo domain.UserRepository
-	jwt  *JWTManager
+	repo               domain.UserRepository
+	jwt                *JWTManager
+	verificationSecret []byte
 }
 
-// NewAuth creates a new Auth service.
-func NewAuth(repo domain.UserRepository, jwt *JWTManager) *Auth {
-	return &Auth{repo: repo, jwt: jwt}
+// NewAuth creates a new Auth service. The verificationSecret is used to sign
+// email verification tokens with HMAC-SHA256. It must not be empty.
+func NewAuth(repo domain.UserRepository, jwt *JWTManager, verificationSecret string) *Auth {
+	return &Auth{
+		repo:               repo,
+		jwt:                jwt,
+		verificationSecret: []byte(verificationSecret),
+	}
 }
 
-// Register creates a new user account and returns the user ID and token pair.
-func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string, *domain.TokenPair, error) {
+// Register creates a new user account and returns the user ID, token pair, and a
+// verification token that should be sent to the user's email address.
+func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string, *domain.TokenPair, string, error) {
 	hash, err := hashPassword(input.Password)
 	if err != nil {
-		return "", nil, fmt.Errorf("register user: %w", err)
+		return "", nil, "", fmt.Errorf("register user: %w", err)
 	}
 
 	user := &domain.User{
@@ -54,16 +68,18 @@ func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string
 	}
 
 	if err := a.repo.CreateUser(ctx, user); err != nil {
-		return "", nil, fmt.Errorf("register user: %w", err)
+		return "", nil, "", fmt.Errorf("register user: %w", err)
 	}
 
 	pair, err := a.generateTokenPair(ctx, user, "", "")
 	if err != nil {
-		return "", nil, fmt.Errorf("register user: %w", err)
+		return "", nil, "", fmt.Errorf("register user: %w", err)
 	}
 
+	verificationToken := a.GenerateVerificationToken(user.ID)
+
 	slog.Info("user registered", "user_id", user.ID, "email", user.Email)
-	return user.ID, pair, nil
+	return user.ID, pair, verificationToken, nil
 }
 
 // Login authenticates a user and returns the user ID, token pair, and whether MFA is required.
@@ -151,16 +167,79 @@ func (a *Auth) Logout(ctx context.Context, rawToken string) error {
 	return nil
 }
 
-// VerifyEmail marks a user's email as verified using the email verification token.
-// For Slice 1, the token is the user ID (a real implementation would use a signed token).
+// VerifyEmail validates the HMAC-signed verification token and marks the user's
+// email as verified if the signature and expiration check pass.
 func (a *Auth) VerifyEmail(ctx context.Context, token string) (bool, error) {
-	if err := a.repo.UpdateEmailVerified(ctx, token, true); err != nil {
+	userID, err := a.ValidateVerificationToken(token)
+	if err != nil {
+		slog.Warn("email verification failed", "error", err)
+		return false, fmt.Errorf("verify email: %w", err)
+	}
+
+	if err := a.repo.UpdateEmailVerified(ctx, userID, true); err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return false, nil
 		}
 		return false, fmt.Errorf("verify email: %w", err)
 	}
+
+	slog.Info("email verified", "user_id", userID)
 	return true, nil
+}
+
+// GenerateVerificationToken creates an HMAC-SHA256 signed token encoding the
+// userID and an expiration timestamp (24 hours from now). The token format is:
+//
+//	base64url(userID + "." + expiryUnix + "." + hmacHex)
+func (a *Auth) GenerateVerificationToken(userID string) string {
+	expiry := time.Now().Add(verificationTokenExpiry).Unix()
+	payload := userID + "." + strconv.FormatInt(expiry, 10)
+
+	mac := hmac.New(sha256.New, a.verificationSecret)
+	mac.Write([]byte(payload))
+	sig := hex.EncodeToString(mac.Sum(nil))
+
+	raw := payload + "." + sig
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+// ValidateVerificationToken validates the HMAC signature and checks expiration.
+// Returns the embedded userID if valid.
+func (a *Auth) ValidateVerificationToken(token string) (string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", fmt.Errorf("validate verification token: %w", domain.ErrInvalidToken)
+	}
+
+	parts := strings.SplitN(string(decoded), ".", 3)
+	if len(parts) != 3 {
+		return "", fmt.Errorf("validate verification token: %w", domain.ErrInvalidToken)
+	}
+
+	userID := parts[0]
+	expiryStr := parts[1]
+	providedSig := parts[2]
+
+	// Verify HMAC signature.
+	payload := userID + "." + expiryStr
+	mac := hmac.New(sha256.New, a.verificationSecret)
+	mac.Write([]byte(payload))
+	expectedSig := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(providedSig), []byte(expectedSig)) {
+		return "", fmt.Errorf("validate verification token: %w", domain.ErrInvalidToken)
+	}
+
+	// Check expiration.
+	expiry, err := strconv.ParseInt(expiryStr, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("validate verification token: %w", domain.ErrInvalidToken)
+	}
+	if time.Now().Unix() > expiry {
+		return "", fmt.Errorf("validate verification token: %w", domain.ErrTokenExpired)
+	}
+
+	return userID, nil
 }
 
 // generateTokenPair creates a new access token + refresh token and stores the refresh token.

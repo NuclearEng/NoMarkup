@@ -2,6 +2,7 @@
 
 import { FraudAlertList } from '@/components/admin/FraudAlertList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useFraudAlerts } from '@/hooks/useFraud';
 import { cn } from '@/lib/utils';
 import { ALERT_STATUS, RISK_LEVEL } from '@/types';
@@ -20,34 +21,63 @@ function SummaryCards() {
     pageSize: 1,
   });
 
+  const { data: resolvedData, isLoading: resolvedLoading } = useFraudAlerts({
+    status: ALERT_STATUS.RESOLVED_FRAUD,
+    page: 1,
+    pageSize: 1,
+  });
+
+  const { data: dismissedData, isLoading: dismissedLoading } = useFraudAlerts({
+    status: ALERT_STATUS.DISMISSED,
+    page: 1,
+    pageSize: 1,
+  });
+
   const openCount = openData?.pagination.totalCount ?? 0;
   const criticalCount = criticalData?.pagination.totalCount ?? 0;
-  const isLoading = openLoading || criticalLoading;
+  const resolvedCount = resolvedData?.pagination.totalCount ?? 0;
+  const dismissedCount = dismissedData?.pagination.totalCount ?? 0;
+
+  // Calculate total signals from open alerts
+  const totalSignals = openData?.alerts.reduce(
+    (sum, alert) => sum + alert.signals.length,
+    0,
+  ) ?? 0;
+
+  // False positive rate: dismissed / (resolved + dismissed)
+  const totalResolved = resolvedCount + dismissedCount;
+  const falsePositiveRate = totalResolved > 0
+    ? ((dismissedCount / totalResolved) * 100).toFixed(1)
+    : '0.0';
 
   const cards = [
     {
       title: 'Open Alerts',
-      value: isLoading ? '--' : String(openCount),
+      value: openLoading ? null : String(openCount),
       description: 'Alerts awaiting review',
       accentClass: openCount > 0 ? 'text-blue-600' : 'text-foreground',
+      loading: openLoading,
     },
     {
       title: 'Critical Alerts',
-      value: isLoading ? '--' : String(criticalCount),
+      value: criticalLoading ? null : String(criticalCount),
       description: 'High-priority open alerts',
       accentClass: criticalCount > 0 ? 'text-red-600' : 'text-foreground',
+      loading: criticalLoading,
     },
     {
-      title: 'Signals This Week',
-      value: '--',
-      description: 'Aggregate signals (7 days)',
+      title: 'Open Signals',
+      value: openLoading ? null : String(totalSignals),
+      description: 'Signals in open alerts',
       accentClass: 'text-foreground',
+      loading: openLoading,
     },
     {
       title: 'False Positive Rate',
-      value: '--',
+      value: resolvedLoading || dismissedLoading ? null : `${falsePositiveRate}%`,
       description: 'Dismissed / total resolved',
       accentClass: 'text-foreground',
+      loading: resolvedLoading || dismissedLoading,
     },
   ];
 
@@ -61,9 +91,13 @@ function SummaryCards() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className={cn('text-2xl font-bold tabular-nums', card.accentClass)}>
-              {card.value}
-            </p>
+            {card.loading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <p className={cn('text-2xl font-bold tabular-nums', card.accentClass)}>
+                {card.value}
+              </p>
+            )}
             <p className="mt-1 text-xs text-muted-foreground">{card.description}</p>
           </CardContent>
         </Card>

@@ -188,9 +188,21 @@ impl BidService for BidServiceImpl {
         let job_id = parse_uuid(&req.job_id, "job_id")?;
         let customer_id = parse_uuid(&req.customer_id, "customer_id")?;
 
+        // Extract sort parameters from the proto request.
+        let (sort_field, sort_direction) = if let Some(ref sort) = req.sort {
+            let direction = match sort.direction {
+                1 => "asc",
+                2 => "desc",
+                _ => "",
+            };
+            (sort.field.as_str(), direction)
+        } else {
+            ("", "")
+        };
+
         let bids = self
             .engine
-            .list_bids_for_job(job_id, customer_id)
+            .list_bids_for_job(job_id, customer_id, sort_field, sort_direction)
             .await
             .map_err(bid_error_to_status)?;
 
@@ -429,7 +441,7 @@ fn bid_error_to_status(err: BidError) -> Status {
         BidError::AuctionClosed | BidError::AuctionNotActive => {
             Status::failed_precondition(err.to_string())
         }
-        BidError::BelowMinimum | BidError::InvalidAmount(_) => {
+        BidError::BelowMinimum | BidError::InvalidAmount(_) | BidError::AboveStartingBid { .. } => {
             Status::invalid_argument(err.to_string())
         }
         BidError::AlreadyBid => Status::already_exists(err.to_string()),

@@ -47,6 +47,8 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, st.Message())
 	case codes.FailedPrecondition:
 		writeError(w, http.StatusUnprocessableEntity, st.Message())
+	case codes.ResourceExhausted:
+		writeError(w, http.StatusTooManyRequests, st.Message())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}

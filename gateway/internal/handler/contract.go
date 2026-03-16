@@ -348,6 +348,246 @@ func (h *ContractHandler) CancelContract(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
 }
 
+// --- Change Order handlers ---
+
+type createChangeOrderRequest struct {
+	Description        string `json:"description"`
+	AmountDeltaCents   int64  `json:"amount_delta_cents"`
+}
+
+// CreateChangeOrder handles POST /api/v1/contracts/{id}/change-orders.
+func (h *ContractHandler) CreateChangeOrder(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	var req createChangeOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.contractClient.ProposeChangeOrder(r.Context(), &contractv1.ProposeChangeOrderRequest{
+		ContractId:       contractID,
+		ProposedBy:       claims.UserID,
+		Description:      req.Description,
+		AmountDeltaCents: req.AmountDeltaCents,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, protoChangeOrderToJSON(resp.GetChangeOrder()))
+}
+
+// ListChangeOrders handles GET /api/v1/contracts/{id}/change-orders.
+func (h *ContractHandler) ListChangeOrders(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	// Get the contract which includes change orders.
+	resp, err := h.contractClient.GetContract(r.Context(), &contractv1.GetContractRequest{
+		ContractId:       contractID,
+		RequestingUserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	orders := make([]map[string]interface{}, 0, len(resp.GetChangeOrders()))
+	for _, co := range resp.GetChangeOrders() {
+		orders = append(orders, protoChangeOrderToJSON(co))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"change_orders": orders,
+	})
+}
+
+type respondChangeOrderRequest struct {
+	Accepted bool `json:"accepted"`
+}
+
+// RespondToChangeOrder handles PUT /api/v1/contracts/{id}/change-orders/{orderId}.
+func (h *ContractHandler) RespondToChangeOrder(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	orderID := chi.URLParam(r, "orderId")
+	if orderID == "" {
+		writeError(w, http.StatusBadRequest, "change order id required")
+		return
+	}
+
+	var req respondChangeOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.contractClient.RespondToChangeOrder(r.Context(), &contractv1.RespondToChangeOrderRequest{
+		ChangeOrderId: orderID,
+		UserId:        claims.UserID,
+		Accepted:      req.Accepted,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoChangeOrderToJSON(resp.GetChangeOrder()))
+}
+
+// --- Dispute handlers ---
+
+type openDisputeRequest struct {
+	DisputeType      string   `json:"dispute_type"`
+	Description      string   `json:"description"`
+	EvidenceURLs     []string `json:"evidence_urls"`
+	IsGuaranteeClaim bool     `json:"is_guarantee_claim"`
+}
+
+// OpenDispute handles POST /api/v1/contracts/{id}/disputes.
+func (h *ContractHandler) OpenDispute(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	var req openDisputeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.contractClient.OpenDispute(r.Context(), &contractv1.OpenDisputeRequest{
+		ContractId:       contractID,
+		UserId:           claims.UserID,
+		DisputeType:      stringToDisputeType(req.DisputeType),
+		Description:      req.Description,
+		EvidenceUrls:     req.EvidenceURLs,
+		IsGuaranteeClaim: req.IsGuaranteeClaim,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, protoDisputeToJSON(resp.GetDispute()))
+}
+
+// --- No-show / Abandonment handlers ---
+
+// ReportNoShow handles POST /api/v1/contracts/{id}/report-noshow.
+func (h *ContractHandler) ReportNoShow(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	resp, err := h.contractClient.ReportNoShow(r.Context(), &contractv1.ReportNoShowRequest{
+		ContractId: contractID,
+		CustomerId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
+}
+
+// ReportAbandonment handles POST /api/v1/contracts/{id}/report-abandonment.
+func (h *ContractHandler) ReportAbandonment(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	resp, err := h.contractClient.ReportAbandonment(r.Context(), &contractv1.ReportAbandonmentRequest{
+		ContractId: contractID,
+		CustomerId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
+}
+
+// --- Contract PDF export ---
+
+// ExportPDF handles GET /api/v1/contracts/{id}/pdf.
+func (h *ContractHandler) ExportPDF(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	resp, err := h.contractClient.ExportContractPDF(r.Context(), &contractv1.ExportContractPDFRequest{
+		ContractId: contractID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"pdf_url": resp.GetPdfUrl(),
+	})
+}
+
 // --- Proto to JSON conversion helpers ---
 
 func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
@@ -512,6 +752,102 @@ func contractPaymentTimingToString(pt commonv1.PaymentTiming) string {
 		return "payment_plan"
 	case commonv1.PaymentTiming_PAYMENT_TIMING_RECURRING:
 		return "recurring"
+	default:
+		return "unspecified"
+	}
+}
+
+func protoDisputeToJSON(d *contractv1.Dispute) map[string]interface{} {
+	if d == nil {
+		return map[string]interface{}{}
+	}
+
+	result := map[string]interface{}{
+		"id":                 d.GetId(),
+		"contract_id":        d.GetContractId(),
+		"opened_by":          d.GetOpenedBy(),
+		"dispute_type":       disputeTypeToString(d.GetDisputeType()),
+		"description":        d.GetDescription(),
+		"evidence_urls":      d.GetEvidenceUrls(),
+		"status":             disputeStatusToString(d.GetStatus()),
+		"is_guarantee_claim": d.GetIsGuaranteeClaim(),
+		"created_at":         formatTimestamp(d.GetCreatedAt()),
+	}
+
+	if d.GetResolutionType() != "" {
+		result["resolution_type"] = d.GetResolutionType()
+	}
+	if d.GetResolutionNotes() != "" {
+		result["resolution_notes"] = d.GetResolutionNotes()
+	}
+	if d.GetRefundAmountCents() > 0 {
+		result["refund_amount_cents"] = d.GetRefundAmountCents()
+	}
+	if d.GetResolvedAt() != nil {
+		result["resolved_at"] = formatTimestamp(d.GetResolvedAt())
+	}
+
+	return result
+}
+
+func disputeTypeToString(dt contractv1.DisputeType) string {
+	switch dt {
+	case contractv1.DisputeType_DISPUTE_TYPE_QUALITY:
+		return "quality"
+	case contractv1.DisputeType_DISPUTE_TYPE_INCOMPLETE_WORK:
+		return "incomplete_work"
+	case contractv1.DisputeType_DISPUTE_TYPE_NO_SHOW:
+		return "no_show"
+	case contractv1.DisputeType_DISPUTE_TYPE_ABANDONMENT:
+		return "abandonment"
+	case contractv1.DisputeType_DISPUTE_TYPE_PAYMENT:
+		return "payment"
+	case contractv1.DisputeType_DISPUTE_TYPE_SCOPE_DISAGREEMENT:
+		return "scope_disagreement"
+	case contractv1.DisputeType_DISPUTE_TYPE_GUARANTEE_CLAIM:
+		return "guarantee_claim"
+	case contractv1.DisputeType_DISPUTE_TYPE_OTHER:
+		return "other"
+	default:
+		return "unspecified"
+	}
+}
+
+func stringToDisputeType(s string) contractv1.DisputeType {
+	switch s {
+	case "quality":
+		return contractv1.DisputeType_DISPUTE_TYPE_QUALITY
+	case "incomplete_work":
+		return contractv1.DisputeType_DISPUTE_TYPE_INCOMPLETE_WORK
+	case "no_show":
+		return contractv1.DisputeType_DISPUTE_TYPE_NO_SHOW
+	case "abandonment":
+		return contractv1.DisputeType_DISPUTE_TYPE_ABANDONMENT
+	case "payment":
+		return contractv1.DisputeType_DISPUTE_TYPE_PAYMENT
+	case "scope_disagreement":
+		return contractv1.DisputeType_DISPUTE_TYPE_SCOPE_DISAGREEMENT
+	case "guarantee_claim":
+		return contractv1.DisputeType_DISPUTE_TYPE_GUARANTEE_CLAIM
+	case "other":
+		return contractv1.DisputeType_DISPUTE_TYPE_OTHER
+	default:
+		return contractv1.DisputeType_DISPUTE_TYPE_UNSPECIFIED
+	}
+}
+
+func disputeStatusToString(ds contractv1.DisputeStatus) string {
+	switch ds {
+	case contractv1.DisputeStatus_DISPUTE_STATUS_OPEN:
+		return "open"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_UNDER_REVIEW:
+		return "under_review"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_RESOLVED:
+		return "resolved"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_ESCALATED:
+		return "escalated"
+	case contractv1.DisputeStatus_DISPUTE_STATUS_CLOSED:
+		return "closed"
 	default:
 		return "unspecified"
 	}

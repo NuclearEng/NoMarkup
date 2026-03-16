@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form';
 
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { CategorySelector } from '@/components/providers/CategorySelector';
+import { ImageUpload } from '@/components/ui/ImageUpload';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -87,6 +88,7 @@ export function JobPostingForm() {
       startingBidDollars: undefined,
       offerAcceptedDollars: undefined,
       auctionDurationHours: 72,
+      photoUrls: [],
     },
     mode: 'onTouched',
   });
@@ -134,6 +136,9 @@ export function JobPostingForm() {
         ? Math.round(values.offerAcceptedDollars * 100)
         : undefined,
       auction_duration_hours: values.auctionDurationHours,
+      photo_urls: values.photoUrls && values.photoUrls.length > 0
+        ? values.photoUrls
+        : undefined,
     };
   }
 
@@ -308,6 +313,18 @@ function StepCategory({ form }: { form: FormType }) {
 
 // -- Step 2: Details --
 function StepDetails({ form }: { form: FormType }) {
+  const photoUrls = form.watch('photoUrls') ?? [];
+
+  function handlePhotoUploaded(result: { confirmedUrl: string }) {
+    const current = form.getValues('photoUrls') ?? [];
+    form.setValue('photoUrls', [...current, result.confirmedUrl]);
+  }
+
+  function handlePhotoRemoved(url: string) {
+    const current = form.getValues('photoUrls') ?? [];
+    form.setValue('photoUrls', current.filter((u) => u !== url));
+  }
+
   return (
     <div className="space-y-6">
       <FormField
@@ -353,6 +370,25 @@ function StepDetails({ form }: { form: FormType }) {
           </FormItem>
         )}
       />
+
+      {/* Photo upload */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          Photos (optional)
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Add photos to help providers understand the job. Up to 10 images.
+        </p>
+        <ImageUpload
+          context="job_photo"
+          onUploadComplete={handlePhotoUploaded}
+          multiple
+          maxFiles={10}
+          existingImages={photoUrls}
+          onRemove={handlePhotoRemoved}
+          placeholder="Drop job photos here, or click to browse"
+        />
+      </div>
     </div>
   );
 }

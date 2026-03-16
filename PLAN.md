@@ -231,11 +231,11 @@ Zero tests exist today. Goal: 80% coverage on business logic, integration tests 
 ## Phase 9: Deployment & Production Readiness (Priority: Medium) ✅
 
 ### 9.1 Kubernetes Manifests
-- [ ] Deployment manifests for each service (deferred — placeholder deploy workflow created)
-- [ ] Service and Ingress definitions
-- [ ] ConfigMaps and Secrets
-- [ ] Horizontal Pod Autoscaler for gateway and bidding engine
-- [ ] PersistentVolumeClaims for database and MinIO
+- [x] Deployment manifests for each service
+- [x] Service and Ingress definitions
+- [x] ConfigMaps and Secrets
+- [x] Horizontal Pod Autoscaler for gateway and bidding engine
+- [x] PersistentVolumeClaims for database and MinIO
 
 ### 9.2 CI/CD Pipeline Enhancement
 - [x] Add test execution to CI (unit + integration)

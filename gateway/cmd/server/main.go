@@ -203,7 +203,11 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient)
 
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
-	webhookHandler := handler.NewWebhookHandler(paymentClient)
+	// Webhook handler receives raw payloads and forwards them to backend services
+	// which perform Stripe signature verification via stripe.webhooks.constructEvent().
+	webhookHandler := handler.NewWebhookHandler(paymentClient, subscriptionClient)
+	propertyHandler := handler.NewPropertyHandler(userClient)
+	verificationHandler := handler.NewVerificationHandler(userClient)
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
 	trustHandler := handler.NewTrustHandler(trustClient, cacheClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
@@ -219,7 +223,18 @@ func main() {
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
 
-	r := router.New(cfg.AllowedOrigins, cfg.IsProduction(), rateLimiter, authMW, authHandler, userHandler, providerHandler, categoriesHandler, jobHandler, bidHandler, contractHandler, paymentHandler, webhookHandler, chatHandler, reviewHandler, trustHandler, fraudHandler, notificationHandler, imageHandler, subscriptionHandler, analyticsHandler, adminUsersHandler, adminVerificationHandler, adminJobsHandler, adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler, adminPlatformHandler)
+	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
+	r := router.New(
+		cfg.AllowedOrigins, cfg.IsProduction(), rateLimiter, authMW,
+		authHandler, userHandler, providerHandler, categoriesHandler,
+		jobHandler, bidHandler, contractHandler, paymentHandler,
+		webhookHandler, chatHandler, reviewHandler, trustHandler,
+		fraudHandler, notificationHandler, imageHandler,
+		subscriptionHandler, analyticsHandler,
+		adminUsersHandler, adminVerificationHandler, adminJobsHandler,
+		adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler,
+		adminPlatformHandler, propertyHandler, verificationHandler,
+	)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

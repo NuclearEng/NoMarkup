@@ -20,14 +20,16 @@ import (
 // Server implements the UserService gRPC server.
 type Server struct {
 	userv1.UnimplementedUserServiceServer
-	auth    *service.Auth
-	profile *service.Profile
-	admin   *service.Admin
+	auth         *service.Auth
+	profile      *service.Profile
+	admin        *service.Admin
+	phone        *service.PhoneVerification
+	verification *service.Verification
 }
 
 // NewServer creates a new gRPC server for the user service.
-func NewServer(auth *service.Auth, profile *service.Profile, admin *service.Admin) *Server {
-	return &Server{auth: auth, profile: profile, admin: admin}
+func NewServer(auth *service.Auth, profile *service.Profile, admin *service.Admin, phone *service.PhoneVerification, verification *service.Verification) *Server {
+	return &Server{auth: auth, profile: profile, admin: admin, phone: phone, verification: verification}
 }
 
 // Register registers the user service with a gRPC server.
@@ -54,10 +56,12 @@ func (s *Server) Register(ctx context.Context, req *userv1.RegisterRequest) (*us
 		Roles:       roles,
 	}
 
-	userID, pair, err := s.auth.Register(ctx, input)
+	userID, pair, verificationToken, err := s.auth.Register(ctx, input)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
+
+	_ = verificationToken // TODO: send via email service when integrated
 
 	return &userv1.RegisterResponse{
 		UserId:               userID,
@@ -121,6 +125,129 @@ func (s *Server) VerifyEmail(ctx context.Context, req *userv1.VerifyEmailRequest
 		return nil, mapDomainError(err)
 	}
 	return &userv1.VerifyEmailResponse{Verified: verified}, nil
+}
+
+func (s *Server) SendPhoneOTP(ctx context.Context, req *userv1.SendPhoneOTPRequest) (*userv1.SendPhoneOTPResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetPhone() == "" {
+		return nil, status.Error(codes.InvalidArgument, "phone is required")
+	}
+
+	if err := s.phone.SendPhoneOTP(ctx, req.GetUserId(), req.GetPhone()); err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &userv1.SendPhoneOTPResponse{Sent: true}, nil
+}
+
+func (s *Server) VerifyPhone(ctx context.Context, req *userv1.VerifyPhoneRequest) (*userv1.VerifyPhoneResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetOtpCode() == "" {
+		return nil, status.Error(codes.InvalidArgument, "otp_code is required")
+	}
+
+	if err := s.phone.VerifyPhone(ctx, req.GetUserId(), req.GetOtpCode()); err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &userv1.VerifyPhoneResponse{Verified: true}, nil
+}
+
+func (s *Server) UploadDocument(ctx context.Context, req *userv1.UploadDocumentRequest) (*userv1.UploadDocumentResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetDocumentType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "document_type is required")
+	}
+
+	storageURL := ""
+	fileName := ""
+	if req.GetFile() != nil {
+		storageURL = req.GetFile().GetUrl()
+		fileName = req.GetFile().GetName()
+	}
+
+	doc, err := s.verification.UploadDocument(ctx, req.GetUserId(), domain.DocumentType(req.GetDocumentType()), fileName, storageURL)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.UploadDocumentResponse{
+		DocumentId: doc.ID,
+		Status:     stringToProtoVerificationStatus(string(doc.Status)),
+	}, nil
+}
+
+func (s *Server) GetDocumentStatus(ctx context.Context, req *userv1.GetDocumentStatusRequest) (*userv1.GetDocumentStatusResponse, error) {
+	if req.GetDocumentId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "document_id is required")
+	}
+
+	doc, err := s.verification.GetDocumentStatus(ctx, req.GetDocumentId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	resp := &userv1.GetDocumentStatusResponse{
+		Id:              doc.ID,
+		DocumentType:    string(doc.Type),
+		Status:          stringToProtoVerificationStatus(string(doc.Status)),
+		RejectionReason: doc.RejectionReason,
+	}
+	if doc.ExpiresAt != nil {
+		resp.ExpiresAt = timestamppb.New(*doc.ExpiresAt)
+	}
+	return resp, nil
+}
+
+func (s *Server) ListDocuments(ctx context.Context, req *userv1.ListDocumentsRequest) (*userv1.ListDocumentsResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	docs, err := s.verification.ListDocuments(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoDocs := make([]*userv1.GetDocumentStatusResponse, 0, len(docs))
+	for _, doc := range docs {
+		pd := &userv1.GetDocumentStatusResponse{
+			Id:              doc.ID,
+			DocumentType:    string(doc.Type),
+			Status:          stringToProtoVerificationStatus(string(doc.Status)),
+			RejectionReason: doc.RejectionReason,
+		}
+		if doc.ExpiresAt != nil {
+			pd.ExpiresAt = timestamppb.New(*doc.ExpiresAt)
+		}
+		protoDocs = append(protoDocs, pd)
+	}
+
+	return &userv1.ListDocumentsResponse{Documents: protoDocs}, nil
+}
+
+func (s *Server) AdminReviewDocument(ctx context.Context, req *userv1.AdminReviewDocumentRequest) (*userv1.AdminReviewDocumentResponse, error) {
+	if req.GetDocumentId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "document_id is required")
+	}
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	if err := s.verification.AdminReviewDocument(ctx, req.GetDocumentId(), req.GetApproved(), req.GetRejectionReason()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	resultStatus := commonv1.VerificationStatus_VERIFICATION_STATUS_VERIFIED
+	if !req.GetApproved() {
+		resultStatus = commonv1.VerificationStatus_VERIFICATION_STATUS_REJECTED
+	}
+
+	return &userv1.AdminReviewDocumentResponse{Status: resultStatus}, nil
 }
 
 func (s *Server) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*userv1.GetUserResponse, error) {
@@ -604,7 +731,35 @@ func domainProviderToProto(p *domain.ProviderProfile) *userv1.ProviderProfile {
 		})
 	}
 
+	if p.TrustScore != nil {
+		pb.TrustScore = &userv1.TrustScoreSummary{
+			OverallScore:  p.TrustScore.OverallScore,
+			Tier:          stringToProtoTrustTier(p.TrustScore.Tier),
+			FeedbackScore: p.TrustScore.FeedbackScore,
+			VolumeScore:   p.TrustScore.VolumeScore,
+			RiskScore:     p.TrustScore.RiskScore,
+			FraudScore:    p.TrustScore.FraudScore,
+		}
+	}
+
 	return pb
+}
+
+func stringToProtoTrustTier(tier string) commonv1.TrustTier {
+	switch tier {
+	case "under_review":
+		return commonv1.TrustTier_TRUST_TIER_UNDER_REVIEW
+	case "new":
+		return commonv1.TrustTier_TRUST_TIER_NEW
+	case "rising":
+		return commonv1.TrustTier_TRUST_TIER_RISING
+	case "trusted":
+		return commonv1.TrustTier_TRUST_TIER_TRUSTED
+	case "top_rated":
+		return commonv1.TrustTier_TRUST_TIER_TOP_RATED
+	default:
+		return commonv1.TrustTier_TRUST_TIER_UNSPECIFIED
+	}
 }
 
 func stringToProtoRole(r string) commonv1.UserRole {
@@ -677,6 +832,21 @@ func protoRoleToString(r commonv1.UserRole) string {
 	return strings.ToLower(name)
 }
 
+func stringToProtoVerificationStatus(s string) commonv1.VerificationStatus {
+	switch s {
+	case "not_uploaded":
+		return commonv1.VerificationStatus_VERIFICATION_STATUS_NOT_UPLOADED
+	case "pending":
+		return commonv1.VerificationStatus_VERIFICATION_STATUS_PENDING
+	case "verified":
+		return commonv1.VerificationStatus_VERIFICATION_STATUS_VERIFIED
+	case "rejected":
+		return commonv1.VerificationStatus_VERIFICATION_STATUS_REJECTED
+	default:
+		return commonv1.VerificationStatus_VERIFICATION_STATUS_UNSPECIFIED
+	}
+}
+
 // mapDomainError maps domain errors to gRPC status errors.
 func mapDomainError(err error) error {
 	switch {
@@ -702,6 +872,14 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid role")
 	case errors.Is(err, domain.ErrCategoryNotFound):
 		return status.Error(codes.NotFound, "category not found")
+	case errors.Is(err, domain.ErrInvalidToken):
+		return status.Error(codes.InvalidArgument, "invalid or expired verification token")
+	case errors.Is(err, domain.ErrInvalidOTP):
+		return status.Error(codes.InvalidArgument, "invalid OTP code")
+	case errors.Is(err, domain.ErrOTPExpired):
+		return status.Error(codes.InvalidArgument, "OTP code expired")
+	case errors.Is(err, domain.ErrDocumentNotFound):
+		return status.Error(codes.NotFound, "document not found")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

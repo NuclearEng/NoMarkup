@@ -316,6 +316,65 @@ func (h *BidHandler) ListMyBids(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// GetBid handles GET /api/v1/bids/{id}.
+func (h *BidHandler) GetBid(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	bidID := chi.URLParam(r, "id")
+	if bidID == "" {
+		writeError(w, http.StatusBadRequest, "bid id required")
+		return
+	}
+
+	resp, err := h.bidClient.GetBid(r.Context(), &bidv1.GetBidRequest{
+		BidId:            bidID,
+		RequestingUserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoBidToJSON(resp.GetBid()))
+}
+
+// GetBidAnalytics handles GET /api/v1/bids/analytics.
+func (h *BidHandler) GetBidAnalytics(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	jobID := r.URL.Query().Get("job_id")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job_id query parameter is required")
+		return
+	}
+
+	resp, err := h.bidClient.GetBidAnalytics(r.Context(), &bidv1.GetBidAnalyticsRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"total_bids":           resp.GetTotalBids(),
+		"lowest_bid_cents":     resp.GetLowestBidCents(),
+		"highest_bid_cents":    resp.GetHighestBidCents(),
+		"median_bid_cents":     resp.GetMedianBidCents(),
+		"offer_accepted_count": resp.GetOfferAcceptedCount(),
+		"first_bid_at":         formatTimestamp(resp.GetFirstBidAt()),
+		"last_bid_at":          formatTimestamp(resp.GetLastBidAt()),
+	})
+}
+
 // GetBidCount handles GET /api/v1/jobs/{jobID}/bids/count.
 func (h *BidHandler) GetBidCount(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "id")

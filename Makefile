@@ -107,6 +107,7 @@ test-services:
 	cd services/job && go test ./... -race
 	cd services/payment && go test ./... -race
 	cd services/chat && go test ./... -race
+	cd services/notification && go test ./... -race
 
 test-engines:
 	cd engines && cargo test --all
@@ -124,6 +125,7 @@ lint-go:
 	cd services/job && go vet ./...
 	cd services/payment && go vet ./...
 	cd services/chat && go vet ./...
+	cd services/notification && go vet ./...
 
 lint-rust:
 	cd engines && cargo clippy --all-targets -- -D warnings
@@ -137,6 +139,7 @@ fmt:
 	cd services/job && gofmt -w .
 	cd services/payment && gofmt -w .
 	cd services/chat && gofmt -w .
+	cd services/notification && gofmt -w .
 	cd engines && cargo fmt --all
 
 # ── Build ─────────────────────────────────────────────────────

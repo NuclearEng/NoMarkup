@@ -310,30 +310,193 @@ impl FraudService for FraudServiceImpl {
     // Admin RPCs (unimplemented for now)
     // -----------------------------------------------------------------------
 
+    #[allow(clippy::cast_possible_truncation)]
     async fn admin_list_fraud_alerts(
         &self,
-        _request: Request<fraud_proto::AdminListFraudAlertsRequest>,
+        request: Request<fraud_proto::AdminListFraudAlertsRequest>,
     ) -> Result<Response<fraud_proto::AdminListFraudAlertsResponse>, Status> {
-        Err(Status::unimplemented(
-            "admin_list_fraud_alerts is not yet implemented",
-        ))
+        let req = request.into_inner();
+
+        let (page, page_size) = if let Some(ref pag) = req.pagination {
+            (pag.page, pag.page_size)
+        } else {
+            (1, 20)
+        };
+
+        let offset = i64::from((page - 1).max(0)) * i64::from(page_size.max(1));
+        let limit = i64::from(page_size.clamp(1, 100));
+
+        // Map optional proto status filter to DB status strings.
+        let status_filter: Option<Vec<&str>> = req.status_filter.map(|s| match s {
+            1 => vec!["pending"],                        // OPEN
+            2 => vec!["confirmed"],                      // INVESTIGATING
+            3 => vec!["actioned"],                       // RESOLVED_FRAUD
+            4 => vec!["dismissed"],                      // RESOLVED_LEGITIMATE
+            5 => vec!["dismissed"],                      // DISMISSED
+            _ => vec!["pending", "confirmed", "actioned", "dismissed"],
+        });
+
+        // Map optional risk filter to DB severity strings.
+        let severity_filter: Option<&str> = req.risk_filter.map(|r| match r {
+            1 => "low",
+            2 => "medium",
+            3 | 4 => "high",
+            _ => "low",
+        });
+
+        // Build the query dynamically based on filters.
+        let (rows, total) = self
+            .engine
+            .admin_list_alerts(status_filter.as_deref(), severity_filter, limit, offset)
+            .await
+            .map_err(fraud_error_to_status)?;
+
+        // Group signals by user_id to form FraudAlert aggregates.
+        let alerts: Vec<fraud_proto::FraudAlert> = rows
+            .iter()
+            .map(|row| {
+                let signal = signal_row_to_proto(row);
+                let risk_level = RiskLevel::from_db_severity(&row.severity);
+                let alert_status = match row.status.as_str() {
+                    "pending" => 1,    // OPEN
+                    "confirmed" => 2,  // INVESTIGATING
+                    "actioned" => 3,   // RESOLVED_FRAUD
+                    "dismissed" => 4,  // RESOLVED_LEGITIMATE
+                    _ => 0,
+                };
+
+                fraud_proto::FraudAlert {
+                    id: row.id.to_string(),
+                    user_id: row.user_id.to_string(),
+                    signals: vec![signal],
+                    aggregate_risk: risk_level.to_proto_i32(),
+                    status: alert_status,
+                    assigned_to: String::new(),
+                    resolution_notes: String::new(),
+                    created_at: Some(datetime_to_proto(row.created_at)),
+                    resolved_at: None,
+                }
+            })
+            .collect();
+
+        let total_pages = if page_size > 0 {
+            ((total + i64::from(page_size) - 1) / i64::from(page_size)) as i32
+        } else {
+            0
+        };
+
+        Ok(Response::new(fraud_proto::AdminListFraudAlertsResponse {
+            alerts,
+            pagination: Some(nomarkup::common::v1::PaginationResponse {
+                total_count: total as i32,
+                page,
+                page_size,
+                total_pages,
+                has_next: page < total_pages,
+            }),
+        }))
     }
 
     async fn admin_review_fraud_alert(
         &self,
-        _request: Request<fraud_proto::AdminReviewFraudAlertRequest>,
+        request: Request<fraud_proto::AdminReviewFraudAlertRequest>,
     ) -> Result<Response<fraud_proto::AdminReviewFraudAlertResponse>, Status> {
-        Err(Status::unimplemented(
-            "admin_review_fraud_alert is not yet implemented",
-        ))
+        let req = request.into_inner();
+
+        if req.alert_id.is_empty() {
+            return Err(Status::invalid_argument("alert_id is required"));
+        }
+        if req.admin_id.is_empty() {
+            return Err(Status::invalid_argument("admin_id is required"));
+        }
+
+        let alert_id = parse_uuid(&req.alert_id, "alert_id")?;
+        let _admin_id = parse_uuid(&req.admin_id, "admin_id")?;
+
+        // Map proto AlertStatus to DB status string.
+        let new_status = match req.new_status {
+            3 => "actioned",           // RESOLVED_FRAUD
+            4 | 5 => "dismissed",      // RESOLVED_LEGITIMATE / DISMISSED
+            2 => "confirmed",          // INVESTIGATING
+            _ => return Err(Status::invalid_argument("invalid new_status")),
+        };
+
+        // Determine action based on restriction/ban flags.
+        let action = if req.ban_user {
+            Some("ban")
+        } else if req.restrict_user {
+            Some("restrict")
+        } else {
+            None
+        };
+
+        let row = self
+            .engine
+            .admin_review_alert(alert_id, new_status, &req.resolution_notes, action)
+            .await
+            .map_err(fraud_error_to_status)?;
+
+        let signal = signal_row_to_proto(&row);
+        let risk_level = RiskLevel::from_db_severity(&row.severity);
+        let alert_status = match row.status.as_str() {
+            "pending" => 1,
+            "confirmed" => 2,
+            "actioned" => 3,
+            "dismissed" => 4,
+            _ => 0,
+        };
+
+        Ok(Response::new(fraud_proto::AdminReviewFraudAlertResponse {
+            alert: Some(fraud_proto::FraudAlert {
+                id: row.id.to_string(),
+                user_id: row.user_id.to_string(),
+                signals: vec![signal],
+                aggregate_risk: risk_level.to_proto_i32(),
+                status: alert_status,
+                assigned_to: req.admin_id,
+                resolution_notes: req.resolution_notes,
+                created_at: Some(datetime_to_proto(row.created_at)),
+                resolved_at: Some(datetime_to_proto(row.updated_at)),
+            }),
+        }))
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     async fn admin_get_fraud_dashboard(
         &self,
         _request: Request<fraud_proto::AdminGetFraudDashboardRequest>,
     ) -> Result<Response<fraud_proto::AdminGetFraudDashboardResponse>, Status> {
-        Err(Status::unimplemented(
-            "admin_get_fraud_dashboard is not yet implemented",
+        let stats = self
+            .engine
+            .admin_get_dashboard_stats()
+            .await
+            .map_err(fraud_error_to_status)?;
+
+        Ok(Response::new(
+            fraud_proto::AdminGetFraudDashboardResponse {
+                total_alerts: stats.total_alerts,
+                open_alerts: stats.open_alerts,
+                critical_alerts: stats.critical_alerts,
+                users_restricted: stats.users_restricted,
+                users_banned: stats.users_banned,
+                signal_breakdown: stats
+                    .signal_breakdown
+                    .into_iter()
+                    .map(|(signal_type, count)| {
+                        let percentage = if stats.total_alerts > 0 {
+                            f64::from(count) / f64::from(stats.total_alerts)
+                        } else {
+                            0.0
+                        };
+                        fraud_proto::FraudSignalBreakdown {
+                            signal_type: signal_type.to_proto_i32(),
+                            count,
+                            percentage,
+                        }
+                    })
+                    .collect(),
+                false_positive_rate: stats.false_positive_rate,
+            },
         ))
     }
 }

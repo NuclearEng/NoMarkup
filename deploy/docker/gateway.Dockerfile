@@ -2,7 +2,7 @@
 # Multi-stage build for the Go API Gateway.
 # Build context must be the repository root.
 
-FROM golang:1.26-alpine AS builder
+FROM golang:1.22-alpine AS builder
 WORKDIR /app
 RUN echo "══════════════════════════════════════════════════════════" && \
     echo "  GATEWAY · Build started"                                 && \

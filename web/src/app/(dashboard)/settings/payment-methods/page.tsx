@@ -3,6 +3,7 @@
 import { CreditCard, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { AddPaymentMethodForm } from '@/components/payments/AddPaymentMethodForm';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,13 +14,16 @@ import {
   usePaymentMethods,
   useStripeAccountStatus,
 } from '@/hooks/usePayments';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function PaymentMethodsPage() {
+  const queryClient = useQueryClient();
   const { data: methodsData, isLoading, isError } = usePaymentMethods();
   const deleteMethod = useDeletePaymentMethod();
   const stripeStatus = useStripeAccountStatus();
   const createStripeAccount = useCreateStripeAccount();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
 
   const methods = methodsData?.payment_methods ?? [];
 
@@ -33,6 +37,11 @@ export default function PaymentMethodsPage() {
     }
   }
 
+  function handleAddSuccess() {
+    setShowAddForm(false);
+    void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -44,11 +53,30 @@ export default function PaymentMethodsPage() {
             Manage your payment methods and payout settings
           </p>
         </div>
-        <Button className="min-h-[44px]" disabled>
-          <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-          Add Method
-        </Button>
+        {!showAddForm ? (
+          <Button
+            className="min-h-[44px]"
+            onClick={() => { setShowAddForm(true); }}
+          >
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+            Add Method
+          </Button>
+        ) : null}
       </div>
+
+      {showAddForm ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Add Payment Method</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AddPaymentMethodForm
+              onSuccess={handleAddSuccess}
+              onCancel={() => { setShowAddForm(false); }}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Payment Methods List */}
       <Card>

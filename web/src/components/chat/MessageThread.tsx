@@ -1,9 +1,10 @@
 'use client';
 
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, CheckCheck, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { useMarkRead, useMessages } from '@/hooks/useChannels';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -37,12 +38,119 @@ function isSameDay(a: string, b: string): boolean {
   );
 }
 
+function isProposedTermsMessage(content: string): boolean {
+  return content.startsWith('[Proposed Terms]');
+}
+
+interface ParsedTerms {
+  paymentType: string;
+  amount: string;
+  milestones: string | null;
+  description: string;
+}
+
+function parseProposedTerms(content: string): ParsedTerms | null {
+  if (!isProposedTermsMessage(content)) return null;
+
+  const lines = content.split('\n');
+  let paymentType = '';
+  let amount = '';
+  let milestones: string | null = null;
+  let description = '';
+  let inMilestones = false;
+  const milestoneLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('Payment Type: ')) {
+      paymentType = line.replace('Payment Type: ', '');
+      inMilestones = false;
+    } else if (line.startsWith('Amount: ')) {
+      amount = line.replace('Amount: ', '');
+      inMilestones = false;
+    } else if (line.startsWith('Milestones:')) {
+      inMilestones = true;
+    } else if (line.startsWith('Description: ')) {
+      description = line.replace('Description: ', '');
+      inMilestones = false;
+    } else if (inMilestones && line.trim()) {
+      milestoneLines.push(line.trim());
+    }
+  }
+
+  if (milestoneLines.length > 0) {
+    milestones = milestoneLines.join('\n');
+  }
+
+  return { paymentType, amount, milestones, description };
+}
+
+function ProposedTermsCard({ content }: { content: string }) {
+  const terms = parseProposedTerms(content);
+  if (!terms) return null;
+
+  return (
+    <Card className="border-primary/30 bg-primary/5">
+      <CardContent className="space-y-2 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+          Proposed Terms
+        </p>
+        <div className="grid gap-1.5 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Payment</span>
+            <span className="font-medium capitalize">{terms.paymentType.replace(/_/g, ' ')}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Amount</span>
+            <span className="font-semibold">{terms.amount}</span>
+          </div>
+          {terms.milestones ? (
+            <div>
+              <span className="text-muted-foreground">Milestones</span>
+              <div className="mt-1 space-y-0.5 pl-2 text-xs">
+                {terms.milestones.split('\n').map((m, i) => (
+                  <p key={`ms-${String(i)}`}>{m}</p>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {terms.description ? (
+            <div>
+              <span className="text-muted-foreground">Scope</span>
+              <p className="mt-0.5 text-xs">{terms.description}</p>
+            </div>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReadReceipt({ isOwnMessage, isRead }: { isOwnMessage: boolean; isRead: boolean }) {
+  if (!isOwnMessage) return null;
+
+  return (
+    <span
+      className="ml-1 inline-flex items-center"
+      title={isRead ? 'Read' : 'Sent'}
+      aria-label={isRead ? 'Message read' : 'Message sent'}
+    >
+      {isRead ? (
+        <CheckCheck className="h-3 w-3 text-primary" aria-hidden="true" />
+      ) : (
+        <Check className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+      )}
+    </span>
+  );
+}
+
 function MessageBubble({
   message,
   isOwnMessage,
+  isLastRead,
 }: {
   message: ChatMessage;
   isOwnMessage: boolean;
+  isLastRead: boolean;
 }) {
   if (message.message_type === MESSAGE_TYPE.SYSTEM) {
     return (
@@ -53,6 +161,8 @@ function MessageBubble({
       </div>
     );
   }
+
+  const isTermsProposal = isProposedTermsMessage(message.content);
 
   return (
     <div
@@ -68,24 +178,36 @@ function MessageBubble({
         <div className="mb-0.5 flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">{message.sender_id}</span>
         </div>
-        <div
-          className={cn(
-            'rounded-lg px-3 py-2 text-sm',
-            isOwnMessage
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-foreground',
-          )}
-        >
-          {message.is_deleted ? (
+        {message.is_deleted ? (
+          <div
+            className={cn(
+              'rounded-lg px-3 py-2 text-sm',
+              isOwnMessage
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-foreground',
+            )}
+          >
             <span className="italic text-muted-foreground">This message was deleted</span>
-          ) : (
+          </div>
+        ) : isTermsProposal ? (
+          <ProposedTermsCard content={message.content} />
+        ) : (
+          <div
+            className={cn(
+              'rounded-lg px-3 py-2 text-sm',
+              isOwnMessage
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-foreground',
+            )}
+          >
             <p className="whitespace-pre-wrap break-words">{message.content}</p>
-          )}
-        </div>
+          </div>
+        )}
         <div className="mt-0.5 flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground">
             {formatRelativeTime(new Date(message.created_at))}
           </span>
+          <ReadReceipt isOwnMessage={isOwnMessage} isRead={isLastRead} />
           {message.flagged_contact_info ? (
             <span className="flex items-center gap-0.5 text-[10px] text-amber-600" title="May contain contact information">
               <AlertTriangle className="h-3 w-3" aria-hidden="true" />
@@ -113,6 +235,41 @@ export function MessageThread({ channelId }: { channelId: string }) {
 
   const messages = data?.messages ?? [];
   const hasMore = data?.has_more ?? false;
+
+  // Determine the last message read by the other party.
+  // For simplicity, consider all non-own messages as "read" indicators.
+  // The last own message before any non-own message is considered "read".
+  const lastReadOwnMessageId = (() => {
+    if (!user) return null;
+    let lastOwnId: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg) continue;
+      if (msg.sender_id !== user.id) {
+        // Found a message from the other party, mark the last own message before it as read
+        for (let j = i - 1; j >= 0; j--) {
+          const ownMsg = messages[j];
+          if (ownMsg && ownMsg.sender_id === user.id) {
+            lastOwnId = ownMsg.id;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    // If the last message is our own and there are prior non-own messages, it's read
+    if (!lastOwnId && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.sender_id === user?.id) {
+        // Check if there are other participant messages before
+        const hasOtherMessages = messages.some((m) => m.sender_id !== user?.id);
+        if (hasOtherMessages) {
+          lastOwnId = lastMsg.id;
+        }
+      }
+    }
+    return lastOwnId;
+  })();
 
   // Mark channel as read when viewing
   useEffect(() => {
@@ -214,6 +371,7 @@ export function MessageThread({ channelId }: { channelId: string }) {
               <MessageBubble
                 message={message}
                 isOwnMessage={user?.id === message.sender_id}
+                isLastRead={message.id === lastReadOwnMessageId}
               />
             </div>
           );

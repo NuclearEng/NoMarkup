@@ -43,7 +43,28 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci
-      - run: cd web && npm run test -- --coverage
+      - run: cd web && npm run test -- --coverage --coverage.thresholds.lines=80 --coverage.thresholds.functions=80 --coverage.thresholds.branches=80 --coverage.thresholds.statements=80
+
+  e2e-test:
+    name: Playwright E2E Tests
+    needs: [web-lint-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E tests
+        working-directory: web
+        run: npx playwright test
 
   # ── Go Gateway ────────────────────────────────────────────────
 
@@ -98,7 +119,7 @@ jobs:
 
   build:
     name: Build All
-    needs: [web-test, gateway-test, services-test, engines-test]
+    needs: [web-test, e2e-test, gateway-test, services-test, engines-test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

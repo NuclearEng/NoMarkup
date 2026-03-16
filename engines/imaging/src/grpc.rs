@@ -53,7 +53,7 @@ impl ImagingService for ImagingServiceImpl {
         }
 
         let source_key = url_to_key(&req.source_url);
-        let opts = proto_options_to_domain(req.options.as_ref());
+        let opts = proto_options_to_domain(req.options.as_ref())?;
 
         let (variant, blur_hash) = self
             .pipeline
@@ -126,7 +126,19 @@ impl ImagingService for ImagingServiceImpl {
             }
 
             let source_key = url_to_key(&img_req.source_url);
-            let opts = proto_options_to_domain(img_req.options.as_ref());
+            let opts = match proto_options_to_domain(img_req.options.as_ref()) {
+                Ok(o) => o,
+                Err(e) => {
+                    results.push(imaging_proto::BatchImageResult {
+                        index: idx as i32,
+                        success: false,
+                        result: None,
+                        error: e.message().to_string(),
+                    });
+                    failed += 1;
+                    continue;
+                }
+            };
 
             match self.pipeline.process_image(&source_key, &opts).await {
                 Ok((variant, _blur)) => {
@@ -386,12 +398,19 @@ fn url_to_key(url: &str) -> String {
 }
 
 /// Convert proto `ProcessingOptions` to domain `ProcessingOptions`.
-fn proto_options_to_domain(opts: Option<&imaging_proto::ProcessingOptions>) -> ProcessingOptions {
+///
+/// # Errors
+///
+/// Returns a gRPC `Status::invalid_argument` if an unsupported format
+/// (e.g. AVIF) is requested.
+fn proto_options_to_domain(
+    opts: Option<&imaging_proto::ProcessingOptions>,
+) -> Result<ProcessingOptions, Status> {
     let Some(o) = opts else {
-        return ProcessingOptions::default();
+        return Ok(ProcessingOptions::default());
     };
 
-    ProcessingOptions {
+    Ok(ProcessingOptions {
         max_width: if o.max_width > 0 {
             o.max_width as u32
         } else {
@@ -408,11 +427,11 @@ fn proto_options_to_domain(opts: Option<&imaging_proto::ProcessingOptions>) -> P
         } else {
             85
         },
-        format: proto_image_format(o.output_format),
+        format: proto_image_format(o.output_format)?,
         strip_exif: o.strip_exif,
         auto_orient: o.auto_orient,
         generate_blur_hash: o.generate_blur_hash,
-    }
+    })
 }
 
 /// Convert proto resize mode int to domain enum.
@@ -426,12 +445,15 @@ fn proto_resize_mode(v: i32) -> ResizeMode {
 }
 
 /// Convert proto image format int to domain enum.
-fn proto_image_format(v: i32) -> ImageFormat {
+///
+/// Returns `Err` for AVIF (value 4) since it is not yet supported.
+fn proto_image_format(v: i32) -> Result<ImageFormat, Status> {
     match v {
-        1 => ImageFormat::Jpeg,
-        2 => ImageFormat::Png,
-        3 => ImageFormat::WebP,
-        _ => ImageFormat::Jpeg,
+        1 | 0 => Ok(ImageFormat::Jpeg),
+        2 => Ok(ImageFormat::Png),
+        3 => Ok(ImageFormat::WebP),
+        4 => Err(Status::invalid_argument("AVIF format not yet supported")),
+        _ => Ok(ImageFormat::Jpeg),
     }
 }
 

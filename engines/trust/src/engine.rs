@@ -835,6 +835,8 @@ impl TrustScorer {
     // -----------------------------------------------------------------------
 
     /// Determine the trust tier from the overall score and volume/feedback data.
+    /// Checks user verification status from the `users` table for tiers that
+    /// require it (Trusted and `TopRated`).
     async fn determine_tier(
         &self,
         overall: f64,
@@ -857,6 +859,18 @@ impl TrustScorer {
             return TrustTier::UnderReview;
         }
 
+        // Query user verification status. Default to unverified if the
+        // query fails or the column is absent.
+        let is_verified = sqlx::query_as::<_, VerifiedRow>(
+            "SELECT COALESCE(identity_verified, false) AS is_verified FROM users WHERE id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .ok()
+        .flatten()
+        .map_or(false, |r| r.is_verified);
+
         let requirements = all_tier_requirements();
 
         // Check tiers from highest to lowest.
@@ -866,6 +880,7 @@ impl TrustScorer {
                 && volume.total_jobs_completed >= req.min_completed_jobs
                 && feedback.total_reviews >= req.min_reviews
                 && feedback.average_rating >= req.min_rating
+                && (!req.requires_verification || is_verified)
             {
                 return TrustTier::TopRated;
             }
@@ -877,6 +892,7 @@ impl TrustScorer {
                 && volume.total_jobs_completed >= req.min_completed_jobs
                 && feedback.total_reviews >= req.min_reviews
                 && feedback.average_rating >= req.min_rating
+                && (!req.requires_verification || is_verified)
             {
                 return TrustTier::Trusted;
             }
@@ -887,6 +903,7 @@ impl TrustScorer {
             if overall >= req.min_overall_score
                 && volume.total_jobs_completed >= req.min_completed_jobs
                 && feedback.total_reviews >= req.min_reviews
+                && (!req.requires_verification || is_verified)
             {
                 return TrustTier::Rising;
             }
@@ -908,6 +925,11 @@ struct CountRow {
 #[derive(sqlx::FromRow)]
 struct RolesRow {
     roles: Vec<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct VerifiedRow {
+    is_verified: bool,
 }
 
 #[derive(sqlx::FromRow)]

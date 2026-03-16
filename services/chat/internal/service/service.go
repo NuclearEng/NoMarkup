@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -12,8 +14,9 @@ import (
 
 // Service implements chat business logic.
 type Service struct {
-	repo   domain.ChannelRepository
-	pubsub *PubSub
+	repo       domain.ChannelRepository
+	pubsub     *PubSub
+	bidChecker domain.BidChecker
 }
 
 // New creates a new chat service.
@@ -21,7 +24,13 @@ func New(repo domain.ChannelRepository, pubsub *PubSub) *Service {
 	return &Service{repo: repo, pubsub: pubsub}
 }
 
-// CreateChannel validates inputs and creates a new channel.
+// SetBidChecker sets the bid checker for chat access validation.
+func (s *Service) SetBidChecker(bc domain.BidChecker) {
+	s.bidChecker = bc
+}
+
+// CreateChannel validates inputs, enforces chat access rules (FR-8.1),
+// and creates a new channel.
 func (s *Service) CreateChannel(ctx context.Context, jobID, customerID, providerID, channelType string) (*domain.Channel, error) {
 	if jobID == "" {
 		return nil, fmt.Errorf("create channel: job_id is required")
@@ -34,6 +43,22 @@ func (s *Service) CreateChannel(ctx context.Context, jobID, customerID, provider
 	}
 	if channelType == "" {
 		channelType = "pre_award"
+	}
+
+	// FR-8.1: For post-bid chat, verify the provider has an active bid on the job.
+	if channelType == "pre_award" && s.bidChecker != nil {
+		hasBid, err := s.bidChecker.HasActiveBid(ctx, jobID, providerID)
+		if err != nil {
+			// Log but don't block -- fail open to avoid breaking chat when
+			// the bid engine is temporarily unavailable.
+			slog.Warn("failed to check bid status for chat access",
+				"job_id", jobID,
+				"provider_id", providerID,
+				"error", err,
+			)
+		} else if !hasBid {
+			return nil, fmt.Errorf("create channel: %w", domain.ErrNoBidForChat)
+		}
 	}
 
 	ch := &domain.Channel{
@@ -146,17 +171,21 @@ func (s *Service) SendTypingIndicator(ctx context.Context, channelID, userID str
 	return s.pubsub.PublishTyping(ctx, channelID, userID)
 }
 
-// Contact info detection patterns.
+// Contact info detection patterns (FR-8.8).
 var (
 	phoneRegex = regexp.MustCompile(
 		`(?:(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})`,
 	)
 	emailRegex = regexp.MustCompile(
-		`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`,
+		`\b[\w.+-]+@[\w.-]+\.\w{2,}\b`,
+	)
+	socialHandleRegex = regexp.MustCompile(
+		`(?i)(?:^|[\s(])@[a-zA-Z0-9_.]{2,30}\b`,
 	)
 )
 
-// DetectContactInfo checks if the content contains phone numbers or email addresses.
+// DetectContactInfo checks if the content contains phone numbers, email addresses,
+// or social media handles that could facilitate off-platform communication.
 func DetectContactInfo(content string) bool {
 	if phoneRegex.MatchString(content) {
 		return true
@@ -164,5 +193,100 @@ func DetectContactInfo(content string) bool {
 	if emailRegex.MatchString(content) {
 		return true
 	}
+	if socialHandleRegex.MatchString(content) {
+		return true
+	}
 	return false
+}
+
+// SendProposedTerms sends a PROPOSED_TERMS message type with structured data
+// (FR-8.9). The terms are stored as JSON metadata on the message.
+func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID string, terms map[string]interface{}) (*domain.Message, error) {
+	ch, err := s.repo.GetChannel(ctx, channelID, senderID)
+	if err != nil {
+		return nil, err
+	}
+
+	if ch.ProviderID != senderID {
+		return nil, fmt.Errorf("send proposed terms: only the provider can propose terms")
+	}
+
+	if ch.Status == "closed" || ch.Status == "read_only" {
+		return nil, fmt.Errorf("send proposed terms: %w", domain.ErrChannelClosed)
+	}
+
+	metadataJSON, err := json.Marshal(terms)
+	if err != nil {
+		return nil, fmt.Errorf("send proposed terms: marshal terms: %w", err)
+	}
+
+	// Build a human-readable summary for the content.
+	content := "Proposed terms sent. Please review."
+
+	msg := &domain.Message{
+		ChannelID:   channelID,
+		SenderID:    senderID,
+		MessageType: domain.MessageTypeProposedTerms,
+		Content:     content,
+		MetadataJSON: metadataJSON,
+	}
+
+	result, err := s.repo.SendMessage(ctx, msg)
+	if err != nil {
+		return nil, fmt.Errorf("send proposed terms: %w", err)
+	}
+
+	if s.pubsub != nil {
+		_ = s.pubsub.Publish(ctx, channelID, *result)
+	}
+
+	slog.Info("proposed terms sent",
+		"channel_id", channelID,
+		"sender_id", senderID,
+	)
+
+	return result, nil
+}
+
+// RespondToTerms sends a system message indicating the customer accepted or
+// rejected the proposed terms.
+func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID string, accepted bool) (*domain.Message, error) {
+	ch, err := s.repo.GetChannel(ctx, channelID, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	if ch.CustomerID != customerID {
+		return nil, fmt.Errorf("respond to terms: only the customer can respond")
+	}
+
+	action := "rejected"
+	if accepted {
+		action = "accepted"
+	}
+
+	content := fmt.Sprintf("Customer %s the proposed terms.", action)
+	metadata, _ := json.Marshal(map[string]interface{}{
+		"action":     action,
+		"responded_by": customerID,
+	})
+
+	msg := &domain.Message{
+		ChannelID:    channelID,
+		SenderID:     customerID,
+		MessageType:  domain.MessageTypeSystem,
+		Content:      content,
+		MetadataJSON: metadata,
+	}
+
+	result, err := s.repo.SendMessage(ctx, msg)
+	if err != nil {
+		return nil, fmt.Errorf("respond to terms: %w", err)
+	}
+
+	if s.pubsub != nil {
+		_ = s.pubsub.Publish(ctx, channelID, *result)
+	}
+
+	return result, nil
 }

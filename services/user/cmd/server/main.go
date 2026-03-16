@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -22,7 +23,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	grpcserver "github.com/nomarkup/nomarkup/services/user/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
 	"github.com/nomarkup/nomarkup/services/user/internal/service"
@@ -80,13 +83,62 @@ func main() {
 	}
 	slog.Info("connected to database")
 
+	// Load verification secret for email verification tokens.
+	verificationSecret := os.Getenv("VERIFICATION_SECRET")
+	if verificationSecret == "" {
+		verificationSecret = os.Getenv("SESSION_SECRET")
+	}
+	if verificationSecret == "" {
+		slog.Error("VERIFICATION_SECRET (or SESSION_SECRET) is required")
+		os.Exit(1)
+	}
+
+	// Connect to Redis for OTP storage.
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379"
+	}
+	redisOpts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		slog.Error("invalid REDIS_URL", "error", err)
+		os.Exit(1)
+	}
+	rdb := redis.NewClient(redisOpts)
+	defer rdb.Close()
+
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		slog.Error("failed to connect to Redis", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("connected to Redis")
+
+	// Connect to notification service for SMS delivery.
+	var smsClient service.SMSDelivery
+	notifAddr := os.Getenv("NOTIFICATION_SERVICE_ADDR")
+	if notifAddr != "" {
+		notifConn, err := grpclib.NewClient(notifAddr,
+			grpclib.WithTransportCredentials(insecure.NewCredentials()),
+			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
+		)
+		if err != nil {
+			slog.Warn("failed to connect to notification service, SMS delivery disabled", "addr", notifAddr, "error", err)
+		} else {
+			smsClient = notificationv1.NewNotificationServiceClient(notifConn)
+			slog.Info("notification service connected", "addr", notifAddr)
+		}
+	} else {
+		slog.Warn("NOTIFICATION_SERVICE_ADDR not set, SMS delivery disabled")
+	}
+
 	// Wire up dependencies.
 	repo := repository.NewPostgresRepository(pool)
 	jwtManager := service.NewJWTManager(privateKey)
-	authService := service.NewAuth(repo, jwtManager)
+	authService := service.NewAuth(repo, jwtManager, verificationSecret)
 	profileService := service.NewProfile(repo)
 	adminService := service.NewAdmin(repo)
-	srv := grpcserver.NewServer(authService, profileService, adminService)
+	phoneService := service.NewPhoneVerification(repo, rdb, smsClient)
+	verificationService := service.NewVerification(repo)
+	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))

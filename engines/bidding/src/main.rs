@@ -1,4 +1,5 @@
-#![deny(clippy::all, clippy::pedantic)]
+#![deny(clippy::all, clippy::pedantic, unsafe_code)]
+#![warn(clippy::nursery)]
 
 mod engine;
 mod grpc;
@@ -28,11 +29,18 @@ fn init_tracing(service_name: &str) {
     let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok();
 
     if let Some(endpoint) = endpoint {
-        let exporter = SpanExporter::builder()
+        let Ok(exporter) = SpanExporter::builder()
             .with_tonic()
             .with_endpoint(&endpoint)
             .build()
-            .expect("failed to create OTLP exporter");
+        else {
+            tracing::warn!("failed to create OTLP exporter, continuing without tracing export");
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .init();
+            return;
+        };
 
         let name = std::env::var("OTEL_SERVICE_NAME")
             .unwrap_or_else(|_| service_name.to_string());
@@ -86,9 +94,9 @@ async fn main() -> anyhow::Result<()> {
     tonic::transport::Server::builder()
         .add_service(BidServiceServer::new(service))
         .serve_with_shutdown(addr, async {
-            tokio::signal::ctrl_c()
-                .await
-                .expect("failed to listen for ctrl_c");
+            if let Err(e) = tokio::signal::ctrl_c().await {
+                tracing::error!(error = %e, "failed to listen for ctrl_c");
+            }
             tracing::info!("bidding engine shutting down");
         })
         .await?;
