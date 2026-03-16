@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type {
   TierRequirementsResponse,
   TrustScore,
@@ -10,9 +10,16 @@ import type {
 export function useTrustScore(userId: string) {
   return useQuery({
     queryKey: ['trust-score', userId],
-    queryFn: () =>
-      api.get<{ score: TrustScore }>(`/api/v1/users/${userId}/trust-score`),
+    queryFn: async () => {
+      try {
+        return await api.get<{ score: TrustScore }>(`/api/v1/users/${userId}/trust-score`);
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 404 || error.status === 500)) return null;
+        throw error;
+      }
+    },
     enabled: !!userId,
+    retry: false,
   });
 }
 
@@ -25,15 +32,31 @@ export function useTrustHistory(userId: string, page?: number, pageSize?: number
 
   return useQuery({
     queryKey: ['trust-history', userId, page, pageSize],
-    queryFn: () => api.get<TrustScoreHistoryResponse>(path),
+    queryFn: async () => {
+      try {
+        return await api.get<TrustScoreHistoryResponse>(path);
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 404 || error.status === 500)) return null;
+        throw error;
+      }
+    },
     enabled: !!userId,
+    retry: false,
   });
 }
 
 export function useTierRequirements() {
   return useQuery({
     queryKey: ['tier-requirements'],
-    queryFn: () => api.get<TierRequirementsResponse>('/api/v1/trust/tiers'),
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours — tier requirements rarely change
+    queryFn: async () => {
+      try {
+        return await api.get<TierRequirementsResponse>('/api/v1/trust/tiers');
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 404 || error.status === 500)) return null;
+        throw error;
+      }
+    },
+    staleTime: 24 * 60 * 60 * 1000,
+    retry: false,
   });
 }

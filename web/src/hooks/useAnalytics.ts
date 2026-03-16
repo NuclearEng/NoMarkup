@@ -40,10 +40,11 @@ export function useProviderAnalytics(startDate?: string, endDate?: string) {
       try {
         return await api.get<ProviderAnalytics>(path);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null;
+        if (error instanceof ApiError && (error.status === 404 || error.status === 500)) return null;
         throw error;
       }
     },
+    retry: false,
   });
 }
 
@@ -61,7 +62,15 @@ export function useProviderEarnings(
 
   return useQuery({
     queryKey: ['provider-earnings', startDate, endDate, groupBy],
-    queryFn: () => api.get<ProviderEarningsResponse>(path),
+    queryFn: async () => {
+      try {
+        return await api.get<ProviderEarningsResponse>(path);
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 404 || error.status === 500)) return null;
+        throw error;
+      }
+    },
+    retry: false,
   });
 }
 
@@ -79,6 +88,14 @@ export function useCustomerSpending(
 
   return useQuery({
     queryKey: ['customer-spending', startDate, endDate, groupBy],
-    queryFn: () => api.get<CustomerSpendingResponse>(path),
+    queryFn: async () => {
+      try {
+        return await api.get<CustomerSpendingResponse>(path);
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 404 || error.status === 500)) return null;
+        throw error;
+      }
+    },
+    retry: false,
   });
 }

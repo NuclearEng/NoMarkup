@@ -24,7 +24,7 @@ export function Logo({ size = 'md', className = '', asLink = true }: LogoProps) 
 
   if (asLink) {
     return (
-      <Link href="/" className="text-foreground no-underline" aria-label="NoMarkup Home">
+      <Link href="/" className="inline-flex min-h-[44px] items-center text-foreground no-underline" aria-label="NoMarkup Home">
         {content}
       </Link>
     );
