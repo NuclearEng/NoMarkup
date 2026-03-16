@@ -42,7 +42,7 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID := chi.URLParam(r, "jobID")
+	jobID := chi.URLParam(r, "id")
 	if jobID == "" {
 		writeError(w, http.StatusBadRequest, "job id required")
 		return
@@ -149,7 +149,7 @@ func (h *BidHandler) AcceptOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID := chi.URLParam(r, "jobID")
+	jobID := chi.URLParam(r, "id")
 	if jobID == "" {
 		writeError(w, http.StatusBadRequest, "job id required")
 		return
@@ -180,7 +180,7 @@ func (h *BidHandler) AwardBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID := chi.URLParam(r, "jobID")
+	jobID := chi.URLParam(r, "id")
 	if jobID == "" {
 		writeError(w, http.StatusBadRequest, "job id required")
 		return
@@ -218,7 +218,7 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID := chi.URLParam(r, "jobID")
+	jobID := chi.URLParam(r, "id")
 	if jobID == "" {
 		writeError(w, http.StatusBadRequest, "job id required")
 		return
@@ -235,18 +235,14 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 
 	bids := make([]map[string]interface{}, 0, len(resp.GetBids()))
 	for _, bwp := range resp.GetBids() {
-		entry := protoBidToJSON(bwp.GetBid())
-		if bwp.GetProviderDisplayName() != "" {
-			entry["provider_display_name"] = bwp.GetProviderDisplayName()
-		}
-		if bwp.GetProviderBusinessName() != "" {
-			entry["provider_business_name"] = bwp.GetProviderBusinessName()
-		}
-		if bwp.GetProviderAvatarUrl() != "" {
-			entry["provider_avatar_url"] = bwp.GetProviderAvatarUrl()
-		}
-		if bwp.GetJobsCompleted() > 0 {
-			entry["jobs_completed"] = bwp.GetJobsCompleted()
+		entry := map[string]interface{}{
+			"bid":                    protoBidToJSON(bwp.GetBid()),
+			"provider_display_name":  bwp.GetProviderDisplayName(),
+			"provider_business_name": bwp.GetProviderBusinessName(),
+			"provider_avatar_url":    bwp.GetProviderAvatarUrl(),
+			"jobs_completed":         bwp.GetJobsCompleted(),
+			"trust_score":            nil,
+			"review_summary":         nil,
 		}
 		bids = append(bids, entry)
 	}
@@ -309,11 +305,11 @@ func (h *BidHandler) ListMyBids(w http.ResponseWriter, r *http.Request) {
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
-			"total_count": pg.GetTotalCount(),
+			"totalCount": pg.GetTotalCount(),
 			"page":        pg.GetPage(),
-			"page_size":   pg.GetPageSize(),
-			"total_pages": pg.GetTotalPages(),
-			"has_next":    pg.GetHasNext(),
+			"pageSize":   pg.GetPageSize(),
+			"totalPages": pg.GetTotalPages(),
+			"hasNext":    pg.GetHasNext(),
 		}
 	}
 
@@ -322,7 +318,7 @@ func (h *BidHandler) ListMyBids(w http.ResponseWriter, r *http.Request) {
 
 // GetBidCount handles GET /api/v1/jobs/{jobID}/bids/count.
 func (h *BidHandler) GetBidCount(w http.ResponseWriter, r *http.Request) {
-	jobID := chi.URLParam(r, "jobID")
+	jobID := chi.URLParam(r, "id")
 	if jobID == "" {
 		writeError(w, http.StatusBadRequest, "job id required")
 		return
@@ -366,16 +362,14 @@ func protoBidToJSON(b *bidv1.Bid) map[string]interface{} {
 		result["withdrawn_at"] = formatTimestamp(b.GetWithdrawnAt())
 	}
 
-	if len(b.GetBidHistory()) > 0 {
-		history := make([]map[string]interface{}, 0, len(b.GetBidHistory()))
-		for _, u := range b.GetBidHistory() {
-			history = append(history, map[string]interface{}{
-				"amount_cents": u.GetAmountCents(),
-				"updated_at":   formatTimestamp(u.GetUpdatedAt()),
-			})
-		}
-		result["bid_history"] = history
+	history := make([]map[string]interface{}, 0, len(b.GetBidHistory()))
+	for _, u := range b.GetBidHistory() {
+		history = append(history, map[string]interface{}{
+			"amount_cents": u.GetAmountCents(),
+			"updated_at":   formatTimestamp(u.GetUpdatedAt()),
+		})
 	}
+	result["bid_history"] = history
 
 	return result
 }

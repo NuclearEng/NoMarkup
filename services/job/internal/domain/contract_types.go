@@ -35,7 +35,7 @@ type Contract struct {
 	Status             string // pending_acceptance, active, completed, cancelled, voided, disputed, abandoned, suspended
 	CustomerAccepted   bool
 	ProviderAccepted   bool
-	AcceptanceDeadline time.Time
+	AcceptanceDeadline *time.Time
 	AcceptedAt         *time.Time
 	StartedAt          *time.Time
 	CompletedAt        *time.Time

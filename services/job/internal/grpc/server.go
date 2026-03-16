@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -688,6 +689,7 @@ func mapDomainError(err error) error {
 	case errors.Is(err, domain.ErrInvalidDuration):
 		return status.Error(codes.InvalidArgument, "auction duration must be between 1 and 168 hours")
 	default:
+		slog.Error("unmapped domain error", "error", err)
 		return status.Error(codes.Internal, "internal error")
 	}
 }

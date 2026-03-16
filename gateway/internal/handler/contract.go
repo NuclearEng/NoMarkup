@@ -160,11 +160,11 @@ func (h *ContractHandler) ListContracts(w http.ResponseWriter, r *http.Request) 
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
-			"total_count": pg.GetTotalCount(),
+			"totalCount": pg.GetTotalCount(),
 			"page":        pg.GetPage(),
-			"page_size":   pg.GetPageSize(),
-			"total_pages": pg.GetTotalPages(),
-			"has_next":    pg.GetHasNext(),
+			"pageSize":   pg.GetPageSize(),
+			"totalPages": pg.GetTotalPages(),
+			"hasNext":    pg.GetHasNext(),
 		}
 	}
 
@@ -381,13 +381,11 @@ func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
 		result["completed_at"] = formatTimestamp(c.GetCompletedAt())
 	}
 
-	if len(c.GetMilestones()) > 0 {
-		milestones := make([]map[string]interface{}, 0, len(c.GetMilestones()))
-		for _, m := range c.GetMilestones() {
-			milestones = append(milestones, protoMilestoneToJSON(m))
-		}
-		result["milestones"] = milestones
+	milestones := make([]map[string]interface{}, 0, len(c.GetMilestones()))
+	for _, m := range c.GetMilestones() {
+		milestones = append(milestones, protoMilestoneToJSON(m))
 	}
+	result["milestones"] = milestones
 
 	return result
 }

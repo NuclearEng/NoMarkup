@@ -3,7 +3,9 @@ package grpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
+	"time"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
@@ -310,7 +312,7 @@ func domainContractToProto(c *domain.Contract) *contractv1.Contract {
 		Status:             stringToProtoContractStatus(c.Status),
 		CustomerAccepted:   c.CustomerAccepted,
 		ProviderAccepted:   c.ProviderAccepted,
-		AcceptanceDeadline: timestamppb.New(c.AcceptanceDeadline),
+		AcceptanceDeadline: optionalTimestamp(c.AcceptanceDeadline),
 		CreatedAt:          timestamppb.New(c.CreatedAt),
 	}
 
@@ -568,6 +570,14 @@ func mapContractDomainError(err error) error {
 	case errors.Is(err, domain.ErrDisputeAlreadyResolved):
 		return status.Error(codes.FailedPrecondition, "dispute is already resolved")
 	default:
+		slog.Error("unmapped contract error", "error", err)
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+func optionalTimestamp(t *time.Time) *timestamppb.Timestamp {
+	if t == nil {
+		return nil
+	}
+	return timestamppb.New(*t)
 }

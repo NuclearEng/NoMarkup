@@ -303,10 +303,10 @@ func paginationToJSON(pg *commonv1.PaginationResponse) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	return map[string]interface{}{
-		"total_count": pg.GetTotalCount(),
+		"totalCount": pg.GetTotalCount(),
 		"page":        pg.GetPage(),
-		"page_size":   pg.GetPageSize(),
-		"total_pages": pg.GetTotalPages(),
-		"has_next":    pg.GetHasNext(),
+		"pageSize":   pg.GetPageSize(),
+		"totalPages": pg.GetTotalPages(),
+		"hasNext":    pg.GetHasNext(),
 	}
 }

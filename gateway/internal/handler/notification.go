@@ -75,11 +75,11 @@ func (h *NotificationHandler) ListNotifications(w http.ResponseWriter, r *http.R
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
-			"total_count": pg.GetTotalCount(),
+			"totalCount": pg.GetTotalCount(),
 			"page":        pg.GetPage(),
-			"page_size":   pg.GetPageSize(),
-			"total_pages": pg.GetTotalPages(),
-			"has_next":    pg.GetHasNext(),
+			"pageSize":   pg.GetPageSize(),
+			"totalPages": pg.GetTotalPages(),
+			"hasNext":    pg.GetHasNext(),
 		}
 	}
 

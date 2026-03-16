@@ -41,7 +41,7 @@ func (s *ContractService) CreateContractFromAward(
 		Status:             "pending_acceptance",
 		CustomerAccepted:   false,
 		ProviderAccepted:   false,
-		AcceptanceDeadline: time.Now().Add(72 * time.Hour),
+		AcceptanceDeadline: timePtr(time.Now().Add(72 * time.Hour)),
 	}
 
 	// If no milestones provided, create a single milestone for the full amount.
@@ -97,7 +97,7 @@ func (s *ContractService) AcceptContract(ctx context.Context, contractID, userID
 	}
 
 	// Validate within deadline.
-	if time.Now().After(contract.AcceptanceDeadline) {
+	if contract.AcceptanceDeadline != nil && time.Now().After(*contract.AcceptanceDeadline) {
 		return nil, fmt.Errorf("accept contract: %w", domain.ErrDeadlineExpired)
 	}
 
@@ -484,3 +484,5 @@ func (s *ContractService) CancelContract(ctx context.Context, contractID, userID
 	slog.Info("contract cancelled", "contract_id", contractID, "user_id", userID)
 	return updated, nil
 }
+
+func timePtr(t time.Time) *time.Time { return &t }

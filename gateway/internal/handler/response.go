@@ -24,6 +24,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 func writeGRPCError(w http.ResponseWriter, err error) {
 	st, ok := status.FromError(err)
 	if !ok {
+		slog.Error("non-grpc error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -41,6 +42,7 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 	case codes.FailedPrecondition:
 		writeError(w, http.StatusUnprocessableEntity, st.Message())
 	default:
+		slog.Error("grpc error", "code", st.Code(), "message", st.Message())
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}
 }

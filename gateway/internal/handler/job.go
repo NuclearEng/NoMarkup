@@ -380,11 +380,11 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
-			"total_count": pg.GetTotalCount(),
+			"totalCount": pg.GetTotalCount(),
 			"page":        pg.GetPage(),
-			"page_size":   pg.GetPageSize(),
-			"total_pages": pg.GetTotalPages(),
-			"has_next":    pg.GetHasNext(),
+			"pageSize":   pg.GetPageSize(),
+			"totalPages": pg.GetTotalPages(),
+			"hasNext":    pg.GetHasNext(),
 		}
 	}
 
@@ -425,7 +425,20 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	// Populate customer info from proto or defaults.
+	if c := detail.GetCustomer(); c != nil && c.GetId() != "" {
+		result["customer_display_name"] = c.GetDisplayName()
+		result["customer_avatar_url"] = c.GetAvatarUrl()
+		result["customer_member_since"] = formatTimestamp(c.GetCreatedAt())
+		result["customer_jobs_posted"] = 0
+	} else {
+		result["customer_display_name"] = "Customer"
+		result["customer_avatar_url"] = nil
+		result["customer_member_since"] = formatTimestamp(detail.GetJob().GetCreatedAt())
+		result["customer_jobs_posted"] = 0
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"job": result})
 }
 
 // ListMine handles GET /api/v1/jobs/mine.
@@ -478,11 +491,11 @@ func (h *JobHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
-			"total_count": pg.GetTotalCount(),
+			"totalCount": pg.GetTotalCount(),
 			"page":        pg.GetPage(),
-			"page_size":   pg.GetPageSize(),
-			"total_pages": pg.GetTotalPages(),
-			"has_next":    pg.GetHasNext(),
+			"pageSize":   pg.GetPageSize(),
+			"totalPages": pg.GetTotalPages(),
+			"hasNext":    pg.GetHasNext(),
 		}
 	}
 

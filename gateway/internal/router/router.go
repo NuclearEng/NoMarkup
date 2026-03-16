@@ -73,11 +73,26 @@ func New(
 		r.Get("/tree", categoriesHandler.Tree)
 	})
 
-	// Public job routes (no auth required for search and view)
+	// All job routes in one group (mix of public and authenticated)
 	r.Route("/api/v1/jobs", func(r chi.Router) {
+		// Public
 		r.Get("/", jobHandler.Search)
-		// GET /api/v1/jobs/{id} - public with optional auth for address visibility
 		r.Get("/{id}", optionalAuth(authMW, jobHandler.GetJob))
+		r.Get("/{id}/bids", optionalAuth(authMW, bidHandler.ListBidsForJob))
+		r.Get("/{id}/bids/count", bidHandler.GetBidCount)
+
+		// Authenticated
+		r.With(authMW.Handler).Get("/mine", jobHandler.ListMine)
+		r.With(authMW.Handler).Get("/drafts", jobHandler.ListDrafts)
+		r.With(authMW.Handler).Post("/", jobHandler.Create)
+		r.With(authMW.Handler).Patch("/{id}", jobHandler.Update)
+		r.With(authMW.Handler).Delete("/{id}", jobHandler.Delete)
+		r.With(authMW.Handler).Post("/{id}/publish", jobHandler.Publish)
+		r.With(authMW.Handler).Post("/{id}/close", jobHandler.Close)
+		r.With(authMW.Handler).Post("/{id}/cancel", jobHandler.Cancel)
+		r.With(authMW.Handler).Post("/{id}/bids", bidHandler.PlaceBid)
+		r.With(authMW.Handler).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
+		r.With(authMW.Handler).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
 	})
 
 	// Public trust tier requirements (no auth required)
@@ -131,23 +146,7 @@ func New(
 			r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
 		})
 
-		r.Route("/jobs", func(r chi.Router) {
-			r.Post("/", jobHandler.Create)
-			r.Get("/mine", jobHandler.ListMine)
-			r.Get("/drafts", jobHandler.ListDrafts)
-			r.Patch("/{id}", jobHandler.Update)
-			r.Delete("/{id}", jobHandler.Delete)
-			r.Post("/{id}/publish", jobHandler.Publish)
-			r.Post("/{id}/close", jobHandler.Close)
-			r.Post("/{id}/cancel", jobHandler.Cancel)
-
-			// Bid routes nested under jobs
-			r.Post("/{jobID}/bids", bidHandler.PlaceBid)
-			r.Post("/{jobID}/bids/accept-offer", bidHandler.AcceptOffer)
-			r.Post("/{jobID}/bids/{bidID}/award", bidHandler.AwardBid)
-			r.Get("/{jobID}/bids", bidHandler.ListBidsForJob)
-			r.Get("/{jobID}/bids/count", bidHandler.GetBidCount)
-		})
+		// Job write routes moved to public group with per-route auth
 
 		// Bid routes not nested under a specific job
 		r.Route("/bids", func(r chi.Router) {
