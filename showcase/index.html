@@ -1,0 +1,2680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NoMarkup — The Market Sets The Price</title>
+  <meta name="description" content="Reverse-auction service marketplace. Customers post jobs, providers compete on price. Fair market rates for everyone.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600;700&family=Syne:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ═══════════════════════════════════════
+       RESET & VARIABLES
+       ═══════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #07080b;
+      --bg-surface: #0e1017;
+      --bg-card: #14161e;
+      --bg-card-hover: #1a1d28;
+      --bg-elevated: #1e2130;
+
+      --gold: #c9a84c;
+      --gold-dim: #a08839;
+      --gold-bright: #e4c566;
+      --teal: #4ecdc4;
+      --teal-dim: #2a9d8f;
+      --red: #ef4444;
+      --green: #22c55e;
+      --green-dim: #16a34a;
+
+      --text-primary: #e8ecf1;
+      --text-secondary: #8b949e;
+      --text-tertiary: #484f58;
+      --border: rgba(255, 255, 255, 0.06);
+      --border-strong: rgba(255, 255, 255, 0.12);
+
+      --font-display: 'Instrument Serif', Georgia, serif;
+      --font-heading: 'Syne', sans-serif;
+      --font-body: 'Outfit', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ═══════════════════════════════════════
+       BACKGROUND TEXTURE
+       ═══════════════════════════════════════ */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+      background-size: 32px 32px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Cursor glow */
+    .cursor-glow {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(201,168,76,0.04) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 1;
+      transform: translate(-50%, -50%);
+      transition: opacity 0.3s;
+      opacity: 0;
+    }
+    .cursor-glow.active { opacity: 1; }
+
+    /* ═══════════════════════════════════════
+       UTILITIES
+       ═══════════════════════════════════════ */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+    .container--wide {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .section-label::before {
+      content: '';
+      width: 24px;
+      height: 1px;
+      background: var(--gold);
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+      color: var(--text-primary);
+    }
+
+    .section-subtitle {
+      font-family: var(--font-body);
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      line-height: 1.7;
+    }
+
+    /* Reveal animations */
+    .reveal {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+    .reveal-delay-4 { transition-delay: 0.4s; }
+    .reveal-delay-5 { transition-delay: 0.5s; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .reveal { opacity: 1; transform: none; transition: none; }
+    }
+
+    /* ═══════════════════════════════════════
+       NAVIGATION
+       ═══════════════════════════════════════ */
+    .nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(7, 8, 11, 0.85);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--border);
+      transition: background 0.3s;
+    }
+    .nav__inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+    .nav__brand {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: var(--text-primary);
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+    .nav__brand span { color: var(--gold); }
+    .nav__links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+    .nav__links a {
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.2s;
+      letter-spacing: 0.01em;
+    }
+    .nav__links a:hover { color: var(--text-primary); }
+    .nav__cta {
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      padding: 0.5rem 1.25rem;
+      background: var(--gold);
+      color: var(--bg-primary);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.2s;
+      letter-spacing: 0.01em;
+    }
+    .nav__cta:hover {
+      background: var(--gold-bright);
+      transform: translateY(-1px);
+    }
+
+    /* ═══════════════════════════════════════
+       MARKET TICKER
+       ═══════════════════════════════════════ */
+    .ticker {
+      position: fixed;
+      top: 64px;
+      left: 0;
+      right: 0;
+      z-index: 99;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+      height: 36px;
+      display: flex;
+      align-items: center;
+    }
+    .ticker__track {
+      display: flex;
+      animation: ticker-scroll 45s linear infinite;
+      white-space: nowrap;
+    }
+    .ticker__item {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--text-secondary);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .ticker__item .cat {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+    .ticker__item .loc {
+      color: var(--text-tertiary);
+    }
+    .ticker__item .price {
+      color: var(--gold);
+      font-weight: 600;
+    }
+    .ticker__item .delta {
+      font-weight: 600;
+      font-size: 0.625rem;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .ticker__item .delta--down {
+      color: var(--green);
+      background: rgba(34, 197, 94, 0.1);
+    }
+    .ticker__item .delta--up {
+      color: var(--red);
+      background: rgba(239, 68, 68, 0.1);
+    }
+    .ticker__sep {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    @keyframes ticker-scroll {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    /* ═══════════════════════════════════════
+       HERO
+       ═══════════════════════════════════════ */
+    .hero {
+      padding-top: 160px;
+      padding-bottom: 100px;
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+    }
+    .hero__bg-gradient {
+      position: absolute;
+      top: -200px;
+      right: -300px;
+      width: 900px;
+      height: 900px;
+      background: radial-gradient(circle, rgba(201,168,76,0.06) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hero__grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+      position: relative;
+      z-index: 2;
+    }
+    .hero__text h1 {
+      font-family: var(--font-display);
+      font-size: clamp(3rem, 6vw, 5rem);
+      line-height: 1.05;
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    .hero__text h1 em {
+      font-style: italic;
+      color: var(--gold);
+    }
+    .hero__text p {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      max-width: 520px;
+      margin-bottom: 2rem;
+    }
+    .hero__stat-row {
+      display: flex;
+      gap: 2.5rem;
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+    }
+    .hero__stat {
+      display: flex;
+      flex-direction: column;
+    }
+    .hero__stat-value {
+      font-family: var(--font-mono);
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .hero__stat-label {
+      font-size: 0.75rem;
+      color: var(--text-tertiary);
+      margin-top: 0.25rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .hero__ctas {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    .btn-primary {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      font-weight: 600;
+      padding: 0.875rem 2rem;
+      background: var(--gold);
+      color: var(--bg-primary);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.15s;
+      letter-spacing: 0.01em;
+    }
+    .btn-primary:hover {
+      background: var(--gold-bright);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      font-weight: 500;
+      padding: 0.875rem 2rem;
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .btn-secondary:hover {
+      color: var(--text-primary);
+      border-color: var(--text-tertiary);
+    }
+
+    /* ═══════════════════════════════════════
+       AUCTION WIDGET (Hero right side)
+       ═══════════════════════════════════════ */
+    .auction-widget {
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.03),
+        0 20px 60px rgba(0,0,0,0.5),
+        0 0 120px rgba(201,168,76,0.03);
+    }
+    .auction-widget__header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .auction-widget__status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .auction-widget__dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .auction-widget__status-text {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 500;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .auction-widget__timer {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-tertiary);
+    }
+    .auction-widget__job {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .auction-widget__job-cat {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.375rem;
+    }
+    .auction-widget__job-title {
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.375rem;
+    }
+    .auction-widget__job-loc {
+      font-size: 0.8125rem;
+      color: var(--text-tertiary);
+    }
+    .auction-widget__market {
+      padding: 0.875rem 1.25rem;
+      background: rgba(201,168,76,0.04);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .auction-widget__market-label {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .auction-widget__market-range {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--gold);
+    }
+    .auction-widget__bids {
+      padding: 0.5rem 0;
+      max-height: 320px;
+    }
+    .auction-widget__bid {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.75rem;
+      align-items: center;
+      padding: 0.75rem 1.25rem;
+      transition: background 0.2s;
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+    .auction-widget__bid.visible {
+      opacity: 1;
+      transform: translateX(0);
+      transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out), background 0.2s;
+    }
+    .auction-widget__bid.lowest {
+      background: rgba(34, 197, 94, 0.05);
+    }
+    .auction-widget__bid-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-heading);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      color: var(--bg-primary);
+    }
+    .auction-widget__bid-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .auction-widget__bid-name {
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .auction-widget__bid-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      color: var(--text-tertiary);
+    }
+    .auction-widget__bid-meta .stars { color: var(--gold-dim); }
+    .auction-widget__bid-badge {
+      font-size: 0.5625rem;
+      padding: 1px 4px;
+      border-radius: 3px;
+      background: rgba(78, 205, 196, 0.12);
+      color: var(--teal);
+      font-weight: 500;
+    }
+    .auction-widget__bid-amount {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 600;
+      text-align: right;
+    }
+    .auction-widget__bid-amount.best { color: var(--green); }
+    .auction-widget__bid-savings {
+      font-family: var(--font-mono);
+      font-size: 0.5625rem;
+      color: var(--green-dim);
+      text-align: right;
+      margin-top: 1px;
+    }
+    .auction-widget__footer {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-surface);
+    }
+    .auction-widget__footer-label {
+      font-size: 0.75rem;
+      color: var(--text-tertiary);
+    }
+    .auction-widget__footer-savings {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--green);
+    }
+
+    /* ═══════════════════════════════════════
+       PROBLEM SECTION
+       ═══════════════════════════════════════ */
+    .problem {
+      padding: 120px 0;
+      position: relative;
+    }
+    .problem__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .problem__hero-stat {
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+    .problem__hero-stat .big-number {
+      font-family: var(--font-mono);
+      font-size: clamp(4rem, 10vw, 8rem);
+      font-weight: 600;
+      color: var(--red);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .problem__hero-stat .big-label {
+      font-family: var(--font-body);
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      margin-top: 1rem;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .problem__story {
+      max-width: 720px;
+      margin: 0 auto 4rem;
+      padding: 2rem;
+      border-left: 2px solid var(--gold-dim);
+      background: linear-gradient(90deg, rgba(201,168,76,0.03), transparent);
+    }
+    .problem__story p {
+      font-family: var(--font-display);
+      font-size: 1.375rem;
+      font-style: italic;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+    .problem__story cite {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-tertiary);
+      margin-top: 1rem;
+      font-style: normal;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .problem__cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    .problem-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .problem-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-2px);
+    }
+    .problem-card__icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      font-size: 1.25rem;
+    }
+    .problem-card__icon--red { background: rgba(239, 68, 68, 0.1); }
+    .problem-card__icon--orange { background: rgba(249, 115, 22, 0.1); }
+    .problem-card__icon--yellow { background: rgba(234, 179, 8, 0.1); }
+    .problem-card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+    .problem-card p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    /* ═══════════════════════════════════════
+       HOW IT WORKS
+       ═══════════════════════════════════════ */
+    .how-it-works {
+      padding: 120px 0;
+      position: relative;
+    }
+    .how-it-works__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .how-it-works__steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-top: 4rem;
+      position: relative;
+    }
+    .how-it-works__steps::before {
+      content: '';
+      position: absolute;
+      top: 40px;
+      left: calc(16.67% + 20px);
+      right: calc(16.67% + 20px);
+      height: 1px;
+      background: linear-gradient(90deg, var(--gold-dim), var(--gold), var(--gold-dim));
+      opacity: 0.3;
+    }
+    .step {
+      text-align: center;
+      padding: 0 1rem;
+    }
+    .step__number {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 2px solid var(--gold-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--gold);
+      position: relative;
+      z-index: 2;
+    }
+    .step h3 {
+      font-family: var(--font-heading);
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .step p {
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    /* ═══════════════════════════════════════
+       MARKET OPPORTUNITY
+       ═══════════════════════════════════════ */
+    .market {
+      padding: 120px 0;
+      position: relative;
+    }
+    .market__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .market__tiers {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 4rem;
+    }
+    .market-tier {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2.5rem 2rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .market-tier:hover { border-color: var(--border-strong); }
+    .market-tier--highlight {
+      border-color: var(--gold-dim);
+      background: linear-gradient(180deg, rgba(201,168,76,0.05), var(--bg-card));
+    }
+    .market-tier__label {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      margin-bottom: 1rem;
+    }
+    .market-tier__value {
+      font-family: var(--font-mono);
+      font-size: 3rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+    .market-tier--highlight .market-tier__value { color: var(--gold); }
+    .market-tier__desc {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-top: 1rem;
+    }
+
+    .market__growth {
+      margin-top: 4rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .market__growth-header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .market__growth-title {
+      font-family: var(--font-heading);
+      font-size: 0.9375rem;
+      font-weight: 600;
+    }
+    .market__growth-badge {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(34, 197, 94, 0.1);
+      color: var(--green);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .market__growth-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .market__growth-table th {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      text-align: left;
+      padding: 0.875rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+    }
+    .market__growth-table td {
+      font-size: 0.875rem;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+    .market__growth-table td:first-child { color: var(--text-primary); font-weight: 500; }
+    .market__growth-table td:nth-child(3) {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--gold);
+    }
+    .market__growth-table td:nth-child(4) {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      color: var(--green);
+    }
+    .market__growth-table tr:last-child td { border-bottom: none; }
+    .market__growth-bar {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--bg-elevated);
+      margin-top: 0.375rem;
+      overflow: hidden;
+    }
+    .market__growth-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, var(--gold-dim), var(--gold));
+      transition: width 1.2s var(--ease-out);
+      width: 0;
+    }
+    .market__growth-bar-fill.animated { width: var(--bar-width); }
+
+    /* ═══════════════════════════════════════
+       COMPETITIVE MATRIX
+       ═══════════════════════════════════════ */
+    .competitive {
+      padding: 120px 0;
+      position: relative;
+    }
+    .competitive__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .matrix {
+      margin-top: 4rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow-x: auto;
+    }
+    .matrix table {
+      width: 100%;
+      min-width: 800px;
+      border-collapse: collapse;
+    }
+    .matrix th {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      text-align: left;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+      white-space: nowrap;
+    }
+    .matrix th:first-child {
+      color: var(--text-secondary);
+      font-family: var(--font-body);
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.8125rem;
+    }
+    .matrix th.highlight {
+      color: var(--gold);
+      background: rgba(201,168,76,0.04);
+    }
+    .matrix td {
+      font-size: 0.8125rem;
+      padding: 0.875rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+      vertical-align: middle;
+    }
+    .matrix td:first-child {
+      font-weight: 500;
+      color: var(--text-primary);
+      font-size: 0.8125rem;
+    }
+    .matrix td.highlight {
+      background: rgba(201,168,76,0.02);
+    }
+    .matrix tr:last-child td { border-bottom: none; }
+    .check {
+      color: var(--green);
+      font-weight: 700;
+      font-size: 1rem;
+    }
+    .cross {
+      color: var(--text-tertiary);
+      font-weight: 400;
+      font-size: 0.875rem;
+    }
+    .partial {
+      color: var(--gold-dim);
+      font-size: 0.75rem;
+    }
+
+    /* ═══════════════════════════════════════
+       TRUST ARCHITECTURE
+       ═══════════════════════════════════════ */
+    .trust {
+      padding: 120px 0;
+      position: relative;
+    }
+    .trust__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .trust__grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      margin-top: 4rem;
+    }
+    .trust__dimensions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    .trust-dim {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      transition: border-color 0.3s;
+    }
+    .trust-dim:hover { border-color: var(--border-strong); }
+    .trust-dim__weight {
+      font-family: var(--font-mono);
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .trust-dim__weight--gold { color: var(--gold); }
+    .trust-dim__weight--teal { color: var(--teal); }
+    .trust-dim__weight--green { color: var(--green); }
+    .trust-dim__weight--red { color: var(--red); }
+    .trust-dim__name {
+      font-family: var(--font-heading);
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .trust-dim__desc {
+      font-size: 0.75rem;
+      color: var(--text-tertiary);
+      line-height: 1.6;
+    }
+
+    .guarantee-card {
+      background: linear-gradient(135deg, rgba(201,168,76,0.08), rgba(201,168,76,0.02));
+      border: 1px solid var(--gold-dim);
+      border-radius: 12px;
+      padding: 2.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .guarantee-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 70% 30%, rgba(201,168,76,0.06), transparent 50%);
+      pointer-events: none;
+    }
+    .guarantee-card__icon {
+      font-size: 2rem;
+      margin-bottom: 1.5rem;
+    }
+    .guarantee-card h3 {
+      font-family: var(--font-display);
+      font-size: 1.75rem;
+      margin-bottom: 1rem;
+      color: var(--gold);
+    }
+    .guarantee-card__quote {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-style: italic;
+      color: var(--text-primary);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    .guarantee-card p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+    .guarantee-card__fund {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(201,168,76,0.2);
+      display: flex;
+      gap: 2rem;
+    }
+    .guarantee-card__fund-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .guarantee-card__fund-value {
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--gold);
+    }
+    .guarantee-card__fund-label {
+      font-size: 0.6875rem;
+      color: var(--text-tertiary);
+      margin-top: 0.125rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* ═══════════════════════════════════════
+       DATA FLYWHEEL
+       ═══════════════════════════════════════ */
+    .flywheel {
+      padding: 120px 0;
+      position: relative;
+    }
+    .flywheel__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .flywheel__visual {
+      margin-top: 4rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .flywheel__diagram {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .flywheel__ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      animation: spin-slow 30s linear infinite;
+    }
+    .flywheel__ring--inner {
+      inset: 15%;
+      border-color: var(--gold-dim);
+      opacity: 0.3;
+      animation-duration: 20s;
+      animation-direction: reverse;
+    }
+    .flywheel__ring--core {
+      inset: 35%;
+      border-color: var(--gold);
+      opacity: 0.5;
+      animation-duration: 15s;
+    }
+    @keyframes spin-slow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .flywheel__center {
+      position: absolute;
+      inset: 38%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(201,168,76,0.15), transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .flywheel__center-text {
+      text-align: center;
+    }
+    .flywheel__center-text span {
+      font-family: var(--font-heading);
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--gold);
+      display: block;
+    }
+    .flywheel__center-text small {
+      font-family: var(--font-mono);
+      font-size: 0.5625rem;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .flywheel__node {
+      position: absolute;
+      width: 100px;
+      text-align: center;
+    }
+    .flywheel__node-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--gold);
+      margin: 0 auto 0.5rem;
+      box-shadow: 0 0 12px rgba(201,168,76,0.4);
+    }
+    .flywheel__node-label {
+      font-family: var(--font-mono);
+      font-size: 0.5625rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      line-height: 1.4;
+    }
+    .flywheel__node--top { top: -6%; left: 50%; transform: translateX(-50%); }
+    .flywheel__node--right { top: 50%; right: -10%; transform: translateY(-50%); }
+    .flywheel__node--bottom { bottom: -6%; left: 50%; transform: translateX(-50%); }
+    .flywheel__node--left { top: 50%; left: -10%; transform: translateY(-50%); }
+
+    .flywheel__moat {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .moat-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      transition: border-color 0.3s;
+    }
+    .moat-item:hover { border-color: var(--border-strong); }
+    .moat-item__header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .moat-item__timeline {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .moat-item__timeline--weak {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--red);
+    }
+    .moat-item__timeline--moderate {
+      background: rgba(249, 115, 22, 0.1);
+      color: #f97316;
+    }
+    .moat-item__timeline--strong {
+      background: rgba(34, 197, 94, 0.1);
+      color: var(--green);
+    }
+    .moat-item__timeline--deep {
+      background: rgba(201, 168, 76, 0.1);
+      color: var(--gold);
+    }
+    .moat-item h4 {
+      font-family: var(--font-heading);
+      font-size: 0.9375rem;
+      font-weight: 600;
+    }
+    .moat-item p {
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* ═══════════════════════════════════════
+       FINANCIAL SERVICES
+       ═══════════════════════════════════════ */
+    .finserv {
+      padding: 120px 0;
+      position: relative;
+    }
+    .finserv__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .finserv__take-rate {
+      margin-top: 2rem;
+      margin-bottom: 4rem;
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+    }
+    .finserv__take-rate-bar {
+      flex: 1;
+      height: 48px;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+    }
+    .finserv__take-rate-segment {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      white-space: nowrap;
+      padding: 0 1rem;
+    }
+    .finserv__take-rate-segment--marketplace {
+      background: rgba(201,168,76,0.15);
+      color: var(--gold);
+      flex: 0 0 40%;
+    }
+    .finserv__take-rate-segment--finserv {
+      background: rgba(78,205,196,0.12);
+      color: var(--teal);
+      flex: 0 0 35%;
+    }
+    .finserv__take-rate-segment--guarantee {
+      background: rgba(34,197,94,0.08);
+      color: var(--green);
+      flex: 1;
+    }
+    .finserv__take-rate-label {
+      font-family: var(--font-mono);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .finserv__products {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+    }
+    .finserv-product {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem 1.5rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .finserv-product:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-2px);
+    }
+    .finserv-product__phase {
+      font-family: var(--font-mono);
+      font-size: 0.5625rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: rgba(201,168,76,0.1);
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: inline-block;
+      margin-bottom: 1rem;
+    }
+    .finserv-product__icon {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .finserv-product h3 {
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .finserv-product p {
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 1.25rem;
+    }
+    .finserv-product__revenue {
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .finserv-product__revenue-value {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--teal);
+    }
+    .finserv-product__revenue-label {
+      font-size: 0.6875rem;
+      color: var(--text-tertiary);
+      margin-top: 0.125rem;
+    }
+
+    /* ═══════════════════════════════════════
+       EXPANSION
+       ═══════════════════════════════════════ */
+    .expansion {
+      padding: 120px 0;
+      position: relative;
+    }
+    .expansion__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .expansion__timeline {
+      margin-top: 4rem;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    .expansion-tier {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem;
+      transition: border-color 0.3s;
+    }
+    .expansion-tier:hover { border-color: var(--border-strong); }
+    .expansion-tier__phase {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.5rem;
+    }
+    .expansion-tier__phase--t1 { color: var(--gold); }
+    .expansion-tier__phase--t2 { color: var(--teal); }
+    .expansion-tier__phase--t3 { color: #a78bfa; }
+    .expansion-tier h3 {
+      font-family: var(--font-heading);
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .expansion-tier__tam {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      color: var(--text-tertiary);
+      margin-bottom: 1.25rem;
+    }
+    .expansion-tier__list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .expansion-tier__list li {
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .expansion-tier__list li::before {
+      content: '';
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .expansion-tier--t1 .expansion-tier__list li::before { background: var(--gold); }
+    .expansion-tier--t2 .expansion-tier__list li::before { background: var(--teal); }
+    .expansion-tier--t3 .expansion-tier__list li::before { background: #a78bfa; }
+
+    .expansion__total {
+      margin-top: 2rem;
+      text-align: center;
+      padding: 2.5rem;
+      background: linear-gradient(135deg, rgba(201,168,76,0.06), rgba(78,205,196,0.04));
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+    }
+    .expansion__total-label {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.5rem;
+    }
+    .expansion__total-value {
+      font-family: var(--font-mono);
+      font-size: clamp(3rem, 6vw, 4.5rem);
+      font-weight: 600;
+      color: var(--gold);
+      line-height: 1;
+    }
+    .expansion__total-desc {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      margin-top: 0.5rem;
+    }
+
+    /* ═══════════════════════════════════════
+       METRICS DASHBOARD
+       ═══════════════════════════════════════ */
+    .metrics {
+      padding: 120px 0;
+      position: relative;
+    }
+    .metrics__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .metrics__grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+      margin-top: 4rem;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      transition: border-color 0.3s;
+    }
+    .metric-card:hover { border-color: var(--border-strong); }
+    .metric-card__label {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.75rem;
+    }
+    .metric-card__value {
+      font-family: var(--font-mono);
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1;
+      margin-bottom: 0.375rem;
+    }
+    .metric-card__value--gold { color: var(--gold); }
+    .metric-card__value--green { color: var(--green); }
+    .metric-card__value--teal { color: var(--teal); }
+    .metric-card__target {
+      font-size: 0.6875rem;
+      color: var(--text-tertiary);
+    }
+    .metric-card__target span {
+      color: var(--text-secondary);
+    }
+
+    /* ═══════════════════════════════════════
+       TECH STACK
+       ═══════════════════════════════════════ */
+    .tech {
+      padding: 120px 0;
+      position: relative;
+    }
+    .tech__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    }
+    .tech__layers {
+      margin-top: 4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .tech-layer {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 1.5rem;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      transition: border-color 0.3s;
+    }
+    .tech-layer:hover { border-color: var(--border-strong); }
+    .tech-layer__label {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .tech-layer__label--gold { color: var(--gold); }
+    .tech-layer__label--teal { color: var(--teal); }
+    .tech-layer__label--green { color: var(--green); }
+    .tech-layer__label--red { color: var(--red); }
+    .tech-layer__label--purple { color: #a78bfa; }
+    .tech-layer__items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .tech-tag {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      padding: 0.25rem 0.625rem;
+      border-radius: 4px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    /* ═══════════════════════════════════════
+       CTA SECTION
+       ═══════════════════════════════════════ */
+    .cta-section {
+      padding: 120px 0 80px;
+      position: relative;
+      text-align: center;
+    }
+    .cta-section__divider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+    }
+    .cta-section__glow {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(201,168,76,0.06), transparent 60%);
+      pointer-events: none;
+    }
+    .cta-section h2 {
+      font-family: var(--font-display);
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+    .cta-section h2 em {
+      font-style: italic;
+      color: var(--gold);
+    }
+    .cta-section p {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.7;
+      position: relative;
+    }
+    .cta-section .btn-primary {
+      font-size: 1.0625rem;
+      padding: 1rem 2.5rem;
+      position: relative;
+    }
+
+    /* ═══════════════════════════════════════
+       FOOTER
+       ═══════════════════════════════════════ */
+    .footer {
+      padding: 3rem 0;
+      border-top: 1px solid var(--border);
+    }
+    .footer__inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .footer__brand {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 1rem;
+      color: var(--text-tertiary);
+    }
+    .footer__brand span { color: var(--gold-dim); }
+    .footer__links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+    .footer__links a {
+      font-size: 0.8125rem;
+      color: var(--text-tertiary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer__links a:hover { color: var(--text-secondary); }
+    .footer__copy {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--text-tertiary);
+    }
+
+    /* ═══════════════════════════════════════
+       RESPONSIVE
+       ═══════════════════════════════════════ */
+    @media (max-width: 1024px) {
+      .hero__grid { grid-template-columns: 1fr; gap: 3rem; }
+      .auction-widget { max-width: 480px; }
+      .problem__cards { grid-template-columns: 1fr; }
+      .how-it-works__steps { grid-template-columns: 1fr; gap: 3rem; }
+      .how-it-works__steps::before { display: none; }
+      .market__tiers { grid-template-columns: 1fr; }
+      .trust__grid { grid-template-columns: 1fr; }
+      .flywheel__visual { grid-template-columns: 1fr; }
+      .flywheel__diagram { max-width: 360px; }
+      .finserv__products { grid-template-columns: repeat(2, 1fr); }
+      .finserv__take-rate { flex-direction: column; }
+      .expansion__timeline { grid-template-columns: 1fr; }
+      .metrics__grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 768px) {
+      .container, .container--wide { padding: 0 1.25rem; }
+      .nav__links { display: none; }
+      .hero { padding-top: 140px; min-height: auto; }
+      .hero__stat-row { flex-direction: column; gap: 1.25rem; }
+      .trust__dimensions { grid-template-columns: 1fr; }
+      .finserv__products { grid-template-columns: 1fr; }
+      .metrics__grid { grid-template-columns: 1fr; }
+      .tech-layer { grid-template-columns: 1fr; gap: 0.75rem; }
+      .footer__inner { flex-direction: column; gap: 1.5rem; text-align: center; }
+      .footer__links { flex-wrap: wrap; justify-content: center; }
+      .ticker { display: none; }
+      .hero { padding-top: 100px; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Cursor glow -->
+  <div class="cursor-glow" id="cursorGlow"></div>
+
+  <!-- ═══════════════════════════════════════
+       NAVIGATION
+       ═══════════════════════════════════════ -->
+  <nav class="nav" role="navigation" aria-label="Main navigation">
+    <div class="nav__inner">
+      <a href="#" class="nav__brand" aria-label="NoMarkup Home">No<span>Markup</span></a>
+      <ul class="nav__links">
+        <li><a href="#problem">Problem</a></li>
+        <li><a href="#how-it-works">Platform</a></li>
+        <li><a href="#market">Market</a></li>
+        <li><a href="#trust">Trust</a></li>
+        <li><a href="#flywheel">Moat</a></li>
+        <li><a href="#finserv">Revenue</a></li>
+      </ul>
+      <a href="#cta" class="nav__cta">Request Access</a>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════
+       MARKET TICKER
+       ═══════════════════════════════════════ -->
+  <div class="ticker" role="marquee" aria-label="Live market activity">
+    <div class="ticker__track" id="tickerTrack">
+      <!-- Duplicated for seamless loop -->
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       HERO
+       ═══════════════════════════════════════ -->
+  <section class="hero" id="hero">
+    <div class="hero__bg-gradient"></div>
+    <div class="container--wide">
+      <div class="hero__grid">
+        <div class="hero__text">
+          <div class="section-label reveal">Reverse-Auction Service Marketplace</div>
+          <h1 class="reveal reveal-delay-1">The Market Sets<br>The Price.<br><em>Not The Markup.</em></h1>
+          <p class="reveal reveal-delay-2">
+            Customers post home-service jobs. Qualified providers compete in
+            real-time reverse auctions. Prices drop to fair market rates.
+            Everyone wins except the middleman.
+          </p>
+          <div class="hero__ctas reveal reveal-delay-3">
+            <a href="#cta" class="btn-primary">Request Early Access</a>
+            <a href="#market" class="btn-secondary">View Market Data</a>
+          </div>
+          <div class="hero__stat-row reveal reveal-delay-4">
+            <div class="hero__stat">
+              <div class="hero__stat-value">$657B</div>
+              <div class="hero__stat-label">US Home Services TAM</div>
+            </div>
+            <div class="hero__stat">
+              <div class="hero__stat-value">40&ndash;67%</div>
+              <div class="hero__stat-label">Avg. Industry Markup</div>
+            </div>
+            <div class="hero__stat">
+              <div class="hero__stat-value">0</div>
+              <div class="hero__stat-label">Transparent Competitors</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Auction Widget -->
+        <div class="auction-widget reveal reveal-delay-2">
+          <div class="auction-widget__header">
+            <div class="auction-widget__status">
+              <div class="auction-widget__dot"></div>
+              <span class="auction-widget__status-text">Live Auction</span>
+            </div>
+            <span class="auction-widget__timer" id="auctionTimer">23:47:12 remaining</span>
+          </div>
+          <div class="auction-widget__job">
+            <div class="auction-widget__job-cat">HVAC &rsaquo; Furnace Replacement</div>
+            <div class="auction-widget__job-title">Complete Furnace Replacement &mdash; 80K BTU</div>
+            <div class="auction-widget__job-loc">Seattle, WA 98103 &middot; Scheduled Feb 28</div>
+          </div>
+          <div class="auction-widget__market">
+            <span class="auction-widget__market-label">Market Range (147 data pts)</span>
+            <span class="auction-widget__market-range">$8,200 &mdash; $14,600</span>
+          </div>
+          <div class="auction-widget__bids" id="auctionBids">
+            <!-- Populated by JS -->
+          </div>
+          <div class="auction-widget__footer">
+            <span class="auction-widget__footer-label">Your estimated savings vs. industry average</span>
+            <span class="auction-widget__footer-savings" id="auctionSavings">&mdash;</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       PROBLEM
+       ═══════════════════════════════════════ -->
+  <section class="problem" id="problem">
+    <div class="problem__divider"></div>
+    <div class="container">
+      <div class="problem__hero-stat reveal">
+        <div class="big-number">$30,000</div>
+        <div class="big-label">The hidden markup on a single HVAC job. Parts cost $10K. The quote was $40K. The delta is margin that benefits no one doing the work and no one writing the check.</div>
+      </div>
+
+      <div class="problem__story reveal">
+        <p>A homeowner's brother &mdash; who owns an HVAC company &mdash; purchased identical parts wholesale for $8,000 and shipped them for $2,000. The remaining $30,000 was corporate overhead, franchise fees, and platform lead-gen costs that added zero value.</p>
+        <cite>Real incident &mdash; documented in NoMarkup founding research</cite>
+      </div>
+
+      <div class="section-label reveal">The Problem Is Structural</div>
+      <div class="problem__cards">
+        <div class="problem-card reveal reveal-delay-1">
+          <div class="problem-card__icon problem-card__icon--red">&#9650;</div>
+          <h3>Systemic Price Inflation</h3>
+          <p>Franchise fees, platform lead-gen costs, and corporate overhead inflate every quote. Customers pay for logos and marketing budgets &mdash; not better service.</p>
+        </div>
+        <div class="problem-card reveal reveal-delay-2">
+          <div class="problem-card__icon problem-card__icon--orange">&#9673;</div>
+          <h3>Labor &amp; Materials Fraud</h3>
+          <p>A technician completed a one-hour repair, sat in his van for eight hours, then billed for nine. $125 in materials became $5,000. The customer had to review their own security footage.</p>
+        </div>
+        <div class="problem-card reveal reveal-delay-3">
+          <div class="problem-card__icon problem-card__icon--yellow">&#9888;</div>
+          <h3>Zero Accountability</h3>
+          <p>No existing platform verifies pricing fairness, processes payments, or ensures accountability. Lead-gen platforms add another fee layer on top of an already broken system.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       HOW IT WORKS
+       ═══════════════════════════════════════ -->
+  <section class="how-it-works" id="how-it-works">
+    <div class="how-it-works__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">How NoMarkup Works</div>
+      <h2 class="section-title reveal">Three clicks from posted <br>to priced to scheduled.</h2>
+      <p class="section-subtitle reveal">No weeks of vetting. No inflated quotes. No wondering if you paid too much.</p>
+
+      <div class="how-it-works__steps">
+        <div class="step reveal reveal-delay-1">
+          <div class="step__number">01</div>
+          <h3>Post Your Job</h3>
+          <p>Select a service category, describe the work, set your terms. The platform shows you real market pricing data so you know what the job should cost before a single bid comes in.</p>
+        </div>
+        <div class="step reveal reveal-delay-2">
+          <div class="step__number">02</div>
+          <h3>Providers Compete</h3>
+          <p>Verified, licensed providers see your job and submit sealed bids. They compete on price, reviews, and qualifications &mdash; not marketing spend. You see trust scores, verification badges, and real transaction history.</p>
+        </div>
+        <div class="step reveal reveal-delay-3">
+          <div class="step__number">03</div>
+          <h3>Choose &amp; Save</h3>
+          <p>Select your provider based on price, quality, and trust. Pay through the platform with milestone tracking and the NoMarkup Guarantee. Both sides leave verified reviews after completion.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       MARKET OPPORTUNITY
+       ═══════════════════════════════════════ -->
+  <section class="market" id="market">
+    <div class="market__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">Market Opportunity</div>
+      <h2 class="section-title reveal">The last $657B industry<br>that hasn't been digitized.</h2>
+      <p class="section-subtitle reveal">Home services is the largest consumer category with the lowest digital adoption. The timing is now.</p>
+
+      <div class="market__tiers">
+        <div class="market-tier reveal reveal-delay-1">
+          <div class="market-tier__label">Total Addressable Market</div>
+          <div class="market-tier__value" data-counter="657">$0B</div>
+          <div class="market-tier__desc">U.S. residential maintenance, repair, improvement, and emergency services &mdash; annually.</div>
+        </div>
+        <div class="market-tier reveal reveal-delay-2">
+          <div class="market-tier__label">Serviceable Addressable Market</div>
+          <div class="market-tier__value" data-counter="263">$0B</div>
+          <div class="market-tier__desc">Digitally-influenced home services &mdash; jobs where customers search, compare, and book online. 40% of TAM.</div>
+        </div>
+        <div class="market-tier market-tier--highlight reveal reveal-delay-3">
+          <div class="market-tier__label">Year 1 Obtainable &mdash; Seattle Metro</div>
+          <div class="market-tier__value" data-counter="85">$0M</div>
+          <div class="market-tier__desc">1% penetration of Seattle metro at $8.5B local market. Revenue at 5-8% take rate: $4.25M&ndash;$6.8M.</div>
+        </div>
+      </div>
+
+      <div class="market__growth reveal">
+        <div class="market__growth-header">
+          <span class="market__growth-title">Growth Trajectory</span>
+          <span class="market__growth-badge">Projected</span>
+        </div>
+        <table class="market__growth-table">
+          <thead>
+            <tr>
+              <th>Timeline</th>
+              <th>Market</th>
+              <th>Target GMV</th>
+              <th>Revenue (5-8%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Year 1</td>
+              <td>Seattle metro</td>
+              <td>$85M
+                <div class="market__growth-bar"><div class="market__growth-bar-fill" style="--bar-width: 2%"></div></div>
+              </td>
+              <td>$4.25M&ndash;$6.8M</td>
+            </tr>
+            <tr>
+              <td>Year 2</td>
+              <td>WA State + Portland</td>
+              <td>$350M
+                <div class="market__growth-bar"><div class="market__growth-bar-fill" style="--bar-width: 7%"></div></div>
+              </td>
+              <td>$17.5M&ndash;$28M</td>
+            </tr>
+            <tr>
+              <td>Year 3</td>
+              <td>PNW + 3 Major Metros</td>
+              <td>$1.2B
+                <div class="market__growth-bar"><div class="market__growth-bar-fill" style="--bar-width: 24%"></div></div>
+              </td>
+              <td>$60M&ndash;$96M</td>
+            </tr>
+            <tr>
+              <td>Year 5</td>
+              <td>National (Top 25 Metros)</td>
+              <td>$5B+
+                <div class="market__growth-bar"><div class="market__growth-bar-fill" style="--bar-width: 100%"></div></div>
+              </td>
+              <td>$250M&ndash;$400M</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       COMPETITIVE MATRIX
+       ═══════════════════════════════════════ -->
+  <section class="competitive" id="competitive">
+    <div class="competitive__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">Competitive Landscape</div>
+      <h2 class="section-title reveal">Built different.<br>Not built on top.</h2>
+      <p class="section-subtitle reveal">Every existing platform either adds more fees to a broken system or offers zero trust and verification. NoMarkup is the first to solve both.</p>
+
+      <div class="matrix reveal">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th class="highlight">NoMarkup</th>
+              <th>Angi / Thumbtack</th>
+              <th>TaskRabbit</th>
+              <th>Craigslist / FB</th>
+              <th>Franchises</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Reverse auction pricing</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Market pricing intelligence</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>On-platform payments</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="partial">On-site</span></td>
+            </tr>
+            <tr>
+              <td>Milestone &amp; escrow</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Identity &amp; license verification</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="partial">Basic</span></td>
+              <td><span class="partial">Background</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="partial">Internal</span></td>
+            </tr>
+            <tr>
+              <td>AI fraud detection</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Transaction-verified reviews</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Work completion guarantee</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="cross">&mdash;</span></td>
+              <td><span class="partial">Brand</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       TRUST ARCHITECTURE
+       ═══════════════════════════════════════ -->
+  <section class="trust" id="trust">
+    <div class="trust__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">Trust Architecture</div>
+      <h2 class="section-title reveal">Trust is computed,<br>not claimed.</h2>
+      <p class="section-subtitle reveal">A composite 0&ndash;100 trust score built from four independently calculated dimensions, backed by verified on-platform transactions.</p>
+
+      <div class="trust__grid">
+        <div class="trust__dimensions">
+          <div class="trust-dim reveal reveal-delay-1">
+            <div class="trust-dim__weight trust-dim__weight--gold">35%</div>
+            <div class="trust-dim__name">Feedback Score</div>
+            <div class="trust-dim__desc">Star ratings, value-for-service, on-time delivery, and communication &mdash; tied to verified payments.</div>
+          </div>
+          <div class="trust-dim reveal reveal-delay-2">
+            <div class="trust-dim__weight trust-dim__weight--teal">25%</div>
+            <div class="trust-dim__name">Risk Score</div>
+            <div class="trust-dim__desc">Identity verification, business documentation, insurance status, cancellation and dispute rates.</div>
+          </div>
+          <div class="trust-dim reveal reveal-delay-3">
+            <div class="trust-dim__weight trust-dim__weight--green">20%</div>
+            <div class="trust-dim__name">Volume Score</div>
+            <div class="trust-dim__desc">Completed transactions, repeat customer rate, response time, and account tenure on the platform.</div>
+          </div>
+          <div class="trust-dim reveal reveal-delay-4">
+            <div class="trust-dim__weight trust-dim__weight--red">20%</div>
+            <div class="trust-dim__name">Fraud Score</div>
+            <div class="trust-dim__desc">Account integrity, review integrity, transaction integrity, and behavioral analysis. Inverse scoring &mdash; higher is cleaner.</div>
+          </div>
+        </div>
+
+        <div class="guarantee-card reveal">
+          <div class="guarantee-card__icon">&#9741;</div>
+          <h3>The NoMarkup Guarantee</h3>
+          <div class="guarantee-card__quote">&ldquo;If the work isn't completed as agreed, NoMarkup will make it right &mdash; up to the full contract value.&rdquo;</div>
+          <p>
+            The Guarantee only applies to on-platform transactions.
+            Off-platform, you're on your own. This is why customers stay.
+            This is why providers build their reputation here.
+          </p>
+          <div class="guarantee-card__fund">
+            <div class="guarantee-card__fund-item">
+              <div class="guarantee-card__fund-value">2&ndash;3%</div>
+              <div class="guarantee-card__fund-label">Guarantee Fund Rate</div>
+            </div>
+            <div class="guarantee-card__fund-item">
+              <div class="guarantee-card__fund-value">$1.7M</div>
+              <div class="guarantee-card__fund-label">Year 1 Reserve (at $85M GMV)</div>
+            </div>
+            <div class="guarantee-card__fund-item">
+              <div class="guarantee-card__fund-value">1&ndash;3%</div>
+              <div class="guarantee-card__fund-label">Expected Claim Rate</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       DATA FLYWHEEL
+       ═══════════════════════════════════════ -->
+  <section class="flywheel" id="flywheel">
+    <div class="flywheel__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">Competitive Moat</div>
+      <h2 class="section-title reveal">Every transaction makes<br>the platform smarter.</h2>
+      <p class="section-subtitle reveal">After 12 months of transaction data, no competitor can replicate the intelligence layer. After 24 months, the gap is insurmountable.</p>
+
+      <div class="flywheel__visual">
+        <div class="flywheel__diagram reveal">
+          <div class="flywheel__ring"></div>
+          <div class="flywheel__ring flywheel__ring--inner"></div>
+          <div class="flywheel__ring flywheel__ring--core"></div>
+          <div class="flywheel__center">
+            <div class="flywheel__center-text">
+              <span>Data Flywheel</span>
+              <small>Compounding Intelligence</small>
+            </div>
+          </div>
+          <div class="flywheel__node flywheel__node--top">
+            <div class="flywheel__node-dot"></div>
+            <div class="flywheel__node-label">More Providers<br>Lower Prices</div>
+          </div>
+          <div class="flywheel__node flywheel__node--right">
+            <div class="flywheel__node-dot"></div>
+            <div class="flywheel__node-label">More Customers<br>More Jobs</div>
+          </div>
+          <div class="flywheel__node flywheel__node--bottom">
+            <div class="flywheel__node-dot"></div>
+            <div class="flywheel__node-label">Better Data<br>Smarter Pricing</div>
+          </div>
+          <div class="flywheel__node flywheel__node--left">
+            <div class="flywheel__node-dot"></div>
+            <div class="flywheel__node-label">Higher Trust<br>More Repeat Use</div>
+          </div>
+        </div>
+
+        <div class="flywheel__moat">
+          <div class="moat-item reveal reveal-delay-1">
+            <div class="moat-item__header">
+              <span class="moat-item__timeline moat-item__timeline--weak">Month 1&ndash;6</span>
+              <h4>Building Foundation</h4>
+            </div>
+            <p>Insufficient data for defensibility. Competitors could replicate features. Focus on data collection infrastructure and initial transaction volume.</p>
+          </div>
+          <div class="moat-item reveal reveal-delay-2">
+            <div class="moat-item__header">
+              <span class="moat-item__timeline moat-item__timeline--moderate">Month 6&ndash;12</span>
+              <h4>Intelligence Emerges</h4>
+            </div>
+            <p>Pricing intelligence becomes credible. Fraud detection catches first real patterns. Provider reputation graphs develop meaningful depth.</p>
+          </div>
+          <div class="moat-item reveal reveal-delay-3">
+            <div class="moat-item__header">
+              <span class="moat-item__timeline moat-item__timeline--strong">Month 12&ndash;24</span>
+              <h4>Moat Deepens</h4>
+            </div>
+            <p>Thousands of verified transactions. Pricing data is more accurate than any published cost guide. ML models trained on real fraud attempts. Provider reputations are deep.</p>
+          </div>
+          <div class="moat-item reveal reveal-delay-4">
+            <div class="moat-item__header">
+              <span class="moat-item__timeline moat-item__timeline--deep">Month 24+</span>
+              <h4>Insurmountable</h4>
+            </div>
+            <p>Multi-year transaction history, mature ML models, verified provider reputations that took years to build. A new entrant would need to acquire this data &mdash; they cannot generate it.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       FINANCIAL SERVICES
+       ═══════════════════════════════════════ -->
+  <section class="finserv" id="finserv">
+    <div class="finserv__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">Revenue Architecture</div>
+      <h2 class="section-title reveal">Marketplace fee is the<br>starting line, not the ceiling.</h2>
+      <p class="section-subtitle reveal">Financial services push the effective take rate from 5&ndash;8% to 12&ndash;20% &mdash; the playbook that built Stripe, Square, and Shopify into category-defining companies.</p>
+
+      <div class="finserv__take-rate reveal">
+        <div class="finserv__take-rate-bar">
+          <div class="finserv__take-rate-segment finserv__take-rate-segment--marketplace">Marketplace 5&ndash;8%</div>
+          <div class="finserv__take-rate-segment finserv__take-rate-segment--finserv">Financial Services 5&ndash;8%</div>
+          <div class="finserv__take-rate-segment finserv__take-rate-segment--guarantee">Guarantee 2&ndash;3%</div>
+        </div>
+        <div class="finserv__take-rate-label">12&ndash;20%</div>
+      </div>
+
+      <div class="finserv__products">
+        <div class="finserv-product reveal reveal-delay-1">
+          <span class="finserv-product__phase">Phase 2</span>
+          <div class="finserv-product__icon">&#9733;</div>
+          <h3>Provider Working Capital</h3>
+          <p>Cash advances against awarded contracts. Auto-repaid from job payout. NoMarkup's data underwrites risk better than any bank.</p>
+          <div class="finserv-product__revenue">
+            <div class="finserv-product__revenue-value">$6M&ndash;$15M</div>
+            <div class="finserv-product__revenue-label">Annual at $5B GMV</div>
+          </div>
+        </div>
+        <div class="finserv-product reveal reveal-delay-2">
+          <span class="finserv-product__phase">Phase 2</span>
+          <div class="finserv-product__icon">&#9638;</div>
+          <h3>Customer BNPL</h3>
+          <p>Installment financing at point of payment. Customers complete larger jobs they would have deferred. Provider gets paid in full immediately.</p>
+          <div class="finserv-product__revenue">
+            <div class="finserv-product__revenue-value">$15M&ndash;$25M</div>
+            <div class="finserv-product__revenue-label">Annual at $5B GMV</div>
+          </div>
+        </div>
+        <div class="finserv-product reveal reveal-delay-3">
+          <span class="finserv-product__phase">Phase 3</span>
+          <div class="finserv-product__icon">&#9650;</div>
+          <h3>Per-Job Insurance</h3>
+          <p>Property damage protection and extended workmanship warranty. Platform data enables superior risk assessment for underwriting.</p>
+          <div class="finserv-product__revenue">
+            <div class="finserv-product__revenue-value">$10M&ndash;$30M</div>
+            <div class="finserv-product__revenue-label">Annual at $5B GMV</div>
+          </div>
+        </div>
+        <div class="finserv-product reveal reveal-delay-4">
+          <span class="finserv-product__phase">Phase 3</span>
+          <div class="finserv-product__icon">&#9881;</div>
+          <h3>Business Services</h3>
+          <p>1099-K management, expense tracking, invoicing, and business analytics. Bundled with Pro subscription for provider lock-in.</p>
+          <div class="finserv-product__revenue">
+            <div class="finserv-product__revenue-value">$5M&ndash;$12M</div>
+            <div class="finserv-product__revenue-label">Annual at $5B GMV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       EXPANSION
+       ═══════════════════════════════════════ -->
+  <section class="expansion" id="expansion">
+    <div class="expansion__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">Platform Expansion</div>
+      <h2 class="section-title reveal">Home services is the beachhead.<br>Not the destination.</h2>
+      <p class="section-subtitle reveal">The reverse-auction + verification + payment + guarantee model is horizontal. Same technology, new taxonomy, compounding data moat.</p>
+
+      <div class="expansion__timeline">
+        <div class="expansion-tier expansion-tier--t1 reveal reveal-delay-1">
+          <div class="expansion-tier__phase expansion-tier__phase--t1">Tier 1 &middot; Year 2&ndash;3</div>
+          <h3>Direct Adjacencies</h3>
+          <div class="expansion-tier__tam">$420B combined TAM</div>
+          <ul class="expansion-tier__list">
+            <li>Auto repair &amp; maintenance ($300B)</li>
+            <li>Moving services ($18B)</li>
+            <li>Pet services ($12B)</li>
+            <li>Commercial cleaning ($90B)</li>
+          </ul>
+        </div>
+        <div class="expansion-tier expansion-tier--t2 reveal reveal-delay-2">
+          <div class="expansion-tier__phase expansion-tier__phase--t2">Tier 2 &middot; Year 3&ndash;5</div>
+          <h3>Professional Services</h3>
+          <div class="expansion-tier__tam">$205B combined TAM</div>
+          <ul class="expansion-tier__list">
+            <li>Legal services &mdash; simple ($50B)</li>
+            <li>Accounting &amp; tax prep ($50B)</li>
+            <li>Event services ($80B)</li>
+            <li>Tutoring &amp; education ($25B)</li>
+          </ul>
+        </div>
+        <div class="expansion-tier expansion-tier--t3 reveal reveal-delay-3">
+          <div class="expansion-tier__phase expansion-tier__phase--t3">Tier 3 &middot; Year 5+</div>
+          <h3>Vertical Platforms</h3>
+          <div class="expansion-tier__tam">$700B+ combined TAM</div>
+          <ul class="expansion-tier__list">
+            <li>Healthcare &mdash; elective ($200B+)</li>
+            <li>Commercial construction ($500B+)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="expansion__total reveal">
+        <div class="expansion__total-label">Total Platform TAM</div>
+        <div class="expansion__total-value">$2T+</div>
+        <div class="expansion__total-desc">Same infrastructure. New taxonomies. Compounding data advantage.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       METRICS
+       ═══════════════════════════════════════ -->
+  <section class="metrics" id="metrics">
+    <div class="metrics__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">North Star KPIs</div>
+      <h2 class="section-title reveal">The numbers we<br>live and die by.</h2>
+
+      <div class="metrics__grid">
+        <div class="metric-card reveal reveal-delay-1">
+          <div class="metric-card__label">Year 1 GMV</div>
+          <div class="metric-card__value metric-card__value--gold">$85M</div>
+          <div class="metric-card__target">Seattle metro &middot; 1% penetration</div>
+        </div>
+        <div class="metric-card reveal reveal-delay-2">
+          <div class="metric-card__label">Marketplace Liquidity</div>
+          <div class="metric-card__value metric-card__value--green">&gt;80%</div>
+          <div class="metric-card__target">Jobs with <span>1+ bid within 24hrs</span></div>
+        </div>
+        <div class="metric-card reveal reveal-delay-3">
+          <div class="metric-card__label">Time to First Bid</div>
+          <div class="metric-card__value metric-card__value--teal">&lt;4hrs</div>
+          <div class="metric-card__target">Median &middot; <span>target Month 12</span></div>
+        </div>
+        <div class="metric-card reveal reveal-delay-1">
+          <div class="metric-card__label">LTV:CAC Ratio</div>
+          <div class="metric-card__value">&gt;4:1</div>
+          <div class="metric-card__target"><span>$200+ LTV</span> &middot; <span>&lt;$50 CAC</span></div>
+        </div>
+        <div class="metric-card reveal reveal-delay-2">
+          <div class="metric-card__label">Fill Rate</div>
+          <div class="metric-card__value metric-card__value--green">&gt;60%</div>
+          <div class="metric-card__target">Posted jobs &rarr; <span>completed transactions</span></div>
+        </div>
+        <div class="metric-card reveal reveal-delay-3">
+          <div class="metric-card__label">Avg Bids Per Job</div>
+          <div class="metric-card__value">3&ndash;7</div>
+          <div class="metric-card__target">Healthy competition <span>per auction</span></div>
+        </div>
+        <div class="metric-card reveal reveal-delay-4">
+          <div class="metric-card__label">Provider Retention</div>
+          <div class="metric-card__value metric-card__value--gold">85%</div>
+          <div class="metric-card__target">Month-over-month &middot; <span>Month 24 target</span></div>
+        </div>
+        <div class="metric-card reveal reveal-delay-5">
+          <div class="metric-card__label">Off-Platform Leakage</div>
+          <div class="metric-card__value metric-card__value--teal">&lt;8%</div>
+          <div class="metric-card__target">Month 24 target &middot; <span>Guarantee drives retention</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       TECH STACK
+       ═══════════════════════════════════════ -->
+  <section class="tech" id="tech">
+    <div class="tech__divider"></div>
+    <div class="container">
+      <div class="section-label reveal">Engineering</div>
+      <h2 class="section-title reveal">Built for sub-millisecond<br>bid processing at scale.</h2>
+
+      <div class="tech__layers">
+        <div class="tech-layer reveal reveal-delay-1">
+          <div class="tech-layer__label tech-layer__label--gold">Frontend</div>
+          <div class="tech-layer__items">
+            <span class="tech-tag">Next.js 15</span>
+            <span class="tech-tag">TypeScript</span>
+            <span class="tech-tag">Tailwind CSS 4</span>
+            <span class="tech-tag">shadcn/ui</span>
+            <span class="tech-tag">Zustand</span>
+            <span class="tech-tag">TanStack Query</span>
+            <span class="tech-tag">Mapbox GL</span>
+            <span class="tech-tag">WebSocket</span>
+          </div>
+        </div>
+        <div class="tech-layer reveal reveal-delay-2">
+          <div class="tech-layer__label tech-layer__label--teal">Go Services</div>
+          <div class="tech-layer__items">
+            <span class="tech-tag">Go 1.22+</span>
+            <span class="tech-tag">Chi Router</span>
+            <span class="tech-tag">pgx</span>
+            <span class="tech-tag">gRPC</span>
+            <span class="tech-tag">Redis</span>
+            <span class="tech-tag">Stripe Connect</span>
+            <span class="tech-tag">slog</span>
+          </div>
+        </div>
+        <div class="tech-layer reveal reveal-delay-3">
+          <div class="tech-layer__label tech-layer__label--red">Rust Engines</div>
+          <div class="tech-layer__items">
+            <span class="tech-tag">Tokio</span>
+            <span class="tech-tag">Tonic gRPC</span>
+            <span class="tech-tag">Axum</span>
+            <span class="tech-tag">sqlx</span>
+            <span class="tech-tag">ONNX Runtime</span>
+            <span class="tech-tag">Criterion</span>
+            <span class="tech-tag">libvips FFI</span>
+          </div>
+        </div>
+        <div class="tech-layer reveal reveal-delay-4">
+          <div class="tech-layer__label tech-layer__label--green">Data Layer</div>
+          <div class="tech-layer__items">
+            <span class="tech-tag">PostgreSQL 16</span>
+            <span class="tech-tag">PostGIS 3.4</span>
+            <span class="tech-tag">Redis 7 Cluster</span>
+            <span class="tech-tag">Meilisearch</span>
+            <span class="tech-tag">S3</span>
+          </div>
+        </div>
+        <div class="tech-layer reveal reveal-delay-5">
+          <div class="tech-layer__label tech-layer__label--purple">Infrastructure</div>
+          <div class="tech-layer__items">
+            <span class="tech-tag">Kubernetes</span>
+            <span class="tech-tag">GitHub Actions</span>
+            <span class="tech-tag">OpenTelemetry</span>
+            <span class="tech-tag">Prometheus</span>
+            <span class="tech-tag">Grafana</span>
+            <span class="tech-tag">Sentry</span>
+            <span class="tech-tag">Vault</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       CTA
+       ═══════════════════════════════════════ -->
+  <section class="cta-section" id="cta">
+    <div class="cta-section__divider"></div>
+    <div class="cta-section__glow"></div>
+    <div class="container">
+      <h2 class="reveal">The fair market<br>starts <em>here.</em></h2>
+      <p class="reveal reveal-delay-1">
+        NoMarkup launches in Seattle, WA. Request early access for customers
+        and providers, or reach out to discuss enterprise partnerships
+        and investment opportunities.
+      </p>
+      <a href="mailto:tanner@nomarkup.com" class="btn-primary reveal reveal-delay-2">Request Early Access</a>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       FOOTER
+       ═══════════════════════════════════════ -->
+  <footer class="footer">
+    <div class="container--wide">
+      <div class="footer__inner">
+        <div class="footer__brand">No<span>Markup</span></div>
+        <ul class="footer__links">
+          <li><a href="#problem">Problem</a></li>
+          <li><a href="#how-it-works">Platform</a></li>
+          <li><a href="#market">Market</a></li>
+          <li><a href="#trust">Trust</a></li>
+          <li><a href="#finserv">Revenue</a></li>
+        </ul>
+        <div class="footer__copy">&copy; 2026 NoMarkup, Inc. &middot; Seattle, WA</div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ═══════════════════════════════════════
+       SCRIPTS
+       ═══════════════════════════════════════ -->
+  <script>
+    /* ─── Cursor Glow ─── */
+    const glow = document.getElementById('cursorGlow');
+    let glowTimeout;
+    document.addEventListener('mousemove', (e) => {
+      glow.style.left = e.clientX + 'px';
+      glow.style.top = e.clientY + 'px';
+      glow.classList.add('active');
+      clearTimeout(glowTimeout);
+      glowTimeout = setTimeout(() => glow.classList.remove('active'), 3000);
+    });
+
+    /* ─── Market Ticker ─── */
+    const tickerData = [
+      { cat: 'HVAC Replacement', loc: 'Seattle, WA', price: '$12,400', delta: '-18%', dir: 'down' },
+      { cat: 'Plumbing Repair', loc: 'Bellevue, WA', price: '$340', delta: '-22%', dir: 'down' },
+      { cat: 'Roof Inspection', loc: 'Tacoma, WA', price: '$285', delta: '-12%', dir: 'down' },
+      { cat: 'Electrical Panel', loc: 'Kirkland, WA', price: '$2,150', delta: '-15%', dir: 'down' },
+      { cat: 'Interior Painting', loc: 'Redmond, WA', price: '$1,800', delta: '-9%', dir: 'down' },
+      { cat: 'Tree Removal', loc: 'Issaquah, WA', price: '$950', delta: '-27%', dir: 'down' },
+      { cat: 'Fence Install', loc: 'Renton, WA', price: '$3,200', delta: '-14%', dir: 'down' },
+      { cat: 'Water Heater', loc: 'Everett, WA', price: '$1,100', delta: '-20%', dir: 'down' },
+      { cat: 'Carpet Replace', loc: 'Kent, WA', price: '$2,400', delta: '-11%', dir: 'down' },
+      { cat: 'Garage Door', loc: 'Lynnwood, WA', price: '$890', delta: '-16%', dir: 'down' },
+    ];
+
+    function buildTicker() {
+      const track = document.getElementById('tickerTrack');
+      let html = '';
+      // Double the items for seamless loop
+      for (let i = 0; i < 2; i++) {
+        tickerData.forEach((item, idx) => {
+          html += `
+            <div class="ticker__item">
+              <span class="cat">${item.cat}</span>
+              <span class="loc">${item.loc}</span>
+              <span class="price">${item.price}</span>
+              <span class="delta delta--${item.dir}">${item.delta} vs. industry</span>
+            </div>`;
+          if (idx < tickerData.length - 1) {
+            html += '<div class="ticker__sep"></div>';
+          }
+        });
+        if (i === 0) html += '<div class="ticker__sep"></div>';
+      }
+      track.innerHTML = html;
+    }
+    buildTicker();
+
+    /* ─── Auction Widget ─── */
+    const bids = [
+      { name: 'Pacific NW HVAC Pro', initials: 'PN', color: '#4a6fa5', stars: '4.2', trust: 72, badge: null, amount: 36500 },
+      { name: 'Seattle Climate Solutions', initials: 'SC', color: '#6b5b95', stars: '4.7', trust: 85, badge: 'Verified', amount: 29800 },
+      { name: 'Emerald City Heating', initials: 'EC', color: '#2a9d8f', stars: '4.8', trust: 91, badge: 'Licensed', amount: 24200 },
+      { name: 'Puget Sound HVAC', initials: 'PS', color: '#e76f51', stars: '4.5', trust: 78, badge: 'Insured', amount: 18900 },
+      { name: 'Summit Mechanical', initials: 'SM', color: '#c9a84c', stars: '4.9', trust: 94, badge: 'Top Rated', amount: 12400 },
+    ];
+
+    const industryAvg = 38000;
+    const bidsContainer = document.getElementById('auctionBids');
+    const savingsEl = document.getElementById('auctionSavings');
+
+    function formatCurrency(cents) {
+      return '$' + cents.toLocaleString();
+    }
+
+    function animateBids() {
+      bidsContainer.innerHTML = '';
+      let lowestSoFar = Infinity;
+
+      bids.forEach((bid, i) => {
+        const el = document.createElement('div');
+        el.className = 'auction-widget__bid';
+        if (bid.amount < lowestSoFar) lowestSoFar = bid.amount;
+        const isLowest = bid.amount <= lowestSoFar;
+        const savingsPercent = Math.round((1 - bid.amount / industryAvg) * 100);
+
+        el.innerHTML = `
+          <div class="auction-widget__bid-avatar" style="background:${bid.color}">${bid.initials}</div>
+          <div class="auction-widget__bid-info">
+            <div class="auction-widget__bid-name">${bid.name}</div>
+            <div class="auction-widget__bid-meta">
+              <span class="stars">${'&#9733;'.repeat(Math.floor(parseFloat(bid.stars)))} ${bid.stars}</span>
+              <span>Trust: ${bid.trust}</span>
+              ${bid.badge ? `<span class="auction-widget__bid-badge">${bid.badge}</span>` : ''}
+            </div>
+          </div>
+          <div>
+            <div class="auction-widget__bid-amount ${i === bids.length - 1 ? 'best' : ''}">${formatCurrency(bid.amount)}</div>
+            ${i === bids.length - 1 ? `<div class="auction-widget__bid-savings">-${savingsPercent}% vs. industry</div>` : ''}
+          </div>
+        `;
+
+        bidsContainer.appendChild(el);
+
+        setTimeout(() => {
+          el.classList.add('visible');
+          if (i === bids.length - 1) {
+            el.classList.add('lowest');
+            const totalSaved = industryAvg - bid.amount;
+            savingsEl.textContent = formatCurrency(totalSaved) + ' saved';
+          }
+        }, 800 + i * 700);
+      });
+    }
+
+    /* ─── Auction Timer ─── */
+    const timerEl = document.getElementById('auctionTimer');
+    let timerSeconds = 23 * 3600 + 47 * 60 + 12;
+    function updateTimer() {
+      const h = Math.floor(timerSeconds / 3600);
+      const m = Math.floor((timerSeconds % 3600) / 60);
+      const s = timerSeconds % 60;
+      timerEl.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} remaining`;
+      timerSeconds = Math.max(0, timerSeconds - 1);
+    }
+    setInterval(updateTimer, 1000);
+
+    /* ─── Scroll Reveal ─── */
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+    /* ─── Counter Animation ─── */
+    const counterObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const el = entry.target;
+          const target = parseInt(el.dataset.counter);
+          const suffix = target >= 1000 ? 'B' : 'M';
+          const displayTarget = target;
+          let current = 0;
+          const duration = 1500;
+          const step = 16;
+          const increment = target / (duration / step);
+
+          const timer = setInterval(() => {
+            current += increment;
+            if (current >= displayTarget) {
+              current = displayTarget;
+              clearInterval(timer);
+            }
+            el.textContent = '$' + Math.round(current) + suffix;
+          }, step);
+
+          counterObserver.unobserve(el);
+        }
+      });
+    }, { threshold: 0.5 });
+
+    document.querySelectorAll('[data-counter]').forEach(el => counterObserver.observe(el));
+
+    /* ─── Growth Bar Animation ─── */
+    const barObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.querySelectorAll('.market__growth-bar-fill').forEach(bar => {
+            bar.classList.add('animated');
+          });
+          barObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.3 });
+
+    document.querySelectorAll('.market__growth').forEach(el => barObserver.observe(el));
+
+    /* ─── Initial animation ─── */
+    setTimeout(animateBids, 500);
+
+    /* ─── Repeat auction animation ─── */
+    setInterval(() => {
+      savingsEl.textContent = '\u2014';
+      animateBids();
+    }, 12000);
+  </script>
+</body>
+</html>
