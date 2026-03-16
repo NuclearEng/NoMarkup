@@ -53,12 +53,16 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
+    html {
+      overflow-x: hidden;
+    }
     body {
       font-family: var(--font-body);
       background: var(--bg-primary);
       color: var(--text-primary);
       line-height: 1.6;
       overflow-x: hidden;
+      overscroll-behavior-x: none;
     }
 
     /* ═══════════════════════════════════════
@@ -832,9 +836,6 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior-x: contain;
     }
     .market__growth-header {
       padding: 1.25rem 2rem;
@@ -863,6 +864,7 @@
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-x: contain;
+      touch-action: pan-x;
     }
     .market__growth-table {
       width: 100%;
@@ -938,6 +940,7 @@
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-x: contain;
+      touch-action: pan-x;
     }
     .matrix table {
       width: 100%;
