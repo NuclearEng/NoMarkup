@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
-import type { Contract, ContractDetail, ContractsResponse, Milestone } from '@/types';
+import type { Contract, ContractDetail, ContractsResponse, Dispute, Milestone } from '@/types';
 
 interface ContractsParams {
   status?: string;
@@ -189,6 +189,31 @@ export function useRequestRevision() {
     },
     onError: () => {
       toast.error('Failed to request revision');
+    },
+  });
+}
+
+export function useOpenDispute() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (variables: {
+      contractId: string;
+      dispute_type: string;
+      description: string;
+      is_guarantee_claim?: boolean;
+    }) =>
+      api.post<{ dispute: Dispute }>(`/api/v1/contracts/${variables.contractId}/disputes`, {
+        dispute_type: variables.dispute_type,
+        description: variables.description,
+        is_guarantee_claim: variables.is_guarantee_claim ?? false,
+      }),
+    onSuccess: (_data, variables) => {
+      toast.success('Claim submitted successfully');
+      void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
+    },
+    onError: () => {
+      toast.error('Failed to submit claim');
     },
   });
 }

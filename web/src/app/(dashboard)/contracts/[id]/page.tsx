@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Loader2, Star } from 'lucide-react';
+import { ArrowLeft, Loader2, Shield, Star } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -8,6 +8,8 @@ import { useState } from 'react';
 
 import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
+import { GuaranteeCoverage } from '@/components/contracts/GuaranteeCoverage';
+import { InstallmentSchedule } from '@/components/payments/InstallmentSchedule';
 import {
   getPaymentTimingLabel,
   getStatusLabel,
@@ -25,6 +27,7 @@ import {
   useMarkComplete,
   useStartWork,
 } from '@/hooks/useContracts';
+import { useInstallmentSchedule } from '@/hooks/useInstallments';
 import { useReviewEligibility } from '@/hooks/useReviews';
 import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -61,6 +64,7 @@ export default function ContractDetailPage() {
   const markComplete = useMarkComplete();
   const approveCompletion = useApproveCompletion();
   const cancelContract = useCancelContract();
+  const { installments } = useInstallmentSchedule(contractId);
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
@@ -268,6 +272,14 @@ export default function ContractDetailPage() {
         <CompletionFlow contract={contract} />
       ) : null}
 
+      {/* Guarantee Coverage */}
+      <GuaranteeCoverage contract={contract} />
+
+      {/* Installment Schedule */}
+      {installments.length > 0 ? (
+        <InstallmentSchedule installments={installments} />
+      ) : null}
+
       {/* Action buttons based on status and role */}
       {contract.status === CONTRACT_STATUS.ACTIVE && (isCustomer || isProvider) ? (
         <Card>
@@ -364,6 +376,16 @@ export default function ContractDetailPage() {
                 Cancel Contract
               </Button>
             )}
+
+            {/* Customer: File Guarantee Claim */}
+            {isCustomer ? (
+              <Link href={`/contracts/${contract.id}/guarantee-claim` as Route}>
+                <Button variant="outline" className="min-h-[44px] w-full gap-2">
+                  <Shield className="h-4 w-4" aria-hidden="true" />
+                  File Guarantee Claim
+                </Button>
+              </Link>
+            ) : null}
 
             {/* Error messages for other mutations */}
             {startWork.isError ? (

@@ -1,8 +1,10 @@
 'use client';
 
 import {
+  Banknote,
   BarChart3,
   Briefcase,
+  Building2,
   CreditCard,
   FileText,
   Gavel,
@@ -39,6 +41,8 @@ const BASE_NAV_ITEMS: NavItem[] = [
 const PROVIDER_NAV_ITEMS: NavItem[] = [
   { href: '/provider' as Route, label: 'Provider Dashboard', icon: LayoutDashboard },
   { href: '/bids' as Route, label: 'My Bids', icon: Gavel },
+  { href: '/provider/advances' as Route, label: 'Working Capital', icon: Banknote },
+  { href: '/provider/business' as Route, label: 'Business Tools', icon: Building2 },
 ];
 
 const ADMIN_NAV_ITEMS: NavItem[] = [
@@ -56,8 +60,8 @@ const COMMON_NAV_ITEMS: NavItem[] = [
 ];
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === '/dashboard' || href === '/bids' || href === '/jobs/mine' || href === '/jobs/new') {
-    return pathname === href;
+  if (href === '/dashboard' || href === '/bids' || href === '/jobs/mine' || href === '/jobs/new' || href === '/provider/advances' || href === '/provider/business') {
+    return pathname === href || pathname.startsWith(href + '/');
   }
   return pathname.startsWith(href);
 }

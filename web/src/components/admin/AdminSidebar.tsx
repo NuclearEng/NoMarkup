@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  Banknote,
   BarChart3,
   CreditCard,
   FileCheck,
@@ -9,6 +10,7 @@ import {
   LayoutDashboard,
   MessageSquareWarning,
   Shield,
+  ShieldCheck,
   Users,
 } from 'lucide-react';
 import type { Route } from 'next';
@@ -32,6 +34,8 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/reviews' as Route, label: 'Reviews', icon: Flag },
   { href: '/admin/fraud' as Route, label: 'Fraud', icon: Shield },
   { href: '/admin/payments' as Route, label: 'Payments', icon: CreditCard },
+  { href: '/admin/advances' as Route, label: 'Advances', icon: Banknote },
+  { href: '/admin/guarantee' as Route, label: 'Guarantee', icon: ShieldCheck },
   { href: '/admin/platform' as Route, label: 'Platform', icon: MessageSquareWarning },
 ];
 

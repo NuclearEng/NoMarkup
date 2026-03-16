@@ -45,6 +45,8 @@ func New(
 	adminPlatformHandler *handler.AdminPlatformHandler,
 	propertyHandler *handler.PropertyHandler,
 	verificationHandler *handler.VerificationHandler,
+	workingCapitalHandler *handler.WorkingCapitalHandler,
+	expenseHandler *handler.ExpenseHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -173,6 +175,20 @@ func New(
 			r.Post("/me/stripe/account", paymentHandler.CreateStripeAccount)
 			r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
 			r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
+
+			// Working Capital advances
+			r.Route("/me/advances", func(r chi.Router) {
+				r.Post("/", workingCapitalHandler.RequestAdvance)
+				r.Get("/", workingCapitalHandler.ListMyAdvances)
+				r.Get("/{id}", workingCapitalHandler.GetAdvance)
+			})
+
+			// Expenses
+			r.Route("/me/expenses", func(r chi.Router) {
+				r.Post("/", expenseHandler.CreateExpense)
+				r.Get("/", expenseHandler.ListExpenses)
+				r.Delete("/{id}", expenseHandler.DeleteExpense)
+			})
 		})
 
 		// Property routes
@@ -324,6 +340,12 @@ func New(
 			})
 			r.Get("/revenue", adminPaymentsHandler.GetRevenueReport)
 			r.Put("/fees", adminPaymentsHandler.UpdateFeeConfig)
+
+			// Working Capital advances (admin review)
+			r.Route("/advances", func(r chi.Router) {
+				r.Get("/", workingCapitalHandler.AdminListAdvances)
+				r.Post("/{id}/review", workingCapitalHandler.AdminReviewAdvance)
+			})
 
 			// Platform
 			r.Route("/platform", func(r chi.Router) {

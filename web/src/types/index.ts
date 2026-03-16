@@ -1317,3 +1317,85 @@ export interface FeeConfig {
 export interface CategoryMetricsResponse {
   categories: CategoryMetric[];
 }
+
+// ────────────────────────────────────────
+// Working Capital types
+// ────────────────────────────────────────
+
+export const ADVANCE_STATUS = {
+  REQUESTED: 'requested',
+  APPROVED: 'approved',
+  DISBURSED: 'disbursed',
+  REPAYING: 'repaying',
+  REPAID: 'repaid',
+  DEFAULTED: 'defaulted',
+  REJECTED: 'rejected',
+} as const;
+export type AdvanceStatus = (typeof ADVANCE_STATUS)[keyof typeof ADVANCE_STATUS];
+
+export interface WorkingCapitalAdvance {
+  id: string;
+  provider_id: string;
+  contract_id: string;
+  contract_number?: string;
+  advance_amount_cents: number;
+  fee_cents: number;
+  repaid_cents: number;
+  status: AdvanceStatus;
+  reviewed_at?: string;
+  rejection_reason?: string;
+  disbursed_at?: string;
+  repaid_at?: string;
+  created_at: string;
+}
+
+export interface AdvancesResponse {
+  advances: WorkingCapitalAdvance[];
+  pagination: PaginationResponse;
+}
+
+// ────────────────────────────────────────
+// Expense types
+// ────────────────────────────────────────
+
+export const EXPENSE_CATEGORY = {
+  MATERIALS: 'materials',
+  TOOLS: 'tools',
+  TRANSPORTATION: 'transportation',
+  INSURANCE: 'insurance',
+  LICENSING: 'licensing',
+  MARKETING: 'marketing',
+  SUBCONTRACTOR: 'subcontractor',
+  OFFICE: 'office',
+  OTHER: 'other',
+} as const;
+export type ExpenseCategory = (typeof EXPENSE_CATEGORY)[keyof typeof EXPENSE_CATEGORY];
+
+export interface ProviderExpense {
+  id: string;
+  provider_id: string;
+  category: ExpenseCategory;
+  description: string;
+  amount_cents: number;
+  receipt_url?: string;
+  expense_date: string;
+  created_at: string;
+}
+
+export interface ExpensesResponse {
+  expenses: ProviderExpense[];
+  total_cents: number;
+}
+
+// ────────────────────────────────────────
+// Installment types
+// ────────────────────────────────────────
+
+export interface InstallmentInfo {
+  installment_number: number;
+  total_installments: number;
+  amount_cents: number;
+  status: string;
+  due_date?: string;
+  paid_at?: string;
+}

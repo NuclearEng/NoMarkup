@@ -208,6 +208,8 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(paymentClient, subscriptionClient)
 	propertyHandler := handler.NewPropertyHandler(userClient)
 	verificationHandler := handler.NewVerificationHandler(userClient)
+	workingCapitalHandler := handler.NewWorkingCapitalHandler()
+	expenseHandler := handler.NewExpenseHandler()
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
 	trustHandler := handler.NewTrustHandler(trustClient, cacheClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
@@ -234,6 +236,7 @@ func main() {
 		adminUsersHandler, adminVerificationHandler, adminJobsHandler,
 		adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler,
 		adminPlatformHandler, propertyHandler, verificationHandler,
+		workingCapitalHandler, expenseHandler,
 	)
 
 	srv := &http.Server{
