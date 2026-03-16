@@ -102,9 +102,9 @@ export default function AdminTaxonomyPage() {
           <CardContent className="flex items-center gap-3 p-4">
             <FolderTree className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
             <div>
-              <p className="text-2xl font-bold tabular-nums">
+              <div className="text-2xl font-bold tabular-nums">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalCategories)}
-              </p>
+              </div>
               <p className="text-xs text-muted-foreground">Categories</p>
             </div>
           </CardContent>
@@ -113,9 +113,9 @@ export default function AdminTaxonomyPage() {
           <CardContent className="flex items-center gap-3 p-4">
             <Layers className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
             <div>
-              <p className="text-2xl font-bold tabular-nums">
+              <div className="text-2xl font-bold tabular-nums">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalSubcategories)}
-              </p>
+              </div>
               <p className="text-xs text-muted-foreground">Subcategories</p>
             </div>
           </CardContent>
@@ -124,9 +124,9 @@ export default function AdminTaxonomyPage() {
           <CardContent className="flex items-center gap-3 p-4">
             <Tag className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
             <div>
-              <p className="text-2xl font-bold tabular-nums">
+              <div className="text-2xl font-bold tabular-nums">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalServiceTypes)}
-              </p>
+              </div>
               <p className="text-xs text-muted-foreground">Service Types</p>
             </div>
           </CardContent>
