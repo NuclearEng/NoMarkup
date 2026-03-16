@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type {
   AnalyticsMarketRange,
   CustomerSpendingResponse,
@@ -36,7 +36,14 @@ export function useProviderAnalytics(startDate?: string, endDate?: string) {
 
   return useQuery({
     queryKey: ['provider-analytics', startDate, endDate],
-    queryFn: () => api.get<ProviderAnalytics>(path),
+    queryFn: async () => {
+      try {
+        return await api.get<ProviderAnalytics>(path);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
   });
 }
 

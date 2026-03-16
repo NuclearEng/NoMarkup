@@ -31,22 +31,18 @@ export default function JobDetailPage() {
   const isJobOwner = user !== null && job !== undefined && user.id === job.customer_id;
 
   // Determine if the job is in a state where bidding/awarding is possible
-  const canBid =
-    job?.status === JOB_STATUS.ACTIVE &&
-    isProvider &&
-    !isJobOwner;
+  const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
 
   const canAward =
-    isJobOwner &&
-    (job.status === JOB_STATUS.ACTIVE || job.status === JOB_STATUS.CLOSED);
+    isJobOwner && (job.status === JOB_STATUS.ACTIVE || job.status === JOB_STATUS.CLOSED);
 
   if (isLoading) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="space-y-6">
-          <div className="h-8 w-2/3 animate-pulse rounded bg-muted" />
-          <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-          <div className="h-64 animate-pulse rounded-xl border bg-muted" />
+          <div className="bg-muted h-8 w-2/3 animate-pulse rounded" />
+          <div className="bg-muted h-4 w-1/3 animate-pulse rounded" />
+          <div className="bg-muted h-64 animate-pulse rounded-xl border" />
         </div>
       </div>
     );
@@ -56,7 +52,7 @@ export default function JobDetailPage() {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 text-center sm:px-6 lg:px-8">
         <h1 className="text-2xl font-bold">Job Not Found</h1>
-        <p className="mt-2 text-muted-foreground">
+        <p className="text-muted-foreground mt-2">
           This job may have been removed or does not exist.
         </p>
         <Link href={'/jobs' as Route}>
@@ -80,16 +76,25 @@ export default function JobDetailPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-1 text-sm text-muted-foreground">
-        <Link href={'/jobs' as Route} className="min-h-[44px] px-1 hover:text-foreground inline-flex items-center">
+      <nav
+        aria-label="Breadcrumb"
+        className="text-muted-foreground mb-6 flex items-center gap-1 text-sm"
+      >
+        <Link
+          href={'/jobs' as Route}
+          className="hover:text-foreground inline-flex min-h-[44px] items-center px-1"
+        >
           Jobs
         </Link>
         <ChevronRight className="h-3 w-3" aria-hidden="true" />
-        <Link href={'/jobs' as Route} className="min-h-[44px] px-1 hover:text-foreground inline-flex items-center">
+        <Link
+          href={'/jobs' as Route}
+          className="hover:text-foreground inline-flex min-h-[44px] items-center px-1"
+        >
           {job.category_name}
         </Link>
         <ChevronRight className="h-3 w-3" aria-hidden="true" />
-        <span className="truncate text-foreground">{job.title}</span>
+        <span className="text-foreground truncate">{job.title}</span>
       </nav>
 
       <div className="grid gap-8 lg:grid-cols-3">
@@ -101,21 +106,25 @@ export default function JobDetailPage() {
               <h1 className="text-2xl font-bold tracking-tight">{job.title}</h1>
               <Badge
                 variant={
-                  job.status === 'active' ? 'default' : job.status === 'draft' ? 'secondary' : 'outline'
+                  job.status === 'active'
+                    ? 'default'
+                    : job.status === 'draft'
+                      ? 'secondary'
+                      : 'outline'
                 }
                 className="shrink-0"
               >
                 {job.status.replace(/_/g, ' ')}
               </Badge>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="text-muted-foreground mt-1 text-sm">
               Posted {formatRelativeTime(new Date(job.created_at))}
             </p>
           </div>
 
           {/* Category */}
           <div className="flex items-center gap-2 text-sm">
-            <Tag className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Tag className="text-muted-foreground h-4 w-4" aria-hidden="true" />
             <span>{job.category_name}</span>
           </div>
 
@@ -124,7 +133,7 @@ export default function JobDetailPage() {
           {/* Description */}
           <div>
             <h2 className="mb-2 text-lg font-semibold">Description</h2>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{job.description}</p>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.description}</p>
           </div>
 
           <Separator />
@@ -133,10 +142,13 @@ export default function JobDetailPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Location */}
             <div className="flex items-start gap-3">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <MapPin
+                className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0"
+                aria-hidden="true"
+              />
               <div>
                 <h3 className="text-sm font-medium">Location</h3>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   {job.location_address ?? 'Remote / Not specified'}
                 </p>
               </div>
@@ -144,12 +156,15 @@ export default function JobDetailPage() {
 
             {/* Schedule */}
             <div className="flex items-start gap-3">
-              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Calendar
+                className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0"
+                aria-hidden="true"
+              />
               <div>
                 <h3 className="text-sm font-medium">Schedule</h3>
-                <p className="text-sm text-muted-foreground">{scheduleLabel}</p>
+                <p className="text-muted-foreground text-sm">{scheduleLabel}</p>
                 {job.scheduled_date ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-muted-foreground text-sm">
                     {new Date(job.scheduled_date).toLocaleDateString('en-US', {
                       weekday: 'long',
                       month: 'long',
@@ -168,10 +183,10 @@ export default function JobDetailPage() {
 
             {/* Bids */}
             <div className="flex items-start gap-3">
-              <Users className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Users className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <div>
                 <h3 className="text-sm font-medium">Bids</h3>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''} placed
                 </p>
                 {job.lowest_bid_cents ? (
@@ -184,10 +199,10 @@ export default function JobDetailPage() {
 
             {/* Auction duration */}
             <div className="flex items-start gap-3">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Clock className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <div>
                 <h3 className="text-sm font-medium">Auction Duration</h3>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   {String(job.auction_duration_hours)} hours
                 </p>
               </div>
@@ -207,9 +222,7 @@ export default function JobDetailPage() {
             <>
               <Separator />
               <div>
-                <h2 className="mb-4 text-lg font-semibold">
-                  Bids ({String(displayBidCount)})
-                </h2>
+                <h2 className="mb-4 text-lg font-semibold">Bids</h2>
                 <BidList jobId={jobId} canAward={canAward} />
               </div>
             </>
@@ -227,19 +240,19 @@ export default function JobDetailPage() {
               {job.auction_ends_at ? (
                 <AuctionTimer auctionEndsAt={job.auction_ends_at} />
               ) : (
-                <p className="text-sm text-muted-foreground">Auction not started</p>
+                <p className="text-muted-foreground text-sm">Auction not started</p>
               )}
 
               {job.starting_bid_cents ? (
                 <div>
-                  <p className="text-xs text-muted-foreground">Starting Bid</p>
+                  <p className="text-muted-foreground text-xs">Starting Bid</p>
                   <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
                 </div>
               ) : null}
 
               {job.offer_accepted_cents ? (
                 <div>
-                  <p className="text-xs text-muted-foreground">Instant Accept Price</p>
+                  <p className="text-muted-foreground text-xs">Instant Accept Price</p>
                   <p className="text-lg font-semibold text-green-600">
                     {formatCents(job.offer_accepted_cents)}
                   </p>
@@ -248,8 +261,8 @@ export default function JobDetailPage() {
 
               {/* Bid count badge */}
               <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <span className="text-sm text-muted-foreground">
+                <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+                <span className="text-muted-foreground text-sm">
                   {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
                 </span>
               </div>
@@ -272,7 +285,7 @@ export default function JobDetailPage() {
                   </Button>
                 </Link>
               ) : !isProvider && !isJobOwner ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   Only providers can place bids on jobs.
                 </p>
               ) : null}
@@ -286,14 +299,14 @@ export default function JobDetailPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="font-medium">{job.customer_display_name}</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Member since{' '}
                 {new Date(job.customer_member_since).toLocaleDateString('en-US', {
                   month: 'long',
                   year: 'numeric',
                 })}
               </p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 {String(job.customer_jobs_posted)} job{job.customer_jobs_posted !== 1 ? 's' : ''}{' '}
                 posted
               </p>

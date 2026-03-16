@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type {
   GlobalTermsInput,
   PortfolioImage,
@@ -12,10 +12,26 @@ import type {
 export function useProviderProfile() {
   return useQuery({
     queryKey: ['providerProfile'],
-    queryFn: () =>
-      api
-        .get<{ profile: ProviderProfile }>('/api/v1/providers/me')
-        .then((res) => res.profile),
+    queryFn: async (): Promise<ProviderProfile | null> => {
+      try {
+        const res = await api.get<{ profile: ProviderProfile }>('/api/v1/providers/me');
+        return res.profile ?? null;
+      } catch (error: unknown) {
+        // Provider profile may not exist yet (e.g. user just enabled the role).
+        // Return null instead of crashing so the dashboard can show onboarding.
+        const status =
+          error instanceof ApiError ? error.status : (error as { status?: number })?.status;
+        if (status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    retry: (failureCount, error) => {
+      // Don't retry on 404 — profile just doesn't exist.
+      if (error instanceof ApiError && error.status === 404) return false;
+      return failureCount < 1;
+    },
   });
 }
 
@@ -83,10 +99,10 @@ export function useSetAvailability() {
   return useMutation({
     mutationFn: (input: { instant_enabled: boolean; instant_available: boolean }) =>
       api
-        .put<{ instant_enabled: boolean; instant_available: boolean }>(
-          '/api/v1/providers/me/availability',
-          input,
-        )
+        .put<{
+          instant_enabled: boolean;
+          instant_available: boolean;
+        }>('/api/v1/providers/me/availability', input)
         .then((res) => res),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });

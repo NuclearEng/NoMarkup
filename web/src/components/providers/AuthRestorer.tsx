@@ -16,16 +16,18 @@ import { useAuthStore } from '@/stores/auth-store';
  * happens — the user simply stays unauthenticated.
  */
 export function AuthRestorer() {
-  const { isAuthenticated, refreshToken } = useAuthStore();
+  const refreshToken = useAuthStore((s) => s.refreshToken);
   const attempted = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated || attempted.current) return;
+    if (attempted.current) return;
     attempted.current = true;
 
-    // Fire-and-forget — we intentionally ignore failures.
+    // Always attempt a refresh on mount. If the refresh cookie is valid the
+    // store is hydrated; if it fails the store is reset to unauthenticated.
+    // This handles stale in-memory auth state when cookies have been cleared.
     void refreshToken();
-  }, [isAuthenticated, refreshToken]);
+  }, [refreshToken]);
 
   return null;
 }

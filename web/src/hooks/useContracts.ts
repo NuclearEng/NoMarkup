@@ -2,12 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
-import type {
-  Contract,
-  ContractDetail,
-  ContractsResponse,
-  Milestone,
-} from '@/types';
+import type { Contract, ContractDetail, ContractsResponse, Milestone } from '@/types';
 
 interface ContractsParams {
   status?: string;
@@ -18,7 +13,16 @@ interface ContractsParams {
 export function useContract(id: string) {
   return useQuery({
     queryKey: ['contract', id],
-    queryFn: () => api.get<ContractDetail>(`/api/v1/contracts/${id}`),
+    queryFn: async () => {
+      const raw = await api.get<Record<string, unknown>>(`/api/v1/contracts/${id}`);
+      // The gateway returns a flat contract object with change_orders embedded.
+      // Normalize to { contract, change_orders } to match ContractDetail type.
+      const { change_orders, ...contractFields } = raw;
+      return {
+        contract: contractFields as unknown as Contract,
+        change_orders: (change_orders ?? []) as ContractDetail['change_orders'],
+      };
+    },
     enabled: !!id,
   });
 }
@@ -42,7 +46,9 @@ export function useAcceptContract() {
 
   return useMutation({
     mutationFn: (id: string) =>
-      api.post<{ contract: Contract }>(`/api/v1/contracts/${id}/accept`).then((res) => res.contract),
+      api
+        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/accept`)
+        .then((res) => res.contract),
     onSuccess: (_data, id) => {
       toast.success('Contract accepted');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
@@ -76,7 +82,9 @@ export function useMarkComplete() {
 
   return useMutation({
     mutationFn: (id: string) =>
-      api.post<{ contract: Contract }>(`/api/v1/contracts/${id}/complete`).then((res) => res.contract),
+      api
+        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/complete`)
+        .then((res) => res.contract),
     onSuccess: (_data, id) => {
       toast.success('Work marked as complete');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
@@ -93,7 +101,9 @@ export function useApproveCompletion() {
 
   return useMutation({
     mutationFn: (id: string) =>
-      api.post<{ contract: Contract }>(`/api/v1/contracts/${id}/approve-completion`).then((res) => res.contract),
+      api
+        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/approve-completion`)
+        .then((res) => res.contract),
     onSuccess: (_data, id) => {
       toast.success('Completion approved — payment released');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
@@ -110,7 +120,9 @@ export function useCancelContract() {
 
   return useMutation({
     mutationFn: (id: string) =>
-      api.post<{ contract: Contract }>(`/api/v1/contracts/${id}/cancel`).then((res) => res.contract),
+      api
+        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/cancel`)
+        .then((res) => res.contract),
     onSuccess: (_data, id) => {
       toast.success('Contract cancelled');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
@@ -127,7 +139,9 @@ export function useSubmitMilestone() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string }) =>
-      api.post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/submit`).then((res) => res.milestone),
+      api
+        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/submit`)
+        .then((res) => res.milestone),
     onSuccess: (_data, variables) => {
       toast.success('Milestone submitted for review');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
@@ -144,7 +158,9 @@ export function useApproveMilestone() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string }) =>
-      api.post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/approve`).then((res) => res.milestone),
+      api
+        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/approve`)
+        .then((res) => res.milestone),
     onSuccess: (_data, variables) => {
       toast.success('Milestone approved');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
@@ -160,11 +176,7 @@ export function useRequestRevision() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: {
-      milestoneId: string;
-      contractId: string;
-      revisionNotes: string;
-    }) =>
+    mutationFn: (variables: { milestoneId: string; contractId: string; revisionNotes: string }) =>
       api
         .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/revision`, {
           revision_notes: variables.revisionNotes,

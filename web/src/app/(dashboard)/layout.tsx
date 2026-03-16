@@ -1,6 +1,19 @@
 'use client';
 
-import { Briefcase, CreditCard, FileText, Gavel, Home, LayoutDashboard, MessageSquare, PlusCircle, User } from 'lucide-react';
+import {
+  BarChart3,
+  Briefcase,
+  CreditCard,
+  FileText,
+  Gavel,
+  Home,
+  LayoutDashboard,
+  MessageSquare,
+  PlusCircle,
+  Shield,
+  User,
+  Users,
+} from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -28,6 +41,12 @@ const PROVIDER_NAV_ITEMS: NavItem[] = [
   { href: '/bids' as Route, label: 'My Bids', icon: Gavel },
 ];
 
+const ADMIN_NAV_ITEMS: NavItem[] = [
+  { href: '/admin' as Route, label: 'Admin Panel', icon: Shield },
+  { href: '/admin/users' as Route, label: 'Manage Users', icon: Users },
+  { href: '/admin/disputes' as Route, label: 'Disputes', icon: BarChart3 },
+];
+
 const COMMON_NAV_ITEMS: NavItem[] = [
   { href: '/contracts' as Route, label: 'Contracts', icon: FileText },
   { href: '/payments' as Route, label: 'Payments', icon: CreditCard },
@@ -47,10 +66,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const user = useAuthStore((state) => state.user);
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
+  const isAdmin = user?.roles.includes(USER_ROLE.ADMIN) ?? false;
 
   const allNavItems = [
     ...BASE_NAV_ITEMS,
     ...(isProvider ? PROVIDER_NAV_ITEMS : []),
+    ...(isAdmin ? ADMIN_NAV_ITEMS : []),
     ...COMMON_NAV_ITEMS,
   ];
 

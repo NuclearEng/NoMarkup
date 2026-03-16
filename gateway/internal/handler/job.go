@@ -430,7 +430,17 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 		result["customer_display_name"] = c.GetDisplayName()
 		result["customer_avatar_url"] = c.GetAvatarUrl()
 		result["customer_member_since"] = formatTimestamp(c.GetCreatedAt())
-		result["customer_jobs_posted"] = 0
+
+		// Fetch the customer's job count.
+		jobCount := int32(0)
+		countResp, err := h.jobClient.ListCustomerJobs(r.Context(), &jobv1.ListCustomerJobsRequest{
+			CustomerId: c.GetId(),
+			Pagination: &commonv1.PaginationRequest{PageSize: 1},
+		})
+		if err == nil && countResp.GetPagination() != nil {
+			jobCount = countResp.GetPagination().GetTotalCount()
+		}
+		result["customer_jobs_posted"] = jobCount
 	} else {
 		result["customer_display_name"] = "Customer"
 		result["customer_avatar_url"] = nil
