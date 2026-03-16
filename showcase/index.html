@@ -832,6 +832,9 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
     }
     .market__growth-header {
       padding: 1.25rem 2rem;
@@ -856,8 +859,14 @@
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
+    .market__growth-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+    }
     .market__growth-table {
       width: 100%;
+      min-width: 600px;
       border-collapse: collapse;
     }
     .market__growth-table th {
@@ -927,6 +936,8 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
     }
     .matrix table {
       width: 100%;
@@ -1937,6 +1948,7 @@
           <span class="market__growth-title">Growth Trajectory</span>
           <span class="market__growth-badge">Projected</span>
         </div>
+        <div class="market__growth-scroll">
         <table class="market__growth-table">
           <thead>
             <tr>
@@ -1981,6 +1993,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   </section>
