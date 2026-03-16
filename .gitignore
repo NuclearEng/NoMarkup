@@ -58,8 +58,9 @@ __pycache__/
 *.log
 npm-debug.log*
 
-# Generated proto code (regenerate with make proto-gen)
-proto/gen/
+# Generated proto code — Go output is committed (needed for builds).
+# Regenerate with: make proto-gen
+# proto/gen/rust/ is built by tonic-build at compile time, not committed.
 
 # Sentry
 .sentryclirc
