@@ -18,9 +18,11 @@ export default function Icon() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'white',
+          color: '#c9a84c',
           borderRadius: '6px',
-          fontWeight: 700,
+          fontWeight: 800,
+          fontFamily: 'sans-serif',
+          letterSpacing: '-0.02em',
         }}
       >
         N

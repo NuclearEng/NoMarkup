@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
-import { APP_NAME } from '@/lib/constants';
 import { useAuthStore } from '@/stores/auth-store';
 
+import { Logo } from './Logo';
 import { NotificationBell } from './NotificationBell';
 
 export function Header() {
@@ -29,12 +29,7 @@ export function Header() {
         Skip to main content
       </a>
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link
-          href="/"
-          className="text-xl font-bold tracking-tight text-foreground"
-        >
-          {APP_NAME}
-        </Link>
+        <Logo />
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">

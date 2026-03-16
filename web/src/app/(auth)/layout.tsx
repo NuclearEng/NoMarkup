@@ -1,6 +1,4 @@
-import Link from 'next/link';
-
-import { APP_NAME } from '@/lib/constants';
+import { Logo } from '@/components/layout/Logo';
 
 export default function AuthLayout({
   children,
@@ -9,12 +7,9 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8">
-      <Link
-        href="/"
-        className="mb-8 text-3xl font-bold tracking-tight text-foreground"
-      >
-        {APP_NAME}
-      </Link>
+      <div className="mb-8">
+        <Logo size="lg" />
+      </div>
       <div className="w-full max-w-md">{children}</div>
     </div>
   );

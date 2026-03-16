@@ -23,6 +23,11 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
 
+  /* NoMarkup brand */
+  --brand-gold: #c9a84c;
+  --brand-gold-dim: #a08839;
+  --brand-gold-bright: #e4c566;
+
   /* NoMarkup trust tier colors */
   --trust-low: 0 84% 60%;
   --trust-medium: 38 92% 50%;
@@ -77,6 +82,10 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+
+  --brand-gold: #d4af57;
+  --brand-gold-dim: #b89a45;
+  --brand-gold-bright: #e8c76e;
 
   --trust-low: 0 63% 45%;
   --trust-medium: 38 80% 45%;
