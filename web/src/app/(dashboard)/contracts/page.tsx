@@ -32,7 +32,7 @@ function ContractTabContent({ tab }: { tab: ContractTab }) {
   const { data, isLoading, isError } = useContracts({
     status: statusFilter,
     page,
-    per_page: 20,
+    page_size: 20,
   });
 
   if (isLoading) {

@@ -27,13 +27,15 @@ const seedPassword = "Password123!"
 
 // Fixed UUIDs for deterministic seed data (idempotent re-runs).
 const (
-	adminUserID    = "00000000-0000-0000-0000-000000000001"
-	customerUserID = "00000000-0000-0000-0000-000000000002"
-	providerUserID = "00000000-0000-0000-0000-000000000003"
+	adminUserID     = "00000000-0000-0000-0000-000000000001"
+	customerUserID  = "00000000-0000-0000-0000-000000000002"
+	providerUserID  = "00000000-0000-0000-0000-000000000003"
+	provider2UserID = "00000000-0000-0000-0000-000000000004"
 
 	propertyID = "00000000-0000-0000-0000-000000000010"
 
-	providerProfileID = "00000000-0000-0000-0000-000000000020"
+	providerProfileID  = "00000000-0000-0000-0000-000000000020"
+	provider2ProfileID = "00000000-0000-0000-0000-000000000021"
 
 	activeJobID    = "00000000-0000-0000-0000-000000000100"
 	awardedJobID   = "00000000-0000-0000-0000-000000000101"
@@ -135,11 +137,12 @@ func main() {
 	_, err = tx.Exec(ctx, `
 		INSERT INTO users (id, email, email_verified, password_hash, display_name, roles, status, timezone)
 		VALUES
-			($1, 'admin@nomarkup.com',    true, $4, 'Admin User',     '{admin}',    'active', 'America/Los_Angeles'),
-			($2, 'customer@nomarkup.com', true, $4, 'Jane Customer',  '{customer}', 'active', 'America/New_York'),
-			($3, 'provider@nomarkup.com', true, $4, 'Mike Provider',  '{provider}', 'active', 'America/Chicago')
+			($1, 'admin@nomarkup.com',    true, $5, 'Admin User',     '{admin}',    'active', 'America/Los_Angeles'),
+			($2, 'customer@nomarkup.com', true, $5, 'Jane Customer',  '{customer}', 'active', 'America/New_York'),
+			($3, 'provider@nomarkup.com', true, $5, 'Mike Provider',  '{provider}', 'active', 'America/Chicago'),
+			($4, 'provider2@nomarkup.com', true, $5, 'Sarah Provider', '{provider}', 'active', 'America/Denver')
 		ON CONFLICT (id) DO NOTHING`,
-		adminUserID, customerUserID, providerUserID, passwordHash,
+		adminUserID, customerUserID, providerUserID, provider2UserID, passwordHash,
 	)
 	if err != nil {
 		log.Fatalf("insert users: %v", err)
@@ -175,6 +178,22 @@ func main() {
 		log.Fatalf("insert provider profile: %v", err)
 	}
 
+	// Second provider profile.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO provider_profiles (id, user_id, business_name, bio,
+			service_address, service_location, service_radius_km,
+			default_payment_timing, jobs_completed, profile_completeness)
+		VALUES ($1, $2, 'Sarah''s Repairs', 'Certified HVAC and plumbing technician with 5 years of experience.',
+			'789 Trade Ave, Austin, TX 78703',
+			ST_SetSRID(ST_MakePoint(-97.7600, 30.2800), 4326),
+			50, 'completion', 8, 70)
+		ON CONFLICT (id) DO NOTHING`,
+		provider2ProfileID, provider2UserID,
+	)
+	if err != nil {
+		log.Fatalf("insert provider2 profile: %v", err)
+	}
+
 	// ── 4. Provider Service Categories ────────────────────────────
 
 	_, err = tx.Exec(ctx, `
@@ -185,6 +204,16 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("insert provider categories: %v", err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO provider_service_categories (provider_id, category_id)
+		VALUES ($1, $2), ($1, $3)
+		ON CONFLICT DO NOTHING`,
+		provider2ProfileID, hvacCatID, plumbingCatID,
+	)
+	if err != nil {
+		log.Fatalf("insert provider2 categories: %v", err)
 	}
 
 	// ── 5. Jobs ───────────────────────────────────────────────────
@@ -286,7 +315,7 @@ func main() {
 
 	// ── 6. Bids ───────────────────────────────────────────────────
 
-	// Bid on the active job (one bid per provider per job due to UNIQUE constraint)
+	// Bids on the active job (one bid per provider per job due to UNIQUE constraint)
 	_, err = tx.Exec(ctx, `
 		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents, status)
 		VALUES ($1, $2, $3, 35000, 40000, 'active')
@@ -294,7 +323,17 @@ func main() {
 		bid1ID, activeJobID, providerUserID,
 	)
 	if err != nil {
-		log.Fatalf("insert bid on active job: %v", err)
+		log.Fatalf("insert bid1 on active job: %v", err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents, status)
+		VALUES ($1, $2, $3, 42000, 45000, 'active')
+		ON CONFLICT (id) DO NOTHING`,
+		bid2ID, activeJobID, provider2UserID,
+	)
+	if err != nil {
+		log.Fatalf("insert bid2 on active job: %v", err)
 	}
 
 	// Awarded bid on the awarded job
@@ -480,13 +519,14 @@ func main() {
 	log.Println("╔══════════════════════════════════════════════════════════════╗")
 	log.Println("║  Dev Accounts (all passwords: Password123!)                 ║")
 	log.Println("╠══════════════════════════════════════════════════════════════╣")
-	log.Println("║  Admin:    admin@nomarkup.com      roles: [admin]           ║")
-	log.Println("║  Customer: customer@nomarkup.com   roles: [customer]        ║")
-	log.Println("║  Provider: provider@nomarkup.com   roles: [provider]        ║")
+	log.Println("║  Admin:     admin@nomarkup.com      roles: [admin]          ║")
+	log.Println("║  Customer:  customer@nomarkup.com   roles: [customer]       ║")
+	log.Println("║  Provider:  provider@nomarkup.com   roles: [provider]       ║")
+	log.Println("║  Provider2: provider2@nomarkup.com  roles: [provider]       ║")
 	log.Println("╚══════════════════════════════════════════════════════════════╝")
 	log.Println("")
-	log.Println("Seeded: 3 users, 1 property, 1 provider profile, 3 jobs,")
-	log.Println("        2 bids, 2 contracts, 2 milestones, 1 review,")
+	log.Println("Seeded: 4 users, 1 property, 2 provider profiles, 3 jobs,")
+	log.Println("        4 bids, 2 contracts, 2 milestones, 1 review,")
 	log.Println("        1 trust score, 3 subscription tiers, 3 subscriptions,")
 	log.Println("        3 notification preferences, 1 market range")
 }

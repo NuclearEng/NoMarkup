@@ -12,7 +12,7 @@ import type {
 interface ContractsParams {
   status?: string;
   page?: number;
-  per_page?: number;
+  page_size?: number;
 }
 
 export function useContract(id: string) {
@@ -27,12 +27,12 @@ export function useContracts(params?: ContractsParams) {
   const searchParams = new URLSearchParams();
   if (params?.status) searchParams.set('status', params.status);
   if (params?.page !== undefined) searchParams.set('page', String(params.page));
-  if (params?.per_page !== undefined) searchParams.set('per_page', String(params.per_page));
+  if (params?.page_size !== undefined) searchParams.set('page_size', String(params.page_size));
   const query = searchParams.toString();
   const path = `/api/v1/contracts${query ? `?${query}` : ''}`;
 
   return useQuery({
-    queryKey: ['contracts', params?.status, params?.page, params?.per_page],
+    queryKey: ['contracts', params?.status, params?.page, params?.page_size],
     queryFn: () => api.get<ContractsResponse>(path),
   });
 }

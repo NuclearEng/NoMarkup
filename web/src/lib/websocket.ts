@@ -72,6 +72,13 @@ const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
+/**
+ * Debounce delay for connect(). This absorbs React StrictMode's
+ * rapid mount -> unmount -> remount cycle so we never open a WebSocket
+ * that gets immediately closed before the handshake completes.
+ */
+const CONNECT_DEBOUNCE_MS = 100;
+
 // ─── Singleton WebSocket Manager ─────────────────────────────────
 class WebSocketManager {
   private socket: WebSocket | null = null;
@@ -80,6 +87,7 @@ class WebSocketManager {
   private status: ConnectionStatus = CONNECTION_STATUS.DISCONNECTED;
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private outboundQueue: WsClientMessage[] = [];
   private intentionalClose = false;
 
@@ -91,7 +99,44 @@ class WebSocketManager {
     return this.status === CONNECTION_STATUS.CONNECTED;
   }
 
+  /**
+   * Request a WebSocket connection. The actual socket open is debounced
+   * by CONNECT_DEBOUNCE_MS so that React StrictMode's rapid
+   * mount -> cleanup -> remount cycle cancels the first attempt
+   * via disconnect() before the socket is ever created.
+   */
   connect(): void {
+    // If already connected or mid-handshake, nothing to do.
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    // Clear intentional-close so the debounced open will proceed
+    // even after a StrictMode cleanup called disconnect().
+    this.intentionalClose = false;
+
+    // If a connect is already scheduled, let it stand.
+    if (this.connectTimer !== null) {
+      return;
+    }
+
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      this.openSocket();
+    }, CONNECT_DEBOUNCE_MS);
+  }
+
+  /**
+   * Actually opens the WebSocket. Called after the debounce window
+   * so that a StrictMode unmount can cancel it via disconnect().
+   */
+  private openSocket(): void {
+    // Re-check: disconnect() may have been called during the debounce.
+    if (this.intentionalClose) {
+      return;
+    }
+
+    // Guard against double-open.
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
@@ -101,10 +146,16 @@ class WebSocketManager {
       return;
     }
 
-    this.intentionalClose = false;
     this.setStatus(CONNECTION_STATUS.CONNECTING);
 
-    const wsUrl = API_BASE_URL.replace(/^http/, 'ws');
+    // Derive WebSocket URL. When API_BASE_URL is empty (same-origin proxy), use current host.
+    let wsUrl: string;
+    if (API_BASE_URL === '' && typeof window !== 'undefined') {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${proto}//${window.location.host}`;
+    } else {
+      wsUrl = API_BASE_URL.replace(/^http/, 'ws');
+    }
     this.socket = new WebSocket(`${wsUrl}/ws/chat?token=${encodeURIComponent(token)}`);
 
     this.socket.onopen = () => {
@@ -140,6 +191,12 @@ class WebSocketManager {
 
   disconnect(): void {
     this.intentionalClose = true;
+
+    // Cancel a pending debounced connect so the socket never opens.
+    if (this.connectTimer !== null) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
 
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);

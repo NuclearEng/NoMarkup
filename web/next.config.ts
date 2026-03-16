@@ -1,5 +1,7 @@
 import type { NextConfig } from 'next';
 
+const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8080';
+
 const nextConfig: NextConfig = {
   output: 'standalone',
   typedRoutes: true,
@@ -12,6 +14,18 @@ const nextConfig: NextConfig = {
         pathname: '/nomarkup-dev/**',
       },
     ],
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${API_URL}/api/:path*`,
+      },
+      {
+        source: '/ws/:path*',
+        destination: `${API_URL}/ws/:path*`,
+      },
+    ];
   },
 };
 

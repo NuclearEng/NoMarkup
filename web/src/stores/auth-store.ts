@@ -128,7 +128,20 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
         '/api/v1/auth/refresh',
       );
       setAccessToken(data.access_token);
-      set({ accessToken: data.access_token, isAuthenticated: true });
+
+      // Parse the JWT to reconstruct the user object so that role
+      // checks (e.g. isProvider) work on public pages where
+      // AuthRestorer hydrates the store asynchronously.
+      const payload = parseJwtPayload(data.access_token);
+      const user = payload
+        ? userFromJwt(payload.sub, payload)
+        : null;
+
+      set({
+        user,
+        accessToken: data.access_token,
+        isAuthenticated: true,
+      });
       return true;
     } catch {
       clearTokens();

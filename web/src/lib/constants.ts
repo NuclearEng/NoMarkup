@@ -1,6 +1,8 @@
 export const APP_NAME = 'NoMarkup' as const;
 
-export const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8080';
+// API requests are proxied through Next.js rewrites (same-origin) so cookies work.
+// In production, set NEXT_PUBLIC_API_URL if the API is on a different domain.
+export const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? '';
 
 export const AUCTION_DURATION_OPTIONS = [24, 48, 72] as const;
 export const MAX_BID_PHOTOS = 10;

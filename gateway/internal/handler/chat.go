@@ -310,9 +310,12 @@ func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	defer clientConn.CloseNow()
 
 	// Connect to the chat service WebSocket endpoint, passing the validated user ID.
+	// Use context.Background() for the dial so the backend connection attempt is
+	// not canceled if the client disconnects during the handshake (e.g. React
+	// StrictMode unmount closing the socket before the backend dial completes).
 	backendURL := fmt.Sprintf("ws://%s/ws?user_id=%s", h.chatWSAddr, claims.UserID)
 
-	backendCtx, backendCancel := context.WithTimeout(r.Context(), 10*time.Second)
+	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	backendConn, _, err := websocket.Dial(backendCtx, backendURL, nil)
 	backendCancel()
 	if err != nil {

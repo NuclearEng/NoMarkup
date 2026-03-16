@@ -526,9 +526,9 @@ start_go_service() {
     fi
     ensure_dirs
 
-    # Build if binary missing or source newer than binary
+    # Build if binary missing or source newer than binary (check service dir + proto gen dir)
     if [[ ! -f "$DEVBIN/$name" ]] || \
-       [[ -n "$(find "$dir" -name '*.go' -newer "$DEVBIN/$name" 2>/dev/null | head -1)" ]]; then
+       [[ -n "$(find "$dir" "$ROOT/proto/gen/go" -name '*.go' -newer "$DEVBIN/$name" 2>/dev/null | head -1)" ]]; then
         build_go_service "$name" "$dir"
     fi
 
