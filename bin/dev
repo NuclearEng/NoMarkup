@@ -1,0 +1,1123 @@
+#!/usr/bin/env bash
+#
+# bin/dev — Native development environment for NoMarkup
+#
+# Replaces docker-compose for local development. Installs and manages
+# all infrastructure and application services natively on macOS.
+#
+# Usage:
+#   bin/dev setup              Install deps, create DB, generate JWT keys
+#   bin/dev up [target]        Start services (default: all)
+#   bin/dev down               Stop all running services
+#   bin/dev status             Show service health
+#   bin/dev logs [service]     Tail service logs
+#   bin/dev reset              Wipe local data, start fresh
+#   bin/dev doctor             Check environment health
+#   bin/dev rebuild [service]  Force-rebuild a service binary
+#
+# Targets for 'up':
+#   all        Everything (default)
+#   infra      postgres, redis, meilisearch, minio, jaeger
+#   services   Go microservices (user, job, payment, chat, notification)
+#   engines    Rust engines (bidding, fraud, trust, imaging)
+#   <name>     Any individual service by name
+
+set -euo pipefail
+
+# ── Paths ────────────────────────────────────────────────────────
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEV="$ROOT/.dev"
+PIDS="$DEV/pids"
+LOGS="$DEV/logs"
+DATA="$DEV/data"
+DEVBIN="$DEV/bin"
+
+# ── Ports ────────────────────────────────────────────────────────
+PG_PORT=5432
+REDIS_PORT=6379
+MEILI_PORT=7700
+MINIO_PORT=9000
+MINIO_CONSOLE=9001
+JAEGER_UI=16686
+JAEGER_OTLP=4317
+
+GATEWAY_PORT=8080
+USER_PORT=50051
+JOB_PORT=50052
+BID_PORT=50053
+PAYMENT_PORT=50054
+CHAT_PORT=50055
+CHAT_WS_PORT=50065
+FRAUD_PORT=50056
+TRUST_PORT=50057
+IMAGING_PORT=50058
+NOTIFICATION_PORT=50059
+WEB_PORT=3000
+
+# ── Database ─────────────────────────────────────────────────────
+PG_USER=nomarkup
+PG_DB=nomarkup
+DATABASE_URL="postgresql://$PG_USER@localhost:$PG_PORT/$PG_DB?sslmode=disable"
+
+# ── Colors ───────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+log()     { echo -e "${BLUE}==>${NC} $*"; }
+success() { echo -e "${GREEN} ✔${NC} $*"; }
+warn()    { echo -e "${YELLOW} ⚠${NC} $*"; }
+err()     { echo -e "${RED} ✘${NC} $*" >&2; }
+step()    { echo -e "${CYAN}  →${NC} $*"; }
+
+# ── Utility Functions ────────────────────────────────────────────
+
+ensure_dirs() {
+    mkdir -p "$PIDS" "$LOGS" "$DATA" "$DEVBIN"
+}
+
+has_cmd() {
+    command -v "$1" &>/dev/null
+}
+
+is_running() {
+    local name="$1"
+    local pidfile="$PIDS/$name.pid"
+    if [[ -f "$pidfile" ]]; then
+        local pid
+        pid=$(<"$pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        rm -f "$pidfile"
+    fi
+    return 1
+}
+
+get_pid() {
+    local pidfile="$PIDS/$1.pid"
+    [[ -f "$pidfile" ]] && cat "$pidfile"
+}
+
+save_pid() {
+    echo "$2" > "$PIDS/$1.pid"
+}
+
+port_in_use() {
+    lsof -iTCP:"$1" -sTCP:LISTEN -t &>/dev/null
+}
+
+wait_for_port() {
+    local name="$1" port="$2" timeout="${3:-30}"
+    local i=0
+    while ! nc -z localhost "$port" 2>/dev/null; do
+        sleep 0.5
+        i=$((i + 1))
+        if [[ $i -ge $((timeout * 2)) ]]; then
+            err "$name did not start on :$port within ${timeout}s"
+            err "Check log: $LOGS/$name.log"
+            return 1
+        fi
+    done
+    success "$name ready on :$port"
+}
+
+stop_one() {
+    local name="$1"
+    if is_running "$name"; then
+        local pid
+        pid=$(get_pid "$name")
+        kill "$pid" 2>/dev/null || true
+        local i=0
+        while kill -0 "$pid" 2>/dev/null && [[ $i -lt 50 ]]; do
+            sleep 0.1
+            i=$((i + 1))
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+            warn "Force-killed $name (pid $pid)"
+        else
+            success "Stopped $name (pid $pid)"
+        fi
+        rm -f "$PIDS/$name.pid"
+    fi
+}
+
+ensure_pg_on_path() {
+    if ! has_cmd pg_ctl; then
+        local prefix
+        prefix="$(brew --prefix postgresql@16 2>/dev/null || true)"
+        if [[ -n "$prefix" && -d "$prefix/bin" ]]; then
+            export PATH="$prefix/bin:$PATH"
+        else
+            err "pg_ctl not found. Run: bin/dev setup"
+            return 1
+        fi
+    fi
+}
+
+# ── Setup ────────────────────────────────────────────────────────
+
+cmd_setup() {
+    log "Setting up NoMarkup development environment"
+    ensure_dirs
+
+    if ! has_cmd brew; then
+        err "Homebrew is required. Install: https://brew.sh"
+        exit 1
+    fi
+
+    # ── System dependencies ──────────────────────────────────────
+    log "Checking system dependencies..."
+
+    local formulae=(
+        "postgresql@16"
+        "postgis"
+        "redis"
+        "meilisearch"
+        "golang-migrate"
+        "protobuf"
+    )
+    for f in "${formulae[@]}"; do
+        if brew list "$f" &>/dev/null; then
+            success "$f installed"
+        else
+            step "Installing $f..."
+            brew install "$f"
+            success "$f installed"
+        fi
+    done
+
+    # MinIO server + client
+    for tap_pkg in "minio/stable/minio:minio" "minio/stable/mc:mc"; do
+        local pkg="${tap_pkg%%:*}" cmd="${tap_pkg##*:}"
+        if has_cmd "$cmd"; then
+            success "$cmd installed"
+        else
+            step "Installing $pkg..."
+            brew install "$pkg"
+            success "$cmd installed"
+        fi
+    done
+
+    # Jaeger (optional)
+    if has_cmd jaeger-all-in-one; then
+        success "jaeger installed"
+    elif brew list jaeger &>/dev/null; then
+        success "jaeger installed"
+    else
+        step "Installing jaeger (optional, for tracing)..."
+        brew install jaeger 2>/dev/null || warn "Jaeger install failed — tracing disabled"
+    fi
+
+    # ── Language toolchains ──────────────────────────────────────
+    log "Checking language toolchains..."
+
+    if has_cmd go; then
+        success "Go $(go version | awk '{print $3}')"
+    else
+        err "Go not found. Install: brew install go"
+        exit 1
+    fi
+
+    if has_cmd cargo; then
+        success "Rust $(rustc --version | awk '{print $2}')"
+    else
+        err "Rust not found. Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        exit 1
+    fi
+
+    if has_cmd node; then
+        success "Node $(node --version)"
+    else
+        err "Node.js not found. Install: brew install node"
+        exit 1
+    fi
+
+    # Proto code generators
+    step "Installing Go protobuf tools..."
+    go install google.golang.org/protobuf/cmd/protoc-gen-go@latest 2>/dev/null
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest 2>/dev/null
+    success "Protobuf toolchain ready"
+
+    # ── PostgreSQL ───────────────────────────────────────────────
+    log "Initializing PostgreSQL..."
+    ensure_pg_on_path
+
+    if [[ ! -d "$DATA/postgres" ]]; then
+        step "Creating data directory..."
+        initdb -D "$DATA/postgres" \
+            --username="$PG_USER" \
+            --auth=trust \
+            --no-locale \
+            --encoding=UTF8 > "$LOGS/pg-init.log" 2>&1
+
+        # Configure for local dev
+        cat >> "$DATA/postgres/postgresql.conf" <<PGCONF
+# NoMarkup dev overrides
+port = $PG_PORT
+unix_socket_directories = '$DATA/postgres'
+listen_addresses = 'localhost'
+log_destination = 'stderr'
+logging_collector = off
+PGCONF
+        success "PostgreSQL data directory created"
+    else
+        success "PostgreSQL data directory exists"
+    fi
+
+    # Start PG temporarily to set up the database
+    log "Configuring database..."
+    local pg_was_running=false
+    if is_running postgres; then
+        pg_was_running=true
+    else
+        start_postgres
+    fi
+
+    # Create database
+    if psql -h localhost -p "$PG_PORT" -U "$PG_USER" -lqt 2>/dev/null | cut -d'|' -f1 | grep -qw "$PG_DB"; then
+        success "Database '$PG_DB' exists"
+    else
+        createdb -h localhost -p "$PG_PORT" -U "$PG_USER" "$PG_DB"
+        success "Database '$PG_DB' created"
+    fi
+
+    # Extensions
+    psql -h localhost -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" \
+        -c "CREATE EXTENSION IF NOT EXISTS postgis;" \
+        -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" \
+        > /dev/null 2>&1
+    success "Extensions enabled (postgis, uuid-ossp)"
+
+    # Migrations
+    if [[ -d "$ROOT/database/migrations" ]]; then
+        step "Running migrations..."
+        migrate -path "$ROOT/database/migrations" -database "$DATABASE_URL" up 2>&1 || true
+        success "Migrations applied"
+    fi
+
+    if [[ "$pg_was_running" == false ]]; then
+        stop_postgres
+    fi
+
+    # ── JWT Keys ─────────────────────────────────────────────────
+    log "Checking JWT keys..."
+    if [[ ! -f "$ROOT/keys/private.pem" ]]; then
+        mkdir -p "$ROOT/keys"
+        openssl genrsa -out "$ROOT/keys/private.pem" 4096 2>/dev/null
+        openssl rsa -in "$ROOT/keys/private.pem" -pubout -out "$ROOT/keys/public.pem" 2>/dev/null
+        success "JWT keypair generated"
+    else
+        success "JWT keys exist"
+    fi
+
+    # ── .env.local ───────────────────────────────────────────────
+    if [[ ! -f "$ROOT/.env.local" ]]; then
+        log "Creating .env.local..."
+        cat > "$ROOT/.env.local" <<ENVFILE
+# Generated by bin/dev setup — edit as needed
+DATABASE_URL=$DATABASE_URL
+REDIS_URL=redis://localhost:$REDIS_PORT
+MEILISEARCH_URL=http://localhost:$MEILI_PORT
+MEILISEARCH_API_KEY=masterKey
+
+JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem
+JWT_PUBLIC_KEY_PATH=$ROOT/keys/public.pem
+SESSION_SECRET=$(openssl rand -base64 32)
+
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_CONNECT_CLIENT_ID=ca_...
+
+S3_BUCKET=nomarkup-dev
+S3_REGION=us-east-1
+S3_ENDPOINT=http://localhost:$MINIO_PORT
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=minioadmin
+
+NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ...
+NEXT_PUBLIC_API_URL=http://localhost:$GATEWAY_PORT
+NEXT_PUBLIC_WS_URL=ws://localhost:$GATEWAY_PORT
+
+SENTRY_DSN=
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP
+
+GATEWAY_PORT=$GATEWAY_PORT
+USER_SERVICE_PORT=$USER_PORT
+JOB_SERVICE_PORT=$JOB_PORT
+BID_ENGINE_PORT=$BID_PORT
+PAYMENT_SERVICE_PORT=$PAYMENT_PORT
+CHAT_SERVICE_PORT=$CHAT_PORT
+FRAUD_ENGINE_PORT=$FRAUD_PORT
+TRUST_ENGINE_PORT=$TRUST_PORT
+IMAGING_SERVICE_PORT=$IMAGING_PORT
+NOTIFICATION_SERVICE_PORT=$NOTIFICATION_PORT
+WEB_PORT=$WEB_PORT
+ENVFILE
+        success ".env.local created — add your Stripe/Mapbox keys"
+    else
+        success ".env.local exists"
+    fi
+
+    # ── Web dependencies ─────────────────────────────────────────
+    log "Installing web dependencies..."
+    (cd "$ROOT/web" && npm install --silent 2>/dev/null)
+    success "Web dependencies installed"
+
+    echo ""
+    log "${GREEN}Setup complete!${NC}"
+    echo -e "  Run ${BOLD}bin/dev up${NC} to start all services."
+    echo -e "  Run ${BOLD}bin/dev up infra${NC} to start only infrastructure."
+}
+
+# ── Infrastructure ───────────────────────────────────────────────
+
+start_postgres() {
+    if is_running postgres; then
+        success "postgres already running (pid $(get_pid postgres))"
+        return 0
+    fi
+    ensure_pg_on_path
+    ensure_dirs
+
+    if [[ ! -d "$DATA/postgres" ]]; then
+        err "PostgreSQL not initialized. Run: bin/dev setup"
+        return 1
+    fi
+
+    step "Starting PostgreSQL..."
+    pg_ctl -D "$DATA/postgres" -l "$LOGS/postgres.log" start -w -o "-p $PG_PORT" > /dev/null 2>&1
+
+    # Read PG's own PID
+    local pid
+    pid=$(head -1 "$DATA/postgres/postmaster.pid" 2>/dev/null || echo "")
+    [[ -n "$pid" ]] && save_pid postgres "$pid"
+
+    wait_for_port postgres "$PG_PORT" 10
+}
+
+stop_postgres() {
+    if is_running postgres || [[ -f "$DATA/postgres/postmaster.pid" ]]; then
+        ensure_pg_on_path
+        pg_ctl -D "$DATA/postgres" stop -m fast > /dev/null 2>&1 || true
+        rm -f "$PIDS/postgres.pid"
+        success "Stopped postgres"
+    fi
+}
+
+start_redis() {
+    if is_running redis; then
+        success "redis already running (pid $(get_pid redis))"
+        return 0
+    fi
+    ensure_dirs
+    mkdir -p "$DATA/redis"
+
+    step "Starting Redis..."
+    redis-server \
+        --port "$REDIS_PORT" \
+        --dir "$DATA/redis" \
+        --appendonly yes \
+        --daemonize yes \
+        --pidfile "$PIDS/redis.pid" \
+        --logfile "$LOGS/redis.log" > /dev/null 2>&1
+
+    wait_for_port redis "$REDIS_PORT" 10
+}
+
+stop_redis() {
+    if is_running redis; then
+        redis-cli -p "$REDIS_PORT" shutdown nosave 2>/dev/null || true
+        rm -f "$PIDS/redis.pid"
+        success "Stopped redis"
+    fi
+}
+
+start_meilisearch() {
+    if is_running meilisearch; then
+        success "meilisearch already running (pid $(get_pid meilisearch))"
+        return 0
+    fi
+    ensure_dirs
+    mkdir -p "$DATA/meilisearch"
+
+    step "Starting Meilisearch..."
+    meilisearch \
+        --db-path "$DATA/meilisearch" \
+        --env development \
+        --master-key masterKey \
+        --http-addr "localhost:$MEILI_PORT" \
+        --no-analytics \
+        > "$LOGS/meilisearch.log" 2>&1 &
+    save_pid meilisearch $!
+
+    wait_for_port meilisearch "$MEILI_PORT" 15
+}
+
+start_minio() {
+    if is_running minio; then
+        success "minio already running (pid $(get_pid minio))"
+        return 0
+    fi
+    ensure_dirs
+    mkdir -p "$DATA/minio"
+
+    step "Starting MinIO..."
+    MINIO_ROOT_USER=minioadmin \
+    MINIO_ROOT_PASSWORD=minioadmin \
+    minio server "$DATA/minio" \
+        --address ":$MINIO_PORT" \
+        --console-address ":$MINIO_CONSOLE" \
+        > "$LOGS/minio.log" 2>&1 &
+    save_pid minio $!
+
+    wait_for_port minio "$MINIO_PORT" 15
+
+    # Create default bucket
+    mc alias set nomarkup-local "http://localhost:$MINIO_PORT" minioadmin minioadmin > /dev/null 2>&1 || true
+    mc mb --ignore-existing nomarkup-local/nomarkup-dev > /dev/null 2>&1 || true
+    success "MinIO bucket 'nomarkup-dev' ready"
+}
+
+start_jaeger() {
+    if is_running jaeger; then
+        success "jaeger already running (pid $(get_pid jaeger))"
+        return 0
+    fi
+    ensure_dirs
+
+    if ! has_cmd jaeger-all-in-one; then
+        warn "Jaeger not installed — tracing disabled (install: brew install jaeger)"
+        return 0
+    fi
+
+    step "Starting Jaeger..."
+    COLLECTOR_OTLP_ENABLED=true \
+    jaeger-all-in-one \
+        > "$LOGS/jaeger.log" 2>&1 &
+    save_pid jaeger $!
+
+    wait_for_port jaeger "$JAEGER_UI" 10
+}
+
+# ── Go Services ──────────────────────────────────────────────────
+
+build_go_service() {
+    local name="$1" dir="$2"
+    step "Building $name..."
+    (cd "$dir" && go build -o "$DEVBIN/$name" ./cmd/server) 2>> "$LOGS/$name-build.log"
+}
+
+start_go_service() {
+    local name="$1" dir="$2" port="$3"
+    shift 3
+    # Remaining args are KEY=VALUE env vars
+
+    if is_running "$name"; then
+        success "$name already running (pid $(get_pid "$name"))"
+        return 0
+    fi
+    ensure_dirs
+
+    # Build if binary missing or source newer than binary
+    if [[ ! -f "$DEVBIN/$name" ]] || \
+       [[ -n "$(find "$dir" -name '*.go' -newer "$DEVBIN/$name" 2>/dev/null | head -1)" ]]; then
+        build_go_service "$name" "$dir"
+    fi
+
+    # Common env
+    local env_args=(
+        "DATABASE_URL=$DATABASE_URL"
+        "REDIS_URL=redis://localhost:$REDIS_PORT"
+        "OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP"
+        "OTEL_SERVICE_NAME=$name"
+    )
+    # Service-specific env
+    env_args+=("$@")
+
+    env "${env_args[@]}" "$DEVBIN/$name" > "$LOGS/$name.log" 2>&1 &
+    save_pid "$name" $!
+
+    wait_for_port "$name" "$port" 15
+}
+
+# ── Rust Engines ─────────────────────────────────────────────────
+
+build_engines() {
+    step "Building Rust workspace (shared deps compile once)..."
+    (cd "$ROOT/engines" && cargo build --workspace 2>&1) | tee -a "$LOGS/engines-build.log" | tail -1
+    success "Rust workspace compiled"
+}
+
+start_rust_engine() {
+    local name="$1" binary="$2" port="$3"
+    shift 3
+
+    if is_running "$name"; then
+        success "$name already running (pid $(get_pid "$name"))"
+        return 0
+    fi
+    ensure_dirs
+
+    local bin_path="$ROOT/engines/target/debug/$binary"
+    if [[ ! -f "$bin_path" ]]; then
+        err "$binary not found at $bin_path — building workspace..."
+        build_engines
+    fi
+
+    local env_args=(
+        "DATABASE_URL=$DATABASE_URL"
+        "RUST_LOG=info"
+        "OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP"
+        "OTEL_SERVICE_NAME=$name"
+    )
+    env_args+=("$@")
+
+    env "${env_args[@]}" "$bin_path" > "$LOGS/$name.log" 2>&1 &
+    save_pid "$name" $!
+
+    wait_for_port "$name" "$port" 20
+}
+
+# ── Web Frontend ─────────────────────────────────────────────────
+
+start_web() {
+    if is_running web; then
+        success "web already running (pid $(get_pid web))"
+        return 0
+    fi
+    ensure_dirs
+
+    step "Starting Next.js dev server..."
+    (
+        cd "$ROOT/web"
+        NEXT_PUBLIC_API_URL="http://localhost:$GATEWAY_PORT" \
+        NEXT_PUBLIC_WS_URL="ws://localhost:$GATEWAY_PORT" \
+        npx next dev --port "$WEB_PORT" > "$LOGS/web.log" 2>&1
+    ) &
+    save_pid web $!
+
+    wait_for_port web "$WEB_PORT" 30
+}
+
+# ── Composite Start/Stop ────────────────────────────────────────
+
+start_infra() {
+    log "Starting infrastructure..."
+    start_postgres
+    start_redis
+    start_meilisearch
+    start_minio
+    start_jaeger
+
+    # Run pending migrations
+    if has_cmd migrate && [[ -d "$ROOT/database/migrations" ]]; then
+        step "Running migrations..."
+        migrate -path "$ROOT/database/migrations" -database "$DATABASE_URL" up 2>/dev/null || true
+    fi
+
+    success "Infrastructure ready"
+}
+
+start_services() {
+    log "Starting Go services..."
+
+    start_go_service user "$ROOT/services/user" "$USER_PORT" \
+        "USER_SERVICE_PORT=$USER_PORT" \
+        "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem"
+
+    start_go_service job "$ROOT/services/job" "$JOB_PORT" \
+        "JOB_SERVICE_PORT=$JOB_PORT" \
+        "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
+        "MEILISEARCH_API_KEY=masterKey"
+
+    start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \
+        "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
+        "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
+        "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
+
+    start_go_service chat "$ROOT/services/chat" "$CHAT_PORT" \
+        "CHAT_SERVICE_PORT=$CHAT_PORT" \
+        "CHAT_WS_PORT=$CHAT_WS_PORT"
+
+    start_go_service notification "$ROOT/services/notification" "$NOTIFICATION_PORT" \
+        "NOTIFICATION_SERVICE_PORT=$NOTIFICATION_PORT"
+
+    success "Go services ready"
+}
+
+start_engines() {
+    log "Starting Rust engines..."
+
+    # Build entire workspace once — shared deps only compile once
+    build_engines
+
+    start_rust_engine bidding nomarkup-bidding-engine "$BID_PORT" \
+        "BID_ENGINE_PORT=$BID_PORT"
+
+    start_rust_engine fraud nomarkup-fraud-engine "$FRAUD_PORT" \
+        "FRAUD_ENGINE_PORT=$FRAUD_PORT"
+
+    start_rust_engine trust nomarkup-trust-engine "$TRUST_PORT" \
+        "TRUST_ENGINE_PORT=$TRUST_PORT"
+
+    start_rust_engine imaging nomarkup-imaging-engine "$IMAGING_PORT" \
+        "IMAGING_SERVICE_PORT=$IMAGING_PORT" \
+        "S3_BUCKET=nomarkup-dev" \
+        "S3_ENDPOINT=http://localhost:$MINIO_PORT" \
+        "S3_PUBLIC_URL=http://localhost:$MINIO_PORT/nomarkup-dev" \
+        "AWS_ACCESS_KEY_ID=minioadmin" \
+        "AWS_SECRET_ACCESS_KEY=minioadmin" \
+        "AWS_REGION=us-east-1"
+
+    success "Rust engines ready"
+}
+
+start_gateway() {
+    log "Starting API gateway..."
+
+    start_go_service gateway "$ROOT/gateway" "$GATEWAY_PORT" \
+        "GATEWAY_PORT=$GATEWAY_PORT" \
+        "JWT_PUBLIC_KEY_PATH=$ROOT/keys/public.pem" \
+        "ALLOWED_ORIGINS=http://localhost:$WEB_PORT" \
+        "SECURE_COOKIES=false" \
+        "USER_SERVICE_ADDR=localhost:$USER_PORT" \
+        "JOB_SERVICE_ADDR=localhost:$JOB_PORT" \
+        "BID_ENGINE_ADDR=localhost:$BID_PORT" \
+        "PAYMENT_SERVICE_ADDR=localhost:$PAYMENT_PORT" \
+        "CHAT_SERVICE_ADDR=localhost:$CHAT_PORT" \
+        "CHAT_WS_ADDR=localhost:$CHAT_WS_PORT" \
+        "FRAUD_ENGINE_ADDR=localhost:$FRAUD_PORT" \
+        "TRUST_ENGINE_ADDR=localhost:$TRUST_PORT" \
+        "IMAGING_SERVICE_ADDR=localhost:$IMAGING_PORT" \
+        "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT" \
+        "REDIS_URL=redis://localhost:$REDIS_PORT"
+
+    success "Gateway ready"
+}
+
+# ── Commands ─────────────────────────────────────────────────────
+
+cmd_up() {
+    local target="${1:-all}"
+    ensure_dirs
+
+    # Source user env for overrides (Stripe keys, etc.)
+    [[ -f "$ROOT/.env.local" ]] && set -a && source "$ROOT/.env.local" 2>/dev/null && set +a
+
+    case "$target" in
+        all)
+            start_infra
+            start_engines
+            start_services
+            start_gateway
+            start_web
+            echo ""
+            log "${GREEN}All services running!${NC}"
+            echo ""
+            echo -e "  ${BOLD}Web${NC}          http://localhost:$WEB_PORT"
+            echo -e "  ${BOLD}API${NC}          http://localhost:$GATEWAY_PORT"
+            echo -e "  ${BOLD}Jaeger${NC}       http://localhost:$JAEGER_UI"
+            echo -e "  ${BOLD}MinIO${NC}        http://localhost:$MINIO_CONSOLE"
+            echo -e "  ${BOLD}Meilisearch${NC}  http://localhost:$MEILI_PORT"
+            echo ""
+            echo -e "  ${DIM}bin/dev status  — check health${NC}"
+            echo -e "  ${DIM}bin/dev logs    — tail all logs${NC}"
+            echo -e "  ${DIM}bin/dev down    — stop everything${NC}"
+            ;;
+        infra)      start_infra ;;
+        services)   start_services ;;
+        engines)    start_engines ;;
+        gateway)    start_gateway ;;
+        web)        start_web ;;
+        postgres)   start_postgres ;;
+        redis)      start_redis ;;
+        meilisearch) start_meilisearch ;;
+        minio)      start_minio ;;
+        jaeger)     start_jaeger ;;
+        user)
+            start_go_service user "$ROOT/services/user" "$USER_PORT" \
+                "USER_SERVICE_PORT=$USER_PORT" \
+                "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem"
+            ;;
+        job)
+            start_go_service job "$ROOT/services/job" "$JOB_PORT" \
+                "JOB_SERVICE_PORT=$JOB_PORT" \
+                "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
+                "MEILISEARCH_API_KEY=masterKey"
+            ;;
+        payment)
+            start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \
+                "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
+                "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
+                "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
+            ;;
+        chat)
+            start_go_service chat "$ROOT/services/chat" "$CHAT_PORT" \
+                "CHAT_SERVICE_PORT=$CHAT_PORT" \
+                "CHAT_WS_PORT=$CHAT_WS_PORT"
+            ;;
+        notification)
+            start_go_service notification "$ROOT/services/notification" "$NOTIFICATION_PORT" \
+                "NOTIFICATION_SERVICE_PORT=$NOTIFICATION_PORT"
+            ;;
+        bidding)
+            start_rust_engine bidding nomarkup-bidding-engine "$BID_PORT" \
+                "BID_ENGINE_PORT=$BID_PORT"
+            ;;
+        fraud)
+            start_rust_engine fraud nomarkup-fraud-engine "$FRAUD_PORT" \
+                "FRAUD_ENGINE_PORT=$FRAUD_PORT"
+            ;;
+        trust)
+            start_rust_engine trust nomarkup-trust-engine "$TRUST_PORT" \
+                "TRUST_ENGINE_PORT=$TRUST_PORT"
+            ;;
+        imaging)
+            start_rust_engine imaging nomarkup-imaging-engine "$IMAGING_PORT" \
+                "IMAGING_SERVICE_PORT=$IMAGING_PORT" \
+                "S3_BUCKET=nomarkup-dev" \
+                "S3_ENDPOINT=http://localhost:$MINIO_PORT" \
+                "S3_PUBLIC_URL=http://localhost:$MINIO_PORT/nomarkup-dev" \
+                "AWS_ACCESS_KEY_ID=minioadmin" \
+                "AWS_SECRET_ACCESS_KEY=minioadmin" \
+                "AWS_REGION=us-east-1"
+            ;;
+        *)
+            err "Unknown target: $target"
+            echo "  Groups:   all, infra, services, engines"
+            echo "  Infra:    postgres, redis, meilisearch, minio, jaeger"
+            echo "  Services: user, job, payment, chat, notification"
+            echo "  Engines:  bidding, fraud, trust, imaging"
+            echo "  Other:    gateway, web"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_down() {
+    log "Stopping all services..."
+
+    # Web + gateway
+    stop_one web
+    stop_one gateway
+
+    # Go services
+    for svc in notification chat payment job user; do
+        stop_one "$svc"
+    done
+
+    # Rust engines
+    for eng in imaging trust fraud bidding; do
+        stop_one "$eng"
+    done
+
+    # Infrastructure (reverse order)
+    stop_one jaeger
+    stop_one meilisearch
+    stop_one minio
+    stop_redis
+    stop_postgres
+
+    success "All services stopped"
+}
+
+cmd_status() {
+    local entries=(
+        "postgres:$PG_PORT:infra"
+        "redis:$REDIS_PORT:infra"
+        "meilisearch:$MEILI_PORT:infra"
+        "minio:$MINIO_PORT:infra"
+        "jaeger:$JAEGER_UI:infra"
+        "user:$USER_PORT:go"
+        "job:$JOB_PORT:go"
+        "payment:$PAYMENT_PORT:go"
+        "chat:$CHAT_PORT:go"
+        "notification:$NOTIFICATION_PORT:go"
+        "bidding:$BID_PORT:rust"
+        "fraud:$FRAUD_PORT:rust"
+        "trust:$TRUST_PORT:rust"
+        "imaging:$IMAGING_PORT:rust"
+        "gateway:$GATEWAY_PORT:go"
+        "web:$WEB_PORT:node"
+    )
+
+    echo ""
+    printf "  ${BOLD}%-16s %-10s %-8s %-7s${NC}\n" "SERVICE" "STATUS" "PID" "PORT"
+    printf "  %-16s %-10s %-8s %-7s\n" "───────────────" "────────" "──────" "─────"
+
+    local running=0 stopped=0
+    for entry in "${entries[@]}"; do
+        IFS=':' read -r name port kind <<< "$entry"
+        local pid
+        pid=$(get_pid "$name")
+
+        if is_running "$name"; then
+            printf "  %-16s ${GREEN}%-10s${NC} %-8s %-7s\n" "$name" "running" "$pid" ":$port"
+            running=$((running + 1))
+        else
+            printf "  %-16s ${DIM}%-10s${NC} %-8s %-7s\n" "$name" "stopped" "—" ":$port"
+            stopped=$((stopped + 1))
+        fi
+    done
+
+    echo ""
+    echo -e "  ${GREEN}$running running${NC}  ${DIM}$stopped stopped${NC}"
+    echo ""
+}
+
+cmd_logs() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        if ls "$LOGS"/*.log &>/dev/null; then
+            tail -f "$LOGS"/*.log
+        else
+            warn "No log files yet. Start services first: bin/dev up"
+        fi
+    elif [[ -f "$LOGS/$name.log" ]]; then
+        tail -f "$LOGS/$name.log"
+    else
+        err "No log file for '$name'"
+        echo "  Available logs:"
+        for f in "$LOGS"/*.log; do
+            [[ -f "$f" ]] && echo "    $(basename "$f" .log)"
+        done
+        exit 1
+    fi
+}
+
+cmd_rebuild() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        err "Usage: bin/dev rebuild <service>"
+        exit 1
+    fi
+
+    case "$name" in
+        gateway|user|job|payment|chat|notification)
+            local dir
+            if [[ "$name" == "gateway" ]]; then
+                dir="$ROOT/gateway"
+            else
+                dir="$ROOT/services/$name"
+            fi
+            stop_one "$name"
+            rm -f "$DEVBIN/$name"
+            log "Rebuilding $name..."
+            build_go_service "$name" "$dir"
+            success "$name rebuilt — restart with: bin/dev up $name"
+            ;;
+        bidding|fraud|trust|imaging)
+            stop_one "$name"
+            log "Rebuilding Rust workspace..."
+            build_engines
+            success "$name rebuilt — restart with: bin/dev up $name"
+            ;;
+        web)
+            stop_one web
+            log "Web runs via next dev — just restart: bin/dev up web"
+            ;;
+        *)
+            err "Unknown service: $name"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_reset() {
+    echo ""
+    warn "This will delete ALL local dev data:"
+    echo "    - PostgreSQL database"
+    echo "    - Redis data"
+    echo "    - Meilisearch index"
+    echo "    - MinIO files"
+    echo "    - Build artifacts"
+    echo "    - Log files"
+    echo ""
+    read -rp "  Continue? [y/N] " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "  Cancelled."
+        return
+    fi
+
+    cmd_down 2>/dev/null || true
+    rm -rf "$DEV"
+    success "All local data wiped"
+    echo -e "  Run ${BOLD}bin/dev setup${NC} to reinitialize."
+}
+
+cmd_doctor() {
+    log "Checking environment health..."
+    echo ""
+
+    local ok=true
+
+    # Commands
+    local checks=(
+        "go:Go compiler"
+        "cargo:Rust compiler"
+        "node:Node.js runtime"
+        "npm:npm package manager"
+        "brew:Homebrew"
+        "pg_ctl:PostgreSQL"
+        "redis-server:Redis"
+        "meilisearch:Meilisearch"
+        "minio:MinIO"
+        "mc:MinIO client"
+        "migrate:golang-migrate"
+        "protoc:Protobuf compiler"
+    )
+
+    printf "  ${BOLD}%-20s %-10s %s${NC}\n" "TOOL" "STATUS" "DETAIL"
+    printf "  %-20s %-10s %s\n" "──────────────────" "────────" "──────"
+
+    for check in "${checks[@]}"; do
+        IFS=':' read -r cmd label <<< "$check"
+        if has_cmd "$cmd"; then
+            local ver=""
+            case "$cmd" in
+                go)    ver="$(go version | awk '{print $3}')" ;;
+                cargo) ver="$(rustc --version | awk '{print $2}')" ;;
+                node)  ver="$(node --version)" ;;
+                *)     ver="found" ;;
+            esac
+            printf "  %-20s ${GREEN}%-10s${NC} %s\n" "$label" "ok" "$ver"
+        else
+            printf "  %-20s ${RED}%-10s${NC} %s\n" "$label" "missing" "run: bin/dev setup"
+            ok=false
+        fi
+    done
+
+    echo ""
+
+    # Data directories
+    printf "  ${BOLD}%-20s %-10s${NC}\n" "DATA" "STATUS"
+    printf "  %-20s %-10s\n" "──────────────────" "────────"
+
+    if [[ -d "$DATA/postgres" ]]; then
+        printf "  %-20s ${GREEN}%-10s${NC}\n" "PostgreSQL data" "ok"
+    else
+        printf "  %-20s ${RED}%-10s${NC}\n" "PostgreSQL data" "missing"
+        ok=false
+    fi
+
+    if [[ -f "$ROOT/keys/private.pem" ]]; then
+        printf "  %-20s ${GREEN}%-10s${NC}\n" "JWT keys" "ok"
+    else
+        printf "  %-20s ${RED}%-10s${NC}\n" "JWT keys" "missing"
+        ok=false
+    fi
+
+    if [[ -f "$ROOT/.env.local" ]]; then
+        printf "  %-20s ${GREEN}%-10s${NC}\n" ".env.local" "ok"
+    else
+        printf "  %-20s ${YELLOW}%-10s${NC}\n" ".env.local" "missing"
+    fi
+
+    echo ""
+
+    # Port conflicts
+    printf "  ${BOLD}%-20s %-10s${NC}\n" "PORT" "STATUS"
+    printf "  %-20s %-10s\n" "──────────────────" "────────"
+
+    local ports=(
+        "$PG_PORT:PostgreSQL"
+        "$REDIS_PORT:Redis"
+        "$MEILI_PORT:Meilisearch"
+        "$MINIO_PORT:MinIO"
+        "$GATEWAY_PORT:Gateway"
+        "$WEB_PORT:Web"
+    )
+
+    for p in "${ports[@]}"; do
+        IFS=':' read -r port label <<< "$p"
+        if port_in_use "$port"; then
+            if is_running "$(echo "$label" | tr '[:upper:]' '[:lower:]')"; then
+                printf "  %-20s ${GREEN}%-10s${NC} %s\n" ":$port ($label)" "ours" ""
+            else
+                printf "  %-20s ${RED}%-10s${NC} %s\n" ":$port ($label)" "conflict" "another process is using this port"
+                ok=false
+            fi
+        else
+            printf "  %-20s ${DIM}%-10s${NC}\n" ":$port ($label)" "free"
+        fi
+    done
+
+    echo ""
+    if $ok; then
+        success "Environment looks healthy"
+    else
+        warn "Issues found — run ${BOLD}bin/dev setup${NC} to fix"
+    fi
+}
+
+# ── Main ─────────────────────────────────────────────────────────
+
+cmd_help() {
+    cat <<HELP
+${BOLD}bin/dev${NC} — Native development environment for NoMarkup
+
+${BOLD}Usage:${NC}
+  bin/dev <command> [args]
+
+${BOLD}Commands:${NC}
+  setup              Install dependencies, create database, generate keys
+  up [target]        Start services (default: all)
+  down               Stop all running services
+  status             Show service health
+  logs [service]     Tail logs (all services, or one by name)
+  rebuild <service>  Force-rebuild a service binary
+  reset              Wipe all local data, start fresh
+  doctor             Check environment health
+
+${BOLD}Targets for 'up':${NC}
+  all                Everything (default)
+  infra              postgres, redis, meilisearch, minio, jaeger
+  services           Go microservices (user, job, payment, chat, notification)
+  engines            Rust engines (bidding, fraud, trust, imaging)
+  gateway            API gateway
+  web                Next.js frontend
+  <name>             Any individual service by name
+
+${BOLD}Examples:${NC}
+  bin/dev setup              # First-time setup
+  bin/dev up                 # Start everything
+  bin/dev up infra           # Start only databases + search + storage
+  bin/dev up gateway         # Start just the gateway
+  bin/dev status             # Check what's running
+  bin/dev logs gateway       # Tail gateway logs
+  bin/dev rebuild user       # Rebuild the user service binary
+  bin/dev down               # Stop everything
+HELP
+}
+
+main() {
+    local cmd="${1:-help}"
+    shift || true
+
+    case "$cmd" in
+        setup)   cmd_setup "$@" ;;
+        up)      cmd_up "$@" ;;
+        down)    cmd_down "$@" ;;
+        status)  cmd_status "$@" ;;
+        logs)    cmd_logs "$@" ;;
+        rebuild) cmd_rebuild "$@" ;;
+        reset)   cmd_reset "$@" ;;
+        doctor)  cmd_doctor "$@" ;;
+        help|-h|--help) cmd_help ;;
+        *)
+            err "Unknown command: $cmd"
+            cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

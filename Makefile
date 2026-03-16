@@ -1,7 +1,24 @@
-.PHONY: up down dev-full dev-infra migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
+.PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
        setup-tools test lint fmt build-gateway build-web build-engines clean
 
-# ── Infrastructure ────────────────────────────────────────────
+# ── Native Dev (bin/dev) ─────────────────────────────────────
+
+dev:
+	bin/dev up
+
+dev-setup:
+	bin/dev setup
+
+dev-status:
+	bin/dev status
+
+dev-logs:
+	bin/dev logs
+
+dev-down:
+	bin/dev down
+
+# ── Docker (legacy) ──────────────────────────────────────────
 
 up:
 	docker compose up -d
