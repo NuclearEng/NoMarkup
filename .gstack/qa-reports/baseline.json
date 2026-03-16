@@ -1,0 +1,16 @@
+{
+  "date": "2026-03-15",
+  "url": "http://localhost:3000",
+  "healthScore": 85,
+  "issues": [],
+  "categoryScores": {
+    "console": 40,
+    "links": 100,
+    "visual": 100,
+    "functional": 100,
+    "ux": 92,
+    "performance": 85,
+    "content": 92,
+    "accessibility": 85
+  }
+}
