@@ -137,7 +137,16 @@ function BusinessInfoStep({ onNext }: { onNext: () => void }) {
 
   const form = useForm<BusinessInfoFormValues>({
     resolver: zodResolver(businessInfoSchema),
-    defaultValues: { businessName: '', bio: '', serviceAddress: '' },
+    defaultValues: {
+      businessName: '',
+      bio: '',
+      serviceAddress: '',
+      einTin: '',
+      insuranceProvider: '',
+      insurancePolicyNumber: '',
+      insuranceExpiry: '',
+      insuranceCoverageDollars: undefined,
+    },
   });
 
   async function onSubmit(values: BusinessInfoFormValues) {
@@ -201,6 +210,109 @@ function BusinessInfoStep({ onNext }: { onNext: () => void }) {
             </FormItem>
           )}
         />
+
+        {/* Business Identity */}
+        <div className="border-t pt-6">
+          <h3 className="mb-4 text-sm font-semibold">Business Identity (Optional)</h3>
+
+          <div className="space-y-4">
+            <FormField
+              control={form.control}
+              name="einTin"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>EIN / TIN</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder="XX-XXXXXXX"
+                      maxLength={10}
+                      className="min-h-[44px]"
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/[^\d-]/g, '');
+                        // Auto-insert dash after 2 digits
+                        if (val.length === 2 && !val.includes('-') && field.value?.length !== 3) {
+                          val = val + '-';
+                        }
+                        field.onChange(val);
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="insuranceProvider"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Insurance Provider</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="e.g. State Farm, Allstate" className="min-h-[44px]" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="insurancePolicyNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Insurance Policy Number</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="POL-12345678" className="min-h-[44px]" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="insuranceExpiry"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Insurance Expiry Date</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" className="min-h-[44px]" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="insuranceCoverageDollars"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Insurance Coverage Amount ($)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      placeholder="e.g. 1000000"
+                      className="min-h-[44px]"
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val === '' ? undefined : Number(val));
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </div>
 
         <div className="flex gap-3">
           <Button type="submit" disabled={updateProvider.isPending} className="min-h-[44px]">

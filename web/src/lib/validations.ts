@@ -80,6 +80,15 @@ export const businessInfoSchema = z.object({
     .max(100, 'Business name must be at most 100 characters'),
   bio: z.string().max(500, 'Bio must be at most 500 characters').optional().or(z.literal('')),
   serviceAddress: z.string().optional().or(z.literal('')),
+  einTin: z
+    .string()
+    .regex(/^\d{2}-?\d{7}$/, 'EIN/TIN must be in XX-XXXXXXX format')
+    .optional()
+    .or(z.literal('')),
+  insuranceProvider: z.string().max(200).optional().or(z.literal('')),
+  insurancePolicyNumber: z.string().max(100).optional().or(z.literal('')),
+  insuranceExpiry: z.string().optional().or(z.literal('')),
+  insuranceCoverageDollars: z.number().positive('Coverage must be positive').optional(),
 });
 
 export type BusinessInfoFormValues = z.infer<typeof businessInfoSchema>;
@@ -250,3 +259,28 @@ export const propertySchema = z.object({
 });
 
 export type PropertyFormValues = z.infer<typeof propertySchema>;
+
+// Employee schemas
+export const addEmployeeSchema = z.object({
+  firstName: z.string().min(1, 'First name is required').max(100),
+  lastName: z.string().min(1, 'Last name is required').max(100),
+  email: z.string().email('Invalid email').optional().or(z.literal('')),
+  phone: z.string().optional().or(z.literal('')),
+  dateOfBirth: z.string().optional().or(z.literal('')),
+  role: z.enum(['technician', 'lead', 'manager', 'apprentice'], {
+    required_error: 'Role is required',
+  }),
+  ssnLastFour: z
+    .string()
+    .regex(/^\d{4}$/, 'Must be exactly 4 digits')
+    .optional()
+    .or(z.literal('')),
+  backgroundCheckConsent: z.boolean().optional(),
+  licenseNumber: z.string().optional().or(z.literal('')),
+  licenseState: z.string().optional().or(z.literal('')),
+  licenseExpiry: z.string().optional().or(z.literal('')),
+  insurancePolicyNumber: z.string().optional().or(z.literal('')),
+  insuranceExpiry: z.string().optional().or(z.literal('')),
+});
+
+export type AddEmployeeFormValues = z.infer<typeof addEmployeeSchema>;

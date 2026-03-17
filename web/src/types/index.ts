@@ -1447,3 +1447,65 @@ export interface InstallmentInfo {
   due_date?: string;
   paid_at?: string;
 }
+
+// ────────────────────────────────────────
+// Company Employee types
+// ────────────────────────────────────────
+
+export const EMPLOYEE_ROLE = {
+  TECHNICIAN: 'technician',
+  LEAD: 'lead',
+  MANAGER: 'manager',
+  APPRENTICE: 'apprentice',
+} as const;
+export type EmployeeRole = (typeof EMPLOYEE_ROLE)[keyof typeof EMPLOYEE_ROLE];
+
+export const EMPLOYEE_STATUS = {
+  PENDING: 'pending',
+  ACTIVE: 'active',
+  SUSPENDED: 'suspended',
+  TERMINATED: 'terminated',
+} as const;
+export type EmployeeStatus = (typeof EMPLOYEE_STATUS)[keyof typeof EMPLOYEE_STATUS];
+
+export const BACKGROUND_CHECK_STATUS = {
+  NOT_STARTED: 'not_started',
+  PENDING: 'pending',
+  PASSED: 'passed',
+  FAILED: 'failed',
+} as const;
+export type BackgroundCheckStatus =
+  (typeof BACKGROUND_CHECK_STATUS)[keyof typeof BACKGROUND_CHECK_STATUS];
+
+export interface CompanyEmployee {
+  id: string;
+  provider_id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  date_of_birth: string | null;
+  role: EmployeeRole;
+  status: EmployeeStatus;
+  hire_date: string | null;
+  background_check_status: BackgroundCheckStatus;
+  background_check_date: string | null;
+  license_number: string | null;
+  license_state: string | null;
+  license_expiry: string | null;
+  insurance_policy_number: string | null;
+  insurance_expiry: string | null;
+  created_at: string;
+}
+
+export interface AddEmployeeInput {
+  first_name: string;
+  last_name: string;
+  email?: string;
+  phone?: string;
+  date_of_birth?: string;
+  role: EmployeeRole;
+  license_number?: string;
+  license_state?: string;
+  license_expiry?: string;
+}
