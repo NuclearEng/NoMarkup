@@ -53,7 +53,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
     });
   }, [priceEvents]);
 
-  if (steps.length === 0) {
+  if (steps.length === 0 || width === 0) {
     return (
       <div
         ref={containerRef}
