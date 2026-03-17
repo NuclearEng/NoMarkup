@@ -102,6 +102,11 @@ Track all bids with status tabs (All, Active, Won, Lost). Each bid card shows: b
 
 ![Provider Bids](gstack/qa-reports/screenshots/showcase-13-provider-bids.png)
 
+### Team Management
+Manage company employees and their verification status. Add team members with roles (Technician, Lead, Manager, Apprentice), track background check status, licensing, and insurance. Empty state prompts first employee creation.
+
+![Team Management](gstack/qa-reports/screenshots/showcase-27-team-management.png)
+
 ---
 
 ## Admin Panel
