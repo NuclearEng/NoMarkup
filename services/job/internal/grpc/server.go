@@ -516,6 +516,17 @@ func domainJobToProto(j *domain.Job) *jobv1.Job {
 		pb.MinProviderRating = j.MinProviderRating
 	}
 
+	// Auction type & snipe extensions.
+	if j.AuctionType != "" {
+		pb.AuctionType = j.AuctionType
+	}
+	if j.SnipeExtensionCount > 0 {
+		pb.SnipeExtensionCount = j.SnipeExtensionCount
+	}
+	if j.OriginalAuctionEndsAt != nil {
+		pb.OriginalAuctionEndsAt = timestamppb.New(*j.OriginalAuctionEndsAt)
+	}
+
 	// Photos.
 	photoURLs := make([]string, 0, len(j.Photos))
 	for _, p := range j.Photos {

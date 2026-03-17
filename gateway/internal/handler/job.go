@@ -678,6 +678,15 @@ func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 	if j.MinProviderRating != nil {
 		result["min_provider_rating"] = j.GetMinProviderRating()
 	}
+	if j.GetAuctionType() != "" {
+		result["auction_type"] = j.GetAuctionType()
+	}
+	if j.GetSnipeExtensionCount() > 0 {
+		result["snipe_extension_count"] = j.GetSnipeExtensionCount()
+	}
+	if j.GetOriginalAuctionEndsAt() != nil {
+		result["original_auction_ends_at"] = formatTimestamp(j.GetOriginalAuctionEndsAt())
+	}
 
 	// Market range.
 	if mr := j.GetMarketRange(); mr != nil {

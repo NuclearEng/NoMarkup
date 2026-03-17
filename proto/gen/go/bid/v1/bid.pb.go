@@ -82,6 +82,392 @@ func (BidStatus) EnumDescriptor() ([]byte, []int) {
 	return file_bid_v1_bid_proto_rawDescGZIP(), []int{0}
 }
 
+type AuctionType int32
+
+const (
+	AuctionType_AUCTION_TYPE_UNSPECIFIED AuctionType = 0
+	AuctionType_AUCTION_TYPE_SEALED      AuctionType = 1
+	AuctionType_AUCTION_TYPE_LIVE        AuctionType = 2
+)
+
+// Enum value maps for AuctionType.
+var (
+	AuctionType_name = map[int32]string{
+		0: "AUCTION_TYPE_UNSPECIFIED",
+		1: "AUCTION_TYPE_SEALED",
+		2: "AUCTION_TYPE_LIVE",
+	}
+	AuctionType_value = map[string]int32{
+		"AUCTION_TYPE_UNSPECIFIED": 0,
+		"AUCTION_TYPE_SEALED":      1,
+		"AUCTION_TYPE_LIVE":        2,
+	}
+)
+
+func (x AuctionType) Enum() *AuctionType {
+	p := new(AuctionType)
+	*p = x
+	return p
+}
+
+func (x AuctionType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AuctionType) Descriptor() protoreflect.EnumDescriptor {
+	return file_bid_v1_bid_proto_enumTypes[1].Descriptor()
+}
+
+func (AuctionType) Type() protoreflect.EnumType {
+	return &file_bid_v1_bid_proto_enumTypes[1]
+}
+
+func (x AuctionType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AuctionType.Descriptor instead.
+func (AuctionType) EnumDescriptor() ([]byte, []int) {
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{1}
+}
+
+// Live Auction Arena messages
+type AuctionBidEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	AmountCents   int64                  `protobuf:"varint,2,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	EventType     string                 `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // bid_placed, bid_updated, bid_withdrawn
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuctionBidEvent) Reset() {
+	*x = AuctionBidEvent{}
+	mi := &file_bid_v1_bid_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuctionBidEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuctionBidEvent) ProtoMessage() {}
+
+func (x *AuctionBidEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_bid_v1_bid_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuctionBidEvent.ProtoReflect.Descriptor instead.
+func (*AuctionBidEvent) Descriptor() ([]byte, []int) {
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *AuctionBidEvent) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *AuctionBidEvent) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *AuctionBidEvent) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *AuctionBidEvent) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type LiveAuctionState struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	JobId               string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	LowestBidCents      int64                  `protobuf:"varint,2,opt,name=lowest_bid_cents,json=lowestBidCents,proto3" json:"lowest_bid_cents,omitempty"`
+	BidCount            int32                  `protobuf:"varint,3,opt,name=bid_count,json=bidCount,proto3" json:"bid_count,omitempty"`
+	AuctionEndsAt       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=auction_ends_at,json=auctionEndsAt,proto3" json:"auction_ends_at,omitempty"`
+	SnipeExtensionCount int32                  `protobuf:"varint,5,opt,name=snipe_extension_count,json=snipeExtensionCount,proto3" json:"snipe_extension_count,omitempty"`
+	MaxSnipeExtensions  int32                  `protobuf:"varint,6,opt,name=max_snipe_extensions,json=maxSnipeExtensions,proto3" json:"max_snipe_extensions,omitempty"`
+	RecentEvents        []*AuctionBidEvent     `protobuf:"bytes,7,rep,name=recent_events,json=recentEvents,proto3" json:"recent_events,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *LiveAuctionState) Reset() {
+	*x = LiveAuctionState{}
+	mi := &file_bid_v1_bid_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LiveAuctionState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LiveAuctionState) ProtoMessage() {}
+
+func (x *LiveAuctionState) ProtoReflect() protoreflect.Message {
+	mi := &file_bid_v1_bid_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LiveAuctionState.ProtoReflect.Descriptor instead.
+func (*LiveAuctionState) Descriptor() ([]byte, []int) {
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *LiveAuctionState) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *LiveAuctionState) GetLowestBidCents() int64 {
+	if x != nil {
+		return x.LowestBidCents
+	}
+	return 0
+}
+
+func (x *LiveAuctionState) GetBidCount() int32 {
+	if x != nil {
+		return x.BidCount
+	}
+	return 0
+}
+
+func (x *LiveAuctionState) GetAuctionEndsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AuctionEndsAt
+	}
+	return nil
+}
+
+func (x *LiveAuctionState) GetSnipeExtensionCount() int32 {
+	if x != nil {
+		return x.SnipeExtensionCount
+	}
+	return 0
+}
+
+func (x *LiveAuctionState) GetMaxSnipeExtensions() int32 {
+	if x != nil {
+		return x.MaxSnipeExtensions
+	}
+	return 0
+}
+
+func (x *LiveAuctionState) GetRecentEvents() []*AuctionBidEvent {
+	if x != nil {
+		return x.RecentEvents
+	}
+	return nil
+}
+
+type GetLiveAuctionStateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLiveAuctionStateRequest) Reset() {
+	*x = GetLiveAuctionStateRequest{}
+	mi := &file_bid_v1_bid_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLiveAuctionStateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLiveAuctionStateRequest) ProtoMessage() {}
+
+func (x *GetLiveAuctionStateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bid_v1_bid_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLiveAuctionStateRequest.ProtoReflect.Descriptor instead.
+func (*GetLiveAuctionStateRequest) Descriptor() ([]byte, []int) {
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetLiveAuctionStateRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+type GetLiveAuctionStateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         *LiveAuctionState      `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLiveAuctionStateResponse) Reset() {
+	*x = GetLiveAuctionStateResponse{}
+	mi := &file_bid_v1_bid_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLiveAuctionStateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLiveAuctionStateResponse) ProtoMessage() {}
+
+func (x *GetLiveAuctionStateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_bid_v1_bid_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLiveAuctionStateResponse.ProtoReflect.Descriptor instead.
+func (*GetLiveAuctionStateResponse) Descriptor() ([]byte, []int) {
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetLiveAuctionStateResponse) GetState() *LiveAuctionState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+type GetAuctionEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAuctionEventsRequest) Reset() {
+	*x = GetAuctionEventsRequest{}
+	mi := &file_bid_v1_bid_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAuctionEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAuctionEventsRequest) ProtoMessage() {}
+
+func (x *GetAuctionEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bid_v1_bid_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAuctionEventsRequest.ProtoReflect.Descriptor instead.
+func (*GetAuctionEventsRequest) Descriptor() ([]byte, []int) {
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetAuctionEventsRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+type GetAuctionEventsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*AuctionBidEvent     `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAuctionEventsResponse) Reset() {
+	*x = GetAuctionEventsResponse{}
+	mi := &file_bid_v1_bid_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAuctionEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAuctionEventsResponse) ProtoMessage() {}
+
+func (x *GetAuctionEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_bid_v1_bid_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAuctionEventsResponse.ProtoReflect.Descriptor instead.
+func (*GetAuctionEventsResponse) Descriptor() ([]byte, []int) {
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetAuctionEventsResponse) GetEvents() []*AuctionBidEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
 type Bid struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -102,7 +488,7 @@ type Bid struct {
 
 func (x *Bid) Reset() {
 	*x = Bid{}
-	mi := &file_bid_v1_bid_proto_msgTypes[0]
+	mi := &file_bid_v1_bid_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -114,7 +500,7 @@ func (x *Bid) String() string {
 func (*Bid) ProtoMessage() {}
 
 func (x *Bid) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[0]
+	mi := &file_bid_v1_bid_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -127,7 +513,7 @@ func (x *Bid) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Bid.ProtoReflect.Descriptor instead.
 func (*Bid) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{0}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Bid) GetId() string {
@@ -224,7 +610,7 @@ type BidUpdate struct {
 
 func (x *BidUpdate) Reset() {
 	*x = BidUpdate{}
-	mi := &file_bid_v1_bid_proto_msgTypes[1]
+	mi := &file_bid_v1_bid_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -236,7 +622,7 @@ func (x *BidUpdate) String() string {
 func (*BidUpdate) ProtoMessage() {}
 
 func (x *BidUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[1]
+	mi := &file_bid_v1_bid_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -249,7 +635,7 @@ func (x *BidUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BidUpdate.ProtoReflect.Descriptor instead.
 func (*BidUpdate) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{1}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BidUpdate) GetAmountCents() int64 {
@@ -283,7 +669,7 @@ type BidWithProvider struct {
 
 func (x *BidWithProvider) Reset() {
 	*x = BidWithProvider{}
-	mi := &file_bid_v1_bid_proto_msgTypes[2]
+	mi := &file_bid_v1_bid_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -295,7 +681,7 @@ func (x *BidWithProvider) String() string {
 func (*BidWithProvider) ProtoMessage() {}
 
 func (x *BidWithProvider) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[2]
+	mi := &file_bid_v1_bid_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +694,7 @@ func (x *BidWithProvider) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BidWithProvider.ProtoReflect.Descriptor instead.
 func (*BidWithProvider) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{2}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BidWithProvider) GetBid() *Bid {
@@ -378,7 +764,7 @@ type PlaceBidRequest struct {
 
 func (x *PlaceBidRequest) Reset() {
 	*x = PlaceBidRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[3]
+	mi := &file_bid_v1_bid_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -390,7 +776,7 @@ func (x *PlaceBidRequest) String() string {
 func (*PlaceBidRequest) ProtoMessage() {}
 
 func (x *PlaceBidRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[3]
+	mi := &file_bid_v1_bid_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -403,7 +789,7 @@ func (x *PlaceBidRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlaceBidRequest.ProtoReflect.Descriptor instead.
 func (*PlaceBidRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{3}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PlaceBidRequest) GetJobId() string {
@@ -436,7 +822,7 @@ type PlaceBidResponse struct {
 
 func (x *PlaceBidResponse) Reset() {
 	*x = PlaceBidResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[4]
+	mi := &file_bid_v1_bid_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -448,7 +834,7 @@ func (x *PlaceBidResponse) String() string {
 func (*PlaceBidResponse) ProtoMessage() {}
 
 func (x *PlaceBidResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[4]
+	mi := &file_bid_v1_bid_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -461,7 +847,7 @@ func (x *PlaceBidResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlaceBidResponse.ProtoReflect.Descriptor instead.
 func (*PlaceBidResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{4}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PlaceBidResponse) GetBid() *Bid {
@@ -482,7 +868,7 @@ type UpdateBidRequest struct {
 
 func (x *UpdateBidRequest) Reset() {
 	*x = UpdateBidRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[5]
+	mi := &file_bid_v1_bid_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +880,7 @@ func (x *UpdateBidRequest) String() string {
 func (*UpdateBidRequest) ProtoMessage() {}
 
 func (x *UpdateBidRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[5]
+	mi := &file_bid_v1_bid_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +893,7 @@ func (x *UpdateBidRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBidRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBidRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{5}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UpdateBidRequest) GetBidId() string {
@@ -540,7 +926,7 @@ type UpdateBidResponse struct {
 
 func (x *UpdateBidResponse) Reset() {
 	*x = UpdateBidResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[6]
+	mi := &file_bid_v1_bid_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +938,7 @@ func (x *UpdateBidResponse) String() string {
 func (*UpdateBidResponse) ProtoMessage() {}
 
 func (x *UpdateBidResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[6]
+	mi := &file_bid_v1_bid_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +951,7 @@ func (x *UpdateBidResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBidResponse.ProtoReflect.Descriptor instead.
 func (*UpdateBidResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{6}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UpdateBidResponse) GetBid() *Bid {
@@ -585,7 +971,7 @@ type WithdrawBidRequest struct {
 
 func (x *WithdrawBidRequest) Reset() {
 	*x = WithdrawBidRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[7]
+	mi := &file_bid_v1_bid_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +983,7 @@ func (x *WithdrawBidRequest) String() string {
 func (*WithdrawBidRequest) ProtoMessage() {}
 
 func (x *WithdrawBidRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[7]
+	mi := &file_bid_v1_bid_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +996,7 @@ func (x *WithdrawBidRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawBidRequest.ProtoReflect.Descriptor instead.
 func (*WithdrawBidRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{7}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WithdrawBidRequest) GetBidId() string {
@@ -636,7 +1022,7 @@ type WithdrawBidResponse struct {
 
 func (x *WithdrawBidResponse) Reset() {
 	*x = WithdrawBidResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[8]
+	mi := &file_bid_v1_bid_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +1034,7 @@ func (x *WithdrawBidResponse) String() string {
 func (*WithdrawBidResponse) ProtoMessage() {}
 
 func (x *WithdrawBidResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[8]
+	mi := &file_bid_v1_bid_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +1047,7 @@ func (x *WithdrawBidResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawBidResponse.ProtoReflect.Descriptor instead.
 func (*WithdrawBidResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{8}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WithdrawBidResponse) GetBid() *Bid {
@@ -681,7 +1067,7 @@ type AcceptOfferPriceRequest struct {
 
 func (x *AcceptOfferPriceRequest) Reset() {
 	*x = AcceptOfferPriceRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[9]
+	mi := &file_bid_v1_bid_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -693,7 +1079,7 @@ func (x *AcceptOfferPriceRequest) String() string {
 func (*AcceptOfferPriceRequest) ProtoMessage() {}
 
 func (x *AcceptOfferPriceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[9]
+	mi := &file_bid_v1_bid_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -706,7 +1092,7 @@ func (x *AcceptOfferPriceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptOfferPriceRequest.ProtoReflect.Descriptor instead.
 func (*AcceptOfferPriceRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{9}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AcceptOfferPriceRequest) GetJobId() string {
@@ -732,7 +1118,7 @@ type AcceptOfferPriceResponse struct {
 
 func (x *AcceptOfferPriceResponse) Reset() {
 	*x = AcceptOfferPriceResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[10]
+	mi := &file_bid_v1_bid_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -744,7 +1130,7 @@ func (x *AcceptOfferPriceResponse) String() string {
 func (*AcceptOfferPriceResponse) ProtoMessage() {}
 
 func (x *AcceptOfferPriceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[10]
+	mi := &file_bid_v1_bid_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -757,7 +1143,7 @@ func (x *AcceptOfferPriceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptOfferPriceResponse.ProtoReflect.Descriptor instead.
 func (*AcceptOfferPriceResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{10}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *AcceptOfferPriceResponse) GetBid() *Bid {
@@ -778,7 +1164,7 @@ type AwardBidRequest struct {
 
 func (x *AwardBidRequest) Reset() {
 	*x = AwardBidRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[11]
+	mi := &file_bid_v1_bid_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +1176,7 @@ func (x *AwardBidRequest) String() string {
 func (*AwardBidRequest) ProtoMessage() {}
 
 func (x *AwardBidRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[11]
+	mi := &file_bid_v1_bid_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +1189,7 @@ func (x *AwardBidRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AwardBidRequest.ProtoReflect.Descriptor instead.
 func (*AwardBidRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{11}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AwardBidRequest) GetJobId() string {
@@ -837,7 +1223,7 @@ type AwardBidResponse struct {
 
 func (x *AwardBidResponse) Reset() {
 	*x = AwardBidResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[12]
+	mi := &file_bid_v1_bid_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -849,7 +1235,7 @@ func (x *AwardBidResponse) String() string {
 func (*AwardBidResponse) ProtoMessage() {}
 
 func (x *AwardBidResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[12]
+	mi := &file_bid_v1_bid_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -862,7 +1248,7 @@ func (x *AwardBidResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AwardBidResponse.ProtoReflect.Descriptor instead.
 func (*AwardBidResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{12}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AwardBidResponse) GetAwardedBid() *Bid {
@@ -889,7 +1275,7 @@ type GetBidRequest struct {
 
 func (x *GetBidRequest) Reset() {
 	*x = GetBidRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[13]
+	mi := &file_bid_v1_bid_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -901,7 +1287,7 @@ func (x *GetBidRequest) String() string {
 func (*GetBidRequest) ProtoMessage() {}
 
 func (x *GetBidRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[13]
+	mi := &file_bid_v1_bid_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -914,7 +1300,7 @@ func (x *GetBidRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBidRequest.ProtoReflect.Descriptor instead.
 func (*GetBidRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{13}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetBidRequest) GetBidId() string {
@@ -940,7 +1326,7 @@ type GetBidResponse struct {
 
 func (x *GetBidResponse) Reset() {
 	*x = GetBidResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[14]
+	mi := &file_bid_v1_bid_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -952,7 +1338,7 @@ func (x *GetBidResponse) String() string {
 func (*GetBidResponse) ProtoMessage() {}
 
 func (x *GetBidResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[14]
+	mi := &file_bid_v1_bid_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -965,7 +1351,7 @@ func (x *GetBidResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBidResponse.ProtoReflect.Descriptor instead.
 func (*GetBidResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{14}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetBidResponse) GetBid() *Bid {
@@ -987,7 +1373,7 @@ type ListBidsForJobRequest struct {
 
 func (x *ListBidsForJobRequest) Reset() {
 	*x = ListBidsForJobRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[15]
+	mi := &file_bid_v1_bid_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -999,7 +1385,7 @@ func (x *ListBidsForJobRequest) String() string {
 func (*ListBidsForJobRequest) ProtoMessage() {}
 
 func (x *ListBidsForJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[15]
+	mi := &file_bid_v1_bid_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1012,7 +1398,7 @@ func (x *ListBidsForJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBidsForJobRequest.ProtoReflect.Descriptor instead.
 func (*ListBidsForJobRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{15}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListBidsForJobRequest) GetJobId() string {
@@ -1045,7 +1431,7 @@ type ListBidsForJobResponse struct {
 
 func (x *ListBidsForJobResponse) Reset() {
 	*x = ListBidsForJobResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[16]
+	mi := &file_bid_v1_bid_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1057,7 +1443,7 @@ func (x *ListBidsForJobResponse) String() string {
 func (*ListBidsForJobResponse) ProtoMessage() {}
 
 func (x *ListBidsForJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[16]
+	mi := &file_bid_v1_bid_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1070,7 +1456,7 @@ func (x *ListBidsForJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBidsForJobResponse.ProtoReflect.Descriptor instead.
 func (*ListBidsForJobResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{16}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListBidsForJobResponse) GetBids() []*BidWithProvider {
@@ -1092,7 +1478,7 @@ type ListBidsForProviderRequest struct {
 
 func (x *ListBidsForProviderRequest) Reset() {
 	*x = ListBidsForProviderRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[17]
+	mi := &file_bid_v1_bid_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1104,7 +1490,7 @@ func (x *ListBidsForProviderRequest) String() string {
 func (*ListBidsForProviderRequest) ProtoMessage() {}
 
 func (x *ListBidsForProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[17]
+	mi := &file_bid_v1_bid_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1117,7 +1503,7 @@ func (x *ListBidsForProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBidsForProviderRequest.ProtoReflect.Descriptor instead.
 func (*ListBidsForProviderRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{17}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListBidsForProviderRequest) GetProviderId() string {
@@ -1151,7 +1537,7 @@ type ListBidsForProviderResponse struct {
 
 func (x *ListBidsForProviderResponse) Reset() {
 	*x = ListBidsForProviderResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[18]
+	mi := &file_bid_v1_bid_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1163,7 +1549,7 @@ func (x *ListBidsForProviderResponse) String() string {
 func (*ListBidsForProviderResponse) ProtoMessage() {}
 
 func (x *ListBidsForProviderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[18]
+	mi := &file_bid_v1_bid_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1176,7 +1562,7 @@ func (x *ListBidsForProviderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBidsForProviderResponse.ProtoReflect.Descriptor instead.
 func (*ListBidsForProviderResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{18}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListBidsForProviderResponse) GetBids() []*Bid {
@@ -1202,7 +1588,7 @@ type GetBidCountRequest struct {
 
 func (x *GetBidCountRequest) Reset() {
 	*x = GetBidCountRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[19]
+	mi := &file_bid_v1_bid_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1214,7 +1600,7 @@ func (x *GetBidCountRequest) String() string {
 func (*GetBidCountRequest) ProtoMessage() {}
 
 func (x *GetBidCountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[19]
+	mi := &file_bid_v1_bid_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1227,7 +1613,7 @@ func (x *GetBidCountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBidCountRequest.ProtoReflect.Descriptor instead.
 func (*GetBidCountRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{19}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetBidCountRequest) GetJobId() string {
@@ -1246,7 +1632,7 @@ type GetBidCountResponse struct {
 
 func (x *GetBidCountResponse) Reset() {
 	*x = GetBidCountResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[20]
+	mi := &file_bid_v1_bid_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1258,7 +1644,7 @@ func (x *GetBidCountResponse) String() string {
 func (*GetBidCountResponse) ProtoMessage() {}
 
 func (x *GetBidCountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[20]
+	mi := &file_bid_v1_bid_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1271,7 +1657,7 @@ func (x *GetBidCountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBidCountResponse.ProtoReflect.Descriptor instead.
 func (*GetBidCountResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{20}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetBidCountResponse) GetCount() int32 {
@@ -1290,7 +1676,7 @@ type ExpireAuctionRequest struct {
 
 func (x *ExpireAuctionRequest) Reset() {
 	*x = ExpireAuctionRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[21]
+	mi := &file_bid_v1_bid_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1302,7 +1688,7 @@ func (x *ExpireAuctionRequest) String() string {
 func (*ExpireAuctionRequest) ProtoMessage() {}
 
 func (x *ExpireAuctionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[21]
+	mi := &file_bid_v1_bid_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1315,7 +1701,7 @@ func (x *ExpireAuctionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpireAuctionRequest.ProtoReflect.Descriptor instead.
 func (*ExpireAuctionRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{21}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ExpireAuctionRequest) GetJobId() string {
@@ -1334,7 +1720,7 @@ type ExpireAuctionResponse struct {
 
 func (x *ExpireAuctionResponse) Reset() {
 	*x = ExpireAuctionResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[22]
+	mi := &file_bid_v1_bid_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1346,7 +1732,7 @@ func (x *ExpireAuctionResponse) String() string {
 func (*ExpireAuctionResponse) ProtoMessage() {}
 
 func (x *ExpireAuctionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[22]
+	mi := &file_bid_v1_bid_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1359,7 +1745,7 @@ func (x *ExpireAuctionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpireAuctionResponse.ProtoReflect.Descriptor instead.
 func (*ExpireAuctionResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{22}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ExpireAuctionResponse) GetBidsExpired() int32 {
@@ -1378,7 +1764,7 @@ type CheckAuctionDeadlinesRequest struct {
 
 func (x *CheckAuctionDeadlinesRequest) Reset() {
 	*x = CheckAuctionDeadlinesRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[23]
+	mi := &file_bid_v1_bid_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1390,7 +1776,7 @@ func (x *CheckAuctionDeadlinesRequest) String() string {
 func (*CheckAuctionDeadlinesRequest) ProtoMessage() {}
 
 func (x *CheckAuctionDeadlinesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[23]
+	mi := &file_bid_v1_bid_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1403,7 +1789,7 @@ func (x *CheckAuctionDeadlinesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckAuctionDeadlinesRequest.ProtoReflect.Descriptor instead.
 func (*CheckAuctionDeadlinesRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{23}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CheckAuctionDeadlinesRequest) GetBefore() *timestamppb.Timestamp {
@@ -1423,7 +1809,7 @@ type CheckAuctionDeadlinesResponse struct {
 
 func (x *CheckAuctionDeadlinesResponse) Reset() {
 	*x = CheckAuctionDeadlinesResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[24]
+	mi := &file_bid_v1_bid_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1435,7 +1821,7 @@ func (x *CheckAuctionDeadlinesResponse) String() string {
 func (*CheckAuctionDeadlinesResponse) ProtoMessage() {}
 
 func (x *CheckAuctionDeadlinesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[24]
+	mi := &file_bid_v1_bid_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1448,7 +1834,7 @@ func (x *CheckAuctionDeadlinesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckAuctionDeadlinesResponse.ProtoReflect.Descriptor instead.
 func (*CheckAuctionDeadlinesResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{24}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CheckAuctionDeadlinesResponse) GetExpiredJobIds() []string {
@@ -1474,7 +1860,7 @@ type GetBidAnalyticsRequest struct {
 
 func (x *GetBidAnalyticsRequest) Reset() {
 	*x = GetBidAnalyticsRequest{}
-	mi := &file_bid_v1_bid_proto_msgTypes[25]
+	mi := &file_bid_v1_bid_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +1872,7 @@ func (x *GetBidAnalyticsRequest) String() string {
 func (*GetBidAnalyticsRequest) ProtoMessage() {}
 
 func (x *GetBidAnalyticsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[25]
+	mi := &file_bid_v1_bid_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +1885,7 @@ func (x *GetBidAnalyticsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBidAnalyticsRequest.ProtoReflect.Descriptor instead.
 func (*GetBidAnalyticsRequest) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{25}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetBidAnalyticsRequest) GetJobId() string {
@@ -1524,7 +1910,7 @@ type GetBidAnalyticsResponse struct {
 
 func (x *GetBidAnalyticsResponse) Reset() {
 	*x = GetBidAnalyticsResponse{}
-	mi := &file_bid_v1_bid_proto_msgTypes[26]
+	mi := &file_bid_v1_bid_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1536,7 +1922,7 @@ func (x *GetBidAnalyticsResponse) String() string {
 func (*GetBidAnalyticsResponse) ProtoMessage() {}
 
 func (x *GetBidAnalyticsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bid_v1_bid_proto_msgTypes[26]
+	mi := &file_bid_v1_bid_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1549,7 +1935,7 @@ func (x *GetBidAnalyticsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBidAnalyticsResponse.ProtoReflect.Descriptor instead.
 func (*GetBidAnalyticsResponse) Descriptor() ([]byte, []int) {
-	return file_bid_v1_bid_proto_rawDescGZIP(), []int{26}
+	return file_bid_v1_bid_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetBidAnalyticsResponse) GetTotalBids() int32 {
@@ -1605,7 +1991,30 @@ var File_bid_v1_bid_proto protoreflect.FileDescriptor
 
 const file_bid_v1_bid_proto_rawDesc = "" +
 	"\n" +
-	"\x10bid/v1/bid.proto\x12\x0fnomarkup.bid.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16common/v1/common.proto\x1a\x12user/v1/user.proto\"\xb1\x04\n" +
+	"\x10bid/v1/bid.proto\x12\x0fnomarkup.bid.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16common/v1/common.proto\x1a\x12user/v1/user.proto\"\xa5\x01\n" +
+	"\x0fAuctionBidEvent\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
+	"\famount_cents\x18\x02 \x01(\x03R\vamountCents\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x03 \x01(\tR\teventType\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xe1\x02\n" +
+	"\x10LiveAuctionState\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12(\n" +
+	"\x10lowest_bid_cents\x18\x02 \x01(\x03R\x0elowestBidCents\x12\x1b\n" +
+	"\tbid_count\x18\x03 \x01(\x05R\bbidCount\x12B\n" +
+	"\x0fauction_ends_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rauctionEndsAt\x122\n" +
+	"\x15snipe_extension_count\x18\x05 \x01(\x05R\x13snipeExtensionCount\x120\n" +
+	"\x14max_snipe_extensions\x18\x06 \x01(\x05R\x12maxSnipeExtensions\x12E\n" +
+	"\rrecent_events\x18\a \x03(\v2 .nomarkup.bid.v1.AuctionBidEventR\frecentEvents\"3\n" +
+	"\x1aGetLiveAuctionStateRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"V\n" +
+	"\x1bGetLiveAuctionStateResponse\x127\n" +
+	"\x05state\x18\x01 \x01(\v2!.nomarkup.bid.v1.LiveAuctionStateR\x05state\"0\n" +
+	"\x17GetAuctionEventsRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"T\n" +
+	"\x18GetAuctionEventsResponse\x128\n" +
+	"\x06events\x18\x01 \x03(\v2 .nomarkup.bid.v1.AuctionBidEventR\x06events\"\xb1\x04\n" +
 	"\x03Bid\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x1f\n" +
@@ -1731,7 +2140,12 @@ const file_bid_v1_bid_proto_rawDesc = "" +
 	"\x12BID_STATUS_AWARDED\x10\x02\x12\x1b\n" +
 	"\x17BID_STATUS_NOT_SELECTED\x10\x03\x12\x18\n" +
 	"\x14BID_STATUS_WITHDRAWN\x10\x04\x12\x16\n" +
-	"\x12BID_STATUS_EXPIRED\x10\x052\xfd\b\n" +
+	"\x12BID_STATUS_EXPIRED\x10\x05*[\n" +
+	"\vAuctionType\x12\x1c\n" +
+	"\x18AUCTION_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13AUCTION_TYPE_SEALED\x10\x01\x12\x15\n" +
+	"\x11AUCTION_TYPE_LIVE\x10\x022\xd8\n" +
+	"\n" +
 	"\n" +
 	"BidService\x12O\n" +
 	"\bPlaceBid\x12 .nomarkup.bid.v1.PlaceBidRequest\x1a!.nomarkup.bid.v1.PlaceBidResponse\x12R\n" +
@@ -1745,7 +2159,9 @@ const file_bid_v1_bid_proto_rawDesc = "" +
 	"\vGetBidCount\x12#.nomarkup.bid.v1.GetBidCountRequest\x1a$.nomarkup.bid.v1.GetBidCountResponse\x12^\n" +
 	"\rExpireAuction\x12%.nomarkup.bid.v1.ExpireAuctionRequest\x1a&.nomarkup.bid.v1.ExpireAuctionResponse\x12v\n" +
 	"\x15CheckAuctionDeadlines\x12-.nomarkup.bid.v1.CheckAuctionDeadlinesRequest\x1a..nomarkup.bid.v1.CheckAuctionDeadlinesResponse\x12d\n" +
-	"\x0fGetBidAnalytics\x12'.nomarkup.bid.v1.GetBidAnalyticsRequest\x1a(.nomarkup.bid.v1.GetBidAnalyticsResponseB1Z/github.com/nomarkup/nomarkup/proto/bid/v1;bidv1b\x06proto3"
+	"\x0fGetBidAnalytics\x12'.nomarkup.bid.v1.GetBidAnalyticsRequest\x1a(.nomarkup.bid.v1.GetBidAnalyticsResponse\x12p\n" +
+	"\x13GetLiveAuctionState\x12+.nomarkup.bid.v1.GetLiveAuctionStateRequest\x1a,.nomarkup.bid.v1.GetLiveAuctionStateResponse\x12g\n" +
+	"\x10GetAuctionEvents\x12(.nomarkup.bid.v1.GetAuctionEventsRequest\x1a).nomarkup.bid.v1.GetAuctionEventsResponseB1Z/github.com/nomarkup/nomarkup/proto/bid/v1;bidv1b\x06proto3"
 
 var (
 	file_bid_v1_bid_proto_rawDescOnce sync.Once
@@ -1759,101 +2175,117 @@ func file_bid_v1_bid_proto_rawDescGZIP() []byte {
 	return file_bid_v1_bid_proto_rawDescData
 }
 
-var file_bid_v1_bid_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_bid_v1_bid_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_bid_v1_bid_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_bid_v1_bid_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_bid_v1_bid_proto_goTypes = []any{
 	(BidStatus)(0),                        // 0: nomarkup.bid.v1.BidStatus
-	(*Bid)(nil),                           // 1: nomarkup.bid.v1.Bid
-	(*BidUpdate)(nil),                     // 2: nomarkup.bid.v1.BidUpdate
-	(*BidWithProvider)(nil),               // 3: nomarkup.bid.v1.BidWithProvider
-	(*PlaceBidRequest)(nil),               // 4: nomarkup.bid.v1.PlaceBidRequest
-	(*PlaceBidResponse)(nil),              // 5: nomarkup.bid.v1.PlaceBidResponse
-	(*UpdateBidRequest)(nil),              // 6: nomarkup.bid.v1.UpdateBidRequest
-	(*UpdateBidResponse)(nil),             // 7: nomarkup.bid.v1.UpdateBidResponse
-	(*WithdrawBidRequest)(nil),            // 8: nomarkup.bid.v1.WithdrawBidRequest
-	(*WithdrawBidResponse)(nil),           // 9: nomarkup.bid.v1.WithdrawBidResponse
-	(*AcceptOfferPriceRequest)(nil),       // 10: nomarkup.bid.v1.AcceptOfferPriceRequest
-	(*AcceptOfferPriceResponse)(nil),      // 11: nomarkup.bid.v1.AcceptOfferPriceResponse
-	(*AwardBidRequest)(nil),               // 12: nomarkup.bid.v1.AwardBidRequest
-	(*AwardBidResponse)(nil),              // 13: nomarkup.bid.v1.AwardBidResponse
-	(*GetBidRequest)(nil),                 // 14: nomarkup.bid.v1.GetBidRequest
-	(*GetBidResponse)(nil),                // 15: nomarkup.bid.v1.GetBidResponse
-	(*ListBidsForJobRequest)(nil),         // 16: nomarkup.bid.v1.ListBidsForJobRequest
-	(*ListBidsForJobResponse)(nil),        // 17: nomarkup.bid.v1.ListBidsForJobResponse
-	(*ListBidsForProviderRequest)(nil),    // 18: nomarkup.bid.v1.ListBidsForProviderRequest
-	(*ListBidsForProviderResponse)(nil),   // 19: nomarkup.bid.v1.ListBidsForProviderResponse
-	(*GetBidCountRequest)(nil),            // 20: nomarkup.bid.v1.GetBidCountRequest
-	(*GetBidCountResponse)(nil),           // 21: nomarkup.bid.v1.GetBidCountResponse
-	(*ExpireAuctionRequest)(nil),          // 22: nomarkup.bid.v1.ExpireAuctionRequest
-	(*ExpireAuctionResponse)(nil),         // 23: nomarkup.bid.v1.ExpireAuctionResponse
-	(*CheckAuctionDeadlinesRequest)(nil),  // 24: nomarkup.bid.v1.CheckAuctionDeadlinesRequest
-	(*CheckAuctionDeadlinesResponse)(nil), // 25: nomarkup.bid.v1.CheckAuctionDeadlinesResponse
-	(*GetBidAnalyticsRequest)(nil),        // 26: nomarkup.bid.v1.GetBidAnalyticsRequest
-	(*GetBidAnalyticsResponse)(nil),       // 27: nomarkup.bid.v1.GetBidAnalyticsResponse
-	(*timestamppb.Timestamp)(nil),         // 28: google.protobuf.Timestamp
-	(*v1.TrustScoreSummary)(nil),          // 29: nomarkup.user.v1.TrustScoreSummary
-	(*v1.ReviewSummary)(nil),              // 30: nomarkup.user.v1.ReviewSummary
-	(*v1.VerificationBadge)(nil),          // 31: nomarkup.user.v1.VerificationBadge
-	(*v11.SortRequest)(nil),               // 32: nomarkup.common.v1.SortRequest
-	(*v11.PaginationRequest)(nil),         // 33: nomarkup.common.v1.PaginationRequest
-	(*v11.PaginationResponse)(nil),        // 34: nomarkup.common.v1.PaginationResponse
+	(AuctionType)(0),                      // 1: nomarkup.bid.v1.AuctionType
+	(*AuctionBidEvent)(nil),               // 2: nomarkup.bid.v1.AuctionBidEvent
+	(*LiveAuctionState)(nil),              // 3: nomarkup.bid.v1.LiveAuctionState
+	(*GetLiveAuctionStateRequest)(nil),    // 4: nomarkup.bid.v1.GetLiveAuctionStateRequest
+	(*GetLiveAuctionStateResponse)(nil),   // 5: nomarkup.bid.v1.GetLiveAuctionStateResponse
+	(*GetAuctionEventsRequest)(nil),       // 6: nomarkup.bid.v1.GetAuctionEventsRequest
+	(*GetAuctionEventsResponse)(nil),      // 7: nomarkup.bid.v1.GetAuctionEventsResponse
+	(*Bid)(nil),                           // 8: nomarkup.bid.v1.Bid
+	(*BidUpdate)(nil),                     // 9: nomarkup.bid.v1.BidUpdate
+	(*BidWithProvider)(nil),               // 10: nomarkup.bid.v1.BidWithProvider
+	(*PlaceBidRequest)(nil),               // 11: nomarkup.bid.v1.PlaceBidRequest
+	(*PlaceBidResponse)(nil),              // 12: nomarkup.bid.v1.PlaceBidResponse
+	(*UpdateBidRequest)(nil),              // 13: nomarkup.bid.v1.UpdateBidRequest
+	(*UpdateBidResponse)(nil),             // 14: nomarkup.bid.v1.UpdateBidResponse
+	(*WithdrawBidRequest)(nil),            // 15: nomarkup.bid.v1.WithdrawBidRequest
+	(*WithdrawBidResponse)(nil),           // 16: nomarkup.bid.v1.WithdrawBidResponse
+	(*AcceptOfferPriceRequest)(nil),       // 17: nomarkup.bid.v1.AcceptOfferPriceRequest
+	(*AcceptOfferPriceResponse)(nil),      // 18: nomarkup.bid.v1.AcceptOfferPriceResponse
+	(*AwardBidRequest)(nil),               // 19: nomarkup.bid.v1.AwardBidRequest
+	(*AwardBidResponse)(nil),              // 20: nomarkup.bid.v1.AwardBidResponse
+	(*GetBidRequest)(nil),                 // 21: nomarkup.bid.v1.GetBidRequest
+	(*GetBidResponse)(nil),                // 22: nomarkup.bid.v1.GetBidResponse
+	(*ListBidsForJobRequest)(nil),         // 23: nomarkup.bid.v1.ListBidsForJobRequest
+	(*ListBidsForJobResponse)(nil),        // 24: nomarkup.bid.v1.ListBidsForJobResponse
+	(*ListBidsForProviderRequest)(nil),    // 25: nomarkup.bid.v1.ListBidsForProviderRequest
+	(*ListBidsForProviderResponse)(nil),   // 26: nomarkup.bid.v1.ListBidsForProviderResponse
+	(*GetBidCountRequest)(nil),            // 27: nomarkup.bid.v1.GetBidCountRequest
+	(*GetBidCountResponse)(nil),           // 28: nomarkup.bid.v1.GetBidCountResponse
+	(*ExpireAuctionRequest)(nil),          // 29: nomarkup.bid.v1.ExpireAuctionRequest
+	(*ExpireAuctionResponse)(nil),         // 30: nomarkup.bid.v1.ExpireAuctionResponse
+	(*CheckAuctionDeadlinesRequest)(nil),  // 31: nomarkup.bid.v1.CheckAuctionDeadlinesRequest
+	(*CheckAuctionDeadlinesResponse)(nil), // 32: nomarkup.bid.v1.CheckAuctionDeadlinesResponse
+	(*GetBidAnalyticsRequest)(nil),        // 33: nomarkup.bid.v1.GetBidAnalyticsRequest
+	(*GetBidAnalyticsResponse)(nil),       // 34: nomarkup.bid.v1.GetBidAnalyticsResponse
+	(*timestamppb.Timestamp)(nil),         // 35: google.protobuf.Timestamp
+	(*v1.TrustScoreSummary)(nil),          // 36: nomarkup.user.v1.TrustScoreSummary
+	(*v1.ReviewSummary)(nil),              // 37: nomarkup.user.v1.ReviewSummary
+	(*v1.VerificationBadge)(nil),          // 38: nomarkup.user.v1.VerificationBadge
+	(*v11.SortRequest)(nil),               // 39: nomarkup.common.v1.SortRequest
+	(*v11.PaginationRequest)(nil),         // 40: nomarkup.common.v1.PaginationRequest
+	(*v11.PaginationResponse)(nil),        // 41: nomarkup.common.v1.PaginationResponse
 }
 var file_bid_v1_bid_proto_depIdxs = []int32{
-	0,  // 0: nomarkup.bid.v1.Bid.status:type_name -> nomarkup.bid.v1.BidStatus
-	2,  // 1: nomarkup.bid.v1.Bid.bid_history:type_name -> nomarkup.bid.v1.BidUpdate
-	28, // 2: nomarkup.bid.v1.Bid.created_at:type_name -> google.protobuf.Timestamp
-	28, // 3: nomarkup.bid.v1.Bid.updated_at:type_name -> google.protobuf.Timestamp
-	28, // 4: nomarkup.bid.v1.Bid.awarded_at:type_name -> google.protobuf.Timestamp
-	28, // 5: nomarkup.bid.v1.Bid.withdrawn_at:type_name -> google.protobuf.Timestamp
-	28, // 6: nomarkup.bid.v1.BidUpdate.updated_at:type_name -> google.protobuf.Timestamp
-	1,  // 7: nomarkup.bid.v1.BidWithProvider.bid:type_name -> nomarkup.bid.v1.Bid
-	29, // 8: nomarkup.bid.v1.BidWithProvider.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
-	30, // 9: nomarkup.bid.v1.BidWithProvider.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
-	31, // 10: nomarkup.bid.v1.BidWithProvider.badges:type_name -> nomarkup.user.v1.VerificationBadge
-	1,  // 11: nomarkup.bid.v1.PlaceBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
-	1,  // 12: nomarkup.bid.v1.UpdateBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
-	1,  // 13: nomarkup.bid.v1.WithdrawBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
-	1,  // 14: nomarkup.bid.v1.AcceptOfferPriceResponse.bid:type_name -> nomarkup.bid.v1.Bid
-	1,  // 15: nomarkup.bid.v1.AwardBidResponse.awarded_bid:type_name -> nomarkup.bid.v1.Bid
-	1,  // 16: nomarkup.bid.v1.GetBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
-	32, // 17: nomarkup.bid.v1.ListBidsForJobRequest.sort:type_name -> nomarkup.common.v1.SortRequest
-	3,  // 18: nomarkup.bid.v1.ListBidsForJobResponse.bids:type_name -> nomarkup.bid.v1.BidWithProvider
-	0,  // 19: nomarkup.bid.v1.ListBidsForProviderRequest.status_filter:type_name -> nomarkup.bid.v1.BidStatus
-	33, // 20: nomarkup.bid.v1.ListBidsForProviderRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	1,  // 21: nomarkup.bid.v1.ListBidsForProviderResponse.bids:type_name -> nomarkup.bid.v1.Bid
-	34, // 22: nomarkup.bid.v1.ListBidsForProviderResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	28, // 23: nomarkup.bid.v1.CheckAuctionDeadlinesRequest.before:type_name -> google.protobuf.Timestamp
-	28, // 24: nomarkup.bid.v1.GetBidAnalyticsResponse.first_bid_at:type_name -> google.protobuf.Timestamp
-	28, // 25: nomarkup.bid.v1.GetBidAnalyticsResponse.last_bid_at:type_name -> google.protobuf.Timestamp
-	4,  // 26: nomarkup.bid.v1.BidService.PlaceBid:input_type -> nomarkup.bid.v1.PlaceBidRequest
-	6,  // 27: nomarkup.bid.v1.BidService.UpdateBid:input_type -> nomarkup.bid.v1.UpdateBidRequest
-	8,  // 28: nomarkup.bid.v1.BidService.WithdrawBid:input_type -> nomarkup.bid.v1.WithdrawBidRequest
-	10, // 29: nomarkup.bid.v1.BidService.AcceptOfferPrice:input_type -> nomarkup.bid.v1.AcceptOfferPriceRequest
-	12, // 30: nomarkup.bid.v1.BidService.AwardBid:input_type -> nomarkup.bid.v1.AwardBidRequest
-	14, // 31: nomarkup.bid.v1.BidService.GetBid:input_type -> nomarkup.bid.v1.GetBidRequest
-	16, // 32: nomarkup.bid.v1.BidService.ListBidsForJob:input_type -> nomarkup.bid.v1.ListBidsForJobRequest
-	18, // 33: nomarkup.bid.v1.BidService.ListBidsForProvider:input_type -> nomarkup.bid.v1.ListBidsForProviderRequest
-	20, // 34: nomarkup.bid.v1.BidService.GetBidCount:input_type -> nomarkup.bid.v1.GetBidCountRequest
-	22, // 35: nomarkup.bid.v1.BidService.ExpireAuction:input_type -> nomarkup.bid.v1.ExpireAuctionRequest
-	24, // 36: nomarkup.bid.v1.BidService.CheckAuctionDeadlines:input_type -> nomarkup.bid.v1.CheckAuctionDeadlinesRequest
-	26, // 37: nomarkup.bid.v1.BidService.GetBidAnalytics:input_type -> nomarkup.bid.v1.GetBidAnalyticsRequest
-	5,  // 38: nomarkup.bid.v1.BidService.PlaceBid:output_type -> nomarkup.bid.v1.PlaceBidResponse
-	7,  // 39: nomarkup.bid.v1.BidService.UpdateBid:output_type -> nomarkup.bid.v1.UpdateBidResponse
-	9,  // 40: nomarkup.bid.v1.BidService.WithdrawBid:output_type -> nomarkup.bid.v1.WithdrawBidResponse
-	11, // 41: nomarkup.bid.v1.BidService.AcceptOfferPrice:output_type -> nomarkup.bid.v1.AcceptOfferPriceResponse
-	13, // 42: nomarkup.bid.v1.BidService.AwardBid:output_type -> nomarkup.bid.v1.AwardBidResponse
-	15, // 43: nomarkup.bid.v1.BidService.GetBid:output_type -> nomarkup.bid.v1.GetBidResponse
-	17, // 44: nomarkup.bid.v1.BidService.ListBidsForJob:output_type -> nomarkup.bid.v1.ListBidsForJobResponse
-	19, // 45: nomarkup.bid.v1.BidService.ListBidsForProvider:output_type -> nomarkup.bid.v1.ListBidsForProviderResponse
-	21, // 46: nomarkup.bid.v1.BidService.GetBidCount:output_type -> nomarkup.bid.v1.GetBidCountResponse
-	23, // 47: nomarkup.bid.v1.BidService.ExpireAuction:output_type -> nomarkup.bid.v1.ExpireAuctionResponse
-	25, // 48: nomarkup.bid.v1.BidService.CheckAuctionDeadlines:output_type -> nomarkup.bid.v1.CheckAuctionDeadlinesResponse
-	27, // 49: nomarkup.bid.v1.BidService.GetBidAnalytics:output_type -> nomarkup.bid.v1.GetBidAnalyticsResponse
-	38, // [38:50] is the sub-list for method output_type
-	26, // [26:38] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	35, // 0: nomarkup.bid.v1.AuctionBidEvent.created_at:type_name -> google.protobuf.Timestamp
+	35, // 1: nomarkup.bid.v1.LiveAuctionState.auction_ends_at:type_name -> google.protobuf.Timestamp
+	2,  // 2: nomarkup.bid.v1.LiveAuctionState.recent_events:type_name -> nomarkup.bid.v1.AuctionBidEvent
+	3,  // 3: nomarkup.bid.v1.GetLiveAuctionStateResponse.state:type_name -> nomarkup.bid.v1.LiveAuctionState
+	2,  // 4: nomarkup.bid.v1.GetAuctionEventsResponse.events:type_name -> nomarkup.bid.v1.AuctionBidEvent
+	0,  // 5: nomarkup.bid.v1.Bid.status:type_name -> nomarkup.bid.v1.BidStatus
+	9,  // 6: nomarkup.bid.v1.Bid.bid_history:type_name -> nomarkup.bid.v1.BidUpdate
+	35, // 7: nomarkup.bid.v1.Bid.created_at:type_name -> google.protobuf.Timestamp
+	35, // 8: nomarkup.bid.v1.Bid.updated_at:type_name -> google.protobuf.Timestamp
+	35, // 9: nomarkup.bid.v1.Bid.awarded_at:type_name -> google.protobuf.Timestamp
+	35, // 10: nomarkup.bid.v1.Bid.withdrawn_at:type_name -> google.protobuf.Timestamp
+	35, // 11: nomarkup.bid.v1.BidUpdate.updated_at:type_name -> google.protobuf.Timestamp
+	8,  // 12: nomarkup.bid.v1.BidWithProvider.bid:type_name -> nomarkup.bid.v1.Bid
+	36, // 13: nomarkup.bid.v1.BidWithProvider.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
+	37, // 14: nomarkup.bid.v1.BidWithProvider.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
+	38, // 15: nomarkup.bid.v1.BidWithProvider.badges:type_name -> nomarkup.user.v1.VerificationBadge
+	8,  // 16: nomarkup.bid.v1.PlaceBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
+	8,  // 17: nomarkup.bid.v1.UpdateBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
+	8,  // 18: nomarkup.bid.v1.WithdrawBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
+	8,  // 19: nomarkup.bid.v1.AcceptOfferPriceResponse.bid:type_name -> nomarkup.bid.v1.Bid
+	8,  // 20: nomarkup.bid.v1.AwardBidResponse.awarded_bid:type_name -> nomarkup.bid.v1.Bid
+	8,  // 21: nomarkup.bid.v1.GetBidResponse.bid:type_name -> nomarkup.bid.v1.Bid
+	39, // 22: nomarkup.bid.v1.ListBidsForJobRequest.sort:type_name -> nomarkup.common.v1.SortRequest
+	10, // 23: nomarkup.bid.v1.ListBidsForJobResponse.bids:type_name -> nomarkup.bid.v1.BidWithProvider
+	0,  // 24: nomarkup.bid.v1.ListBidsForProviderRequest.status_filter:type_name -> nomarkup.bid.v1.BidStatus
+	40, // 25: nomarkup.bid.v1.ListBidsForProviderRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	8,  // 26: nomarkup.bid.v1.ListBidsForProviderResponse.bids:type_name -> nomarkup.bid.v1.Bid
+	41, // 27: nomarkup.bid.v1.ListBidsForProviderResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	35, // 28: nomarkup.bid.v1.CheckAuctionDeadlinesRequest.before:type_name -> google.protobuf.Timestamp
+	35, // 29: nomarkup.bid.v1.GetBidAnalyticsResponse.first_bid_at:type_name -> google.protobuf.Timestamp
+	35, // 30: nomarkup.bid.v1.GetBidAnalyticsResponse.last_bid_at:type_name -> google.protobuf.Timestamp
+	11, // 31: nomarkup.bid.v1.BidService.PlaceBid:input_type -> nomarkup.bid.v1.PlaceBidRequest
+	13, // 32: nomarkup.bid.v1.BidService.UpdateBid:input_type -> nomarkup.bid.v1.UpdateBidRequest
+	15, // 33: nomarkup.bid.v1.BidService.WithdrawBid:input_type -> nomarkup.bid.v1.WithdrawBidRequest
+	17, // 34: nomarkup.bid.v1.BidService.AcceptOfferPrice:input_type -> nomarkup.bid.v1.AcceptOfferPriceRequest
+	19, // 35: nomarkup.bid.v1.BidService.AwardBid:input_type -> nomarkup.bid.v1.AwardBidRequest
+	21, // 36: nomarkup.bid.v1.BidService.GetBid:input_type -> nomarkup.bid.v1.GetBidRequest
+	23, // 37: nomarkup.bid.v1.BidService.ListBidsForJob:input_type -> nomarkup.bid.v1.ListBidsForJobRequest
+	25, // 38: nomarkup.bid.v1.BidService.ListBidsForProvider:input_type -> nomarkup.bid.v1.ListBidsForProviderRequest
+	27, // 39: nomarkup.bid.v1.BidService.GetBidCount:input_type -> nomarkup.bid.v1.GetBidCountRequest
+	29, // 40: nomarkup.bid.v1.BidService.ExpireAuction:input_type -> nomarkup.bid.v1.ExpireAuctionRequest
+	31, // 41: nomarkup.bid.v1.BidService.CheckAuctionDeadlines:input_type -> nomarkup.bid.v1.CheckAuctionDeadlinesRequest
+	33, // 42: nomarkup.bid.v1.BidService.GetBidAnalytics:input_type -> nomarkup.bid.v1.GetBidAnalyticsRequest
+	4,  // 43: nomarkup.bid.v1.BidService.GetLiveAuctionState:input_type -> nomarkup.bid.v1.GetLiveAuctionStateRequest
+	6,  // 44: nomarkup.bid.v1.BidService.GetAuctionEvents:input_type -> nomarkup.bid.v1.GetAuctionEventsRequest
+	12, // 45: nomarkup.bid.v1.BidService.PlaceBid:output_type -> nomarkup.bid.v1.PlaceBidResponse
+	14, // 46: nomarkup.bid.v1.BidService.UpdateBid:output_type -> nomarkup.bid.v1.UpdateBidResponse
+	16, // 47: nomarkup.bid.v1.BidService.WithdrawBid:output_type -> nomarkup.bid.v1.WithdrawBidResponse
+	18, // 48: nomarkup.bid.v1.BidService.AcceptOfferPrice:output_type -> nomarkup.bid.v1.AcceptOfferPriceResponse
+	20, // 49: nomarkup.bid.v1.BidService.AwardBid:output_type -> nomarkup.bid.v1.AwardBidResponse
+	22, // 50: nomarkup.bid.v1.BidService.GetBid:output_type -> nomarkup.bid.v1.GetBidResponse
+	24, // 51: nomarkup.bid.v1.BidService.ListBidsForJob:output_type -> nomarkup.bid.v1.ListBidsForJobResponse
+	26, // 52: nomarkup.bid.v1.BidService.ListBidsForProvider:output_type -> nomarkup.bid.v1.ListBidsForProviderResponse
+	28, // 53: nomarkup.bid.v1.BidService.GetBidCount:output_type -> nomarkup.bid.v1.GetBidCountResponse
+	30, // 54: nomarkup.bid.v1.BidService.ExpireAuction:output_type -> nomarkup.bid.v1.ExpireAuctionResponse
+	32, // 55: nomarkup.bid.v1.BidService.CheckAuctionDeadlines:output_type -> nomarkup.bid.v1.CheckAuctionDeadlinesResponse
+	34, // 56: nomarkup.bid.v1.BidService.GetBidAnalytics:output_type -> nomarkup.bid.v1.GetBidAnalyticsResponse
+	5,  // 57: nomarkup.bid.v1.BidService.GetLiveAuctionState:output_type -> nomarkup.bid.v1.GetLiveAuctionStateResponse
+	7,  // 58: nomarkup.bid.v1.BidService.GetAuctionEvents:output_type -> nomarkup.bid.v1.GetAuctionEventsResponse
+	45, // [45:59] is the sub-list for method output_type
+	31, // [31:45] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_bid_v1_bid_proto_init() }
@@ -1861,14 +2293,14 @@ func file_bid_v1_bid_proto_init() {
 	if File_bid_v1_bid_proto != nil {
 		return
 	}
-	file_bid_v1_bid_proto_msgTypes[17].OneofWrappers = []any{}
+	file_bid_v1_bid_proto_msgTypes[23].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bid_v1_bid_proto_rawDesc), len(file_bid_v1_bid_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   27,
+			NumEnums:      2,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

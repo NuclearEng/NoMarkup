@@ -31,6 +31,8 @@ const (
 	BidService_ExpireAuction_FullMethodName         = "/nomarkup.bid.v1.BidService/ExpireAuction"
 	BidService_CheckAuctionDeadlines_FullMethodName = "/nomarkup.bid.v1.BidService/CheckAuctionDeadlines"
 	BidService_GetBidAnalytics_FullMethodName       = "/nomarkup.bid.v1.BidService/GetBidAnalytics"
+	BidService_GetLiveAuctionState_FullMethodName   = "/nomarkup.bid.v1.BidService/GetLiveAuctionState"
+	BidService_GetAuctionEvents_FullMethodName      = "/nomarkup.bid.v1.BidService/GetAuctionEvents"
 )
 
 // BidServiceClient is the client API for BidService service.
@@ -54,6 +56,9 @@ type BidServiceClient interface {
 	CheckAuctionDeadlines(ctx context.Context, in *CheckAuctionDeadlinesRequest, opts ...grpc.CallOption) (*CheckAuctionDeadlinesResponse, error)
 	// Analytics
 	GetBidAnalytics(ctx context.Context, in *GetBidAnalyticsRequest, opts ...grpc.CallOption) (*GetBidAnalyticsResponse, error)
+	// Live auction
+	GetLiveAuctionState(ctx context.Context, in *GetLiveAuctionStateRequest, opts ...grpc.CallOption) (*GetLiveAuctionStateResponse, error)
+	GetAuctionEvents(ctx context.Context, in *GetAuctionEventsRequest, opts ...grpc.CallOption) (*GetAuctionEventsResponse, error)
 }
 
 type bidServiceClient struct {
@@ -184,6 +189,26 @@ func (c *bidServiceClient) GetBidAnalytics(ctx context.Context, in *GetBidAnalyt
 	return out, nil
 }
 
+func (c *bidServiceClient) GetLiveAuctionState(ctx context.Context, in *GetLiveAuctionStateRequest, opts ...grpc.CallOption) (*GetLiveAuctionStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetLiveAuctionStateResponse)
+	err := c.cc.Invoke(ctx, BidService_GetLiveAuctionState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bidServiceClient) GetAuctionEvents(ctx context.Context, in *GetAuctionEventsRequest, opts ...grpc.CallOption) (*GetAuctionEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAuctionEventsResponse)
+	err := c.cc.Invoke(ctx, BidService_GetAuctionEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BidServiceServer is the server API for BidService service.
 // All implementations must embed UnimplementedBidServiceServer
 // for forward compatibility.
@@ -205,6 +230,9 @@ type BidServiceServer interface {
 	CheckAuctionDeadlines(context.Context, *CheckAuctionDeadlinesRequest) (*CheckAuctionDeadlinesResponse, error)
 	// Analytics
 	GetBidAnalytics(context.Context, *GetBidAnalyticsRequest) (*GetBidAnalyticsResponse, error)
+	// Live auction
+	GetLiveAuctionState(context.Context, *GetLiveAuctionStateRequest) (*GetLiveAuctionStateResponse, error)
+	GetAuctionEvents(context.Context, *GetAuctionEventsRequest) (*GetAuctionEventsResponse, error)
 	mustEmbedUnimplementedBidServiceServer()
 }
 
@@ -250,6 +278,12 @@ func (UnimplementedBidServiceServer) CheckAuctionDeadlines(context.Context, *Che
 }
 func (UnimplementedBidServiceServer) GetBidAnalytics(context.Context, *GetBidAnalyticsRequest) (*GetBidAnalyticsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetBidAnalytics not implemented")
+}
+func (UnimplementedBidServiceServer) GetLiveAuctionState(context.Context, *GetLiveAuctionStateRequest) (*GetLiveAuctionStateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetLiveAuctionState not implemented")
+}
+func (UnimplementedBidServiceServer) GetAuctionEvents(context.Context, *GetAuctionEventsRequest) (*GetAuctionEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAuctionEvents not implemented")
 }
 func (UnimplementedBidServiceServer) mustEmbedUnimplementedBidServiceServer() {}
 func (UnimplementedBidServiceServer) testEmbeddedByValue()                    {}
@@ -488,6 +522,42 @@ func _BidService_GetBidAnalytics_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BidService_GetLiveAuctionState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLiveAuctionStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BidServiceServer).GetLiveAuctionState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BidService_GetLiveAuctionState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BidServiceServer).GetLiveAuctionState(ctx, req.(*GetLiveAuctionStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BidService_GetAuctionEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAuctionEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BidServiceServer).GetAuctionEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BidService_GetAuctionEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BidServiceServer).GetAuctionEvents(ctx, req.(*GetAuctionEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BidService_ServiceDesc is the grpc.ServiceDesc for BidService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -542,6 +612,14 @@ var BidService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetBidAnalytics",
 			Handler:    _BidService_GetBidAnalytics_Handler,
+		},
+		{
+			MethodName: "GetLiveAuctionState",
+			Handler:    _BidService_GetLiveAuctionState_Handler,
+		},
+		{
+			MethodName: "GetAuctionEvents",
+			Handler:    _BidService_GetAuctionEvents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

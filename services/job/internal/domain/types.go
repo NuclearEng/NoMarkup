@@ -57,6 +57,9 @@ type Job struct {
 	AwardedBidID         *string
 	RepostedFromID       *string
 	RepostCount          int
+	AuctionType          string
+	SnipeExtensionCount  int32
+	OriginalAuctionEndsAt *time.Time
 	AwardedAt            *time.Time
 	ClosedAt             *time.Time
 	CompletedAt          *time.Time

@@ -150,8 +150,12 @@ type Job struct {
 	AuctionClosedAt *timestamppb.Timestamp `protobuf:"bytes,28,opt,name=auction_closed_at,json=auctionClosedAt,proto3" json:"auction_closed_at,omitempty"`
 	AwardedAt       *timestamppb.Timestamp `protobuf:"bytes,29,opt,name=awarded_at,json=awardedAt,proto3" json:"awarded_at,omitempty"`
 	CompletedAt     *timestamppb.Timestamp `protobuf:"bytes,30,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Live auction support
+	AuctionType           string                 `protobuf:"bytes,31,opt,name=auction_type,json=auctionType,proto3" json:"auction_type,omitempty"` // "sealed" or "live"
+	SnipeExtensionCount   int32                  `protobuf:"varint,32,opt,name=snipe_extension_count,json=snipeExtensionCount,proto3" json:"snipe_extension_count,omitempty"`
+	OriginalAuctionEndsAt *timestamppb.Timestamp `protobuf:"bytes,33,opt,name=original_auction_ends_at,json=originalAuctionEndsAt,proto3" json:"original_auction_ends_at,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Job) Reset() {
@@ -390,6 +394,27 @@ func (x *Job) GetAwardedAt() *timestamppb.Timestamp {
 func (x *Job) GetCompletedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CompletedAt
+	}
+	return nil
+}
+
+func (x *Job) GetAuctionType() string {
+	if x != nil {
+		return x.AuctionType
+	}
+	return ""
+}
+
+func (x *Job) GetSnipeExtensionCount() int32 {
+	if x != nil {
+		return x.SnipeExtensionCount
+	}
+	return 0
+}
+
+func (x *Job) GetOriginalAuctionEndsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.OriginalAuctionEndsAt
 	}
 	return nil
 }
@@ -3340,7 +3365,7 @@ var File_job_v1_job_proto protoreflect.FileDescriptor
 
 const file_job_v1_job_proto_rawDesc = "" +
 	"\n" +
-	"\x10job/v1/job.proto\x12\x0fnomarkup.job.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16common/v1/common.proto\x1a\x12user/v1/user.proto\"\xff\f\n" +
+	"\x10job/v1/job.proto\x12\x0fnomarkup.job.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16common/v1/common.proto\x1a\x12user/v1/user.proto\"\xab\x0e\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vcustomer_id\x18\x02 \x01(\tR\n" +
@@ -3377,7 +3402,10 @@ const file_job_v1_job_proto_rawDesc = "" +
 	"\x11auction_closed_at\x18\x1c \x01(\v2\x1a.google.protobuf.TimestampR\x0fauctionClosedAt\x129\n" +
 	"\n" +
 	"awarded_at\x18\x1d \x01(\v2\x1a.google.protobuf.TimestampR\tawardedAt\x12=\n" +
-	"\fcompleted_at\x18\x1e \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAtB\x15\n" +
+	"\fcompleted_at\x18\x1e \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12!\n" +
+	"\fauction_type\x18\x1f \x01(\tR\vauctionType\x122\n" +
+	"\x15snipe_extension_count\x18  \x01(\x05R\x13snipeExtensionCount\x12S\n" +
+	"\x18original_auction_ends_at\x18! \x01(\v2\x1a.google.protobuf.TimestampR\x15originalAuctionEndsAtB\x15\n" +
 	"\x13_starting_bid_centsB\x17\n" +
 	"\x15_offer_accepted_centsB\x16\n" +
 	"\x14_min_provider_rating\"\xf5\x01\n" +
@@ -3800,101 +3828,102 @@ var file_job_v1_job_proto_depIdxs = []int32{
 	53, // 12: nomarkup.job.v1.Job.auction_closed_at:type_name -> google.protobuf.Timestamp
 	53, // 13: nomarkup.job.v1.Job.awarded_at:type_name -> google.protobuf.Timestamp
 	53, // 14: nomarkup.job.v1.Job.completed_at:type_name -> google.protobuf.Timestamp
-	1,  // 15: nomarkup.job.v1.JobDetail.job:type_name -> nomarkup.job.v1.Job
-	51, // 16: nomarkup.job.v1.JobDetail.exact_address:type_name -> nomarkup.common.v1.Address
-	56, // 17: nomarkup.job.v1.JobDetail.customer:type_name -> nomarkup.user.v1.User
-	57, // 18: nomarkup.job.v1.JobDetail.customer_trust:type_name -> nomarkup.user.v1.TrustScoreSummary
-	52, // 19: nomarkup.job.v1.CreateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
-	53, // 20: nomarkup.job.v1.CreateJobRequest.scheduled_date:type_name -> google.protobuf.Timestamp
-	54, // 21: nomarkup.job.v1.CreateJobRequest.schedule_range:type_name -> nomarkup.common.v1.DateRange
-	55, // 22: nomarkup.job.v1.CreateJobRequest.recurrence_frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
-	1,  // 23: nomarkup.job.v1.CreateJobResponse.job:type_name -> nomarkup.job.v1.Job
-	52, // 24: nomarkup.job.v1.UpdateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
-	1,  // 25: nomarkup.job.v1.UpdateJobResponse.job:type_name -> nomarkup.job.v1.Job
-	2,  // 26: nomarkup.job.v1.GetJobResponse.job:type_name -> nomarkup.job.v1.JobDetail
-	1,  // 27: nomarkup.job.v1.PublishJobResponse.job:type_name -> nomarkup.job.v1.Job
-	1,  // 28: nomarkup.job.v1.CloseAuctionResponse.job:type_name -> nomarkup.job.v1.Job
-	1,  // 29: nomarkup.job.v1.CancelJobResponse.job:type_name -> nomarkup.job.v1.Job
-	1,  // 30: nomarkup.job.v1.RepostJobResponse.new_job:type_name -> nomarkup.job.v1.Job
-	58, // 31: nomarkup.job.v1.SearchJobsRequest.location:type_name -> nomarkup.common.v1.Location
-	52, // 32: nomarkup.job.v1.SearchJobsRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
-	59, // 33: nomarkup.job.v1.SearchJobsRequest.sort:type_name -> nomarkup.common.v1.SortRequest
-	60, // 34: nomarkup.job.v1.SearchJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	1,  // 35: nomarkup.job.v1.SearchJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
-	61, // 36: nomarkup.job.v1.SearchJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	58, // 37: nomarkup.job.v1.GetJobsOnMapRequest.center:type_name -> nomarkup.common.v1.Location
-	25, // 38: nomarkup.job.v1.GetJobsOnMapResponse.pins:type_name -> nomarkup.job.v1.JobMapPin
-	58, // 39: nomarkup.job.v1.JobMapPin.location:type_name -> nomarkup.common.v1.Location
-	53, // 40: nomarkup.job.v1.JobMapPin.auction_ends_at:type_name -> google.protobuf.Timestamp
-	0,  // 41: nomarkup.job.v1.ListCustomerJobsRequest.status_filter:type_name -> nomarkup.job.v1.JobStatus
-	60, // 42: nomarkup.job.v1.ListCustomerJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	1,  // 43: nomarkup.job.v1.ListCustomerJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
-	61, // 44: nomarkup.job.v1.ListCustomerJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	60, // 45: nomarkup.job.v1.ListProviderBiddedJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	30, // 46: nomarkup.job.v1.ListProviderBiddedJobsResponse.jobs:type_name -> nomarkup.job.v1.JobWithBid
-	61, // 47: nomarkup.job.v1.ListProviderBiddedJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	1,  // 48: nomarkup.job.v1.JobWithBid.job:type_name -> nomarkup.job.v1.Job
-	31, // 49: nomarkup.job.v1.JobWithBid.my_bid:type_name -> nomarkup.job.v1.BidSummary
-	53, // 50: nomarkup.job.v1.BidSummary.created_at:type_name -> google.protobuf.Timestamp
-	1,  // 51: nomarkup.job.v1.ListDraftsResponse.drafts:type_name -> nomarkup.job.v1.Job
-	3,  // 52: nomarkup.job.v1.GetServiceCategoriesResponse.categories:type_name -> nomarkup.job.v1.ServiceCategory
-	38, // 53: nomarkup.job.v1.GetCategoryTreeResponse.tree:type_name -> nomarkup.job.v1.CategoryTreeNode
-	3,  // 54: nomarkup.job.v1.CategoryTreeNode.category:type_name -> nomarkup.job.v1.ServiceCategory
-	38, // 55: nomarkup.job.v1.CategoryTreeNode.children:type_name -> nomarkup.job.v1.CategoryTreeNode
-	0,  // 56: nomarkup.job.v1.AdminListJobsRequest.status_filter:type_name -> nomarkup.job.v1.JobStatus
-	60, // 57: nomarkup.job.v1.AdminListJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	1,  // 58: nomarkup.job.v1.AdminListJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
-	61, // 59: nomarkup.job.v1.AdminListJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	1,  // 60: nomarkup.job.v1.AdminSuspendJobResponse.job:type_name -> nomarkup.job.v1.Job
-	3,  // 61: nomarkup.job.v1.AdminCreateCategoryResponse.category:type_name -> nomarkup.job.v1.ServiceCategory
-	3,  // 62: nomarkup.job.v1.AdminUpdateCategoryResponse.category:type_name -> nomarkup.job.v1.ServiceCategory
-	5,  // 63: nomarkup.job.v1.JobService.CreateJob:input_type -> nomarkup.job.v1.CreateJobRequest
-	7,  // 64: nomarkup.job.v1.JobService.UpdateJob:input_type -> nomarkup.job.v1.UpdateJobRequest
-	9,  // 65: nomarkup.job.v1.JobService.GetJob:input_type -> nomarkup.job.v1.GetJobRequest
-	11, // 66: nomarkup.job.v1.JobService.DeleteDraft:input_type -> nomarkup.job.v1.DeleteDraftRequest
-	13, // 67: nomarkup.job.v1.JobService.PublishJob:input_type -> nomarkup.job.v1.PublishJobRequest
-	15, // 68: nomarkup.job.v1.JobService.CloseAuction:input_type -> nomarkup.job.v1.CloseAuctionRequest
-	17, // 69: nomarkup.job.v1.JobService.CancelJob:input_type -> nomarkup.job.v1.CancelJobRequest
-	19, // 70: nomarkup.job.v1.JobService.RepostJob:input_type -> nomarkup.job.v1.RepostJobRequest
-	21, // 71: nomarkup.job.v1.JobService.SearchJobs:input_type -> nomarkup.job.v1.SearchJobsRequest
-	23, // 72: nomarkup.job.v1.JobService.GetJobsOnMap:input_type -> nomarkup.job.v1.GetJobsOnMapRequest
-	26, // 73: nomarkup.job.v1.JobService.ListCustomerJobs:input_type -> nomarkup.job.v1.ListCustomerJobsRequest
-	28, // 74: nomarkup.job.v1.JobService.ListProviderBiddedJobs:input_type -> nomarkup.job.v1.ListProviderBiddedJobsRequest
-	32, // 75: nomarkup.job.v1.JobService.ListDrafts:input_type -> nomarkup.job.v1.ListDraftsRequest
-	34, // 76: nomarkup.job.v1.JobService.GetServiceCategories:input_type -> nomarkup.job.v1.GetServiceCategoriesRequest
-	36, // 77: nomarkup.job.v1.JobService.GetCategoryTree:input_type -> nomarkup.job.v1.GetCategoryTreeRequest
-	39, // 78: nomarkup.job.v1.JobService.AdminListJobs:input_type -> nomarkup.job.v1.AdminListJobsRequest
-	41, // 79: nomarkup.job.v1.JobService.AdminSuspendJob:input_type -> nomarkup.job.v1.AdminSuspendJobRequest
-	43, // 80: nomarkup.job.v1.JobService.AdminRemoveJob:input_type -> nomarkup.job.v1.AdminRemoveJobRequest
-	45, // 81: nomarkup.job.v1.JobService.AdminCreateCategory:input_type -> nomarkup.job.v1.AdminCreateCategoryRequest
-	47, // 82: nomarkup.job.v1.JobService.AdminUpdateCategory:input_type -> nomarkup.job.v1.AdminUpdateCategoryRequest
-	49, // 83: nomarkup.job.v1.JobService.AdminDeleteCategory:input_type -> nomarkup.job.v1.AdminDeleteCategoryRequest
-	6,  // 84: nomarkup.job.v1.JobService.CreateJob:output_type -> nomarkup.job.v1.CreateJobResponse
-	8,  // 85: nomarkup.job.v1.JobService.UpdateJob:output_type -> nomarkup.job.v1.UpdateJobResponse
-	10, // 86: nomarkup.job.v1.JobService.GetJob:output_type -> nomarkup.job.v1.GetJobResponse
-	12, // 87: nomarkup.job.v1.JobService.DeleteDraft:output_type -> nomarkup.job.v1.DeleteDraftResponse
-	14, // 88: nomarkup.job.v1.JobService.PublishJob:output_type -> nomarkup.job.v1.PublishJobResponse
-	16, // 89: nomarkup.job.v1.JobService.CloseAuction:output_type -> nomarkup.job.v1.CloseAuctionResponse
-	18, // 90: nomarkup.job.v1.JobService.CancelJob:output_type -> nomarkup.job.v1.CancelJobResponse
-	20, // 91: nomarkup.job.v1.JobService.RepostJob:output_type -> nomarkup.job.v1.RepostJobResponse
-	22, // 92: nomarkup.job.v1.JobService.SearchJobs:output_type -> nomarkup.job.v1.SearchJobsResponse
-	24, // 93: nomarkup.job.v1.JobService.GetJobsOnMap:output_type -> nomarkup.job.v1.GetJobsOnMapResponse
-	27, // 94: nomarkup.job.v1.JobService.ListCustomerJobs:output_type -> nomarkup.job.v1.ListCustomerJobsResponse
-	29, // 95: nomarkup.job.v1.JobService.ListProviderBiddedJobs:output_type -> nomarkup.job.v1.ListProviderBiddedJobsResponse
-	33, // 96: nomarkup.job.v1.JobService.ListDrafts:output_type -> nomarkup.job.v1.ListDraftsResponse
-	35, // 97: nomarkup.job.v1.JobService.GetServiceCategories:output_type -> nomarkup.job.v1.GetServiceCategoriesResponse
-	37, // 98: nomarkup.job.v1.JobService.GetCategoryTree:output_type -> nomarkup.job.v1.GetCategoryTreeResponse
-	40, // 99: nomarkup.job.v1.JobService.AdminListJobs:output_type -> nomarkup.job.v1.AdminListJobsResponse
-	42, // 100: nomarkup.job.v1.JobService.AdminSuspendJob:output_type -> nomarkup.job.v1.AdminSuspendJobResponse
-	44, // 101: nomarkup.job.v1.JobService.AdminRemoveJob:output_type -> nomarkup.job.v1.AdminRemoveJobResponse
-	46, // 102: nomarkup.job.v1.JobService.AdminCreateCategory:output_type -> nomarkup.job.v1.AdminCreateCategoryResponse
-	48, // 103: nomarkup.job.v1.JobService.AdminUpdateCategory:output_type -> nomarkup.job.v1.AdminUpdateCategoryResponse
-	50, // 104: nomarkup.job.v1.JobService.AdminDeleteCategory:output_type -> nomarkup.job.v1.AdminDeleteCategoryResponse
-	84, // [84:105] is the sub-list for method output_type
-	63, // [63:84] is the sub-list for method input_type
-	63, // [63:63] is the sub-list for extension type_name
-	63, // [63:63] is the sub-list for extension extendee
-	0,  // [0:63] is the sub-list for field type_name
+	53, // 15: nomarkup.job.v1.Job.original_auction_ends_at:type_name -> google.protobuf.Timestamp
+	1,  // 16: nomarkup.job.v1.JobDetail.job:type_name -> nomarkup.job.v1.Job
+	51, // 17: nomarkup.job.v1.JobDetail.exact_address:type_name -> nomarkup.common.v1.Address
+	56, // 18: nomarkup.job.v1.JobDetail.customer:type_name -> nomarkup.user.v1.User
+	57, // 19: nomarkup.job.v1.JobDetail.customer_trust:type_name -> nomarkup.user.v1.TrustScoreSummary
+	52, // 20: nomarkup.job.v1.CreateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
+	53, // 21: nomarkup.job.v1.CreateJobRequest.scheduled_date:type_name -> google.protobuf.Timestamp
+	54, // 22: nomarkup.job.v1.CreateJobRequest.schedule_range:type_name -> nomarkup.common.v1.DateRange
+	55, // 23: nomarkup.job.v1.CreateJobRequest.recurrence_frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
+	1,  // 24: nomarkup.job.v1.CreateJobResponse.job:type_name -> nomarkup.job.v1.Job
+	52, // 25: nomarkup.job.v1.UpdateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
+	1,  // 26: nomarkup.job.v1.UpdateJobResponse.job:type_name -> nomarkup.job.v1.Job
+	2,  // 27: nomarkup.job.v1.GetJobResponse.job:type_name -> nomarkup.job.v1.JobDetail
+	1,  // 28: nomarkup.job.v1.PublishJobResponse.job:type_name -> nomarkup.job.v1.Job
+	1,  // 29: nomarkup.job.v1.CloseAuctionResponse.job:type_name -> nomarkup.job.v1.Job
+	1,  // 30: nomarkup.job.v1.CancelJobResponse.job:type_name -> nomarkup.job.v1.Job
+	1,  // 31: nomarkup.job.v1.RepostJobResponse.new_job:type_name -> nomarkup.job.v1.Job
+	58, // 32: nomarkup.job.v1.SearchJobsRequest.location:type_name -> nomarkup.common.v1.Location
+	52, // 33: nomarkup.job.v1.SearchJobsRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
+	59, // 34: nomarkup.job.v1.SearchJobsRequest.sort:type_name -> nomarkup.common.v1.SortRequest
+	60, // 35: nomarkup.job.v1.SearchJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	1,  // 36: nomarkup.job.v1.SearchJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
+	61, // 37: nomarkup.job.v1.SearchJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	58, // 38: nomarkup.job.v1.GetJobsOnMapRequest.center:type_name -> nomarkup.common.v1.Location
+	25, // 39: nomarkup.job.v1.GetJobsOnMapResponse.pins:type_name -> nomarkup.job.v1.JobMapPin
+	58, // 40: nomarkup.job.v1.JobMapPin.location:type_name -> nomarkup.common.v1.Location
+	53, // 41: nomarkup.job.v1.JobMapPin.auction_ends_at:type_name -> google.protobuf.Timestamp
+	0,  // 42: nomarkup.job.v1.ListCustomerJobsRequest.status_filter:type_name -> nomarkup.job.v1.JobStatus
+	60, // 43: nomarkup.job.v1.ListCustomerJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	1,  // 44: nomarkup.job.v1.ListCustomerJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
+	61, // 45: nomarkup.job.v1.ListCustomerJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	60, // 46: nomarkup.job.v1.ListProviderBiddedJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	30, // 47: nomarkup.job.v1.ListProviderBiddedJobsResponse.jobs:type_name -> nomarkup.job.v1.JobWithBid
+	61, // 48: nomarkup.job.v1.ListProviderBiddedJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	1,  // 49: nomarkup.job.v1.JobWithBid.job:type_name -> nomarkup.job.v1.Job
+	31, // 50: nomarkup.job.v1.JobWithBid.my_bid:type_name -> nomarkup.job.v1.BidSummary
+	53, // 51: nomarkup.job.v1.BidSummary.created_at:type_name -> google.protobuf.Timestamp
+	1,  // 52: nomarkup.job.v1.ListDraftsResponse.drafts:type_name -> nomarkup.job.v1.Job
+	3,  // 53: nomarkup.job.v1.GetServiceCategoriesResponse.categories:type_name -> nomarkup.job.v1.ServiceCategory
+	38, // 54: nomarkup.job.v1.GetCategoryTreeResponse.tree:type_name -> nomarkup.job.v1.CategoryTreeNode
+	3,  // 55: nomarkup.job.v1.CategoryTreeNode.category:type_name -> nomarkup.job.v1.ServiceCategory
+	38, // 56: nomarkup.job.v1.CategoryTreeNode.children:type_name -> nomarkup.job.v1.CategoryTreeNode
+	0,  // 57: nomarkup.job.v1.AdminListJobsRequest.status_filter:type_name -> nomarkup.job.v1.JobStatus
+	60, // 58: nomarkup.job.v1.AdminListJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	1,  // 59: nomarkup.job.v1.AdminListJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
+	61, // 60: nomarkup.job.v1.AdminListJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	1,  // 61: nomarkup.job.v1.AdminSuspendJobResponse.job:type_name -> nomarkup.job.v1.Job
+	3,  // 62: nomarkup.job.v1.AdminCreateCategoryResponse.category:type_name -> nomarkup.job.v1.ServiceCategory
+	3,  // 63: nomarkup.job.v1.AdminUpdateCategoryResponse.category:type_name -> nomarkup.job.v1.ServiceCategory
+	5,  // 64: nomarkup.job.v1.JobService.CreateJob:input_type -> nomarkup.job.v1.CreateJobRequest
+	7,  // 65: nomarkup.job.v1.JobService.UpdateJob:input_type -> nomarkup.job.v1.UpdateJobRequest
+	9,  // 66: nomarkup.job.v1.JobService.GetJob:input_type -> nomarkup.job.v1.GetJobRequest
+	11, // 67: nomarkup.job.v1.JobService.DeleteDraft:input_type -> nomarkup.job.v1.DeleteDraftRequest
+	13, // 68: nomarkup.job.v1.JobService.PublishJob:input_type -> nomarkup.job.v1.PublishJobRequest
+	15, // 69: nomarkup.job.v1.JobService.CloseAuction:input_type -> nomarkup.job.v1.CloseAuctionRequest
+	17, // 70: nomarkup.job.v1.JobService.CancelJob:input_type -> nomarkup.job.v1.CancelJobRequest
+	19, // 71: nomarkup.job.v1.JobService.RepostJob:input_type -> nomarkup.job.v1.RepostJobRequest
+	21, // 72: nomarkup.job.v1.JobService.SearchJobs:input_type -> nomarkup.job.v1.SearchJobsRequest
+	23, // 73: nomarkup.job.v1.JobService.GetJobsOnMap:input_type -> nomarkup.job.v1.GetJobsOnMapRequest
+	26, // 74: nomarkup.job.v1.JobService.ListCustomerJobs:input_type -> nomarkup.job.v1.ListCustomerJobsRequest
+	28, // 75: nomarkup.job.v1.JobService.ListProviderBiddedJobs:input_type -> nomarkup.job.v1.ListProviderBiddedJobsRequest
+	32, // 76: nomarkup.job.v1.JobService.ListDrafts:input_type -> nomarkup.job.v1.ListDraftsRequest
+	34, // 77: nomarkup.job.v1.JobService.GetServiceCategories:input_type -> nomarkup.job.v1.GetServiceCategoriesRequest
+	36, // 78: nomarkup.job.v1.JobService.GetCategoryTree:input_type -> nomarkup.job.v1.GetCategoryTreeRequest
+	39, // 79: nomarkup.job.v1.JobService.AdminListJobs:input_type -> nomarkup.job.v1.AdminListJobsRequest
+	41, // 80: nomarkup.job.v1.JobService.AdminSuspendJob:input_type -> nomarkup.job.v1.AdminSuspendJobRequest
+	43, // 81: nomarkup.job.v1.JobService.AdminRemoveJob:input_type -> nomarkup.job.v1.AdminRemoveJobRequest
+	45, // 82: nomarkup.job.v1.JobService.AdminCreateCategory:input_type -> nomarkup.job.v1.AdminCreateCategoryRequest
+	47, // 83: nomarkup.job.v1.JobService.AdminUpdateCategory:input_type -> nomarkup.job.v1.AdminUpdateCategoryRequest
+	49, // 84: nomarkup.job.v1.JobService.AdminDeleteCategory:input_type -> nomarkup.job.v1.AdminDeleteCategoryRequest
+	6,  // 85: nomarkup.job.v1.JobService.CreateJob:output_type -> nomarkup.job.v1.CreateJobResponse
+	8,  // 86: nomarkup.job.v1.JobService.UpdateJob:output_type -> nomarkup.job.v1.UpdateJobResponse
+	10, // 87: nomarkup.job.v1.JobService.GetJob:output_type -> nomarkup.job.v1.GetJobResponse
+	12, // 88: nomarkup.job.v1.JobService.DeleteDraft:output_type -> nomarkup.job.v1.DeleteDraftResponse
+	14, // 89: nomarkup.job.v1.JobService.PublishJob:output_type -> nomarkup.job.v1.PublishJobResponse
+	16, // 90: nomarkup.job.v1.JobService.CloseAuction:output_type -> nomarkup.job.v1.CloseAuctionResponse
+	18, // 91: nomarkup.job.v1.JobService.CancelJob:output_type -> nomarkup.job.v1.CancelJobResponse
+	20, // 92: nomarkup.job.v1.JobService.RepostJob:output_type -> nomarkup.job.v1.RepostJobResponse
+	22, // 93: nomarkup.job.v1.JobService.SearchJobs:output_type -> nomarkup.job.v1.SearchJobsResponse
+	24, // 94: nomarkup.job.v1.JobService.GetJobsOnMap:output_type -> nomarkup.job.v1.GetJobsOnMapResponse
+	27, // 95: nomarkup.job.v1.JobService.ListCustomerJobs:output_type -> nomarkup.job.v1.ListCustomerJobsResponse
+	29, // 96: nomarkup.job.v1.JobService.ListProviderBiddedJobs:output_type -> nomarkup.job.v1.ListProviderBiddedJobsResponse
+	33, // 97: nomarkup.job.v1.JobService.ListDrafts:output_type -> nomarkup.job.v1.ListDraftsResponse
+	35, // 98: nomarkup.job.v1.JobService.GetServiceCategories:output_type -> nomarkup.job.v1.GetServiceCategoriesResponse
+	37, // 99: nomarkup.job.v1.JobService.GetCategoryTree:output_type -> nomarkup.job.v1.GetCategoryTreeResponse
+	40, // 100: nomarkup.job.v1.JobService.AdminListJobs:output_type -> nomarkup.job.v1.AdminListJobsResponse
+	42, // 101: nomarkup.job.v1.JobService.AdminSuspendJob:output_type -> nomarkup.job.v1.AdminSuspendJobResponse
+	44, // 102: nomarkup.job.v1.JobService.AdminRemoveJob:output_type -> nomarkup.job.v1.AdminRemoveJobResponse
+	46, // 103: nomarkup.job.v1.JobService.AdminCreateCategory:output_type -> nomarkup.job.v1.AdminCreateCategoryResponse
+	48, // 104: nomarkup.job.v1.JobService.AdminUpdateCategory:output_type -> nomarkup.job.v1.AdminUpdateCategoryResponse
+	50, // 105: nomarkup.job.v1.JobService.AdminDeleteCategory:output_type -> nomarkup.job.v1.AdminDeleteCategoryResponse
+	85, // [85:106] is the sub-list for method output_type
+	64, // [64:85] is the sub-list for method input_type
+	64, // [64:64] is the sub-list for extension type_name
+	64, // [64:64] is the sub-list for extension extendee
+	0,  // [0:64] is the sub-list for field type_name
 }
 
 func init() { file_job_v1_job_proto_init() }

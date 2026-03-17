@@ -521,6 +521,7 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 		       j.status, j.bid_count,
 		       COALESCE(j.awarded_provider_id::text, ''), COALESCE(j.awarded_bid_id::text, ''),
 		       COALESCE(j.reposted_from_id::text, ''), j.repost_count,
+		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
@@ -610,6 +611,7 @@ func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID st
 		       j.status, j.bid_count,
 		       COALESCE(j.awarded_provider_id::text, ''), COALESCE(j.awarded_bid_id::text, ''),
 		       COALESCE(j.reposted_from_id::text, ''), j.repost_count,
+		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
@@ -657,6 +659,7 @@ func (r *PostgresRepository) ListDrafts(ctx context.Context, customerID string) 
 		       j.status, j.bid_count,
 		       COALESCE(j.awarded_provider_id::text, ''), COALESCE(j.awarded_bid_id::text, ''),
 		       COALESCE(j.reposted_from_id::text, ''), j.repost_count,
+		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
@@ -826,6 +829,7 @@ func (r *PostgresRepository) AdminListJobs(ctx context.Context, statusFilter *st
 		       j.status, j.bid_count,
 		       COALESCE(j.awarded_provider_id::text, ''), COALESCE(j.awarded_bid_id::text, ''),
 		       COALESCE(j.reposted_from_id::text, ''), j.repost_count,
+		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
@@ -1028,6 +1032,7 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		       j.status, j.bid_count,
 		       COALESCE(j.awarded_provider_id::text, ''), COALESCE(j.awarded_bid_id::text, ''),
 		       COALESCE(j.reposted_from_id::text, ''), j.repost_count,
+		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
@@ -1058,6 +1063,7 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		&j.Status, &j.BidCount,
 		&awardedProviderID, &awardedBidID,
 		&repostedFromID, &j.RepostCount,
+		&j.AuctionType, &j.SnipeExtensionCount, &j.OriginalAuctionEndsAt,
 		&j.AwardedAt, &j.ClosedAt, &j.CompletedAt, &j.CancelledAt,
 		&j.CreatedAt, &j.UpdatedAt, &j.DeletedAt,
 		&catName, &catSlug, &catIcon,
@@ -1161,6 +1167,7 @@ func scanJobRow(rows pgx.Rows) (*domain.Job, error) {
 		&j.Status, &j.BidCount,
 		&awardedProviderID, &awardedBidID,
 		&repostedFromID, &j.RepostCount,
+		&j.AuctionType, &j.SnipeExtensionCount, &j.OriginalAuctionEndsAt,
 		&j.AwardedAt, &j.ClosedAt, &j.CompletedAt, &j.CancelledAt,
 		&j.CreatedAt, &j.UpdatedAt, &j.DeletedAt,
 		&catName, &catSlug, &catIcon,
