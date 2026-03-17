@@ -32,7 +32,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::engine::BiddingEngine;
-use crate::models::{Bid, BidError};
+use crate::models::{AuctionBidEvent as AuctionBidEventModel, Bid, BidError, LiveAuctionState as LiveAuctionStateModel};
 
 /// gRPC service implementation wrapping the bidding engine.
 pub struct BidServiceImpl {
@@ -376,6 +376,74 @@ impl BidService for BidServiceImpl {
             last_bid_at: analytics.last_bid_at.map(datetime_to_proto),
         }))
     }
+
+    async fn get_live_auction_state(
+        &self,
+        request: Request<bid_proto::GetLiveAuctionStateRequest>,
+    ) -> Result<Response<bid_proto::GetLiveAuctionStateResponse>, Status> {
+        let req = request.into_inner();
+        let job_id = parse_uuid(&req.job_id, "job_id")?;
+
+        let state = self.engine.get_live_auction_state(job_id).await.map_err(|e| match e {
+            BidError::JobNotFound => Status::not_found("job not found"),
+            BidError::FeatureNotEnabled(msg) => Status::failed_precondition(msg),
+            BidError::DatabaseError(e) => {
+                tracing::error!("database error in get_live_auction_state: {}", e);
+                Status::internal("internal error")
+            }
+            e => Status::internal(format!("unexpected error: {}", e)),
+        })?;
+
+        let recent_events = state.recent_events.iter().map(|e| {
+            bid_proto::AuctionBidEvent {
+                job_id: e.job_id.to_string(),
+                amount_cents: e.amount_cents,
+                event_type: e.event_type.clone(),
+                created_at: Some(datetime_to_proto(e.created_at)),
+            }
+        }).collect();
+
+        Ok(Response::new(bid_proto::GetLiveAuctionStateResponse {
+            state: Some(bid_proto::LiveAuctionState {
+                job_id: state.job_id.to_string(),
+                lowest_bid_cents: state.lowest_bid_cents,
+                bid_count: state.bid_count,
+                auction_ends_at: state.auction_ends_at.map(datetime_to_proto),
+                snipe_extension_count: state.snipe_extension_count,
+                max_snipe_extensions: state.max_snipe_extensions,
+                recent_events,
+            }),
+        }))
+    }
+
+    async fn get_auction_events(
+        &self,
+        request: Request<bid_proto::GetAuctionEventsRequest>,
+    ) -> Result<Response<bid_proto::GetAuctionEventsResponse>, Status> {
+        let req = request.into_inner();
+        let job_id = parse_uuid(&req.job_id, "job_id")?;
+
+        let events = self.engine.get_auction_events(job_id).await.map_err(|e| match e {
+            BidError::DatabaseError(e) => {
+                tracing::error!("database error in get_auction_events: {}", e);
+                Status::internal("internal error")
+            }
+            e => Status::internal(format!("unexpected error: {}", e)),
+        })?;
+
+        let proto_events = events.iter().map(|e| {
+            bid_proto::AuctionBidEvent {
+                job_id: e.job_id.to_string(),
+                amount_cents: e.amount_cents,
+                event_type: e.event_type.clone(),
+                created_at: Some(datetime_to_proto(e.created_at)),
+            }
+        }).collect();
+
+        Ok(Response::new(bid_proto::GetAuctionEventsResponse {
+            events: proto_events,
+        }))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -450,6 +518,9 @@ fn bid_error_to_status(err: BidError) -> Status {
         }
         BidError::BidNotActive => Status::failed_precondition(err.to_string()),
         BidError::BidNotFound | BidError::JobNotFound => Status::not_found(err.to_string()),
+        BidError::SnipeExtensionLimitReached { .. } | BidError::FeatureNotEnabled(_) => {
+            Status::failed_precondition(err.to_string())
+        }
         BidError::DatabaseError(e) => {
             tracing::error!(error = %e, "database error in bid service");
             Status::internal("internal database error")

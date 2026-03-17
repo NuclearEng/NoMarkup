@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -394,6 +395,54 @@ func (h *BidHandler) GetBidCount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"count": resp.GetCount(),
 	})
+}
+
+// GetLiveAuctionState returns the current state of a live auction.
+func (h *BidHandler) GetLiveAuctionState(w http.ResponseWriter, r *http.Request) {
+	if os.Getenv("ENABLE_LIVE_AUCTION") != "true" {
+		writeError(w, http.StatusNotFound, "live auctions not enabled")
+		return
+	}
+
+	jobID := chi.URLParam(r, "id")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job ID required")
+		return
+	}
+
+	resp, err := h.bidClient.GetLiveAuctionState(r.Context(), &bidv1.GetLiveAuctionStateRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp.GetState())
+}
+
+// GetAuctionEvents returns the bid events for a live auction.
+func (h *BidHandler) GetAuctionEvents(w http.ResponseWriter, r *http.Request) {
+	if os.Getenv("ENABLE_LIVE_AUCTION") != "true" {
+		writeError(w, http.StatusNotFound, "live auctions not enabled")
+		return
+	}
+
+	jobID := chi.URLParam(r, "id")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job ID required")
+		return
+	}
+
+	resp, err := h.bidClient.GetAuctionEvents(r.Context(), &bidv1.GetAuctionEventsRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp.GetEvents())
 }
 
 // protoBidToJSON converts a proto Bid to a JSON-friendly map.

@@ -12,6 +12,40 @@ import "user/v1/user.proto";
 // Bid Engine Service (Rust) — Sealed-bid reverse auction
 // ============================================================
 
+// Live Auction Arena messages
+message AuctionBidEvent {
+  string job_id = 1;
+  int64 amount_cents = 2;
+  string event_type = 3; // bid_placed, bid_updated, bid_withdrawn
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message LiveAuctionState {
+  string job_id = 1;
+  int64 lowest_bid_cents = 2;
+  int32 bid_count = 3;
+  google.protobuf.Timestamp auction_ends_at = 4;
+  int32 snipe_extension_count = 5;
+  int32 max_snipe_extensions = 6;
+  repeated AuctionBidEvent recent_events = 7;
+}
+
+message GetLiveAuctionStateRequest {
+  string job_id = 1;
+}
+
+message GetLiveAuctionStateResponse {
+  LiveAuctionState state = 1;
+}
+
+message GetAuctionEventsRequest {
+  string job_id = 1;
+}
+
+message GetAuctionEventsResponse {
+  repeated AuctionBidEvent events = 1;
+}
+
 service BidService {
   // Bidding
   rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse);
@@ -34,6 +68,10 @@ service BidService {
 
   // Analytics
   rpc GetBidAnalytics(GetBidAnalyticsRequest) returns (GetBidAnalyticsResponse);
+
+  // Live auction
+  rpc GetLiveAuctionState(GetLiveAuctionStateRequest) returns (GetLiveAuctionStateResponse);
+  rpc GetAuctionEvents(GetAuctionEventsRequest) returns (GetAuctionEventsResponse);
 }
 
 // ============================================================
@@ -47,6 +85,12 @@ enum BidStatus {
   BID_STATUS_NOT_SELECTED = 3;
   BID_STATUS_WITHDRAWN = 4;
   BID_STATUS_EXPIRED = 5;
+}
+
+enum AuctionType {
+  AUCTION_TYPE_UNSPECIFIED = 0;
+  AUCTION_TYPE_SEALED = 1;
+  AUCTION_TYPE_LIVE = 2;
 }
 
 message Bid {

@@ -211,6 +211,7 @@ func main() {
 	workingCapitalHandler := handler.NewWorkingCapitalHandler()
 	expenseHandler := handler.NewExpenseHandler()
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
+	auctionWSHandler := handler.NewAuctionWSHandler(authMW, cfg.ChatWSAddr)
 	trustHandler := handler.NewTrustHandler(trustClient, cacheClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
 	notificationHandler := handler.NewNotificationHandler(notifClient)
@@ -237,6 +238,7 @@ func main() {
 		adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler,
 		adminPlatformHandler, propertyHandler, verificationHandler,
 		workingCapitalHandler, expenseHandler,
+		auctionWSHandler,
 	)
 
 	srv := &http.Server{

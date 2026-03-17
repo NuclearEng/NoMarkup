@@ -86,7 +86,28 @@ async fn main() -> anyhow::Result<()> {
         .max_connections(20)
         .connect_lazy(&database_url)?;
 
-    let engine = Arc::new(BiddingEngine::new(pool));
+    // Redis connection (optional — live auction streaming)
+    let redis_conn = match std::env::var("REDIS_URL") {
+        Ok(url) => {
+            let client = redis::Client::open(url).expect("invalid REDIS_URL");
+            match client.get_multiplexed_tokio_connection().await {
+                Ok(conn) => {
+                    tracing::info!("connected to Redis for live auction streaming");
+                    Some(conn)
+                }
+                Err(e) => {
+                    tracing::warn!("failed to connect to Redis, live auction streaming disabled: {}", e);
+                    None
+                }
+            }
+        }
+        Err(_) => {
+            tracing::info!("REDIS_URL not set, live auction streaming disabled");
+            None
+        }
+    };
+
+    let engine = Arc::new(BiddingEngine::new(pool, redis_conn));
     let service = BidServiceImpl::new(engine);
 
     tracing::info!("bidding engine starting on {}", addr);

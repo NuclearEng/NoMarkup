@@ -150,6 +150,7 @@ export const jobPostingSchema = z
       .int('Duration must be a whole number')
       .min(24, 'Minimum auction duration is 24 hours')
       .max(168, 'Maximum auction duration is 168 hours (7 days)'),
+    auctionType: z.union([z.literal('sealed'), z.literal('live')]).optional(),
     photoUrls: z.array(z.string().url()).optional(),
   })
   .refine(

@@ -4,12 +4,14 @@ import { Briefcase, DollarSign, Gavel, Star } from 'lucide-react';
 import Link from 'next/link';
 
 import { EarningsChart } from '@/components/analytics/EarningsChart';
+import { ProviderRankCard } from '@/components/providers/ProviderRankCard';
 import { TrustScoreBreakdown } from '@/components/providers/TrustScoreBreakdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useProviderAnalytics, useProviderEarnings } from '@/hooks/useAnalytics';
 import { useMyBids } from '@/hooks/useBids';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
@@ -152,6 +154,8 @@ export default function ProviderDashboardPage() {
           loading={isLoading}
         />
       </div>
+
+      {ENABLE_LIVE_AUCTION ? <ProviderRankCard /> : null}
 
       {/* Performance stats */}
       {analytics ? (

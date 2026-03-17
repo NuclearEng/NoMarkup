@@ -40,6 +40,26 @@ pub struct BidAnalytics {
     pub last_bid_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
+pub struct AuctionBidEvent {
+    pub id: Uuid,
+    pub job_id: Uuid,
+    pub amount_cents: i64,
+    pub event_type: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveAuctionState {
+    pub job_id: Uuid,
+    pub lowest_bid_cents: i64,
+    pub bid_count: i32,
+    pub auction_ends_at: Option<DateTime<Utc>>,
+    pub snipe_extension_count: i32,
+    pub max_snipe_extensions: i32,
+    pub recent_events: Vec<AuctionBidEvent>,
+}
+
 /// Errors that can occur during bidding operations.
 #[derive(Debug, thiserror::Error)]
 pub enum BidError {
@@ -75,6 +95,12 @@ pub enum BidError {
 
     #[error("permission denied: {0}")]
     PermissionDenied(String),
+
+    #[error("snipe extension limit reached for job {job_id}")]
+    SnipeExtensionLimitReached { job_id: String },
+
+    #[error("feature not enabled: {0}")]
+    FeatureNotEnabled(String),
 
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),

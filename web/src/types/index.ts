@@ -34,6 +34,12 @@ export const JOB_STATUS = {
 } as const;
 export type JobStatus = (typeof JOB_STATUS)[keyof typeof JOB_STATUS];
 
+export const AUCTION_TYPE = {
+  SEALED: 'sealed',
+  LIVE: 'live',
+} as const;
+export type AuctionType = (typeof AUCTION_TYPE)[keyof typeof AUCTION_TYPE];
+
 export const BID_STATUS = {
   ACTIVE: 'active',
   AWARDED: 'awarded',
@@ -272,6 +278,9 @@ export interface Job {
   bid_count: number;
   lowest_bid_cents: number | null;
   market_range: MarketRange | null;
+  auction_type: AuctionType;
+  snipe_extension_count: number;
+  original_auction_ends_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -297,6 +306,7 @@ export interface CreateJobInput {
   starting_bid_cents?: number;
   offer_accepted_cents?: number;
   auction_duration_hours: number;
+  auction_type?: AuctionType;
   photo_urls?: string[];
 }
 
@@ -406,6 +416,44 @@ export interface MyBidsResponse {
 
 export interface BidCountResponse {
   count: number;
+}
+
+export interface AuctionBidEvent {
+  job_id: string;
+  amount_cents: number;
+  event_type: 'bid_placed' | 'bid_updated' | 'bid_withdrawn';
+  created_at: string;
+}
+
+export interface LiveAuctionState {
+  job_id: string;
+  lowest_bid_cents: number;
+  bid_count: number;
+  auction_ends_at: string | null;
+  snipe_extension_count: number;
+  max_snipe_extensions: number;
+  recent_events: AuctionBidEvent[];
+}
+
+export interface UserSavings {
+  id: string;
+  user_id: string;
+  job_id: string;
+  awarded_cents: number;
+  market_median_cents: number;
+  savings_cents: number;
+  created_at: string;
+}
+
+export interface ProviderStreak {
+  id: string;
+  provider_id: string;
+  category_id: string | null;
+  current_streak: number;
+  longest_streak: number;
+  total_wins: number;
+  category_rank: number | null;
+  updated_at: string;
 }
 
 // Contract types

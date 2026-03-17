@@ -72,6 +72,9 @@ const mockJob: Job = {
   bid_count: 3,
   lowest_bid_cents: 8000,
   market_range: null,
+  auction_type: 'sealed',
+  snipe_extension_count: 0,
+  original_auction_ends_at: null,
   created_at: '2026-03-01T12:00:00Z',
   updated_at: '2026-03-01T12:00:00Z',
 };

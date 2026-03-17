@@ -34,10 +34,11 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
+import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useCreateJob, usePublishJob } from '@/hooks/useJobs';
 import { formatCents } from '@/lib/utils';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
-import type { CreateJobInput, MarketRange } from '@/types';
+import { AUCTION_TYPE, type CreateJobInput, type MarketRange } from '@/types';
 
 const STEPS = [
   { title: 'Category', description: 'What type of service do you need?' },
@@ -88,6 +89,7 @@ export function JobPostingForm() {
       startingBidDollars: undefined,
       offerAcceptedDollars: undefined,
       auctionDurationHours: 72,
+      auctionType: AUCTION_TYPE.SEALED,
       photoUrls: [],
     },
     mode: 'onTouched',
@@ -136,9 +138,8 @@ export function JobPostingForm() {
         ? Math.round(values.offerAcceptedDollars * 100)
         : undefined,
       auction_duration_hours: values.auctionDurationHours,
-      photo_urls: values.photoUrls && values.photoUrls.length > 0
-        ? values.photoUrls
-        : undefined,
+      auction_type: values.auctionType,
+      photo_urls: values.photoUrls && values.photoUrls.length > 0 ? values.photoUrls : undefined,
     };
   }
 
@@ -175,7 +176,7 @@ export function JobPostingForm() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Post a New Job</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Step {String(step + 1)} of {String(STEPS.length)}
         </p>
       </div>
@@ -192,7 +193,7 @@ export function JobPostingForm() {
               if (idx < step) setStep(idx);
             }}
             disabled={idx > step}
-            className={`min-h-[44px] whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium ${
+            className={`min-h-[44px] rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap ${
               idx === step
                 ? 'bg-primary text-primary-foreground'
                 : idx < step
@@ -213,36 +214,30 @@ export function JobPostingForm() {
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form onSubmit={(e) => { e.preventDefault(); }} className="space-y-6">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+              }}
+              className="space-y-6"
+            >
               {step === 0 ? <StepCategory form={form} /> : null}
               {step === 1 ? <StepDetails form={form} /> : null}
               {step === 2 ? <StepLocation form={form} /> : null}
               {step === 3 ? <StepSchedule form={form} /> : null}
               {step === 4 ? <StepAuction form={form} /> : null}
-              {step === 5 ? (
-                <StepReview form={form} marketRange={EXAMPLE_MARKET_RANGE} />
-              ) : null}
+              {step === 5 ? <StepReview form={form} marketRange={EXAMPLE_MARKET_RANGE} /> : null}
 
               {/* Navigation buttons */}
               <div className="flex gap-3">
                 {step > 0 ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={goPrev}
-                    className="min-h-[44px]"
-                  >
+                  <Button type="button" variant="outline" onClick={goPrev} className="min-h-[44px]">
                     <ChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
                     Previous
                   </Button>
                 ) : null}
 
                 {step < STEPS.length - 1 ? (
-                  <Button
-                    type="button"
-                    onClick={() => void goNext()}
-                    className="min-h-[44px]"
-                  >
+                  <Button type="button" onClick={() => void goNext()} className="min-h-[44px]">
                     Next
                     <ChevronRight className="ml-1 h-4 w-4" aria-hidden="true" />
                   </Button>
@@ -295,12 +290,14 @@ function StepCategory({ form }: { form: FormType }) {
             <FormControl>
               <CategorySelector
                 selected={field.value ? [field.value] : []}
-                onChange={(ids) => { field.onChange(ids[0] ?? ''); }}
+                onChange={(ids) => {
+                  field.onChange(ids[0] ?? '');
+                }}
               />
             </FormControl>
             <FormMessage />
             {categoryId ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Category selected. Click Next to continue.
               </p>
             ) : null}
@@ -322,7 +319,10 @@ function StepDetails({ form }: { form: FormType }) {
 
   function handlePhotoRemoved(url: string) {
     const current = form.getValues('photoUrls') ?? [];
-    form.setValue('photoUrls', current.filter((u) => u !== url));
+    form.setValue(
+      'photoUrls',
+      current.filter((u) => u !== url),
+    );
   }
 
   return (
@@ -373,10 +373,8 @@ function StepDetails({ form }: { form: FormType }) {
 
       {/* Photo upload */}
       <div className="space-y-2">
-        <label className="text-sm font-medium">
-          Photos (optional)
-        </label>
-        <p className="text-xs text-muted-foreground">
+        <label className="text-sm font-medium">Photos (optional)</label>
+        <p className="text-muted-foreground text-xs">
           Add photos to help providers understand the job. Up to 10 images.
         </p>
         <ImageUpload
@@ -418,7 +416,7 @@ function StepLocation({ form }: { form: FormType }) {
         )}
       />
 
-      <div className="rounded-md border p-8 text-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground rounded-md border p-8 text-center text-sm">
         Map preview will appear here based on the address entered
       </div>
     </div>
@@ -482,10 +480,7 @@ function StepSchedule({ form }: { form: FormType }) {
         render={({ field }) => (
           <FormItem className="flex min-h-[44px] items-center gap-3">
             <FormControl>
-              <Checkbox
-                checked={field.value}
-                onCheckedChange={field.onChange}
-              />
+              <Checkbox checked={field.value} onCheckedChange={field.onChange} />
             </FormControl>
             <FormLabel className="cursor-pointer">This is a recurring job</FormLabel>
             <FormMessage />
@@ -528,6 +523,39 @@ function StepAuction({ form }: { form: FormType }) {
 
   return (
     <div className="space-y-6">
+      {ENABLE_LIVE_AUCTION ? (
+        <div className="space-y-2">
+          <p className="text-sm font-medium" id="auction-type-label">
+            Auction Type
+          </p>
+          <div className="flex gap-4" role="radiogroup" aria-labelledby="auction-type-label">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                value={AUCTION_TYPE.SEALED}
+                {...form.register('auctionType')}
+                defaultChecked
+                className="h-4 w-4"
+              />
+              <span className="text-sm">Sealed Bid</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                value={AUCTION_TYPE.LIVE}
+                {...form.register('auctionType')}
+                className="h-4 w-4"
+              />
+              <span className="text-sm">Live Auction</span>
+            </label>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Live auctions show real-time price drops. Sealed bids are hidden until you choose a
+            winner.
+          </p>
+        </div>
+      ) : null}
+
       <FormField
         control={form.control}
         name="startingBidDollars"
@@ -536,7 +564,7 @@ function StepAuction({ form }: { form: FormType }) {
             <FormLabel>Starting Bid (optional)</FormLabel>
             <FormControl>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2">
                   $
                 </span>
                 <Input
@@ -554,7 +582,8 @@ function StepAuction({ form }: { form: FormType }) {
               </div>
             </FormControl>
             <FormDescription>
-              Set a suggested starting price for bids. Leave blank to let providers set their own price.
+              Set a suggested starting price for bids. Leave blank to let providers set their own
+              price.
             </FormDescription>
             <FormMessage />
           </FormItem>
@@ -569,7 +598,7 @@ function StepAuction({ form }: { form: FormType }) {
             <FormLabel>Instant Accept Price (optional)</FormLabel>
             <FormControl>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2">
                   $
                 </span>
                 <Input
@@ -600,9 +629,9 @@ function StepAuction({ form }: { form: FormType }) {
         render={({ field }) => (
           <FormItem>
             <FormLabel>
-              Auction Duration: {String(durationHours)} hour{durationHours !== 1 ? 's' : ''}{' '}
-              ({String(Math.floor(durationHours / 24))} day{Math.floor(durationHours / 24) !== 1 ? 's' : ''}{' '}
-              {String(durationHours % 24)}h)
+              Auction Duration: {String(durationHours)} hour{durationHours !== 1 ? 's' : ''} (
+              {String(Math.floor(durationHours / 24))} day
+              {Math.floor(durationHours / 24) !== 1 ? 's' : ''} {String(durationHours % 24)}h)
             </FormLabel>
             <FormControl>
               <Slider
@@ -620,7 +649,7 @@ function StepAuction({ form }: { form: FormType }) {
                 aria-label={`Auction duration: ${String(durationHours)} hours`}
               />
             </FormControl>
-            <div className="flex justify-between text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex justify-between text-xs">
               <span>24h (1 day)</span>
               <span>168h (7 days)</span>
             </div>
@@ -633,37 +662,31 @@ function StepAuction({ form }: { form: FormType }) {
 }
 
 // -- Step 6: Review --
-function StepReview({
-  form,
-  marketRange,
-}: {
-  form: FormType;
-  marketRange: MarketRange;
-}) {
+function StepReview({ form, marketRange }: { form: FormType; marketRange: MarketRange }) {
   const values = form.getValues();
 
   return (
     <div className="space-y-6">
       <div className="space-y-4 rounded-md border p-4">
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground">Title</h3>
+          <h3 className="text-muted-foreground text-sm font-medium">Title</h3>
           <p className="text-base font-semibold">{values.title}</p>
         </div>
 
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
-          <p className="whitespace-pre-wrap text-sm">{values.description}</p>
+          <h3 className="text-muted-foreground text-sm font-medium">Description</h3>
+          <p className="text-sm whitespace-pre-wrap">{values.description}</p>
         </div>
 
         {values.locationAddress ? (
           <div>
-            <h3 className="text-sm font-medium text-muted-foreground">Location</h3>
+            <h3 className="text-muted-foreground text-sm font-medium">Location</h3>
             <p className="text-sm">{values.locationAddress}</p>
           </div>
         ) : null}
 
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground">Schedule</h3>
+          <h3 className="text-muted-foreground text-sm font-medium">Schedule</h3>
           <div className="flex gap-2">
             <Badge variant="outline">
               {values.scheduleType === 'specific_date'
@@ -682,16 +705,17 @@ function StepReview({
               </Badge>
             ) : null}
             {values.isRecurring && values.recurrenceFrequency ? (
-              <Badge variant="secondary">
-                Recurring: {values.recurrenceFrequency}
-              </Badge>
+              <Badge variant="secondary">Recurring: {values.recurrenceFrequency}</Badge>
             ) : null}
           </div>
         </div>
 
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground">Auction Settings</h3>
+          <h3 className="text-muted-foreground text-sm font-medium">Auction Settings</h3>
           <div className="mt-1 space-y-1 text-sm">
+            {ENABLE_LIVE_AUCTION && values.auctionType ? (
+              <p>Type: {values.auctionType === 'live' ? 'Live Auction' : 'Sealed Bid'}</p>
+            ) : null}
             <p>
               Duration: {String(values.auctionDurationHours)} hours (
               {String(Math.floor(values.auctionDurationHours / 24))} days{' '}
@@ -703,19 +727,14 @@ function StepReview({
               <p>Starting bid: Open</p>
             )}
             {values.offerAcceptedDollars ? (
-              <p>
-                Instant accept:{' '}
-                {formatCents(Math.round(values.offerAcceptedDollars * 100))}
-              </p>
+              <p>Instant accept: {formatCents(Math.round(values.offerAcceptedDollars * 100))}</p>
             ) : null}
           </div>
         </div>
       </div>
 
       {/* Market range display */}
-      {marketRange.sample_size > 0 ? (
-        <MarketRangeDisplay marketRange={marketRange} />
-      ) : null}
+      {marketRange.sample_size > 0 ? <MarketRangeDisplay marketRange={marketRange} /> : null}
     </div>
   );
 }

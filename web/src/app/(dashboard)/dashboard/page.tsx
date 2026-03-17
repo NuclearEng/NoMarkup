@@ -11,10 +11,12 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+import { SavingsTracker } from '@/components/dashboard/SavingsTracker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useMyBids } from '@/hooks/useBids';
 import { useContracts } from '@/hooks/useContracts';
 import { useCustomerJobs } from '@/hooks/useJobs';
@@ -157,6 +159,8 @@ function CustomerDashboard() {
           loading={isLoading}
         />
       </div>
+
+      {ENABLE_LIVE_AUCTION ? <SavingsTracker /> : null}
 
       {/* Recent jobs */}
       <Card>

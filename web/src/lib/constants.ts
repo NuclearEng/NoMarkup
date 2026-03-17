@@ -14,3 +14,5 @@ export const REVIEW_WINDOW_DAYS = 14;
 export const REVISION_MIN_NOTES_LENGTH = 200;
 
 export const MIN_TOUCH_TARGET_PX = 44; // WCAG 2.2 AA
+
+export const ENABLE_LIVE_AUCTION = process.env['NEXT_PUBLIC_ENABLE_LIVE_AUCTION'] === 'true';

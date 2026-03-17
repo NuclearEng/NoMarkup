@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { Route } from 'next';
 import { useParams } from 'next/navigation';
 
+import { AuctionArena } from '@/components/bids/AuctionArena';
 import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
@@ -13,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useBidCount } from '@/hooks/useBids';
 import { useJob } from '@/hooks/useJobs';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
@@ -231,66 +233,70 @@ export default function JobDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Auction timer card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Auction Status</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {job.auction_ends_at ? (
-                <AuctionTimer auctionEndsAt={job.auction_ends_at} />
-              ) : (
-                <p className="text-muted-foreground text-sm">Auction not started</p>
-              )}
+          {job.auction_type === 'live' && ENABLE_LIVE_AUCTION ? (
+            <AuctionArena job={job} isProvider={isProvider} isJobOwner={isJobOwner} />
+          ) : (
+            /* Sealed bid auction UI */
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Auction Status</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {job.auction_ends_at ? (
+                  <AuctionTimer auctionEndsAt={job.auction_ends_at} />
+                ) : (
+                  <p className="text-muted-foreground text-sm">Auction not started</p>
+                )}
 
-              {job.starting_bid_cents ? (
-                <div>
-                  <p className="text-muted-foreground text-xs">Starting Bid</p>
-                  <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
+                {job.starting_bid_cents ? (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Starting Bid</p>
+                    <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
+                  </div>
+                ) : null}
+
+                {job.offer_accepted_cents ? (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Instant Accept Price</p>
+                    <p className="text-lg font-semibold text-green-600">
+                      {formatCents(job.offer_accepted_cents)}
+                    </p>
+                  </div>
+                ) : null}
+
+                {/* Bid count badge */}
+                <div className="flex items-center gap-2">
+                  <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+                  <span className="text-muted-foreground text-sm">
+                    {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
+                  </span>
                 </div>
-              ) : null}
 
-              {job.offer_accepted_cents ? (
-                <div>
-                  <p className="text-muted-foreground text-xs">Instant Accept Price</p>
-                  <p className="text-lg font-semibold text-green-600">
-                    {formatCents(job.offer_accepted_cents)}
+                {/* Bidding section based on user role */}
+                {canBid ? (
+                  <BidForm
+                    jobId={jobId}
+                    existingBid={null}
+                    startingBidCents={job.starting_bid_cents}
+                    offerAcceptedCents={job.offer_accepted_cents}
+                    marketRange={job.market_range}
+                    auctionEndsAt={job.auction_ends_at}
+                  />
+                ) : !isAuthenticated ? (
+                  <Link href={'/login' as Route}>
+                    <Button variant="outline" className="min-h-[44px] w-full">
+                      <LogIn className="h-4 w-4" aria-hidden="true" />
+                      Sign in to bid
+                    </Button>
+                  </Link>
+                ) : !isProvider && !isJobOwner ? (
+                  <p className="text-muted-foreground text-sm">
+                    Only providers can place bids on jobs.
                   </p>
-                </div>
-              ) : null}
-
-              {/* Bid count badge */}
-              <div className="flex items-center gap-2">
-                <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
-                <span className="text-muted-foreground text-sm">
-                  {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
-                </span>
-              </div>
-
-              {/* Bidding section based on user role */}
-              {canBid ? (
-                <BidForm
-                  jobId={jobId}
-                  existingBid={null}
-                  startingBidCents={job.starting_bid_cents}
-                  offerAcceptedCents={job.offer_accepted_cents}
-                  marketRange={job.market_range}
-                  auctionEndsAt={job.auction_ends_at}
-                />
-              ) : !isAuthenticated ? (
-                <Link href={'/login' as Route}>
-                  <Button variant="outline" className="min-h-[44px] w-full">
-                    <LogIn className="h-4 w-4" aria-hidden="true" />
-                    Sign in to bid
-                  </Button>
-                </Link>
-              ) : !isProvider && !isJobOwner ? (
-                <p className="text-muted-foreground text-sm">
-                  Only providers can place bids on jobs.
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Customer info card */}
           <Card>

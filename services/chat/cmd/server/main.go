@@ -126,9 +126,13 @@ func main() {
 		}
 	}()
 
+	// Auction WebSocket handler
+	auctionHandler := ws.NewAuctionHandler(rdb)
+
 	// Start HTTP server for WebSocket connections.
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
+	mux.HandleFunc("/ws/auction", auctionHandler.HandleWebSocket)
 
 	httpSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", wsPort),

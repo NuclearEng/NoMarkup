@@ -3,12 +3,16 @@ import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
 import type {
+  AuctionBidEvent,
   Bid,
   BidCountResponse,
   BidsForJobResponse,
+  LiveAuctionState,
   MyBidsResponse,
   PlaceBidInput,
+  ProviderStreak,
   UpdateBidInput,
+  UserSavings,
 } from '@/types';
 
 export function usePlaceBid() {
@@ -73,9 +77,7 @@ export function useAcceptOffer() {
 
   return useMutation({
     mutationFn: (jobId: string) =>
-      api
-        .post<{ bid: Bid }>(`/api/v1/jobs/${jobId}/bids/accept-offer`)
-        .then((res) => res.bid),
+      api.post<{ bid: Bid }>(`/api/v1/jobs/${jobId}/bids/accept-offer`).then((res) => res.bid),
     onSuccess: (_data, jobId) => {
       toast.success('Offer accepted');
       void queryClient.invalidateQueries({ queryKey: ['jobs', jobId] });
@@ -94,9 +96,7 @@ export function useAwardBid() {
 
   return useMutation({
     mutationFn: ({ jobId, bidId }: { jobId: string; bidId: string }) =>
-      api
-        .post<{ bid: Bid }>(`/api/v1/jobs/${jobId}/bids/${bidId}/award`)
-        .then((res) => res.bid),
+      api.post<{ bid: Bid }>(`/api/v1/jobs/${jobId}/bids/${bidId}/award`).then((res) => res.bid),
     onSuccess: (_data, variables) => {
       toast.success('Bid awarded — contract created');
       void queryClient.invalidateQueries({ queryKey: ['jobs', variables.jobId] });
@@ -136,5 +136,52 @@ export function useBidCount(jobId: string) {
     queryFn: () =>
       api.get<BidCountResponse>(`/api/v1/jobs/${jobId}/bids/count`).then((res) => res.count),
     enabled: !!jobId,
+  });
+}
+
+export function useLiveAuctionState(jobId: string | undefined) {
+  return useQuery({
+    queryKey: ['liveAuctionState', jobId],
+    queryFn: async () => {
+      const response = await api.get<LiveAuctionState>(
+        `/api/v1/jobs/${String(jobId)}/auction/state`,
+      );
+      return response;
+    },
+    enabled: !!jobId,
+    refetchInterval: 30000, // Refresh every 30s as fallback
+  });
+}
+
+export function useAuctionEvents(jobId: string | undefined) {
+  return useQuery({
+    queryKey: ['auctionEvents', jobId],
+    queryFn: async () => {
+      const response = await api.get<AuctionBidEvent[]>(
+        `/api/v1/jobs/${String(jobId)}/auction/events`,
+      );
+      return response;
+    },
+    enabled: !!jobId,
+  });
+}
+
+export function useSavings() {
+  return useQuery({
+    queryKey: ['savings'],
+    queryFn: async () => {
+      const response = await api.get<UserSavings[]>('/api/v1/users/me/savings');
+      return response;
+    },
+  });
+}
+
+export function useProviderStreaks() {
+  return useQuery({
+    queryKey: ['providerStreaks'],
+    queryFn: async () => {
+      const response = await api.get<ProviderStreak[]>('/api/v1/providers/me/streaks');
+      return response;
+    },
   });
 }

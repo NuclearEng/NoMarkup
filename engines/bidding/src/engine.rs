@@ -6,16 +6,17 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::{Bid, BidAnalytics, BidError, BidUpdate};
+use crate::models::{AuctionBidEvent, Bid, BidAnalytics, BidError, BidUpdate, LiveAuctionState};
 
 pub struct BiddingEngine {
     pool: PgPool,
+    redis: Option<redis::aio::MultiplexedConnection>,
 }
 
 impl BiddingEngine {
     #[must_use]
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, redis: Option<redis::aio::MultiplexedConnection>) -> Self {
+        Self { pool, redis }
     }
 
     /// Place a new bid on a job. Validates the auction is active and the provider
@@ -39,7 +40,7 @@ impl BiddingEngine {
 
         // Validate auction is active and not expired.
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
              FROM jobs WHERE id = $1",
         )
         .bind(job_id)
@@ -100,7 +101,56 @@ impl BiddingEngine {
             .execute(&mut *tx)
             .await?;
 
+        // Live auction: record event and check anti-snipe
+        if job.auction_type == "live" {
+            sqlx::query(
+                "INSERT INTO auction_bid_events (job_id, amount_cents, event_type) VALUES ($1, $2, 'bid_placed')"
+            )
+            .bind(job_id)
+            .bind(amount_cents)
+            .execute(&mut *tx)
+            .await
+            .map_err(BidError::DatabaseError)?;
+
+            // Anti-snipe: if within final 5 minutes and extensions < 3, extend by 5 min
+            let snipe_window = sqlx::query_scalar::<_, bool>(
+                "SELECT auction_ends_at IS NOT NULL AND auction_ends_at - INTERVAL '5 minutes' <= now() AND snipe_extension_count < 3 FROM jobs WHERE id = $1"
+            )
+            .bind(job_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(BidError::DatabaseError)?;
+
+            if snipe_window {
+                sqlx::query(
+                    "UPDATE jobs SET auction_ends_at = auction_ends_at + INTERVAL '5 minutes', snipe_extension_count = snipe_extension_count + 1, updated_at = now() WHERE id = $1"
+                )
+                .bind(job_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(BidError::DatabaseError)?;
+            }
+        }
+
         tx.commit().await?;
+
+        // Publish to Redis for live streaming (fire-and-forget)
+        if job.auction_type == "live" {
+            if let Some(ref mut redis_conn) = self.redis.clone() {
+                let event = serde_json::json!({
+                    "type": "bid_placed",
+                    "job_id": job_id.to_string(),
+                    "amount_cents": amount_cents,
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                });
+                let topic = format!("auction:{}", job_id);
+                let _ = redis::cmd("PUBLISH")
+                    .arg(&topic)
+                    .arg(event.to_string())
+                    .query_async::<()>(redis_conn)
+                    .await;
+            }
+        }
 
         tracing::info!(
             bid_id = %bid.id,
@@ -167,6 +217,61 @@ impl BiddingEngine {
         .fetch_one(&self.pool)
         .await?;
 
+        // Live auction: record event and check anti-snipe
+        let auction_type: String = sqlx::query_scalar(
+            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)"
+        )
+        .bind(bid_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(BidError::DatabaseError)?;
+
+        if auction_type == "live" {
+            sqlx::query(
+                "INSERT INTO auction_bid_events (job_id, amount_cents, event_type) VALUES ($1, $2, 'bid_updated')"
+            )
+            .bind(bid.job_id)
+            .bind(new_amount)
+            .execute(&self.pool)
+            .await
+            .map_err(BidError::DatabaseError)?;
+
+            // Anti-snipe check
+            let snipe_window: bool = sqlx::query_scalar(
+                "SELECT auction_ends_at IS NOT NULL AND auction_ends_at - INTERVAL '5 minutes' <= now() AND snipe_extension_count < 3 FROM jobs WHERE id = $1"
+            )
+            .bind(bid.job_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(BidError::DatabaseError)?;
+
+            if snipe_window {
+                sqlx::query(
+                    "UPDATE jobs SET auction_ends_at = auction_ends_at + INTERVAL '5 minutes', snipe_extension_count = snipe_extension_count + 1, updated_at = now() WHERE id = $1"
+                )
+                .bind(bid.job_id)
+                .execute(&self.pool)
+                .await
+                .map_err(BidError::DatabaseError)?;
+            }
+
+            // Publish to Redis
+            if let Some(ref mut redis_conn) = self.redis.clone() {
+                let event = serde_json::json!({
+                    "type": "bid_updated",
+                    "job_id": bid.job_id.to_string(),
+                    "amount_cents": new_amount,
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                });
+                let topic = format!("auction:{}", bid.job_id);
+                let _ = redis::cmd("PUBLISH")
+                    .arg(&topic)
+                    .arg(event.to_string())
+                    .query_async::<()>(redis_conn)
+                    .await;
+            }
+        }
+
         tracing::info!(
             bid_id = %bid_id,
             old_amount = existing.amount_cents,
@@ -212,6 +317,41 @@ impl BiddingEngine {
             .execute(&self.pool)
             .await?;
 
+        // Live auction: record withdrawal event
+        let auction_type: String = sqlx::query_scalar(
+            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)"
+        )
+        .bind(bid_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(BidError::DatabaseError)?;
+
+        if auction_type == "live" {
+            sqlx::query(
+                "INSERT INTO auction_bid_events (job_id, amount_cents, event_type) VALUES ($1, $2, 'bid_withdrawn')"
+            )
+            .bind(bid.job_id)
+            .bind(bid.amount_cents)
+            .execute(&self.pool)
+            .await
+            .map_err(BidError::DatabaseError)?;
+
+            if let Some(ref mut redis_conn) = self.redis.clone() {
+                let event = serde_json::json!({
+                    "type": "bid_withdrawn",
+                    "job_id": bid.job_id.to_string(),
+                    "amount_cents": bid.amount_cents,
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                });
+                let topic = format!("auction:{}", bid.job_id);
+                let _ = redis::cmd("PUBLISH")
+                    .arg(&topic)
+                    .arg(event.to_string())
+                    .query_async::<()>(redis_conn)
+                    .await;
+            }
+        }
+
         tracing::info!(bid_id = %bid_id, "bid withdrawn");
 
         Ok(bid)
@@ -228,7 +368,7 @@ impl BiddingEngine {
         provider_id: Uuid,
     ) -> Result<Bid, BidError> {
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
              FROM jobs WHERE id = $1",
         )
         .bind(job_id)
@@ -302,7 +442,7 @@ impl BiddingEngine {
 
         // Validate customer owns the job. Lock the row to prevent concurrent awards.
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
              FROM jobs WHERE id = $1 FOR UPDATE",
         )
         .bind(job_id)
@@ -395,7 +535,7 @@ impl BiddingEngine {
     ) -> Result<Vec<Bid>, BidError> {
         // Validate customer owns the job.
         let job = sqlx::query_as::<_, JobRow>(
-            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id \
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
              FROM jobs WHERE id = $1",
         )
         .bind(job_id)
@@ -635,6 +775,59 @@ impl BiddingEngine {
             last_bid_at: stats.last_bid_at,
         })
     }
+
+    pub async fn get_live_auction_state(&self, job_id: Uuid) -> Result<LiveAuctionState, BidError> {
+        let row = sqlx::query_as::<_, (i32, Option<DateTime<Utc>>, i32, String)>(
+            "SELECT bid_count, auction_ends_at, snipe_extension_count, auction_type FROM jobs WHERE id = $1 AND status = 'active'"
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(BidError::DatabaseError)?
+        .ok_or(BidError::JobNotFound)?;
+
+        if row.3 != "live" {
+            return Err(BidError::FeatureNotEnabled("live auctions not enabled for this job".into()));
+        }
+
+        let lowest: Option<i64> = sqlx::query_scalar(
+            "SELECT MIN(amount_cents) FROM bids WHERE job_id = $1 AND status = 'active'"
+        )
+        .bind(job_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(BidError::DatabaseError)?;
+
+        let recent_events = sqlx::query_as::<_, AuctionBidEvent>(
+            "SELECT id, job_id, amount_cents, event_type, created_at FROM auction_bid_events WHERE job_id = $1 ORDER BY created_at DESC LIMIT 50"
+        )
+        .bind(job_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(BidError::DatabaseError)?;
+
+        Ok(LiveAuctionState {
+            job_id,
+            lowest_bid_cents: lowest.unwrap_or(0),
+            bid_count: row.0,
+            auction_ends_at: row.1,
+            snipe_extension_count: row.2,
+            max_snipe_extensions: 3,
+            recent_events,
+        })
+    }
+
+    pub async fn get_auction_events(&self, job_id: Uuid) -> Result<Vec<AuctionBidEvent>, BidError> {
+        let events = sqlx::query_as::<_, AuctionBidEvent>(
+            "SELECT id, job_id, amount_cents, event_type, created_at FROM auction_bid_events WHERE job_id = $1 ORDER BY created_at ASC"
+        )
+        .bind(job_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(BidError::DatabaseError)?;
+
+        Ok(events)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +843,8 @@ struct JobRow {
     starting_bid_cents: Option<i64>,
     auction_ends_at: Option<DateTime<Utc>>,
     customer_id: Uuid,
+    auction_type: String,
+    snipe_extension_count: i32,
 }
 
 #[derive(sqlx::FromRow)]

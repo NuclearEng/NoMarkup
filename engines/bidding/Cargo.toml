@@ -21,6 +21,7 @@ opentelemetry-otlp.workspace = true
 tracing-opentelemetry.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+redis.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true

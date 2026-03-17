@@ -47,6 +47,7 @@ func New(
 	verificationHandler *handler.VerificationHandler,
 	workingCapitalHandler *handler.WorkingCapitalHandler,
 	expenseHandler *handler.ExpenseHandler,
+	auctionWSHandler *handler.AuctionWSHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -111,6 +112,10 @@ func New(
 		r.With(authMW.Handler).Post("/{id}/bids", bidHandler.PlaceBid)
 		r.With(authMW.Handler).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
 		r.With(authMW.Handler).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
+
+		// Live auction endpoints
+		r.With(authMW.Handler).Get("/{id}/auction/state", bidHandler.GetLiveAuctionState)
+		r.With(authMW.Handler).Get("/{id}/auction/events", bidHandler.GetAuctionEvents)
 	})
 
 	// Public trust tier requirements (no auth required)
@@ -390,6 +395,9 @@ func New(
 
 	// WebSocket chat endpoint (auth via query param, header, or cookie — validated in handler)
 	r.Get("/ws/chat", chatHandler.WebSocket)
+
+	// Auction WebSocket endpoint (auth via query param, header, or cookie — validated in handler)
+	r.Get("/ws/auction/{jobId}", auctionWSHandler.WebSocket)
 
 	return r
 }
