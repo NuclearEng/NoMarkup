@@ -113,6 +113,18 @@ func (h *UserHandler) EnableRole(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, protoUserToJSON(resp.GetUser()))
 }
 
+// GetSavings handles GET /api/v1/users/me/savings.
+func (h *UserHandler) GetSavings(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	// TODO: implement savings query via user service gRPC
+	writeJSON(w, http.StatusOK, []interface{}{})
+}
+
 // GetUser handles GET /api/v1/users/{id}.
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")

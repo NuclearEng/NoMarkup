@@ -281,6 +281,18 @@ func (h *ProviderHandler) SetAvailability(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// GetStreaks handles GET /api/v1/providers/me/streaks.
+func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	// TODO: implement streaks query via user service gRPC
+	writeJSON(w, http.StatusOK, []interface{}{})
+}
+
 // GetProvider handles GET /api/v1/providers/{id}.
 func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")

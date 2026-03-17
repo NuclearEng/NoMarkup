@@ -156,6 +156,7 @@ func New(
 			r.Get("/me", userHandler.GetMe)
 			r.Patch("/me", userHandler.UpdateMe)
 			r.Post("/me/roles", userHandler.EnableRole)
+			r.Get("/me/savings", userHandler.GetSavings)
 			r.Get("/{id}", userHandler.GetUser)
 			r.Get("/{id}/reviews", reviewHandler.ListReviewsForUser)
 			r.Get("/{id}/trust-score", trustHandler.GetTrustScore)
@@ -169,6 +170,7 @@ func New(
 			r.Put("/me/categories", providerHandler.UpdateCategories)
 			r.Put("/me/portfolio", providerHandler.UpdatePortfolio)
 			r.Put("/me/availability", providerHandler.SetAvailability)
+			r.Get("/me/streaks", providerHandler.GetStreaks)
 			r.Get("/{id}", providerHandler.GetProvider)
 
 			// Provider verification documents
