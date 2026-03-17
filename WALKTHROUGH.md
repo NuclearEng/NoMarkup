@@ -50,6 +50,17 @@ The heart of NoMarkup. A job with:
 
 ![Job Detail](.gstack/qa-reports/screenshots/showcase-02-job-detail.png)
 
+### Live Auction Arena (10X Feature)
+The "Robinhood moment" — watch prices drop in real-time as providers compete:
+- **Current Lowest: $420** — live-updating lowest bid
+- **Total Bids: 2** — real-time bid counter with trend indicator
+- **Extensions: 1/3** — anti-snipe protection (max 3 extensions of 5 minutes each)
+- **Price History chart** — SVG step chart showing price evolution over time
+- **WebSocket streaming** — real-time bid events (shows "Offline" when bidding engine WebSocket is not connected, falls back to REST polling)
+- Feature-flagged via `NEXT_PUBLIC_ENABLE_LIVE_AUCTION=true`
+
+![Live Auction Arena](.gstack/qa-reports/screenshots/showcase-26-auction-polished.png)
+
 ### Post a Job (7-Step Form)
 Guided job posting wizard:
 1. **Category** — 27 service categories (HVAC, Plumbing, Electrical, etc.) with search filter
