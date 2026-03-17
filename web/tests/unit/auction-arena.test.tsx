@@ -132,7 +132,7 @@ describe('AuctionArena', () => {
     expect(screen.getByText('Live Auction')).toBeDefined();
   });
 
-  it('shows Offline when disconnected', () => {
+  it('shows RECONNECTING when disconnected', () => {
     render(
       createElement(AuctionArena, {
         job: mockJobDetail,
@@ -141,10 +141,10 @@ describe('AuctionArena', () => {
       }),
       { wrapper: createWrapper(queryClient) },
     );
-    expect(screen.getByText('Offline')).toBeDefined();
+    expect(screen.getByText('RECONNECTING')).toBeDefined();
   });
 
-  it('shows Live when connected', () => {
+  it('shows LIVE when connected', () => {
     vi.mocked(useAuctionStream).mockReturnValue({
       events: [],
       connectionStatus: 'connected',
@@ -163,10 +163,10 @@ describe('AuctionArena', () => {
       }),
       { wrapper: createWrapper(queryClient) },
     );
-    expect(screen.getByText('Live')).toBeDefined();
+    expect(screen.getByText('LIVE')).toBeDefined();
   });
 
-  it('shows Connecting... when connecting', () => {
+  it('shows CONNECTING when connecting', () => {
     vi.mocked(useAuctionStream).mockReturnValue({
       events: [],
       connectionStatus: 'connecting',
@@ -185,7 +185,7 @@ describe('AuctionArena', () => {
       }),
       { wrapper: createWrapper(queryClient) },
     );
-    expect(screen.getByText('Connecting...')).toBeDefined();
+    expect(screen.getByText('CONNECTING')).toBeDefined();
   });
 
   it('displays current lowest bid formatted as currency', () => {
@@ -263,7 +263,7 @@ describe('AuctionArena', () => {
       }),
       { wrapper: createWrapper(queryClient) },
     );
-    expect(screen.getByText('2/3')).toBeDefined();
+    expect(screen.getByText('2/3 extensions')).toBeDefined();
   });
 
   it('renders Price History section', () => {
@@ -375,7 +375,7 @@ describe('AuctionArena', () => {
 
     expect(screen.getByText('$150')).toBeDefined();
     expect(screen.getByText('2')).toBeDefined();
-    expect(screen.getByText('1/3')).toBeDefined();
+    expect(screen.getByText('1/3 extensions')).toBeDefined();
   });
 
   it('renders stat labels', () => {
@@ -387,8 +387,8 @@ describe('AuctionArena', () => {
       }),
       { wrapper: createWrapper(queryClient) },
     );
-    expect(screen.getByText('Current Lowest')).toBeDefined();
-    expect(screen.getByText('Total Bids')).toBeDefined();
-    expect(screen.getByText('Extensions')).toBeDefined();
+    expect(screen.getByText('Current Lowest Bid')).toBeDefined();
+    expect(screen.getByText('Bids')).toBeDefined();
+    expect(screen.getByText('0/3 extensions')).toBeDefined();
   });
 });

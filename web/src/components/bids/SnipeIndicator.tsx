@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock } from 'lucide-react';
+import { Shield } from 'lucide-react';
 
 interface SnipeIndicatorProps {
   count: number;
@@ -8,21 +8,59 @@ interface SnipeIndicatorProps {
 }
 
 export function SnipeIndicator({ count, max }: SnipeIndicatorProps) {
-  if (count === 0) {
-    return <p className="text-xl font-bold text-muted-foreground sm:text-2xl">0/{String(max)}</p>;
-  }
+  const isActive = count > 0;
 
   return (
     <div
-      className="flex items-center justify-center gap-1.5"
+      className="flex flex-col items-center gap-1.5"
       role="status"
       aria-live="polite"
-      aria-label={`Auction extended ${String(count)} of ${String(max)} times`}
+      aria-label={
+        isActive
+          ? `Anti-snipe protection active: ${String(count)} of ${String(max)} extensions used`
+          : `Anti-snipe protection available: 0 of ${String(max)} extensions used`
+      }
     >
-      <Clock className="h-4 w-4 animate-pulse text-amber-500" aria-hidden="true" />
-      <p className="text-xl font-bold text-amber-500 sm:text-2xl">
-        {String(count)}/{String(max)}
-      </p>
+      {/* Shield icon + label */}
+      <div className="flex items-center gap-1.5">
+        <Shield
+          className={`h-4 w-4 ${isActive ? 'text-amber-400' : 'text-muted-foreground/50'}`}
+          aria-hidden="true"
+          fill={isActive ? 'currentColor' : 'none'}
+        />
+        <span
+          className={`text-xs font-medium ${isActive ? 'text-amber-400' : 'text-muted-foreground'}`}
+        >
+          {isActive ? 'Active' : 'Ready'}
+        </span>
+      </div>
+
+      {/* Segment dots */}
+      <div className="flex items-center gap-1.5">
+        {Array.from({ length: max }, (_, i) => {
+          const used = i < count;
+          return (
+            <div
+              key={String(i)}
+              className={`h-2.5 w-2.5 rounded-full border ${
+                used
+                  ? 'border-amber-400 bg-amber-400'
+                  : 'border-muted-foreground/30 bg-transparent'
+              }`}
+              style={
+                used
+                  ? { boxShadow: '0 0 6px rgba(251, 191, 36, 0.5)' }
+                  : undefined
+              }
+            />
+          );
+        })}
+      </div>
+
+      {/* Micro label */}
+      <span className="text-[10px] text-muted-foreground">
+        {String(count)}/{String(max)} extensions
+      </span>
     </div>
   );
 }

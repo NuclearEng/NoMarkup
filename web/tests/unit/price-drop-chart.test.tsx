@@ -16,9 +16,7 @@ beforeAll(() => {
 describe('PriceDropChart', () => {
   it('shows empty state with no events', () => {
     render(<PriceDropChart events={[]} />);
-    expect(
-      screen.getByText(/no bids yet/i),
-    ).toBeDefined();
+    expect(screen.getByText(/waiting for bids/i)).toBeDefined();
   });
 
   it('has accessible aria-label on empty state', () => {
@@ -159,8 +157,11 @@ describe('PriceDropChart', () => {
       },
     ];
     const { container } = render(<PriceDropChart events={events} />);
-    const circles = container.querySelectorAll('circle');
-    expect(circles).toHaveLength(2);
+    // Each step has an outer glow circle + main dot (2 per step).
+    // The last step also has 2 pulsing ring circles.
+    // 2 steps = 2*2 + 2 = 6 total circles.
+    const glowCircles = container.querySelectorAll('circle[filter="url(#dotGlow)"]');
+    expect(glowCircles).toHaveLength(2);
   });
 
   it('renders a step path element', () => {
