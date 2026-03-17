@@ -4,7 +4,7 @@ import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useProfile, useUpdateProfile, useEnableRole } from '@/hooks/useProfile';
-import type { User } from '@/types';
+// Types not needed — mocks use raw API shape (snake_case), hook maps to User
 
 // Note: useAuth.ts does not exist in the codebase. The auth logic lives in
 // the auth store (tested in auth-store.test.ts). This file tests useProfile
@@ -31,25 +31,22 @@ function createTestQueryClient(): QueryClient {
 
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      children,
-    );
+    return createElement(QueryClientProvider, { client: queryClient }, children);
   };
 }
 
-const mockUser: User = {
+// API returns snake_case; the hook maps to camelCase User via mapApiUser
+const mockApiUser = {
   id: 'user-1',
   email: 'test@example.com',
-  displayName: 'Test User',
-  avatarUrl: 'https://example.com/avatar.png',
-  roles: ['customer'],
-  status: 'active',
-  emailVerified: true,
-  phoneVerified: false,
-  mfaEnabled: false,
-  createdAt: '2026-01-01T00:00:00Z',
+  display_name: 'Test User',
+  avatar_url: 'https://example.com/avatar.png',
+  roles: ['customer'] as const,
+  status: 'active' as const,
+  email_verified: true,
+  phone_verified: false,
+  mfa_enabled: false,
+  created_at: '2026-01-01T00:00:00Z',
 };
 
 describe('useProfile', () => {
@@ -65,7 +62,7 @@ describe('useProfile', () => {
   });
 
   it('fetches the current user profile', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ user: mockUser });
+    vi.mocked(api.get).mockResolvedValueOnce(mockApiUser);
 
     const { result } = renderHook(() => useProfile(), {
       wrapper: createWrapper(queryClient),
@@ -116,8 +113,8 @@ describe('useUpdateProfile', () => {
   });
 
   it('updates the user profile and invalidates queries', async () => {
-    const updatedUser = { ...mockUser, displayName: 'Updated Name' };
-    vi.mocked(api.patch).mockResolvedValueOnce({ user: updatedUser });
+    const updatedApiUser = { ...mockApiUser, display_name: 'Updated Name' };
+    vi.mocked(api.patch).mockResolvedValueOnce(updatedApiUser);
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -137,9 +134,7 @@ describe('useUpdateProfile', () => {
   });
 
   it('handles update error', async () => {
-    vi.mocked(api.patch).mockRejectedValueOnce(
-      new Error('Validation failed'),
-    );
+    vi.mocked(api.patch).mockRejectedValueOnce(new Error('Validation failed'));
 
     const { result } = renderHook(() => useUpdateProfile(), {
       wrapper: createWrapper(queryClient),
@@ -164,11 +159,11 @@ describe('useEnableRole', () => {
   });
 
   it('enables a new role for the user', async () => {
-    const updatedUser = {
-      ...mockUser,
+    const updatedApiUser = {
+      ...mockApiUser,
       roles: ['customer', 'provider'] as const,
     };
-    vi.mocked(api.post).mockResolvedValueOnce({ user: updatedUser });
+    vi.mocked(api.post).mockResolvedValueOnce(updatedApiUser);
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -181,17 +176,14 @@ describe('useEnableRole', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data?.roles).toContain('provider');
-    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
-      '/api/v1/users/me/roles',
-      { role: 'provider' },
-    );
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/users/me/roles', {
+      role: 'provider',
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['profile'] });
   });
 
   it('handles role enable error', async () => {
-    vi.mocked(api.post).mockRejectedValueOnce(
-      new Error('Role already enabled'),
-    );
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('Role already enabled'));
 
     const { result } = renderHook(() => useEnableRole(), {
       wrapper: createWrapper(queryClient),

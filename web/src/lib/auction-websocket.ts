@@ -22,7 +22,7 @@ type StatusListener = (status: AuctionConnectionStatus) => void;
 class AuctionWebSocketManager {
   private ws: WebSocket | null = null;
   private jobId: string | null = null;
-  private token: string | null = null;
+  private tokenGetter: (() => string | null) | null = null;
   private messageListeners: Set<AuctionMessageListener> = new Set();
   private statusListeners: Set<StatusListener> = new Set();
   private reconnectAttempts = 0;
@@ -31,23 +31,25 @@ class AuctionWebSocketManager {
   private status: AuctionConnectionStatus = 'disconnected';
   private connectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  connect(jobId: string, token: string): void {
+  connect(jobId: string, token: string, tokenGetter?: () => string | null): void {
     // Debounce for React StrictMode
     if (this.connectDebounceTimer) {
       clearTimeout(this.connectDebounceTimer);
     }
 
     this.connectDebounceTimer = setTimeout(() => {
-      this.doConnect(jobId, token);
+      this.doConnect(jobId, token, tokenGetter);
     }, 100);
   }
 
-  private doConnect(jobId: string, token: string): void {
+  private doConnect(jobId: string, token: string, tokenGetter?: () => string | null): void {
     if (this.ws && this.jobId === jobId) return;
 
     this.disconnect();
     this.jobId = jobId;
-    this.token = token;
+    if (tokenGetter) {
+      this.tokenGetter = tokenGetter;
+    }
 
     const wsBase = API_BASE_URL.replace(/^http/, 'ws');
     const url = `${wsBase}/ws/auction/${jobId}?token=${encodeURIComponent(token)}`;
@@ -96,20 +98,24 @@ class AuctionWebSocketManager {
       this.ws = null;
     }
     this.jobId = null;
-    this.token = null;
+    this.tokenGetter = null;
     this.reconnectAttempts = 0;
     this.updateStatus('disconnected');
   }
 
   private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts || !this.jobId || !this.token) return;
+    if (this.reconnectAttempts >= this.maxReconnectAttempts || !this.jobId) return;
+
+    const freshToken = this.tokenGetter ? this.tokenGetter() : null;
+    if (!freshToken) return;
 
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
 
     this.reconnectTimer = setTimeout(() => {
-      if (this.jobId && this.token) {
-        this.doConnect(this.jobId, this.token);
+      const token = this.tokenGetter ? this.tokenGetter() : null;
+      if (this.jobId && token) {
+        this.doConnect(this.jobId, token);
       }
     }, delay);
   }

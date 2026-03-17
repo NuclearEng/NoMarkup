@@ -53,15 +53,26 @@ export default function JobDetailPage() {
   if (isError || !job) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 text-center sm:px-6 lg:px-8">
-        <h1 className="text-2xl font-bold">Job Not Found</h1>
+        <h1 className="text-2xl font-bold">Failed to Load Job</h1>
         <p className="text-muted-foreground mt-2">
-          This job may have been removed or does not exist.
+          This job could not be loaded. It may have been removed, or there was a connection issue.
         </p>
-        <Link href={'/jobs' as Route}>
-          <Button variant="outline" className="mt-4 min-h-[44px]">
-            Back to Jobs
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <Button
+            variant="outline"
+            className="min-h-[44px]"
+            onClick={() => {
+              window.location.reload();
+            }}
+          >
+            Retry
           </Button>
-        </Link>
+          <Link href={'/jobs' as Route}>
+            <Button variant="ghost" className="min-h-[44px]">
+              Back to Jobs
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }

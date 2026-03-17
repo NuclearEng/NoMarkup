@@ -2,7 +2,7 @@
 
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-import type MapboxGL from 'mapbox-gl';
+import type mapboxgl from 'mapbox-gl';
 import { useEffect, useRef, useState } from 'react';
 
 interface ServiceAreaMapProps {
@@ -17,7 +17,7 @@ export function ServiceAreaMap({
   className,
 }: ServiceAreaMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapboxGL.Map | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
   const [mapError, setMapError] = useState(false);
 
   const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
@@ -73,7 +73,7 @@ export function ServiceAreaMap({
     const map = mapRef.current;
 
     if (map.getSource('service-area')) {
-      (map.getSource('service-area') as MapboxGL.GeoJSONSource).setData(
+      (map.getSource('service-area') as mapboxgl.GeoJSONSource).setData(
         createCircleGeoJSON(center, radiusKm),
       );
     }
@@ -114,9 +114,7 @@ function createCircleGeoJSON(
 
   for (let i = 0; i <= points; i++) {
     const angle = (i / points) * 2 * Math.PI;
-    const lat =
-      center[1] +
-      (radiusKm / earthRadiusKm) * (180 / Math.PI) * Math.sin(angle);
+    const lat = center[1] + (radiusKm / earthRadiusKm) * (180 / Math.PI) * Math.sin(angle);
     const lng =
       center[0] +
       ((radiusKm / earthRadiusKm) * (180 / Math.PI) * Math.cos(angle)) /
@@ -139,11 +137,7 @@ function createCircleGeoJSON(
   };
 }
 
-function addCircleLayer(
-  map: MapboxGL.Map,
-  center: [number, number],
-  radiusKm: number,
-) {
+function addCircleLayer(map: mapboxgl.Map, center: [number, number], radiusKm: number) {
   map.addSource('service-area', {
     type: 'geojson',
     data: createCircleGeoJSON(center, radiusKm),

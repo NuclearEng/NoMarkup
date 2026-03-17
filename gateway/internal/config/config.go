@@ -40,7 +40,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid GATEWAY_PORT: %w", err)
 	}
 
-	origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000")
+	origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3002")
 
 	cfg := &Config{
 		Port:               port,

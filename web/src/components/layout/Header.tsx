@@ -21,13 +21,7 @@ export function Header() {
   }
 
   return (
-    <header className="border-b bg-background">
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:bg-primary focus:p-4 focus:text-primary-foreground"
-      >
-        Skip to main content
-      </a>
+    <header className="bg-background border-b">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Logo />
 
@@ -36,7 +30,7 @@ export function Header() {
           {isHydrating ? null : isAuthenticated ? (
             <>
               <NotificationBell />
-              <span className="text-sm text-muted-foreground">
+              <span className="text-muted-foreground text-sm">
                 {user?.displayName ?? user?.email}
               </span>
               <Button
@@ -50,12 +44,7 @@ export function Header() {
             </>
           ) : (
             <>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="min-h-[44px]"
-                asChild
-              >
+              <Button variant="ghost" size="sm" className="min-h-[44px]" asChild>
                 <Link href="/login">Sign in</Link>
               </Button>
               <Button size="sm" className="min-h-[44px]" asChild>
@@ -69,7 +58,9 @@ export function Header() {
         <button
           type="button"
           className="flex min-h-[44px] min-w-[44px] items-center justify-center md:hidden"
-          onClick={() => { setMobileMenuOpen((prev) => !prev); }}
+          onClick={() => {
+            setMobileMenuOpen((prev) => !prev);
+          }}
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-menu"
           aria-label="Toggle navigation menu"
@@ -83,11 +74,7 @@ export function Header() {
             aria-hidden="true"
           >
             {mobileMenuOpen ? (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             ) : (
               <path
                 strokeLinecap="round"
@@ -101,16 +88,12 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav
-          id="mobile-menu"
-          className="border-t px-4 py-4 md:hidden"
-          aria-label="Mobile"
-        >
+        <nav id="mobile-menu" className="border-t px-4 py-4 md:hidden" aria-label="Mobile">
           <div className="flex flex-col gap-3">
             {isHydrating ? null : isAuthenticated ? (
               <>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-muted-foreground text-sm">
                     {user?.displayName ?? user?.email}
                   </span>
                   <NotificationBell />
@@ -125,11 +108,7 @@ export function Header() {
               </>
             ) : (
               <>
-                <Button
-                  variant="outline"
-                  className="min-h-[44px] w-full"
-                  asChild
-                >
+                <Button variant="outline" className="min-h-[44px] w-full" asChild>
                   <Link href="/login">Sign in</Link>
                 </Button>
                 <Button className="min-h-[44px] w-full" asChild>

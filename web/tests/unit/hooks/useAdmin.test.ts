@@ -52,22 +52,22 @@ function createTestQueryClient(): QueryClient {
 
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      children,
-    );
+    return createElement(QueryClientProvider, { client: queryClient }, children);
   };
 }
 
 const mockAdminUser: AdminUser = {
   id: 'user-1',
   email: 'admin@example.com',
-  display_name: 'Admin User',
+  first_name: 'Admin',
+  last_name: 'User',
+  phone: '',
   roles: ['admin'],
   status: 'active',
+  avatar_url: '',
+  email_verified: true,
+  phone_verified: false,
   created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
 };
 
 const mockUsersResponse: AdminUsersResponse = {
@@ -116,12 +116,8 @@ describe('useAdminUsers', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('query=test'),
-    );
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('status=active'),
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('query=test'));
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('status=active'));
   });
 
   it('handles API errors', async () => {
@@ -193,10 +189,9 @@ describe('useSuspendUser', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
-      '/api/v1/admin/users/user-1/suspend',
-      { reason: 'Policy violation' },
-    );
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/users/user-1/suspend', {
+      reason: 'Policy violation',
+    });
     expect(invalidateSpy).toHaveBeenCalled();
   });
 });
@@ -224,10 +219,9 @@ describe('useBanUser', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
-      '/api/v1/admin/users/user-1/ban',
-      { reason: 'Fraud' },
-    );
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/users/user-1/ban', {
+      reason: 'Fraud',
+    });
   });
 });
 
@@ -278,16 +272,13 @@ describe('useAdminDisputes', () => {
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockDisputes);
 
-    const { result } = renderHook(
-      () => useAdminDisputes({ status: 'open', page: 1 }),
-      { wrapper: createWrapper(queryClient) },
-    );
+    const { result } = renderHook(() => useAdminDisputes({ status: 'open', page: 1 }), {
+      wrapper: createWrapper(queryClient),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('status=open'),
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('status=open'));
   });
 });
 
@@ -326,10 +317,24 @@ describe('usePlatformMetrics', () => {
 
   it('fetches platform metrics', async () => {
     const mockMetrics: PlatformMetrics = {
-      total_users: 1000,
-      total_jobs: 500,
+      total_gmv_cents: 10000000,
       total_revenue_cents: 5000000,
-      active_providers: 200,
+      total_guarantee_fund_cents: 500000,
+      effective_take_rate: 0.05,
+      total_users: 1000,
+      active_users: 800,
+      new_users: 50,
+      total_jobs_posted: 500,
+      total_jobs_completed: 300,
+      job_fill_rate: 0.6,
+      job_completion_rate: 0.9,
+      total_bids: 2000,
+      avg_bids_per_job: 4,
+      disputes_opened: 10,
+      disputes_resolved: 8,
+      dispute_rate: 0.02,
+      guarantee_claims: 3,
+      guarantee_payouts_cents: 150000,
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockMetrics);
 
@@ -339,9 +344,7 @@ describe('usePlatformMetrics', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/admin/platform/metrics',
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/platform/metrics');
   });
 });
 
@@ -359,23 +362,23 @@ describe('useRevenueReport', () => {
 
   it('fetches revenue report with date range', async () => {
     const mockRevenue: RevenueReport = {
+      data_points: [],
+      total_gmv_cents: 10000000,
       total_revenue_cents: 5000000,
-      periods: [],
+      total_guarantee_fund_cents: 500000,
+      effective_take_rate: 0.05,
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockRevenue);
 
-    const { result } = renderHook(
-      () => useRevenueReport('2026-01-01', '2026-03-01', 'month'),
-      { wrapper: createWrapper(queryClient) },
-    );
+    const { result } = renderHook(() => useRevenueReport('2026-01-01', '2026-03-01', 'month'), {
+      wrapper: createWrapper(queryClient),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       expect.stringContaining('start_date=2026-01-01'),
     );
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('group_by=month'),
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=month'));
   });
 });

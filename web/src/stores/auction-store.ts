@@ -5,6 +5,7 @@ import {
   auctionWsManager,
   type AuctionConnectionStatus,
 } from '@/lib/auction-websocket';
+import { useAuthStore } from '@/stores/auth-store';
 
 interface AuctionState {
   activeJobId: string | null;
@@ -50,7 +51,7 @@ export const useAuctionStore = create<AuctionState & AuctionActions>((set, get) 
       snipeExtensionCount: 0,
     });
 
-    auctionWsManager.connect(jobId, token);
+    auctionWsManager.connect(jobId, token, () => useAuthStore.getState().accessToken);
   },
 
   clearActiveJob: () => {

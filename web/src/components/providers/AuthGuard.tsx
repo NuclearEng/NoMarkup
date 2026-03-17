@@ -32,13 +32,18 @@ export function AuthGuard({ children }: AuthGuardProps) {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <div className="border-primary h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" />
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return null;
+    // Redirect is in-flight via router.replace('/login') — show loading until it completes
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="border-primary h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" />
+      </div>
+    );
   }
 
   return <>{children}</>;

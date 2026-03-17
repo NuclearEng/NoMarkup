@@ -2,7 +2,7 @@
 
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-import type MapboxGL from 'mapbox-gl';
+import type mapboxgl from 'mapbox-gl';
 import { MapPin } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -22,8 +22,8 @@ function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: J
   );
 
   return (
-    <div className="rounded-xl border bg-muted/30 p-6">
-      <div className="mb-4 flex items-center gap-2 text-muted-foreground">
+    <div className="bg-muted/30 rounded-xl border p-6">
+      <div className="text-muted-foreground mb-4 flex items-center gap-2">
         <MapPin className="h-5 w-5" aria-hidden="true" />
         <p className="text-sm font-medium">
           {jobsWithLocation.length > 0
@@ -38,18 +38,18 @@ function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: J
             <button
               key={job.id}
               type="button"
-              className="flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50"
-              onClick={() => { onJobSelect?.(job); }}
+              className="bg-card hover:bg-muted/50 flex items-start gap-3 rounded-lg border p-3 text-left transition-colors"
+              onClick={() => {
+                onJobSelect?.(job);
+              }}
             >
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <MapPin className="text-primary mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{job.title}</p>
                 {job.location_address ? (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {job.location_address}
-                  </p>
+                  <p className="text-muted-foreground truncate text-xs">{job.location_address}</p>
                 ) : (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     {job.location_lat?.toFixed(4)}, {job.location_lng?.toFixed(4)}
                   </p>
                 )}
@@ -68,7 +68,7 @@ function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: J
           ))}
         </div>
       ) : (
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-center text-sm">
           Jobs without location data are shown in the list below.
         </p>
       )}
@@ -78,7 +78,7 @@ function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: J
 
 export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapboxGL.Map | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(false);
 
@@ -157,8 +157,10 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
       // Add markers
       for (const job of jobsWithLocation) {
         const el = document.createElement('div');
-        el.className = 'flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md cursor-pointer';
-        el.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
+        el.className =
+          'flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md cursor-pointer';
+        el.innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
 
         const popup = new mapboxgl.Popup({ offset: 25, className: 'nomarkup-job-popup' });
         const popupDiv = document.createElement('div');

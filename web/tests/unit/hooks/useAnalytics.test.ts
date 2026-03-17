@@ -40,28 +40,40 @@ function createTestQueryClient(): QueryClient {
 
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      children,
-    );
+    return createElement(QueryClientProvider, { client: queryClient }, children);
   };
 }
 
 const mockMarketRange: AnalyticsMarketRange = {
+  category_id: 'cat-1',
+  subcategory_id: 'subcat-1',
+  service_type_id: 'svc-1',
+  region: 'us-west',
   low_cents: 5000,
   median_cents: 12500,
   high_cents: 25000,
-  sample_size: 42,
+  data_points: 42,
+  source: 'platform',
+  confidence: 0.85,
+  computed_at: '2026-01-01T00:00:00Z',
 };
 
 const mockProviderAnalytics: ProviderAnalytics = {
-  total_jobs_completed: 15,
+  total_bids: 23,
+  bids_won: 15,
+  win_rate: 0.65,
+  average_bid_cents: 50000,
+  jobs_completed: 15,
+  jobs_in_progress: 3,
+  on_time_rate: 0.92,
+  completion_rate: 0.95,
   total_earnings_cents: 750000,
+  average_job_value_cents: 50000,
   average_rating: 4.8,
   total_reviews: 12,
-  active_bids: 3,
-  win_rate: 0.65,
+  rating_trend: 0.1,
+  avg_response_time_minutes: 30,
+  category_breakdown: [],
 };
 
 describe('useMarketRange', () => {
@@ -79,10 +91,9 @@ describe('useMarketRange', () => {
   it('fetches market range for a category', async () => {
     vi.mocked(api.get).mockResolvedValueOnce(mockMarketRange);
 
-    const { result } = renderHook(
-      () => useMarketRange('cat-1'),
-      { wrapper: createWrapper(queryClient) },
-    );
+    const { result } = renderHook(() => useMarketRange('cat-1'), {
+      wrapper: createWrapper(queryClient),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -96,10 +107,9 @@ describe('useMarketRange', () => {
   it('passes subcategory and service type params', async () => {
     vi.mocked(api.get).mockResolvedValueOnce(mockMarketRange);
 
-    const { result } = renderHook(
-      () => useMarketRange('cat-1', 'subcat-1', 'svc-1'),
-      { wrapper: createWrapper(queryClient) },
-    );
+    const { result } = renderHook(() => useMarketRange('cat-1', 'subcat-1', 'svc-1'), {
+      wrapper: createWrapper(queryClient),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -153,26 +163,23 @@ describe('useProviderAnalytics', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(result.current.data?.total_jobs_completed).toBe(15);
+    expect(result.current.data?.jobs_completed).toBe(15);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/provider');
   });
 
   it('passes date range params', async () => {
     vi.mocked(api.get).mockResolvedValueOnce(mockProviderAnalytics);
 
-    const { result } = renderHook(
-      () => useProviderAnalytics('2026-01-01', '2026-03-01'),
-      { wrapper: createWrapper(queryClient) },
-    );
+    const { result } = renderHook(() => useProviderAnalytics('2026-01-01', '2026-03-01'), {
+      wrapper: createWrapper(queryClient),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       expect.stringContaining('start_date=2026-01-01'),
     );
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('end_date=2026-03-01'),
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('end_date=2026-03-01'));
   });
 
   it('handles API errors', async () => {
@@ -200,8 +207,11 @@ describe('useProviderEarnings', () => {
 
   it('fetches earnings without params', async () => {
     const mockEarnings: ProviderEarningsResponse = {
-      total_cents: 500000,
-      periods: [],
+      data_points: [],
+      total_earnings_cents: 500000,
+      total_fees_cents: 25000,
+      net_earnings_cents: 475000,
+      total_jobs: 10,
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockEarnings);
 
@@ -211,28 +221,26 @@ describe('useProviderEarnings', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/analytics/provider/earnings',
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/provider/earnings');
   });
 
   it('passes group_by param', async () => {
     const mockEarnings: ProviderEarningsResponse = {
-      total_cents: 500000,
-      periods: [],
+      data_points: [],
+      total_earnings_cents: 500000,
+      total_fees_cents: 25000,
+      net_earnings_cents: 475000,
+      total_jobs: 10,
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockEarnings);
 
-    const { result } = renderHook(
-      () => useProviderEarnings('2026-01-01', '2026-03-01', 'month'),
-      { wrapper: createWrapper(queryClient) },
-    );
+    const { result } = renderHook(() => useProviderEarnings('2026-01-01', '2026-03-01', 'month'), {
+      wrapper: createWrapper(queryClient),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('group_by=month'),
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=month'));
   });
 });
 
@@ -250,8 +258,12 @@ describe('useCustomerSpending', () => {
 
   it('fetches spending without params', async () => {
     const mockSpending: CustomerSpendingResponse = {
-      total_cents: 300000,
-      periods: [],
+      data_points: [],
+      total_spent_cents: 300000,
+      total_jobs: 5,
+      average_job_cost_cents: 60000,
+      total_savings_cents: 50000,
+      category_breakdown: [],
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockSpending);
 
@@ -261,28 +273,27 @@ describe('useCustomerSpending', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/analytics/customer/spending',
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/customer/spending');
   });
 
   it('passes date and group_by params', async () => {
     const mockSpending: CustomerSpendingResponse = {
-      total_cents: 300000,
-      periods: [],
+      data_points: [],
+      total_spent_cents: 300000,
+      total_jobs: 5,
+      average_job_cost_cents: 60000,
+      total_savings_cents: 50000,
+      category_breakdown: [],
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockSpending);
 
-    const { result } = renderHook(
-      () => useCustomerSpending('2026-01-01', '2026-03-01', 'week'),
-      { wrapper: createWrapper(queryClient) },
-    );
+    const { result } = renderHook(() => useCustomerSpending('2026-01-01', '2026-03-01', 'week'), {
+      wrapper: createWrapper(queryClient),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('group_by=week'),
-    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=week'));
   });
 
   it('handles API errors', async () => {

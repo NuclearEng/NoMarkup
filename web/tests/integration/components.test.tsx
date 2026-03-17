@@ -75,11 +75,7 @@ function createTestQueryClient(): QueryClient {
 
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      children,
-    );
+    return createElement(QueryClientProvider, { client: queryClient }, children);
   };
 }
 
@@ -145,23 +141,19 @@ describe('JobPostingForm', () => {
   });
 
   it('renders the first step of job posting form', async () => {
-    const { JobPostingForm } = await import(
-      '@/components/forms/JobPostingForm'
-    );
+    const { JobPostingForm } = await import('@/components/forms/JobPostingForm');
 
     render(createElement(JobPostingForm), {
       wrapper: createWrapper(queryClient),
     });
 
     // First step should show category selection.
-    const heading = screen.getByText(/category|what type/i);
-    expect(heading).toBeDefined();
+    const headings = screen.getAllByText(/category|what type/i);
+    expect(headings.length).toBeGreaterThan(0);
   });
 
   it('shows step navigation buttons', async () => {
-    const { JobPostingForm } = await import(
-      '@/components/forms/JobPostingForm'
-    );
+    const { JobPostingForm } = await import('@/components/forms/JobPostingForm');
 
     render(createElement(JobPostingForm), {
       wrapper: createWrapper(queryClient),
