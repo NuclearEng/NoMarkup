@@ -79,7 +79,8 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
 
   const priceMin = Math.min(...steps.map((s) => s.price));
   const priceMax = Math.max(...steps.map((s) => s.price));
-  const pricePad = (priceMax - priceMin) * 0.1 || 100;
+  // Use proportional padding, with a minimum of 5% of the max price
+  const pricePad = Math.max((priceMax - priceMin) * 0.2, priceMax * 0.05, 500);
   const yMin = priceMin - pricePad;
   const yMax = priceMax + pricePad;
 
@@ -115,10 +116,12 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
         role="img"
         aria-label={`Price history chart showing ${String(steps.length)} price changes. Current lowest: ${formatPrice(lastStep.price)}`}
       >
-        {/* Grid lines */}
+        {/* Grid lines — skip labels that overlap with current price */}
         {[0.25, 0.5, 0.75].map((frac) => {
           const y = padding.top + frac * chartHeight;
           const price = yMax - frac * (yMax - yMin);
+          const currentPriceY = scaleY(lastStep.price);
+          const tooClose = Math.abs(y - currentPriceY) < 14;
           return (
             <g key={String(frac)}>
               <line
@@ -131,13 +134,15 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
                 strokeDasharray="4 4"
                 opacity={0.3}
               />
-              <text
-                x={width - padding.right + 4}
-                y={y + 4}
-                className="fill-muted-foreground text-[10px]"
-              >
-                {formatPrice(price)}
-              </text>
+              {!tooClose ? (
+                <text
+                  x={width - padding.right + 4}
+                  y={y + 4}
+                  className="fill-muted-foreground text-[10px]"
+                >
+                  {formatPrice(price)}
+                </text>
+              ) : null}
             </g>
           );
         })}
