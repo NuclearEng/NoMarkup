@@ -1,6 +1,7 @@
 'use client';
 
 import { CreditCard } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { PaymentHistory } from '@/components/payments/PaymentHistory';
@@ -84,6 +85,9 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
         <CreditCard className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No payments</p>
         <p className="mt-1 text-sm text-muted-foreground">{emptyMessages[tab]}</p>
+        <Button asChild className="mt-4 min-h-[44px]">
+          <Link href="/jobs">Browse Jobs</Link>
+        </Button>
       </div>
     );
   }

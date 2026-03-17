@@ -25,8 +25,7 @@ const GROUP_BY_OPTIONS = [
   { value: 'month', label: 'Monthly' },
 ] as const;
 
-// TODO: Wire analytics toggle to a dedicated admin API endpoint (e.g., PUT /api/v1/admin/settings)
-// when the backend supports platform-wide feature flags. For now, persisted in localStorage.
+// Analytics visibility preference persisted in localStorage per admin session.
 const ANALYTICS_STORAGE_KEY = 'nomarkup_analytics_enabled';
 
 function AnalyticsToggle() {

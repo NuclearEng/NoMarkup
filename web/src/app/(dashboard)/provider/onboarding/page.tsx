@@ -1,11 +1,11 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, FileText, Plus, Trash2, Upload, X } from 'lucide-react';
 import type { Route } from 'next';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 
 import { CategorySelector } from '@/components/providers/CategorySelector';
@@ -15,6 +15,7 @@ const ServiceAreaMap = dynamic(
   { ssr: false },
 );
 import { ImageUpload } from '@/components/ui/ImageUpload';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -35,6 +36,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import {
   useUpdateCategories,
   useUpdatePortfolio,
@@ -54,6 +56,7 @@ const STEPS = [
   { title: 'Service Area', description: 'Where do you work?' },
   { title: 'Terms', description: 'Set your default terms' },
   { title: 'Portfolio', description: 'Showcase your work' },
+  { title: 'Verification', description: 'Upload documents to verify your business' },
 ] as const;
 
 export default function ProviderOnboardingPage() {
@@ -121,6 +124,7 @@ export default function ProviderOnboardingPage() {
           {step === 2 ? <ServiceAreaStep onNext={goNext} onPrev={goPrev} /> : null}
           {step === 3 ? <GlobalTermsStep onNext={goNext} onPrev={goPrev} /> : null}
           {step === 4 ? <PortfolioStep onNext={goNext} onPrev={goPrev} /> : null}
+          {step === 5 ? <DocumentVerificationStep onNext={goNext} onPrev={goPrev} /> : null}
         </CardContent>
       </Card>
     </div>
@@ -598,12 +602,349 @@ function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
           disabled={updatePortfolio.isPending}
           className="min-h-[44px]"
         >
-          {updatePortfolio.isPending ? 'Saving...' : 'Finish'}
+          {updatePortfolio.isPending ? 'Saving...' : 'Next'}
         </Button>
         <Button type="button" variant="ghost" onClick={onNext} className="min-h-[44px]">
           Skip
         </Button>
       </div>
+    </div>
+  );
+}
+
+// -- Step 6: Document Verification --
+
+const ACCEPTED_DOCUMENT_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+];
+
+const ACCEPTED_DOCUMENT_EXTENSIONS = '.jpg,.jpeg,.png,.webp,.pdf';
+
+const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
+interface DocumentTypeConfig {
+  key: string;
+  label: string;
+  description: string;
+  required: boolean;
+}
+
+const DOCUMENT_TYPES: DocumentTypeConfig[] = [
+  {
+    key: 'government_id',
+    label: 'Government-Issued ID',
+    description: "Driver's license or passport. Used to verify your identity.",
+    required: true,
+  },
+  {
+    key: 'business_license',
+    label: 'Business License',
+    description: 'Your business registration or license certificate.',
+    required: false,
+  },
+  {
+    key: 'proof_of_insurance',
+    label: 'Proof of Insurance',
+    description: 'Liability insurance or bonding documentation.',
+    required: false,
+  },
+  {
+    key: 'trade_license',
+    label: 'Trade-Specific License',
+    description: 'Electrician, plumber, contractor, or other trade license.',
+    required: false,
+  },
+];
+
+interface DocumentFile {
+  file: File;
+  name: string;
+}
+
+function formatDocumentSize(bytes: number): string {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
+function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
+  const [documents, setDocuments] = useState<Record<string, DocumentFile>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function handleFileSelect(docKey: string, file: File | undefined) {
+    if (!file) return;
+
+    // Validate file type
+    if (!ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
+      setErrors((prev) => ({
+        ...prev,
+        [docKey]: 'Please upload a JPG, PNG, WebP, or PDF file.',
+      }));
+      return;
+    }
+
+    // Validate file size
+    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
+      setErrors((prev) => ({
+        ...prev,
+        [docKey]: `File exceeds the ${formatDocumentSize(MAX_DOCUMENT_SIZE_BYTES)} limit.`,
+      }));
+      return;
+    }
+
+    // Clear any previous error
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[docKey];
+      return next;
+    });
+
+    setDocuments((prev) => ({
+      ...prev,
+      [docKey]: { file, name: file.name },
+    }));
+  }
+
+  function handleRemove(docKey: string) {
+    setDocuments((prev) => {
+      const next = { ...prev };
+      delete next[docKey];
+      return next;
+    });
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[docKey];
+      return next;
+    });
+  }
+
+  function handleFinish() {
+    // Validate required documents
+    const missingRequired = DOCUMENT_TYPES.filter(
+      (dt) => dt.required && !documents[dt.key],
+    );
+
+    if (missingRequired.length > 0) {
+      const newErrors: Record<string, string> = {};
+      for (const dt of missingRequired) {
+        newErrors[dt.key] = `${dt.label} is required.`;
+      }
+      setErrors((prev) => ({ ...prev, ...newErrors }));
+      return;
+    }
+
+    // In the future, documents would be uploaded to the server here.
+    // For now, proceed to complete onboarding.
+    onNext();
+  }
+
+  const hasRequiredDocuments = DOCUMENT_TYPES.filter((dt) => dt.required).every(
+    (dt) => documents[dt.key] !== undefined,
+  );
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Upload documents to verify your identity and business credentials.
+        Accepted formats: JPG, PNG, WebP, PDF (max{' '}
+        {formatDocumentSize(MAX_DOCUMENT_SIZE_BYTES)}).
+      </p>
+
+      <div className="space-y-4">
+        {DOCUMENT_TYPES.map((docType) => (
+          <DocumentUploadField
+            key={docType.key}
+            config={docType}
+            document={documents[docType.key]}
+            error={errors[docType.key]}
+            onFileSelect={(file) => { handleFileSelect(docType.key, file); }}
+            onRemove={() => { handleRemove(docType.key); }}
+          />
+        ))}
+      </div>
+
+      <div className="flex gap-3">
+        <Button type="button" variant="outline" onClick={onPrev} className="min-h-[44px]">
+          Previous
+        </Button>
+        <Button
+          type="button"
+          onClick={handleFinish}
+          className="min-h-[44px]"
+        >
+          Finish
+        </Button>
+        {hasRequiredDocuments ? null : (
+          <Button type="button" variant="ghost" onClick={onNext} className="min-h-[44px]">
+            Skip
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DocumentUploadField({
+  config,
+  document,
+  error,
+  onFileSelect,
+  onRemove,
+}: {
+  config: DocumentTypeConfig;
+  document: DocumentFile | undefined;
+  error: string | undefined;
+  onFileSelect: (file: File | undefined) => void;
+  onRemove: () => void;
+}) {
+  const inputId = useId();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      const file = e.dataTransfer.files[0];
+      onFileSelect(file);
+    },
+    [onFileSelect],
+  );
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      onFileSelect(file);
+      // Reset input so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    },
+    [onFileSelect],
+  );
+
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openFilePicker();
+      }
+    },
+    [openFilePicker],
+  );
+
+  const isPdf = document?.file.type === 'application/pdf';
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <label htmlFor={inputId} className="text-sm font-medium">
+              {config.label}
+            </label>
+            <Badge variant={config.required ? 'default' : 'secondary'}>
+              {config.required ? 'Required' : 'Optional'}
+            </Badge>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {config.description}
+          </p>
+        </div>
+        {document ? (
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" aria-label="Uploaded" />
+        ) : null}
+      </div>
+
+      {document ? (
+        <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-3">
+          <FileText className="h-8 w-8 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{document.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatDocumentSize(document.file.size)}
+              {isPdf ? ' - PDF' : ` - ${document.file.type.replace('image/', '').toUpperCase()}`}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            className="min-h-[44px] min-w-[44px] shrink-0"
+            aria-label={`Remove ${config.label}`}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ) : (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={`Upload ${config.label}`}
+          className={cn(
+            'flex min-h-[80px] cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-4 py-4 transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            isDragging
+              ? 'border-primary bg-primary/5'
+              : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50',
+          )}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={openFilePicker}
+          onKeyDown={handleKeyDown}
+        >
+          <input
+            ref={fileInputRef}
+            id={inputId}
+            type="file"
+            accept={ACCEPTED_DOCUMENT_EXTENSIONS}
+            className="sr-only"
+            onChange={handleInputChange}
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+          <Upload className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground">
+            {isDragging ? 'Drop file here' : 'Click or drag file to upload'}
+          </p>
+        </div>
+      )}
+
+      {error ? (
+        <p className="mt-2 text-sm text-destructive" role="alert" aria-describedby={inputId}>
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

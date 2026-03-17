@@ -1,6 +1,7 @@
 'use client';
 
 import { FileText } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { ContractCard } from '@/components/contracts/ContractCard';
@@ -78,6 +79,9 @@ function ContractTabContent({ tab }: { tab: ContractTab }) {
         <FileText className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No contracts</p>
         <p className="mt-1 text-sm text-muted-foreground">{emptyMessages[tab]}</p>
+        <Button asChild className="mt-4 min-h-[44px]">
+          <Link href="/jobs">Browse Jobs</Link>
+        </Button>
       </div>
     );
   }

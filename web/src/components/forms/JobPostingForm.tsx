@@ -1,15 +1,14 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus, X } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { CategorySelector } from '@/components/providers/CategorySelector';
-import { ImageUpload } from '@/components/ui/ImageUpload';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,9 +44,13 @@ const STEPS = [
   { title: 'Details', description: 'Describe the job' },
   { title: 'Location', description: 'Where is the work?' },
   { title: 'Schedule', description: 'When do you need it done?' },
+  { title: 'Photos', description: 'Add photos of the job' },
   { title: 'Auction', description: 'Set your auction parameters' },
   { title: 'Review', description: 'Review and publish' },
 ] as const;
+
+const MAX_PHOTOS = 10;
+const ACCEPTED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 // Fields to validate per step (used for partial validation)
 const STEP_FIELDS: Record<number, (keyof JobPostingFormValues)[]> = {
@@ -55,8 +58,9 @@ const STEP_FIELDS: Record<number, (keyof JobPostingFormValues)[]> = {
   1: ['title', 'description'],
   2: [],
   3: ['scheduleType', 'scheduledDate', 'isRecurring', 'recurrenceFrequency'],
-  4: ['auctionDurationHours', 'startingBidDollars', 'offerAcceptedDollars'],
-  5: [],
+  4: [], // Photos — validated via local state, not Zod
+  5: ['auctionDurationHours', 'startingBidDollars', 'offerAcceptedDollars'],
+  6: [],
 };
 
 // Example market range for the review step (would come from API in production)
@@ -69,6 +73,7 @@ const EXAMPLE_MARKET_RANGE: MarketRange = {
 
 export function JobPostingForm() {
   const [step, setStep] = useState(0);
+  const [photos, setPhotos] = useState<File[]>([]);
   const router = useRouter();
   const createJob = useCreateJob();
   const publishJob = usePublishJob();
@@ -224,8 +229,11 @@ export function JobPostingForm() {
               {step === 1 ? <StepDetails form={form} /> : null}
               {step === 2 ? <StepLocation form={form} /> : null}
               {step === 3 ? <StepSchedule form={form} /> : null}
-              {step === 4 ? <StepAuction form={form} /> : null}
-              {step === 5 ? <StepReview form={form} marketRange={EXAMPLE_MARKET_RANGE} /> : null}
+              {step === 4 ? <StepPhotos photos={photos} onPhotosChange={setPhotos} /> : null}
+              {step === 5 ? <StepAuction form={form} /> : null}
+              {step === 6 ? (
+                <StepReview form={form} marketRange={EXAMPLE_MARKET_RANGE} photoCount={photos.length} />
+              ) : null}
 
               {/* Navigation buttons */}
               <div className="flex gap-3">
@@ -310,21 +318,6 @@ function StepCategory({ form }: { form: FormType }) {
 
 // -- Step 2: Details --
 function StepDetails({ form }: { form: FormType }) {
-  const photoUrls = form.watch('photoUrls') ?? [];
-
-  function handlePhotoUploaded(result: { confirmedUrl: string }) {
-    const current = form.getValues('photoUrls') ?? [];
-    form.setValue('photoUrls', [...current, result.confirmedUrl]);
-  }
-
-  function handlePhotoRemoved(url: string) {
-    const current = form.getValues('photoUrls') ?? [];
-    form.setValue(
-      'photoUrls',
-      current.filter((u) => u !== url),
-    );
-  }
-
   return (
     <div className="space-y-6">
       <FormField
@@ -370,23 +363,6 @@ function StepDetails({ form }: { form: FormType }) {
           </FormItem>
         )}
       />
-
-      {/* Photo upload */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Photos (optional)</label>
-        <p className="text-muted-foreground text-xs">
-          Add photos to help providers understand the job. Up to 10 images.
-        </p>
-        <ImageUpload
-          context="job_photo"
-          onUploadComplete={handlePhotoUploaded}
-          multiple
-          maxFiles={10}
-          existingImages={photoUrls}
-          onRemove={handlePhotoRemoved}
-          placeholder="Drop job photos here, or click to browse"
-        />
-      </div>
     </div>
   );
 }
@@ -517,7 +493,164 @@ function StepSchedule({ form }: { form: FormType }) {
   );
 }
 
-// -- Step 5: Auction --
+// -- Step 5: Photos --
+interface StepPhotosProps {
+  photos: File[];
+  onPhotosChange: (photos: File[]) => void;
+}
+
+function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      const incoming = Array.from(files).filter((f) =>
+        ACCEPTED_PHOTO_TYPES.includes(f.type),
+      );
+      const slotsRemaining = MAX_PHOTOS - photos.length;
+      if (slotsRemaining <= 0) return;
+      const toAdd = incoming.slice(0, slotsRemaining);
+      onPhotosChange([...photos, ...toAdd]);
+    },
+    [photos, onPhotosChange],
+  );
+
+  const removePhoto = useCallback(
+    (index: number) => {
+      onPhotosChange(photos.filter((_, i) => i !== index));
+    },
+    [photos, onPhotosChange],
+  );
+
+  const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      if (e.dataTransfer.files.length > 0) {
+        addFiles(e.dataTransfer.files);
+      }
+    },
+    [addFiles],
+  );
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+        addFiles(e.target.files);
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    },
+    [addFiles],
+  );
+
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      {/* Drop zone */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Drag photos here or click to browse"
+        className={`flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-8 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+          isDragging
+            ? 'border-primary bg-primary/5'
+            : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
+        } ${photos.length >= MAX_PHOTOS ? 'pointer-events-none opacity-50' : ''}`}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onClick={openFilePicker}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openFilePicker();
+          }
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp"
+          multiple
+          className="sr-only"
+          onChange={handleInputChange}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+        <ImagePlus className="mb-2 h-8 w-8 text-muted-foreground" aria-hidden="true" />
+        <p className="text-sm font-medium text-muted-foreground">
+          Drag photos here or click to browse
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground/70">
+          Up to 10 photos (JPG, PNG, WebP)
+        </p>
+      </div>
+
+      {/* Photo count */}
+      {photos.length > 0 ? (
+        <p className="text-muted-foreground text-sm">
+          {String(photos.length)} of {String(MAX_PHOTOS)} photos selected
+        </p>
+      ) : null}
+
+      {/* Preview thumbnails */}
+      {photos.length > 0 ? (
+        <div className="grid grid-cols-5 gap-3">
+          {photos.map((file, index) => (
+            <div
+              key={`${file.name}-${String(file.lastModified)}-${String(index)}`}
+              className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={URL.createObjectURL(file)}
+                alt={file.name}
+                className="h-full w-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  removePhoto(index);
+                }}
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
+                aria-label={`Remove ${file.name}`}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// -- Step 6: Auction --
 function StepAuction({ form }: { form: FormType }) {
   const durationHours = form.watch('auctionDurationHours');
 
@@ -661,8 +794,16 @@ function StepAuction({ form }: { form: FormType }) {
   );
 }
 
-// -- Step 6: Review --
-function StepReview({ form, marketRange }: { form: FormType; marketRange: MarketRange }) {
+// -- Step 7: Review --
+function StepReview({
+  form,
+  marketRange,
+  photoCount,
+}: {
+  form: FormType;
+  marketRange: MarketRange;
+  photoCount: number;
+}) {
   const values = form.getValues();
 
   return (
@@ -708,6 +849,15 @@ function StepReview({ form, marketRange }: { form: FormType; marketRange: Market
               <Badge variant="secondary">Recurring: {values.recurrenceFrequency}</Badge>
             ) : null}
           </div>
+        </div>
+
+        <div>
+          <h3 className="text-muted-foreground text-sm font-medium">Photos</h3>
+          <p className="text-sm">
+            {photoCount > 0
+              ? `${String(photoCount)} photo${photoCount !== 1 ? 's' : ''} attached`
+              : 'No photos attached'}
+          </p>
         </div>
 
         <div>

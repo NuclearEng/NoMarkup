@@ -1,9 +1,11 @@
 'use client';
 
 import { MessageSquare, Search } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useChannels } from '@/hooks/useChannels';
@@ -150,6 +152,11 @@ export function ChannelList() {
                 ? 'Try a different search term.'
                 : 'Conversations will appear here when you start messaging.'}
             </p>
+            {!searchQuery ? (
+              <Button asChild variant="outline" className="mt-4 min-h-[44px]">
+                <Link href="/jobs">Browse Jobs</Link>
+              </Button>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-1">

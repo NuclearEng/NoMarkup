@@ -1,6 +1,7 @@
 'use client';
 
 import { Inbox } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { ProviderBidCard } from '@/components/bids/ProviderBidCard';
@@ -71,6 +72,9 @@ function BidTabContent({ tab }: { tab: BidTab }) {
         <Inbox className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No bids</p>
         <p className="mt-1 text-sm text-muted-foreground">{emptyMessages[tab]}</p>
+        <Button asChild className="mt-4 min-h-[44px]">
+          <Link href="/jobs">Browse Jobs</Link>
+        </Button>
       </div>
     );
   }
