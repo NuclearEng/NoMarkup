@@ -3,6 +3,7 @@ module github.com/nomarkup/nomarkup/services/payment
 go 1.25.0
 
 require (
+	github.com/getsentry/sentry-go v0.44.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/nomarkup/nomarkup/proto v0.0.0-00010101000000-000000000000

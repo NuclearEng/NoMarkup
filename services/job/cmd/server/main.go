@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -34,6 +35,22 @@ func main() {
 	port := os.Getenv("JOB_SERVICE_PORT")
 	if port == "" {
 		port = "50052"
+	}
+
+	// Initialize Sentry error tracking.
+	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			Environment:      os.Getenv("APP_ENV"),
+			Release:          os.Getenv("APP_VERSION"),
+			TracesSampleRate: 0.1,
+			EnableTracing:    true,
+		}); err != nil {
+			slog.Error("failed to initialize sentry", "error", err)
+		} else {
+			slog.Info("sentry initialized", "service", "job-service")
+			defer sentry.Flush(2 * time.Second)
+		}
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -83,6 +100,12 @@ func main() {
 	// Wire up dependencies.
 	repo := repository.NewPostgresRepository(pool)
 	jobService := service.NewJobService(repo, searchEngine)
+
+	// Wire up provider matching engine.
+	matchingService := service.NewMatchingService(repo)
+	jobService.SetMatchingService(matchingService)
+	slog.Info("provider matching engine enabled")
+
 	srv := grpcserver.NewServer(jobService)
 
 	// Wire up contract service (shares same repo/pool).

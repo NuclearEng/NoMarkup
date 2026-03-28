@@ -164,6 +164,30 @@ func (m *mockUserRepo) ListDocuments(_ context.Context, _ string) ([]domain.Docu
 func (m *mockUserRepo) UpdateDocumentStatus(_ context.Context, _ string, _ domain.DocumentStatus, _ string) error {
 	return nil
 }
+func (m *mockUserRepo) FindUserByOAuth(_ context.Context, _, _ string) (*domain.User, error) {
+	return nil, domain.ErrUserNotFound
+}
+func (m *mockUserRepo) CreateOAuthUser(_ context.Context, _ *domain.User, _, _ string) error {
+	return nil
+}
+func (m *mockUserRepo) LinkOAuthAccount(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+func (m *mockUserRepo) StoreMFASecret(_ context.Context, _, _ string) error {
+	return nil
+}
+func (m *mockUserRepo) GetMFASecret(_ context.Context, _ string) (string, error) {
+	return "", domain.ErrMFANotSetup
+}
+func (m *mockUserRepo) EnableMFA(_ context.Context, _ string, _ []string) error {
+	return nil
+}
+func (m *mockUserRepo) DisableMFA(_ context.Context, _ string) error {
+	return nil
+}
+func (m *mockUserRepo) IsMFAEnabled(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
 
 // --- helpers ---
 
@@ -286,11 +310,12 @@ func TestAuth_Login(t *testing.T) {
 			},
 			getByEmail: func(_ context.Context, _ string) (*domain.User, error) {
 				return &domain.User{
-					ID:           "user-1",
-					Email:        "test@example.com",
-					PasswordHash: knownHash,
-					Roles:        []string{"customer"},
-					Status:       "active",
+					ID:            "user-1",
+					Email:         "test@example.com",
+					PasswordHash:  knownHash,
+					Roles:         []string{"customer"},
+					Status:        "active",
+					EmailVerified: true,
 				}, nil
 			},
 		},
@@ -372,12 +397,13 @@ func TestAuth_Login(t *testing.T) {
 			},
 			getByEmail: func(_ context.Context, _ string) (*domain.User, error) {
 				return &domain.User{
-					ID:           "user-5",
-					Email:        "mfa@example.com",
-					PasswordHash: knownHash,
-					Roles:        []string{"customer"},
-					Status:       "active",
-					MFAEnabled:   true,
+					ID:            "user-5",
+					Email:         "mfa@example.com",
+					PasswordHash:  knownHash,
+					Roles:         []string{"customer"},
+					Status:        "active",
+					EmailVerified: true,
+					MFAEnabled:    true,
 				}, nil
 			},
 			wantMFA: true,
@@ -396,7 +422,7 @@ func TestAuth_Login(t *testing.T) {
 			}
 			auth := newTestAuth(t, repo)
 
-			userID, pair, mfa, err := auth.Login(context.Background(), tt.input)
+			userID, pair, mfa, _, err := auth.Login(context.Background(), tt.input)
 
 			if tt.wantErr != nil {
 				require.Error(t, err)

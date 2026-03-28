@@ -4,6 +4,7 @@ test.describe('Authentication flows', () => {
   test.describe('Login page', () => {
     test('renders login form', async ({ page }) => {
       await page.goto('/login');
+      await page.waitForLoadState('domcontentloaded');
       await expect(page.getByRole('heading', { name: /welcome back/i })).toBeVisible();
       await expect(page.getByLabel(/email/i)).toBeVisible();
       await expect(page.getByLabel(/password/i)).toBeVisible();
@@ -42,6 +43,7 @@ test.describe('Authentication flows', () => {
   test.describe('Registration page', () => {
     test('renders registration form', async ({ page }) => {
       await page.goto('/register');
+      await page.waitForLoadState('domcontentloaded');
       await expect(page.getByRole('heading', { name: /create.*account/i })).toBeVisible();
       await expect(page.getByLabel(/email/i)).toBeVisible();
       await expect(page.getByLabel(/display name/i)).toBeVisible();
@@ -79,6 +81,7 @@ test.describe('Authentication flows', () => {
   test.describe('Forgot password page', () => {
     test('renders forgot password form', async ({ page }) => {
       await page.goto('/forgot-password');
+      await page.waitForLoadState('domcontentloaded');
       await expect(page.getByRole('heading', { name: /forgot.*password/i })).toBeVisible();
       await expect(page.getByLabel(/email/i)).toBeVisible();
       await expect(page.getByRole('button', { name: /send.*reset/i })).toBeVisible();
@@ -107,6 +110,7 @@ test.describe('Authentication flows', () => {
 
     test('renders reset form with token', async ({ page }) => {
       await page.goto('/reset-password?token=test-token');
+      await page.waitForLoadState('domcontentloaded');
       await expect(page.getByRole('heading', { name: /set new password/i })).toBeVisible();
       await expect(page.getByLabel(/new password/i)).toBeVisible();
       await expect(page.getByLabel(/confirm password/i)).toBeVisible();

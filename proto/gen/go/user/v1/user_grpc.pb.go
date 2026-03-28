@@ -24,11 +24,14 @@ const (
 	UserService_RefreshToken_FullMethodName            = "/nomarkup.user.v1.UserService/RefreshToken"
 	UserService_Logout_FullMethodName                  = "/nomarkup.user.v1.UserService/Logout"
 	UserService_VerifyEmail_FullMethodName             = "/nomarkup.user.v1.UserService/VerifyEmail"
+	UserService_ResendVerification_FullMethodName      = "/nomarkup.user.v1.UserService/ResendVerification"
 	UserService_VerifyPhone_FullMethodName             = "/nomarkup.user.v1.UserService/VerifyPhone"
 	UserService_SendPhoneOTP_FullMethodName            = "/nomarkup.user.v1.UserService/SendPhoneOTP"
 	UserService_RequestPasswordReset_FullMethodName    = "/nomarkup.user.v1.UserService/RequestPasswordReset"
 	UserService_ResetPassword_FullMethodName           = "/nomarkup.user.v1.UserService/ResetPassword"
+	UserService_FindOrCreateByOAuth_FullMethodName     = "/nomarkup.user.v1.UserService/FindOrCreateByOAuth"
 	UserService_EnableMFA_FullMethodName               = "/nomarkup.user.v1.UserService/EnableMFA"
+	UserService_ConfirmMFASetup_FullMethodName         = "/nomarkup.user.v1.UserService/ConfirmMFASetup"
 	UserService_VerifyMFA_FullMethodName               = "/nomarkup.user.v1.UserService/VerifyMFA"
 	UserService_DisableMFA_FullMethodName              = "/nomarkup.user.v1.UserService/DisableMFA"
 	UserService_GetUser_FullMethodName                 = "/nomarkup.user.v1.UserService/GetUser"
@@ -68,12 +71,16 @@ type UserServiceClient interface {
 	RefreshToken(ctx context.Context, in *RefreshTokenRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error)
 	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutResponse, error)
 	VerifyEmail(ctx context.Context, in *VerifyEmailRequest, opts ...grpc.CallOption) (*VerifyEmailResponse, error)
+	ResendVerification(ctx context.Context, in *ResendVerificationRequest, opts ...grpc.CallOption) (*ResendVerificationResponse, error)
 	VerifyPhone(ctx context.Context, in *VerifyPhoneRequest, opts ...grpc.CallOption) (*VerifyPhoneResponse, error)
 	SendPhoneOTP(ctx context.Context, in *SendPhoneOTPRequest, opts ...grpc.CallOption) (*SendPhoneOTPResponse, error)
 	RequestPasswordReset(ctx context.Context, in *RequestPasswordResetRequest, opts ...grpc.CallOption) (*RequestPasswordResetResponse, error)
 	ResetPassword(ctx context.Context, in *ResetPasswordRequest, opts ...grpc.CallOption) (*ResetPasswordResponse, error)
+	// OAuth
+	FindOrCreateByOAuth(ctx context.Context, in *FindOrCreateByOAuthRequest, opts ...grpc.CallOption) (*FindOrCreateByOAuthResponse, error)
 	// MFA
 	EnableMFA(ctx context.Context, in *EnableMFARequest, opts ...grpc.CallOption) (*EnableMFAResponse, error)
+	ConfirmMFASetup(ctx context.Context, in *ConfirmMFASetupRequest, opts ...grpc.CallOption) (*ConfirmMFASetupResponse, error)
 	VerifyMFA(ctx context.Context, in *VerifyMFARequest, opts ...grpc.CallOption) (*VerifyMFAResponse, error)
 	DisableMFA(ctx context.Context, in *DisableMFARequest, opts ...grpc.CallOption) (*DisableMFAResponse, error)
 	// User profile
@@ -168,6 +175,16 @@ func (c *userServiceClient) VerifyEmail(ctx context.Context, in *VerifyEmailRequ
 	return out, nil
 }
 
+func (c *userServiceClient) ResendVerification(ctx context.Context, in *ResendVerificationRequest, opts ...grpc.CallOption) (*ResendVerificationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResendVerificationResponse)
+	err := c.cc.Invoke(ctx, UserService_ResendVerification_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *userServiceClient) VerifyPhone(ctx context.Context, in *VerifyPhoneRequest, opts ...grpc.CallOption) (*VerifyPhoneResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VerifyPhoneResponse)
@@ -208,10 +225,30 @@ func (c *userServiceClient) ResetPassword(ctx context.Context, in *ResetPassword
 	return out, nil
 }
 
+func (c *userServiceClient) FindOrCreateByOAuth(ctx context.Context, in *FindOrCreateByOAuthRequest, opts ...grpc.CallOption) (*FindOrCreateByOAuthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FindOrCreateByOAuthResponse)
+	err := c.cc.Invoke(ctx, UserService_FindOrCreateByOAuth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *userServiceClient) EnableMFA(ctx context.Context, in *EnableMFARequest, opts ...grpc.CallOption) (*EnableMFAResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EnableMFAResponse)
 	err := c.cc.Invoke(ctx, UserService_EnableMFA_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) ConfirmMFASetup(ctx context.Context, in *ConfirmMFASetupRequest, opts ...grpc.CallOption) (*ConfirmMFASetupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmMFASetupResponse)
+	err := c.cc.Invoke(ctx, UserService_ConfirmMFASetup_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -498,12 +535,16 @@ type UserServiceServer interface {
 	RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error)
 	Logout(context.Context, *LogoutRequest) (*LogoutResponse, error)
 	VerifyEmail(context.Context, *VerifyEmailRequest) (*VerifyEmailResponse, error)
+	ResendVerification(context.Context, *ResendVerificationRequest) (*ResendVerificationResponse, error)
 	VerifyPhone(context.Context, *VerifyPhoneRequest) (*VerifyPhoneResponse, error)
 	SendPhoneOTP(context.Context, *SendPhoneOTPRequest) (*SendPhoneOTPResponse, error)
 	RequestPasswordReset(context.Context, *RequestPasswordResetRequest) (*RequestPasswordResetResponse, error)
 	ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error)
+	// OAuth
+	FindOrCreateByOAuth(context.Context, *FindOrCreateByOAuthRequest) (*FindOrCreateByOAuthResponse, error)
 	// MFA
 	EnableMFA(context.Context, *EnableMFARequest) (*EnableMFAResponse, error)
+	ConfirmMFASetup(context.Context, *ConfirmMFASetupRequest) (*ConfirmMFASetupResponse, error)
 	VerifyMFA(context.Context, *VerifyMFARequest) (*VerifyMFAResponse, error)
 	DisableMFA(context.Context, *DisableMFARequest) (*DisableMFAResponse, error)
 	// User profile
@@ -563,6 +604,9 @@ func (UnimplementedUserServiceServer) Logout(context.Context, *LogoutRequest) (*
 func (UnimplementedUserServiceServer) VerifyEmail(context.Context, *VerifyEmailRequest) (*VerifyEmailResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyEmail not implemented")
 }
+func (UnimplementedUserServiceServer) ResendVerification(context.Context, *ResendVerificationRequest) (*ResendVerificationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResendVerification not implemented")
+}
 func (UnimplementedUserServiceServer) VerifyPhone(context.Context, *VerifyPhoneRequest) (*VerifyPhoneResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyPhone not implemented")
 }
@@ -575,8 +619,14 @@ func (UnimplementedUserServiceServer) RequestPasswordReset(context.Context, *Req
 func (UnimplementedUserServiceServer) ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResetPassword not implemented")
 }
+func (UnimplementedUserServiceServer) FindOrCreateByOAuth(context.Context, *FindOrCreateByOAuthRequest) (*FindOrCreateByOAuthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FindOrCreateByOAuth not implemented")
+}
 func (UnimplementedUserServiceServer) EnableMFA(context.Context, *EnableMFARequest) (*EnableMFAResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnableMFA not implemented")
+}
+func (UnimplementedUserServiceServer) ConfirmMFASetup(context.Context, *ConfirmMFASetupRequest) (*ConfirmMFASetupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmMFASetup not implemented")
 }
 func (UnimplementedUserServiceServer) VerifyMFA(context.Context, *VerifyMFARequest) (*VerifyMFAResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyMFA not implemented")
@@ -770,6 +820,24 @@ func _UserService_VerifyEmail_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_ResendVerification_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResendVerificationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).ResendVerification(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_ResendVerification_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).ResendVerification(ctx, req.(*ResendVerificationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UserService_VerifyPhone_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VerifyPhoneRequest)
 	if err := dec(in); err != nil {
@@ -842,6 +910,24 @@ func _UserService_ResetPassword_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_FindOrCreateByOAuth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FindOrCreateByOAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).FindOrCreateByOAuth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_FindOrCreateByOAuth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).FindOrCreateByOAuth(ctx, req.(*FindOrCreateByOAuthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UserService_EnableMFA_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EnableMFARequest)
 	if err := dec(in); err != nil {
@@ -856,6 +942,24 @@ func _UserService_EnableMFA_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UserServiceServer).EnableMFA(ctx, req.(*EnableMFARequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_ConfirmMFASetup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmMFASetupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).ConfirmMFASetup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_ConfirmMFASetup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).ConfirmMFASetup(ctx, req.(*ConfirmMFASetupRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1374,6 +1478,10 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _UserService_VerifyEmail_Handler,
 		},
 		{
+			MethodName: "ResendVerification",
+			Handler:    _UserService_ResendVerification_Handler,
+		},
+		{
 			MethodName: "VerifyPhone",
 			Handler:    _UserService_VerifyPhone_Handler,
 		},
@@ -1390,8 +1498,16 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _UserService_ResetPassword_Handler,
 		},
 		{
+			MethodName: "FindOrCreateByOAuth",
+			Handler:    _UserService_FindOrCreateByOAuth_Handler,
+		},
+		{
 			MethodName: "EnableMFA",
 			Handler:    _UserService_EnableMFA_Handler,
+		},
+		{
+			MethodName: "ConfirmMFASetup",
+			Handler:    _UserService_ConfirmMFASetup_Handler,
 		},
 		{
 			MethodName: "VerifyMFA",

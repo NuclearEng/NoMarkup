@@ -239,6 +239,11 @@ func (s *ContractServer) ListDisputes(ctx context.Context, req *contractv1.ListD
 		statusFilter = &sf
 	}
 
+	var isGuaranteeClaim *bool
+	if req.IsGuaranteeClaim != nil {
+		isGuaranteeClaim = req.IsGuaranteeClaim
+	}
+
 	page := int32(1)
 	pageSize := int32(20)
 	if pg := req.GetPagination(); pg != nil {
@@ -250,7 +255,7 @@ func (s *ContractServer) ListDisputes(ctx context.Context, req *contractv1.ListD
 		}
 	}
 
-	disputes, pagination, err := s.svc.ListDisputes(ctx, contractID, userID, statusFilter, int(page), int(pageSize))
+	disputes, pagination, err := s.svc.ListDisputes(ctx, contractID, userID, statusFilter, isGuaranteeClaim, int(page), int(pageSize))
 	if err != nil {
 		return nil, mapContractDomainError(err)
 	}

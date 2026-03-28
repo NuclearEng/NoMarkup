@@ -1,0 +1,1 @@
+DROP MATERIALIZED VIEW IF EXISTS fair_price_index;

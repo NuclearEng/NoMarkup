@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -40,6 +41,22 @@ func main() {
 	port := os.Getenv("USER_SERVICE_PORT")
 	if port == "" {
 		port = "50051"
+	}
+
+	// Initialize Sentry error tracking.
+	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			Environment:      os.Getenv("APP_ENV"),
+			Release:          os.Getenv("APP_VERSION"),
+			TracesSampleRate: 0.1,
+			EnableTracing:    true,
+		}); err != nil {
+			slog.Error("failed to initialize sentry", "error", err)
+		} else {
+			slog.Info("sentry initialized", "service", "user-service")
+			defer sentry.Flush(2 * time.Second)
+		}
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -112,8 +129,9 @@ func main() {
 	}
 	slog.Info("connected to Redis")
 
-	// Connect to notification service for SMS delivery.
+	// Connect to notification service for SMS delivery and email verification.
 	var smsClient service.SMSDelivery
+	var notifClient notificationv1.NotificationServiceClient
 	notifAddr := os.Getenv("NOTIFICATION_SERVICE_ADDR")
 	if notifAddr != "" {
 		notifConn, err := grpclib.NewClient(notifAddr,
@@ -121,13 +139,19 @@ func main() {
 			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
 		)
 		if err != nil {
-			slog.Warn("failed to connect to notification service, SMS delivery disabled", "addr", notifAddr, "error", err)
+			slog.Warn("failed to connect to notification service, SMS/email delivery disabled", "addr", notifAddr, "error", err)
 		} else {
-			smsClient = notificationv1.NewNotificationServiceClient(notifConn)
+			notifClient = notificationv1.NewNotificationServiceClient(notifConn)
+			smsClient = notifClient
 			slog.Info("notification service connected", "addr", notifAddr)
 		}
 	} else {
-		slog.Warn("NOTIFICATION_SERVICE_ADDR not set, SMS delivery disabled")
+		slog.Warn("NOTIFICATION_SERVICE_ADDR not set, SMS/email delivery disabled")
+	}
+
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:3000"
 	}
 
 	// Wire up dependencies.
@@ -138,7 +162,7 @@ func main() {
 	adminService := service.NewAdmin(repo)
 	phoneService := service.NewPhoneVerification(repo, rdb, smsClient)
 	verificationService := service.NewVerification(repo)
-	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService)
+	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, notifClient, baseURL)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))

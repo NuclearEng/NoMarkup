@@ -1,16 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Shield, TrendingUp, Users, Zap } from 'lucide-react';
 
+import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
+import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
 import { BidForm } from '@/components/bids/BidForm';
+import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { PriceDropChart } from '@/components/bids/PriceDropChart';
 import { SnipeIndicator } from '@/components/bids/SnipeIndicator';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
+import { SavingsCelebration } from '@/components/ui/SavingsCelebration';
 import { useAuctionStream } from '@/hooks/useAuctionStream';
 import { useLiveAuctionState } from '@/hooks/useBids';
+import { useCountdown } from '@/hooks/useCountdown';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
-import type { JobDetail } from '@/types';
+import type { AuctionBidEvent, JobDetail } from '@/types';
 
 interface AuctionArenaProps {
   job: JobDetail;
@@ -18,87 +23,12 @@ interface AuctionArenaProps {
   isJobOwner: boolean;
 }
 
-function useCountdown(endsAt: string | null | undefined) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
-
-  if (!endsAt) return { label: '--:--:--', urgency: 'normal' as const, totalSeconds: 0 };
-
-  const diff = new Date(endsAt).getTime() - now;
-  if (diff <= 0) return { label: 'ENDED', urgency: 'ended' as const, totalSeconds: 0 };
-
-  const totalSeconds = Math.floor(diff / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  const pad = (n: number) => String(n).padStart(2, '0');
-
-  let label: string;
-  if (hours > 0) {
-    label = `${String(hours)}:${pad(minutes)}:${pad(seconds)}`;
-  } else {
-    label = `${pad(minutes)}:${pad(seconds)}`;
-  }
-
-  let urgency: 'normal' | 'warning' | 'critical' | 'extreme';
-  if (totalSeconds > 3600) {
-    urgency = 'normal';
-  } else if (totalSeconds > 900) {
-    urgency = 'warning';
-  } else if (totalSeconds > 300) {
-    urgency = 'critical';
-  } else {
-    urgency = 'extreme';
-  }
-
-  return { label, urgency, totalSeconds };
-}
-
-function AnimatedPrice({
-  cents,
-  formatCurrency,
-}: {
-  cents: number;
-  formatCurrency: (c: number) => string;
-}) {
-  const [displayCents, setDisplayCents] = useState(cents);
-  const [isChanging, setIsChanging] = useState(false);
-
-  useEffect(() => {
-    if (cents !== displayCents) {
-      setIsChanging(true);
-      // Small delay so the flash is visible
-      const timer = setTimeout(() => {
-        setDisplayCents(cents);
-        setIsChanging(false);
-      }, 150);
-      return () => {
-        clearTimeout(timer);
-      };
-    }
-    return undefined;
-  }, [cents, displayCents]);
-
-  return (
-    <span
-      className={`transition-all duration-300 ${isChanging ? 'scale-110 brightness-150' : ''}`}
-      style={{
-        display: 'inline-block',
-        textShadow: '0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.15)',
-      }}
-    >
-      {displayCents > 0 ? formatCurrency(displayCents) : '\u2014'}
-    </span>
-  );
+function getUrgency(totalSeconds: number, isExpired: boolean) {
+  if (isExpired) return 'ended' as const;
+  if (totalSeconds > 3600) return 'normal' as const;
+  if (totalSeconds > 900) return 'warning' as const;
+  if (totalSeconds > 300) return 'critical' as const;
+  return 'extreme' as const;
 }
 
 export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps) {
@@ -114,9 +44,14 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
 
   const { data: auctionState } = useLiveAuctionState(job.id);
 
-  if (!ENABLE_LIVE_AUCTION) return null;
+  const [showCelebration, setShowCelebration] = useState(false);
+  const celebrationShownRef = useRef(false);
 
-  // Use WebSocket data if connected, fall back to REST, then job data
+  const handleCloseCelebration = useCallback(() => {
+    setShowCelebration(false);
+  }, []);
+
+  // Compute derived auction data (before early return so hooks stay stable)
   const displayLowest =
     currentLowest || auctionState?.lowest_bid_cents || job.lowest_bid_cents || 0;
   const displayBidCount = bidCount || auctionState?.bid_count || job.bid_count || 0;
@@ -128,6 +63,57 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
   const startingPrice = job.starting_bid_cents || 0;
   const medianPrice = job.market_range?.median_cents || 0;
   const savingsCents = medianPrice > 0 && displayLowest > 0 ? medianPrice - displayLowest : 0;
+
+  // Map displayEvents to BidActivity[] for the activity feed (reverse chronological)
+  const bidActivities = useMemo(() => {
+    const priceEvents = displayEvents.filter(
+      (e: AuctionBidEvent) => e.event_type === 'bid_placed' || e.event_type === 'bid_updated',
+    );
+    const lowestAmount =
+      priceEvents.length > 0
+        ? Math.min(...priceEvents.map((e: AuctionBidEvent) => e.amount_cents))
+        : 0;
+
+    return [...priceEvents].reverse().map((event: AuctionBidEvent, index: number) => ({
+      id: `${event.created_at}-${String(priceEvents.length - 1 - index)}`,
+      providerName: `Provider ${String(priceEvents.length - index)}`,
+      amount: event.amount_cents,
+      timestamp: new Date(event.created_at).toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+      isLowest: event.amount_cents === lowestAmount,
+    }));
+  }, [displayEvents]);
+
+  // Map displayEvents to bid amounts for the sparkline chart (chronological)
+  const sparklineBids = useMemo(
+    () =>
+      displayEvents
+        .filter(
+          (e: AuctionBidEvent) => e.event_type === 'bid_placed' || e.event_type === 'bid_updated',
+        )
+        .map((e: AuctionBidEvent) => e.amount_cents),
+    [displayEvents],
+  );
+
+  // Trigger savings celebration when the auction ends and the customer has savings
+  useEffect(() => {
+    if (celebrationShownRef.current) return;
+    if (!isJobOwner || savingsCents <= 0) return;
+
+    const auctionHasEnded =
+      displayEndsAt != null && new Date(displayEndsAt).getTime() <= Date.now();
+    const jobAwarded = job.status === 'awarded' || job.status === 'completed';
+
+    if (auctionHasEnded || jobAwarded) {
+      celebrationShownRef.current = true;
+      setShowCelebration(true);
+    }
+  }, [isJobOwner, savingsCents, displayEndsAt, job.status]);
+
+  if (!ENABLE_LIVE_AUCTION) return null;
 
   const formatCurrency = (cents: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -274,6 +260,15 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         <PriceDropChart events={displayEvents} />
       </div>
 
+      {/* ── Sparkline + Activity Feed ── */}
+      <div className="px-4 pb-2 sm:px-6">
+        <h3 className="text-muted-foreground/70 mb-2 text-xs font-medium tracking-wider uppercase">
+          Bid Trend
+        </h3>
+        <BidPriceChart bids={sparklineBids} height={100} className="mb-4" />
+        <BidActivityFeed activities={bidActivities} />
+      </div>
+
       {/* ── Market Intelligence ── */}
       {job.market_range && job.market_range.sample_size > 0 ? (
         <div className="px-4 pb-2 sm:px-6">
@@ -306,15 +301,26 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
             offerAcceptedCents={job.offer_accepted_cents}
             marketRange={job.market_range}
             auctionEndsAt={displayEndsAt}
+            categorySlug={job.category_slug}
           />
         </div>
+      ) : null}
+
+      {/* ── Savings celebration overlay ── */}
+      {showCelebration && savingsCents > 0 ? (
+        <SavingsCelebration
+          savingsCents={savingsCents}
+          jobTitle={job.title}
+          onClose={handleCloseCelebration}
+        />
       ) : null}
     </div>
   );
 }
 
 function CountdownCell({ endsAt }: { endsAt: string | null | undefined }) {
-  const { label, urgency } = useCountdown(endsAt);
+  const { timeLeft: label, isExpired, totalSeconds } = useCountdown(endsAt);
+  const urgency = getUrgency(totalSeconds, isExpired);
 
   const colorMap = {
     normal: 'text-foreground',

@@ -3,6 +3,7 @@ module github.com/nomarkup/nomarkup/services/job
 go 1.25.0
 
 require (
+	github.com/getsentry/sentry-go v0.44.1
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/meilisearch/meilisearch-go v0.36.1
 	github.com/nomarkup/nomarkup/proto v0.0.0-00010101000000-000000000000

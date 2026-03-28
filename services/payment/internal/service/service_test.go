@@ -14,17 +14,26 @@ import (
 // --- Mock Payment Repository ---
 
 type mockPaymentRepo struct {
-	createPaymentFn      func(ctx context.Context, payment *domain.Payment) error
-	getPaymentFn         func(ctx context.Context, id string) (*domain.Payment, error)
+	createPaymentFn       func(ctx context.Context, payment *domain.Payment) error
+	getPaymentFn          func(ctx context.Context, id string) (*domain.Payment, error)
 	updatePaymentStatusFn func(ctx context.Context, id string, status string) error
-	listPaymentsFn       func(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error)
-	getFeeConfigFn       func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
+	listPaymentsFn        func(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error)
+	getFeeConfigFn        func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
 	getDefaultFeeConfigFn func(ctx context.Context) (*domain.FeeConfig, error)
-	findByStripePIFn     func(ctx context.Context, paymentIntentID string) (*domain.Payment, error)
-	updateStripeFieldsFn func(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
-	updateRefundFn       func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
-	getStripeAccountIDFn func(ctx context.Context, userID string) (string, error)
-	setStripeAccountIDFn func(ctx context.Context, userID string, stripeAccountID string) error
+	findByStripePIFn      func(ctx context.Context, paymentIntentID string) (*domain.Payment, error)
+	updateStripeFieldsFn  func(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
+	updateRefundFn        func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
+	getStripeAccountIDFn  func(ctx context.Context, userID string) (string, error)
+	setStripeAccountIDFn  func(ctx context.Context, userID string, stripeAccountID string) error
+	// Expense methods
+	createExpenseFn func(ctx context.Context, expense *domain.Expense) error
+	listExpensesFn  func(ctx context.Context, providerID string, startDate, endDate *time.Time, page, pageSize int) ([]*domain.Expense, int64, int, error)
+	deleteExpenseFn func(ctx context.Context, expenseID, providerID string) error
+	// Advance methods
+	createAdvanceFn       func(ctx context.Context, advance *domain.Advance) error
+	listAdvancesFn        func(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*domain.Advance, int, error)
+	getAdvanceFn          func(ctx context.Context, advanceID string) (*domain.Advance, error)
+	updateAdvanceReviewFn func(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*domain.Advance, error)
 }
 
 func (m *mockPaymentRepo) CreatePayment(ctx context.Context, payment *domain.Payment) error {
@@ -59,6 +68,48 @@ func (m *mockPaymentRepo) GetStripeAccountID(ctx context.Context, userID string)
 }
 func (m *mockPaymentRepo) SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error {
 	return m.setStripeAccountIDFn(ctx, userID, stripeAccountID)
+}
+func (m *mockPaymentRepo) CreateExpense(ctx context.Context, expense *domain.Expense) error {
+	if m.createExpenseFn != nil {
+		return m.createExpenseFn(ctx, expense)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) ListExpenses(ctx context.Context, providerID string, startDate, endDate *time.Time, page, pageSize int) ([]*domain.Expense, int64, int, error) {
+	if m.listExpensesFn != nil {
+		return m.listExpensesFn(ctx, providerID, startDate, endDate, page, pageSize)
+	}
+	return nil, 0, 0, nil
+}
+func (m *mockPaymentRepo) DeleteExpense(ctx context.Context, expenseID, providerID string) error {
+	if m.deleteExpenseFn != nil {
+		return m.deleteExpenseFn(ctx, expenseID, providerID)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) CreateAdvance(ctx context.Context, advance *domain.Advance) error {
+	if m.createAdvanceFn != nil {
+		return m.createAdvanceFn(ctx, advance)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) ListAdvances(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*domain.Advance, int, error) {
+	if m.listAdvancesFn != nil {
+		return m.listAdvancesFn(ctx, providerID, statusFilter, page, pageSize)
+	}
+	return nil, 0, nil
+}
+func (m *mockPaymentRepo) GetAdvance(ctx context.Context, advanceID string) (*domain.Advance, error) {
+	if m.getAdvanceFn != nil {
+		return m.getAdvanceFn(ctx, advanceID)
+	}
+	return nil, domain.ErrAdvanceNotFound
+}
+func (m *mockPaymentRepo) UpdateAdvanceReview(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*domain.Advance, error) {
+	if m.updateAdvanceReviewFn != nil {
+		return m.updateAdvanceReviewFn(ctx, advanceID, status, reviewerID, rejectionReason)
+	}
+	return nil, domain.ErrAdvanceNotFound
 }
 
 // --- Mock Stripe Service ---

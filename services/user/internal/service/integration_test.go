@@ -141,7 +141,7 @@ func TestIntegration_Registration_Login_ProfileUpdate(t *testing.T) {
 				Email:    tt.register.Email,
 				Password: tt.loginPass,
 			}
-			loginUserID, loginPair, mfa, err := auth.Login(ctx, loginInput)
+			loginUserID, loginPair, mfa, _, err := auth.Login(ctx, loginInput)
 			if tt.wantLoginErr {
 				require.Error(t, err)
 				return

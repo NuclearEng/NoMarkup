@@ -3,9 +3,11 @@ module github.com/nomarkup/nomarkup/services/user
 go 1.25.0
 
 require (
+	github.com/getsentry/sentry-go v0.44.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/nomarkup/nomarkup/proto v0.0.0-00010101000000-000000000000
+	github.com/pquerna/otp v1.4.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.66.0
@@ -18,6 +20,7 @@ require (
 )
 
 require (
+	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

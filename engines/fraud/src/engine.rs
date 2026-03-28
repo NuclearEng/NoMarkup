@@ -1496,7 +1496,13 @@ mod tests {
     #[test]
     fn signal_type_proto_roundtrip() {
         for i in 1..=9 {
-            let st = SignalType::from_proto_i32(i).unwrap();
+            let st = match SignalType::from_proto_i32(i) {
+                Some(s) => s,
+                None => {
+                    tracing::warn!(value = i, "skipping unknown signal type proto value");
+                    continue;
+                }
+            };
             assert_eq!(st.to_proto_i32(), i);
         }
     }

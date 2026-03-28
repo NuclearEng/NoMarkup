@@ -5,6 +5,7 @@ import { CheckCircle, DollarSign, Loader2, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
+import { BidSuggestion } from '@/components/bids/BidSuggestion';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +30,8 @@ interface BidFormProps {
   offerAcceptedCents: number | null;
   marketRange: MarketRange | null;
   auctionEndsAt: string | null;
+  categorySlug?: string;
+  zipCode?: string;
 }
 
 function isAuctionClosed(auctionEndsAt: string | null): boolean {
@@ -43,6 +46,8 @@ export function BidForm({
   offerAcceptedCents,
   marketRange,
   auctionEndsAt,
+  categorySlug,
+  zipCode,
 }: BidFormProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showAcceptConfirm, setShowAcceptConfirm] = useState(false);
@@ -152,6 +157,11 @@ export function BidForm({
       {/* Market range */}
       {marketRange && marketRange.sample_size > 0 ? (
         <MarketRangeDisplay marketRange={marketRange} />
+      ) : null}
+
+      {/* Fair Price Index suggestion */}
+      {categorySlug ? (
+        <BidSuggestion categorySlug={categorySlug} zipCode={zipCode} />
       ) : null}
 
       {/* Bid form */}

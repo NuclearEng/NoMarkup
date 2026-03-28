@@ -12,6 +12,17 @@ import type {
   UserRole,
 } from '@/types';
 
+/** Thrown when login succeeds but MFA verification is required. */
+export class MFARequiredError extends Error {
+  constructor(
+    public readonly userId: string,
+    public readonly challengeToken: string,
+  ) {
+    super('MFA verification required');
+    this.name = 'MFARequiredError';
+  }
+}
+
 interface AuthState {
   user: User | null;
   accessToken: string | null;
@@ -22,6 +33,7 @@ interface AuthState {
 
 interface AuthActions {
   login: (email: string, password: string) => Promise<void>;
+  completeMFALogin: (challengeToken: string, totpCode: string) => Promise<void>;
   register: (
     email: string,
     password: string,
@@ -68,12 +80,43 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       body,
     );
 
+    if (data.mfa_required && data.mfa_challenge_token) {
+      throw new MFARequiredError(data.user_id, data.mfa_challenge_token);
+    }
+
     setAccessToken(data.access_token);
 
     const payload = parseJwtPayload(data.access_token);
     const user = payload
       ? userFromJwt(data.user_id, payload)
       : userFromJwt(data.user_id, { email, roles: [] });
+
+    set({
+      user,
+      accessToken: data.access_token,
+      isAuthenticated: true,
+      isHydrating: false,
+    });
+  },
+
+  completeMFALogin: async (challengeToken: string, totpCode: string) => {
+    const data = await api.postUnauthed<AuthResponse>(
+      '/api/v1/auth/mfa/verify',
+      {
+        mfa_challenge_token: challengeToken,
+        totp_code: totpCode,
+      },
+    );
+
+    setAccessToken(data.access_token);
+
+    const payload = parseJwtPayload(data.access_token);
+    // The MFA verify endpoint may not return user_id in the body,
+    // so we extract it from the JWT payload (sub claim).
+    const userId = data.user_id || (payload ? payload.sub : '');
+    const user = payload
+      ? userFromJwt(userId, payload)
+      : null;
 
     set({
       user,

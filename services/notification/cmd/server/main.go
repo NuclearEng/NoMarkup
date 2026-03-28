@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -34,6 +35,22 @@ func main() {
 	port := os.Getenv("NOTIFICATION_SERVICE_PORT")
 	if port == "" {
 		port = "50059"
+	}
+
+	// Initialize Sentry error tracking.
+	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			Environment:      os.Getenv("APP_ENV"),
+			Release:          os.Getenv("APP_VERSION"),
+			TracesSampleRate: 0.1,
+			EnableTracing:    true,
+		}); err != nil {
+			slog.Error("failed to initialize sentry", "error", err)
+		} else {
+			slog.Info("sentry initialized", "service", "notification-service")
+			defer sentry.Flush(2 * time.Second)
+		}
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")

@@ -23,7 +23,7 @@ func NewAdminDisputesHandler(contractClient contractv1.ContractServiceClient) *A
 }
 
 // ListDisputes handles GET /api/v1/admin/disputes.
-// Query params: status, page, page_size.
+// Query params: status, is_guarantee_claim, page, page_size.
 func (h *AdminDisputesHandler) ListDisputes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -35,6 +35,12 @@ func (h *AdminDisputesHandler) ListDisputes(w http.ResponseWriter, r *http.Reque
 		if status != contractv1.DisputeStatus_DISPUTE_STATUS_UNSPECIFIED {
 			grpcReq.StatusFilter = &status
 		}
+	}
+
+	// Parse optional is_guarantee_claim filter.
+	if gc := q.Get("is_guarantee_claim"); gc != "" {
+		val := gc == "true" || gc == "1"
+		grpcReq.IsGuaranteeClaim = &val
 	}
 
 	// Parse pagination.
@@ -137,6 +143,122 @@ func (h *AdminDisputesHandler) ResolveDispute(w http.ResponseWriter, r *http.Req
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"dispute": disputeToJSON(resp.GetDispute()),
+	})
+}
+
+// --- Guarantee Claims ---
+
+// ListGuaranteeClaims handles GET /api/v1/admin/guarantee-claims.
+// Query params: status, page, page_size.
+func (h *AdminDisputesHandler) ListGuaranteeClaims(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	isGuaranteeClaim := true
+	grpcReq := &contractv1.ListDisputesRequest{
+		IsGuaranteeClaim: &isGuaranteeClaim,
+	}
+
+	// Parse optional status filter.
+	if s := q.Get("status"); s != "" {
+		status := parseDisputeStatus(s)
+		if status != contractv1.DisputeStatus_DISPUTE_STATUS_UNSPECIFIED {
+			grpcReq.StatusFilter = &status
+		}
+	}
+
+	// Parse pagination.
+	page := int32(1)
+	pageSize := int32(20)
+	if p := q.Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = int32(v)
+		}
+	}
+	if ps := q.Get("page_size"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+			pageSize = int32(v)
+		}
+	}
+	grpcReq.Pagination = &commonv1.PaginationRequest{
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	resp, err := h.contractClient.ListDisputes(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	claims := make([]map[string]interface{}, 0, len(resp.GetDisputes()))
+	for _, d := range resp.GetDisputes() {
+		claims = append(claims, disputeToJSON(d))
+	}
+
+	result := map[string]interface{}{
+		"guarantee_claims": claims,
+	}
+	if pg := resp.GetPagination(); pg != nil {
+		result["pagination"] = paginationToJSON(pg)
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ReviewGuaranteeClaim handles PUT /api/v1/admin/guarantee-claims/{id}/review.
+// Admin approves or rejects a guarantee claim.
+func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *http.Request) {
+	claimID := chi.URLParam(r, "id")
+	if claimID == "" {
+		writeError(w, http.StatusBadRequest, "claim id required")
+		return
+	}
+
+	adminClaims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var body struct {
+		Approved        bool   `json:"approved"`
+		ResolutionNotes string `json:"resolution_notes"`
+		PayoutCents     int64  `json:"payout_cents"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if body.ResolutionNotes == "" {
+		writeError(w, http.StatusBadRequest, "resolution_notes is required")
+		return
+	}
+
+	resolutionType := "dismissed"
+	guaranteeOutcome := "denied"
+	refundCents := int64(0)
+	if body.Approved {
+		resolutionType = "guarantee_invoked"
+		guaranteeOutcome = "refund"
+		refundCents = body.PayoutCents
+	}
+
+	resp, err := h.contractClient.AdminResolveDispute(r.Context(), &contractv1.AdminResolveDisputeRequest{
+		DisputeId:         claimID,
+		AdminId:           adminClaims.UserID,
+		ResolutionType:    resolutionType,
+		ResolutionNotes:   body.ResolutionNotes,
+		RefundAmountCents: refundCents,
+		GuaranteeOutcome:  guaranteeOutcome,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"guarantee_claim": disputeToJSON(resp.GetDispute()),
 	})
 }
 

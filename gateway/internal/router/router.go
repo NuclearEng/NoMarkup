@@ -48,6 +48,12 @@ func New(
 	workingCapitalHandler *handler.WorkingCapitalHandler,
 	expenseHandler *handler.ExpenseHandler,
 	auctionWSHandler *handler.AuctionWSHandler,
+	spectatorWSHandler *handler.SpectatorWSHandler,
+	featureFlagHandler *handler.FeatureFlagHandler,
+	pricingHandler *handler.PricingHandler,
+	oauthHandler *handler.OAuthHandler,
+	auctionReplayHandler *handler.AuctionReplayHandler,
+	challengeHandler *handler.ChallengeHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -69,8 +75,15 @@ func New(
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.Refresh)
 		r.Post("/verify-email", authHandler.VerifyEmail)
+		r.Post("/resend-verification", authHandler.ResendVerification)
 		r.Post("/request-password-reset", authHandler.RequestPasswordReset)
 		r.Post("/reset-password", authHandler.ResetPassword)
+
+		// OAuth routes (public, no auth required).
+		r.Get("/oauth/google", oauthHandler.InitGoogleOAuth)
+		r.Get("/callback/google", oauthHandler.GoogleOAuthCallback)
+		r.Get("/oauth/apple", oauthHandler.InitAppleOAuth)
+		r.Post("/callback/apple", oauthHandler.AppleOAuthCallback)
 
 		// MFA verify does not require auth (uses challenge token from login).
 		r.Post("/mfa/verify", authHandler.VerifyMFA)
@@ -80,8 +93,9 @@ func New(
 		r.With(authMW.Handler).Post("/verify-phone", authHandler.VerifyPhone)
 		r.With(authMW.Handler).Post("/send-phone-otp", authHandler.SendPhoneOTP)
 
-		// MFA enable/disable require authentication.
+		// MFA enable/disable/confirm require authentication.
 		r.With(authMW.Handler).Post("/mfa/enable", authHandler.EnableMFA)
+		r.With(authMW.Handler).Post("/mfa/verify-setup", authHandler.ConfirmMFASetup)
 		r.With(authMW.Handler).Delete("/mfa/disable", authHandler.DisableMFA)
 	})
 
@@ -140,6 +154,16 @@ func New(
 
 	// Public provider search (no auth required)
 	r.Get("/api/v1/providers/search", providerHandler.SearchProviders)
+
+	// Public feature flags (no auth required)
+	r.Get("/api/v1/flags", featureFlagHandler.GetFeatureFlags)
+
+	// Public Fair Price Index routes (no auth required, SEO-friendly)
+	r.Get("/api/v1/pricing", pricingHandler.GetPricingOverview)
+	r.Get("/api/v1/pricing/{category}", pricingHandler.GetPricingByCategory)
+
+	// Public auction replay (no auth required — completed auctions are public)
+	r.Get("/api/v1/auctions/{jobId}/replay", auctionReplayHandler.GetAuctionReplay)
 
 	// Market analytics routes (require authentication)
 	r.Route("/api/v1/analytics/market", func(r chi.Router) {
@@ -234,6 +258,10 @@ func New(
 
 			// Disputes
 			r.Post("/{id}/disputes", contractHandler.OpenDispute)
+
+			// Guarantee claims
+			r.Post("/{id}/guarantee-claim", contractHandler.SubmitGuaranteeClaim)
+			r.Get("/{id}/guarantee-claim", contractHandler.GetGuaranteeClaim)
 
 			// No-show / abandonment
 			r.Post("/{id}/report-noshow", contractHandler.ReportNoShow)
@@ -331,6 +359,12 @@ func New(
 				r.Post("/{id}/resolve", adminDisputesHandler.ResolveDispute)
 			})
 
+			// Guarantee claims
+			r.Route("/guarantee-claims", func(r chi.Router) {
+				r.Get("/", adminDisputesHandler.ListGuaranteeClaims)
+				r.Put("/{id}/review", adminDisputesHandler.ReviewGuaranteeClaim)
+			})
+
 			// Reviews
 			r.Route("/reviews", func(r chi.Router) {
 				r.Get("/flagged", adminReviewsHandler.ListFlaggedReviews)
@@ -362,6 +396,16 @@ func New(
 				r.Get("/geographic", adminPlatformHandler.GetGeographicMetrics)
 			})
 			r.Get("/subscriptions", adminPlatformHandler.ListSubscriptions)
+
+			// Challenges
+			r.Route("/challenges", func(r chi.Router) {
+				r.Get("/", challengeHandler.AdminListChallenges)
+				r.Post("/", challengeHandler.AdminCreateChallenge)
+			})
+
+			// Feature flags
+			r.Get("/flags", featureFlagHandler.ListFeatureFlags)
+			r.Put("/flags/{key}", featureFlagHandler.UpdateFeatureFlag)
 		})
 
 		// Notification routes
@@ -387,6 +431,14 @@ func New(
 			r.Get("/invoices", subscriptionHandler.ListInvoices)
 		})
 
+		// Challenge routes (authenticated)
+		r.Route("/challenges", func(r chi.Router) {
+			r.Get("/", challengeHandler.ListActiveChallenges)
+			r.Get("/me", challengeHandler.GetMyProgress)
+			r.Get("/{id}", challengeHandler.GetChallenge)
+			r.Post("/{id}/join", challengeHandler.JoinChallenge)
+		})
+
 		// Analytics routes (authenticated)
 		r.Route("/analytics", func(r chi.Router) {
 			r.Get("/providers/{id}", analyticsHandler.GetProviderAnalytics)
@@ -400,6 +452,9 @@ func New(
 
 	// Auction WebSocket endpoint (auth via query param, header, or cookie — validated in handler)
 	r.Get("/ws/auction/{jobId}", auctionWSHandler.WebSocket)
+
+	// Spectator WebSocket endpoint (public, no auth required — anonymous viewers)
+	r.Get("/ws/auction/{jobId}/spectate", spectatorWSHandler.SpectateAuction)
 
 	return r
 }

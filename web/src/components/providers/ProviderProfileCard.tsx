@@ -2,6 +2,7 @@
 
 import { Star } from 'lucide-react';
 
+import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,6 +79,9 @@ export function ProviderProfileCard({
                   ({profile.jobsCompleted} jobs)
                 </span>
               </div>
+            ) : null}
+            {profile.responseTimeLabel ? (
+              <ResponseTimeBadge label={profile.responseTimeLabel} />
             ) : null}
           </div>
         </div>

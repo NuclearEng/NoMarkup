@@ -38,7 +38,7 @@ func NewSMSDispatcher(accountSID, authToken, fromNumber string) *SMSDispatcher {
 // Send dispatches an SMS message via Twilio. In dev mode it logs instead.
 func (s *SMSDispatcher) Send(ctx context.Context, toNumber, body string) error {
 	if s.devMode {
-		slog.Info("sms dispatcher (dev mode): would send SMS",
+		slog.Warn("DEV MODE: SMS not actually sent — OTP will not be delivered",
 			"to", toNumber,
 			"body_length", len(body),
 		)

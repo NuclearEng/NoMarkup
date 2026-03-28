@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { NOTIFICATION_TYPE } from '@/types';
-import type { Notification } from '@/types';
+import type { Notification, NotificationType } from '@/types';
 
 interface NotificationItemProps {
   notification: Notification;
@@ -13,7 +13,7 @@ interface NotificationItemProps {
   onMarkRead?: (id: string) => void;
 }
 
-const NOTIFICATION_ICON_MAP: Record<string, string> = {
+const NOTIFICATION_ICON_MAP: Partial<Record<NotificationType, string>> = {
   // Bidding
   [NOTIFICATION_TYPE.NEW_BID]: '\u2696',
   [NOTIFICATION_TYPE.BID_AWARDED]: '\u2696',
@@ -45,6 +45,8 @@ const NOTIFICATION_ICON_MAP: Record<string, string> = {
   [NOTIFICATION_TYPE.DISPUTE_RESOLVED]: '\u26A0',
   [NOTIFICATION_TYPE.TIER_UPGRADE]: '\uD83D\uDEE1',
   [NOTIFICATION_TYPE.TIER_DOWNGRADE]: '\uD83D\uDEE1',
+  // Pre-matching
+  [NOTIFICATION_TYPE.JOB_MATCHED]: '\uD83C\uDFAF',
 };
 
 const DEFAULT_ICON = '\uD83D\uDD14';

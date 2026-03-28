@@ -16,6 +16,7 @@ export interface PublicProvider {
   jobs_completed: number;
   member_since: string;
   verified: boolean;
+  response_time_label?: string;
 }
 
 export interface SearchProvidersParams {
@@ -47,9 +48,7 @@ export function useSearchProviders(params: SearchProvidersParams) {
   return useQuery({
     queryKey: ['providers', params],
     queryFn: () =>
-      api.get<SearchProvidersResponse>(
-        `/api/v1/providers/search${query ? `?${query}` : ''}`,
-      ),
+      api.getPublic<SearchProvidersResponse>(`/api/v1/providers/search${query ? `?${query}` : ''}`),
   });
 }
 
@@ -58,7 +57,7 @@ export function usePublicProviderProfile(id: string) {
     queryKey: ['provider', id],
     queryFn: () =>
       api
-        .get<{ profile: PublicProvider }>(`/api/v1/providers/${id}`)
+        .getPublic<{ profile: PublicProvider }>(`/api/v1/providers/${id}`)
         .then((res) => res.profile),
     enabled: !!id,
   });

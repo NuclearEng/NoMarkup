@@ -109,6 +109,43 @@ type CreatePaymentInput struct {
 	TotalInstallments   *int
 }
 
+// Expense represents a provider expense record.
+type Expense struct {
+	ID           string
+	ProviderID   string
+	Category     string
+	Description  string
+	AmountCents  int64
+	ReceiptURL   *string
+	ExpenseDate  time.Time // DATE stored as time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// Advance represents a working capital advance.
+type Advance struct {
+	ID                 string
+	ProviderID         string
+	ContractID         string
+	AdvanceAmountCents int64
+	FeeCents           int64
+	RepaidCents        int64
+	Status             string // requested, approved, disbursed, repaying, repaid, defaulted, rejected
+	ReviewedBy         *string
+	ReviewedAt         *time.Time
+	RejectionReason    *string
+	DisbursedAt        *time.Time
+	RepaidAt           *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+// Sentinel errors for expenses and advances.
+var (
+	ErrExpenseNotFound = errors.New("expense not found")
+	ErrAdvanceNotFound = errors.New("advance not found")
+)
+
 // PaymentRepository defines persistence operations for payments.
 type PaymentRepository interface {
 	CreatePayment(ctx context.Context, payment *Payment) error
@@ -122,4 +159,15 @@ type PaymentRepository interface {
 	UpdateRefund(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
 	GetStripeAccountID(ctx context.Context, userID string) (string, error)
 	SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error
+
+	// Expense operations
+	CreateExpense(ctx context.Context, expense *Expense) error
+	ListExpenses(ctx context.Context, providerID string, startDate, endDate *time.Time, page, pageSize int) ([]*Expense, int64, int, error)
+	DeleteExpense(ctx context.Context, expenseID, providerID string) error
+
+	// Advance operations
+	CreateAdvance(ctx context.Context, advance *Advance) error
+	ListAdvances(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*Advance, int, error)
+	GetAdvance(ctx context.Context, advanceID string) (*Advance, error)
+	UpdateAdvanceReview(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*Advance, error)
 }

@@ -15,4 +15,6 @@ export const REVISION_MIN_NOTES_LENGTH = 200;
 
 export const MIN_TOUCH_TARGET_PX = 44; // WCAG 2.2 AA
 
+// Deprecated: use useFeatureFlag('live_auction') from @/hooks/useFeatureFlags instead.
+// This env-based flag is kept for backward compatibility during migration.
 export const ENABLE_LIVE_AUCTION = process.env['NEXT_PUBLIC_ENABLE_LIVE_AUCTION'] === 'true';

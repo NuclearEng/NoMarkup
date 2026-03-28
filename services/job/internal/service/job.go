@@ -4,19 +4,39 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
 
+// NotificationSender abstracts sending notifications to users.
+// Implemented by the gateway or a gRPC client to the notification service.
+type NotificationSender interface {
+	SendMatchNotification(ctx context.Context, providerID string, jobID string, jobTitle string, categoryName string, distanceKm float64, matchScorePct int) error
+}
+
 // JobService implements job business logic with validation.
 type JobService struct {
-	repo   domain.JobRepository
-	search *SearchEngine
+	repo     domain.JobRepository
+	search   *SearchEngine
+	matching *MatchingService
+	notifier NotificationSender
 }
 
 // NewJobService creates a new job service.
 func NewJobService(repo domain.JobRepository, search *SearchEngine) *JobService {
 	return &JobService{repo: repo, search: search}
+}
+
+// SetMatchingService wires in the provider matching engine.
+// Called separately to avoid circular dependency during initialization.
+func (s *JobService) SetMatchingService(matching *MatchingService) {
+	s.matching = matching
+}
+
+// SetNotifier wires in the notification sender.
+func (s *JobService) SetNotifier(notifier NotificationSender) {
+	s.notifier = notifier
 }
 
 // CreateJob validates input, enforces the 10-draft limit (FR-3.11), and creates a new job.
@@ -55,8 +75,16 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 
 	if job.Status == "active" && s.search != nil {
 		if indexErr := s.search.IndexJob(ctx, job); indexErr != nil {
-			slog.Warn("failed to index job in search", "job_id", job.ID, "error", indexErr)
+			slog.Error("SEARCH INDEX FAILED — job will not appear in search results",
+				"job_id", job.ID,
+				"error", indexErr,
+			)
 		}
+	}
+
+	// Trigger async provider matching for published jobs.
+	if job.Status == "active" {
+		s.triggerProviderMatching(job)
 	}
 
 	slog.Info("job created", "job_id", job.ID, "customer_id", job.CustomerID, "status", job.Status)
@@ -97,7 +125,10 @@ func (s *JobService) DeleteDraft(ctx context.Context, jobID string) error {
 	}
 	if s.search != nil {
 		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Warn("failed to remove job from search", "job_id", jobID, "error", removeErr)
+			slog.Error("SEARCH REMOVAL FAILED — deleted draft may remain in search results",
+				"job_id", jobID,
+				"error", removeErr,
+			)
 		}
 	}
 	return nil
@@ -111,9 +142,16 @@ func (s *JobService) PublishJob(ctx context.Context, jobID string) (*domain.Job,
 	}
 	if s.search != nil {
 		if indexErr := s.search.IndexJob(ctx, job); indexErr != nil {
-			slog.Warn("failed to index published job in search", "job_id", job.ID, "error", indexErr)
+			slog.Error("SEARCH INDEX FAILED — published job will not appear in search results",
+				"job_id", job.ID,
+				"error", indexErr,
+			)
 		}
 	}
+
+	// Trigger async provider matching for the newly published job.
+	s.triggerProviderMatching(job)
+
 	slog.Info("job published", "job_id", job.ID)
 	return job, nil
 }
@@ -126,7 +164,10 @@ func (s *JobService) CloseAuction(ctx context.Context, jobID string, customerID 
 	}
 	if s.search != nil {
 		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Warn("failed to remove closed job from search", "job_id", jobID, "error", removeErr)
+			slog.Error("SEARCH REMOVAL FAILED — closed job may remain in search results",
+				"job_id", jobID,
+				"error", removeErr,
+			)
 		}
 	}
 	slog.Info("auction closed", "job_id", job.ID, "status", job.Status)
@@ -141,7 +182,10 @@ func (s *JobService) CancelJob(ctx context.Context, jobID string, customerID str
 	}
 	if s.search != nil {
 		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Warn("failed to remove cancelled job from search", "job_id", jobID, "error", removeErr)
+			slog.Error("SEARCH REMOVAL FAILED — cancelled job may remain in search results",
+				"job_id", jobID,
+				"error", removeErr,
+			)
 		}
 	}
 	slog.Info("job cancelled", "job_id", job.ID)
@@ -261,9 +305,15 @@ func (s *JobService) RepostJob(ctx context.Context, jobID, customerID string, up
 
 	if s.search != nil {
 		if indexErr := s.search.IndexJob(ctx, newJob); indexErr != nil {
-			slog.Warn("failed to index reposted job in search", "job_id", newJob.ID, "error", indexErr)
+			slog.Error("SEARCH INDEX FAILED — reposted job will not appear in search results",
+				"job_id", newJob.ID,
+				"error", indexErr,
+			)
 		}
 	}
+
+	// Trigger async provider matching for the reposted job.
+	s.triggerProviderMatching(newJob)
 
 	slog.Info("job reposted",
 		"original_job_id", jobID,
@@ -282,7 +332,10 @@ func (s *JobService) AwardJob(ctx context.Context, jobID, customerID, providerID
 
 	if s.search != nil {
 		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Warn("failed to remove awarded job from search", "job_id", jobID, "error", removeErr)
+			slog.Error("SEARCH REMOVAL FAILED — awarded job may remain in search results",
+				"job_id", jobID,
+				"error", removeErr,
+			)
 		}
 	}
 
@@ -323,7 +376,10 @@ func (s *JobService) AdminSuspendJob(ctx context.Context, jobID, reason, adminID
 
 	if s.search != nil {
 		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Warn("failed to remove suspended job from search", "job_id", jobID, "error", removeErr)
+			slog.Error("SEARCH REMOVAL FAILED — suspended job may remain in search results",
+				"job_id", jobID,
+				"error", removeErr,
+			)
 		}
 	}
 
@@ -345,7 +401,10 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 
 	if s.search != nil {
 		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Warn("failed to remove job from search", "job_id", jobID, "error", removeErr)
+			slog.Error("SEARCH REMOVAL FAILED — removed job may remain in search results",
+				"job_id", jobID,
+				"error", removeErr,
+			)
 		}
 	}
 
@@ -357,4 +416,80 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 
 	slog.Info("job removed by admin", "job_id", jobID, "admin_id", adminID, "reason", reason)
 	return nil
+}
+
+// triggerProviderMatching starts an asynchronous goroutine that finds matching
+// providers for a job and sends each a notification. Errors are logged but do
+// not fail the parent operation — matching is best-effort.
+func (s *JobService) triggerProviderMatching(job *domain.Job) {
+	if s.matching == nil {
+		return
+	}
+
+	// Capture values for the goroutine. We intentionally use context.Background()
+	// because the parent HTTP/gRPC request context may be cancelled before the
+	// async matching completes.
+	jobID := job.ID
+	categoryID := job.CategoryID
+	jobTitle := job.Title
+	categoryName := ""
+	if job.Category != nil {
+		categoryName = job.Category.Name
+	}
+
+	go func() {
+		ctx := context.Background()
+
+		matches, err := s.matching.FindMatchingProviders(ctx, jobID, categoryID, 0, 0, defaultMaxProviders)
+		if err != nil {
+			slog.Error("provider matching failed",
+				"job_id", jobID,
+				"error", err,
+			)
+			return
+		}
+
+		if len(matches) == 0 {
+			slog.Info("no matching providers found", "job_id", jobID)
+			return
+		}
+
+		for _, m := range matches {
+			s.notifyProviderOfMatch(ctx, m, jobID, jobTitle, categoryName)
+		}
+
+		slog.Info("provider match notifications sent",
+			"job_id", jobID,
+			"providers_notified", len(matches),
+		)
+	}()
+}
+
+// notifyProviderOfMatch sends a match notification to a single provider.
+func (s *JobService) notifyProviderOfMatch(ctx context.Context, match domain.MatchedProvider, jobID, jobTitle, categoryName string) {
+	if s.notifier == nil {
+		slog.Warn("notification sender not configured — skipping match notification",
+			"provider_id", match.ProviderID,
+			"job_id", jobID,
+		)
+		return
+	}
+
+	matchScorePct := int(math.Round(match.MatchScore * 100))
+
+	if err := s.notifier.SendMatchNotification(
+		ctx,
+		match.ProviderID,
+		jobID,
+		jobTitle,
+		categoryName,
+		match.DistanceKm,
+		matchScorePct,
+	); err != nil {
+		slog.Error("failed to send match notification",
+			"provider_id", match.ProviderID,
+			"job_id", jobID,
+			"error", err,
+		)
+	}
 }

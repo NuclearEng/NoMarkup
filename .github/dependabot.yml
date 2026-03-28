@@ -1,0 +1,120 @@
+version: 2
+updates:
+  # Go modules — Gateway
+  - package-ecosystem: "gomod"
+    directory: "/gateway"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+
+  # Go modules — User Service
+  - package-ecosystem: "gomod"
+    directory: "/services/user"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Go modules — Job Service
+  - package-ecosystem: "gomod"
+    directory: "/services/job"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Go modules — Payment Service
+  - package-ecosystem: "gomod"
+    directory: "/services/payment"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Go modules — Chat Service
+  - package-ecosystem: "gomod"
+    directory: "/services/chat"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Go modules — Notification Service
+  - package-ecosystem: "gomod"
+    directory: "/services/notification"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Rust crates — Bidding Engine
+  - package-ecosystem: "cargo"
+    directory: "/engines/bidding"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Rust crates — Fraud Detection Engine
+  - package-ecosystem: "cargo"
+    directory: "/engines/fraud"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Rust crates — Trust Scoring Engine
+  - package-ecosystem: "cargo"
+    directory: "/engines/trust"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # Rust crates — Imaging Pipeline
+  - package-ecosystem: "cargo"
+    directory: "/engines/imaging"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
+  # npm — Next.js Frontend
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+
+  # Docker — Deployment images
+  - package-ecosystem: "docker"
+    directory: "/deploy/docker"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "infrastructure"
+
+  # GitHub Actions — CI/CD workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"

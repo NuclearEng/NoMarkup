@@ -6,16 +6,22 @@ import type { Route } from 'next';
 import { useParams } from 'next/navigation';
 
 import { AuctionArena } from '@/components/bids/AuctionArena';
+import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
 import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
+import { BidPlacementPanel } from '@/components/bids/BidPlacementPanel';
+import { BidPriceChart } from '@/components/bids/BidPriceChart';
+import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
-import { useBidCount } from '@/hooks/useBids';
+import { useBidCount, useBidsForJob, usePlaceBid } from '@/hooks/useBids';
+import { useCountdown } from '@/hooks/useCountdown';
 import { useJob } from '@/hooks/useJobs';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -26,11 +32,22 @@ export default function JobDetailPage() {
   const jobId = params.id;
   const { data: job, isLoading, isError } = useJob(jobId);
   const { data: bidCount } = useBidCount(jobId);
+  const { timeLeft, isExpired: auctionExpired } = useCountdown(job?.auction_ends_at);
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const isJobOwner = user !== null && job !== undefined && user.id === job.customer_id;
+
+  // Fetch bids for this job — only when authenticated (endpoint requires auth)
+  const { data: bidsData } = useBidsForJob(isAuthenticated ? jobId : '');
+  const placeBid = usePlaceBid();
+
+  // Find the current provider's existing bid (if any)
+  const existingBid =
+    isProvider && user && bidsData
+      ? (bidsData.bids.find((b) => b.bid.provider_id === user.id)?.bid ?? null)
+      : null;
 
   // Determine if the job is in a state where bidding/awarding is possible
   const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
@@ -52,27 +69,58 @@ export default function JobDetailPage() {
 
   if (isError || !job) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-8 text-center sm:px-6 lg:px-8">
-        <h1 className="text-2xl font-bold">Failed to Load Job</h1>
-        <p className="text-muted-foreground mt-2">
-          This job could not be loaded. It may have been removed, or there was a connection issue.
-        </p>
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <Button
-            variant="outline"
-            className="min-h-[44px]"
-            onClick={() => {
-              window.location.reload();
-            }}
-          >
-            Retry
-          </Button>
-          <Link href={'/jobs' as Route}>
-            <Button variant="ghost" className="min-h-[44px]">
-              Back to Jobs
-            </Button>
-          </Link>
-        </div>
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+        <EmptyState
+          icon={
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <rect
+                x="4"
+                y="6"
+                width="24"
+                height="20"
+                rx="3"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path
+                d="M10 14H22"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                opacity="0.4"
+              />
+              <path
+                d="M10 18H18"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                opacity="0.3"
+              />
+              <path d="M14 2V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <path d="M18 2V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          }
+          title="Job not found"
+          description="This job could not be loaded. It may have been removed, or there was a connection issue."
+          action={
+            <div className="flex items-center gap-3">
+              <Button
+                variant="default"
+                className="min-h-[44px]"
+                onClick={() => {
+                  window.location.reload();
+                }}
+              >
+                Retry
+              </Button>
+              <Link href={'/jobs' as Route}>
+                <Button variant="outline" className="min-h-[44px]">
+                  Back to Jobs
+                </Button>
+              </Link>
+            </div>
+          }
+        />
       </div>
     );
   }
@@ -87,7 +135,7 @@ export default function JobDetailPage() {
   const displayBidCount = bidCount ?? job.bid_count;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="animate-fade-in mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Breadcrumb */}
       <nav
         aria-label="Breadcrumb"
@@ -247,66 +295,116 @@ export default function JobDetailPage() {
           {job.auction_type === 'live' && ENABLE_LIVE_AUCTION ? (
             <AuctionArena job={job} isProvider={isProvider} isJobOwner={isJobOwner} />
           ) : (
-            /* Sealed bid auction UI */
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Auction Status</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {job.auction_ends_at ? (
-                  <AuctionTimer auctionEndsAt={job.auction_ends_at} />
-                ) : (
-                  <p className="text-muted-foreground text-sm">Auction not started</p>
-                )}
+            /* Sealed bid auction UI — enhanced with Polymarket/Robinhood-style ticker */
+            <div className="space-y-4">
+              {/* Live Bid Ticker — hero price display */}
+              {job.lowest_bid_cents && job.starting_bid_cents ? (
+                <LiveBidTicker
+                  currentBid={job.lowest_bid_cents}
+                  startingPrice={job.starting_bid_cents}
+                  totalBids={displayBidCount}
+                  timeRemaining={!auctionExpired ? timeLeft : undefined}
+                />
+              ) : null}
 
-                {job.starting_bid_cents ? (
-                  <div>
-                    <p className="text-muted-foreground text-xs">Starting Bid</p>
-                    <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
+              {/* Sparkline price chart — shows bid history trend */}
+              {job.lowest_bid_cents && job.starting_bid_cents ? (
+                <BidPriceChart
+                  bids={[job.starting_bid_cents, job.lowest_bid_cents]}
+                  height={80}
+                  className="bg-card rounded-xl border p-3"
+                />
+              ) : null}
+
+              {/* Original auction status card */}
+              <Card className="ring-border shadow-sm ring-1">
+                <CardHeader>
+                  <CardTitle className="text-base">Auction Status</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {job.auction_ends_at ? (
+                    <AuctionTimer auctionEndsAt={job.auction_ends_at} />
+                  ) : (
+                    <p className="text-muted-foreground text-sm">Auction not started</p>
+                  )}
+
+                  {job.starting_bid_cents ? (
+                    <div>
+                      <p className="text-muted-foreground text-xs">Starting Bid</p>
+                      <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
+                    </div>
+                  ) : null}
+
+                  {job.offer_accepted_cents ? (
+                    <div>
+                      <p className="text-muted-foreground text-xs">Instant Accept Price</p>
+                      <p className="text-lg font-semibold text-green-600">
+                        {formatCents(job.offer_accepted_cents)}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {/* Bid count badge */}
+                  <div className="flex items-center gap-2">
+                    <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+                    <span className="text-muted-foreground text-sm">
+                      {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
+                    </span>
                   </div>
-                ) : null}
 
-                {job.offer_accepted_cents ? (
-                  <div>
-                    <p className="text-muted-foreground text-xs">Instant Accept Price</p>
-                    <p className="text-lg font-semibold text-green-600">
-                      {formatCents(job.offer_accepted_cents)}
+                  {/* Bidding section based on user role */}
+                  {canBid && existingBid !== null ? (
+                    <BidForm
+                      jobId={jobId}
+                      existingBid={existingBid}
+                      startingBidCents={job.starting_bid_cents}
+                      offerAcceptedCents={job.offer_accepted_cents}
+                      marketRange={job.market_range}
+                      auctionEndsAt={job.auction_ends_at}
+                      categorySlug={job.category_slug}
+                    />
+                  ) : !isAuthenticated ? (
+                    <Link href={'/login' as Route}>
+                      <Button variant="outline" className="min-h-[44px] w-full">
+                        <LogIn className="h-4 w-4" aria-hidden="true" />
+                        Sign in to bid
+                      </Button>
+                    </Link>
+                  ) : !isProvider && !isJobOwner ? (
+                    <p className="text-muted-foreground text-sm">
+                      Only providers can place bids on jobs.
                     </p>
-                  </div>
-                ) : null}
+                  ) : null}
+                </CardContent>
+              </Card>
 
-                {/* Bid count badge */}
-                <div className="flex items-center gap-2">
-                  <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
-                  <span className="text-muted-foreground text-sm">
-                    {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
-                  </span>
-                </div>
+              {/* BidPlacementPanel — shown for providers placing a new bid */}
+              {canBid && existingBid === null && job.lowest_bid_cents && job.starting_bid_cents ? (
+                <BidPlacementPanel
+                  currentLowest={job.lowest_bid_cents}
+                  startingPrice={job.starting_bid_cents}
+                  onPlaceBid={(amountCents) => {
+                    placeBid.mutate({ jobId, input: { amount_cents: amountCents } });
+                  }}
+                  isSubmitting={placeBid.isPending}
+                />
+              ) : null}
 
-                {/* Bidding section based on user role */}
-                {canBid ? (
-                  <BidForm
-                    jobId={jobId}
-                    existingBid={null}
-                    startingBidCents={job.starting_bid_cents}
-                    offerAcceptedCents={job.offer_accepted_cents}
-                    marketRange={job.market_range}
-                    auctionEndsAt={job.auction_ends_at}
-                  />
-                ) : !isAuthenticated ? (
-                  <Link href={'/login' as Route}>
-                    <Button variant="outline" className="min-h-[44px] w-full">
-                      <LogIn className="h-4 w-4" aria-hidden="true" />
-                      Sign in to bid
-                    </Button>
-                  </Link>
-                ) : !isProvider && !isJobOwner ? (
-                  <p className="text-muted-foreground text-sm">
-                    Only providers can place bids on jobs.
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
+              {/* Bid activity feed — historical bids for sealed auctions */}
+              {bidsData && bidsData.bids.length > 0 ? (
+                <BidActivityFeed
+                  activities={bidsData.bids.map((b) => ({
+                    id: b.bid.id,
+                    providerName: b.provider_display_name || b.provider_business_name,
+                    amount: b.bid.amount_cents,
+                    timestamp: formatRelativeTime(new Date(b.bid.created_at)),
+                    isLowest:
+                      b.bid.amount_cents ===
+                      Math.min(...bidsData.bids.map((x) => x.bid.amount_cents)),
+                  }))}
+                />
+              ) : null}
+            </div>
           )}
 
           {/* Customer info card */}

@@ -2,18 +2,22 @@
 
 import { useEffect, useRef } from 'react';
 
+import { parseJwtPayload, setAccessToken } from '@/lib/auth';
 import { useAuthStore } from '@/stores/auth-store';
+import type { UserRole } from '@/types';
 
 /**
- * Silently attempts to restore authentication state from a refresh token cookie.
+ * Silently attempts to restore authentication state.
+ *
+ * On mount it first checks for short-lived OAuth callback cookies (set by the
+ * gateway when a user completes Google/Apple sign-in). If found, those are
+ * consumed and the auth store is hydrated immediately.
+ *
+ * Otherwise it falls back to the normal refresh-token flow.
  *
  * Unlike AuthGuard, this component never redirects unauthenticated users.
  * It is meant to be placed in the root layout so that auth state persists
  * across full-page navigations to public pages (where AuthGuard is absent).
- *
- * If the refresh succeeds the Zustand store is hydrated and components
- * like Header will render the authenticated UI.  If it fails, nothing
- * happens — the user simply stays unauthenticated.
  */
 export function AuthRestorer() {
   const refreshToken = useAuthStore((s) => s.refreshToken);
@@ -23,11 +27,54 @@ export function AuthRestorer() {
     if (attempted.current) return;
     attempted.current = true;
 
-    // Always attempt a refresh on mount. If the refresh cookie is valid the
-    // store is hydrated; if it fails the store is reset to unauthenticated.
-    // This handles stale in-memory auth state when cookies have been cleared.
+    // Check for OAuth callback cookies first.
+    const oauthToken = getCookie('oauth_access_token');
+    if (oauthToken) {
+      // Clear the short-lived cookies immediately.
+      deleteCookie('oauth_access_token');
+      deleteCookie('oauth_token_expires');
+
+      setAccessToken(oauthToken);
+      const payload = parseJwtPayload(oauthToken);
+
+      if (payload) {
+        useAuthStore.setState({
+          user: {
+            id: payload.sub,
+            email: payload.email,
+            displayName: '',
+            avatarUrl: null,
+            roles: payload.roles as UserRole[],
+            status: 'active',
+            emailVerified: true,
+            phoneVerified: false,
+            mfaEnabled: false,
+            createdAt: new Date().toISOString(),
+          },
+          accessToken: oauthToken,
+          isAuthenticated: true,
+          isHydrating: false,
+        });
+      }
+      return;
+    }
+
+    // No OAuth cookies — fall back to normal refresh.
     void refreshToken();
   }, [refreshToken]);
 
   return null;
+}
+
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(
+    new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'),
+  );
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
+function deleteCookie(name: string): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = name + '=; path=/; max-age=0; samesite=strict';
 }

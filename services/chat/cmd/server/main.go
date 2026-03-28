@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -42,6 +43,22 @@ func main() {
 	wsPort := os.Getenv("CHAT_WS_PORT")
 	if wsPort == "" {
 		wsPort = "50065"
+	}
+
+	// Initialize Sentry error tracking.
+	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			Environment:      os.Getenv("APP_ENV"),
+			Release:          os.Getenv("APP_VERSION"),
+			TracesSampleRate: 0.1,
+			EnableTracing:    true,
+		}); err != nil {
+			slog.Error("failed to initialize sentry", "error", err)
+		} else {
+			slog.Info("sentry initialized", "service", "chat-service")
+			defer sentry.Flush(2 * time.Second)
+		}
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")

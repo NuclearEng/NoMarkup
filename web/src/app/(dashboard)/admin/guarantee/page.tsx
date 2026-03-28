@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useAdminDisputes } from '@/hooks/useAdmin';
+import { useAdminGuaranteeClaims } from '@/hooks/useGuarantee';
 import { cn, formatCents } from '@/lib/utils';
 import type { Dispute, DisputeStatus } from '@/types';
 import { DISPUTE_STATUS } from '@/types';
@@ -49,80 +49,74 @@ export default function AdminGuaranteePage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
 
-  // We use the disputes endpoint and filter for guarantee claims on the client side
-  // In production, the backend would accept a is_guarantee_claim filter
-  const { data, isLoading, isError } = useAdminDisputes({
+  const { data, isLoading, isError } = useAdminGuaranteeClaims({
     status: statusFilter,
     page,
-    page_size: 50,
+    page_size: 20,
   });
 
-  // Filter for guarantee claims — in the real backend this would be a query param
-  const guaranteeClaims = (data?.disputes ?? []).filter((d) =>
-    d.reason.toLowerCase().includes('guarantee') ||
-    d.reason.toLowerCase().includes('claim'),
-  );
+  const guaranteeClaims = data?.guarantee_claims ?? [];
 
   const columns: Column<Dispute>[] = [
     {
       key: 'id',
       header: 'Claim',
-      render: (dispute) => (
+      render: (claim) => (
         <Link
-          href={`/admin/disputes/${dispute.id}` as Route}
+          href={`/admin/guarantee/${claim.id}` as Route}
           className="font-medium text-primary hover:underline"
         >
-          {dispute.id.slice(0, 8)}...
+          {claim.id.slice(0, 8)}...
         </Link>
       ),
     },
     {
       key: 'contract',
       header: 'Contract',
-      render: (dispute) => (
+      render: (claim) => (
         <Link
-          href={`/admin/disputes/${dispute.id}` as Route}
-          className="text-sm text-primary hover:underline"
+          href={`/admin/disputes/${claim.id}` as Route}
+          className="font-mono text-xs text-primary hover:underline"
         >
-          {dispute.contract_id.slice(0, 8)}...
+          {claim.contract_id.slice(0, 8)}...
         </Link>
       ),
     },
     {
       key: 'customer',
       header: 'Customer',
-      render: (dispute) => (
+      render: (claim) => (
         <span className="text-sm">
-          {dispute.initiator_name ?? dispute.initiated_by.slice(0, 8)}
+          {claim.initiator_name ?? claim.initiated_by.slice(0, 8)}
         </span>
       ),
     },
     {
       key: 'reason',
       header: 'Claim Type',
-      render: (dispute) => (
-        <span className="line-clamp-2 text-sm">{dispute.reason}</span>
+      render: (claim) => (
+        <span className="line-clamp-2 text-sm">{claim.reason}</span>
       ),
     },
     {
       key: 'status',
       header: 'Status',
-      render: (dispute) => (
+      render: (claim) => (
         <Badge
           variant="outline"
-          className={cn('text-xs', STATUS_CLASSES[dispute.status])}
+          className={cn('text-xs', STATUS_CLASSES[claim.status])}
         >
-          {STATUS_LABELS[dispute.status]}
+          {STATUS_LABELS[claim.status] ?? claim.status}
         </Badge>
       ),
     },
     {
       key: 'refund',
-      header: 'Refund',
-      render: (dispute) => (
+      header: 'Payout',
+      render: (claim) => (
         <span className="tabular-nums">
-          {dispute.refund_amount_cents !== undefined && dispute.refund_amount_cents > 0
-            ? formatCents(dispute.refund_amount_cents)
+          {claim.refund_amount_cents !== undefined && claim.refund_amount_cents > 0
+            ? formatCents(claim.refund_amount_cents)
             : '--'}
         </span>
       ),
@@ -130,15 +124,15 @@ export default function AdminGuaranteePage() {
     {
       key: 'created_at',
       header: 'Filed',
-      render: (dispute) => (
-        <span className="text-muted-foreground">{formatDate(dispute.created_at)}</span>
+      render: (claim) => (
+        <span className="text-muted-foreground">{formatDate(claim.created_at)}</span>
       ),
     },
     {
       key: 'actions',
       header: 'Actions',
-      render: (dispute) => (
-        <Link href={`/admin/disputes/${dispute.id}` as Route}>
+      render: (claim) => (
+        <Link href={`/admin/guarantee/${claim.id}` as Route}>
           <Button variant="outline" size="sm" className="min-h-[44px]">
             Review
           </Button>
@@ -183,7 +177,7 @@ export default function AdminGuaranteePage() {
             <SelectItem value={ALL_FILTER}>All Statuses</SelectItem>
             {Object.entries(DISPUTE_STATUS).map(([key, value]) => (
               <SelectItem key={key} value={value}>
-                {STATUS_LABELS[value]}
+                {STATUS_LABELS[value] ?? value}
               </SelectItem>
             ))}
           </SelectContent>
@@ -193,7 +187,7 @@ export default function AdminGuaranteePage() {
       <DataTable
         columns={columns}
         data={guaranteeClaims}
-        rowKey={(dispute) => dispute.id}
+        rowKey={(claim) => claim.id}
         pagination={data?.pagination}
         page={page}
         onPageChange={setPage}

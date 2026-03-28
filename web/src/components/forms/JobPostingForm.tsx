@@ -152,11 +152,17 @@ export function JobPostingForm() {
     const valid = await form.trigger();
     if (!valid) return;
 
-    const values = form.getValues();
-    const input = buildCreateInput(values);
-    const job = await createJob.mutateAsync(input);
-    await publishJob.mutateAsync(job.id);
-    router.push('/jobs/mine' as Route);
+    try {
+      const values = form.getValues();
+      const input = buildCreateInput(values);
+      const job = await createJob.mutateAsync(input);
+      if (!job?.id) throw new Error('Job creation returned no data');
+      await publishJob.mutateAsync(job.id);
+      router.push('/jobs/mine' as Route);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to publish job';
+      form.setError('root', { message });
+    }
   }
 
   async function handleSaveDraft() {
@@ -169,10 +175,15 @@ export function JobPostingForm() {
       return;
     }
 
-    const values = form.getValues();
-    const input = buildCreateInput(values);
-    await createJob.mutateAsync(input);
-    router.push('/jobs/mine' as Route);
+    try {
+      const values = form.getValues();
+      const input = buildCreateInput(values);
+      await createJob.mutateAsync(input);
+      router.push('/jobs/mine' as Route);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save draft';
+      form.setError('root', { message });
+    }
   }
 
   const isPending = createJob.isPending || publishJob.isPending;
@@ -232,7 +243,11 @@ export function JobPostingForm() {
               {step === 4 ? <StepPhotos photos={photos} onPhotosChange={setPhotos} /> : null}
               {step === 5 ? <StepAuction form={form} /> : null}
               {step === 6 ? (
-                <StepReview form={form} marketRange={EXAMPLE_MARKET_RANGE} photoCount={photos.length} />
+                <StepReview
+                  form={form}
+                  marketRange={EXAMPLE_MARKET_RANGE}
+                  photoCount={photos.length}
+                />
               ) : null}
 
               {/* Navigation buttons */}
@@ -505,9 +520,7 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
-      const incoming = Array.from(files).filter((f) =>
-        ACCEPTED_PHOTO_TYPES.includes(f.type),
-      );
+      const incoming = Array.from(files).filter((f) => ACCEPTED_PHOTO_TYPES.includes(f.type));
       const slotsRemaining = MAX_PHOTOS - photos.length;
       if (slotsRemaining <= 0) return;
       const toAdd = incoming.slice(0, slotsRemaining);
@@ -575,7 +588,7 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
         role="button"
         tabIndex={0}
         aria-label="Drag photos here or click to browse"
-        className={`flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-8 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+        className={`focus-visible:ring-ring flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-8 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none ${
           isDragging
             ? 'border-primary bg-primary/5'
             : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
@@ -602,13 +615,11 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
           aria-hidden="true"
           tabIndex={-1}
         />
-        <ImagePlus className="mb-2 h-8 w-8 text-muted-foreground" aria-hidden="true" />
-        <p className="text-sm font-medium text-muted-foreground">
+        <ImagePlus className="text-muted-foreground mb-2 h-8 w-8" aria-hidden="true" />
+        <p className="text-muted-foreground text-sm font-medium">
           Drag photos here or click to browse
         </p>
-        <p className="mt-1 text-xs text-muted-foreground/70">
-          Up to 10 photos (JPG, PNG, WebP)
-        </p>
+        <p className="text-muted-foreground/70 mt-1 text-xs">Up to 10 photos (JPG, PNG, WebP)</p>
       </div>
 
       {/* Photo count */}
@@ -624,7 +635,7 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
           {photos.map((file, index) => (
             <div
               key={`${file.name}-${String(file.lastModified)}-${String(index)}`}
-              className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
+              className="group bg-muted relative aspect-square overflow-hidden rounded-md border"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -637,7 +648,7 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
                 onClick={() => {
                   removePhoto(index);
                 }}
-                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
+                className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/80"
                 aria-label={`Remove ${file.name}`}
               >
                 <X className="h-3.5 w-3.5" aria-hidden="true" />

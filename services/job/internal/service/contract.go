@@ -401,8 +401,8 @@ func (s *ContractService) GetDispute(ctx context.Context, disputeID string) (*do
 }
 
 // ListDisputes lists disputes with optional filters.
-func (s *ContractService) ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, page, pageSize int) ([]*domain.Dispute, *domain.Pagination, error) {
-	disputes, pagination, err := s.contractRepo.ListDisputes(ctx, contractID, userID, status, page, pageSize)
+func (s *ContractService) ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, isGuaranteeClaim *bool, page, pageSize int) ([]*domain.Dispute, *domain.Pagination, error) {
+	disputes, pagination, err := s.contractRepo.ListDisputes(ctx, contractID, userID, status, isGuaranteeClaim, page, pageSize)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list disputes: %w", err)
 	}

@@ -3341,13 +3341,14 @@ func (x *GetDisputeResponse) GetDispute() *Dispute {
 }
 
 type ListDisputesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ContractId    *string                `protobuf:"bytes,1,opt,name=contract_id,json=contractId,proto3,oneof" json:"contract_id,omitempty"`
-	UserId        *string                `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"`
-	StatusFilter  *DisputeStatus         `protobuf:"varint,3,opt,name=status_filter,json=statusFilter,proto3,enum=nomarkup.contract.v1.DisputeStatus,oneof" json:"status_filter,omitempty"`
-	Pagination    *v1.PaginationRequest  `protobuf:"bytes,4,opt,name=pagination,proto3" json:"pagination,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ContractId       *string                `protobuf:"bytes,1,opt,name=contract_id,json=contractId,proto3,oneof" json:"contract_id,omitempty"`
+	UserId           *string                `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"`
+	StatusFilter     *DisputeStatus         `protobuf:"varint,3,opt,name=status_filter,json=statusFilter,proto3,enum=nomarkup.contract.v1.DisputeStatus,oneof" json:"status_filter,omitempty"`
+	Pagination       *v1.PaginationRequest  `protobuf:"bytes,4,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	IsGuaranteeClaim *bool                  `protobuf:"varint,5,opt,name=is_guarantee_claim,json=isGuaranteeClaim,proto3,oneof" json:"is_guarantee_claim,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ListDisputesRequest) Reset() {
@@ -3406,6 +3407,13 @@ func (x *ListDisputesRequest) GetPagination() *v1.PaginationRequest {
 		return x.Pagination
 	}
 	return nil
+}
+
+func (x *ListDisputesRequest) GetIsGuaranteeClaim() bool {
+	if x != nil && x.IsGuaranteeClaim != nil {
+		return *x.IsGuaranteeClaim
+	}
+	return false
 }
 
 type ListDisputesResponse struct {
@@ -4042,7 +4050,7 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"\n" +
 	"dispute_id\x18\x01 \x01(\tR\tdisputeId\"M\n" +
 	"\x12GetDisputeResponse\x127\n" +
-	"\adispute\x18\x01 \x01(\v2\x1d.nomarkup.contract.v1.DisputeR\adispute\"\x9d\x02\n" +
+	"\adispute\x18\x01 \x01(\v2\x1d.nomarkup.contract.v1.DisputeR\adispute\"\xe7\x02\n" +
 	"\x13ListDisputesRequest\x12$\n" +
 	"\vcontract_id\x18\x01 \x01(\tH\x00R\n" +
 	"contractId\x88\x01\x01\x12\x1c\n" +
@@ -4050,11 +4058,13 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"\rstatus_filter\x18\x03 \x01(\x0e2#.nomarkup.contract.v1.DisputeStatusH\x02R\fstatusFilter\x88\x01\x01\x12E\n" +
 	"\n" +
 	"pagination\x18\x04 \x01(\v2%.nomarkup.common.v1.PaginationRequestR\n" +
-	"paginationB\x0e\n" +
+	"pagination\x121\n" +
+	"\x12is_guarantee_claim\x18\x05 \x01(\bH\x03R\x10isGuaranteeClaim\x88\x01\x01B\x0e\n" +
 	"\f_contract_idB\n" +
 	"\n" +
 	"\b_user_idB\x10\n" +
-	"\x0e_status_filter\"\x99\x01\n" +
+	"\x0e_status_filterB\x15\n" +
+	"\x13_is_guarantee_claim\"\x99\x01\n" +
 	"\x14ListDisputesResponse\x129\n" +
 	"\bdisputes\x18\x01 \x03(\v2\x1d.nomarkup.contract.v1.DisputeR\bdisputes\x12F\n" +
 	"\n" +

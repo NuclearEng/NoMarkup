@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -14,11 +18,14 @@ import (
 // ProviderHandler handles HTTP endpoints for provider profiles.
 type ProviderHandler struct {
 	userClient userv1.UserServiceClient
+	db         *pgxpool.Pool
 }
 
 // NewProviderHandler creates a new ProviderHandler.
-func NewProviderHandler(userClient userv1.UserServiceClient) *ProviderHandler {
-	return &ProviderHandler{userClient: userClient}
+// The db pool is used for gateway-level queries (e.g. streaks) that don't
+// have a corresponding gRPC RPC. If db is nil, those endpoints degrade gracefully.
+func NewProviderHandler(userClient userv1.UserServiceClient, db *pgxpool.Pool) *ProviderHandler {
+	return &ProviderHandler{userClient: userClient, db: db}
 }
 
 type updateProviderRequest struct {
@@ -84,7 +91,12 @@ func (h *ProviderHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile()))
+	result := protoProviderToJSON(resp.GetProfile())
+	if label := h.getResponseTimeLabel(r.Context(), claims.UserID); label != nil {
+		result["response_time_label"] = *label
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // UpdateMe handles PATCH /api/v1/providers/me.
@@ -283,14 +295,63 @@ func (h *ProviderHandler) SetAvailability(w http.ResponseWriter, r *http.Request
 
 // GetStreaks handles GET /api/v1/providers/me/streaks.
 func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
 	}
 
-	// TODO: implement streaks query via user service gRPC
-	writeJSON(w, http.StatusOK, []interface{}{})
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(), `
+		SELECT id, provider_id, category_id, current_streak, longest_streak,
+		       total_wins, category_rank, updated_at
+		FROM provider_streaks
+		WHERE provider_id = $1
+		ORDER BY total_wins DESC`, claims.UserID)
+	if err != nil {
+		slog.Error("failed to query provider streaks", "provider_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to get streaks")
+		return
+	}
+	defer rows.Close()
+
+	streaks := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var (
+			id, providerID                          string
+			categoryID                              *string
+			currentStreak, longestStreak, totalWins  int
+			categoryRank                             *int
+			updatedAt                                time.Time
+		)
+		if err := rows.Scan(&id, &providerID, &categoryID, &currentStreak, &longestStreak, &totalWins, &categoryRank, &updatedAt); err != nil {
+			slog.Error("failed to scan provider streak row", "provider_id", claims.UserID, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to read streaks")
+			return
+		}
+		streak := map[string]interface{}{
+			"id":              id,
+			"provider_id":     providerID,
+			"category_id":     categoryID,
+			"current_streak":  currentStreak,
+			"longest_streak":  longestStreak,
+			"total_wins":      totalWins,
+			"category_rank":   categoryRank,
+			"updated_at":      updatedAt.UTC().Format(time.RFC3339),
+		}
+		streaks = append(streaks, streak)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("error iterating provider streak rows", "provider_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to get streaks")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, streaks)
 }
 
 // GetProvider handles GET /api/v1/providers/{id}.
@@ -309,7 +370,12 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile()))
+	result := protoProviderToJSON(resp.GetProfile())
+	if label := h.getResponseTimeLabel(r.Context(), userID); label != nil {
+		result["response_time_label"] = *label
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // SearchProviders handles GET /api/v1/providers/search.
@@ -388,7 +454,11 @@ func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request
 
 	providers := make([]map[string]interface{}, 0, len(resp.GetProviders()))
 	for _, p := range resp.GetProviders() {
-		providers = append(providers, protoProviderSearchResultToJSON(p))
+		pJSON := protoProviderSearchResultToJSON(p)
+		if label := h.getResponseTimeLabel(r.Context(), p.GetUserId()); label != nil {
+			pJSON["response_time_label"] = *label
+		}
+		providers = append(providers, pJSON)
 	}
 
 	result := map[string]interface{}{
@@ -405,6 +475,62 @@ func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// getResponseTimeLabel calculates the average first-response time for a
+// provider across chat channels from the last 90 days and returns a
+// human-readable label. Returns nil when there is insufficient data or the
+// database pool is unavailable.
+func (h *ProviderHandler) getResponseTimeLabel(ctx context.Context, providerID string) *string {
+	if h.db == nil {
+		return nil
+	}
+
+	var avgMinutes *float64
+	err := h.db.QueryRow(ctx, `
+		SELECT AVG(EXTRACT(EPOCH FROM (first_response - channel_created)) / 60.0)
+		FROM (
+			SELECT
+				ch.created_at AS channel_created,
+				MIN(cm.created_at) AS first_response
+			FROM chat_channels ch
+			JOIN chat_messages cm
+				ON cm.channel_id = ch.id
+				AND cm.sender_id = $1
+			WHERE ch.provider_id = $1
+			  AND ch.created_at > now() - interval '90 days'
+			GROUP BY ch.id, ch.created_at
+		) sub
+		WHERE first_response IS NOT NULL
+	`, providerID).Scan(&avgMinutes)
+
+	if err != nil {
+		slog.Error("failed to query provider response time",
+			"provider_id", providerID,
+			"error", err,
+		)
+		return nil
+	}
+	if avgMinutes == nil {
+		return nil
+	}
+
+	minutes := *avgMinutes
+	var label string
+	switch {
+	case minutes < 15:
+		label = "Usually responds in minutes"
+	case minutes < 60:
+		label = "Usually responds within an hour"
+	case minutes < 180:
+		label = "Usually responds within a few hours"
+	case minutes < 1440:
+		label = "Usually responds within a day"
+	default:
+		return nil // Too slow to be a positive signal
+	}
+
+	return &label
 }
 
 func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]interface{} {

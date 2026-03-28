@@ -46,17 +46,18 @@ func (s *Service) CreateChannel(ctx context.Context, jobID, customerID, provider
 	}
 
 	// FR-8.1: For post-bid chat, verify the provider has an active bid on the job.
+	// Fail closed: if bid verification is unavailable, deny access.
 	if channelType == "pre_award" && s.bidChecker != nil {
 		hasBid, err := s.bidChecker.HasActiveBid(ctx, jobID, providerID)
 		if err != nil {
-			// Log but don't block -- fail open to avoid breaking chat when
-			// the bid engine is temporarily unavailable.
-			slog.Warn("failed to check bid status for chat access",
+			slog.Error("failed to check bid status for chat access",
 				"job_id", jobID,
 				"provider_id", providerID,
 				"error", err,
 			)
-		} else if !hasBid {
+			return nil, fmt.Errorf("create channel: bid verification unavailable: %w", err)
+		}
+		if !hasBid {
 			return nil, fmt.Errorf("create channel: %w", domain.ErrNoBidForChat)
 		}
 	}

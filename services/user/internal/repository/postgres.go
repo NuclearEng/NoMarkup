@@ -187,6 +187,85 @@ func (r *PostgresRepository) RevokeAllUserTokens(ctx context.Context, userID str
 	return nil
 }
 
+// --- OAuth ---
+
+func (r *PostgresRepository) FindUserByOAuth(ctx context.Context, provider, providerID string) (*domain.User, error) {
+	query := `
+		SELECT u.id, u.email, u.email_verified, u.password_hash, u.phone, u.phone_verified,
+		       u.display_name, u.avatar_url, u.roles, u.status, u.suspension_reason,
+		       u.mfa_enabled, u.mfa_secret, u.mfa_backup_codes,
+		       u.last_login_at, u.last_active_at, u.timezone,
+		       u.created_at, u.updated_at, u.deleted_at
+		FROM users u
+		JOIN oauth_accounts oa ON oa.user_id = u.id
+		WHERE oa.provider = $1 AND oa.provider_id = $2 AND u.deleted_at IS NULL`
+
+	u, err := scanUser(r.pool.QueryRow(ctx, query, provider, providerID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("find user by oauth: %w", domain.ErrUserNotFound)
+		}
+		return nil, fmt.Errorf("find user by oauth: %w", err)
+	}
+	return u, nil
+}
+
+func (r *PostgresRepository) CreateOAuthUser(ctx context.Context, user *domain.User, provider, providerID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("create oauth user begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	userQuery := `
+		INSERT INTO users (email, email_verified, password_hash, display_name, avatar_url, roles, status, timezone)
+		VALUES ($1, true, NULL, $2, $3, $4, $5, $6)
+		RETURNING id, created_at, updated_at`
+
+	err = tx.QueryRow(ctx, userQuery,
+		user.Email,
+		user.DisplayName,
+		user.AvatarURL,
+		user.Roles,
+		user.Status,
+		user.Timezone,
+	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("create oauth user: %w", domain.ErrEmailTaken)
+		}
+		return fmt.Errorf("create oauth user: %w", err)
+	}
+
+	oauthQuery := `
+		INSERT INTO oauth_accounts (user_id, provider, provider_id, email)
+		VALUES ($1, $2, $3, $4)`
+
+	_, err = tx.Exec(ctx, oauthQuery, user.ID, provider, providerID, user.Email)
+	if err != nil {
+		return fmt.Errorf("create oauth account: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("create oauth user commit: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) LinkOAuthAccount(ctx context.Context, userID, provider, providerID, email string) error {
+	query := `
+		INSERT INTO oauth_accounts (user_id, provider, provider_id, email)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (provider, provider_id) DO NOTHING`
+
+	_, err := r.pool.Exec(ctx, query, userID, provider, providerID, email)
+	if err != nil {
+		return fmt.Errorf("link oauth account: %w", err)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) UpdateUser(ctx context.Context, userID string, input domain.UpdateUserInput) (*domain.User, error) {
 	setClauses := []string{}
 	args := []interface{}{}
@@ -1048,6 +1127,73 @@ func (r *PostgresRepository) UpdateDocumentStatus(ctx context.Context, documentI
 		return fmt.Errorf("update document status: %w", domain.ErrDocumentNotFound)
 	}
 	return nil
+}
+
+// --- MFA ---
+
+func (r *PostgresRepository) StoreMFASecret(ctx context.Context, userID, encryptedSecret string) error {
+	query := `UPDATE users SET mfa_secret = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`
+	tag, err := r.pool.Exec(ctx, query, encryptedSecret, userID)
+	if err != nil {
+		return fmt.Errorf("store mfa secret: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("store mfa secret: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetMFASecret(ctx context.Context, userID string) (string, error) {
+	query := `SELECT mfa_secret FROM users WHERE id = $1 AND deleted_at IS NULL`
+	var secret *string
+	err := r.pool.QueryRow(ctx, query, userID).Scan(&secret)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("get mfa secret: %w", domain.ErrUserNotFound)
+		}
+		return "", fmt.Errorf("get mfa secret: %w", err)
+	}
+	if secret == nil {
+		return "", fmt.Errorf("get mfa secret: %w", domain.ErrMFANotSetup)
+	}
+	return *secret, nil
+}
+
+func (r *PostgresRepository) EnableMFA(ctx context.Context, userID string, hashedBackupCodes []string) error {
+	query := `UPDATE users SET mfa_enabled = true, mfa_backup_codes = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`
+	tag, err := r.pool.Exec(ctx, query, hashedBackupCodes, userID)
+	if err != nil {
+		return fmt.Errorf("enable mfa: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("enable mfa: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) DisableMFA(ctx context.Context, userID string) error {
+	query := `UPDATE users SET mfa_enabled = false, mfa_secret = NULL, mfa_backup_codes = NULL, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`
+	tag, err := r.pool.Exec(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("disable mfa: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("disable mfa: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) IsMFAEnabled(ctx context.Context, userID string) (bool, error) {
+	query := `SELECT mfa_enabled FROM users WHERE id = $1 AND deleted_at IS NULL`
+	var enabled bool
+	err := r.pool.QueryRow(ctx, query, userID).Scan(&enabled)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, fmt.Errorf("is mfa enabled: %w", domain.ErrUserNotFound)
+		}
+		return false, fmt.Errorf("is mfa enabled: %w", err)
+	}
+	return enabled, nil
 }
 
 // parseIP parses an IP address string, stripping any CIDR suffix from PostgreSQL inet type.

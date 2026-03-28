@@ -33,8 +33,8 @@ func (h *PaymentHandler) CreateStripeAccount(w http.ResponseWriter, r *http.Requ
 		Email        string `json:"email"`
 		BusinessName string `json:"business_name"`
 	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req) {
+		return
 	}
 
 	resp, err := h.paymentClient.CreateStripeAccount(r.Context(), &paymentv1.CreateStripeAccountRequest{
@@ -254,8 +254,8 @@ func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req processPaymentRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req) {
+		return
 	}
 
 	resp, err := h.paymentClient.ProcessPayment(r.Context(), &paymentv1.ProcessPaymentRequest{
@@ -429,8 +429,8 @@ func (h *PaymentHandler) ReleasePayment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req releasePaymentRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req) {
+		return
 	}
 
 	resp, err := h.paymentClient.ReleaseEscrow(r.Context(), &paymentv1.ReleaseEscrowRequest{

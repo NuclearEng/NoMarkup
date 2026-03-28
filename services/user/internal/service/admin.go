@@ -25,11 +25,12 @@ func (a *Admin) SuspendUser(ctx context.Context, userID, reason, adminID string)
 	}
 
 	if err := a.repo.RevokeAllUserTokens(ctx, userID); err != nil {
-		slog.Warn("failed to revoke tokens after suspension",
+		slog.Error("failed to revoke tokens during suspension",
 			"user_id", userID,
 			"admin_id", adminID,
 			"error", err,
 		)
+		return fmt.Errorf("suspend user: revoke tokens: %w", err)
 	}
 
 	slog.Info("user suspended",
@@ -47,11 +48,12 @@ func (a *Admin) BanUser(ctx context.Context, userID, reason, adminID string) err
 	}
 
 	if err := a.repo.RevokeAllUserTokens(ctx, userID); err != nil {
-		slog.Warn("failed to revoke tokens after ban",
+		slog.Error("failed to revoke tokens during ban",
 			"user_id", userID,
 			"admin_id", adminID,
 			"error", err,
 		)
+		return fmt.Errorf("ban user: revoke tokens: %w", err)
 	}
 
 	slog.Info("user banned",

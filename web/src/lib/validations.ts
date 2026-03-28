@@ -216,6 +216,12 @@ export const reviewResponseSchema = z.string().min(10, 'Response must be at leas
 // Chat schemas
 export const chatMessageSchema = z.string().min(1, 'Message cannot be empty').max(2000, 'Message too long');
 
+// MFA schema
+export const mfaCodeSchema = z
+  .string()
+  .min(6, 'Code must be at least 6 characters')
+  .max(8, 'Code must be at most 8 characters');
+
 // Auth flow schemas
 export const forgotPasswordSchema = z.object({
   email: emailSchema,

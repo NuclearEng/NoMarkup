@@ -2,12 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -56,6 +59,7 @@ type authResponse struct {
 	AccessToken          string `json:"access_token,omitempty"`
 	AccessTokenExpiresAt string `json:"access_token_expires_at,omitempty"`
 	MFARequired          bool   `json:"mfa_required,omitempty"`
+	MFAChallengeToken    string `json:"mfa_challenge_token,omitempty"`
 }
 
 // Register handles POST /api/v1/auth/register.
@@ -101,6 +105,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		IpAddress:  extractIP(r),
 	})
 	if err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition && st.Message() == "email not verified" {
+			writeError(w, http.StatusForbidden, "Please verify your email before signing in")
+			return
+		}
 		writeGRPCError(w, err)
 		return
 	}
@@ -114,6 +122,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		AccessToken:          resp.GetAccessToken(),
 		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
 		MFARequired:          resp.GetMfaRequired(),
+		MFAChallengeToken:    resp.GetMfaChallengeToken(),
 	})
 }
 
@@ -209,6 +218,37 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"verified": resp.GetVerified()})
+}
+
+type resendVerificationRequest struct {
+	Email string `json:"email"`
+}
+
+// ResendVerification handles POST /api/v1/auth/resend-verification.
+func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req resendVerificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+
+	// Call user service to regenerate token and send email.
+	_, err := h.userClient.ResendVerification(r.Context(), &userv1.ResendVerificationRequest{
+		Email: req.Email,
+	})
+	if err != nil {
+		// Don't reveal whether the email exists.
+		slog.Info("resend verification attempted", "email", req.Email, "error", err)
+	}
+
+	// Always return success to prevent email enumeration.
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "If an account exists with this email, a verification link has been sent",
+	})
 }
 
 // --- Phone verification ---
@@ -347,6 +387,38 @@ func (h *AuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
 		"qr_code_url":  resp.GetQrCodeUrl(),
 		"backup_codes": resp.GetBackupCodes(),
 	})
+}
+
+type confirmMFASetupRequest struct {
+	TOTPCode    string   `json:"totp_code"`
+	BackupCodes []string `json:"backup_codes"`
+}
+
+// ConfirmMFASetup handles POST /api/v1/auth/mfa/verify-setup.
+func (h *AuthHandler) ConfirmMFASetup(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req confirmMFASetupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.userClient.ConfirmMFASetup(r.Context(), &userv1.ConfirmMFASetupRequest{
+		UserId:      claims.UserID,
+		TotpCode:    req.TOTPCode,
+		BackupCodes: req.BackupCodes,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
 }
 
 type verifyMFARequest struct {

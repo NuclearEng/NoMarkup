@@ -16,3 +16,7 @@ CREATE TABLE working_capital_advances (
 );
 CREATE INDEX idx_wca_provider ON working_capital_advances(provider_id, status);
 CREATE INDEX idx_wca_contract ON working_capital_advances(contract_id);
+
+CREATE TRIGGER set_working_capital_advances_updated_at
+  BEFORE UPDATE ON working_capital_advances
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();

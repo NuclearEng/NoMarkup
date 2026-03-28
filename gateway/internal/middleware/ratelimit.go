@@ -154,6 +154,7 @@ var routeTiers = []struct {
 	{"/api/v1/auth/send-phone-otp", TierStrict},
 	{"/api/v1/auth/request-password-reset", TierStrict},
 	{"/api/v1/auth/mfa/enable", TierStrict},
+	{"/api/v1/auth/mfa/verify-setup", TierStrict},
 	{"/api/v1/auth/mfa/disable", TierStrict},
 	{"/api/v1/users/me/enable-role", TierStrict},
 	{"/api/v1/users/me/deactivate", TierStrict},

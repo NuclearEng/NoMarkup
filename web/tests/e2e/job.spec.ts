@@ -10,10 +10,12 @@ test.describe('Job flows', () => {
 
     test('job posting form renders required fields', async ({ page }) => {
       await page.goto('/jobs/new');
-      // If redirected to login, skip remaining assertions.
-      if (page.url().includes('/login')) {
-        return;
-      }
+      // AuthGuard redirects unauthenticated users to /login.
+      const redirected = await page
+        .waitForURL(/\/login/, { timeout: 8_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (redirected) return;
       await expect(page.getByLabel(/title/i)).toBeVisible();
       await expect(page.getByLabel(/description/i)).toBeVisible();
     });
@@ -28,9 +30,7 @@ test.describe('Job flows', () => {
       if (await submitButton.isVisible()) {
         await submitButton.click();
         // Should show validation errors for required fields.
-        await expect(
-          page.getByText(/required|title|description/i).first(),
-        ).toBeVisible();
+        await expect(page.getByText(/required|title|description/i).first()).toBeVisible();
       }
     });
   });
@@ -53,8 +53,14 @@ test.describe('Job flows', () => {
   test.describe('Job detail', () => {
     test('shows not found or job content for detail page', async ({ page }) => {
       await page.goto('/jobs/test-job-id');
-      // Should either show job content or a not-found state.
-      await page.waitForLoadState('networkidle');
+      // Wait for either job content heading or not-found text to appear.
+      await Promise.race([
+        page.getByRole('heading').first().waitFor({ timeout: 10_000 }),
+        page
+          .getByText(/not found|error|unavailable/i)
+          .first()
+          .waitFor({ timeout: 10_000 }),
+      ]).catch(() => {});
       const hasContent = await page.getByRole('heading').count();
       const hasNotFound = await page.getByText(/not found|error|unavailable/i).count();
       expect(hasContent > 0 || hasNotFound > 0).toBeTruthy();

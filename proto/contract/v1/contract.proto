@@ -443,6 +443,7 @@ message ListDisputesRequest {
   optional string user_id = 2;
   optional DisputeStatus status_filter = 3;
   nomarkup.common.v1.PaginationRequest pagination = 4;
+  optional bool is_guarantee_claim = 5;
 }
 
 message ListDisputesResponse {

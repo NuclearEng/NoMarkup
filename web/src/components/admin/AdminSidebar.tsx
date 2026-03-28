@@ -11,6 +11,7 @@ import {
   MessageSquareWarning,
   Shield,
   ShieldCheck,
+  Trophy,
   Users,
 } from 'lucide-react';
 import type { Route } from 'next';
@@ -36,6 +37,7 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/payments' as Route, label: 'Payments', icon: CreditCard },
   { href: '/admin/advances' as Route, label: 'Advances', icon: Banknote },
   { href: '/admin/guarantee' as Route, label: 'Guarantee', icon: ShieldCheck },
+  { href: '/admin/challenges' as Route, label: 'Challenges', icon: Trophy },
   { href: '/admin/platform' as Route, label: 'Platform', icon: MessageSquareWarning },
 ];
 

@@ -47,6 +47,17 @@ service PaymentService {
 
   // Revenue reporting
   rpc GetRevenueReport(GetRevenueReportRequest) returns (GetRevenueReportResponse);
+
+  // Expenses
+  rpc CreateExpense(CreateExpenseRequest) returns (CreateExpenseResponse);
+  rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
+  rpc DeleteExpense(DeleteExpenseRequest) returns (DeleteExpenseResponse);
+
+  // Working Capital
+  rpc RequestAdvance(RequestAdvanceRequest) returns (RequestAdvanceResponse);
+  rpc ListAdvances(ListAdvancesRequest) returns (ListAdvancesResponse);
+  rpc GetAdvance(GetAdvanceRequest) returns (GetAdvanceResponse);
+  rpc ReviewAdvance(ReviewAdvanceRequest) returns (ReviewAdvanceResponse);
 }
 
 // ============================================================
@@ -359,4 +370,125 @@ message RevenueDataPoint {
   int64 gmv_cents = 2;
   int64 revenue_cents = 3;
   int32 transaction_count = 4;
+}
+
+// ============================================================
+// Expense RPCs
+// ============================================================
+
+message Expense {
+  string id = 1;
+  string provider_id = 2;
+  string category = 3;
+  string description = 4;
+  int64 amount_cents = 5;
+  string receipt_url = 6;
+  string expense_date = 7;  // YYYY-MM-DD
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CreateExpenseRequest {
+  string provider_id = 1;
+  string category = 2;
+  string description = 3;
+  int64 amount_cents = 4;
+  string receipt_url = 5;
+  string expense_date = 6;  // YYYY-MM-DD
+}
+
+message CreateExpenseResponse {
+  Expense expense = 1;
+}
+
+message ListExpensesRequest {
+  string provider_id = 1;
+  string start_date = 2;  // YYYY-MM-DD, optional filter
+  string end_date = 3;    // YYYY-MM-DD, optional filter
+  nomarkup.common.v1.PaginationRequest pagination = 4;
+}
+
+message ListExpensesResponse {
+  repeated Expense expenses = 1;
+  int64 total_cents = 2;
+  nomarkup.common.v1.PaginationResponse pagination = 3;
+}
+
+message DeleteExpenseRequest {
+  string expense_id = 1;
+  string provider_id = 2;  // for ownership check
+}
+
+message DeleteExpenseResponse {}
+
+// ============================================================
+// Working Capital Advance RPCs
+// ============================================================
+
+enum AdvanceStatus {
+  ADVANCE_STATUS_UNSPECIFIED = 0;
+  ADVANCE_STATUS_REQUESTED = 1;
+  ADVANCE_STATUS_APPROVED = 2;
+  ADVANCE_STATUS_DISBURSED = 3;
+  ADVANCE_STATUS_REPAYING = 4;
+  ADVANCE_STATUS_REPAID = 5;
+  ADVANCE_STATUS_DEFAULTED = 6;
+  ADVANCE_STATUS_REJECTED = 7;
+}
+
+message Advance {
+  string id = 1;
+  string provider_id = 2;
+  string contract_id = 3;
+  int64 advance_amount_cents = 4;
+  int64 fee_cents = 5;
+  int64 repaid_cents = 6;
+  string status = 7;
+  string reviewed_by = 8;
+  google.protobuf.Timestamp reviewed_at = 9;
+  string rejection_reason = 10;
+  google.protobuf.Timestamp disbursed_at = 11;
+  google.protobuf.Timestamp repaid_at = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message RequestAdvanceRequest {
+  string provider_id = 1;
+  string contract_id = 2;
+  int64 amount_cents = 3;
+}
+
+message RequestAdvanceResponse {
+  Advance advance = 1;
+}
+
+message ListAdvancesRequest {
+  string provider_id = 1;  // empty = list all (admin)
+  optional string status_filter = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message ListAdvancesResponse {
+  repeated Advance advances = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message GetAdvanceRequest {
+  string advance_id = 1;
+}
+
+message GetAdvanceResponse {
+  Advance advance = 1;
+}
+
+message ReviewAdvanceRequest {
+  string advance_id = 1;
+  string reviewer_id = 2;
+  string action = 3;  // "approve" or "reject"
+  string reason = 4;  // rejection reason (required if action=reject)
+}
+
+message ReviewAdvanceResponse {
+  Advance advance = 1;
 }

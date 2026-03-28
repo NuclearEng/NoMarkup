@@ -700,7 +700,7 @@ func (r *PostgresRepository) GetDispute(ctx context.Context, disputeID string) (
 }
 
 // ListDisputes lists disputes with optional filters and pagination.
-func (r *PostgresRepository) ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, page, pageSize int) ([]*domain.Dispute, *domain.Pagination, error) {
+func (r *PostgresRepository) ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, isGuaranteeClaim *bool, page, pageSize int) ([]*domain.Dispute, *domain.Pagination, error) {
 	where := []string{"1=1"}
 	args := []interface{}{}
 	argIdx := 1
@@ -720,6 +720,12 @@ func (r *PostgresRepository) ListDisputes(ctx context.Context, contractID *strin
 	if status != nil && *status != "" {
 		where = append(where, fmt.Sprintf("d.status = $%d", argIdx))
 		args = append(args, *status)
+		argIdx++
+	}
+
+	if isGuaranteeClaim != nil {
+		where = append(where, fmt.Sprintf("d.is_guarantee_claim = $%d", argIdx))
+		args = append(args, *isGuaranteeClaim)
 		argIdx++
 	}
 

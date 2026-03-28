@@ -52,18 +52,36 @@ export function ForgotPasswordForm() {
 
   if (submitted) {
     return (
-      <Card>
+      <Card className="border-border/50 overflow-hidden shadow-xl shadow-black/5 backdrop-blur-sm">
+        <div className="h-[3px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400" />
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Check your email</CardTitle>
-          <CardDescription>
-            If an account exists with that email address, we sent a password
-            reset link. Check your inbox and follow the instructions.
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/10">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6 text-emerald-600 dark:text-emerald-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+          </div>
+          <CardTitle className="text-2xl font-bold tracking-tight">Check your email</CardTitle>
+          <CardDescription className="leading-relaxed">
+            If an account exists with that email address, we sent a password reset link. Check your
+            inbox and follow the instructions.
           </CardDescription>
         </CardHeader>
-        <CardFooter className="justify-center">
+        <CardFooter className="border-border/50 justify-center border-t pt-6">
           <Link
             href="/login"
-            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
             Back to sign in
           </Link>
@@ -73,12 +91,11 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <Card>
+    <Card className="border-border/50 overflow-hidden shadow-xl shadow-black/5 backdrop-blur-sm">
+      <div className="h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Forgot your password?</CardTitle>
-        <CardDescription>
-          Enter your email and we&apos;ll send you a reset link
-        </CardDescription>
+        <CardTitle className="text-2xl font-bold tracking-tight">Forgot your password?</CardTitle>
+        <CardDescription>Enter your email and we&apos;ll send you a reset link</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -91,7 +108,7 @@ export function ForgotPasswordForm() {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+                className="animate-auth-error bg-destructive/10 text-destructive rounded-md p-3 text-sm"
               >
                 {formError}
               </div>
@@ -118,7 +135,7 @@ export function ForgotPasswordForm() {
 
             <Button
               type="submit"
-              className="min-h-[44px] w-full"
+              className="min-h-[44px] w-full bg-[var(--brand-gold)] font-semibold text-white shadow-[var(--brand-gold)]/20 shadow-md transition-all hover:bg-[var(--brand-gold-bright)] hover:shadow-[var(--brand-gold)]/25 hover:shadow-lg"
               disabled={form.formState.isSubmitting}
             >
               {form.formState.isSubmitting ? 'Sending...' : 'Send reset link'}
@@ -126,12 +143,12 @@ export function ForgotPasswordForm() {
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="justify-center">
-        <p className="text-sm text-muted-foreground">
+      <CardFooter className="border-border/50 justify-center border-t pt-6">
+        <p className="text-muted-foreground text-sm">
           Remember your password?{' '}
           <Link
             href="/login"
-            className="font-medium text-primary underline-offset-4 hover:underline"
+            className="text-primary font-medium underline-offset-4 hover:underline"
           >
             Sign in
           </Link>

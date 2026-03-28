@@ -97,7 +97,7 @@ func addClaimsToRequest(r *http.Request, userID, email string, roles []string) *
 	return r.WithContext(ctx)
 }
 
-func decodeJSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]interface{} {
+func decodeJSONResponse(t *testing.T, rec *httptest.ResponseRecorder) map[string]interface{} {
 	t.Helper()
 	var result map[string]interface{}
 	err := json.NewDecoder(rec.Body).Decode(&result)
@@ -177,7 +177,7 @@ func TestAuthHandler_Register(t *testing.T) {
 			h.Register(rec, req)
 
 			assert.Equal(t, tt.wantStatus, rec.Code)
-			result := decodeJSON(t, rec)
+			result := decodeJSONResponse(t, rec)
 			if tt.wantField != "" {
 				assert.Equal(t, tt.wantValue, result[tt.wantField])
 			}
@@ -247,7 +247,7 @@ func TestAuthHandler_Login(t *testing.T) {
 
 			assert.Equal(t, tt.wantStatus, rec.Code)
 			if tt.wantStatus == http.StatusOK {
-				result := decodeJSON(t, rec)
+				result := decodeJSONResponse(t, rec)
 				if tt.wantMFA {
 					assert.Equal(t, true, result["mfa_required"])
 				}
@@ -378,7 +378,7 @@ func TestJobHandler_Create(t *testing.T) {
 
 			assert.Equal(t, tt.wantStatus, rec.Code)
 			if tt.wantField != "" {
-				result := decodeJSON(t, rec)
+				result := decodeJSONResponse(t, rec)
 				assert.Equal(t, tt.wantValue, result[tt.wantField])
 			}
 		})
@@ -407,7 +407,7 @@ func TestJobHandler_Search(t *testing.T) {
 	h.Search(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	result := decodeJSON(t, rec)
+	result := decodeJSONResponse(t, rec)
 	jobs, ok := result["jobs"].([]interface{})
 	require.True(t, ok)
 	assert.Len(t, jobs, 2)
@@ -454,7 +454,7 @@ func TestSubscriptionHandler_ListTiers(t *testing.T) {
 	h.ListTiers(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	result := decodeJSON(t, rec)
+	result := decodeJSONResponse(t, rec)
 	tiers, ok := result["tiers"].([]interface{})
 	require.True(t, ok)
 	assert.Len(t, tiers, 2)
@@ -644,7 +644,7 @@ func TestWriteGRPCError_non_grpc_error(t *testing.T) {
 	writeGRPCError(rec, assert.AnError) // a non-gRPC error
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	result := decodeJSON(t, rec)
+	result := decodeJSONResponse(t, rec)
 	assert.Equal(t, "internal error", result["error"])
 }
 

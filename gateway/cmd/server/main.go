@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
@@ -34,6 +35,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -54,6 +56,23 @@ func main() {
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
+	}
+
+	// Initialize Sentry error tracking. When SENTRY_DSN is not set, this is a
+	// no-op — all sentry.CaptureException / hub.Recover calls become silent.
+	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			Environment:      os.Getenv("APP_ENV"),
+			Release:          os.Getenv("APP_VERSION"),
+			TracesSampleRate: 0.1,
+			EnableTracing:    true,
+		}); err != nil {
+			slog.Error("failed to initialize sentry", "error", err)
+		} else {
+			slog.Info("sentry initialized", "environment", os.Getenv("APP_ENV"))
+			defer sentry.Flush(2 * time.Second)
+		}
 	}
 
 	// Initialize OpenTelemetry tracing.
@@ -170,6 +189,21 @@ func main() {
 		defer cacheClient.Close()
 	}
 
+	// Connect to PostgreSQL for gateway-level queries (feature flags).
+	// The pool is nil-safe — handlers degrade gracefully if DATABASE_URL is not set.
+	var dbPool *pgxpool.Pool
+	if cfg.DatabaseURL != "" {
+		dbPool, err = pgxpool.New(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			slog.Error("failed to connect to database", "error", err)
+			os.Exit(1)
+		}
+		defer dbPool.Close()
+		slog.Info("database pool initialized")
+	} else {
+		slog.Warn("DATABASE_URL not set, feature flags disabled")
+	}
+
 	// Determine if we should use secure cookies (production).
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
@@ -183,8 +217,8 @@ func main() {
 	// Wire up handlers and middleware.
 	authMW := middleware.NewAuthMiddleware(publicKey)
 	authHandler := handler.NewAuthHandler(userClient, secureCookie)
-	userHandler := handler.NewUserHandler(userClient)
-	providerHandler := handler.NewProviderHandler(userClient)
+	userHandler := handler.NewUserHandler(userClient, dbPool)
+	providerHandler := handler.NewProviderHandler(userClient, dbPool)
 	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)
 	jobHandler := handler.NewJobHandler(jobClient)
 	bidHandler := handler.NewBidHandler(bidClient)
@@ -208,10 +242,11 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(paymentClient, subscriptionClient)
 	propertyHandler := handler.NewPropertyHandler(userClient)
 	verificationHandler := handler.NewVerificationHandler(userClient)
-	workingCapitalHandler := handler.NewWorkingCapitalHandler()
-	expenseHandler := handler.NewExpenseHandler()
+	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient)
+	expenseHandler := handler.NewExpenseHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
 	auctionWSHandler := handler.NewAuctionWSHandler(authMW, cfg.ChatWSAddr)
+	spectatorWSHandler := handler.NewSpectatorWSHandler(cacheClient)
 	trustHandler := handler.NewTrustHandler(trustClient, cacheClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
 	notificationHandler := handler.NewNotificationHandler(notifClient)
@@ -225,6 +260,11 @@ func main() {
 	adminReviewsHandler := handler.NewAdminReviewsHandler(reviewClient)
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
+	featureFlagHandler := handler.NewFeatureFlagHandler(dbPool)
+	pricingHandler := handler.NewPricingHandler(dbPool)
+	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
+	challengeHandler := handler.NewChallengeHandler(dbPool)
+	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
@@ -239,6 +279,12 @@ func main() {
 		adminPlatformHandler, propertyHandler, verificationHandler,
 		workingCapitalHandler, expenseHandler,
 		auctionWSHandler,
+		spectatorWSHandler,
+		featureFlagHandler,
+		pricingHandler,
+		oauthHandler,
+		auctionReplayHandler,
+		challengeHandler,
 	)
 
 	srv := &http.Server{

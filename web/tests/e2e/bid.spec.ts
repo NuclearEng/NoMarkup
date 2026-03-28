@@ -4,8 +4,21 @@ test.describe('Bidding flows', () => {
   test.describe('Bid submission', () => {
     test('job detail page shows bid form or login prompt', async ({ page }) => {
       await page.goto('/jobs/test-job-id');
-      await page.waitForLoadState('networkidle');
-      // Should show either a bid form, a login prompt, or a not-found state.
+      // Wait for content to render (API call + React render cycle).
+      await Promise.race([
+        page
+          .getByRole('button', { name: /bid|submit|place/i })
+          .first()
+          .waitFor({ timeout: 10_000 }),
+        page
+          .getByRole('link', { name: /login|sign in/i })
+          .first()
+          .waitFor({ timeout: 10_000 }),
+        page
+          .getByText(/not found|unavailable/i)
+          .first()
+          .waitFor({ timeout: 10_000 }),
+      ]).catch(() => {});
       const hasBidForm = await page.getByRole('button', { name: /bid|submit|place/i }).count();
       const hasLogin = await page.getByRole('link', { name: /login|sign in/i }).count();
       const hasNotFound = await page.getByText(/not found|unavailable/i).count();
@@ -22,9 +35,7 @@ test.describe('Bidding flows', () => {
         if (await submitBtn.isVisible()) {
           await submitBtn.click();
           // Should show validation error for invalid amount.
-          await expect(
-            page.getByText(/invalid|greater|minimum|required/i).first(),
-          ).toBeVisible();
+          await expect(page.getByText(/invalid|greater|minimum|required/i).first()).toBeVisible();
         }
       }
     });
@@ -57,9 +68,7 @@ test.describe('Bidding flows', () => {
       await page.waitForLoadState('networkidle');
       // If there are bids, the page should have interactive elements.
       const bidCards = await page.getByRole('article').count();
-      const withdrawButtons = await page
-        .getByRole('button', { name: /withdraw|cancel/i })
-        .count();
+      const withdrawButtons = await page.getByRole('button', { name: /withdraw|cancel/i }).count();
       // Either bids exist with potential withdraw options, or page is empty.
       expect(bidCards >= 0 || withdrawButtons >= 0).toBeTruthy();
     });

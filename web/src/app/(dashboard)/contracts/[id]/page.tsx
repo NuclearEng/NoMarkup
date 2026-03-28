@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Loader2, Shield, Star } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Shield, Star } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { ShareSavingsCard } from '@/components/ui/ShareSavingsCard';
 import {
   useApproveCompletion,
   useCancelContract,
@@ -27,6 +28,7 @@ import {
   useMarkComplete,
   useStartWork,
 } from '@/hooks/useContracts';
+import { useSavings } from '@/hooks/useBids';
 import { useInstallmentSchedule } from '@/hooks/useInstallments';
 import { useReviewEligibility } from '@/hooks/useReviews';
 import { formatCents } from '@/lib/utils';
@@ -65,6 +67,7 @@ export default function ContractDetailPage() {
   const approveCompletion = useApproveCompletion();
   const cancelContract = useCancelContract();
   const { installments } = useInstallmentSchedule(contractId);
+  const { data: allSavings } = useSavings();
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
@@ -96,6 +99,10 @@ export default function ContractDetailPage() {
   const { contract, change_orders } = data;
   const isCustomer = user?.id === contract.customer_id;
   const isProvider = user?.id === contract.provider_id;
+
+  // Find savings for this contract's job (for the share card)
+  const jobSavings = allSavings?.find((s) => s.job_id === contract.job_id);
+  const contractSavingsCents = jobSavings?.savings_cents ?? 0;
 
   function handleStartWork() {
     startWork.mutate(contract.id);
@@ -440,9 +447,38 @@ export default function ContractDetailPage() {
         </div>
       ) : null}
 
+      {/* Auction Replay link (for completed contracts) */}
+      {contract.status === CONTRACT_STATUS.COMPLETED ? (
+        <Card>
+          <CardContent className="flex items-center justify-between pt-6">
+            <div>
+              <h3 className="text-sm font-semibold">Auction Replay</h3>
+              <p className="text-muted-foreground text-xs">
+                Watch how providers competed for this job
+              </p>
+            </div>
+            <Link href={`/auctions/${contract.job_id}/replay` as Route}>
+              <Button variant="outline" className="min-h-[44px] gap-2">
+                <Play className="h-4 w-4" aria-hidden="true" />
+                Watch Replay
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Reviews section (for completed contracts) */}
       {contract.status === CONTRACT_STATUS.COMPLETED && (isCustomer || isProvider) ? (
         <ReviewSection contractId={contract.id} />
+      ) : null}
+
+      {/* Share savings card (for completed contracts with savings) */}
+      {contract.status === CONTRACT_STATUS.COMPLETED && isCustomer && contractSavingsCents > 0 ? (
+        <ShareSavingsCard
+          savingsCents={contractSavingsCents}
+          jobTitle={contract.job_title}
+          category={contract.job_title}
+        />
       ) : null}
     </div>
   );

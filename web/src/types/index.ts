@@ -160,6 +160,23 @@ export interface VerifyEmailResponse {
   verified: boolean;
 }
 
+// MFA types
+export interface EnableMFAResponse {
+  secret: string;
+  qr_code_url: string;
+  backup_codes: string[];
+}
+
+export interface ConfirmMFASetupInput {
+  totp_code: string;
+  backup_codes: string[];
+}
+
+export interface VerifyMFALoginInput {
+  mfa_challenge_token: string;
+  totp_code: string;
+}
+
 // Profile & Provider types
 export interface MilestoneTemplate {
   description: string;
@@ -203,6 +220,7 @@ export interface ProviderProfile {
   serviceCategories: ServiceCategorySummary[];
   portfolio: PortfolioImage[];
   memberSince: string;
+  responseTimeLabel?: string;
 }
 
 export interface ServiceCategory {
@@ -891,6 +909,8 @@ export const NOTIFICATION_TYPE = {
   DISPUTE_RESOLVED: 'dispute_resolved',
   TIER_UPGRADE: 'tier_upgrade',
   TIER_DOWNGRADE: 'tier_downgrade',
+  // Pre-matching
+  JOB_MATCHED: 'job_matched',
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
 
@@ -1225,6 +1245,26 @@ export interface Dispute {
   resolution_type?: DisputeResolutionType;
   resolution_notes?: string;
   refund_amount_cents?: number;
+  is_guarantee_claim: boolean;
+  guarantee_outcome?: string;
+  guarantee_payout_cents?: number;
+  created_at: string;
+  resolved_at?: string;
+}
+
+export interface GuaranteeClaim {
+  id: string;
+  contract_id: string;
+  opened_by: string;
+  dispute_type: string;
+  description: string;
+  evidence_urls: string[];
+  status: DisputeStatus;
+  is_guarantee_claim: true;
+  guarantee_outcome?: string;
+  resolution_type?: string;
+  resolution_notes?: string;
+  refund_amount_cents?: number;
   created_at: string;
   resolved_at?: string;
 }
@@ -1508,4 +1548,122 @@ export interface AddEmployeeInput {
   license_number?: string;
   license_state?: string;
   license_expiry?: string;
+}
+
+// Challenge types
+export const CHALLENGE_TYPE = {
+  JOBS_COMPLETED: 'jobs_completed',
+  FIVE_STAR_REVIEWS: 'five_star_reviews',
+  RESPONSE_TIME: 'response_time',
+  BID_WIN_RATE: 'bid_win_rate',
+  REVENUE_MILESTONE: 'revenue_milestone',
+  CATEGORY_SPECIALIST: 'category_specialist',
+} as const;
+export type ChallengeType = (typeof CHALLENGE_TYPE)[keyof typeof CHALLENGE_TYPE];
+
+export const REWARD_TYPE = {
+  BADGE: 'badge',
+  PRIORITY_PLACEMENT: 'priority_placement',
+  FEE_DISCOUNT: 'fee_discount',
+  PROFILE_HIGHLIGHT: 'profile_highlight',
+} as const;
+export type RewardType = (typeof REWARD_TYPE)[keyof typeof REWARD_TYPE];
+
+export interface ChallengeProgress {
+  current_progress: number;
+  percent_complete: number;
+  completed: boolean;
+  reward_claimed: boolean;
+  completed_at?: string;
+  joined_at?: string;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  provider_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  current_progress: number;
+  percent_complete: number;
+  completed: boolean;
+  completed_at?: string;
+}
+
+export interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  challenge_type: ChallengeType;
+  target_value: number;
+  reward_type: RewardType;
+  reward_value: string;
+  starts_at: string;
+  ends_at: string;
+  is_seasonal: boolean;
+  season_name: string | null;
+  max_participants: number | null;
+  participant_count: number;
+  joined: boolean;
+  my_progress?: ChallengeProgress;
+  time_remaining_seconds: number;
+}
+
+export interface ChallengeDetail extends Challenge {
+  leaderboard: LeaderboardEntry[];
+  created_at: string;
+}
+
+export interface MyChallengeProgress {
+  id: string;
+  title: string;
+  description: string;
+  challenge_type: ChallengeType;
+  target_value: number;
+  reward_type: RewardType;
+  reward_value: string;
+  starts_at: string;
+  ends_at: string;
+  is_seasonal: boolean;
+  season_name: string | null;
+  current_progress: number;
+  percent_complete: number;
+  completed: boolean;
+  reward_claimed: boolean;
+  joined_at: string;
+  completed_at?: string;
+  time_remaining_seconds: number;
+}
+
+export interface AdminChallenge {
+  id: string;
+  title: string;
+  description: string;
+  challenge_type: ChallengeType;
+  target_value: number;
+  reward_type: RewardType;
+  reward_value: string;
+  starts_at: string;
+  ends_at: string;
+  is_seasonal: boolean;
+  season_name: string | null;
+  max_participants: number | null;
+  participant_count: number;
+  completed_count: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateChallengeInput {
+  title: string;
+  description: string;
+  challenge_type: ChallengeType;
+  target_value: number;
+  reward_type: RewardType;
+  reward_value: string;
+  starts_at: string;
+  ends_at: string;
+  is_seasonal: boolean;
+  season_name?: string;
+  max_participants?: number;
 }

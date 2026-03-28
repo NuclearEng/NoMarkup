@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
+import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -79,6 +80,11 @@ export default function ProviderProfilePage() {
                   year: 'numeric',
                 })}
               </p>
+              {provider.response_time_label ? (
+                <div className="mt-2">
+                  <ResponseTimeBadge label={provider.response_time_label} />
+                </div>
+              ) : null}
             </div>
             {provider.trust_score ? (
               <div className="text-center">

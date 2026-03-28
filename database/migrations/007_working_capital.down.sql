@@ -1,1 +1,2 @@
+DROP TRIGGER IF EXISTS set_working_capital_advances_updated_at ON working_capital_advances;
 DROP TABLE IF EXISTS working_capital_advances;

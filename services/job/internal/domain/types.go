@@ -183,6 +183,24 @@ type Pagination struct {
 	HasNext    bool
 }
 
+// MatchedProvider represents a provider matched to a job by the pre-matching engine.
+type MatchedProvider struct {
+	ProviderID    string
+	DisplayName   string
+	TrustScore    float64
+	TrustTier     string
+	DistanceKm    float64
+	WinRate       float64
+	AvgResponseMin int
+	MatchScore    float64
+}
+
+// MatchingRepository defines persistence operations for provider matching.
+type MatchingRepository interface {
+	QueryMatchingProviders(ctx context.Context, categoryID string, lat, lng float64, radiusMeters float64, limit int) ([]MatchedProvider, error)
+	GetJobLocation(ctx context.Context, jobID string) (lat, lng float64, err error)
+}
+
 // JobRepository defines persistence operations for jobs.
 type JobRepository interface {
 	CreateJob(ctx context.Context, input CreateJobInput) (*Job, error)

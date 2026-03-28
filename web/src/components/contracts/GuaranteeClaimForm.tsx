@@ -1,12 +1,12 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { ImagePlus, Loader2, X } from 'lucide-react';
+import Image from 'next/image';
+import { useCallback, useRef, useState } from 'react';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -16,27 +16,27 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useOpenDispute } from '@/hooks/useContracts';
+import { useImageUpload } from '@/hooks/useImageUpload';
+import { useSubmitGuaranteeClaim } from '@/hooks/useGuarantee';
 
-const CLAIM_TYPES = {
-  QUALITY_ISSUE: 'quality_issue',
+const CLAIM_REASONS = {
+  QUALITY: 'quality',
   INCOMPLETE_WORK: 'incomplete_work',
+  DAMAGE: 'damage',
   NO_SHOW: 'no_show',
-  ABANDONMENT: 'abandonment',
-  OTHER: 'other',
 } as const;
 
-const CLAIM_TYPE_LABELS: Record<string, string> = {
-  quality_issue: 'Quality Issue',
+const CLAIM_REASON_LABELS: Record<string, string> = {
+  quality: 'Quality Issue',
   incomplete_work: 'Incomplete Work',
+  damage: 'Property Damage',
   no_show: 'No-Show',
-  abandonment: 'Abandonment',
-  other: 'Other',
 };
 
 const claimSchema = z.object({
-  dispute_type: z.string().min(1, 'Claim type is required'),
+  reason: z.string().min(1, 'Claim type is required'),
   description: z.string().min(50, 'Description must be at least 50 characters').max(5000),
+  evidence_urls: z.array(z.string().url()).min(1, 'At least 1 photo is required'),
 });
 
 interface GuaranteeClaimFormProps {
@@ -46,24 +46,42 @@ interface GuaranteeClaimFormProps {
 }
 
 export function GuaranteeClaimForm({ contractId, onSuccess, className }: GuaranteeClaimFormProps) {
-  const openDispute = useOpenDispute();
+  const submitClaim = useSubmitGuaranteeClaim();
 
-  const [claimType, setClaimType] = useState('');
+  const [reason, setReason] = useState('');
   const [description, setDescription] = useState('');
-  const [evidenceUrls, setEvidenceUrls] = useState<string[]>(['']);
+  const [evidenceUrls, setEvidenceUrls] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  function handleAddEvidence() {
-    setEvidenceUrls((prev) => [...prev, '']);
-  }
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleEvidenceChange(index: number, value: string) {
-    setEvidenceUrls((prev) => {
-      const next = [...prev];
-      next[index] = value;
-      return next;
-    });
-  }
+  const imageUpload = useImageUpload({
+    context: 'document',
+    onSuccess: (result) => {
+      setEvidenceUrls((prev) => [...prev, result.confirmedUrl]);
+      if (errors['evidence_urls']) {
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next['evidence_urls'];
+          return next;
+        });
+      }
+    },
+    onError: (errorMsg) => {
+      setErrors((prev) => ({ ...prev, upload: errorMsg }));
+    },
+  });
+
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      // Reset input so the same file can be re-selected.
+      e.target.value = '';
+      await imageUpload.upload(file);
+    },
+    [imageUpload],
+  );
 
   function handleRemoveEvidence(index: number) {
     setEvidenceUrls((prev) => prev.filter((_, i) => i !== index));
@@ -74,8 +92,9 @@ export function GuaranteeClaimForm({ contractId, onSuccess, className }: Guarant
     setErrors({});
 
     const result = claimSchema.safeParse({
-      dispute_type: claimType,
+      reason,
       description,
+      evidence_urls: evidenceUrls,
     });
 
     if (!result.success) {
@@ -90,21 +109,21 @@ export function GuaranteeClaimForm({ contractId, onSuccess, className }: Guarant
       return;
     }
 
-    const filteredUrls = evidenceUrls.filter((url) => url.trim().length > 0);
-    const fullDescription = filteredUrls.length > 0
-      ? `${description}\n\nEvidence URLs:\n${filteredUrls.join('\n')}`
-      : description;
-
-    openDispute.mutate(
+    submitClaim.mutate(
       {
         contractId,
-        dispute_type: claimType,
-        description: fullDescription,
-        is_guarantee_claim: true,
+        reason: result.data.reason,
+        description: result.data.description,
+        evidence_urls: result.data.evidence_urls,
       },
       { onSuccess },
     );
   }
+
+  const isUploading =
+    imageUpload.status === 'getting_url' ||
+    imageUpload.status === 'uploading' ||
+    imageUpload.status === 'confirming';
 
   return (
     <Card className={className}>
@@ -119,22 +138,22 @@ export function GuaranteeClaimForm({ contractId, onSuccess, className }: Guarant
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Claim Type */}
           <div className="space-y-2">
-            <Label htmlFor="claim-type">Claim Type</Label>
-            <Select value={claimType} onValueChange={setClaimType}>
-              <SelectTrigger id="claim-type" className="min-h-[44px]" aria-label="Select claim type">
+            <Label htmlFor="claim-reason">Claim Type</Label>
+            <Select value={reason} onValueChange={setReason}>
+              <SelectTrigger id="claim-reason" className="min-h-[44px]" aria-label="Select claim type">
                 <SelectValue placeholder="Select a claim type" />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(CLAIM_TYPES).map(([key, value]) => (
+                {Object.entries(CLAIM_REASONS).map(([key, value]) => (
                   <SelectItem key={key} value={value}>
-                    {CLAIM_TYPE_LABELS[value]}
+                    {CLAIM_REASON_LABELS[value]}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors['dispute_type'] ? (
+            {errors['reason'] ? (
               <p className="text-sm text-destructive" role="alert">
-                {errors['dispute_type']}
+                {errors['reason']}
               </p>
             ) : null}
           </div>
@@ -173,55 +192,97 @@ export function GuaranteeClaimForm({ contractId, onSuccess, className }: Guarant
             </div>
           </div>
 
-          {/* Evidence URLs */}
+          {/* Photo Evidence */}
           <div className="space-y-2">
-            <Label>Evidence URLs (optional)</Label>
-            {evidenceUrls.map((url, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <Input
-                  placeholder="https://..."
-                  value={url}
-                  onChange={(e) => { handleEvidenceChange(index, e.target.value); }}
-                  className="min-h-[44px]"
-                />
-                {evidenceUrls.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="min-h-[44px] shrink-0"
-                    onClick={() => { handleRemoveEvidence(index); }}
-                    aria-label={`Remove evidence URL ${String(index + 1)}`}
+            <Label>Photo Evidence</Label>
+            <p className="text-xs text-muted-foreground">
+              Upload at least 1 photo showing the issue. Accepted formats: JPEG, PNG, WebP.
+            </p>
+
+            {/* Thumbnail Grid */}
+            {evidenceUrls.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {evidenceUrls.map((url, index) => (
+                  <div
+                    key={url}
+                    className="group relative aspect-square overflow-hidden rounded-md border"
                   >
-                    Remove
-                  </Button>
-                ) : null}
+                    <Image
+                      src={url}
+                      alt={`Evidence photo ${String(index + 1)}`}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 640px) 33vw, 25vw"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { handleRemoveEvidence(index); }}
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      aria-label={`Remove photo ${String(index + 1)}`}
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : null}
+
+            {/* Upload Button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => { void handleFileSelect(e); }}
+              className="sr-only"
+              aria-label="Upload evidence photo"
+            />
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="min-h-[44px]"
-              onClick={handleAddEvidence}
+              className="min-h-[44px] gap-2"
+              disabled={isUploading}
+              onClick={() => { fileInputRef.current?.click(); }}
             >
-              Add Another URL
+              {isUploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <ImagePlus className="h-4 w-4" aria-hidden="true" />
+              )}
+              {isUploading
+                ? `Uploading... ${String(imageUpload.progress)}%`
+                : 'Add Photo'}
             </Button>
+
+            {errors['evidence_urls'] ? (
+              <p className="text-sm text-destructive" role="alert">
+                {errors['evidence_urls']}
+              </p>
+            ) : null}
+            {errors['upload'] ? (
+              <p className="text-sm text-destructive" role="alert">
+                {errors['upload']}
+              </p>
+            ) : null}
+            {imageUpload.error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {imageUpload.error}
+              </p>
+            ) : null}
           </div>
 
           {/* Submit */}
           <Button
             type="submit"
             className="min-h-[44px] w-full"
-            disabled={openDispute.isPending}
+            disabled={submitClaim.isPending || isUploading}
           >
-            {openDispute.isPending ? (
+            {submitClaim.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : null}
             Submit Claim
           </Button>
 
-          {openDispute.isError ? (
+          {submitClaim.isError ? (
             <p className="text-sm text-destructive" role="alert">
               Failed to submit claim. Please try again.
             </p>

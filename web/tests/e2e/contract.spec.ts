@@ -1,17 +1,24 @@
 import { expect, test } from '@playwright/test';
 
+/** Navigate to a protected route and wait for the auth check to resolve. */
+async function gotoProtected(page: import('@playwright/test').Page, url: string) {
+  await page.goto(url);
+  const redirected = await page
+    .waitForURL(/\/login/, { timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  return redirected;
+}
+
 test.describe('Contract flows', () => {
   test.describe('Contract list', () => {
     test('contracts page loads or redirects to login', async ({ page }) => {
-      await page.goto('/dashboard/contracts');
-      await page.waitForURL(/\/(dashboard\/contracts|login)/);
+      await gotoProtected(page, '/contracts');
     });
 
     test('contracts page shows list or empty state', async ({ page }) => {
-      await page.goto('/dashboard/contracts');
-      if (page.url().includes('/login')) {
-        return;
-      }
+      const redirected = await gotoProtected(page, '/contracts');
+      if (redirected) return;
       await page.waitForLoadState('networkidle');
       const hasContracts = await page.getByRole('link').count();
       const hasEmpty = await page.getByText(/no contracts|no results|no active/i).count();
@@ -21,11 +28,9 @@ test.describe('Contract flows', () => {
 
   test.describe('Contract detail', () => {
     test('contract detail page loads or shows not found', async ({ page }) => {
-      await page.goto('/dashboard/contracts/test-contract-id');
+      const redirected = await gotoProtected(page, '/contracts/test-contract-id');
+      if (redirected) return;
       await page.waitForLoadState('networkidle');
-      if (page.url().includes('/login')) {
-        return;
-      }
       const hasContent = await page.getByRole('heading').count();
       const hasNotFound = await page.getByText(/not found|error|unavailable/i).count();
       expect(hasContent > 0 || hasNotFound > 0).toBeTruthy();
@@ -34,13 +39,9 @@ test.describe('Contract flows', () => {
 
   test.describe('Milestone management', () => {
     test('contract detail shows milestones section when applicable', async ({ page }) => {
-      await page.goto('/dashboard/contracts/test-contract-id');
+      const redirected = await gotoProtected(page, '/contracts/test-contract-id');
+      if (redirected) return;
       await page.waitForLoadState('networkidle');
-      if (page.url().includes('/login')) {
-        return;
-      }
-      // Milestone-based contracts should show milestone progress or
-      // the page shows a not-found / different payment type.
       const hasMilestones = await page.getByText(/milestone|payment|progress/i).count();
       const hasNotFound = await page.getByText(/not found|error/i).count();
       expect(hasMilestones > 0 || hasNotFound > 0).toBeTruthy();
@@ -49,10 +50,8 @@ test.describe('Contract flows', () => {
 
   test.describe('Accessibility', () => {
     test('contracts page has proper heading', async ({ page }) => {
-      await page.goto('/dashboard/contracts');
-      if (page.url().includes('/login')) {
-        return;
-      }
+      const redirected = await gotoProtected(page, '/contracts');
+      if (redirected) return;
       const headings = page.getByRole('heading');
       expect(await headings.count()).toBeGreaterThanOrEqual(1);
     });

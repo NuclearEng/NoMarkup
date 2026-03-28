@@ -141,8 +141,8 @@ func (h *SubscriptionHandler) CancelSubscription(w http.ResponseWriter, r *http.
 	}
 
 	var req cancelSubscriptionRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req) {
+		return
 	}
 
 	resp, err := h.client.CancelSubscription(r.Context(), &subscriptionv1.CancelSubscriptionRequest{

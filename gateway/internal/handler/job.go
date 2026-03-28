@@ -280,7 +280,9 @@ func (h *JobHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req cancelJobRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req) {
+		return
+	}
 
 	resp, err := h.jobClient.CancelJob(r.Context(), &jobv1.CancelJobRequest{
 		JobId:      jobID,
@@ -396,6 +398,10 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "id")
 	if jobID == "" {
 		writeError(w, http.StatusBadRequest, "job id required")
+		return
+	}
+	if !isValidUUID(jobID) {
+		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
 

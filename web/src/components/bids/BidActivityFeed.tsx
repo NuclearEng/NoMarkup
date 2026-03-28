@@ -1,0 +1,81 @@
+'use client';
+
+import { cn } from '@/lib/utils';
+import { TrendingDown, User } from 'lucide-react';
+
+interface BidActivity {
+  id: string;
+  providerName: string;
+  amount: number;
+  timestamp: string;
+  isLowest?: boolean;
+}
+
+interface BidActivityFeedProps {
+  activities: BidActivity[];
+  className?: string;
+}
+
+export function BidActivityFeed({ activities, className }: BidActivityFeedProps) {
+  if (activities.length === 0) {
+    return (
+      <div
+        className={cn(
+          'bg-card text-muted-foreground rounded-xl border p-6 text-center text-sm',
+          className,
+        )}
+      >
+        No bids yet. Be the first to bid!
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('bg-card rounded-xl border', className)}>
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <h3 className="text-sm font-semibold">Live Activity</h3>
+        <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          <span
+            className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"
+            aria-hidden="true"
+          />
+          Live
+        </span>
+      </div>
+      <div
+        className="max-h-[320px] divide-y overflow-y-auto"
+        role="log"
+        aria-label="Bid activity feed"
+      >
+        {activities.map((activity, index) => (
+          <div
+            key={activity.id}
+            className={cn(
+              'flex items-center gap-3 px-4 py-3 transition-colors',
+              index === 0 && 'animate-fade-in bg-muted/50',
+            )}
+          >
+            <div className="bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+              <User className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium">{activity.providerName}</span>
+                {activity.isLowest && (
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                    <TrendingDown className="h-2.5 w-2.5" aria-hidden="true" />
+                    Lowest
+                  </span>
+                )}
+              </div>
+              <span className="text-muted-foreground text-xs">{activity.timestamp}</span>
+            </div>
+            <span className="text-sm font-semibold tabular-nums">
+              ${(activity.amount / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

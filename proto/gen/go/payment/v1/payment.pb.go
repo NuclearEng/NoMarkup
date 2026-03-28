@@ -96,6 +96,70 @@ func (PaymentStatus) EnumDescriptor() ([]byte, []int) {
 	return file_payment_v1_payment_proto_rawDescGZIP(), []int{0}
 }
 
+type AdvanceStatus int32
+
+const (
+	AdvanceStatus_ADVANCE_STATUS_UNSPECIFIED AdvanceStatus = 0
+	AdvanceStatus_ADVANCE_STATUS_REQUESTED   AdvanceStatus = 1
+	AdvanceStatus_ADVANCE_STATUS_APPROVED    AdvanceStatus = 2
+	AdvanceStatus_ADVANCE_STATUS_DISBURSED   AdvanceStatus = 3
+	AdvanceStatus_ADVANCE_STATUS_REPAYING    AdvanceStatus = 4
+	AdvanceStatus_ADVANCE_STATUS_REPAID      AdvanceStatus = 5
+	AdvanceStatus_ADVANCE_STATUS_DEFAULTED   AdvanceStatus = 6
+	AdvanceStatus_ADVANCE_STATUS_REJECTED    AdvanceStatus = 7
+)
+
+// Enum value maps for AdvanceStatus.
+var (
+	AdvanceStatus_name = map[int32]string{
+		0: "ADVANCE_STATUS_UNSPECIFIED",
+		1: "ADVANCE_STATUS_REQUESTED",
+		2: "ADVANCE_STATUS_APPROVED",
+		3: "ADVANCE_STATUS_DISBURSED",
+		4: "ADVANCE_STATUS_REPAYING",
+		5: "ADVANCE_STATUS_REPAID",
+		6: "ADVANCE_STATUS_DEFAULTED",
+		7: "ADVANCE_STATUS_REJECTED",
+	}
+	AdvanceStatus_value = map[string]int32{
+		"ADVANCE_STATUS_UNSPECIFIED": 0,
+		"ADVANCE_STATUS_REQUESTED":   1,
+		"ADVANCE_STATUS_APPROVED":    2,
+		"ADVANCE_STATUS_DISBURSED":   3,
+		"ADVANCE_STATUS_REPAYING":    4,
+		"ADVANCE_STATUS_REPAID":      5,
+		"ADVANCE_STATUS_DEFAULTED":   6,
+		"ADVANCE_STATUS_REJECTED":    7,
+	}
+)
+
+func (x AdvanceStatus) Enum() *AdvanceStatus {
+	p := new(AdvanceStatus)
+	*p = x
+	return p
+}
+
+func (x AdvanceStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AdvanceStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_payment_v1_payment_proto_enumTypes[1].Descriptor()
+}
+
+func (AdvanceStatus) Type() protoreflect.EnumType {
+	return &file_payment_v1_payment_proto_enumTypes[1]
+}
+
+func (x AdvanceStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AdvanceStatus.Descriptor instead.
+func (AdvanceStatus) EnumDescriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{1}
+}
+
 type Payment struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -2728,6 +2792,1022 @@ func (x *RevenueDataPoint) GetTransactionCount() int32 {
 	return 0
 }
 
+type Expense struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProviderId    string                 `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	Category      string                 `protobuf:"bytes,3,opt,name=category,proto3" json:"category,omitempty"`
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	AmountCents   int64                  `protobuf:"varint,5,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	ReceiptUrl    string                 `protobuf:"bytes,6,opt,name=receipt_url,json=receiptUrl,proto3" json:"receipt_url,omitempty"`
+	ExpenseDate   string                 `protobuf:"bytes,7,opt,name=expense_date,json=expenseDate,proto3" json:"expense_date,omitempty"` // YYYY-MM-DD
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Expense) Reset() {
+	*x = Expense{}
+	mi := &file_payment_v1_payment_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Expense) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Expense) ProtoMessage() {}
+
+func (x *Expense) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Expense.ProtoReflect.Descriptor instead.
+func (*Expense) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *Expense) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Expense) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *Expense) GetCategory() string {
+	if x != nil {
+		return x.Category
+	}
+	return ""
+}
+
+func (x *Expense) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Expense) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *Expense) GetReceiptUrl() string {
+	if x != nil {
+		return x.ReceiptUrl
+	}
+	return ""
+}
+
+func (x *Expense) GetExpenseDate() string {
+	if x != nil {
+		return x.ExpenseDate
+	}
+	return ""
+}
+
+func (x *Expense) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Expense) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type CreateExpenseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	Category      string                 `protobuf:"bytes,2,opt,name=category,proto3" json:"category,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	AmountCents   int64                  `protobuf:"varint,4,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	ReceiptUrl    string                 `protobuf:"bytes,5,opt,name=receipt_url,json=receiptUrl,proto3" json:"receipt_url,omitempty"`
+	ExpenseDate   string                 `protobuf:"bytes,6,opt,name=expense_date,json=expenseDate,proto3" json:"expense_date,omitempty"` // YYYY-MM-DD
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateExpenseRequest) Reset() {
+	*x = CreateExpenseRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateExpenseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateExpenseRequest) ProtoMessage() {}
+
+func (x *CreateExpenseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateExpenseRequest.ProtoReflect.Descriptor instead.
+func (*CreateExpenseRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *CreateExpenseRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *CreateExpenseRequest) GetCategory() string {
+	if x != nil {
+		return x.Category
+	}
+	return ""
+}
+
+func (x *CreateExpenseRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *CreateExpenseRequest) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *CreateExpenseRequest) GetReceiptUrl() string {
+	if x != nil {
+		return x.ReceiptUrl
+	}
+	return ""
+}
+
+func (x *CreateExpenseRequest) GetExpenseDate() string {
+	if x != nil {
+		return x.ExpenseDate
+	}
+	return ""
+}
+
+type CreateExpenseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Expense       *Expense               `protobuf:"bytes,1,opt,name=expense,proto3" json:"expense,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateExpenseResponse) Reset() {
+	*x = CreateExpenseResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateExpenseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateExpenseResponse) ProtoMessage() {}
+
+func (x *CreateExpenseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateExpenseResponse.ProtoReflect.Descriptor instead.
+func (*CreateExpenseResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *CreateExpenseResponse) GetExpense() *Expense {
+	if x != nil {
+		return x.Expense
+	}
+	return nil
+}
+
+type ListExpensesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	StartDate     string                 `protobuf:"bytes,2,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"` // YYYY-MM-DD, optional filter
+	EndDate       string                 `protobuf:"bytes,3,opt,name=end_date,json=endDate,proto3" json:"end_date,omitempty"`       // YYYY-MM-DD, optional filter
+	Pagination    *v1.PaginationRequest  `protobuf:"bytes,4,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExpensesRequest) Reset() {
+	*x = ListExpensesRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExpensesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExpensesRequest) ProtoMessage() {}
+
+func (x *ListExpensesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExpensesRequest.ProtoReflect.Descriptor instead.
+func (*ListExpensesRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ListExpensesRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *ListExpensesRequest) GetStartDate() string {
+	if x != nil {
+		return x.StartDate
+	}
+	return ""
+}
+
+func (x *ListExpensesRequest) GetEndDate() string {
+	if x != nil {
+		return x.EndDate
+	}
+	return ""
+}
+
+func (x *ListExpensesRequest) GetPagination() *v1.PaginationRequest {
+	if x != nil {
+		return x.Pagination
+	}
+	return nil
+}
+
+type ListExpensesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Expenses      []*Expense             `protobuf:"bytes,1,rep,name=expenses,proto3" json:"expenses,omitempty"`
+	TotalCents    int64                  `protobuf:"varint,2,opt,name=total_cents,json=totalCents,proto3" json:"total_cents,omitempty"`
+	Pagination    *v1.PaginationResponse `protobuf:"bytes,3,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExpensesResponse) Reset() {
+	*x = ListExpensesResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExpensesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExpensesResponse) ProtoMessage() {}
+
+func (x *ListExpensesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExpensesResponse.ProtoReflect.Descriptor instead.
+func (*ListExpensesResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ListExpensesResponse) GetExpenses() []*Expense {
+	if x != nil {
+		return x.Expenses
+	}
+	return nil
+}
+
+func (x *ListExpensesResponse) GetTotalCents() int64 {
+	if x != nil {
+		return x.TotalCents
+	}
+	return 0
+}
+
+func (x *ListExpensesResponse) GetPagination() *v1.PaginationResponse {
+	if x != nil {
+		return x.Pagination
+	}
+	return nil
+}
+
+type DeleteExpenseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ExpenseId     string                 `protobuf:"bytes,1,opt,name=expense_id,json=expenseId,proto3" json:"expense_id,omitempty"`
+	ProviderId    string                 `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"` // for ownership check
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteExpenseRequest) Reset() {
+	*x = DeleteExpenseRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteExpenseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteExpenseRequest) ProtoMessage() {}
+
+func (x *DeleteExpenseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteExpenseRequest.ProtoReflect.Descriptor instead.
+func (*DeleteExpenseRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *DeleteExpenseRequest) GetExpenseId() string {
+	if x != nil {
+		return x.ExpenseId
+	}
+	return ""
+}
+
+func (x *DeleteExpenseRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+type DeleteExpenseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteExpenseResponse) Reset() {
+	*x = DeleteExpenseResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteExpenseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteExpenseResponse) ProtoMessage() {}
+
+func (x *DeleteExpenseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteExpenseResponse.ProtoReflect.Descriptor instead.
+func (*DeleteExpenseResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{50}
+}
+
+type Advance struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProviderId         string                 `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ContractId         string                 `protobuf:"bytes,3,opt,name=contract_id,json=contractId,proto3" json:"contract_id,omitempty"`
+	AdvanceAmountCents int64                  `protobuf:"varint,4,opt,name=advance_amount_cents,json=advanceAmountCents,proto3" json:"advance_amount_cents,omitempty"`
+	FeeCents           int64                  `protobuf:"varint,5,opt,name=fee_cents,json=feeCents,proto3" json:"fee_cents,omitempty"`
+	RepaidCents        int64                  `protobuf:"varint,6,opt,name=repaid_cents,json=repaidCents,proto3" json:"repaid_cents,omitempty"`
+	Status             string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
+	ReviewedBy         string                 `protobuf:"bytes,8,opt,name=reviewed_by,json=reviewedBy,proto3" json:"reviewed_by,omitempty"`
+	ReviewedAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=reviewed_at,json=reviewedAt,proto3" json:"reviewed_at,omitempty"`
+	RejectionReason    string                 `protobuf:"bytes,10,opt,name=rejection_reason,json=rejectionReason,proto3" json:"rejection_reason,omitempty"`
+	DisbursedAt        *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=disbursed_at,json=disbursedAt,proto3" json:"disbursed_at,omitempty"`
+	RepaidAt           *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=repaid_at,json=repaidAt,proto3" json:"repaid_at,omitempty"`
+	CreatedAt          *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt          *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Advance) Reset() {
+	*x = Advance{}
+	mi := &file_payment_v1_payment_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Advance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Advance) ProtoMessage() {}
+
+func (x *Advance) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Advance.ProtoReflect.Descriptor instead.
+func (*Advance) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *Advance) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Advance) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *Advance) GetContractId() string {
+	if x != nil {
+		return x.ContractId
+	}
+	return ""
+}
+
+func (x *Advance) GetAdvanceAmountCents() int64 {
+	if x != nil {
+		return x.AdvanceAmountCents
+	}
+	return 0
+}
+
+func (x *Advance) GetFeeCents() int64 {
+	if x != nil {
+		return x.FeeCents
+	}
+	return 0
+}
+
+func (x *Advance) GetRepaidCents() int64 {
+	if x != nil {
+		return x.RepaidCents
+	}
+	return 0
+}
+
+func (x *Advance) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Advance) GetReviewedBy() string {
+	if x != nil {
+		return x.ReviewedBy
+	}
+	return ""
+}
+
+func (x *Advance) GetReviewedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ReviewedAt
+	}
+	return nil
+}
+
+func (x *Advance) GetRejectionReason() string {
+	if x != nil {
+		return x.RejectionReason
+	}
+	return ""
+}
+
+func (x *Advance) GetDisbursedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DisbursedAt
+	}
+	return nil
+}
+
+func (x *Advance) GetRepaidAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RepaidAt
+	}
+	return nil
+}
+
+func (x *Advance) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Advance) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type RequestAdvanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ContractId    string                 `protobuf:"bytes,2,opt,name=contract_id,json=contractId,proto3" json:"contract_id,omitempty"`
+	AmountCents   int64                  `protobuf:"varint,3,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestAdvanceRequest) Reset() {
+	*x = RequestAdvanceRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestAdvanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestAdvanceRequest) ProtoMessage() {}
+
+func (x *RequestAdvanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestAdvanceRequest.ProtoReflect.Descriptor instead.
+func (*RequestAdvanceRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *RequestAdvanceRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *RequestAdvanceRequest) GetContractId() string {
+	if x != nil {
+		return x.ContractId
+	}
+	return ""
+}
+
+func (x *RequestAdvanceRequest) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+type RequestAdvanceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Advance       *Advance               `protobuf:"bytes,1,opt,name=advance,proto3" json:"advance,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestAdvanceResponse) Reset() {
+	*x = RequestAdvanceResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestAdvanceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestAdvanceResponse) ProtoMessage() {}
+
+func (x *RequestAdvanceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestAdvanceResponse.ProtoReflect.Descriptor instead.
+func (*RequestAdvanceResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *RequestAdvanceResponse) GetAdvance() *Advance {
+	if x != nil {
+		return x.Advance
+	}
+	return nil
+}
+
+type ListAdvancesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"` // empty = list all (admin)
+	StatusFilter  *string                `protobuf:"bytes,2,opt,name=status_filter,json=statusFilter,proto3,oneof" json:"status_filter,omitempty"`
+	Pagination    *v1.PaginationRequest  `protobuf:"bytes,3,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdvancesRequest) Reset() {
+	*x = ListAdvancesRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdvancesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdvancesRequest) ProtoMessage() {}
+
+func (x *ListAdvancesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdvancesRequest.ProtoReflect.Descriptor instead.
+func (*ListAdvancesRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *ListAdvancesRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *ListAdvancesRequest) GetStatusFilter() string {
+	if x != nil && x.StatusFilter != nil {
+		return *x.StatusFilter
+	}
+	return ""
+}
+
+func (x *ListAdvancesRequest) GetPagination() *v1.PaginationRequest {
+	if x != nil {
+		return x.Pagination
+	}
+	return nil
+}
+
+type ListAdvancesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Advances      []*Advance             `protobuf:"bytes,1,rep,name=advances,proto3" json:"advances,omitempty"`
+	Pagination    *v1.PaginationResponse `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdvancesResponse) Reset() {
+	*x = ListAdvancesResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdvancesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdvancesResponse) ProtoMessage() {}
+
+func (x *ListAdvancesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdvancesResponse.ProtoReflect.Descriptor instead.
+func (*ListAdvancesResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *ListAdvancesResponse) GetAdvances() []*Advance {
+	if x != nil {
+		return x.Advances
+	}
+	return nil
+}
+
+func (x *ListAdvancesResponse) GetPagination() *v1.PaginationResponse {
+	if x != nil {
+		return x.Pagination
+	}
+	return nil
+}
+
+type GetAdvanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AdvanceId     string                 `protobuf:"bytes,1,opt,name=advance_id,json=advanceId,proto3" json:"advance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAdvanceRequest) Reset() {
+	*x = GetAdvanceRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAdvanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAdvanceRequest) ProtoMessage() {}
+
+func (x *GetAdvanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAdvanceRequest.ProtoReflect.Descriptor instead.
+func (*GetAdvanceRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *GetAdvanceRequest) GetAdvanceId() string {
+	if x != nil {
+		return x.AdvanceId
+	}
+	return ""
+}
+
+type GetAdvanceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Advance       *Advance               `protobuf:"bytes,1,opt,name=advance,proto3" json:"advance,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAdvanceResponse) Reset() {
+	*x = GetAdvanceResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAdvanceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAdvanceResponse) ProtoMessage() {}
+
+func (x *GetAdvanceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAdvanceResponse.ProtoReflect.Descriptor instead.
+func (*GetAdvanceResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *GetAdvanceResponse) GetAdvance() *Advance {
+	if x != nil {
+		return x.Advance
+	}
+	return nil
+}
+
+type ReviewAdvanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AdvanceId     string                 `protobuf:"bytes,1,opt,name=advance_id,json=advanceId,proto3" json:"advance_id,omitempty"`
+	ReviewerId    string                 `protobuf:"bytes,2,opt,name=reviewer_id,json=reviewerId,proto3" json:"reviewer_id,omitempty"`
+	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"` // "approve" or "reject"
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"` // rejection reason (required if action=reject)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReviewAdvanceRequest) Reset() {
+	*x = ReviewAdvanceRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReviewAdvanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReviewAdvanceRequest) ProtoMessage() {}
+
+func (x *ReviewAdvanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReviewAdvanceRequest.ProtoReflect.Descriptor instead.
+func (*ReviewAdvanceRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *ReviewAdvanceRequest) GetAdvanceId() string {
+	if x != nil {
+		return x.AdvanceId
+	}
+	return ""
+}
+
+func (x *ReviewAdvanceRequest) GetReviewerId() string {
+	if x != nil {
+		return x.ReviewerId
+	}
+	return ""
+}
+
+func (x *ReviewAdvanceRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ReviewAdvanceRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ReviewAdvanceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Advance       *Advance               `protobuf:"bytes,1,opt,name=advance,proto3" json:"advance,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReviewAdvanceResponse) Reset() {
+	*x = ReviewAdvanceResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReviewAdvanceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReviewAdvanceResponse) ProtoMessage() {}
+
+func (x *ReviewAdvanceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReviewAdvanceResponse.ProtoReflect.Descriptor instead.
+func (*ReviewAdvanceResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *ReviewAdvanceResponse) GetAdvance() *Advance {
+	if x != nil {
+		return x.Advance
+	}
+	return nil
+}
+
 var File_payment_v1_payment_proto protoreflect.FileDescriptor
 
 const file_payment_v1_payment_proto_rawDesc = "" +
@@ -2953,7 +4033,111 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\fperiod_start\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\x12\x1b\n" +
 	"\tgmv_cents\x18\x02 \x01(\x03R\bgmvCents\x12#\n" +
 	"\rrevenue_cents\x18\x03 \x01(\x03R\frevenueCents\x12+\n" +
-	"\x11transaction_count\x18\x04 \x01(\x05R\x10transactionCount*\xdb\x02\n" +
+	"\x11transaction_count\x18\x04 \x01(\x05R\x10transactionCount\"\xd5\x02\n" +
+	"\aExpense\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vprovider_id\x18\x02 \x01(\tR\n" +
+	"providerId\x12\x1a\n" +
+	"\bcategory\x18\x03 \x01(\tR\bcategory\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12!\n" +
+	"\famount_cents\x18\x05 \x01(\x03R\vamountCents\x12\x1f\n" +
+	"\vreceipt_url\x18\x06 \x01(\tR\n" +
+	"receiptUrl\x12!\n" +
+	"\fexpense_date\x18\a \x01(\tR\vexpenseDate\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xdc\x01\n" +
+	"\x14CreateExpenseRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12\x1a\n" +
+	"\bcategory\x18\x02 \x01(\tR\bcategory\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12!\n" +
+	"\famount_cents\x18\x04 \x01(\x03R\vamountCents\x12\x1f\n" +
+	"\vreceipt_url\x18\x05 \x01(\tR\n" +
+	"receiptUrl\x12!\n" +
+	"\fexpense_date\x18\x06 \x01(\tR\vexpenseDate\"O\n" +
+	"\x15CreateExpenseResponse\x126\n" +
+	"\aexpense\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.ExpenseR\aexpense\"\xb7\x01\n" +
+	"\x13ListExpensesRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12\x1d\n" +
+	"\n" +
+	"start_date\x18\x02 \x01(\tR\tstartDate\x12\x19\n" +
+	"\bend_date\x18\x03 \x01(\tR\aendDate\x12E\n" +
+	"\n" +
+	"pagination\x18\x04 \x01(\v2%.nomarkup.common.v1.PaginationRequestR\n" +
+	"pagination\"\xb9\x01\n" +
+	"\x14ListExpensesResponse\x128\n" +
+	"\bexpenses\x18\x01 \x03(\v2\x1c.nomarkup.payment.v1.ExpenseR\bexpenses\x12\x1f\n" +
+	"\vtotal_cents\x18\x02 \x01(\x03R\n" +
+	"totalCents\x12F\n" +
+	"\n" +
+	"pagination\x18\x03 \x01(\v2&.nomarkup.common.v1.PaginationResponseR\n" +
+	"pagination\"V\n" +
+	"\x14DeleteExpenseRequest\x12\x1d\n" +
+	"\n" +
+	"expense_id\x18\x01 \x01(\tR\texpenseId\x12\x1f\n" +
+	"\vprovider_id\x18\x02 \x01(\tR\n" +
+	"providerId\"\x17\n" +
+	"\x15DeleteExpenseResponse\"\xdc\x04\n" +
+	"\aAdvance\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vprovider_id\x18\x02 \x01(\tR\n" +
+	"providerId\x12\x1f\n" +
+	"\vcontract_id\x18\x03 \x01(\tR\n" +
+	"contractId\x120\n" +
+	"\x14advance_amount_cents\x18\x04 \x01(\x03R\x12advanceAmountCents\x12\x1b\n" +
+	"\tfee_cents\x18\x05 \x01(\x03R\bfeeCents\x12!\n" +
+	"\frepaid_cents\x18\x06 \x01(\x03R\vrepaidCents\x12\x16\n" +
+	"\x06status\x18\a \x01(\tR\x06status\x12\x1f\n" +
+	"\vreviewed_by\x18\b \x01(\tR\n" +
+	"reviewedBy\x12;\n" +
+	"\vreviewed_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"reviewedAt\x12)\n" +
+	"\x10rejection_reason\x18\n" +
+	" \x01(\tR\x0frejectionReason\x12=\n" +
+	"\fdisbursed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vdisbursedAt\x127\n" +
+	"\trepaid_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\brepaidAt\x129\n" +
+	"\n" +
+	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"|\n" +
+	"\x15RequestAdvanceRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12\x1f\n" +
+	"\vcontract_id\x18\x02 \x01(\tR\n" +
+	"contractId\x12!\n" +
+	"\famount_cents\x18\x03 \x01(\x03R\vamountCents\"P\n" +
+	"\x16RequestAdvanceResponse\x126\n" +
+	"\aadvance\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.AdvanceR\aadvance\"\xb9\x01\n" +
+	"\x13ListAdvancesRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12(\n" +
+	"\rstatus_filter\x18\x02 \x01(\tH\x00R\fstatusFilter\x88\x01\x01\x12E\n" +
+	"\n" +
+	"pagination\x18\x03 \x01(\v2%.nomarkup.common.v1.PaginationRequestR\n" +
+	"paginationB\x10\n" +
+	"\x0e_status_filter\"\x98\x01\n" +
+	"\x14ListAdvancesResponse\x128\n" +
+	"\badvances\x18\x01 \x03(\v2\x1c.nomarkup.payment.v1.AdvanceR\badvances\x12F\n" +
+	"\n" +
+	"pagination\x18\x02 \x01(\v2&.nomarkup.common.v1.PaginationResponseR\n" +
+	"pagination\"2\n" +
+	"\x11GetAdvanceRequest\x12\x1d\n" +
+	"\n" +
+	"advance_id\x18\x01 \x01(\tR\tadvanceId\"L\n" +
+	"\x12GetAdvanceResponse\x126\n" +
+	"\aadvance\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.AdvanceR\aadvance\"\x86\x01\n" +
+	"\x14ReviewAdvanceRequest\x12\x1d\n" +
+	"\n" +
+	"advance_id\x18\x01 \x01(\tR\tadvanceId\x12\x1f\n" +
+	"\vreviewer_id\x18\x02 \x01(\tR\n" +
+	"reviewerId\x12\x16\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"O\n" +
+	"\x15ReviewAdvanceResponse\x126\n" +
+	"\aadvance\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.AdvanceR\aadvance*\xdb\x02\n" +
 	"\rPaymentStatus\x12\x1e\n" +
 	"\x1aPAYMENT_STATUS_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16PAYMENT_STATUS_PENDING\x10\x01\x12\x1d\n" +
@@ -2966,7 +4150,16 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"!PAYMENT_STATUS_PARTIALLY_REFUNDED\x10\b\x12\x1b\n" +
 	"\x17PAYMENT_STATUS_DISPUTED\x10\t\x12\x1d\n" +
 	"\x19PAYMENT_STATUS_CHARGEBACK\x10\n" +
-	"2\x8f\x12\n" +
+	"*\xfb\x01\n" +
+	"\rAdvanceStatus\x12\x1e\n" +
+	"\x1aADVANCE_STATUS_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18ADVANCE_STATUS_REQUESTED\x10\x01\x12\x1b\n" +
+	"\x17ADVANCE_STATUS_APPROVED\x10\x02\x12\x1c\n" +
+	"\x18ADVANCE_STATUS_DISBURSED\x10\x03\x12\x1b\n" +
+	"\x17ADVANCE_STATUS_REPAYING\x10\x04\x12\x19\n" +
+	"\x15ADVANCE_STATUS_REPAID\x10\x05\x12\x1c\n" +
+	"\x18ADVANCE_STATUS_DEFAULTED\x10\x06\x12\x1b\n" +
+	"\x17ADVANCE_STATUS_REJECTED\x10\a2\xdb\x17\n" +
 	"\x0ePaymentService\x12x\n" +
 	"\x13CreateStripeAccount\x12/.nomarkup.payment.v1.CreateStripeAccountRequest\x1a0.nomarkup.payment.v1.CreateStripeAccountResponse\x12\x84\x01\n" +
 	"\x17GetStripeOnboardingLink\x123.nomarkup.payment.v1.GetStripeOnboardingLinkRequest\x1a4.nomarkup.payment.v1.GetStripeOnboardingLinkResponse\x12\x81\x01\n" +
@@ -2988,7 +4181,15 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x16AdminGetPaymentDetails\x122.nomarkup.payment.v1.AdminGetPaymentDetailsRequest\x1a3.nomarkup.payment.v1.AdminGetPaymentDetailsResponse\x12r\n" +
 	"\x11AdminListPayments\x12-.nomarkup.payment.v1.AdminListPaymentsRequest\x1a..nomarkup.payment.v1.AdminListPaymentsResponse\x12{\n" +
 	"\x14AdminUpdateFeeConfig\x120.nomarkup.payment.v1.AdminUpdateFeeConfigRequest\x1a1.nomarkup.payment.v1.AdminUpdateFeeConfigResponse\x12o\n" +
-	"\x10GetRevenueReport\x12,.nomarkup.payment.v1.GetRevenueReportRequest\x1a-.nomarkup.payment.v1.GetRevenueReportResponseB9Z7github.com/nomarkup/nomarkup/proto/payment/v1;paymentv1b\x06proto3"
+	"\x10GetRevenueReport\x12,.nomarkup.payment.v1.GetRevenueReportRequest\x1a-.nomarkup.payment.v1.GetRevenueReportResponse\x12f\n" +
+	"\rCreateExpense\x12).nomarkup.payment.v1.CreateExpenseRequest\x1a*.nomarkup.payment.v1.CreateExpenseResponse\x12c\n" +
+	"\fListExpenses\x12(.nomarkup.payment.v1.ListExpensesRequest\x1a).nomarkup.payment.v1.ListExpensesResponse\x12f\n" +
+	"\rDeleteExpense\x12).nomarkup.payment.v1.DeleteExpenseRequest\x1a*.nomarkup.payment.v1.DeleteExpenseResponse\x12i\n" +
+	"\x0eRequestAdvance\x12*.nomarkup.payment.v1.RequestAdvanceRequest\x1a+.nomarkup.payment.v1.RequestAdvanceResponse\x12c\n" +
+	"\fListAdvances\x12(.nomarkup.payment.v1.ListAdvancesRequest\x1a).nomarkup.payment.v1.ListAdvancesResponse\x12]\n" +
+	"\n" +
+	"GetAdvance\x12&.nomarkup.payment.v1.GetAdvanceRequest\x1a'.nomarkup.payment.v1.GetAdvanceResponse\x12f\n" +
+	"\rReviewAdvance\x12).nomarkup.payment.v1.ReviewAdvanceRequest\x1a*.nomarkup.payment.v1.ReviewAdvanceResponseB9Z7github.com/nomarkup/nomarkup/proto/payment/v1;paymentv1b\x06proto3"
 
 var (
 	file_payment_v1_payment_proto_rawDescOnce sync.Once
@@ -3002,135 +4203,183 @@ func file_payment_v1_payment_proto_rawDescGZIP() []byte {
 	return file_payment_v1_payment_proto_rawDescData
 }
 
-var file_payment_v1_payment_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
+var file_payment_v1_payment_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
 var file_payment_v1_payment_proto_goTypes = []any{
 	(PaymentStatus)(0),                      // 0: nomarkup.payment.v1.PaymentStatus
-	(*Payment)(nil),                         // 1: nomarkup.payment.v1.Payment
-	(*PaymentBreakdown)(nil),                // 2: nomarkup.payment.v1.PaymentBreakdown
-	(*CreateStripeAccountRequest)(nil),      // 3: nomarkup.payment.v1.CreateStripeAccountRequest
-	(*CreateStripeAccountResponse)(nil),     // 4: nomarkup.payment.v1.CreateStripeAccountResponse
-	(*GetStripeOnboardingLinkRequest)(nil),  // 5: nomarkup.payment.v1.GetStripeOnboardingLinkRequest
-	(*GetStripeOnboardingLinkResponse)(nil), // 6: nomarkup.payment.v1.GetStripeOnboardingLinkResponse
-	(*GetStripeAccountStatusRequest)(nil),   // 7: nomarkup.payment.v1.GetStripeAccountStatusRequest
-	(*GetStripeAccountStatusResponse)(nil),  // 8: nomarkup.payment.v1.GetStripeAccountStatusResponse
-	(*GetStripeDashboardLinkRequest)(nil),   // 9: nomarkup.payment.v1.GetStripeDashboardLinkRequest
-	(*GetStripeDashboardLinkResponse)(nil),  // 10: nomarkup.payment.v1.GetStripeDashboardLinkResponse
-	(*CreateSetupIntentRequest)(nil),        // 11: nomarkup.payment.v1.CreateSetupIntentRequest
-	(*CreateSetupIntentResponse)(nil),       // 12: nomarkup.payment.v1.CreateSetupIntentResponse
-	(*PaymentMethod)(nil),                   // 13: nomarkup.payment.v1.PaymentMethod
-	(*ListPaymentMethodsRequest)(nil),       // 14: nomarkup.payment.v1.ListPaymentMethodsRequest
-	(*ListPaymentMethodsResponse)(nil),      // 15: nomarkup.payment.v1.ListPaymentMethodsResponse
-	(*DeletePaymentMethodRequest)(nil),      // 16: nomarkup.payment.v1.DeletePaymentMethodRequest
-	(*DeletePaymentMethodResponse)(nil),     // 17: nomarkup.payment.v1.DeletePaymentMethodResponse
-	(*CreatePaymentRequest)(nil),            // 18: nomarkup.payment.v1.CreatePaymentRequest
-	(*CreatePaymentResponse)(nil),           // 19: nomarkup.payment.v1.CreatePaymentResponse
-	(*ProcessPaymentRequest)(nil),           // 20: nomarkup.payment.v1.ProcessPaymentRequest
-	(*ProcessPaymentResponse)(nil),          // 21: nomarkup.payment.v1.ProcessPaymentResponse
-	(*ReleaseEscrowRequest)(nil),            // 22: nomarkup.payment.v1.ReleaseEscrowRequest
-	(*ReleaseEscrowResponse)(nil),           // 23: nomarkup.payment.v1.ReleaseEscrowResponse
-	(*GetPaymentRequest)(nil),               // 24: nomarkup.payment.v1.GetPaymentRequest
-	(*GetPaymentResponse)(nil),              // 25: nomarkup.payment.v1.GetPaymentResponse
-	(*ListPaymentsRequest)(nil),             // 26: nomarkup.payment.v1.ListPaymentsRequest
-	(*ListPaymentsResponse)(nil),            // 27: nomarkup.payment.v1.ListPaymentsResponse
-	(*CreateRefundRequest)(nil),             // 28: nomarkup.payment.v1.CreateRefundRequest
-	(*CreateRefundResponse)(nil),            // 29: nomarkup.payment.v1.CreateRefundResponse
-	(*HandleStripeWebhookRequest)(nil),      // 30: nomarkup.payment.v1.HandleStripeWebhookRequest
-	(*HandleStripeWebhookResponse)(nil),     // 31: nomarkup.payment.v1.HandleStripeWebhookResponse
-	(*CalculateFeesRequest)(nil),            // 32: nomarkup.payment.v1.CalculateFeesRequest
-	(*CalculateFeesResponse)(nil),           // 33: nomarkup.payment.v1.CalculateFeesResponse
-	(*GetFeeConfigRequest)(nil),             // 34: nomarkup.payment.v1.GetFeeConfigRequest
-	(*GetFeeConfigResponse)(nil),            // 35: nomarkup.payment.v1.GetFeeConfigResponse
-	(*AdminGetPaymentDetailsRequest)(nil),   // 36: nomarkup.payment.v1.AdminGetPaymentDetailsRequest
-	(*AdminGetPaymentDetailsResponse)(nil),  // 37: nomarkup.payment.v1.AdminGetPaymentDetailsResponse
-	(*AdminListPaymentsRequest)(nil),        // 38: nomarkup.payment.v1.AdminListPaymentsRequest
-	(*AdminListPaymentsResponse)(nil),       // 39: nomarkup.payment.v1.AdminListPaymentsResponse
-	(*AdminUpdateFeeConfigRequest)(nil),     // 40: nomarkup.payment.v1.AdminUpdateFeeConfigRequest
-	(*AdminUpdateFeeConfigResponse)(nil),    // 41: nomarkup.payment.v1.AdminUpdateFeeConfigResponse
-	(*GetRevenueReportRequest)(nil),         // 42: nomarkup.payment.v1.GetRevenueReportRequest
-	(*GetRevenueReportResponse)(nil),        // 43: nomarkup.payment.v1.GetRevenueReportResponse
-	(*RevenueDataPoint)(nil),                // 44: nomarkup.payment.v1.RevenueDataPoint
-	(*timestamppb.Timestamp)(nil),           // 45: google.protobuf.Timestamp
-	(v1.PaymentTiming)(0),                   // 46: nomarkup.common.v1.PaymentTiming
-	(*v1.PaginationRequest)(nil),            // 47: nomarkup.common.v1.PaginationRequest
-	(*v1.PaginationResponse)(nil),           // 48: nomarkup.common.v1.PaginationResponse
-	(*v1.DateRange)(nil),                    // 49: nomarkup.common.v1.DateRange
+	(AdvanceStatus)(0),                      // 1: nomarkup.payment.v1.AdvanceStatus
+	(*Payment)(nil),                         // 2: nomarkup.payment.v1.Payment
+	(*PaymentBreakdown)(nil),                // 3: nomarkup.payment.v1.PaymentBreakdown
+	(*CreateStripeAccountRequest)(nil),      // 4: nomarkup.payment.v1.CreateStripeAccountRequest
+	(*CreateStripeAccountResponse)(nil),     // 5: nomarkup.payment.v1.CreateStripeAccountResponse
+	(*GetStripeOnboardingLinkRequest)(nil),  // 6: nomarkup.payment.v1.GetStripeOnboardingLinkRequest
+	(*GetStripeOnboardingLinkResponse)(nil), // 7: nomarkup.payment.v1.GetStripeOnboardingLinkResponse
+	(*GetStripeAccountStatusRequest)(nil),   // 8: nomarkup.payment.v1.GetStripeAccountStatusRequest
+	(*GetStripeAccountStatusResponse)(nil),  // 9: nomarkup.payment.v1.GetStripeAccountStatusResponse
+	(*GetStripeDashboardLinkRequest)(nil),   // 10: nomarkup.payment.v1.GetStripeDashboardLinkRequest
+	(*GetStripeDashboardLinkResponse)(nil),  // 11: nomarkup.payment.v1.GetStripeDashboardLinkResponse
+	(*CreateSetupIntentRequest)(nil),        // 12: nomarkup.payment.v1.CreateSetupIntentRequest
+	(*CreateSetupIntentResponse)(nil),       // 13: nomarkup.payment.v1.CreateSetupIntentResponse
+	(*PaymentMethod)(nil),                   // 14: nomarkup.payment.v1.PaymentMethod
+	(*ListPaymentMethodsRequest)(nil),       // 15: nomarkup.payment.v1.ListPaymentMethodsRequest
+	(*ListPaymentMethodsResponse)(nil),      // 16: nomarkup.payment.v1.ListPaymentMethodsResponse
+	(*DeletePaymentMethodRequest)(nil),      // 17: nomarkup.payment.v1.DeletePaymentMethodRequest
+	(*DeletePaymentMethodResponse)(nil),     // 18: nomarkup.payment.v1.DeletePaymentMethodResponse
+	(*CreatePaymentRequest)(nil),            // 19: nomarkup.payment.v1.CreatePaymentRequest
+	(*CreatePaymentResponse)(nil),           // 20: nomarkup.payment.v1.CreatePaymentResponse
+	(*ProcessPaymentRequest)(nil),           // 21: nomarkup.payment.v1.ProcessPaymentRequest
+	(*ProcessPaymentResponse)(nil),          // 22: nomarkup.payment.v1.ProcessPaymentResponse
+	(*ReleaseEscrowRequest)(nil),            // 23: nomarkup.payment.v1.ReleaseEscrowRequest
+	(*ReleaseEscrowResponse)(nil),           // 24: nomarkup.payment.v1.ReleaseEscrowResponse
+	(*GetPaymentRequest)(nil),               // 25: nomarkup.payment.v1.GetPaymentRequest
+	(*GetPaymentResponse)(nil),              // 26: nomarkup.payment.v1.GetPaymentResponse
+	(*ListPaymentsRequest)(nil),             // 27: nomarkup.payment.v1.ListPaymentsRequest
+	(*ListPaymentsResponse)(nil),            // 28: nomarkup.payment.v1.ListPaymentsResponse
+	(*CreateRefundRequest)(nil),             // 29: nomarkup.payment.v1.CreateRefundRequest
+	(*CreateRefundResponse)(nil),            // 30: nomarkup.payment.v1.CreateRefundResponse
+	(*HandleStripeWebhookRequest)(nil),      // 31: nomarkup.payment.v1.HandleStripeWebhookRequest
+	(*HandleStripeWebhookResponse)(nil),     // 32: nomarkup.payment.v1.HandleStripeWebhookResponse
+	(*CalculateFeesRequest)(nil),            // 33: nomarkup.payment.v1.CalculateFeesRequest
+	(*CalculateFeesResponse)(nil),           // 34: nomarkup.payment.v1.CalculateFeesResponse
+	(*GetFeeConfigRequest)(nil),             // 35: nomarkup.payment.v1.GetFeeConfigRequest
+	(*GetFeeConfigResponse)(nil),            // 36: nomarkup.payment.v1.GetFeeConfigResponse
+	(*AdminGetPaymentDetailsRequest)(nil),   // 37: nomarkup.payment.v1.AdminGetPaymentDetailsRequest
+	(*AdminGetPaymentDetailsResponse)(nil),  // 38: nomarkup.payment.v1.AdminGetPaymentDetailsResponse
+	(*AdminListPaymentsRequest)(nil),        // 39: nomarkup.payment.v1.AdminListPaymentsRequest
+	(*AdminListPaymentsResponse)(nil),       // 40: nomarkup.payment.v1.AdminListPaymentsResponse
+	(*AdminUpdateFeeConfigRequest)(nil),     // 41: nomarkup.payment.v1.AdminUpdateFeeConfigRequest
+	(*AdminUpdateFeeConfigResponse)(nil),    // 42: nomarkup.payment.v1.AdminUpdateFeeConfigResponse
+	(*GetRevenueReportRequest)(nil),         // 43: nomarkup.payment.v1.GetRevenueReportRequest
+	(*GetRevenueReportResponse)(nil),        // 44: nomarkup.payment.v1.GetRevenueReportResponse
+	(*RevenueDataPoint)(nil),                // 45: nomarkup.payment.v1.RevenueDataPoint
+	(*Expense)(nil),                         // 46: nomarkup.payment.v1.Expense
+	(*CreateExpenseRequest)(nil),            // 47: nomarkup.payment.v1.CreateExpenseRequest
+	(*CreateExpenseResponse)(nil),           // 48: nomarkup.payment.v1.CreateExpenseResponse
+	(*ListExpensesRequest)(nil),             // 49: nomarkup.payment.v1.ListExpensesRequest
+	(*ListExpensesResponse)(nil),            // 50: nomarkup.payment.v1.ListExpensesResponse
+	(*DeleteExpenseRequest)(nil),            // 51: nomarkup.payment.v1.DeleteExpenseRequest
+	(*DeleteExpenseResponse)(nil),           // 52: nomarkup.payment.v1.DeleteExpenseResponse
+	(*Advance)(nil),                         // 53: nomarkup.payment.v1.Advance
+	(*RequestAdvanceRequest)(nil),           // 54: nomarkup.payment.v1.RequestAdvanceRequest
+	(*RequestAdvanceResponse)(nil),          // 55: nomarkup.payment.v1.RequestAdvanceResponse
+	(*ListAdvancesRequest)(nil),             // 56: nomarkup.payment.v1.ListAdvancesRequest
+	(*ListAdvancesResponse)(nil),            // 57: nomarkup.payment.v1.ListAdvancesResponse
+	(*GetAdvanceRequest)(nil),               // 58: nomarkup.payment.v1.GetAdvanceRequest
+	(*GetAdvanceResponse)(nil),              // 59: nomarkup.payment.v1.GetAdvanceResponse
+	(*ReviewAdvanceRequest)(nil),            // 60: nomarkup.payment.v1.ReviewAdvanceRequest
+	(*ReviewAdvanceResponse)(nil),           // 61: nomarkup.payment.v1.ReviewAdvanceResponse
+	(*timestamppb.Timestamp)(nil),           // 62: google.protobuf.Timestamp
+	(v1.PaymentTiming)(0),                   // 63: nomarkup.common.v1.PaymentTiming
+	(*v1.PaginationRequest)(nil),            // 64: nomarkup.common.v1.PaginationRequest
+	(*v1.PaginationResponse)(nil),           // 65: nomarkup.common.v1.PaginationResponse
+	(*v1.DateRange)(nil),                    // 66: nomarkup.common.v1.DateRange
 }
 var file_payment_v1_payment_proto_depIdxs = []int32{
 	0,  // 0: nomarkup.payment.v1.Payment.status:type_name -> nomarkup.payment.v1.PaymentStatus
-	45, // 1: nomarkup.payment.v1.Payment.escrow_at:type_name -> google.protobuf.Timestamp
-	45, // 2: nomarkup.payment.v1.Payment.released_at:type_name -> google.protobuf.Timestamp
-	45, // 3: nomarkup.payment.v1.Payment.completed_at:type_name -> google.protobuf.Timestamp
-	45, // 4: nomarkup.payment.v1.Payment.created_at:type_name -> google.protobuf.Timestamp
-	13, // 5: nomarkup.payment.v1.ListPaymentMethodsResponse.methods:type_name -> nomarkup.payment.v1.PaymentMethod
-	46, // 6: nomarkup.payment.v1.CreatePaymentRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
-	1,  // 7: nomarkup.payment.v1.CreatePaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
-	1,  // 8: nomarkup.payment.v1.ProcessPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
-	1,  // 9: nomarkup.payment.v1.ReleaseEscrowResponse.payment:type_name -> nomarkup.payment.v1.Payment
-	1,  // 10: nomarkup.payment.v1.GetPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
-	2,  // 11: nomarkup.payment.v1.GetPaymentResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
+	62, // 1: nomarkup.payment.v1.Payment.escrow_at:type_name -> google.protobuf.Timestamp
+	62, // 2: nomarkup.payment.v1.Payment.released_at:type_name -> google.protobuf.Timestamp
+	62, // 3: nomarkup.payment.v1.Payment.completed_at:type_name -> google.protobuf.Timestamp
+	62, // 4: nomarkup.payment.v1.Payment.created_at:type_name -> google.protobuf.Timestamp
+	14, // 5: nomarkup.payment.v1.ListPaymentMethodsResponse.methods:type_name -> nomarkup.payment.v1.PaymentMethod
+	63, // 6: nomarkup.payment.v1.CreatePaymentRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	2,  // 7: nomarkup.payment.v1.CreatePaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
+	2,  // 8: nomarkup.payment.v1.ProcessPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
+	2,  // 9: nomarkup.payment.v1.ReleaseEscrowResponse.payment:type_name -> nomarkup.payment.v1.Payment
+	2,  // 10: nomarkup.payment.v1.GetPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
+	3,  // 11: nomarkup.payment.v1.GetPaymentResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	0,  // 12: nomarkup.payment.v1.ListPaymentsRequest.status_filter:type_name -> nomarkup.payment.v1.PaymentStatus
-	47, // 13: nomarkup.payment.v1.ListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	1,  // 14: nomarkup.payment.v1.ListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
-	48, // 15: nomarkup.payment.v1.ListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	1,  // 16: nomarkup.payment.v1.CreateRefundResponse.payment:type_name -> nomarkup.payment.v1.Payment
-	2,  // 17: nomarkup.payment.v1.CalculateFeesResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
-	1,  // 18: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.payment:type_name -> nomarkup.payment.v1.Payment
-	2,  // 19: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
+	64, // 13: nomarkup.payment.v1.ListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	2,  // 14: nomarkup.payment.v1.ListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
+	65, // 15: nomarkup.payment.v1.ListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	2,  // 16: nomarkup.payment.v1.CreateRefundResponse.payment:type_name -> nomarkup.payment.v1.Payment
+	3,  // 17: nomarkup.payment.v1.CalculateFeesResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
+	2,  // 18: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.payment:type_name -> nomarkup.payment.v1.Payment
+	3,  // 19: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	0,  // 20: nomarkup.payment.v1.AdminListPaymentsRequest.status_filter:type_name -> nomarkup.payment.v1.PaymentStatus
-	49, // 21: nomarkup.payment.v1.AdminListPaymentsRequest.date_range:type_name -> nomarkup.common.v1.DateRange
-	47, // 22: nomarkup.payment.v1.AdminListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	1,  // 23: nomarkup.payment.v1.AdminListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
-	48, // 24: nomarkup.payment.v1.AdminListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	35, // 25: nomarkup.payment.v1.AdminUpdateFeeConfigResponse.config:type_name -> nomarkup.payment.v1.GetFeeConfigResponse
-	49, // 26: nomarkup.payment.v1.GetRevenueReportRequest.date_range:type_name -> nomarkup.common.v1.DateRange
-	44, // 27: nomarkup.payment.v1.GetRevenueReportResponse.data_points:type_name -> nomarkup.payment.v1.RevenueDataPoint
-	45, // 28: nomarkup.payment.v1.RevenueDataPoint.period_start:type_name -> google.protobuf.Timestamp
-	3,  // 29: nomarkup.payment.v1.PaymentService.CreateStripeAccount:input_type -> nomarkup.payment.v1.CreateStripeAccountRequest
-	5,  // 30: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:input_type -> nomarkup.payment.v1.GetStripeOnboardingLinkRequest
-	7,  // 31: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:input_type -> nomarkup.payment.v1.GetStripeAccountStatusRequest
-	9,  // 32: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:input_type -> nomarkup.payment.v1.GetStripeDashboardLinkRequest
-	11, // 33: nomarkup.payment.v1.PaymentService.CreateSetupIntent:input_type -> nomarkup.payment.v1.CreateSetupIntentRequest
-	14, // 34: nomarkup.payment.v1.PaymentService.ListPaymentMethods:input_type -> nomarkup.payment.v1.ListPaymentMethodsRequest
-	16, // 35: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:input_type -> nomarkup.payment.v1.DeletePaymentMethodRequest
-	18, // 36: nomarkup.payment.v1.PaymentService.CreatePayment:input_type -> nomarkup.payment.v1.CreatePaymentRequest
-	20, // 37: nomarkup.payment.v1.PaymentService.ProcessPayment:input_type -> nomarkup.payment.v1.ProcessPaymentRequest
-	22, // 38: nomarkup.payment.v1.PaymentService.ReleaseEscrow:input_type -> nomarkup.payment.v1.ReleaseEscrowRequest
-	24, // 39: nomarkup.payment.v1.PaymentService.GetPayment:input_type -> nomarkup.payment.v1.GetPaymentRequest
-	26, // 40: nomarkup.payment.v1.PaymentService.ListPayments:input_type -> nomarkup.payment.v1.ListPaymentsRequest
-	28, // 41: nomarkup.payment.v1.PaymentService.CreateRefund:input_type -> nomarkup.payment.v1.CreateRefundRequest
-	30, // 42: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:input_type -> nomarkup.payment.v1.HandleStripeWebhookRequest
-	32, // 43: nomarkup.payment.v1.PaymentService.CalculateFees:input_type -> nomarkup.payment.v1.CalculateFeesRequest
-	34, // 44: nomarkup.payment.v1.PaymentService.GetFeeConfig:input_type -> nomarkup.payment.v1.GetFeeConfigRequest
-	36, // 45: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:input_type -> nomarkup.payment.v1.AdminGetPaymentDetailsRequest
-	38, // 46: nomarkup.payment.v1.PaymentService.AdminListPayments:input_type -> nomarkup.payment.v1.AdminListPaymentsRequest
-	40, // 47: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:input_type -> nomarkup.payment.v1.AdminUpdateFeeConfigRequest
-	42, // 48: nomarkup.payment.v1.PaymentService.GetRevenueReport:input_type -> nomarkup.payment.v1.GetRevenueReportRequest
-	4,  // 49: nomarkup.payment.v1.PaymentService.CreateStripeAccount:output_type -> nomarkup.payment.v1.CreateStripeAccountResponse
-	6,  // 50: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:output_type -> nomarkup.payment.v1.GetStripeOnboardingLinkResponse
-	8,  // 51: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:output_type -> nomarkup.payment.v1.GetStripeAccountStatusResponse
-	10, // 52: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:output_type -> nomarkup.payment.v1.GetStripeDashboardLinkResponse
-	12, // 53: nomarkup.payment.v1.PaymentService.CreateSetupIntent:output_type -> nomarkup.payment.v1.CreateSetupIntentResponse
-	15, // 54: nomarkup.payment.v1.PaymentService.ListPaymentMethods:output_type -> nomarkup.payment.v1.ListPaymentMethodsResponse
-	17, // 55: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:output_type -> nomarkup.payment.v1.DeletePaymentMethodResponse
-	19, // 56: nomarkup.payment.v1.PaymentService.CreatePayment:output_type -> nomarkup.payment.v1.CreatePaymentResponse
-	21, // 57: nomarkup.payment.v1.PaymentService.ProcessPayment:output_type -> nomarkup.payment.v1.ProcessPaymentResponse
-	23, // 58: nomarkup.payment.v1.PaymentService.ReleaseEscrow:output_type -> nomarkup.payment.v1.ReleaseEscrowResponse
-	25, // 59: nomarkup.payment.v1.PaymentService.GetPayment:output_type -> nomarkup.payment.v1.GetPaymentResponse
-	27, // 60: nomarkup.payment.v1.PaymentService.ListPayments:output_type -> nomarkup.payment.v1.ListPaymentsResponse
-	29, // 61: nomarkup.payment.v1.PaymentService.CreateRefund:output_type -> nomarkup.payment.v1.CreateRefundResponse
-	31, // 62: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:output_type -> nomarkup.payment.v1.HandleStripeWebhookResponse
-	33, // 63: nomarkup.payment.v1.PaymentService.CalculateFees:output_type -> nomarkup.payment.v1.CalculateFeesResponse
-	35, // 64: nomarkup.payment.v1.PaymentService.GetFeeConfig:output_type -> nomarkup.payment.v1.GetFeeConfigResponse
-	37, // 65: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:output_type -> nomarkup.payment.v1.AdminGetPaymentDetailsResponse
-	39, // 66: nomarkup.payment.v1.PaymentService.AdminListPayments:output_type -> nomarkup.payment.v1.AdminListPaymentsResponse
-	41, // 67: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:output_type -> nomarkup.payment.v1.AdminUpdateFeeConfigResponse
-	43, // 68: nomarkup.payment.v1.PaymentService.GetRevenueReport:output_type -> nomarkup.payment.v1.GetRevenueReportResponse
-	49, // [49:69] is the sub-list for method output_type
-	29, // [29:49] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	66, // 21: nomarkup.payment.v1.AdminListPaymentsRequest.date_range:type_name -> nomarkup.common.v1.DateRange
+	64, // 22: nomarkup.payment.v1.AdminListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	2,  // 23: nomarkup.payment.v1.AdminListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
+	65, // 24: nomarkup.payment.v1.AdminListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	36, // 25: nomarkup.payment.v1.AdminUpdateFeeConfigResponse.config:type_name -> nomarkup.payment.v1.GetFeeConfigResponse
+	66, // 26: nomarkup.payment.v1.GetRevenueReportRequest.date_range:type_name -> nomarkup.common.v1.DateRange
+	45, // 27: nomarkup.payment.v1.GetRevenueReportResponse.data_points:type_name -> nomarkup.payment.v1.RevenueDataPoint
+	62, // 28: nomarkup.payment.v1.RevenueDataPoint.period_start:type_name -> google.protobuf.Timestamp
+	62, // 29: nomarkup.payment.v1.Expense.created_at:type_name -> google.protobuf.Timestamp
+	62, // 30: nomarkup.payment.v1.Expense.updated_at:type_name -> google.protobuf.Timestamp
+	46, // 31: nomarkup.payment.v1.CreateExpenseResponse.expense:type_name -> nomarkup.payment.v1.Expense
+	64, // 32: nomarkup.payment.v1.ListExpensesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	46, // 33: nomarkup.payment.v1.ListExpensesResponse.expenses:type_name -> nomarkup.payment.v1.Expense
+	65, // 34: nomarkup.payment.v1.ListExpensesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	62, // 35: nomarkup.payment.v1.Advance.reviewed_at:type_name -> google.protobuf.Timestamp
+	62, // 36: nomarkup.payment.v1.Advance.disbursed_at:type_name -> google.protobuf.Timestamp
+	62, // 37: nomarkup.payment.v1.Advance.repaid_at:type_name -> google.protobuf.Timestamp
+	62, // 38: nomarkup.payment.v1.Advance.created_at:type_name -> google.protobuf.Timestamp
+	62, // 39: nomarkup.payment.v1.Advance.updated_at:type_name -> google.protobuf.Timestamp
+	53, // 40: nomarkup.payment.v1.RequestAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
+	64, // 41: nomarkup.payment.v1.ListAdvancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	53, // 42: nomarkup.payment.v1.ListAdvancesResponse.advances:type_name -> nomarkup.payment.v1.Advance
+	65, // 43: nomarkup.payment.v1.ListAdvancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	53, // 44: nomarkup.payment.v1.GetAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
+	53, // 45: nomarkup.payment.v1.ReviewAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
+	4,  // 46: nomarkup.payment.v1.PaymentService.CreateStripeAccount:input_type -> nomarkup.payment.v1.CreateStripeAccountRequest
+	6,  // 47: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:input_type -> nomarkup.payment.v1.GetStripeOnboardingLinkRequest
+	8,  // 48: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:input_type -> nomarkup.payment.v1.GetStripeAccountStatusRequest
+	10, // 49: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:input_type -> nomarkup.payment.v1.GetStripeDashboardLinkRequest
+	12, // 50: nomarkup.payment.v1.PaymentService.CreateSetupIntent:input_type -> nomarkup.payment.v1.CreateSetupIntentRequest
+	15, // 51: nomarkup.payment.v1.PaymentService.ListPaymentMethods:input_type -> nomarkup.payment.v1.ListPaymentMethodsRequest
+	17, // 52: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:input_type -> nomarkup.payment.v1.DeletePaymentMethodRequest
+	19, // 53: nomarkup.payment.v1.PaymentService.CreatePayment:input_type -> nomarkup.payment.v1.CreatePaymentRequest
+	21, // 54: nomarkup.payment.v1.PaymentService.ProcessPayment:input_type -> nomarkup.payment.v1.ProcessPaymentRequest
+	23, // 55: nomarkup.payment.v1.PaymentService.ReleaseEscrow:input_type -> nomarkup.payment.v1.ReleaseEscrowRequest
+	25, // 56: nomarkup.payment.v1.PaymentService.GetPayment:input_type -> nomarkup.payment.v1.GetPaymentRequest
+	27, // 57: nomarkup.payment.v1.PaymentService.ListPayments:input_type -> nomarkup.payment.v1.ListPaymentsRequest
+	29, // 58: nomarkup.payment.v1.PaymentService.CreateRefund:input_type -> nomarkup.payment.v1.CreateRefundRequest
+	31, // 59: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:input_type -> nomarkup.payment.v1.HandleStripeWebhookRequest
+	33, // 60: nomarkup.payment.v1.PaymentService.CalculateFees:input_type -> nomarkup.payment.v1.CalculateFeesRequest
+	35, // 61: nomarkup.payment.v1.PaymentService.GetFeeConfig:input_type -> nomarkup.payment.v1.GetFeeConfigRequest
+	37, // 62: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:input_type -> nomarkup.payment.v1.AdminGetPaymentDetailsRequest
+	39, // 63: nomarkup.payment.v1.PaymentService.AdminListPayments:input_type -> nomarkup.payment.v1.AdminListPaymentsRequest
+	41, // 64: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:input_type -> nomarkup.payment.v1.AdminUpdateFeeConfigRequest
+	43, // 65: nomarkup.payment.v1.PaymentService.GetRevenueReport:input_type -> nomarkup.payment.v1.GetRevenueReportRequest
+	47, // 66: nomarkup.payment.v1.PaymentService.CreateExpense:input_type -> nomarkup.payment.v1.CreateExpenseRequest
+	49, // 67: nomarkup.payment.v1.PaymentService.ListExpenses:input_type -> nomarkup.payment.v1.ListExpensesRequest
+	51, // 68: nomarkup.payment.v1.PaymentService.DeleteExpense:input_type -> nomarkup.payment.v1.DeleteExpenseRequest
+	54, // 69: nomarkup.payment.v1.PaymentService.RequestAdvance:input_type -> nomarkup.payment.v1.RequestAdvanceRequest
+	56, // 70: nomarkup.payment.v1.PaymentService.ListAdvances:input_type -> nomarkup.payment.v1.ListAdvancesRequest
+	58, // 71: nomarkup.payment.v1.PaymentService.GetAdvance:input_type -> nomarkup.payment.v1.GetAdvanceRequest
+	60, // 72: nomarkup.payment.v1.PaymentService.ReviewAdvance:input_type -> nomarkup.payment.v1.ReviewAdvanceRequest
+	5,  // 73: nomarkup.payment.v1.PaymentService.CreateStripeAccount:output_type -> nomarkup.payment.v1.CreateStripeAccountResponse
+	7,  // 74: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:output_type -> nomarkup.payment.v1.GetStripeOnboardingLinkResponse
+	9,  // 75: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:output_type -> nomarkup.payment.v1.GetStripeAccountStatusResponse
+	11, // 76: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:output_type -> nomarkup.payment.v1.GetStripeDashboardLinkResponse
+	13, // 77: nomarkup.payment.v1.PaymentService.CreateSetupIntent:output_type -> nomarkup.payment.v1.CreateSetupIntentResponse
+	16, // 78: nomarkup.payment.v1.PaymentService.ListPaymentMethods:output_type -> nomarkup.payment.v1.ListPaymentMethodsResponse
+	18, // 79: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:output_type -> nomarkup.payment.v1.DeletePaymentMethodResponse
+	20, // 80: nomarkup.payment.v1.PaymentService.CreatePayment:output_type -> nomarkup.payment.v1.CreatePaymentResponse
+	22, // 81: nomarkup.payment.v1.PaymentService.ProcessPayment:output_type -> nomarkup.payment.v1.ProcessPaymentResponse
+	24, // 82: nomarkup.payment.v1.PaymentService.ReleaseEscrow:output_type -> nomarkup.payment.v1.ReleaseEscrowResponse
+	26, // 83: nomarkup.payment.v1.PaymentService.GetPayment:output_type -> nomarkup.payment.v1.GetPaymentResponse
+	28, // 84: nomarkup.payment.v1.PaymentService.ListPayments:output_type -> nomarkup.payment.v1.ListPaymentsResponse
+	30, // 85: nomarkup.payment.v1.PaymentService.CreateRefund:output_type -> nomarkup.payment.v1.CreateRefundResponse
+	32, // 86: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:output_type -> nomarkup.payment.v1.HandleStripeWebhookResponse
+	34, // 87: nomarkup.payment.v1.PaymentService.CalculateFees:output_type -> nomarkup.payment.v1.CalculateFeesResponse
+	36, // 88: nomarkup.payment.v1.PaymentService.GetFeeConfig:output_type -> nomarkup.payment.v1.GetFeeConfigResponse
+	38, // 89: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:output_type -> nomarkup.payment.v1.AdminGetPaymentDetailsResponse
+	40, // 90: nomarkup.payment.v1.PaymentService.AdminListPayments:output_type -> nomarkup.payment.v1.AdminListPaymentsResponse
+	42, // 91: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:output_type -> nomarkup.payment.v1.AdminUpdateFeeConfigResponse
+	44, // 92: nomarkup.payment.v1.PaymentService.GetRevenueReport:output_type -> nomarkup.payment.v1.GetRevenueReportResponse
+	48, // 93: nomarkup.payment.v1.PaymentService.CreateExpense:output_type -> nomarkup.payment.v1.CreateExpenseResponse
+	50, // 94: nomarkup.payment.v1.PaymentService.ListExpenses:output_type -> nomarkup.payment.v1.ListExpensesResponse
+	52, // 95: nomarkup.payment.v1.PaymentService.DeleteExpense:output_type -> nomarkup.payment.v1.DeleteExpenseResponse
+	55, // 96: nomarkup.payment.v1.PaymentService.RequestAdvance:output_type -> nomarkup.payment.v1.RequestAdvanceResponse
+	57, // 97: nomarkup.payment.v1.PaymentService.ListAdvances:output_type -> nomarkup.payment.v1.ListAdvancesResponse
+	59, // 98: nomarkup.payment.v1.PaymentService.GetAdvance:output_type -> nomarkup.payment.v1.GetAdvanceResponse
+	61, // 99: nomarkup.payment.v1.PaymentService.ReviewAdvance:output_type -> nomarkup.payment.v1.ReviewAdvanceResponse
+	73, // [73:100] is the sub-list for method output_type
+	46, // [46:73] is the sub-list for method input_type
+	46, // [46:46] is the sub-list for extension type_name
+	46, // [46:46] is the sub-list for extension extendee
+	0,  // [0:46] is the sub-list for field type_name
 }
 
 func init() { file_payment_v1_payment_proto_init() }
@@ -3142,13 +4391,14 @@ func file_payment_v1_payment_proto_init() {
 	file_payment_v1_payment_proto_msgTypes[33].OneofWrappers = []any{}
 	file_payment_v1_payment_proto_msgTypes[37].OneofWrappers = []any{}
 	file_payment_v1_payment_proto_msgTypes[39].OneofWrappers = []any{}
+	file_payment_v1_payment_proto_msgTypes[54].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_payment_v1_payment_proto_rawDesc), len(file_payment_v1_payment_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   44,
+			NumEnums:      2,
+			NumMessages:   60,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

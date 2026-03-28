@@ -39,6 +39,13 @@ const (
 	PaymentService_AdminListPayments_FullMethodName       = "/nomarkup.payment.v1.PaymentService/AdminListPayments"
 	PaymentService_AdminUpdateFeeConfig_FullMethodName    = "/nomarkup.payment.v1.PaymentService/AdminUpdateFeeConfig"
 	PaymentService_GetRevenueReport_FullMethodName        = "/nomarkup.payment.v1.PaymentService/GetRevenueReport"
+	PaymentService_CreateExpense_FullMethodName           = "/nomarkup.payment.v1.PaymentService/CreateExpense"
+	PaymentService_ListExpenses_FullMethodName            = "/nomarkup.payment.v1.PaymentService/ListExpenses"
+	PaymentService_DeleteExpense_FullMethodName           = "/nomarkup.payment.v1.PaymentService/DeleteExpense"
+	PaymentService_RequestAdvance_FullMethodName          = "/nomarkup.payment.v1.PaymentService/RequestAdvance"
+	PaymentService_ListAdvances_FullMethodName            = "/nomarkup.payment.v1.PaymentService/ListAdvances"
+	PaymentService_GetAdvance_FullMethodName              = "/nomarkup.payment.v1.PaymentService/GetAdvance"
+	PaymentService_ReviewAdvance_FullMethodName           = "/nomarkup.payment.v1.PaymentService/ReviewAdvance"
 )
 
 // PaymentServiceClient is the client API for PaymentService service.
@@ -73,6 +80,15 @@ type PaymentServiceClient interface {
 	AdminUpdateFeeConfig(ctx context.Context, in *AdminUpdateFeeConfigRequest, opts ...grpc.CallOption) (*AdminUpdateFeeConfigResponse, error)
 	// Revenue reporting
 	GetRevenueReport(ctx context.Context, in *GetRevenueReportRequest, opts ...grpc.CallOption) (*GetRevenueReportResponse, error)
+	// Expenses
+	CreateExpense(ctx context.Context, in *CreateExpenseRequest, opts ...grpc.CallOption) (*CreateExpenseResponse, error)
+	ListExpenses(ctx context.Context, in *ListExpensesRequest, opts ...grpc.CallOption) (*ListExpensesResponse, error)
+	DeleteExpense(ctx context.Context, in *DeleteExpenseRequest, opts ...grpc.CallOption) (*DeleteExpenseResponse, error)
+	// Working Capital
+	RequestAdvance(ctx context.Context, in *RequestAdvanceRequest, opts ...grpc.CallOption) (*RequestAdvanceResponse, error)
+	ListAdvances(ctx context.Context, in *ListAdvancesRequest, opts ...grpc.CallOption) (*ListAdvancesResponse, error)
+	GetAdvance(ctx context.Context, in *GetAdvanceRequest, opts ...grpc.CallOption) (*GetAdvanceResponse, error)
+	ReviewAdvance(ctx context.Context, in *ReviewAdvanceRequest, opts ...grpc.CallOption) (*ReviewAdvanceResponse, error)
 }
 
 type paymentServiceClient struct {
@@ -283,6 +299,76 @@ func (c *paymentServiceClient) GetRevenueReport(ctx context.Context, in *GetReve
 	return out, nil
 }
 
+func (c *paymentServiceClient) CreateExpense(ctx context.Context, in *CreateExpenseRequest, opts ...grpc.CallOption) (*CreateExpenseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateExpenseResponse)
+	err := c.cc.Invoke(ctx, PaymentService_CreateExpense_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ListExpenses(ctx context.Context, in *ListExpensesRequest, opts ...grpc.CallOption) (*ListExpensesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListExpensesResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ListExpenses_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) DeleteExpense(ctx context.Context, in *DeleteExpenseRequest, opts ...grpc.CallOption) (*DeleteExpenseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteExpenseResponse)
+	err := c.cc.Invoke(ctx, PaymentService_DeleteExpense_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) RequestAdvance(ctx context.Context, in *RequestAdvanceRequest, opts ...grpc.CallOption) (*RequestAdvanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestAdvanceResponse)
+	err := c.cc.Invoke(ctx, PaymentService_RequestAdvance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ListAdvances(ctx context.Context, in *ListAdvancesRequest, opts ...grpc.CallOption) (*ListAdvancesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAdvancesResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ListAdvances_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) GetAdvance(ctx context.Context, in *GetAdvanceRequest, opts ...grpc.CallOption) (*GetAdvanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAdvanceResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GetAdvance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ReviewAdvance(ctx context.Context, in *ReviewAdvanceRequest, opts ...grpc.CallOption) (*ReviewAdvanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewAdvanceResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ReviewAdvance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PaymentServiceServer is the server API for PaymentService service.
 // All implementations must embed UnimplementedPaymentServiceServer
 // for forward compatibility.
@@ -315,6 +401,15 @@ type PaymentServiceServer interface {
 	AdminUpdateFeeConfig(context.Context, *AdminUpdateFeeConfigRequest) (*AdminUpdateFeeConfigResponse, error)
 	// Revenue reporting
 	GetRevenueReport(context.Context, *GetRevenueReportRequest) (*GetRevenueReportResponse, error)
+	// Expenses
+	CreateExpense(context.Context, *CreateExpenseRequest) (*CreateExpenseResponse, error)
+	ListExpenses(context.Context, *ListExpensesRequest) (*ListExpensesResponse, error)
+	DeleteExpense(context.Context, *DeleteExpenseRequest) (*DeleteExpenseResponse, error)
+	// Working Capital
+	RequestAdvance(context.Context, *RequestAdvanceRequest) (*RequestAdvanceResponse, error)
+	ListAdvances(context.Context, *ListAdvancesRequest) (*ListAdvancesResponse, error)
+	GetAdvance(context.Context, *GetAdvanceRequest) (*GetAdvanceResponse, error)
+	ReviewAdvance(context.Context, *ReviewAdvanceRequest) (*ReviewAdvanceResponse, error)
 	mustEmbedUnimplementedPaymentServiceServer()
 }
 
@@ -384,6 +479,27 @@ func (UnimplementedPaymentServiceServer) AdminUpdateFeeConfig(context.Context, *
 }
 func (UnimplementedPaymentServiceServer) GetRevenueReport(context.Context, *GetRevenueReportRequest) (*GetRevenueReportResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRevenueReport not implemented")
+}
+func (UnimplementedPaymentServiceServer) CreateExpense(context.Context, *CreateExpenseRequest) (*CreateExpenseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateExpense not implemented")
+}
+func (UnimplementedPaymentServiceServer) ListExpenses(context.Context, *ListExpensesRequest) (*ListExpensesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListExpenses not implemented")
+}
+func (UnimplementedPaymentServiceServer) DeleteExpense(context.Context, *DeleteExpenseRequest) (*DeleteExpenseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteExpense not implemented")
+}
+func (UnimplementedPaymentServiceServer) RequestAdvance(context.Context, *RequestAdvanceRequest) (*RequestAdvanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestAdvance not implemented")
+}
+func (UnimplementedPaymentServiceServer) ListAdvances(context.Context, *ListAdvancesRequest) (*ListAdvancesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAdvances not implemented")
+}
+func (UnimplementedPaymentServiceServer) GetAdvance(context.Context, *GetAdvanceRequest) (*GetAdvanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAdvance not implemented")
+}
+func (UnimplementedPaymentServiceServer) ReviewAdvance(context.Context, *ReviewAdvanceRequest) (*ReviewAdvanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewAdvance not implemented")
 }
 func (UnimplementedPaymentServiceServer) mustEmbedUnimplementedPaymentServiceServer() {}
 func (UnimplementedPaymentServiceServer) testEmbeddedByValue()                        {}
@@ -766,6 +882,132 @@ func _PaymentService_GetRevenueReport_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PaymentService_CreateExpense_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateExpenseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).CreateExpense(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_CreateExpense_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).CreateExpense(ctx, req.(*CreateExpenseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ListExpenses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExpensesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ListExpenses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ListExpenses_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ListExpenses(ctx, req.(*ListExpensesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_DeleteExpense_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteExpenseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).DeleteExpense(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_DeleteExpense_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).DeleteExpense(ctx, req.(*DeleteExpenseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_RequestAdvance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestAdvanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).RequestAdvance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_RequestAdvance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).RequestAdvance(ctx, req.(*RequestAdvanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ListAdvances_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAdvancesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ListAdvances(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ListAdvances_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ListAdvances(ctx, req.(*ListAdvancesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_GetAdvance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAdvanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GetAdvance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GetAdvance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GetAdvance(ctx, req.(*GetAdvanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ReviewAdvance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewAdvanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ReviewAdvance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ReviewAdvance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ReviewAdvance(ctx, req.(*ReviewAdvanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PaymentService_ServiceDesc is the grpc.ServiceDesc for PaymentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -852,6 +1094,34 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRevenueReport",
 			Handler:    _PaymentService_GetRevenueReport_Handler,
+		},
+		{
+			MethodName: "CreateExpense",
+			Handler:    _PaymentService_CreateExpense_Handler,
+		},
+		{
+			MethodName: "ListExpenses",
+			Handler:    _PaymentService_ListExpenses_Handler,
+		},
+		{
+			MethodName: "DeleteExpense",
+			Handler:    _PaymentService_DeleteExpense_Handler,
+		},
+		{
+			MethodName: "RequestAdvance",
+			Handler:    _PaymentService_RequestAdvance_Handler,
+		},
+		{
+			MethodName: "ListAdvances",
+			Handler:    _PaymentService_ListAdvances_Handler,
+		},
+		{
+			MethodName: "GetAdvance",
+			Handler:    _PaymentService_GetAdvance_Handler,
+		},
+		{
+			MethodName: "ReviewAdvance",
+			Handler:    _PaymentService_ReviewAdvance_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

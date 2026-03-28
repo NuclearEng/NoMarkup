@@ -130,7 +130,7 @@ type ContractRepository interface {
 	// Disputes
 	CreateDispute(ctx context.Context, dispute *Dispute) (*Dispute, error)
 	GetDispute(ctx context.Context, disputeID string) (*Dispute, error)
-	ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, page, pageSize int) ([]*Dispute, *Pagination, error)
+	ListDisputes(ctx context.Context, contractID *string, userID *string, status *string, isGuaranteeClaim *bool, page, pageSize int) ([]*Dispute, *Pagination, error)
 	ResolveDispute(ctx context.Context, disputeID, resolutionType, notes, resolvedBy string, refundAmountCents int64, guaranteeOutcome string) (*Dispute, error)
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
 	UpdateContractStatus(ctx context.Context, contractID string, status string) error

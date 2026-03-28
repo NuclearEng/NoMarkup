@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stripe/stripe-go/v82"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -35,6 +36,22 @@ func main() {
 	port := os.Getenv("PAYMENT_SERVICE_PORT")
 	if port == "" {
 		port = "50054"
+	}
+
+	// Initialize Sentry error tracking.
+	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			Environment:      os.Getenv("APP_ENV"),
+			Release:          os.Getenv("APP_VERSION"),
+			TracesSampleRate: 0.1,
+			EnableTracing:    true,
+		}); err != nil {
+			slog.Error("failed to initialize sentry", "error", err)
+		} else {
+			slog.Info("sentry initialized", "service", "payment-service")
+			defer sentry.Flush(2 * time.Second)
+		}
 	}
 
 	// Initialize OpenTelemetry tracing.
@@ -72,6 +89,13 @@ func main() {
 		slog.Info("stripe key configured")
 	} else {
 		slog.Warn("STRIPE_SECRET_KEY not set, Stripe operations will return stubs")
+	}
+
+	// Refuse to start without a Stripe key in non-development environments.
+	appEnv := os.Getenv("APP_ENV")
+	if stripeKey == "" && appEnv != "development" && appEnv != "" {
+		slog.Error("STRIPE_SECRET_KEY is required in non-development environments")
+		os.Exit(1)
 	}
 
 	// Wire up services.

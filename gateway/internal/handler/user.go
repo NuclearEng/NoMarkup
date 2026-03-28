@@ -2,9 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -13,11 +16,14 @@ import (
 // UserHandler handles HTTP endpoints for user profiles.
 type UserHandler struct {
 	userClient userv1.UserServiceClient
+	db         *pgxpool.Pool
 }
 
 // NewUserHandler creates a new UserHandler.
-func NewUserHandler(userClient userv1.UserServiceClient) *UserHandler {
-	return &UserHandler{userClient: userClient}
+// The db pool is used for gateway-level queries (e.g. savings) that don't
+// have a corresponding gRPC RPC. If db is nil, those endpoints degrade gracefully.
+func NewUserHandler(userClient userv1.UserServiceClient, db *pgxpool.Pool) *UserHandler {
+	return &UserHandler{userClient: userClient, db: db}
 }
 
 type updateUserRequest struct {
@@ -115,14 +121,58 @@ func (h *UserHandler) EnableRole(w http.ResponseWriter, r *http.Request) {
 
 // GetSavings handles GET /api/v1/users/me/savings.
 func (h *UserHandler) GetSavings(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
 	}
 
-	// TODO: implement savings query via user service gRPC
-	writeJSON(w, http.StatusOK, []interface{}{})
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(), `
+		SELECT id, user_id, job_id, awarded_cents, market_median_cents, savings_cents, created_at
+		FROM user_savings
+		WHERE user_id = $1
+		ORDER BY created_at DESC`, claims.UserID)
+	if err != nil {
+		slog.Error("failed to query user savings", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to get savings")
+		return
+	}
+	defer rows.Close()
+
+	savings := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var (
+			id, userID, jobID                          string
+			awardedCents, marketMedianCents, savingsCents int64
+			createdAt                                    time.Time
+		)
+		if err := rows.Scan(&id, &userID, &jobID, &awardedCents, &marketMedianCents, &savingsCents, &createdAt); err != nil {
+			slog.Error("failed to scan user savings row", "user_id", claims.UserID, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to read savings")
+			return
+		}
+		savings = append(savings, map[string]interface{}{
+			"id":                  id,
+			"user_id":             userID,
+			"job_id":              jobID,
+			"awarded_cents":       awardedCents,
+			"market_median_cents": marketMedianCents,
+			"savings_cents":       savingsCents,
+			"created_at":          createdAt.UTC().Format(time.RFC3339),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("error iterating user savings rows", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to get savings")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, savings)
 }
 
 // GetUser handles GET /api/v1/users/{id}.

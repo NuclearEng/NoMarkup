@@ -18,13 +18,18 @@ service UserService {
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc ResendVerification(ResendVerificationRequest) returns (ResendVerificationResponse);
   rpc VerifyPhone(VerifyPhoneRequest) returns (VerifyPhoneResponse);
   rpc SendPhoneOTP(SendPhoneOTPRequest) returns (SendPhoneOTPResponse);
   rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
 
+  // OAuth
+  rpc FindOrCreateByOAuth(FindOrCreateByOAuthRequest) returns (FindOrCreateByOAuthResponse);
+
   // MFA
   rpc EnableMFA(EnableMFARequest) returns (EnableMFAResponse);
+  rpc ConfirmMFASetup(ConfirmMFASetupRequest) returns (ConfirmMFASetupResponse);
   rpc VerifyMFA(VerifyMFARequest) returns (VerifyMFAResponse);
   rpc DisableMFA(DisableMFARequest) returns (DisableMFAResponse);
 
@@ -127,6 +132,12 @@ message VerifyEmailResponse {
   bool verified = 1;
 }
 
+message ResendVerificationRequest {
+  string email = 1;
+}
+
+message ResendVerificationResponse {}
+
 message VerifyPhoneRequest {
   string user_id = 1;
   string otp_code = 2;
@@ -174,6 +185,16 @@ message EnableMFAResponse {
   repeated string backup_codes = 3;
 }
 
+message ConfirmMFASetupRequest {
+  string user_id = 1;
+  string totp_code = 2;
+  repeated string backup_codes = 3;  // plain-text backup codes to hash and store
+}
+
+message ConfirmMFASetupResponse {
+  bool success = 1;
+}
+
 message VerifyMFARequest {
   string mfa_challenge_token = 1;
   string totp_code = 2;
@@ -192,6 +213,26 @@ message DisableMFARequest {
 
 message DisableMFAResponse {
   bool success = 1;
+}
+
+// ============================================================
+// OAuth Messages
+// ============================================================
+
+message FindOrCreateByOAuthRequest {
+  string provider = 1;      // "google" or "apple"
+  string provider_id = 2;   // Provider's unique user ID
+  string email = 3;
+  string name = 4;
+  string avatar_url = 5;
+}
+
+message FindOrCreateByOAuthResponse {
+  string user_id = 1;
+  bool is_new_user = 2;
+  string access_token = 3;
+  string refresh_token = 4;
+  google.protobuf.Timestamp access_token_expires_at = 5;
 }
 
 // ============================================================

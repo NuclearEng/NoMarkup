@@ -82,32 +82,38 @@ func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string
 	return user.ID, pair, verificationToken, nil
 }
 
-// Login authenticates a user and returns the user ID, token pair, and whether MFA is required.
-func (a *Auth) Login(ctx context.Context, input domain.LoginInput) (string, *domain.TokenPair, bool, error) {
+// Login authenticates a user and returns the user ID, token pair, whether MFA is
+// required, and an MFA challenge token (non-empty only when MFA is required).
+func (a *Auth) Login(ctx context.Context, input domain.LoginInput) (string, *domain.TokenPair, bool, string, error) {
 	user, err := a.repo.GetUserByEmail(ctx, input.Email)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
-			return "", nil, false, domain.ErrInvalidCredentials
+			return "", nil, false, "", domain.ErrInvalidCredentials
 		}
-		return "", nil, false, fmt.Errorf("login user: %w", err)
+		return "", nil, false, "", fmt.Errorf("login user: %w", err)
 	}
 
 	switch user.Status {
 	case "suspended":
-		return "", nil, false, domain.ErrAccountSuspended
+		return "", nil, false, "", domain.ErrAccountSuspended
 	case "banned":
-		return "", nil, false, domain.ErrAccountBanned
+		return "", nil, false, "", domain.ErrAccountBanned
 	case "deactivated":
-		return "", nil, false, domain.ErrAccountDeactivated
+		return "", nil, false, "", domain.ErrAccountDeactivated
 	}
 
 	if !verifyPassword(input.Password, user.PasswordHash) {
-		return "", nil, false, domain.ErrInvalidCredentials
+		return "", nil, false, "", domain.ErrInvalidCredentials
+	}
+
+	if !user.EmailVerified {
+		return "", nil, false, "", domain.ErrEmailNotVerified
 	}
 
 	if user.MFAEnabled {
-		// MFA is required; don't issue tokens yet.
-		return user.ID, nil, true, nil
+		// MFA is required; issue a short-lived challenge token instead of auth tokens.
+		challengeToken := a.GenerateMFAChallengeToken(user.ID)
+		return user.ID, nil, true, challengeToken, nil
 	}
 
 	now := time.Now()
@@ -117,11 +123,90 @@ func (a *Auth) Login(ctx context.Context, input domain.LoginInput) (string, *dom
 
 	pair, err := a.generateTokenPair(ctx, user, input.DeviceInfo, input.IPAddress)
 	if err != nil {
-		return "", nil, false, fmt.Errorf("login user: %w", err)
+		return "", nil, false, "", fmt.Errorf("login user: %w", err)
 	}
 
 	slog.Info("user logged in", "user_id", user.ID, "email", user.Email)
-	return user.ID, pair, false, nil
+	return user.ID, pair, false, "", nil
+}
+
+// FindOrCreateByOAuth authenticates a user via an OAuth provider. It follows this flow:
+// 1. Look up user by OAuth provider + provider ID
+// 2. If found, generate tokens and return
+// 3. If not found, look up user by email
+// 4. If email found, link the OAuth account and generate tokens
+// 5. If no user at all, create a new user with OAuth and generate tokens
+func (a *Auth) FindOrCreateByOAuth(ctx context.Context, input domain.OAuthInput) (string, *domain.TokenPair, bool, error) {
+	// 1. Try to find user by OAuth provider + ID.
+	user, err := a.repo.FindUserByOAuth(ctx, input.Provider, input.ProviderID)
+	if err == nil {
+		// Found existing OAuth-linked user.
+		now := time.Now()
+		if updateErr := a.repo.UpdateLastLogin(ctx, user.ID, now); updateErr != nil {
+			slog.Warn("failed to update last login", "user_id", user.ID, "error", updateErr)
+		}
+
+		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "")
+		if err != nil {
+			return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
+		}
+
+		slog.Info("user logged in via oauth", "user_id", user.ID, "provider", input.Provider)
+		return user.ID, pair, false, nil
+	}
+
+	if !errors.Is(err, domain.ErrUserNotFound) {
+		return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
+	}
+
+	// 2. Not found by OAuth. Try to find by email.
+	user, err = a.repo.GetUserByEmail(ctx, input.Email)
+	if err == nil {
+		// Email matches an existing user. Link OAuth account.
+		if linkErr := a.repo.LinkOAuthAccount(ctx, user.ID, input.Provider, input.ProviderID, input.Email); linkErr != nil {
+			return "", nil, false, fmt.Errorf("oauth link account: %w", linkErr)
+		}
+
+		now := time.Now()
+		if updateErr := a.repo.UpdateLastLogin(ctx, user.ID, now); updateErr != nil {
+			slog.Warn("failed to update last login", "user_id", user.ID, "error", updateErr)
+		}
+
+		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "")
+		if err != nil {
+			return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
+		}
+
+		slog.Info("oauth account linked to existing user", "user_id", user.ID, "provider", input.Provider)
+		return user.ID, pair, false, nil
+	}
+
+	if !errors.Is(err, domain.ErrUserNotFound) {
+		return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
+	}
+
+	// 3. No existing user. Create new user with OAuth.
+	newUser := &domain.User{
+		Email:         input.Email,
+		EmailVerified: true, // OAuth providers verify email
+		DisplayName:   input.Name,
+		AvatarURL:     input.AvatarURL,
+		Roles:         []string{"customer"},
+		Status:        "active",
+		Timezone:      "America/Los_Angeles",
+	}
+
+	if err := a.repo.CreateOAuthUser(ctx, newUser, input.Provider, input.ProviderID); err != nil {
+		return "", nil, false, fmt.Errorf("oauth create user: %w", err)
+	}
+
+	pair, err := a.generateTokenPair(ctx, newUser, "oauth-"+input.Provider, "")
+	if err != nil {
+		return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
+	}
+
+	slog.Info("new user created via oauth", "user_id", newUser.ID, "provider", input.Provider)
+	return newUser.ID, pair, true, nil
 }
 
 // RefreshToken validates a refresh token, rotates it, and returns a new token pair.
@@ -185,6 +270,24 @@ func (a *Auth) VerifyEmail(ctx context.Context, token string) (bool, error) {
 
 	slog.Info("email verified", "user_id", userID)
 	return true, nil
+}
+
+// ResendVerification looks up the user by email and generates a fresh verification token.
+// Returns the user and token so the caller can dispatch the email. Returns an error if the
+// user doesn't exist or is already verified.
+func (a *Auth) ResendVerification(ctx context.Context, email string) (*domain.User, string, error) {
+	user, err := a.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, "", fmt.Errorf("resend verification: %w", err)
+	}
+
+	if user.EmailVerified {
+		return nil, "", fmt.Errorf("resend verification: email already verified")
+	}
+
+	token := a.GenerateVerificationToken(user.ID)
+	slog.Info("verification token regenerated", "user_id", user.ID)
+	return user, token, nil
 }
 
 // GenerateVerificationToken creates an HMAC-SHA256 signed token encoding the

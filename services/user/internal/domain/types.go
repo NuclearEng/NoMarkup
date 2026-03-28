@@ -24,6 +24,11 @@ var (
 	ErrInvalidOTP              = errors.New("invalid OTP code")
 	ErrOTPExpired              = errors.New("OTP code expired")
 	ErrDocumentNotFound        = errors.New("document not found")
+	ErrInvalidMFACode          = errors.New("invalid MFA code")
+	ErrMFANotSetup             = errors.New("MFA not set up")
+	ErrMFAAlreadyEnabled       = errors.New("MFA already enabled")
+	ErrInvalidMFAChallengeToken = errors.New("invalid or expired MFA challenge token")
+	ErrEmailNotVerified         = errors.New("email not verified")
 )
 
 // User represents a platform user.
@@ -60,6 +65,25 @@ type RefreshToken struct {
 	ExpiresAt  time.Time
 	RevokedAt  *time.Time
 	CreatedAt  time.Time
+}
+
+// OAuthAccount represents a linked OAuth provider account.
+type OAuthAccount struct {
+	ID         string
+	UserID     string
+	Provider   string
+	ProviderID string
+	Email      string
+	CreatedAt  time.Time
+}
+
+// OAuthInput holds the data needed to find or create a user via OAuth.
+type OAuthInput struct {
+	Provider   string
+	ProviderID string
+	Email      string
+	Name       string
+	AvatarURL  string
 }
 
 // RegisterInput holds the data needed to register a new user.
@@ -265,6 +289,18 @@ type UserRepository interface {
 	GetDocumentByUserAndType(ctx context.Context, userID string, docType DocumentType) (*Document, error)
 	ListDocuments(ctx context.Context, userID string) ([]Document, error)
 	UpdateDocumentStatus(ctx context.Context, documentID string, status DocumentStatus, rejectionReason string) error
+
+	// OAuth
+	FindUserByOAuth(ctx context.Context, provider, providerID string) (*User, error)
+	CreateOAuthUser(ctx context.Context, user *User, provider, providerID string) error
+	LinkOAuthAccount(ctx context.Context, userID, provider, providerID, email string) error
+
+	// MFA
+	StoreMFASecret(ctx context.Context, userID, encryptedSecret string) error
+	GetMFASecret(ctx context.Context, userID string) (string, error)
+	EnableMFA(ctx context.Context, userID string, hashedBackupCodes []string) error
+	DisableMFA(ctx context.Context, userID string) error
+	IsMFAEnabled(ctx context.Context, userID string) (bool, error)
 
 	// Admin operations
 	SuspendUser(ctx context.Context, userID, reason, adminID string) error

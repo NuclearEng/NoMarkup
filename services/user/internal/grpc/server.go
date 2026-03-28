@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/services/user/internal/domain"
 	"github.com/nomarkup/nomarkup/services/user/internal/service"
@@ -20,16 +22,34 @@ import (
 // Server implements the UserService gRPC server.
 type Server struct {
 	userv1.UnimplementedUserServiceServer
-	auth         *service.Auth
-	profile      *service.Profile
-	admin        *service.Admin
-	phone        *service.PhoneVerification
-	verification *service.Verification
+	auth               *service.Auth
+	profile            *service.Profile
+	admin              *service.Admin
+	phone              *service.PhoneVerification
+	verification       *service.Verification
+	notificationClient notificationv1.NotificationServiceClient
+	baseURL            string
 }
 
 // NewServer creates a new gRPC server for the user service.
-func NewServer(auth *service.Auth, profile *service.Profile, admin *service.Admin, phone *service.PhoneVerification, verification *service.Verification) *Server {
-	return &Server{auth: auth, profile: profile, admin: admin, phone: phone, verification: verification}
+func NewServer(
+	auth *service.Auth,
+	profile *service.Profile,
+	admin *service.Admin,
+	phone *service.PhoneVerification,
+	verification *service.Verification,
+	notificationClient notificationv1.NotificationServiceClient,
+	baseURL string,
+) *Server {
+	return &Server{
+		auth:               auth,
+		profile:            profile,
+		admin:              admin,
+		phone:              phone,
+		verification:       verification,
+		notificationClient: notificationClient,
+		baseURL:            baseURL,
+	}
 }
 
 // Register registers the user service with a gRPC server.
@@ -61,7 +81,7 @@ func (s *Server) Register(ctx context.Context, req *userv1.RegisterRequest) (*us
 		return nil, mapDomainError(err)
 	}
 
-	_ = verificationToken // TODO: send via email service when integrated
+	s.sendVerificationEmail(ctx, userID, input.Email, verificationToken)
 
 	return &userv1.RegisterResponse{
 		UserId:               userID,
@@ -79,14 +99,15 @@ func (s *Server) Login(ctx context.Context, req *userv1.LoginRequest) (*userv1.L
 		IPAddress:  req.GetIpAddress(),
 	}
 
-	userID, pair, mfaRequired, err := s.auth.Login(ctx, input)
+	userID, pair, mfaRequired, mfaChallengeToken, err := s.auth.Login(ctx, input)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
 
 	resp := &userv1.LoginResponse{
-		UserId:      userID,
-		MfaRequired: mfaRequired,
+		UserId:            userID,
+		MfaRequired:       mfaRequired,
+		MfaChallengeToken: mfaChallengeToken,
 	}
 
 	if pair != nil {
@@ -96,6 +117,39 @@ func (s *Server) Login(ctx context.Context, req *userv1.LoginRequest) (*userv1.L
 	}
 
 	return resp, nil
+}
+
+func (s *Server) FindOrCreateByOAuth(ctx context.Context, req *userv1.FindOrCreateByOAuthRequest) (*userv1.FindOrCreateByOAuthResponse, error) {
+	if req.GetProvider() == "" {
+		return nil, status.Error(codes.InvalidArgument, "provider is required")
+	}
+	if req.GetProviderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "provider_id is required")
+	}
+	if req.GetEmail() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email is required")
+	}
+
+	input := domain.OAuthInput{
+		Provider:   req.GetProvider(),
+		ProviderID: req.GetProviderId(),
+		Email:      req.GetEmail(),
+		Name:       req.GetName(),
+		AvatarURL:  req.GetAvatarUrl(),
+	}
+
+	userID, pair, isNewUser, err := s.auth.FindOrCreateByOAuth(ctx, input)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.FindOrCreateByOAuthResponse{
+		UserId:               userID,
+		IsNewUser:            isNewUser,
+		AccessToken:          pair.AccessToken,
+		RefreshToken:         pair.RefreshToken,
+		AccessTokenExpiresAt: timestamppb.New(pair.AccessTokenExpiresAt),
+	}, nil
 }
 
 func (s *Server) RefreshToken(ctx context.Context, req *userv1.RefreshTokenRequest) (*userv1.RefreshTokenResponse, error) {
@@ -127,6 +181,48 @@ func (s *Server) VerifyEmail(ctx context.Context, req *userv1.VerifyEmailRequest
 	return &userv1.VerifyEmailResponse{Verified: verified}, nil
 }
 
+func (s *Server) ResendVerification(ctx context.Context, req *userv1.ResendVerificationRequest) (*userv1.ResendVerificationResponse, error) {
+	if req.GetEmail() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email is required")
+	}
+
+	user, token, err := s.auth.ResendVerification(ctx, req.GetEmail())
+	if err != nil {
+		// Log but don't reveal whether the email exists.
+		slog.Info("resend verification attempted", "email", req.GetEmail(), "error", err)
+		return &userv1.ResendVerificationResponse{}, nil
+	}
+
+	s.sendVerificationEmail(ctx, user.ID, user.Email, token)
+	return &userv1.ResendVerificationResponse{}, nil
+}
+
+// sendVerificationEmail dispatches a verification email via the notification service.
+// Failures are logged but not propagated so the caller can continue.
+func (s *Server) sendVerificationEmail(ctx context.Context, userID, email, verificationToken string) {
+	if s.notificationClient != nil {
+		_, err := s.notificationClient.SendNotification(ctx, &notificationv1.SendNotificationRequest{
+			UserId:           userID,
+			NotificationType: notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED,
+			Title:            "Verify your NoMarkup email",
+			Body:             fmt.Sprintf("Your verification code is: %s\n\nOr click this link to verify: %s/verify-email?token=%s", verificationToken, s.baseURL, verificationToken),
+			ActionUrl:        fmt.Sprintf("%s/verify-email?token=%s", s.baseURL, verificationToken),
+			Data: map[string]string{
+				"user_email": email,
+			},
+			Channels: []notificationv1.NotificationChannel{
+				notificationv1.NotificationChannel_NOTIFICATION_CHANNEL_EMAIL,
+			},
+		})
+		if err != nil {
+			slog.Error("failed to send verification email", "user_id", userID, "error", err)
+			// Don't fail registration — the user can request a resend.
+		}
+	} else {
+		slog.Warn("notification client not configured, verification email not sent", "user_id", userID)
+	}
+}
+
 func (s *Server) SendPhoneOTP(ctx context.Context, req *userv1.SendPhoneOTPRequest) (*userv1.SendPhoneOTPResponse, error) {
 	if req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")
@@ -153,6 +249,75 @@ func (s *Server) VerifyPhone(ctx context.Context, req *userv1.VerifyPhoneRequest
 		return nil, mapDomainError(err)
 	}
 	return &userv1.VerifyPhoneResponse{Verified: true}, nil
+}
+
+// --- MFA ---
+
+func (s *Server) EnableMFA(ctx context.Context, req *userv1.EnableMFARequest) (*userv1.EnableMFAResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	secret, qrURL, backupCodes, err := s.auth.GenerateMFASetup(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.EnableMFAResponse{
+		Secret:      secret,
+		QrCodeUrl:   qrURL,
+		BackupCodes: backupCodes,
+	}, nil
+}
+
+func (s *Server) ConfirmMFASetup(ctx context.Context, req *userv1.ConfirmMFASetupRequest) (*userv1.ConfirmMFASetupResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetTotpCode() == "" {
+		return nil, status.Error(codes.InvalidArgument, "totp_code is required")
+	}
+
+	if err := s.auth.VerifyAndEnableMFA(ctx, req.GetUserId(), req.GetTotpCode(), req.GetBackupCodes()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.ConfirmMFASetupResponse{Success: true}, nil
+}
+
+func (s *Server) VerifyMFA(ctx context.Context, req *userv1.VerifyMFARequest) (*userv1.VerifyMFAResponse, error) {
+	if req.GetMfaChallengeToken() == "" {
+		return nil, status.Error(codes.InvalidArgument, "mfa_challenge_token is required")
+	}
+	if req.GetTotpCode() == "" {
+		return nil, status.Error(codes.InvalidArgument, "totp_code is required")
+	}
+
+	_, pair, err := s.auth.CompleteMFALogin(ctx, req.GetMfaChallengeToken(), req.GetTotpCode(), "", "")
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.VerifyMFAResponse{
+		AccessToken:          pair.AccessToken,
+		RefreshToken:         pair.RefreshToken,
+		AccessTokenExpiresAt: timestamppb.New(pair.AccessTokenExpiresAt),
+	}, nil
+}
+
+func (s *Server) DisableMFA(ctx context.Context, req *userv1.DisableMFARequest) (*userv1.DisableMFAResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetTotpCode() == "" {
+		return nil, status.Error(codes.InvalidArgument, "totp_code is required")
+	}
+
+	if err := s.auth.DisableMFA(ctx, req.GetUserId(), req.GetTotpCode()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.DisableMFAResponse{Success: true}, nil
 }
 
 func (s *Server) UploadDocument(ctx context.Context, req *userv1.UploadDocumentRequest) (*userv1.UploadDocumentResponse, error) {
@@ -880,6 +1045,16 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "OTP code expired")
 	case errors.Is(err, domain.ErrDocumentNotFound):
 		return status.Error(codes.NotFound, "document not found")
+	case errors.Is(err, domain.ErrEmailNotVerified):
+		return status.Error(codes.FailedPrecondition, "email not verified")
+	case errors.Is(err, domain.ErrInvalidMFACode):
+		return status.Error(codes.InvalidArgument, "invalid MFA code")
+	case errors.Is(err, domain.ErrMFANotSetup):
+		return status.Error(codes.FailedPrecondition, "MFA not set up")
+	case errors.Is(err, domain.ErrMFAAlreadyEnabled):
+		return status.Error(codes.AlreadyExists, "MFA already enabled")
+	case errors.Is(err, domain.ErrInvalidMFAChallengeToken):
+		return status.Error(codes.Unauthenticated, "invalid or expired MFA challenge token")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

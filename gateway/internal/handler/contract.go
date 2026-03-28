@@ -331,8 +331,8 @@ func (h *ContractHandler) CancelContract(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req cancelContractRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req) {
+		return
 	}
 
 	resp, err := h.contractClient.CancelContract(r.Context(), &contractv1.CancelContractRequest{
@@ -503,6 +503,119 @@ func (h *ContractHandler) OpenDispute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, protoDisputeToJSON(resp.GetDispute()))
+}
+
+// --- Guarantee Claim handlers ---
+
+type submitGuaranteeClaimRequest struct {
+	Reason       string   `json:"reason"`
+	Description  string   `json:"description"`
+	EvidenceURLs []string `json:"evidence_urls"`
+}
+
+// SubmitGuaranteeClaim handles POST /api/v1/contracts/{id}/guarantee-claim.
+// Submits a NoMarkup Guarantee claim against a completed contract.
+func (h *ContractHandler) SubmitGuaranteeClaim(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	var req submitGuaranteeClaimRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if req.Reason == "" {
+		writeError(w, http.StatusBadRequest, "reason is required")
+		return
+	}
+	if len(req.Description) < 50 {
+		writeError(w, http.StatusBadRequest, "description must be at least 50 characters")
+		return
+	}
+
+	// Map reason to dispute type.
+	disputeType := stringToDisputeType(req.Reason)
+	if disputeType == contractv1.DisputeType_DISPUTE_TYPE_UNSPECIFIED {
+		disputeType = contractv1.DisputeType_DISPUTE_TYPE_GUARANTEE_CLAIM
+	}
+
+	resp, err := h.contractClient.OpenDispute(r.Context(), &contractv1.OpenDisputeRequest{
+		ContractId:       contractID,
+		UserId:           claims.UserID,
+		DisputeType:      disputeType,
+		Description:      req.Description,
+		EvidenceUrls:     req.EvidenceURLs,
+		IsGuaranteeClaim: true,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, protoDisputeToJSON(resp.GetDispute()))
+}
+
+// GetGuaranteeClaim handles GET /api/v1/contracts/{id}/guarantee-claim.
+// Returns any guarantee claim filed against this contract.
+func (h *ContractHandler) GetGuaranteeClaim(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if contractID == "" {
+		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	// List disputes for this contract filtered to guarantee claims.
+	isGuarantee := true
+	resp, err := h.contractClient.ListDisputes(r.Context(), &contractv1.ListDisputesRequest{
+		ContractId:       &contractID,
+		IsGuaranteeClaim: &isGuarantee,
+		Pagination: &commonv1.PaginationRequest{
+			Page:     1,
+			PageSize: 1,
+		},
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	// Suppress the claim if the requesting user is not a party.
+	// The ListDisputes call does not enforce party check, so we verify here.
+	contractResp, err := h.contractClient.GetContract(r.Context(), &contractv1.GetContractRequest{
+		ContractId:       contractID,
+		RequestingUserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	_ = contractResp
+
+	if len(resp.GetDisputes()) == 0 {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"guarantee_claim": nil,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"guarantee_claim": protoDisputeToJSON(resp.GetDisputes()[0]),
+	})
 }
 
 // --- No-show / Abandonment handlers ---

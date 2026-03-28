@@ -17,6 +17,26 @@ services:
       timeout: 5s
       retries: 5
 
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.1-p0
+    environment:
+      DATABASE_URL: postgres://nomarkup:password@postgres:5432/nomarkup
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: 100
+      MAX_CLIENT_CONN: 500
+      MAX_DB_CONNECTIONS: 150
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
@@ -82,7 +102,7 @@ services:
       context: .
       dockerfile: deploy/docker/user.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       USER_SERVICE_PORT: "50051"
       JWT_PRIVATE_KEY_PATH: "/keys/private.pem"
@@ -91,7 +111,7 @@ services:
     volumes:
       - ./keys:/keys:ro
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -101,7 +121,7 @@ services:
       context: .
       dockerfile: deploy/docker/job.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       JOB_SERVICE_PORT: "50052"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -109,7 +129,7 @@ services:
       MEILISEARCH_HOST: "http://meilisearch:7700"
       MEILISEARCH_API_KEY: "masterKey"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -121,7 +141,7 @@ services:
       context: .
       dockerfile: deploy/docker/payment.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       PAYMENT_SERVICE_PORT: "50054"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -129,7 +149,7 @@ services:
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -139,14 +159,14 @@ services:
       context: .
       dockerfile: deploy/docker/chat.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       CHAT_SERVICE_PORT: "50055"
       CHAT_WS_PORT: "50065"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "chat-service"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -156,13 +176,13 @@ services:
       context: .
       dockerfile: deploy/docker/notification.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       NOTIFICATION_SERVICE_PORT: "50059"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "notification-service"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -175,13 +195,13 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: bidding
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       BID_ENGINE_PORT: "50053"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "bidding-engine"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
 
   fraud:
@@ -190,13 +210,13 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: fraud
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       FRAUD_ENGINE_PORT: "50056"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "fraud-engine"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
 
   trust:
@@ -205,13 +225,13 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: trust
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@postgres:5432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
       TRUST_ENGINE_PORT: "50057"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "trust-engine"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
 
   imaging:
