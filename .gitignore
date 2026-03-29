@@ -31,6 +31,13 @@ keys/
 # Docker
 minio-data/
 
+# QA artifacts (screenshots regenerated on each run)
+qa/reports/screenshots/
+qa/reports/baseline.json
+
+# Empty dump directory
+dumps/
+
 # Native dev environment (bin/dev)
 .dev/
 
