@@ -184,14 +184,9 @@ export function TerminalGrid({
                 key={wp.widgetId}
                 className={`group/widget overflow-hidden rounded-2xl transition-shadow ${
                   isEditing
-                    ? 'glass border-dashed border-white/15 hover:border-white/25 hover:shadow-md'
-                    : `glass glass-highlight ${isLive ? 'glass-tinted-green' : ''}`
+                    ? 'border border-dashed border-white/15 bg-zinc-900/70 hover:border-white/25 hover:shadow-md'
+                    : `border bg-zinc-900/80 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_20px_50px_-12px_rgba(0,0,0,0.5)] ${isLive ? 'border-emerald-500/10' : 'border-white/[0.06]'}`
                 }`}
-                style={
-                  isLive && !isEditing
-                    ? { animation: 'terminalGlow 4s ease-in-out infinite' }
-                    : undefined
-                }
               >
                 {/* Edit mode header */}
                 {isEditing && (
