@@ -6,7 +6,7 @@ import {
   useContainerWidth,
   verticalCompactor,
 } from 'react-grid-layout';
-import type { Layout, LayoutItem } from 'react-grid-layout';
+import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import { GripVertical, X } from 'lucide-react';
 
 import { useTerminalLayoutStore } from '@/stores/terminal-layout-store';
@@ -85,7 +85,7 @@ export function TerminalGrid({
   }, [widgets, isEditing]);
 
   const handleLayoutChange = useCallback(
-    (layout: Layout) => {
+    (layout: Layout, _layouts: ResponsiveLayouts) => {
       if (!isEditing) return;
       const mapped = layout.map((item) => ({
         i: item.i,
