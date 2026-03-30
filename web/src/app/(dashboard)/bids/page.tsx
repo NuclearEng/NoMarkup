@@ -1,10 +1,10 @@
 'use client';
 
-import { Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
 import { ProviderBidCard } from '@/components/bids/ProviderBidCard';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -69,7 +69,7 @@ function BidTabContent({ tab }: { tab: BidTab }) {
 
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border bg-muted/50 py-12">
-        <Inbox className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
+        <AnimatedIllustration type="no-bids" size="md" />
         <p className="mt-4 text-lg font-medium">No bids</p>
         <p className="mt-1 text-sm text-muted-foreground">{emptyMessages[tab]}</p>
         <Button asChild className="mt-4 min-h-[44px]">

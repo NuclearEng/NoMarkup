@@ -1,11 +1,12 @@
 'use client';
 
-import { ArrowLeft, MessageSquare } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 import { ChannelList } from '@/components/chat/ChannelList';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { MessageThread } from '@/components/chat/MessageThread';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { useChannel } from '@/hooks/useChannels';
 import { CONNECTION_STATUS } from '@/lib/websocket';
@@ -56,7 +57,7 @@ function ActiveThread({ channelId }: { channelId: string }) {
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center">
-      <MessageSquare className="h-16 w-16 text-muted-foreground" aria-hidden="true" />
+      <AnimatedIllustration type="no-messages" size="lg" />
       <h2 className="mt-4 text-lg font-medium">Select a conversation</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Choose a conversation from the list to start messaging.

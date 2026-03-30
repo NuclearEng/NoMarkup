@@ -15,13 +15,15 @@ import {
   Thermometer,
   Home,
   Truck,
-  Star,
   TrendingDown,
   Shield,
   Clock,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { MarketTickerStrip } from '@/components/landing/MarketTickerStrip';
+import { GradientMesh } from '@/components/landing/GradientMesh';
+import { AuctionDemo } from '@/components/landing/AuctionDemo';
 
 // ---------------------------------------------------------------------------
 // Intersection Observer hook for scroll-triggered animations
@@ -104,6 +106,64 @@ function AnimatedCounter({
 }
 
 // ---------------------------------------------------------------------------
+// Micro sparkline SVG for stat cards
+// ---------------------------------------------------------------------------
+function MicroSparkline({ data, color }: { data: readonly number[]; color: string }) {
+  const { ref, inView } = useInView<SVGSVGElement>();
+  const width = 60;
+  const height = 20;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+
+  const points = data
+    .map((val, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - ((val - min) / range) * (height - 4) - 2;
+      return `${String(x)},${String(y)}`;
+    })
+    .join(' ');
+
+  return (
+    <svg
+      ref={ref}
+      width={width}
+      height={height}
+      viewBox={`0 0 ${String(width)} ${String(height)}`}
+      className="mt-1"
+      aria-hidden="true"
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={inView ? 'sparkline-path' : ''}
+        opacity="0.6"
+      />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ticker data (mock marketplace activity)
+// ---------------------------------------------------------------------------
+const TICKER_ITEMS = [
+  { category: 'Plumbing', location: 'Austin', currentPrice: 34000, originalPrice: 80000, status: 'completed' as const },
+  { category: 'House Cleaning', location: 'SF', currentPrice: 8900, bidCount: 12, status: 'active' as const },
+  { category: 'Lawn Care', location: 'Denver', currentPrice: 15500, timeRemaining: 'Ending in 2h', status: 'ending-soon' as const },
+  { category: 'Painting', location: 'Seattle', currentPrice: 120000, originalPrice: 185000, status: 'completed' as const },
+  { category: 'Electrical', location: 'Chicago', currentPrice: 42000, bidCount: 8, status: 'active' as const },
+  { category: 'Roofing', location: 'Portland', currentPrice: 680000, originalPrice: 950000, status: 'completed' as const },
+  { category: 'HVAC Repair', location: 'Miami', currentPrice: 28000, timeRemaining: 'Ending in 45m', status: 'ending-soon' as const },
+  { category: 'Moving', location: 'Dallas', currentPrice: 95000, bidCount: 15, status: 'active' as const },
+  { category: 'Tree Removal', location: 'Atlanta', currentPrice: 45000, originalPrice: 72000, status: 'completed' as const },
+  { category: 'Carpet Cleaning', location: 'Phoenix', currentPrice: 19500, bidCount: 6, status: 'active' as const },
+] as const;
+
+// ---------------------------------------------------------------------------
 // Category data
 // ---------------------------------------------------------------------------
 const CATEGORIES = [
@@ -118,89 +178,187 @@ const CATEGORIES = [
 ] as const;
 
 // ---------------------------------------------------------------------------
+// Stats data with sparklines
+// ---------------------------------------------------------------------------
+const STATS = [
+  {
+    value: 10847,
+    prefix: '',
+    suffix: '+',
+    label: 'Jobs Posted',
+    sparkline: [20, 35, 28, 45, 52, 48, 65, 72, 68, 85, 92, 100] as const,
+    color: 'hsl(220, 70%, 55%)',
+  },
+  {
+    value: 47200,
+    prefix: '',
+    suffix: '+',
+    label: 'Bids Placed',
+    sparkline: [15, 22, 30, 28, 42, 55, 50, 68, 75, 82, 90, 100] as const,
+    color: 'hsl(142, 71%, 45%)',
+  },
+  {
+    value: 2300000,
+    prefix: '$',
+    suffix: '',
+    label: 'Saved by Customers',
+    sparkline: [10, 18, 25, 35, 40, 48, 55, 62, 70, 80, 90, 100] as const,
+    color: 'hsl(38, 92%, 50%)',
+    display: '$2.3M',
+  },
+] as const;
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 export default function LandingPage() {
   const howItWorks = useInView<HTMLElement>();
-  const stats = useInView<HTMLElement>();
+  const statsSection = useInView<HTMLElement>();
   const categories = useInView<HTMLElement>();
 
   return (
     <>
       {/* ================================================================= */}
-      {/* HERO                                                              */}
+      {/* HERO — Dark immersive section with gradient mesh background        */}
       {/* ================================================================= */}
-      <section className="relative isolate overflow-hidden">
-        {/* Background: subtle radial gradient */}
-        <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(120,119,198,0.08),transparent)]" />
-          <div className="absolute top-0 right-0 h-[600px] w-[600px] translate-x-1/3 -translate-y-1/4 rounded-full bg-[radial-gradient(circle,rgba(120,119,198,0.05),transparent_70%)]" />
-          <div className="absolute bottom-0 left-0 h-[400px] w-[400px] -translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.04),transparent_70%)]" />
+      <section className="relative isolate overflow-hidden bg-[#070b14]">
+        {/* Animated gradient mesh background */}
+        <GradientMesh />
+
+        {/* Market ticker strip at top */}
+        <MarketTickerStrip items={[...TICKER_ITEMS]} speed="normal" />
+
+        <div className="mx-auto max-w-7xl px-4 pt-16 pb-20 sm:px-6 sm:pt-20 sm:pb-28 lg:px-8 lg:pt-24 lg:pb-32">
+          <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+            {/* Left column — text content */}
+            <div className="mx-auto max-w-xl text-center lg:mx-0 lg:text-left">
+              {/* Eyebrow badge */}
+              <div className="animate-fade-in mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-sm text-white/60 backdrop-blur-sm">
+                <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Providers compete. You save.</span>
+              </div>
+
+              {/* Main headline */}
+              <h1 className="animate-fade-in-up text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
+                Home services at{' '}
+                <span
+                  className="bg-gradient-to-r bg-clip-text text-transparent"
+                  style={{
+                    backgroundImage: 'linear-gradient(135deg, #e4c566, #c9a84c, #e4c566)',
+                    backgroundSize: '200% 200%',
+                    animation: 'gradient-shift 4s ease infinite',
+                  }}
+                >
+                  market prices
+                </span>
+              </h1>
+
+              {/* Sub-headline */}
+              <p
+                className="animate-fade-in-up mt-6 text-lg leading-relaxed text-white/60 sm:text-xl"
+                style={{ animationDelay: '100ms' }}
+              >
+                Post what you need, then watch qualified providers compete for
+                your business. A reverse auction means the price goes{' '}
+                <span className="font-semibold text-white/90">down</span>,
+                not up.
+              </p>
+
+              {/* CTAs */}
+              <div
+                className="animate-fade-in-up mt-10 flex flex-col items-center gap-4 sm:flex-row lg:justify-start"
+                style={{ animationDelay: '200ms' }}
+              >
+                <Button
+                  size="lg"
+                  className="min-h-[48px] px-8 text-base"
+                  style={{
+                    background: 'linear-gradient(135deg, #c9a84c, #a08839)',
+                    color: '#fff',
+                  }}
+                  asChild
+                >
+                  <Link href="/register">
+                    Get started
+                    <ArrowRight className="ml-1 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="min-h-[48px] border-white/15 bg-white/[0.04] px-8 text-base text-white/80 hover:bg-white/[0.08] hover:text-white"
+                  asChild
+                >
+                  <Link href="/jobs">Browse jobs</Link>
+                </Button>
+              </div>
+
+              {/* Social proof micro-stats */}
+              <div
+                className="animate-fade-in-up mt-10 flex flex-wrap items-center gap-6 lg:justify-start"
+                style={{ animationDelay: '350ms' }}
+              >
+                <div className="flex items-center gap-2 text-sm text-white/50">
+                  <TrendingDown className="h-4 w-4 text-emerald-400" />
+                  <span>Avg. 23% savings</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-white/50">
+                  <BadgeCheck className="h-4 w-4 text-blue-400" />
+                  <span>10,000+ jobs completed</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-white/50">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="#eab308" aria-hidden="true">
+                    <path d="M8 0l2.2 5.5L16 6.3l-4 3.7 1 5.5L8 12.8 2.9 15.5l1-5.5-4-3.7 5.9-.8z" />
+                  </svg>
+                  <span>4.9 average rating</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right column — Auction demo animation */}
+            <div
+              className="animate-fade-in-up mx-auto w-full max-w-sm lg:mx-0 lg:max-w-none"
+              style={{ animationDelay: '300ms' }}
+            >
+              <AuctionDemo />
+            </div>
+          </div>
         </div>
+      </section>
 
-        <div className="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-6 sm:pt-28 sm:pb-32 lg:px-8 lg:pt-36 lg:pb-40">
-          <div className="mx-auto max-w-3xl text-center">
-            {/* Eyebrow badge */}
-            <div className="animate-fade-in border-border/60 bg-muted/50 text-muted-foreground mb-8 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm backdrop-blur-sm">
-              <TrendingDown className="h-3.5 w-3.5" />
-              <span>Providers compete. You save.</span>
-            </div>
-
-            {/* Main headline */}
-            <h1 className="animate-fade-in-up text-foreground text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
-              Home services at{' '}
-              <span className="animate-gradient bg-gradient-to-r from-blue-600 via-violet-600 to-blue-600 bg-clip-text text-transparent">
-                fair prices
-              </span>
-            </h1>
-
-            {/* Sub-headline */}
-            <p
-              className="animate-fade-in-up text-muted-foreground mx-auto mt-6 max-w-2xl text-lg leading-relaxed sm:text-xl"
-              style={{ animationDelay: '100ms' }}
-            >
-              Post what you need, then watch qualified providers compete for your business. A
-              reverse auction means the price goes{' '}
-              <span className="text-foreground font-semibold">down</span>, not up.
-            </p>
-
-            {/* CTAs */}
-            <div
-              className="animate-fade-in-up mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center"
-              style={{ animationDelay: '200ms' }}
-            >
-              <Button size="lg" className="min-h-[48px] px-8 text-base" asChild>
-                <Link href="/register">
-                  Get started
-                  <ArrowRight className="ml-1 h-4 w-4" />
-                </Link>
-              </Button>
-              <Button variant="outline" size="lg" className="min-h-[48px] px-8 text-base" asChild>
-                <Link href="/jobs">Browse jobs</Link>
-              </Button>
-            </div>
-
-            {/* Floating social proof badges */}
-            <div
-              className="animate-fade-in-up mt-16 flex flex-wrap items-center justify-center gap-3 sm:gap-4"
-              style={{ animationDelay: '350ms' }}
-            >
-              <SocialProofBadge
-                icon={<TrendingDown className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />}
-                label="Avg. 23% savings"
-                delay={0}
-              />
-              <SocialProofBadge
-                icon={<BadgeCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
-                label="10,000+ jobs completed"
-                delay={1}
-              />
-              <SocialProofBadge
-                icon={<Star className="h-4 w-4 text-amber-500" />}
-                label="4.9★ average rating"
-                delay={2}
-              />
-            </div>
+      {/* ================================================================= */}
+      {/* HERO STATS BAR — Animated counters with sparklines                 */}
+      {/* ================================================================= */}
+      <section
+        ref={statsSection.ref}
+        className="border-b bg-card py-10 sm:py-12"
+        aria-label="Platform statistics"
+      >
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
+            {STATS.map((stat, i) => (
+              <div
+                key={stat.label}
+                className={`flex flex-col items-center text-center transition-all duration-700 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
+                style={{ transitionDelay: `${String(i * 120)}ms` }}
+              >
+                <p className="text-3xl font-bold tracking-tight sm:text-4xl">
+                  {stat.display ? (
+                    stat.display
+                  ) : (
+                    <AnimatedCounter
+                      end={stat.value}
+                      prefix={stat.prefix}
+                      suffix={stat.suffix}
+                    />
+                  )}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">{stat.label}</p>
+                {statsSection.inView ? (
+                  <MicroSparkline data={stat.sparkline} color={stat.color} />
+                ) : null}
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -275,39 +433,12 @@ export default function LandingPage() {
       </section>
 
       {/* ================================================================= */}
-      {/* TRUST & STATS                                                     */}
+      {/* TESTIMONIAL + TRUST                                               */}
       {/* ================================================================= */}
-      <section ref={stats.ref} className="py-24 sm:py-32" aria-labelledby="trust-heading">
+      <section className="py-24 sm:py-32" aria-labelledby="trust-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          {/* Stat counters */}
-          <div className="mx-auto grid max-w-4xl grid-cols-2 gap-8 sm:gap-12 lg:grid-cols-4">
-            {[
-              { value: 2300000, prefix: '$', suffix: '+', label: 'Saved by customers' },
-              { value: 15000, suffix: '+', label: 'Jobs completed' },
-              { value: 4800, suffix: '+', label: 'Verified providers' },
-              { value: 49, prefix: '', suffix: '', label: 'Average rating', display: '4.9★' },
-            ].map((stat, i) => (
-              <div
-                key={stat.label}
-                className={`text-center transition-all duration-700 ${stats.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
-                style={{ transitionDelay: `${String(i * 100)}ms` }}
-              >
-                <p className="text-3xl font-bold tracking-tight sm:text-4xl">
-                  {stat.display ? (
-                    stat.display
-                  ) : (
-                    <AnimatedCounter end={stat.value} prefix={stat.prefix} suffix={stat.suffix} />
-                  )}
-                </p>
-                <p className="text-muted-foreground mt-1 text-sm">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-
           {/* Testimonial */}
-          <div
-            className={`mx-auto mt-20 max-w-2xl text-center transition-all delay-500 duration-700 ${stats.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
-          >
+          <div className="mx-auto max-w-2xl text-center">
             <blockquote>
               <p className="text-muted-foreground text-lg leading-relaxed sm:text-xl">
                 &ldquo;I posted a bathroom remodel expecting to pay $8,000. Four providers competed
@@ -322,9 +453,7 @@ export default function LandingPage() {
           </div>
 
           {/* Trust signals */}
-          <div
-            className={`text-muted-foreground mx-auto mt-12 flex max-w-lg flex-wrap items-center justify-center gap-6 text-sm transition-all delay-700 duration-700 ${stats.inView ? 'opacity-100' : 'opacity-0'}`}
-          >
+          <div className="text-muted-foreground mx-auto mt-12 flex max-w-lg flex-wrap items-center justify-center gap-6 text-sm">
             <span className="flex items-center gap-1.5">
               <Shield className="h-4 w-4" />
               Payment protection
@@ -413,28 +542,5 @@ export default function LandingPage() {
         </div>
       </section>
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Social proof badge (floating pill in hero)
-// ---------------------------------------------------------------------------
-function SocialProofBadge({
-  icon,
-  label,
-  delay,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  delay: number;
-}) {
-  return (
-    <div
-      className="animate-float border-border/60 bg-card/80 flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-sm backdrop-blur-sm"
-      style={{ animationDelay: `${String(delay * 600)}ms` }}
-    >
-      {icon}
-      <span>{label}</span>
-    </div>
   );
 }
