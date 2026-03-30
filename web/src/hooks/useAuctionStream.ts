@@ -3,7 +3,12 @@
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { useAuctionStore } from '@/stores/auction-store';
+import {
+  useAuctionStore,
+  getBidVelocity,
+  getMomentum,
+  getVelocityBuckets,
+} from '@/stores/auction-store';
 import { auctionWsManager } from '@/lib/auction-websocket';
 import { useAuthStore } from '@/stores/auth-store';
 import type { AuctionBidEvent } from '@/types';
@@ -22,7 +27,13 @@ export function useAuctionStream(jobId: string | undefined) {
     bidCount,
     auctionEndsAt,
     snipeExtensionCount,
+    orderBook,
+    priceHistory,
   } = useAuctionStore();
+
+  const velocity = useAuctionStore(getBidVelocity);
+  const momentum = useAuctionStore(getMomentum);
+  const velocityBuckets = useAuctionStore(getVelocityBuckets);
 
   const handleMessage = useCallback(
     (message: {
@@ -72,5 +83,10 @@ export function useAuctionStream(jobId: string | undefined) {
     auctionEndsAt,
     snipeExtensionCount,
     isConnected: connectionStatus === 'connected',
+    orderBook,
+    priceHistory,
+    velocity,
+    momentum,
+    velocityBuckets,
   };
 }

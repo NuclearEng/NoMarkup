@@ -5,14 +5,17 @@ import { Shield, TrendingUp, Users, Zap } from 'lucide-react';
 
 import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
+import { BidDepthChart } from '@/components/bids/BidDepthChart';
 import { BidForm } from '@/components/bids/BidForm';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
+import { BidVelocityIndicator } from '@/components/bids/BidVelocityIndicator';
+import { OrderBook } from '@/components/bids/OrderBook';
 import { PriceDropChart } from '@/components/bids/PriceDropChart';
 import { SnipeIndicator } from '@/components/bids/SnipeIndicator';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { SavingsCelebration } from '@/components/ui/SavingsCelebration';
 import { useAuctionStream } from '@/hooks/useAuctionStream';
-import { useLiveAuctionState } from '@/hooks/useBids';
+import { useBidsForJob, useLiveAuctionState } from '@/hooks/useBids';
 import { useCountdown } from '@/hooks/useCountdown';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import type { AuctionBidEvent, JobDetail } from '@/types';
@@ -22,6 +25,12 @@ interface AuctionArenaProps {
   isProvider: boolean;
   isJobOwner: boolean;
 }
+
+const VISUALIZATION_TAB = {
+  PRICE_HISTORY: 'price_history',
+  DEPTH_CHART: 'depth_chart',
+} as const;
+type VisualizationTab = (typeof VISUALIZATION_TAB)[keyof typeof VISUALIZATION_TAB];
 
 function getUrgency(totalSeconds: number, isExpired: boolean) {
   if (isExpired) return 'ended' as const;
@@ -40,11 +49,20 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
     auctionEndsAt,
     snipeExtensionCount,
     isConnected,
+    orderBook,
+    velocity,
+    velocityBuckets,
   } = useAuctionStream(job.id);
 
-  const { data: auctionState } = useLiveAuctionState(job.id);
+  // Compute displayEndsAt early so we can pass it to adaptive polling
+  const displayEndsAtForPolling = auctionEndsAt || job.auction_ends_at;
+  const { data: auctionState } = useLiveAuctionState(job.id, displayEndsAtForPolling);
+
+  // Fetch real bid data for the order book (with provider names, trust scores)
+  const { data: bidsData } = useBidsForJob(job.id);
 
   const [showCelebration, setShowCelebration] = useState(false);
+  const [activeTab, setActiveTab] = useState<VisualizationTab>(VISUALIZATION_TAB.PRICE_HISTORY);
   const celebrationShownRef = useRef(false);
 
   const handleCloseCelebration = useCallback(() => {
@@ -63,6 +81,42 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
   const startingPrice = job.starting_bid_cents || 0;
   const medianPrice = job.market_range?.median_cents || 0;
   const savingsCents = medianPrice > 0 && displayLowest > 0 ? medianPrice - displayLowest : 0;
+
+  // Build order book entries from bidsData (real provider info) merged with WS flash state
+  const orderBookBids = useMemo(() => {
+    if (!bidsData?.bids) return [];
+
+    const wsFlashIds = new Set(
+      orderBook.filter((e) => e.is_new).map((e) => e.id),
+    );
+
+    return bidsData.bids
+      .filter((b) => b.bid.status === 'active')
+      .map((b) => ({
+        id: b.bid.id,
+        provider_name: b.provider_business_name || b.provider_display_name,
+        amount_cents: b.bid.amount_cents,
+        trust_score: b.trust_score?.overall_score ?? 0,
+        trust_tier: b.trust_score?.tier ?? 'new',
+        created_at: b.bid.created_at,
+        is_new: wsFlashIds.has(b.bid.id),
+      }));
+  }, [bidsData, orderBook]);
+
+  // Build depth chart data: bucket bids by amount
+  const depthBuckets = useMemo(() => {
+    if (orderBookBids.length === 0) return [];
+
+    const bucketMap = new Map<number, number>();
+    for (const bid of orderBookBids) {
+      const existing = bucketMap.get(bid.amount_cents) ?? 0;
+      bucketMap.set(bid.amount_cents, existing + 1);
+    }
+
+    return Array.from(bucketMap.entries())
+      .map(([amount_cents, count]) => ({ amount_cents, count }))
+      .sort((a, b) => a.amount_cents - b.amount_cents);
+  }, [orderBookBids]);
 
   // Map displayEvents to BidActivity[] for the activity feed (reverse chronological)
   const bidActivities = useMemo(() => {
@@ -141,7 +195,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         }
       `}</style>
 
-      {/* ── Premium header banner ── */}
+      {/* -- Premium header banner -- */}
       <div
         className="relative px-4 py-3 sm:px-6"
         style={{
@@ -156,35 +210,45 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
               Live Auction
             </h2>
           </div>
-          <div
-            className="flex items-center gap-2"
-            role="status"
-            aria-label={
-              isConnected ? 'Live connection active' : `Connection status: ${connectionStatus}`
-            }
-          >
-            {isConnected ? (
-              <>
-                <div
-                  className="h-2 w-2 rounded-full bg-green-500"
-                  style={{ animation: 'livePulse 2s ease-in-out infinite' }}
-                  aria-hidden="true"
-                />
-                <span className="text-xs font-medium text-green-400">LIVE</span>
-              </>
-            ) : (
-              <>
-                <div className="bg-muted-foreground/40 h-2 w-2 rounded-full" aria-hidden="true" />
-                <span className="text-muted-foreground text-xs font-medium">
-                  {connectionStatus === 'connecting' ? 'CONNECTING' : 'RECONNECTING'}
-                </span>
-              </>
+          <div className="flex items-center gap-2.5">
+            {/* Bid velocity indicator */}
+            {velocity > 0 && (
+              <BidVelocityIndicator
+                velocity={velocity}
+                buckets={velocityBuckets}
+              />
             )}
+            {/* Connection status */}
+            <div
+              className="flex items-center gap-2"
+              role="status"
+              aria-label={
+                isConnected ? 'Live connection active' : `Connection status: ${connectionStatus}`
+              }
+            >
+              {isConnected ? (
+                <>
+                  <div
+                    className="h-2 w-2 rounded-full bg-green-500"
+                    style={{ animation: 'livePulse 2s ease-in-out infinite' }}
+                    aria-hidden="true"
+                  />
+                  <span className="text-xs font-medium text-green-400">LIVE</span>
+                </>
+              ) : (
+                <>
+                  <div className="bg-muted-foreground/40 h-2 w-2 rounded-full" aria-hidden="true" />
+                  <span className="text-muted-foreground text-xs font-medium">
+                    {connectionStatus === 'connecting' ? 'CONNECTING' : 'RECONNECTING'}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Hero price display ── */}
+      {/* -- Hero price display -- */}
       <div className="px-4 pt-5 pb-2 text-center sm:px-6 sm:pt-6">
         {startingPrice > 0 && displayLowest > 0 ? (
           <p className="text-muted-foreground mb-1 text-xs font-medium">
@@ -223,7 +287,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         ) : null}
       </div>
 
-      {/* ── Stats row ── */}
+      {/* -- Stats row -- */}
       <div className="border-border/30 bg-border/20 mx-4 my-4 grid grid-cols-3 gap-px overflow-hidden rounded-lg border-y sm:mx-6">
         {/* Total Bids */}
         <div className="bg-card flex flex-col items-center gap-0.5 px-3 py-3">
@@ -252,15 +316,50 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
       </div>
 
-      {/* ── Price History Chart ── */}
-      <div className="px-4 pb-2 sm:px-6">
-        <h3 className="text-muted-foreground/70 mb-2 text-xs font-medium tracking-wider uppercase">
-          Price History
-        </h3>
-        <PriceDropChart events={displayEvents} />
+      {/* -- Visualization tabs: Price History / Depth Chart -- */}
+      <div className="px-4 sm:px-6">
+        <div className="flex items-center gap-1 mb-2" role="tablist" aria-label="Chart visualization">
+          <button
+            role="tab"
+            aria-selected={activeTab === VISUALIZATION_TAB.PRICE_HISTORY}
+            onClick={() => setActiveTab(VISUALIZATION_TAB.PRICE_HISTORY)}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === VISUALIZATION_TAB.PRICE_HISTORY
+                ? 'bg-muted text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            Price History
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === VISUALIZATION_TAB.DEPTH_CHART}
+            onClick={() => setActiveTab(VISUALIZATION_TAB.DEPTH_CHART)}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === VISUALIZATION_TAB.DEPTH_CHART
+                ? 'bg-muted text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            Depth Chart
+          </button>
+        </div>
+
+        {/* Tab panels */}
+        <div role="tabpanel" aria-label={activeTab === VISUALIZATION_TAB.PRICE_HISTORY ? 'Price history chart' : 'Bid depth chart'}>
+          {activeTab === VISUALIZATION_TAB.PRICE_HISTORY ? (
+            <PriceDropChart events={displayEvents} />
+          ) : (
+            <BidDepthChart
+              bids={depthBuckets}
+              startingPrice={startingPrice}
+              currentLowest={displayLowest}
+            />
+          )}
+        </div>
       </div>
 
-      {/* ── Sparkline + Activity Feed ── */}
+      {/* -- Sparkline + Activity Feed -- */}
       <div className="px-4 pb-2 sm:px-6">
         <h3 className="text-muted-foreground/70 mb-2 text-xs font-medium tracking-wider uppercase">
           Bid Trend
@@ -269,7 +368,18 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         <BidActivityFeed activities={bidActivities} />
       </div>
 
-      {/* ── Market Intelligence ── */}
+      {/* -- Order Book -- */}
+      {orderBookBids.length > 0 && (
+        <div className="px-4 pb-2 sm:px-6">
+          <OrderBook
+            jobId={job.id}
+            bids={orderBookBids}
+            startingPrice={startingPrice}
+          />
+        </div>
+      )}
+
+      {/* -- Market Intelligence -- */}
       {job.market_range && job.market_range.sample_size > 0 ? (
         <div className="px-4 pb-2 sm:px-6">
           <MarketRangeDisplay
@@ -279,7 +389,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
       ) : null}
 
-      {/* ── Social proof ── */}
+      {/* -- Social proof -- */}
       {displayBidCount > 0 ? (
         <div className="px-4 pb-4 text-center sm:px-6">
           <p className="text-muted-foreground text-xs">
@@ -291,7 +401,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
       ) : null}
 
-      {/* ── Bid form for providers ── */}
+      {/* -- Bid form for providers -- */}
       {isProvider && !isJobOwner && job.status === 'active' ? (
         <div className="border-border/30 border-t px-4 py-4 sm:px-6">
           <BidForm
@@ -306,7 +416,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
       ) : null}
 
-      {/* ── Savings celebration overlay ── */}
+      {/* -- Savings celebration overlay -- */}
       {showCelebration && savingsCents > 0 ? (
         <SavingsCelebration
           savingsCents={savingsCents}

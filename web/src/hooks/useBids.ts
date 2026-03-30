@@ -1,7 +1,17 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
+import {
+  useAuctionStore,
+  getOrderBook,
+  getBidVelocity,
+  getMomentum,
+  getPriceHistory,
+  getVelocityBuckets,
+} from '@/stores/auction-store';
+import { useCountdown } from '@/hooks/useCountdown';
 import type {
   AuctionBidEvent,
   Bid,
@@ -139,7 +149,21 @@ export function useBidCount(jobId: string) {
   });
 }
 
-export function useLiveAuctionState(jobId: string | undefined) {
+/**
+ * Live auction state with adaptive polling intervals:
+ * - Default: 5s refetch
+ * - Under 5 minutes remaining: 2s refetch
+ */
+export function useLiveAuctionState(jobId: string | undefined, auctionEndsAt?: string | null) {
+  const { totalSeconds, isExpired } = useCountdown(auctionEndsAt ?? null);
+
+  // Adaptive polling: faster when time is running out
+  const refetchInterval = useMemo(() => {
+    if (!jobId || isExpired) return false as const;
+    if (totalSeconds > 0 && totalSeconds <= 300) return 2000; // < 5 min: every 2s
+    return 5000; // default: every 5s
+  }, [jobId, totalSeconds, isExpired]);
+
   return useQuery({
     queryKey: ['liveAuctionState', jobId],
     queryFn: async () => {
@@ -149,7 +173,7 @@ export function useLiveAuctionState(jobId: string | undefined) {
       return response;
     },
     enabled: !!jobId,
-    refetchInterval: 30000, // Refresh every 30s as fallback
+    refetchInterval,
   });
 }
 
@@ -184,4 +208,84 @@ export function useProviderStreaks() {
       return response;
     },
   });
+}
+
+// ── New hooks for live auction features ──
+
+/** Hook that subscribes to the auction store for real-time streaming data */
+export function useBidStream() {
+  const events = useAuctionStore((s) => s.events);
+  const currentLowest = useAuctionStore((s) => s.currentLowest);
+  const bidCount = useAuctionStore((s) => s.bidCount);
+  const connectionStatus = useAuctionStore((s) => s.connectionStatus);
+  const orderBook = useAuctionStore(getOrderBook);
+  const priceHistory = useAuctionStore(getPriceHistory);
+
+  const velocity = useAuctionStore(getBidVelocity);
+  const momentum = useAuctionStore(getMomentum);
+  const velocityBuckets = useAuctionStore(getVelocityBuckets);
+
+  return {
+    events,
+    currentLowest,
+    bidCount,
+    connectionStatus,
+    isConnected: connectionStatus === 'connected',
+    orderBook,
+    priceHistory,
+    velocity,
+    momentum,
+    velocityBuckets,
+  };
+}
+
+/** Computed order book entry with rank and derived fields */
+interface OrderBookComputedEntry {
+  id: string;
+  provider_name: string;
+  amount_cents: number;
+  trust_score: number;
+  trust_tier: string;
+  created_at: string;
+  is_new: boolean;
+  rank: number;
+  percentage_of_total: number;
+  time_since_bid: string;
+}
+
+/** Returns sorted bids with computed fields (rank, % of starting price, time ago) */
+export function useOrderBook(startingPrice: number): OrderBookComputedEntry[] {
+  const orderBook = useAuctionStore(getOrderBook);
+
+  return useMemo(() => {
+    const now = Date.now();
+    return orderBook.map((entry, index) => {
+      const createdMs = new Date(entry.created_at).getTime();
+      const diffMs = now - createdMs;
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHr = Math.floor(diffMin / 60);
+
+      let timeSince: string;
+      if (diffSec < 10) {
+        timeSince = 'just now';
+      } else if (diffSec < 60) {
+        timeSince = `${String(diffSec)}s ago`;
+      } else if (diffMin < 60) {
+        timeSince = `${String(diffMin)}m ago`;
+      } else {
+        timeSince = `${String(diffHr)}h ago`;
+      }
+
+      return {
+        ...entry,
+        rank: index + 1,
+        percentage_of_total:
+          startingPrice > 0
+            ? Math.round((entry.amount_cents / startingPrice) * 100)
+            : 0,
+        time_since_bid: timeSince,
+      };
+    });
+  }, [orderBook, startingPrice]);
 }
