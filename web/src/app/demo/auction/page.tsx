@@ -255,7 +255,7 @@ export default function AuctionDemoPage() {
     sim.currentLowest > 0 ? Math.round((savingsCents / STARTING_PRICE_CENTS) * 100) : 0;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-hidden bg-[#070b14]">
       {/* Animated gradient mesh — same as landing page */}
       <GradientMesh />
 
