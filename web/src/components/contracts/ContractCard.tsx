@@ -128,7 +128,7 @@ export function ContractCard({ contract }: ContractCardProps) {
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <FileText className="h-4 w-4 shrink-0" style={{ opacity: 0.4 }} aria-hidden="true" />
-              <h3 className="truncate text-base font-semibold">{contract.contract_number}</h3>
+              <h3 className="truncate text-base font-semibold text-zinc-100">{contract.contract_number}</h3>
             </div>
             <Badge
               variant="outline"
@@ -141,7 +141,10 @@ export function ContractCard({ contract }: ContractCardProps) {
         <CardContent className="relative z-[2] space-y-3">
           {/* Amount and payment timing */}
           <div className="flex items-baseline justify-between">
-            <p className="text-2xl font-bold tabular-nums tracking-tight">
+            <p
+              className="text-2xl font-bold tabular-nums tracking-tight text-zinc-100"
+              style={{ textShadow: '0 0 16px rgba(16,185,129,0.15)' }}
+            >
               {formatCents(contract.amount_cents)}
             </p>
             <div className="flex items-center gap-1 text-sm" style={{ opacity: 0.7 }}>

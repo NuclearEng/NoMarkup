@@ -111,7 +111,7 @@ export function JobCard({ job }: JobCardProps) {
       >
         <CardHeader className="relative z-[2] pb-3">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-2 text-base font-semibold leading-snug">{job.title}</h3>
+            <h3 className="line-clamp-2 text-base font-semibold leading-snug text-zinc-100">{job.title}</h3>
             <Badge variant={getStatusVariant(job.status)} className="shrink-0">
               {job.status.replace(/_/g, ' ')}
             </Badge>
@@ -171,13 +171,13 @@ export function JobCard({ job }: JobCardProps) {
             ) : null}
           </div>
 
-          {/* Lowest bid - prominent display */}
+          {/* Lowest bid - prominent display with emerald glow */}
           {job.lowest_bid_cents ? (
             <div className="flex items-baseline gap-1.5">
-              <span className="text-xs font-medium" style={{ opacity: 0.7 }}>Lowest:</span>
+              <span className="text-xs font-medium text-zinc-400">Lowest:</span>
               <span
-                className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400"
-                style={{ textShadow: '0 0 12px rgba(16,185,129,0.15)' }}
+                className="text-lg font-bold tabular-nums text-emerald-400"
+                style={{ textShadow: '0 0 16px rgba(16,185,129,0.3), 0 0 32px rgba(16,185,129,0.1)' }}
               >
                 {formatCents(job.lowest_bid_cents)}
               </span>

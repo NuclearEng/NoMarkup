@@ -256,7 +256,7 @@ function WinProbabilityBar({
           {String(percent)}%
         </span>
       </div>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
         <div
           className={cn(
             'h-full rounded-full transition-all duration-500',
@@ -394,7 +394,10 @@ export function BidCard({
         {/* ── 2. Bid amount (prominent) + competitive position ── */}
         <div className="space-y-2">
           <div className="flex items-baseline justify-between">
-            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+            <p
+              className="text-2xl font-bold text-emerald-400"
+              style={{ textShadow: '0 0 16px rgba(16,185,129,0.3), 0 0 32px rgba(16,185,129,0.1)' }}
+            >
               {formatCents(bid.amount_cents)}
             </p>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -436,7 +439,7 @@ export function BidCard({
 
         {/* ── 3. Trust & credibility bar ── */}
         {(trust_score ?? review_summary) ? (
-          <div className="bg-muted/40 rounded-lg border p-3">
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3">
             <div className="flex items-center gap-3">
               {/* Trust score gauge */}
               {trust_score ? (
@@ -637,7 +640,7 @@ function RankBadge({ rank, totalBids }: { rank: number; totalBids: number }) {
 
   return (
     <div
-      className="flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground"
+      className="flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-xs font-medium text-zinc-400"
       aria-label={`Rank ${String(rank)} of ${String(totalBids)} bids`}
     >
       #{String(rank)} of {String(totalBids)}
