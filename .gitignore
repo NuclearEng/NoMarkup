@@ -71,3 +71,4 @@ npm-debug.log*
 
 # Sentry
 .sentryclirc
+.claude/worktrees/
