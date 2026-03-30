@@ -1,11 +1,9 @@
-'use client';
-
+import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
   BarChart3,
   DollarSign,
   FileText,
-  Gauge,
   Info,
   LineChart,
   List,
@@ -13,9 +11,9 @@ import {
   TrendingDown,
   Users,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 
 // ── Widget category ──
+
 const WIDGET_CATEGORY = {
   MARKET: 'market',
   CHART: 'chart',
@@ -25,6 +23,7 @@ const WIDGET_CATEGORY = {
 type WidgetCategory = (typeof WIDGET_CATEGORY)[keyof typeof WIDGET_CATEGORY];
 
 // ── Widget definition ──
+
 export interface WidgetDefinition {
   id: string;
   label: string;
@@ -36,15 +35,15 @@ export interface WidgetDefinition {
 }
 
 // ── Registry ──
-export const WIDGET_REGISTRY: WidgetDefinition[] = [
+
+export const WIDGETS: WidgetDefinition[] = [
   {
     id: 'price-hero',
     label: 'Current Price',
     icon: DollarSign,
     category: WIDGET_CATEGORY.MARKET,
-    defaultSize: { w: 12, h: 5 },
-    minSize: { w: 6, h: 4 },
-    maxSize: { w: 12, h: 8 },
+    defaultSize: { w: 12, h: 4 },
+    minSize: { w: 6, h: 3 },
   },
   {
     id: 'savings',
@@ -53,7 +52,6 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     category: WIDGET_CATEGORY.MARKET,
     defaultSize: { w: 6, h: 4 },
     minSize: { w: 4, h: 3 },
-    maxSize: { w: 12, h: 6 },
   },
   {
     id: 'order-book',
@@ -61,8 +59,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     icon: List,
     category: WIDGET_CATEGORY.MARKET,
     defaultSize: { w: 4, h: 10 },
-    minSize: { w: 3, h: 6 },
-    maxSize: { w: 6, h: 16 },
+    minSize: { w: 3, h: 5 },
   },
   {
     id: 'price-chart',
@@ -71,7 +68,6 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     category: WIDGET_CATEGORY.CHART,
     defaultSize: { w: 6, h: 7 },
     minSize: { w: 4, h: 5 },
-    maxSize: { w: 12, h: 12 },
   },
   {
     id: 'depth-chart',
@@ -80,7 +76,6 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     category: WIDGET_CATEGORY.CHART,
     defaultSize: { w: 6, h: 7 },
     minSize: { w: 4, h: 5 },
-    maxSize: { w: 12, h: 12 },
   },
   {
     id: 'bid-trend',
@@ -88,17 +83,15 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     icon: TrendingDown,
     category: WIDGET_CATEGORY.CHART,
     defaultSize: { w: 6, h: 5 },
-    minSize: { w: 3, h: 3 },
-    maxSize: { w: 12, h: 10 },
+    minSize: { w: 3, h: 4 },
   },
   {
     id: 'activity-feed',
     label: 'Live Activity',
     icon: Activity,
     category: WIDGET_CATEGORY.ACTIVITY,
-    defaultSize: { w: 4, h: 10 },
+    defaultSize: { w: 3, h: 10 },
     minSize: { w: 3, h: 5 },
-    maxSize: { w: 6, h: 16 },
   },
   {
     id: 'top-providers',
@@ -107,7 +100,6 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     category: WIDGET_CATEGORY.ACTIVITY,
     defaultSize: { w: 4, h: 6 },
     minSize: { w: 3, h: 4 },
-    maxSize: { w: 6, h: 10 },
   },
   {
     id: 'market-intel',
@@ -116,16 +108,6 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     category: WIDGET_CATEGORY.INFO,
     defaultSize: { w: 6, h: 5 },
     minSize: { w: 4, h: 4 },
-    maxSize: { w: 12, h: 8 },
-  },
-  {
-    id: 'velocity',
-    label: 'Bid Velocity',
-    icon: Gauge,
-    category: WIDGET_CATEGORY.ACTIVITY,
-    defaultSize: { w: 3, h: 4 },
-    minSize: { w: 2, h: 3 },
-    maxSize: { w: 6, h: 6 },
   },
   {
     id: 'social-proof',
@@ -134,19 +116,34 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     category: WIDGET_CATEGORY.INFO,
     defaultSize: { w: 3, h: 4 },
     minSize: { w: 2, h: 3 },
-    maxSize: { w: 6, h: 6 },
   },
   {
     id: 'job-details',
     label: 'Job Details',
     icon: FileText,
     category: WIDGET_CATEGORY.INFO,
-    defaultSize: { w: 6, h: 5 },
+    defaultSize: { w: 6, h: 4 },
     minSize: { w: 4, h: 3 },
-    maxSize: { w: 12, h: 10 },
   },
 ];
 
+// ── Lookup maps ──
+
+/** Record of widget definitions keyed by id */
+export const WIDGET_MAP: Record<string, WidgetDefinition> = Object.fromEntries(
+  WIDGETS.map((w) => [w.id, w]),
+);
+
+/** Widgets grouped by category */
+export const WIDGET_CATEGORIES: Record<WidgetCategory, WidgetDefinition[]> =
+  WIDGETS.reduce<Record<string, WidgetDefinition[]>>((acc, w) => {
+    const cat = w.category;
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(w);
+    return acc;
+  }, {}) as Record<WidgetCategory, WidgetDefinition[]>;
+
+/** Category display labels */
 export const CATEGORY_LABELS: Record<WidgetCategory, string> = {
   market: 'Market Data',
   chart: 'Charts',
@@ -154,6 +151,7 @@ export const CATEGORY_LABELS: Record<WidgetCategory, string> = {
   info: 'Information',
 };
 
+/** Backward-compatible helper — prefer WIDGET_MAP[id] for O(1) lookup */
 export function getWidgetById(id: string): WidgetDefinition | undefined {
-  return WIDGET_REGISTRY.find((w) => w.id === id);
+  return WIDGET_MAP[id];
 }

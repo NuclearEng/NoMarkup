@@ -5,16 +5,17 @@ import {
   Check,
   ChevronDown,
   Copy,
-  GripVertical,
   Layout,
-  Lock,
   Pencil,
   Plus,
   RotateCcw,
+  Save,
   Trash2,
-  Unlock,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,19 +24,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTerminalLayoutStore } from '@/stores/terminal-layout-store';
-import {
-  WIDGET_REGISTRY,
-  CATEGORY_LABELS,
-  type WidgetDefinition,
-} from './widget-registry';
+import { WIDGET_CATEGORIES, CATEGORY_LABELS, type WidgetDefinition } from './widget-registry';
 
-export function TerminalToolbar() {
+// ── Types ──
+
+interface TerminalToolbarProps {
+  className?: string;
+}
+
+// ── Component ──
+
+export function TerminalToolbar({ className }: TerminalToolbarProps) {
   const {
     layouts,
     activeLayoutId,
@@ -51,22 +52,17 @@ export function TerminalToolbar() {
   } = useTerminalLayoutStore();
 
   const activeLayout = layouts.find((l) => l.id === activeLayoutId);
+
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const activeWidgetIds = new Set(activeLayout?.widgets.map((w) => w.widgetId) ?? []);
 
-  // Group widgets by category
-  const widgetsByCategory = WIDGET_REGISTRY.reduce<
-    Record<string, WidgetDefinition[]>
-  >((acc, w) => {
-    const cat = w.category;
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(w);
-    return acc;
-  }, {});
+  // ── Handlers ──
 
   const handleStartRename = useCallback(() => {
     if (!activeLayout) return;
@@ -88,20 +84,36 @@ export function TerminalToolbar() {
   }, [layouts.length, createLayout]);
 
   const handleDeleteLayout = useCallback(() => {
-    if (layouts.length <= 1) return;
-    if (activeLayout) {
-      deleteLayout(activeLayout.id);
-    }
+    if (layouts.length <= 1 || !activeLayout) return;
+    const deletedName = activeLayout.name;
+    deleteLayout(activeLayout.id);
+    setDeleteConfirmOpen(false);
+    toast.success(`"${deletedName}" deleted`);
   }, [layouts.length, activeLayout, deleteLayout]);
 
+  const handleSave = useCallback(() => {
+    toast.success('Saved!', { duration: 1500 });
+  }, []);
+
+  const handleReset = useCallback(() => {
+    resetToDefault();
+    setResetConfirmOpen(false);
+    toast.info('Layout reset to default');
+  }, [resetToDefault]);
+
   return (
-    <div className="bg-card/80 border-border/50 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 backdrop-blur-sm">
-      {/* Layout selector */}
+    <div
+      className={cn(
+        'bg-card/80 border-border/50 flex h-11 items-center gap-1.5 rounded-xl border px-3 backdrop-blur-sm',
+        className,
+      )}
+    >
+      {/* ── Layout Selector ── */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-xs">
             <Layout className="h-3.5 w-3.5" />
-            <span className="max-w-[120px] truncate">{activeLayout?.name ?? 'Layout'}</span>
+            <span className="max-w-[140px] truncate">{activeLayout?.name ?? 'Layout'}</span>
             <ChevronDown className="h-3 w-3 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
@@ -112,8 +124,11 @@ export function TerminalToolbar() {
               onClick={() => setActiveLayout(layout.id)}
               className="gap-2"
             >
-              {layout.id === activeLayoutId && <Check className="h-3.5 w-3.5" />}
-              {layout.id !== activeLayoutId && <span className="w-3.5" />}
+              {layout.id === activeLayoutId ? (
+                <Check className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <span className="w-3.5 shrink-0" />
+              )}
               <span className="flex-1 truncate">{layout.name}</span>
               <span className="text-muted-foreground text-[10px]">
                 {String(layout.widgets.length)} widgets
@@ -123,13 +138,10 @@ export function TerminalToolbar() {
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleCreateLayout} className="gap-2">
             <Plus className="h-3.5 w-3.5" />
-            New Layout
+            New Layout...
           </DropdownMenuItem>
           {activeLayout && (
-            <DropdownMenuItem
-              onClick={() => duplicateLayout(activeLayout.id)}
-              className="gap-2"
-            >
+            <DropdownMenuItem onClick={() => duplicateLayout(activeLayout.id)} className="gap-2">
               <Copy className="h-3.5 w-3.5" />
               Duplicate Current
             </DropdownMenuItem>
@@ -137,7 +149,7 @@ export function TerminalToolbar() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Layout name — inline editable */}
+      {/* ── Layout Name (inline editable) ── */}
       {isRenaming ? (
         <input
           ref={renameInputRef}
@@ -148,32 +160,34 @@ export function TerminalToolbar() {
             if (e.key === 'Enter') handleFinishRename();
             if (e.key === 'Escape') setIsRenaming(false);
           }}
-          className="bg-muted h-8 rounded-md border px-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring"
+          className="bg-muted focus:ring-ring h-7 rounded-md border px-2 text-xs font-medium focus:ring-1 focus:outline-none"
           style={{ width: `${Math.max(80, renameValue.length * 8)}px` }}
+          aria-label="Layout name"
         />
       ) : (
         <button
           onClick={handleStartRename}
-          className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs transition-colors"
-          title="Click to rename"
+          className="text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-1 rounded px-1 py-0.5 text-xs transition-colors"
+          title="Rename layout"
+          aria-label="Rename layout"
         >
           <Pencil className="h-3 w-3" />
         </button>
       )}
 
-      <div className="bg-border mx-1 hidden h-4 w-px sm:block" />
+      <div className="bg-border mx-0.5 hidden h-4 w-px sm:block" />
 
-      {/* Add Widget button */}
+      {/* ── Add Widget ── */}
       <Popover open={addWidgetOpen} onOpenChange={setAddWidgetOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-xs">
             <Plus className="h-3.5 w-3.5" />
-            Add Widget
+            <span className="hidden sm:inline">Add Widget</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-72 p-0">
           <div className="max-h-80 overflow-y-auto">
-            {(Object.entries(widgetsByCategory) as Array<[string, WidgetDefinition[]]>).map(
+            {(Object.entries(WIDGET_CATEGORIES) as Array<[string, WidgetDefinition[]]>).map(
               ([category, widgets]) => (
                 <div key={category}>
                   <div className="bg-muted/50 px-3 py-1.5">
@@ -194,16 +208,17 @@ export function TerminalToolbar() {
                           }
                         }}
                         disabled={isActive}
-                        className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
-                          isActive
-                            ? 'text-muted-foreground/40 cursor-not-allowed'
-                            : 'hover:bg-muted/50'
-                        }`}
+                        className={cn(
+                          'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
+                          isActive ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted/50',
+                        )}
                       >
                         <Icon className="h-4 w-4 shrink-0" />
                         <span className="flex-1">{w.label}</span>
                         {isActive && (
-                          <Check className="text-muted-foreground/40 h-3.5 w-3.5" />
+                          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                            Active
+                          </Badge>
                         )}
                       </button>
                     );
@@ -215,52 +230,114 @@ export function TerminalToolbar() {
         </PopoverContent>
       </Popover>
 
-      {/* Edit toggle */}
+      {/* ── Edit Layout Toggle ── */}
       <Button
         variant={isEditing ? 'default' : 'outline'}
         size="sm"
         onClick={toggleEditing}
-        className="h-8 gap-1.5 px-3 text-xs"
+        className={cn(
+          'h-8 gap-1.5 px-3 text-xs',
+          isEditing && 'ring-ring ring-offset-background ring-2 ring-offset-1',
+        )}
+        aria-pressed={isEditing}
       >
         {isEditing ? (
           <>
-            <Unlock className="h-3.5 w-3.5" />
-            Editing
+            <Check className="h-3.5 w-3.5" />
+            Done
           </>
         ) : (
           <>
-            <Lock className="h-3.5 w-3.5" />
-            Locked
+            <Pencil className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Edit</span>
           </>
         )}
       </Button>
 
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Reset */}
+      {/* ── Save ── */}
       <Button
-        variant="ghost"
+        variant="outline"
         size="sm"
-        onClick={resetToDefault}
+        onClick={handleSave}
         className="h-8 gap-1.5 px-3 text-xs"
-        title="Reset to default"
+        title="Save layout"
       >
-        <RotateCcw className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Reset</span>
+        <Save className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Save</span>
       </Button>
 
-      {/* Delete */}
+      {/* ── Spacer ── */}
+      <div className="flex-1" />
+
+      {/* ── Reset ── */}
+      <Popover open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs"
+            title="Reset to default"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Reset</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-56 p-3">
+          <p className="mb-3 text-sm">Reset this layout to its default configuration?</p>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setResetConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={handleReset}>
+              Reset
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* ── Delete Layout ── */}
       {layouts.length > 1 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleDeleteLayout}
-          className="text-destructive hover:text-destructive h-8 gap-1.5 px-3 text-xs"
-          title="Delete layout"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        <Popover open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive h-8 px-2 text-xs"
+              title="Delete layout"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-56 p-3">
+            <p className="mb-1 text-sm font-medium">Delete layout?</p>
+            <p className="text-muted-foreground mb-3 text-xs">
+              &ldquo;{activeLayout?.name}&rdquo; will be permanently removed.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setDeleteConfirmOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleDeleteLayout}
+              >
+                Delete
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
       )}
     </div>
   );

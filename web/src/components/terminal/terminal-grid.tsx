@@ -1,11 +1,7 @@
 'use client';
 
 import { useCallback, useMemo } from 'react';
-import {
-  ResponsiveGridLayout,
-  useContainerWidth,
-  verticalCompactor,
-} from 'react-grid-layout';
+import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import { GripVertical, X } from 'lucide-react';
 
@@ -53,10 +49,10 @@ export function TerminalGrid({
       const def = getWidgetById(wp.widgetId);
       return {
         i: wp.widgetId,
-        x: wp.layout.x,
-        y: wp.layout.y,
-        w: wp.layout.w,
-        h: wp.layout.h,
+        x: wp.x,
+        y: wp.y,
+        w: wp.w,
+        h: wp.h,
         minW: def?.minSize.w ?? 2,
         minH: def?.minSize.h ?? 2,
         maxW: def?.maxSize?.w,
@@ -154,7 +150,7 @@ export function TerminalGrid({
                 key={wp.widgetId}
                 className={`group/widget border-border/50 bg-card overflow-hidden rounded-xl border shadow-sm transition-shadow ${
                   isEditing
-                    ? 'ring-1 ring-dashed ring-border/60 hover:shadow-md hover:ring-primary/30'
+                    ? 'ring-dashed ring-border/60 hover:ring-primary/30 ring-1 hover:shadow-md'
                     : ''
                 }`}
               >

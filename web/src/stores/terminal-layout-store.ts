@@ -1,16 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import { WIDGET_REGISTRY, getWidgetById } from '@/components/terminal/widget-registry';
+import { WIDGET_MAP } from '@/components/terminal/widget-registry';
 
 // ── Types ──
 
-interface WidgetPlacement {
+export interface WidgetPlacement {
   widgetId: string;
-  layout: { x: number; y: number; w: number; h: number };
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
-interface TerminalLayout {
+export interface TerminalLayout {
   id: string;
   name: string;
   widgets: WidgetPlacement[];
@@ -18,87 +21,98 @@ interface TerminalLayout {
   updatedAt: string;
 }
 
-interface TerminalLayoutStore {
+interface TerminalLayoutState {
   layouts: TerminalLayout[];
   activeLayoutId: string;
   isEditing: boolean;
+}
 
-  // Actions
+interface TerminalLayoutActions {
   setActiveLayout: (id: string) => void;
-  createLayout: (name: string) => string;
+  createLayout: (name: string, widgets?: WidgetPlacement[]) => string;
   deleteLayout: (id: string) => void;
   renameLayout: (id: string, name: string) => void;
   duplicateLayout: (id: string) => string;
-
   addWidget: (widgetId: string) => void;
-  removeWidget: (widgetId: string) => void;
+  removeWidget: (instanceKey: string) => void;
   updateWidgetLayouts: (
     layouts: Array<{ i: string; x: number; y: number; w: number; h: number }>,
   ) => void;
-
   toggleEditing: () => void;
+  setEditing: (editing: boolean) => void;
   resetToDefault: () => void;
 }
 
 // ── Helpers ──
 
-function generateId(): string {
-  return `layout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function nowIso(): string {
   return new Date().toISOString();
 }
+
+const GRID_COLS = 12;
 
 /** Find the first open Y position that doesn't overlap any existing widgets */
 function findOpenPosition(
   existing: WidgetPlacement[],
   w: number,
-  h: number,
+  _h: number,
 ): { x: number; y: number } {
   if (existing.length === 0) return { x: 0, y: 0 };
-  const maxY = Math.max(...existing.map((wp) => wp.layout.y + wp.layout.h));
+
+  // Build a set of occupied rows for each column
+  const maxY = Math.max(...existing.map((wp) => wp.y + wp.h));
+
+  // Scan rows top-down for a horizontal gap wide enough
+  for (let row = 0; row <= maxY; row++) {
+    for (let col = 0; col <= GRID_COLS - w; col++) {
+      const fits = existing.every((wp) => {
+        // No overlap if widget is entirely left, right, above, or below
+        const noOverlap =
+          col + w <= wp.x || col >= wp.x + wp.w || row + _h <= wp.y || row >= wp.y + wp.h;
+        return noOverlap;
+      });
+      if (fits) return { x: col, y: row };
+    }
+  }
+
+  // Fallback: place below everything
   return { x: 0, y: maxY };
 }
 
 // ── Default preset layouts ──
 
 const PRESET_TRADING_TERMINAL: WidgetPlacement[] = [
-  { widgetId: 'price-hero', layout: { x: 0, y: 0, w: 12, h: 5 } },
-  { widgetId: 'savings', layout: { x: 0, y: 5, w: 5, h: 4 } },
-  { widgetId: 'velocity', layout: { x: 5, y: 5, w: 3, h: 4 } },
-  { widgetId: 'social-proof', layout: { x: 8, y: 5, w: 4, h: 4 } },
-  { widgetId: 'price-chart', layout: { x: 0, y: 9, w: 5, h: 7 } },
-  { widgetId: 'order-book', layout: { x: 5, y: 9, w: 4, h: 10 } },
-  { widgetId: 'activity-feed', layout: { x: 9, y: 9, w: 3, h: 10 } },
-  { widgetId: 'depth-chart', layout: { x: 0, y: 16, w: 5, h: 7 } },
-  { widgetId: 'market-intel', layout: { x: 0, y: 23, w: 5, h: 5 } },
-  { widgetId: 'top-providers', layout: { x: 5, y: 19, w: 4, h: 6 } },
-  { widgetId: 'bid-trend', layout: { x: 9, y: 19, w: 3, h: 5 } },
-  { widgetId: 'job-details', layout: { x: 0, y: 28, w: 12, h: 5 } },
+  // Row 0: price-hero full width
+  { widgetId: 'price-hero', x: 0, y: 0, w: 12, h: 4 },
+  // Row 4: savings + price-chart left, order-book + top-providers center, activity-feed + social-proof right
+  { widgetId: 'savings', x: 0, y: 4, w: 5, h: 4 },
+  { widgetId: 'price-chart', x: 0, y: 8, w: 5, h: 7 },
+  { widgetId: 'order-book', x: 5, y: 4, w: 4, h: 10 },
+  { widgetId: 'top-providers', x: 5, y: 14, w: 4, h: 6 },
+  { widgetId: 'activity-feed', x: 9, y: 4, w: 3, h: 10 },
+  { widgetId: 'social-proof', x: 9, y: 14, w: 3, h: 4 },
+  // Below
+  { widgetId: 'depth-chart', x: 0, y: 15, w: 5, h: 7 },
+  { widgetId: 'bid-trend', x: 0, y: 22, w: 5, h: 5 },
+  { widgetId: 'market-intel', x: 5, y: 20, w: 4, h: 5 },
+  { widgetId: 'job-details', x: 0, y: 27, w: 12, h: 4 },
 ];
 
 const PRESET_MARKET_OVERVIEW: WidgetPlacement[] = [
-  { widgetId: 'price-hero', layout: { x: 0, y: 0, w: 12, h: 5 } },
-  { widgetId: 'price-chart', layout: { x: 0, y: 5, w: 6, h: 7 } },
-  { widgetId: 'depth-chart', layout: { x: 6, y: 5, w: 6, h: 7 } },
-  { widgetId: 'market-intel', layout: { x: 0, y: 12, w: 6, h: 5 } },
-  { widgetId: 'bid-trend', layout: { x: 6, y: 12, w: 6, h: 5 } },
-  { widgetId: 'savings', layout: { x: 0, y: 17, w: 6, h: 4 } },
-  { widgetId: 'social-proof', layout: { x: 6, y: 17, w: 6, h: 4 } },
+  { widgetId: 'price-hero', x: 0, y: 0, w: 12, h: 4 },
+  { widgetId: 'savings', x: 0, y: 4, w: 6, h: 4 },
+  { widgetId: 'market-intel', x: 6, y: 4, w: 6, h: 5 },
+  { widgetId: 'price-chart', x: 0, y: 8, w: 6, h: 7 },
+  { widgetId: 'depth-chart', x: 6, y: 9, w: 6, h: 7 },
 ];
 
 const PRESET_MINIMAL: WidgetPlacement[] = [
-  { widgetId: 'price-hero', layout: { x: 0, y: 0, w: 12, h: 5 } },
-  { widgetId: 'savings', layout: { x: 0, y: 5, w: 6, h: 4 } },
-  { widgetId: 'order-book', layout: { x: 6, y: 5, w: 6, h: 10 } },
+  { widgetId: 'price-hero', x: 0, y: 0, w: 12, h: 4 },
+  { widgetId: 'savings', x: 0, y: 4, w: 6, h: 4 },
+  { widgetId: 'order-book', x: 6, y: 4, w: 6, h: 10 },
 ];
 
-function makePresetLayout(
-  id: string,
-  name: string,
-  widgets: WidgetPlacement[],
-): TerminalLayout {
+function makePresetLayout(id: string, name: string, widgets: WidgetPlacement[]): TerminalLayout {
   const ts = nowIso();
   return { id, name, widgets, createdAt: ts, updatedAt: ts };
 }
@@ -117,7 +131,7 @@ const PRESET_MAP: Record<string, WidgetPlacement[]> = {
 
 // ── Store ──
 
-export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
+export const useTerminalLayoutStore = create<TerminalLayoutState & TerminalLayoutActions>()(
   persist(
     (set, get) => ({
       layouts: DEFAULT_LAYOUTS,
@@ -128,18 +142,13 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
         set({ activeLayoutId: id, isEditing: false });
       },
 
-      createLayout: (name) => {
-        const id = generateId();
+      createLayout: (name, widgets) => {
+        const id = crypto.randomUUID();
         const ts = nowIso();
         const layout: TerminalLayout = {
           id,
           name,
-          widgets: [
-            {
-              widgetId: 'price-hero',
-              layout: { x: 0, y: 0, w: 12, h: 5 },
-            },
-          ],
+          widgets: widgets ?? [{ widgetId: 'price-hero', x: 0, y: 0, w: 12, h: 4 }],
           createdAt: ts,
           updatedAt: ts,
         };
@@ -172,13 +181,13 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
         const { layouts } = get();
         const source = layouts.find((l) => l.id === id);
         if (!source) return id;
-        const newId = generateId();
+        const newId = crypto.randomUUID();
         const ts = nowIso();
         const dupe: TerminalLayout = {
           ...source,
           id: newId,
           name: `${source.name} (Copy)`,
-          widgets: source.widgets.map((w) => ({ ...w, layout: { ...w.layout } })),
+          widgets: source.widgets.map((w) => ({ ...w })),
           createdAt: ts,
           updatedAt: ts,
         };
@@ -190,7 +199,7 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
       },
 
       addWidget: (widgetId) => {
-        const def = getWidgetById(widgetId);
+        const def = WIDGET_MAP[widgetId];
         if (!def) return;
         set((state) => {
           const layout = state.layouts.find((l) => l.id === state.activeLayoutId);
@@ -200,7 +209,10 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
           const pos = findOpenPosition(layout.widgets, def.defaultSize.w, def.defaultSize.h);
           const newWidget: WidgetPlacement = {
             widgetId,
-            layout: { ...pos, w: def.defaultSize.w, h: def.defaultSize.h },
+            x: pos.x,
+            y: pos.y,
+            w: def.defaultSize.w,
+            h: def.defaultSize.h,
           };
           return {
             layouts: state.layouts.map((l) =>
@@ -216,13 +228,13 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
         });
       },
 
-      removeWidget: (widgetId) => {
+      removeWidget: (instanceKey) => {
         set((state) => ({
           layouts: state.layouts.map((l) =>
             l.id === state.activeLayoutId
               ? {
                   ...l,
-                  widgets: l.widgets.filter((w) => w.widgetId !== widgetId),
+                  widgets: l.widgets.filter((w) => w.widgetId !== instanceKey),
                   updatedAt: nowIso(),
                 }
               : l,
@@ -239,7 +251,10 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
             if (!rgl) return wp;
             return {
               ...wp,
-              layout: { x: rgl.x, y: rgl.y, w: rgl.w, h: rgl.h },
+              x: rgl.x,
+              y: rgl.y,
+              w: rgl.w,
+              h: rgl.h,
             };
           });
           return {
@@ -256,6 +271,10 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
         set((state) => ({ isEditing: !state.isEditing }));
       },
 
+      setEditing: (editing) => {
+        set({ isEditing: editing });
+      },
+
       resetToDefault: () => {
         const { activeLayoutId } = get();
         const preset = PRESET_MAP[activeLayoutId];
@@ -263,7 +282,11 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
           set((state) => ({
             layouts: state.layouts.map((l) =>
               l.id === activeLayoutId
-                ? { ...l, widgets: preset.map((w) => ({ ...w, layout: { ...w.layout } })), updatedAt: nowIso() }
+                ? {
+                    ...l,
+                    widgets: preset.map((w) => ({ ...w })),
+                    updatedAt: nowIso(),
+                  }
                 : l,
             ),
           }));
@@ -272,7 +295,7 @@ export const useTerminalLayoutStore = create<TerminalLayoutStore>()(
     }),
     {
       name: 'nomarkup-terminal-layouts',
-      version: 1,
+      version: 2,
     },
   ),
 );

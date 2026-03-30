@@ -1,0 +1,128 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e4]:
+    - link "NoMarkup Home" [ref=e6] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e7]: NoMarkup
+    - generic [ref=e9]:
+      - generic [ref=e11]:
+        - heading "Welcome back" [level=3] [ref=e12]
+        - generic [ref=e13]: Sign in to your account
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - button "Continue with Google" [ref=e16]:
+            - img
+            - text: Continue with Google
+          - button "Continue with Apple" [ref=e17]:
+            - img
+            - text: Continue with Apple
+        - generic [ref=e22]: Or continue with email
+        - generic [ref=e23]:
+          - generic [ref=e24]:
+            - text: Email
+            - textbox "Email" [ref=e25]:
+              - /placeholder: you@example.com
+              - text: admin@nomarkup.com
+          - generic [ref=e26]:
+            - text: Password
+            - textbox "Password" [active] [ref=e27]:
+              - /placeholder: Enter your password
+              - text: Password123!
+          - generic [ref=e28]:
+            - generic [ref=e29] [cursor=pointer]:
+              - checkbox "Remember me" [ref=e30]
+              - generic [ref=e31]: Remember me
+            - link "Forgot password?" [ref=e32] [cursor=pointer]:
+              - /url: /forgot-password
+          - button "Sign in" [ref=e33]
+      - paragraph [ref=e35]:
+        - text: Don't have an account?
+        - link "Create one" [ref=e36] [cursor=pointer]:
+          - /url: /register
+  - region "Notifications alt+T"
+  - generic:
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - navigation [ref=e42]:
+            - button "previous" [disabled] [ref=e43]:
+              - img "previous" [ref=e44]
+            - generic [ref=e46]:
+              - generic [ref=e47]: 1/
+              - text: "1"
+            - button "next" [disabled] [ref=e48]:
+              - img "next" [ref=e49]
+          - img
+        - generic [ref=e51]:
+          - link "Next.js 15.5.12 (outdated) Turbopack" [ref=e52] [cursor=pointer]:
+            - /url: https://nextjs.org/docs/messages/version-staleness
+            - img [ref=e53]
+            - generic "An outdated version detected (latest is 16.2.1), upgrade is highly recommended!" [ref=e55]: Next.js 15.5.12 (outdated)
+            - generic [ref=e56]: Turbopack
+          - img
+      - dialog "Build Error" [ref=e58]:
+        - generic [ref=e61]:
+          - generic [ref=e62]:
+            - generic [ref=e63]:
+              - generic [ref=e65]: Build Error
+              - generic [ref=e66]:
+                - button "Copy Error Info" [ref=e67] [cursor=pointer]:
+                  - img [ref=e68]
+                - button "No related documentation found" [disabled] [ref=e70]:
+                  - img [ref=e71]
+                - link "Learn more about enabling Node.js inspector for server code with Chrome DevTools" [ref=e73] [cursor=pointer]:
+                  - /url: https://nextjs.org/docs/app/building-your-application/configuring/debugging#server-side-code
+                  - img [ref=e74]
+            - paragraph [ref=e83]: Export WidthProvider doesn't exist in target module
+          - generic [ref=e85]:
+            - generic [ref=e87]:
+              - img [ref=e89]
+              - generic [ref=e92]: ./Projects/NoMarkup/web/src/components/terminal/terminal-grid.tsx (4:1)
+              - button "Open in editor" [ref=e93] [cursor=pointer]:
+                - img [ref=e95]
+            - generic [ref=e98]:
+              - generic [ref=e99]: Export WidthProvider doesn't exist in target module
+              - generic [ref=e100]: 2 |
+              - generic [ref=e101]: 3 |
+              - text: import
+              - generic [ref=e102]: "{ useCallback"
+              - text: ","
+              - generic [ref=e103]: "useMemo }"
+              - text: from 'react'; >
+              - generic [ref=e104]: 4 |
+              - text: import RGL,
+              - generic [ref=e105]: "{"
+              - text: WidthProvider
+              - generic [ref=e106]: "}"
+              - text: from 'react-grid-layout';
+              - generic [ref=e107]: "|"
+              - text: ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              - generic [ref=e108]: 5 |
+              - text: import
+              - generic [ref=e109]: "{"
+              - text: GripVertical, X
+              - generic [ref=e110]: "}"
+              - text: from 'lucide-react';
+              - generic [ref=e111]: 6 |
+              - generic [ref=e112]: 7 |
+              - text: import
+              - generic [ref=e113]: "{ useTerminalLayoutStore }"
+              - text: from '@/stores/terminal-layout-store';
+              - generic [ref=e114]: "The export WidthProvider was not found in module [project]/Projects/NoMarkup/web/node_modules/react-grid-layout/dist/index.mjs [app-client] (ecmascript). Did you mean to import getBreakpointFromWidth? All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist. Import traces: Client Component Browser: ./Projects/NoMarkup/web/src/components/terminal/terminal-grid.tsx [Client Component Browser] ./Projects/NoMarkup/web/src/app/demo/auction/page.tsx [Client Component Browser] ./Projects/NoMarkup/web/src/app/demo/auction/page.tsx [Server Component] Client Component SSR: ./Projects/NoMarkup/web/src/components/terminal/terminal-grid.tsx [Client Component SSR] ./Projects/NoMarkup/web/src/app/demo/auction/page.tsx [Client Component SSR] ./Projects/NoMarkup/web/src/app/demo/auction/page.tsx [Server Component]"
+        - generic [ref=e115]:
+          - generic [ref=e116]: "1"
+          - generic [ref=e117]: "2"
+    - generic [ref=e122] [cursor=pointer]:
+      - button "Open Next.js Dev Tools" [ref=e123]:
+        - img [ref=e124]
+      - button "Open issues overlay" [ref=e128]:
+        - generic [ref=e129]:
+          - generic [ref=e130]: "0"
+          - generic [ref=e131]: "1"
+        - generic [ref=e132]: Issue
+  - alert [ref=e133]
+```
