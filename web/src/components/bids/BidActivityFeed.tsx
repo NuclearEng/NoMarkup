@@ -27,7 +27,7 @@ export function BidActivityFeed({
     return (
       <div
         className={cn(
-          'bg-zinc-950/60 text-zinc-500 rounded-xl border border-zinc-800/50 p-6 text-center text-sm',
+          'glass text-zinc-500 p-6 text-center text-sm',
           className,
         )}
       >
@@ -37,7 +37,7 @@ export function BidActivityFeed({
   }
 
   return (
-    <div className={cn('bg-transparent', showHeader && 'rounded-xl border border-zinc-800/50 bg-zinc-950/60', className)}>
+    <div className={cn('bg-transparent', showHeader && 'glass', className)}>
       <style>{`
         @keyframes activityFlashIn {
           0% { background-color: rgba(34, 197, 94, 0.18); }
@@ -49,7 +49,7 @@ export function BidActivityFeed({
         }
       `}</style>
       {showHeader && (
-        <div className="flex items-center justify-between border-b border-zinc-800/60 bg-zinc-900/80 px-4 py-2.5">
+        <div className="flex items-center justify-between glass-header px-4 py-2.5">
           <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">Live Activity</h3>
           <span className="flex items-center gap-1.5 text-xs text-green-400">
             <span
@@ -61,7 +61,7 @@ export function BidActivityFeed({
         </div>
       )}
       <div
-        className={cn('divide-y divide-zinc-800/40 overflow-y-auto', showHeader && 'max-h-[320px]')}
+        className={cn('overflow-y-auto', showHeader && 'max-h-[320px]')}
         role="log"
         aria-label="Bid activity feed"
       >
@@ -72,11 +72,12 @@ export function BidActivityFeed({
             : `$${dollars.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
           return (
+            <div key={activity.id}>
+              {index > 0 && <div className="glass-divider mx-4" />}
             <div
-              key={activity.id}
               className={cn(
                 'flex items-center gap-3 px-4 py-3 transition-colors',
-                'hover:bg-zinc-800/30',
+                'hover:bg-white/[0.03]',
               )}
               style={{
                 animation: index === 0 ? 'activityFlashIn 1.5s ease-out forwards' : undefined,
@@ -90,7 +91,7 @@ export function BidActivityFeed({
                   <span className="text-sm font-medium text-zinc-200">{activity.providerName}</span>
                   {activity.isLowest && (
                     <span
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 ring-1 ring-emerald-500/30"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full glass-tinted-green border border-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400"
                       style={{ animation: 'lowestGlow 3s ease-in-out infinite' }}
                     >
                       <span
@@ -109,6 +110,7 @@ export function BidActivityFeed({
               >
                 {priceStr}
               </span>
+            </div>
             </div>
           );
         })}

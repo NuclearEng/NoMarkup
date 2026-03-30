@@ -44,17 +44,18 @@ export function ResetPasswordContent() {
 
   if (!token) {
     return (
-      <Card>
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Invalid reset link</CardTitle>
-          <CardDescription>
+      <Card className="glass-auth-card border-0 shadow-none">
+        <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+        <CardHeader className="relative z-[2] text-center">
+          <CardTitle className="text-2xl text-white">Invalid reset link</CardTitle>
+          <CardDescription className="text-white/50">
             This password reset link is invalid or has expired.
           </CardDescription>
         </CardHeader>
-        <CardFooter className="justify-center">
+        <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
           <Link
             href="/forgot-password"
-            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="text-sm font-medium text-[var(--brand-gold)] underline-offset-4 hover:underline"
           >
             Request a new reset link
           </Link>
@@ -65,18 +66,19 @@ export function ResetPasswordContent() {
 
   if (success) {
     return (
-      <Card>
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Password reset</CardTitle>
-          <CardDescription>
+      <Card className="glass-auth-card border-0 shadow-none">
+        <div className="relative z-[2] h-[3px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400" />
+        <CardHeader className="relative z-[2] text-center">
+          <CardTitle className="text-2xl text-white">Password reset</CardTitle>
+          <CardDescription className="text-white/50">
             Your password has been successfully reset. You can now sign in with
             your new password.
           </CardDescription>
         </CardHeader>
-        <CardFooter className="justify-center">
+        <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
           <Link
             href="/login"
-            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="text-sm font-medium text-[var(--brand-gold)] underline-offset-4 hover:underline"
           >
             Sign in
           </Link>
@@ -99,14 +101,15 @@ export function ResetPasswordContent() {
   }
 
   return (
-    <Card>
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Set new password</CardTitle>
-        <CardDescription>
+    <Card className="glass-auth-card border-0 shadow-none">
+      <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+      <CardHeader className="relative z-[2] text-center">
+        <CardTitle className="text-2xl text-white">Set new password</CardTitle>
+        <CardDescription className="text-white/50">
           Enter your new password below
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative z-[2]">
         <Form {...form}>
           <form
             onSubmit={(e) => void form.handleSubmit(onSubmit)(e)}
@@ -117,7 +120,7 @@ export function ResetPasswordContent() {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+                className="glass-tinted-red rounded-lg p-3 text-sm text-destructive"
               >
                 {formError}
               </div>
@@ -128,12 +131,13 @@ export function ResetPasswordContent() {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>New password</FormLabel>
+                  <FormLabel className="text-white/80">New password</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder="Enter new password"
                       autoComplete="new-password"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -147,12 +151,13 @@ export function ResetPasswordContent() {
               name="confirmPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Confirm password</FormLabel>
+                  <FormLabel className="text-white/80">Confirm password</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder="Confirm new password"
                       autoComplete="new-password"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -163,7 +168,7 @@ export function ResetPasswordContent() {
 
             <Button
               type="submit"
-              className="min-h-[44px] w-full"
+              className="glass-cta-gold min-h-[44px] w-full rounded-lg font-semibold"
               disabled={form.formState.isSubmitting}
             >
               {form.formState.isSubmitting ? 'Resetting...' : 'Reset password'}
@@ -171,12 +176,12 @@ export function ResetPasswordContent() {
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="justify-center">
-        <p className="text-sm text-muted-foreground">
+      <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
+        <p className="text-sm text-white/50">
           Remember your password?{' '}
           <Link
             href="/login"
-            className="font-medium text-primary underline-offset-4 hover:underline"
+            className="font-medium text-[var(--brand-gold)] underline-offset-4 hover:underline"
           >
             Sign in
           </Link>

@@ -118,7 +118,7 @@ export function TerminalGrid({
   if (widgets.length === 0) {
     return (
       <div ref={containerRef}>
-        <div className="flex min-h-[200px] items-center justify-center rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 backdrop-blur-sm p-8">
+        <div className="glass flex min-h-[200px] items-center justify-center border-dashed border-white/10 p-8">
           <p className="text-zinc-400 text-sm">
             No widgets added. Click &quot;Add Widget&quot; to get started.
           </p>
@@ -164,10 +164,10 @@ export function TerminalGrid({
             return (
               <div
                 key={wp.widgetId}
-                className={`group/widget overflow-hidden rounded-xl transition-shadow ${
+                className={`group/widget overflow-hidden rounded-2xl transition-shadow ${
                   isEditing
-                    ? 'border border-dashed border-zinc-600 bg-zinc-900/60 backdrop-blur-sm hover:border-zinc-500 hover:shadow-md'
-                    : 'bg-zinc-900/40 backdrop-blur-sm border border-zinc-800/50 shadow-sm'
+                    ? 'glass border-dashed border-white/15 hover:border-white/25 hover:shadow-md'
+                    : `glass glass-highlight ${isLive ? 'glass-tinted-green' : ''}`
                 }`}
                 style={
                   isLive && !isEditing
@@ -177,7 +177,7 @@ export function TerminalGrid({
               >
                 {/* Edit mode header */}
                 {isEditing && (
-                  <div className="flex h-7 shrink-0 items-center gap-1 border-b border-zinc-700/50 bg-zinc-800 px-2">
+                  <div className="flex h-7 shrink-0 items-center gap-1 glass-header px-2">
                     <div className="widget-drag-handle cursor-grab active:cursor-grabbing">
                       <GripVertical className="h-3.5 w-3.5 text-zinc-500" />
                     </div>

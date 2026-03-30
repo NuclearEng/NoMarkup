@@ -113,13 +113,21 @@ export function ContractCard({ contract }: ContractCardProps) {
   const progressPercent =
     totalMilestones > 0 ? Math.round((approvedCount / totalMilestones) * 100) : 0;
 
+  /** Map contract status to a glass tint class */
+  const statusGlassTint = cn(
+    contract.status === CONTRACT_STATUS.ACTIVE && 'glass-tinted-emerald',
+    contract.status === CONTRACT_STATUS.PENDING_ACCEPTANCE && 'glass-tinted-amber',
+    contract.status === CONTRACT_STATUS.COMPLETED && 'glass-tinted-blue',
+    (contract.status === CONTRACT_STATUS.DISPUTED || contract.status === CONTRACT_STATUS.SUSPENDED) && 'glass-tinted-red',
+  );
+
   return (
     <Link href={`/contracts/${contract.id}` as Route} className="block">
-      <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
-        <CardHeader className="pb-3">
+      <Card className={cn('glass glass-interactive glass-highlight border', statusGlassTint)}>
+        <CardHeader className="relative z-[2] pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <FileText className="text-muted-foreground h-4 w-4 shrink-0" aria-hidden="true" />
+              <FileText className="h-4 w-4 shrink-0" style={{ opacity: 0.4 }} aria-hidden="true" />
               <h3 className="truncate text-base font-semibold">{contract.contract_number}</h3>
             </div>
             <Badge
@@ -130,40 +138,45 @@ export function ContractCard({ contract }: ContractCardProps) {
             </Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="relative z-[2] space-y-3">
           {/* Amount and payment timing */}
           <div className="flex items-baseline justify-between">
             <p className="text-2xl font-bold tabular-nums tracking-tight">
               {formatCents(contract.amount_cents)}
             </p>
-            <div className="text-muted-foreground flex items-center gap-1 text-sm">
+            <div className="flex items-center gap-1 text-sm" style={{ opacity: 0.7 }}>
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               {getPaymentTimingLabel(contract.payment_timing)}
             </div>
           </div>
 
-          {/* Milestone progress with gradient bar */}
+          {/* Milestone progress with gradient bar on glass */}
           {totalMilestones > 0 ? (
             <div className="space-y-1.5">
-              <div className="text-muted-foreground flex items-center justify-between text-xs">
+              <div className="flex items-center justify-between text-xs" style={{ opacity: 0.7 }}>
                 <span className="font-medium">Milestones</span>
                 <span className="flex items-center gap-1.5">
                   <span>
                     {String(approvedCount)} / {String(totalMilestones)} completed
                   </span>
-                  <span className="font-semibold text-foreground">
+                  <span className="font-semibold" style={{ opacity: 1 }}>
                     {String(progressPercent)}%
                   </span>
                 </span>
               </div>
-              {/* Custom gradient progress bar */}
-              <div className="relative h-2 w-full overflow-hidden rounded-full bg-primary/10">
+              {/* Progress bar with glow against glass */}
+              <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
                 <div
                   className={cn(
                     'h-full rounded-full transition-all duration-500',
                     getProgressGradient(progressPercent),
                   )}
-                  style={{ width: `${String(progressPercent)}%` }}
+                  style={{
+                    width: `${String(progressPercent)}%`,
+                    boxShadow: progressPercent >= 100
+                      ? '0 0 8px rgba(16, 185, 129, 0.4)'
+                      : '0 0 6px rgba(59, 130, 246, 0.3)',
+                  }}
                   role="progressbar"
                   aria-valuenow={progressPercent}
                   aria-valuemin={0}
@@ -187,7 +200,7 @@ export function ContractCard({ contract }: ContractCardProps) {
           ) : null}
 
           {/* Job title reference */}
-          <p className="text-muted-foreground truncate text-xs">
+          <p className="truncate text-xs" style={{ opacity: 0.7 }}>
             {contract.job_title || `Job: ${contract.job_id.slice(0, 8)}...`}
           </p>
         </CardContent>

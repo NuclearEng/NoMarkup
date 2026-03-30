@@ -300,8 +300,8 @@ export default function LandingPage() {
           <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-20">
             {/* Left column — text content */}
             <div className="mx-auto max-w-xl text-center lg:mx-0 lg:text-left">
-              {/* Eyebrow badge */}
-              <div className="animate-fade-in mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-1.5 text-sm text-white/50 backdrop-blur-sm">
+              {/* Eyebrow badge — glass pill */}
+              <div className="glass-pill animate-fade-in mb-8 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm text-white/60">
                 <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
                 <span>Providers compete. You save.</span>
               </div>
@@ -340,12 +340,7 @@ export default function LandingPage() {
               >
                 <Button
                   size="lg"
-                  className="cta-glow-btn min-h-[52px] rounded-xl px-9 text-base font-semibold"
-                  style={{
-                    background: 'linear-gradient(135deg, #d4b55a, #c9a84c, #a08839)',
-                    color: '#fff',
-                    boxShadow: '0 0 16px rgba(201,168,76,0.25), 0 4px 12px rgba(0,0,0,0.3)',
-                  }}
+                  className="glass-cta-gold min-h-[52px] rounded-xl px-9 text-base font-semibold"
                   asChild
                 >
                   <Link href="/register">
@@ -356,7 +351,7 @@ export default function LandingPage() {
                 <Button
                   variant="outline"
                   size="lg"
-                  className="min-h-[52px] rounded-xl border-white/[0.1] bg-white/[0.03] px-9 text-base text-white/70 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+                  className="glass-cta-secondary min-h-[52px] rounded-xl px-9 text-base"
                   asChild
                 >
                   <Link href="/jobs">Browse jobs</Link>
@@ -438,11 +433,11 @@ export default function LandingPage() {
             {STATS.map((stat, i) => (
               <div
                 key={stat.label}
-                className={`flex flex-col items-center text-center transition-all duration-700 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
+                className={`glass-stat-card glass-highlight glass-specular-anim flex flex-col items-center px-6 py-8 text-center transition-all duration-700 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
                 style={{ transitionDelay: `${String(i * 120)}ms` }}
               >
                 <p
-                  className="text-4xl font-black tracking-tight sm:text-5xl"
+                  className="relative z-[3] text-4xl font-black tracking-tight sm:text-5xl"
                   style={{ color: stat.color }}
                 >
                   {'display' in stat && stat.display ? (
@@ -451,11 +446,13 @@ export default function LandingPage() {
                     <AnimatedCounter end={stat.value} prefix={stat.prefix} suffix={stat.suffix} />
                   )}
                 </p>
-                <p className="text-muted-foreground mt-2 text-sm font-medium tracking-wide uppercase">
+                <p className="text-muted-foreground relative z-[3] mt-2 text-sm font-medium tracking-wide uppercase">
                   {stat.label}
                 </p>
                 {statsSection.inView ? (
-                  <MicroSparkline data={stat.sparkline} color={stat.color} />
+                  <div className="relative z-[3]">
+                    <MicroSparkline data={stat.sparkline} color={stat.color} />
+                  </div>
                 ) : null}
               </div>
             ))}
@@ -512,21 +509,21 @@ export default function LandingPage() {
             ].map((item, i) => (
               <div
                 key={item.step}
-                className={`step-card-glow bg-card relative rounded-2xl border p-8 text-center transition-all duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
+                className={`glass glass-interactive glass-highlight glass-specular-anim step-card-glow relative rounded-2xl p-8 text-center transition-all duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
                 style={{ transitionDelay: `${String(200 + i * 150)}ms` }}
               >
                 {/* Large step number — gradient gold */}
-                <div className="gold-text mx-auto text-5xl font-black" aria-hidden="true">
+                <div className="gold-text relative z-[3] mx-auto text-5xl font-black" aria-hidden="true">
                   {String(item.step)}
                 </div>
 
                 {/* Icon */}
-                <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-gold)]/10 ring-1 ring-[var(--brand-gold)]/15">
+                <div className="relative z-[3] mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-gold)]/10 ring-1 ring-[var(--brand-gold)]/15">
                   <item.icon className="h-7 w-7" style={{ color: 'var(--brand-gold)' }} />
                 </div>
 
-                <h3 className="mt-5 text-lg font-bold">{item.title}</h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
+                <h3 className="relative z-[3] mt-5 text-lg font-bold">{item.title}</h3>
+                <p className="text-muted-foreground relative z-[3] mt-3 text-sm leading-relaxed">
                   {item.description}
                 </p>
               </div>
@@ -540,16 +537,16 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section className="py-28 sm:py-36" aria-labelledby="trust-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          {/* Testimonial */}
-          <div className="mx-auto max-w-2xl text-center">
+          {/* Testimonial — glass elevated card */}
+          <div className="glass glass-elevated glass-highlight glass-specular-anim mx-auto max-w-2xl rounded-2xl p-10 text-center sm:p-12">
             {/* Decorative quote mark */}
             <div
-              className="gold-text mx-auto mb-6 text-6xl leading-none font-black"
+              className="gold-text relative z-[3] mx-auto mb-6 text-6xl leading-none font-black"
               aria-hidden="true"
             >
               &ldquo;
             </div>
-            <blockquote>
+            <blockquote className="relative z-[3]">
               <p className="text-foreground/70 text-lg leading-relaxed sm:text-xl">
                 I posted a bathroom remodel expecting to pay $8,000. Four providers competed and I
                 picked an incredible contractor for{' '}
@@ -609,18 +606,18 @@ export default function LandingPage() {
               <Link
                 key={cat.name}
                 href="/jobs"
-                className={`group bg-card flex flex-col items-center gap-3 rounded-2xl border p-7 text-center transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--brand-gold)]/20 hover:shadow-[var(--brand-gold)]/5 hover:shadow-xl ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+                className={`glass glass-interactive glass-highlight group flex flex-col items-center gap-3 rounded-2xl p-7 text-center transition-all duration-300 hover:border-[var(--brand-gold)]/20 ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
                 style={{
                   transitionDelay: categories.inView ? `${String(200 + i * 75)}ms` : '0ms',
                 }}
               >
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-gold)]/[0.08] ring-1 ring-[var(--brand-gold)]/10 transition-colors group-hover:bg-[var(--brand-gold)]/[0.14]">
+                <div className="relative z-[3] flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-gold)]/[0.08] ring-1 ring-[var(--brand-gold)]/10 transition-colors group-hover:bg-[var(--brand-gold)]/[0.14]">
                   <cat.icon
                     className="animate-icon-hover h-6 w-6 transition-transform"
                     style={{ color: 'var(--brand-gold)' }}
                   />
                 </div>
-                <div>
+                <div className="relative z-[3]">
                   <p className="font-bold">{cat.name}</p>
                   <p className="text-muted-foreground mt-0.5 text-xs">
                     {cat.providers.toLocaleString()} providers
@@ -637,22 +634,17 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section className="py-28 sm:py-36" aria-labelledby="cta-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 id="cta-heading" className="text-3xl font-black tracking-tight sm:text-4xl">
+          <div className="glass glass-elevated glass-highlight glass-tinted-gold glass-specular-anim mx-auto max-w-2xl rounded-2xl p-10 text-center sm:p-14">
+            <h2 id="cta-heading" className="relative z-[3] text-3xl font-black tracking-tight sm:text-4xl">
               Ready to save?
             </h2>
-            <p className="text-muted-foreground mt-5 text-lg">
+            <p className="text-muted-foreground relative z-[3] mt-5 text-lg">
               Join thousands of homeowners who stopped overpaying for quality service.
             </p>
-            <div className="mt-12">
+            <div className="relative z-[3] mt-12">
               <Button
                 size="lg"
-                className="cta-glow-btn min-h-[52px] rounded-xl px-10 text-base font-semibold"
-                style={{
-                  background: 'linear-gradient(135deg, #d4b55a, #c9a84c, #a08839)',
-                  color: '#fff',
-                  boxShadow: '0 0 16px rgba(201,168,76,0.2), 0 4px 12px rgba(0,0,0,0.15)',
-                }}
+                className="glass-cta-gold min-h-[52px] rounded-xl px-10 text-base font-semibold"
                 asChild
               >
                 <Link href="/register">

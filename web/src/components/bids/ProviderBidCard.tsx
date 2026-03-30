@@ -116,9 +116,17 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
 
   const isActive = bid.status === BID_STATUS.ACTIVE;
 
+  /** Map bid status to glass tint */
+  const bidGlassTint =
+    bid.status === BID_STATUS.AWARDED
+      ? 'glass-tinted-emerald'
+      : bid.status === BID_STATUS.ACTIVE
+        ? 'glass-tinted-blue'
+        : '';
+
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card className={`glass glass-interactive glass-highlight border ${bidGlassTint}`}>
+      <CardHeader className="relative z-[2] pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             {jobTitle ? (
@@ -130,14 +138,16 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                   {jobTitle}
                 </h3>
                 <ExternalLink
-                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ opacity: 0.7 }}
                   aria-hidden="true"
                 />
               </Link>
             ) : (
               <Link
                 href={`/jobs/${bid.job_id}` as Route}
-                className="text-sm text-muted-foreground hover:underline"
+                className="text-sm hover:underline"
+                style={{ opacity: 0.7 }}
               >
                 View Job
               </Link>
@@ -148,17 +158,17 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="relative z-[2] space-y-4">
         {/* Current bid amount */}
         <div className="flex items-baseline justify-between">
           <div>
-            <p className="text-xs text-muted-foreground">Your Bid</p>
+            <p className="text-xs" style={{ opacity: 0.7 }}>Your Bid</p>
             <p className="text-2xl font-bold">{formatCents(bid.amount_cents)}</p>
           </div>
           {bid.original_amount_cents !== bid.amount_cents ? (
             <div className="text-right">
-              <p className="text-xs text-muted-foreground">Original</p>
-              <p className="text-sm text-muted-foreground line-through">
+              <p className="text-xs" style={{ opacity: 0.7 }}>Original</p>
+              <p className="text-sm line-through" style={{ opacity: 0.7 }}>
                 {formatCents(bid.original_amount_cents)}
               </p>
             </div>
@@ -210,7 +220,7 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
         ) : null}
 
         {/* Timestamps */}
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs" style={{ opacity: 0.7 }}>
           Placed {formatRelativeTime(new Date(bid.created_at))}
           {bid.awarded_at
             ? ` \u2022 Awarded ${formatRelativeTime(new Date(bid.awarded_at))}`

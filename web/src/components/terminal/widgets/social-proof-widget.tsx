@@ -12,14 +12,14 @@ export function SocialProofWidget({ sim, startingPriceCents }: WidgetProps) {
 
   if (sim.bidCount === 0) {
     return (
-      <div className="flex h-full items-center justify-center bg-zinc-950/40">
+      <div className="flex h-full items-center justify-center">
         <p className="text-zinc-500 text-sm">Waiting for bids...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center bg-zinc-950/40 p-4 text-center">
+    <div className="flex h-full flex-col items-center justify-center p-4 text-center">
       <style>{`
         @keyframes socialGlow {
           0%, 100% { text-shadow: 0 0 10px rgba(16, 185, 129, 0.3); }

@@ -21,7 +21,7 @@ export function Header() {
   }
 
   return (
-    <header className="bg-background border-b">
+    <header className="glass-nav sticky top-0 z-40">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Logo />
 
@@ -88,7 +88,7 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav id="mobile-menu" className="border-t px-4 py-4 md:hidden" aria-label="Mobile">
+        <nav id="mobile-menu" className="glass-elevated border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
           <div className="flex flex-col gap-3">
             {isHydrating ? null : isAuthenticated ? (
               <>

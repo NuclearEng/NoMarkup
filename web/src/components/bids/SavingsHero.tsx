@@ -122,8 +122,7 @@ export function SavingsHero({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl border border-emerald-500/20 px-4 py-4 sm:px-6 sm:py-5',
-        'bg-gradient-to-r from-emerald-500/10 via-emerald-400/5 to-teal-500/10',
+        'glass glass-tinted-green glass-highlight relative overflow-hidden px-4 py-4 sm:px-6 sm:py-5',
         isGreatDeal && 'animate-savings-sparkle',
         isAnimating && 'scale-[1.02] transition-transform duration-300',
         className,

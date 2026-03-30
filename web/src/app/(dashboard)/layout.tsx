@@ -85,9 +85,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex min-h-screen flex-col">
         <Header />
 
-        {/* Mobile nav bar - shown below header on small screens */}
+        {/* Mobile nav bar - glass treatment with backdrop blur */}
         <nav
-          className="flex overflow-x-auto border-b px-2 py-1 lg:hidden"
+          className="glass-nav flex overflow-x-auto px-2 py-1 lg:hidden"
           aria-label="Dashboard navigation (mobile)"
         >
           {allNavItems.map((item) => {
@@ -97,10 +97,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex min-h-[44px] min-w-[44px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-md px-3 py-1 text-[0.625rem] font-medium',
+                  'flex min-h-[44px] min-w-[44px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-3 py-1 text-[0.625rem] font-medium transition-colors duration-200',
                   active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    ? 'bg-white/10 text-foreground'
+                    : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
                 )}
               >
                 <item.icon className="h-5 w-5" aria-hidden="true" />
@@ -111,7 +111,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         <div className="flex flex-1">
-          <aside className="hidden w-64 border-r lg:block">
+          {/* Sidebar - glass panel with specular highlight */}
+          <aside className="glass-sidebar hidden w-64 lg:block">
             <nav className="space-y-1 p-4" aria-label="Dashboard navigation">
               {allNavItems.map((item) => {
                 const active = isActive(pathname, item.href);
@@ -120,13 +121,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex min-h-[44px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
+                      'relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                       active
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                        ? 'bg-white/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+                        : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
                     )}
                   >
-                    <item.icon className="h-4 w-4" aria-hidden="true" />
+                    <item.icon className="h-4 w-4" style={{ opacity: active ? 1 : 0.7 }} aria-hidden="true" />
                     {item.label}
                   </Link>
                 );
@@ -134,7 +135,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </nav>
           </aside>
           <WebSocketProvider>
-            <main className="flex-1 p-6">{children}</main>
+            {/* Main content area with ambient background for glass refraction */}
+            <main className="dashboard-ambient flex-1 p-6">{children}</main>
           </WebSocketProvider>
         </div>
       </div>

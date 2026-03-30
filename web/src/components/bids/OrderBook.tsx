@@ -74,7 +74,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
     return (
       <div
         className={cn(
-          'rounded-xl border border-zinc-800/50 bg-zinc-900/60 p-6 text-center',
+          'glass p-6 text-center',
           className,
         )}
         role="region"
@@ -89,7 +89,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
 
   return (
     <div
-      className={cn('rounded-xl border border-zinc-800/50 bg-zinc-950/60 overflow-hidden', className)}
+      className={cn('glass overflow-hidden', className)}
       role="region"
       aria-label={`Order book showing ${String(sortedBids.length)} bids for job`}
     >
@@ -109,7 +109,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
       `}</style>
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800/60 bg-zinc-900/80 px-4 py-2.5">
+      <div className="flex items-center justify-between glass-header px-4 py-2.5">
         <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
           Order Book
         </h3>
@@ -121,7 +121,8 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
       {/* Column headers — mobile hides Trust, desktop shows all 5 */}
       <div
         className={cn(
-          'grid items-center gap-3 border-b border-zinc-800/40 bg-zinc-900/40 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600',
+          'grid items-center gap-3 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600',
+          'border-b border-white/[0.04] bg-white/[0.02]',
           GRID_COLS,
           GRID_COLS_SM,
         )}
@@ -163,11 +164,11 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
             <div
               key={bid.id}
               className={cn(
-                'relative grid items-center gap-3 px-4 py-2.5 transition-colors hover:bg-zinc-800/40',
+                'relative grid items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03]',
                 GRID_COLS,
                 GRID_COLS_SM,
-                isLowest && 'border-l-2 border-l-amber-500/60',
-                !isLowest && 'border-b border-b-zinc-800/30',
+                isLowest && 'border-l-2 border-l-amber-500/60 glass-tinted-amber',
+                !isLowest && 'border-b border-b-white/[0.04]',
               )}
               style={{
                 animation: bid.is_new ? 'orderBookFlash 2s ease-out forwards' : undefined,

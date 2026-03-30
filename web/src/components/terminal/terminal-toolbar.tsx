@@ -104,7 +104,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
   return (
     <div
       className={cn(
-        'flex h-10 items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 backdrop-blur-xl',
+        'glass-toolbar flex h-10 items-center gap-1.5 rounded-2xl px-3',
         className,
       )}
     >

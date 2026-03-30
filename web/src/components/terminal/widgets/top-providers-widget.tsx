@@ -24,20 +24,20 @@ function fmt(cents: number): string {
 export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: WidgetProps) {
   if (sim.orderBookBids.length < 3) {
     return (
-      <div className="flex h-full items-center justify-center bg-zinc-950/40">
+      <div className="flex h-full items-center justify-center">
         <p className="text-zinc-500 text-sm">Waiting for more bids...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-zinc-950/40">
-      <div className="shrink-0 border-b border-zinc-800/60 bg-zinc-900/80 px-4 py-2.5">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 glass-header px-4 py-2.5">
         <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
           Top Providers
         </h3>
       </div>
-      <div className="divide-zinc-800/40 min-h-0 flex-1 divide-y overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {sim.orderBookBids.slice(0, 3).map((bid, idx) => {
           const provider = mockProviders.find((p) => p.name === bid.provider_name);
           const tierKey = (bid.trust_tier as keyof typeof TIER_COLORS) || 'new';
@@ -46,7 +46,9 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
           const medal = medals[idx] ?? '';
 
           return (
-            <div key={bid.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-800/30">
+            <div key={bid.id}>
+              {idx > 0 && <div className="glass-divider mx-4" />}
+              <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]">
               <span className="text-xl" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>{medal}</span>
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 ${colors.bg} ${colors.text} ${colors.ring}`}
@@ -81,6 +83,7 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
                   % off
                 </p>
               </div>
+            </div>
             </div>
           );
         })}

@@ -59,7 +59,7 @@ function EmptyState() {
     <div className="flex h-full flex-col items-center justify-center">
       <AnimatedIllustration type="no-messages" size="lg" />
       <h2 className="mt-4 text-lg font-medium">Select a conversation</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm" style={{ opacity: 0.7 }}>
         Choose a conversation from the list to start messaging.
       </p>
     </div>
@@ -84,14 +84,16 @@ export default function MessagesPage() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-lg border">
+      <div className="glass flex min-h-0 flex-1 overflow-hidden rounded-xl border">
         {/* Desktop: side-by-side layout */}
         {/* Mobile: show either channel list or thread */}
 
-        {/* Channel list sidebar */}
+        {/* Channel list sidebar — glass panel */}
         <div
           className={cn(
-            'w-full border-r md:w-80 md:block',
+            'w-full md:w-80 md:block',
+            'border-r border-white/[0.06]',
+            'bg-white/[0.02]',
             activeChannelId ? 'hidden md:block' : 'block',
           )}
         >

@@ -48,23 +48,24 @@ export function VerifyEmailContent() {
   }, [token, verify]);
 
   return (
-    <Card>
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Email Verification</CardTitle>
-        <CardDescription>
+    <Card className="glass-auth-card border-0 shadow-none">
+      <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+      <CardHeader className="relative z-[2] text-center">
+        <CardTitle className="text-2xl text-white">Email Verification</CardTitle>
+        <CardDescription className="text-white/50">
           {state === 'loading' && 'Verifying your email address...'}
           {state === 'success' && 'Your email has been verified'}
           {state === 'error' && 'Verification failed'}
         </CardDescription>
       </CardHeader>
-      <CardContent className="text-center">
+      <CardContent className="relative z-[2] text-center">
         {state === 'loading' && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/50">
             Please wait while we verify your email.
           </p>
         )}
         {state === 'success' && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/50">
             Your email address has been successfully verified. You can now sign
             in to your account.
           </p>
@@ -75,8 +76,8 @@ export function VerifyEmailContent() {
           </p>
         )}
       </CardContent>
-      <CardFooter className="justify-center">
-        <Button asChild className="min-h-[44px]">
+      <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
+        <Button asChild className="glass-cta-gold min-h-[44px] rounded-lg">
           <Link href="/login">Go to Sign In</Link>
         </Button>
       </CardFooter>

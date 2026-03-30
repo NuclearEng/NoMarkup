@@ -23,7 +23,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
     sim.currentLowest > 0 ? Math.round((savingsCents / startingPriceCents) * 100) : 0;
 
   return (
-    <div className={`flex h-full flex-col overflow-hidden rounded-2xl ${sim.isRunning ? 'hero-strip-live-glow' : ''}`}>
+    <div className={`glass glass-elevated glass-highlight flex h-full flex-col overflow-hidden rounded-2xl ${sim.isRunning ? 'hero-strip-live-glow' : ''}`}>
       {/* Animated gold accent line at top */}
       <div className="hero-gold-line-animated h-[2px] shrink-0" />
 
@@ -31,7 +31,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
       <div
         className="relative flex min-h-0 flex-1 flex-col"
         style={{
-          background: 'linear-gradient(to right, #18181b, rgba(24,24,27,0.97), #18181b)',
+          background: 'linear-gradient(to right, rgba(24,24,27,0.85), rgba(24,24,27,0.7), rgba(24,24,27,0.85))',
         }}
       >
         {/* Subtle noise texture */}
@@ -106,9 +106,9 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
           </div>
 
           {/* Bids stat */}
-          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
+          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
             <div className="hero-stat-accent-blue absolute top-0 left-0 right-0 h-[2px]" />
-            <div className="absolute top-0 bottom-0 left-0 w-px bg-zinc-700/60" />
+            <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Users className="mb-1 h-4 w-4 text-blue-400/70" />
             <p className="text-3xl font-black tabular-nums text-zinc-100">{String(sim.bidCount)}</p>
             <p className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500">
@@ -117,9 +117,9 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
           </div>
 
           {/* Timer */}
-          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
+          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
             <div className="hero-stat-accent-amber absolute top-0 left-0 right-0 h-[2px]" />
-            <div className="absolute top-0 bottom-0 left-0 w-px bg-zinc-700/60" />
+            <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Clock className="mb-1 h-4 w-4 text-amber-400/70" />
             <AuctionTimer auctionEndsAt={auctionEndsAt} compact />
             <p className="mt-0.5 text-[10px] font-semibold tracking-wider uppercase text-zinc-500">
@@ -128,9 +128,9 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
           </div>
 
           {/* Snipe */}
-          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
+          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
             <div className="hero-stat-accent-violet absolute top-0 left-0 right-0 h-[2px]" />
-            <div className="absolute top-0 bottom-0 left-0 w-px bg-zinc-700/60" />
+            <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Shield className="mb-1 h-4 w-4 text-violet-400/70" />
             <SnipeIndicator count={0} max={3} />
           </div>

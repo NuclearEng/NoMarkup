@@ -157,8 +157,8 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
 
       <div
         className={cn(
-          'auction-halo relative rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5 backdrop-blur-xl',
-          'shadow-2xl shadow-black/50',
+          'relative rounded-2xl border border-white/[0.1] bg-zinc-900/80 p-5',
+          'shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_20px_50px_-12px_rgba(0,0,0,0.6)]',
           'transition-all duration-300',
           '[transform:rotateY(-2deg)_rotateX(1deg)]',
           'hover:[transform:rotateY(0deg)_rotateX(0deg)]',
@@ -191,15 +191,15 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-widest text-white/35">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400/70">
               Live Auction
             </p>
-            <h3 className="mt-1 text-base font-bold text-white">
+            <h3 className="mt-1 text-base font-bold text-zinc-100">
               Kitchen Renovation
             </h3>
           </div>
           {/* Timer */}
-          <div className="flex items-center gap-1.5 rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-xs tabular-nums text-white/60">
+          <div className="flex items-center gap-1.5 rounded-lg bg-zinc-800/80 px-2.5 py-1.5 text-xs tabular-nums text-zinc-400 border border-white/[0.06]">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
@@ -208,23 +208,23 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
           </div>
         </div>
 
-        {/* Current price display — cinematic prominence */}
-        <div className="mt-5 rounded-xl bg-white/[0.03] p-4 ring-1 ring-white/[0.06]">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+        {/* Current price display — crisp, sharp */}
+        <div className="mt-5 rounded-xl bg-zinc-800/60 p-4 border border-white/[0.06]">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
             Current Best Price
           </p>
           <div className="mt-2 flex items-baseline gap-3">
             <span
               className={cn(
                 'text-4xl font-black tabular-nums tracking-tight transition-all duration-500',
-                flashActive ? 'text-emerald-400 scale-105' : 'text-white',
+                flashActive ? 'text-emerald-400 scale-105' : 'text-zinc-50',
               )}
               style={{ transformOrigin: 'left bottom' }}
             >
               {formatDollars(currentPrice)}
             </span>
             {visibleBids > 0 ? (
-              <span className="text-sm text-white/25 line-through tabular-nums">
+              <span className="text-sm text-zinc-500 line-through tabular-nums">
                 {formatDollars(STARTING_PRICE)}
               </span>
             ) : null}
@@ -324,18 +324,18 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
 
           {/* Placeholder rows for bids not yet visible */}
           {visibleBids < 3 ? (
-            <div className="flex items-center gap-3 rounded-lg border border-dashed border-white/[0.04] px-3 py-2.5">
-              <div className="h-8 w-8 shrink-0 rounded-full bg-white/[0.03]" />
+            <div className="flex items-center gap-3 rounded-lg border border-dashed border-zinc-700/50 px-3 py-2.5">
+              <div className="h-8 w-8 shrink-0 rounded-full bg-zinc-800/60" />
               <div className="flex-1">
-                <div className="h-3 w-24 rounded bg-white/[0.04]" />
+                <div className="h-3 w-24 rounded bg-zinc-800/60" />
               </div>
-              <div className="h-3 w-12 rounded bg-white/[0.04]" />
+              <div className="h-3 w-12 rounded bg-zinc-800/60" />
             </div>
           ) : null}
         </div>
 
         {/* Bottom label with animated down arrow */}
-        <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] font-medium text-white/30">
+        <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] font-medium text-zinc-500">
           <span>Prices go down as providers compete</span>
           <svg
             width="10"

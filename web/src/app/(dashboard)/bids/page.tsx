@@ -50,7 +50,7 @@ function BidTabContent({ tab }: { tab: BidTab }) {
 
   if (isError) {
     return (
-      <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+      <div className="glass rounded-lg border border-destructive/50 p-4 text-sm text-destructive">
         Failed to load bids. Please try refreshing the page.
       </div>
     );
@@ -68,10 +68,10 @@ function BidTabContent({ tab }: { tab: BidTab }) {
     };
 
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border bg-muted/50 py-12">
+      <div className="glass-empty-state flex flex-col items-center justify-center py-12">
         <AnimatedIllustration type="no-bids" size="md" />
         <p className="mt-4 text-lg font-medium">No bids</p>
-        <p className="mt-1 text-sm text-muted-foreground">{emptyMessages[tab]}</p>
+        <p className="mt-1 text-sm" style={{ opacity: 0.7 }}>{emptyMessages[tab]}</p>
         <Button asChild className="mt-4 min-h-[44px]">
           <Link href="/jobs">Browse Jobs</Link>
         </Button>

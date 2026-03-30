@@ -45,6 +45,21 @@
   --status-in-progress: 38 92% 50%;
   --status-completed: 142 71% 45%;
   --status-disputed: 0 84% 60%;
+  /* Apple System Colors — Light */
+  --apple-blue: #007AFF;
+  --apple-green: #34C759;
+  --apple-red: #FF3B30;
+  --apple-orange: #FF9500;
+  --apple-yellow: #FFCC00;
+  --apple-purple: #AF52DE;
+  --apple-pink: #FF2D55;
+  --apple-gray: #8E8E93;
+  --apple-gray2: #AEAEB2;
+  --apple-gray3: #C7C7CC;
+  --apple-gray4: #D1D1D6;
+  --apple-gray5: #E5E5EA;
+  --apple-gray6: #F2F2F7;
+
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -83,6 +98,21 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+
+  /* Apple System Colors — Dark */
+  --apple-blue: #0A84FF;
+  --apple-green: #30D158;
+  --apple-red: #FF453A;
+  --apple-orange: #FF9F0A;
+  --apple-yellow: #FFD60A;
+  --apple-purple: #BF5AF2;
+  --apple-pink: #FF375F;
+  --apple-gray: #8E8E93;
+  --apple-gray2: #636366;
+  --apple-gray3: #48484A;
+  --apple-gray4: #3A3A3C;
+  --apple-gray5: #2C2C2E;
+  --apple-gray6: #1C1C1E;
 
   --brand-gold: #d4af57;
   --brand-gold-dim: #b89a45;
@@ -1020,4 +1050,663 @@ body {
 }
 .react-resizable-handle:hover::after {
   border-color: oklch(0.6 0.15 160 / 70%);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Liquid Glass Material System — Apple HIG Compliant
+   Comprehensive glass materials with accessibility support
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Base glass — dark variant ─── */
+.glass {
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px) saturate(180%) brightness(110%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(110%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+/* ─── Light mode glass ─── */
+.glass-light {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 8px 32px rgba(31, 38, 135, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+}
+
+/* ─── Specular highlight overlay — top-edge shine ─── */
+.glass-specular::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    175deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.04) 15%,
+    transparent 50%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Legacy alias for specular highlight */
+.glass-highlight {
+  position: relative;
+}
+.glass-highlight::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    175deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.04) 15%,
+    transparent 50%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ─── Inner refraction glow ─── */
+.glass-refraction::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 20px rgba(255, 255, 255, 0.03),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ─── Elevated glass — more depth, hero elements ─── */
+.glass-elevated {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(20px) saturate(200%) brightness(115%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%) brightness(115%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ─── Glass tint variants — subtle color accents ─── */
+.glass-tint-green { background: rgba(52, 199, 89, 0.06); border-color: rgba(52, 199, 89, 0.15); }
+.glass-tint-blue { background: rgba(0, 122, 255, 0.06); border-color: rgba(0, 122, 255, 0.15); }
+.glass-tint-amber { background: rgba(255, 149, 0, 0.06); border-color: rgba(255, 149, 0, 0.15); }
+.glass-tint-red { background: rgba(255, 59, 48, 0.06); border-color: rgba(255, 59, 48, 0.15); }
+.glass-tint-purple { background: rgba(175, 82, 222, 0.06); border-color: rgba(175, 82, 222, 0.15); }
+.glass-tint-gold { background: rgba(201, 168, 76, 0.06); border-color: rgba(201, 168, 76, 0.15); }
+
+/* Legacy tint aliases (backward compat) */
+.glass-tinted-green { background: rgba(34, 197, 94, 0.06); border-color: rgba(34, 197, 94, 0.15); }
+.glass-tinted-amber { background: rgba(245, 158, 11, 0.06); border-color: rgba(245, 158, 11, 0.15); }
+.glass-tinted-gold { background: rgba(201, 168, 76, 0.06); border-color: rgba(201, 168, 76, 0.15); }
+
+/* ─── Interactive glass — hover lift ─── */
+.glass-interactive {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+/* ─── Glass divider — subtle horizontal separator ─── */
+.glass-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+}
+
+/* ─── Glass section header ─── */
+.glass-section-header {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Legacy alias */
+.glass-header {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Glass toolbar — thin variant ─── */
+.glass-toolbar {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Glass nav bar ─── */
+.glass-nav {
+  background: rgba(15, 15, 20, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Glass input — form fields with glass treatment ─── */
+.glass-input {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+.glass-input:focus,
+.glass-input:focus-within {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15);
+}
+
+/* ─── Glass badge — subtle glass backdrop for badges ─── */
+.glass-badge {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ─── Glass button — transparent glass with backdrop-filter ─── */
+.glass-button {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.2s ease;
+}
+.glass-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Terminal glass mesh background — subtle animated gradient blobs */
+@keyframes terminal-blob-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+  33% { transform: translate(40px, 30px) scale(1.1); opacity: 0.5; }
+  66% { transform: translate(-20px, -20px) scale(0.9); opacity: 0.35; }
+}
+@keyframes terminal-blob-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+  50% { transform: translate(-30px, 20px) scale(1.15); opacity: 0.45; }
+}
+@keyframes terminal-blob-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.35; }
+  33% { transform: translate(20px, -30px) scale(0.95); opacity: 0.4; }
+  66% { transform: translate(-15px, 15px) scale(1.05); opacity: 0.3; }
+}
+.terminal-blob-1 { animation: terminal-blob-1 60s ease-in-out infinite; }
+.terminal-blob-2 { animation: terminal-blob-2 50s ease-in-out infinite; }
+.terminal-blob-3 { animation: terminal-blob-3 55s ease-in-out infinite; }
+
+/* ─── Additional tinted glass variants for dashboard ─── */
+.glass-tinted-blue {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.15);
+}
+.glass-tinted-violet {
+  background: rgba(139, 92, 246, 0.06);
+  border-color: rgba(139, 92, 246, 0.15);
+}
+.glass-tinted-emerald {
+  background: rgba(16, 185, 129, 0.06);
+  border-color: rgba(16, 185, 129, 0.15);
+}
+.glass-tinted-cyan {
+  background: rgba(6, 182, 212, 0.06);
+  border-color: rgba(6, 182, 212, 0.15);
+}
+
+/* ─── Dashboard ambient background — subtle gradient mesh for glass refraction ─── */
+.dashboard-ambient {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 20%, rgba(59, 130, 246, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 60%, rgba(139, 92, 246, 0.03) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 50% 80%, rgba(16, 185, 129, 0.03) 0%, transparent 50%);
+}
+
+/* ─── Glass sidebar panel ─── */
+.glass-sidebar {
+  position: relative;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+.glass-sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    175deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 10%,
+    transparent 40%
+  );
+  pointer-events: none;
+}
+
+/* ─── Glass tab bar — active tab brighter ─── */
+.glass-tab-active {
+  background: rgba(255, 255, 255, 0.1);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Glass empty state ─── */
+.glass-empty-state {
+  position: relative;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+}
+
+/* ═══ Accessibility: Increased Contrast ═══
+   When the user requests more contrast, glass transparency is replaced
+   with solid backgrounds so text always meets WCAG AA 4.5:1 ratios. */
+@media (prefers-contrast: more) {
+  .glass,
+  .glass-light,
+  .glass-elevated,
+  .glass-tint-green,
+  .glass-tint-blue,
+  .glass-tint-amber,
+  .glass-tint-red,
+  .glass-tint-purple,
+  .glass-tint-gold,
+  .glass-tinted-green,
+  .glass-tinted-amber,
+  .glass-tinted-gold,
+  .glass-tinted-blue,
+  .glass-tinted-violet,
+  .glass-tinted-emerald,
+  .glass-tinted-cyan,
+  .glass-tinted-red,
+  .glass-toolbar,
+  .glass-nav,
+  .glass-sidebar,
+  .glass-input,
+  .glass-badge,
+  .glass-button,
+  .glass-empty-state {
+    background: rgb(24, 24, 27) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+  }
+  .glass-specular::before,
+  .glass-highlight::before,
+  .glass-sidebar::before {
+    display: none !important;
+  }
+  .glass-refraction::after {
+    display: none !important;
+  }
+  .glass-tab-active {
+    background: rgb(40, 40, 45) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.5) !important;
+  }
+  .dashboard-ambient {
+    background: none !important;
+  }
+}
+
+/* ═══ Accessibility: Reduced Transparency ═══ */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-light,
+  .glass-elevated,
+  .glass-tint-green,
+  .glass-tint-blue,
+  .glass-tint-amber,
+  .glass-tint-red,
+  .glass-tint-purple,
+  .glass-tint-gold,
+  .glass-tinted-green,
+  .glass-tinted-amber,
+  .glass-tinted-gold,
+  .glass-tinted-blue,
+  .glass-tinted-violet,
+  .glass-tinted-emerald,
+  .glass-tinted-cyan,
+  .glass-tinted-red,
+  .glass-toolbar,
+  .glass-nav,
+  .glass-sidebar,
+  .glass-input,
+  .glass-badge,
+  .glass-button,
+  .glass-empty-state {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .glass,
+  .glass-elevated {
+    background: rgba(24, 24, 27, 0.95) !important;
+  }
+  .glass-light {
+    background: rgba(255, 255, 255, 0.95) !important;
+  }
+}
+
+/* ═══ Accessibility: Reduced Motion for Glass ═══ */
+@media (prefers-reduced-motion: reduce) {
+  .glass-interactive,
+  .glass-interactive:hover {
+    transition: none !important;
+    transform: none !important;
+  }
+  .glass-button,
+  .glass-button:hover {
+    transition: none !important;
+  }
+  .glass-input,
+  .glass-input:focus {
+    transition: none !important;
+  }
+  .terminal-blob-1,
+  .terminal-blob-2,
+  .terminal-blob-3 {
+    animation: none !important;
+  }
+  .glass-specular-anim::before {
+    animation: none !important;
+  }
+  .glass-cta-gold:hover,
+  .glass-cta-secondary:hover {
+    transform: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Light-mode Glass Overrides — frosted white variant
+   ═══════════════════════════════════════════════════════════ */
+:root .glass {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+:root .glass-elevated {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+:root .glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+:root .glass-highlight::before {
+  background: linear-gradient(
+    175deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.15) 15%,
+    transparent 50%
+  );
+}
+:root .glass-tinted-gold,
+:root .glass-tint-gold {
+  background: rgba(201, 168, 76, 0.08);
+  border-color: rgba(201, 168, 76, 0.2);
+}
+:root .glass-divider {
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent);
+}
+:root .glass-nav {
+  background: rgba(255, 255, 255, 0.7);
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+:root .glass-input {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+:root .glass-input:focus,
+:root .glass-input:focus-within {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(201, 168, 76, 0.5);
+  box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.2);
+}
+:root .glass-stat-card {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Glass CTA Button — Gold Gradient with Glass Specular
+   ═══════════════════════════════════════════════════════════ */
+.glass-cta-gold {
+  position: relative;
+  background: linear-gradient(135deg, #d4b55a, #c9a84c, #a08839);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 0 16px rgba(201, 168, 76, 0.25),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  color: #fff;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+.glass-cta-gold::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.18), transparent);
+  pointer-events: none;
+  border-radius: inherit;
+}
+.glass-cta-gold:hover {
+  box-shadow:
+    0 0 24px rgba(201, 168, 76, 0.4),
+    0 0 48px rgba(201, 168, 76, 0.2),
+    0 6px 20px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Glass secondary CTA — hero use */
+.glass-cta-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+.glass-cta-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+/* Glass pill badge — hero eyebrow */
+.glass-pill {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Animated Specular Highlight — slow shimmer across glass
+   ═══════════════════════════════════════════════════════════ */
+@keyframes specular-shift {
+  0% { transform: translateX(-120%) rotate(25deg); }
+  100% { transform: translateX(250%) rotate(25deg); }
+}
+.glass-specular-anim {
+  position: relative;
+  overflow: hidden;
+}
+.glass-specular-anim::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 30%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.06),
+    transparent
+  );
+  animation: specular-shift 8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Glass Tinted Red — error states on auth/form pages
+   ═══════════════════════════════════════════════════════════ */
+.glass-tinted-red {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Auth Page Vignette — dark moody corners
+   ═══════════════════════════════════════════════════════════ */
+.auth-vignette {
+  background: radial-gradient(ellipse 70% 50% at 50% 50%, transparent 20%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Glass Stats Card — landing page stat counters
+   ═══════════════════════════════════════════════════════════ */
+.glass-stat-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Glass Auth Card — elevated with gold accent and specular
+   ═══════════════════════════════════════════════════════════ */
+.glass-auth-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px) saturate(200%) brightness(115%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%) brightness(115%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+:root .glass-auth-card {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+/* Auth card specular overlay */
+.glass-auth-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    175deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.03) 15%,
+    transparent 50%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   High Contrast — new glass classes
+   ═══════════════════════════════════════════════════════════ */
+@media (prefers-contrast: more) {
+  .glass-cta-gold {
+    border-color: rgba(255, 255, 255, 0.5) !important;
+  }
+  .glass-cta-gold::after,
+  .glass-auth-card::before,
+  .glass-specular-anim::before {
+    display: none !important;
+  }
+  .glass-auth-card,
+  .glass-stat-card,
+  .glass-pill {
+    background: rgb(24, 24, 27) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+  }
+  .glass-tinted-red {
+    background: rgb(60, 20, 20) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: rgba(239, 68, 68, 0.5) !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-auth-card,
+  .glass-stat-card,
+  .glass-pill,
+  .glass-cta-secondary {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .glass-auth-card,
+  .glass-stat-card {
+    background: rgba(24, 24, 27, 0.95) !important;
+  }
 }

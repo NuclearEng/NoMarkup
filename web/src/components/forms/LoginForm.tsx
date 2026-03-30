@@ -86,30 +86,30 @@ export function LoginForm() {
 
   if (mfaStep) {
     return (
-      <Card className="border-border/50 overflow-hidden shadow-xl shadow-black/5 backdrop-blur-sm">
-        <div className="h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold tracking-tight">
+      <Card className="glass-auth-card border-0 shadow-none">
+        <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+        <CardHeader className="relative z-[2] text-center">
+          <CardTitle className="text-2xl font-bold tracking-tight text-white">
             Two-factor authentication
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-white/50">
             Enter the 6-digit code from your authenticator app, or use a backup code
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="relative z-[2]">
           <form onSubmit={(e) => void onMFASubmit(e)} className="space-y-4">
             {formError ? (
               <div
                 role="alert"
                 aria-live="assertive"
-                className="animate-auth-error bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+                className="glass-tinted-red animate-auth-error text-destructive rounded-lg p-3 text-sm"
               >
                 {formError}
               </div>
             ) : null}
 
             <div className="space-y-2">
-              <label htmlFor="totp-code" className="text-sm leading-none font-medium">
+              <label htmlFor="totp-code" className="text-sm leading-none font-medium text-white/80">
                 Verification code
               </label>
               <Input
@@ -122,14 +122,14 @@ export function LoginForm() {
                 maxLength={8}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                className="text-center text-lg tracking-widest"
+                className="glass-input rounded-lg text-center text-lg tracking-widest text-white placeholder:text-white/30"
               />
-              <p className="text-muted-foreground text-xs">You can also enter a backup code</p>
+              <p className="text-white/40 text-xs">You can also enter a backup code</p>
             </div>
 
             <Button
               type="submit"
-              className="min-h-[44px] w-full bg-[var(--brand-gold)] font-semibold text-white shadow-[var(--brand-gold)]/20 shadow-md transition-all hover:bg-[var(--brand-gold-bright)] hover:shadow-[var(--brand-gold)]/25 hover:shadow-lg"
+              className="glass-cta-gold min-h-[44px] w-full rounded-lg font-semibold"
               disabled={mfaSubmitting || totpCode.length < 6}
             >
               {mfaSubmitting ? 'Verifying...' : 'Verify'}
@@ -138,7 +138,7 @@ export function LoginForm() {
             <Button
               type="button"
               variant="ghost"
-              className="min-h-[44px] w-full"
+              className="min-h-[44px] w-full text-white/60 hover:text-white"
               onClick={() => {
                 setMfaStep(false);
                 setTotpCode('');
@@ -154,13 +154,13 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="border-border/50 overflow-hidden shadow-xl shadow-black/5 backdrop-blur-sm">
-      <div className="h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
-      <CardHeader className="text-center">
-        <CardTitle className="text-3xl font-bold tracking-tight">Welcome back</CardTitle>
-        <CardDescription className="text-sm">Sign in to your account</CardDescription>
+    <Card className="glass-auth-card border-0 shadow-none">
+      <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+      <CardHeader className="relative z-[2] text-center">
+        <CardTitle className="text-3xl font-bold tracking-tight text-white">Welcome back</CardTitle>
+        <CardDescription className="text-sm text-white/50">Sign in to your account</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative z-[2]">
         <OAuthButtons />
         <OAuthDivider />
         <Form {...form}>
@@ -173,7 +173,7 @@ export function LoginForm() {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="animate-auth-error bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+                className="glass-tinted-red animate-auth-error text-destructive rounded-lg p-3 text-sm"
               >
                 {formError}
               </div>
@@ -184,12 +184,13 @@ export function LoginForm() {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel className="text-white/80">Email</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -203,12 +204,13 @@ export function LoginForm() {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Password</FormLabel>
+                  <FormLabel className="text-white/80">Password</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder="Enter your password"
                       autoComplete="current-password"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -227,15 +229,15 @@ export function LoginForm() {
                       type="checkbox"
                       checked={field.value}
                       onChange={field.onChange}
-                      className="border-input accent-primary h-4 w-4 rounded"
+                      className="border-white/20 accent-[var(--brand-gold)] h-4 w-4 rounded bg-white/5"
                     />
-                    <span className="text-muted-foreground text-sm">Remember me</span>
+                    <span className="text-white/50 text-sm">Remember me</span>
                   </label>
                 )}
               />
               <Link
                 href="/forgot-password"
-                className="text-muted-foreground hover:text-foreground flex min-h-[44px] items-center text-sm font-medium underline-offset-4 transition-colors hover:underline"
+                className="text-white/50 hover:text-white flex min-h-[44px] items-center text-sm font-medium underline-offset-4 transition-colors hover:underline"
               >
                 Forgot password?
               </Link>
@@ -243,7 +245,7 @@ export function LoginForm() {
 
             <Button
               type="submit"
-              className="min-h-[44px] w-full bg-[var(--brand-gold)] font-semibold text-white shadow-[var(--brand-gold)]/20 shadow-md transition-all hover:bg-[var(--brand-gold-bright)] hover:shadow-[var(--brand-gold)]/25 hover:shadow-lg"
+              className="glass-cta-gold min-h-[44px] w-full rounded-lg font-semibold"
               disabled={form.formState.isSubmitting}
             >
               {form.formState.isSubmitting ? 'Signing in...' : 'Sign in'}
@@ -251,12 +253,12 @@ export function LoginForm() {
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="border-border/50 justify-center border-t pt-6">
-        <p className="text-muted-foreground text-sm">
+      <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
+        <p className="text-white/50 text-sm">
           Don&apos;t have an account?{' '}
           <Link
             href="/register"
-            className="text-primary font-medium underline-offset-4 hover:underline"
+            className="text-[var(--brand-gold)] font-medium underline-offset-4 hover:underline"
           >
             Create one
           </Link>

@@ -82,13 +82,13 @@ export function RegisterForm() {
   const strength = getPasswordStrength(passwordValue);
 
   return (
-    <Card className="border-border/50 overflow-hidden shadow-xl shadow-black/5 backdrop-blur-sm">
-      <div className="h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
-      <CardHeader className="text-center">
-        <CardTitle className="text-3xl font-bold tracking-tight">Create an account</CardTitle>
-        <CardDescription>Enter your details below to get started</CardDescription>
+    <Card className="glass-auth-card border-0 shadow-none">
+      <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+      <CardHeader className="relative z-[2] text-center">
+        <CardTitle className="text-3xl font-bold tracking-tight text-white">Create an account</CardTitle>
+        <CardDescription className="text-white/50">Enter your details below to get started</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative z-[2]">
         <OAuthButtons />
         <OAuthDivider />
         <Form {...form}>
@@ -101,7 +101,7 @@ export function RegisterForm() {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="animate-auth-error bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+                className="glass-tinted-red animate-auth-error text-destructive rounded-lg p-3 text-sm"
               >
                 {formError}
               </div>
@@ -112,9 +112,14 @@ export function RegisterForm() {
               name="displayName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Display name</FormLabel>
+                  <FormLabel className="text-white/80">Display name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Your name" autoComplete="name" {...field} />
+                    <Input
+                      placeholder="Your name"
+                      autoComplete="name"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -126,12 +131,13 @@ export function RegisterForm() {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel className="text-white/80">Email</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -145,25 +151,26 @@ export function RegisterForm() {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Password</FormLabel>
+                  <FormLabel className="text-white/80">Password</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder="Create a password"
                       autoComplete="new-password"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
                   {/* Password strength indicator */}
                   {passwordValue ? (
                     <div className="space-y-1 pt-1">
-                      <div className="bg-border/50 h-1.5 w-full overflow-hidden rounded-full">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                         <div
                           className={`password-strength-bar h-full rounded-full ${strength.color}`}
                           style={{ width: `${(strength.score / 5) * 100}%` }}
                         />
                       </div>
-                      <p className="text-muted-foreground text-xs">{strength.label}</p>
+                      <p className="text-white/40 text-xs">{strength.label}</p>
                     </div>
                   ) : null}
                   <FormMessage />
@@ -176,12 +183,13 @@ export function RegisterForm() {
               name="confirmPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Confirm password</FormLabel>
+                  <FormLabel className="text-white/80">Confirm password</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder="Confirm your password"
                       autoComplete="new-password"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -192,7 +200,7 @@ export function RegisterForm() {
 
             <Button
               type="submit"
-              className="min-h-[44px] w-full bg-[var(--brand-gold)] font-semibold text-white shadow-[var(--brand-gold)]/20 shadow-md transition-all hover:bg-[var(--brand-gold-bright)] hover:shadow-[var(--brand-gold)]/25 hover:shadow-lg"
+              className="glass-cta-gold min-h-[44px] w-full rounded-lg font-semibold"
               disabled={form.formState.isSubmitting}
             >
               {form.formState.isSubmitting ? 'Creating account...' : 'Create account'}
@@ -200,12 +208,12 @@ export function RegisterForm() {
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="border-border/50 justify-center border-t pt-6">
-        <p className="text-muted-foreground text-sm">
+      <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
+        <p className="text-white/50 text-sm">
           Already have an account?{' '}
           <Link
             href="/login"
-            className="text-primary font-medium underline-offset-4 hover:underline"
+            className="text-[var(--brand-gold)] font-medium underline-offset-4 hover:underline"
           >
             Sign in
           </Link>

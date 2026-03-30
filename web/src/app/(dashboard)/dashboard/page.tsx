@@ -28,7 +28,7 @@ import { useMyBids } from '@/hooks/useBids';
 import { useContracts } from '@/hooks/useContracts';
 import { useCustomerJobs } from '@/hooks/useJobs';
 import { usePayments } from '@/hooks/usePayments';
-import { formatCents } from '@/lib/utils';
+import { cn, formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
@@ -72,13 +72,13 @@ function useCountUp(target: number, duration = 600): number {
   return current;
 }
 
-/** Subtle gradient tint colors per stat card icon for premium feel */
-const STAT_GRADIENT: Record<string, string> = {
-  Briefcase: 'from-blue-500/[0.03] to-transparent dark:from-blue-400/[0.04]',
-  Gavel: 'from-violet-500/[0.03] to-transparent dark:from-violet-400/[0.04]',
-  FileText: 'from-amber-500/[0.03] to-transparent dark:from-amber-400/[0.04]',
-  DollarSign: 'from-emerald-500/[0.03] to-transparent dark:from-emerald-400/[0.04]',
-  TrendingUp: 'from-cyan-500/[0.03] to-transparent dark:from-cyan-400/[0.04]',
+/** Glass tint class per stat card icon — maps to CSS glass-tinted-* classes */
+const STAT_GLASS_TINT: Record<string, string> = {
+  Briefcase: 'glass-tinted-blue',
+  Gavel: 'glass-tinted-violet',
+  FileText: 'glass-tinted-amber',
+  DollarSign: 'glass-tinted-emerald',
+  TrendingUp: 'glass-tinted-cyan',
 };
 
 function StatCard({
@@ -114,23 +114,23 @@ function StatCard({
         : String(animatedNum)
       : value;
 
-  const gradientClass =
-    STAT_GRADIENT[Icon.displayName ?? ''] ?? 'from-primary/[0.02] to-transparent';
+  const glassTintClass =
+    STAT_GLASS_TINT[Icon.displayName ?? ''] ?? '';
 
   return (
-    <Card className="relative overflow-hidden">
-      {/* Subtle gradient background tint */}
-      <div
-        className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${gradientClass}`}
-        aria-hidden="true"
-      />
-      <CardHeader className="relative flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-muted-foreground text-sm font-medium">{title}</CardTitle>
-        <div className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-md">
-          <Icon className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+    <Card
+      className={cn(
+        'glass glass-highlight glass-refraction relative overflow-hidden border',
+        glassTintClass,
+      )}
+    >
+      <CardHeader className="relative z-[2] flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>{title}</CardTitle>
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/[0.06]">
+          <Icon className="h-4 w-4" style={{ opacity: 0.4 }} aria-hidden="true" />
         </div>
       </CardHeader>
-      <CardContent className="relative">
+      <CardContent className="relative z-[2]">
         {loading ? (
           <Skeleton className="h-8 w-24" />
         ) : (
@@ -144,11 +144,11 @@ function StatCard({
                   <TrendArrow value={trendValue} label={trendLabel} size="sm" />
                 ) : null}
                 {description && trendValue === undefined ? (
-                  <p className="text-muted-foreground text-xs">{description}</p>
+                  <p className="text-xs" style={{ opacity: 0.7 }}>{description}</p>
                 ) : null}
               </div>
               {description && trendValue !== undefined ? (
-                <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>
+                <p className="mt-0.5 text-xs" style={{ opacity: 0.7 }}>{description}</p>
               ) : null}
             </div>
             {sparklineData && sparklineData.length >= 2 ? (
@@ -181,11 +181,9 @@ function QuickActionCard({
 }) {
   return (
     <Link href={href} className="block">
-      <Card className="group hover:border-l-primary h-full border-l-2 border-l-transparent transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
-        <CardContent className="flex items-center gap-3 p-4">
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${accentColor}`}
-          >
+      <Card className="glass glass-interactive glass-highlight group h-full border transition-all duration-200">
+        <CardContent className="relative z-[2] flex items-center gap-3 p-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.06]">
             <Icon
               className="text-primary h-5 w-5 transition-transform duration-200 group-hover:scale-110"
               aria-hidden="true"
@@ -193,7 +191,7 @@ function QuickActionCard({
           </div>
           <div>
             <p className="font-medium">{title}</p>
-            <p className="text-muted-foreground text-xs">{description}</p>
+            <p className="text-xs" style={{ opacity: 0.7 }}>{description}</p>
           </div>
         </CardContent>
       </Card>
@@ -319,14 +317,12 @@ function CustomerDashboard() {
 
       {ENABLE_LIVE_AUCTION ? <SavingsTracker /> : null}
 
-      {/* Section divider */}
-      <div className="flex items-center gap-3" aria-hidden="true">
-        <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
-      </div>
+      {/* Section divider — glass */}
+      <div className="glass-divider" aria-hidden="true" />
 
       {/* Recent jobs */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+      <Card className="glass glass-highlight border">
+        <CardHeader className="glass-header relative z-[2] flex flex-row items-center justify-between rounded-t-[1.25rem]">
           <CardTitle className="text-base font-semibold tracking-tight">Recent Jobs</CardTitle>
           <Link href="/jobs/mine">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
@@ -346,26 +342,28 @@ function CustomerDashboard() {
               No active jobs. Post your first job to get started.
             </p>
           ) : (
-            <div className="divide-y">
-              {jobsData.jobs.slice(0, 5).map((job) => (
-                <Link
-                  key={job.id}
-                  href={`/jobs/${job.id}`}
-                  className="hover:bg-muted/50 flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:pl-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{job.title}</p>
-                    <p className="text-muted-foreground text-xs">{job.category_name}</p>
-                  </div>
-                  <div className="ml-3 flex items-center gap-2">
-                    <Badge variant="secondary">
-                      {String(job.bid_count)} bid{job.bid_count !== 1 ? 's' : ''}
-                    </Badge>
-                    <Badge variant="outline" className="capitalize">
-                      {job.status.replace(/_/g, ' ')}
-                    </Badge>
-                  </div>
-                </Link>
+            <div className="relative z-[2]">
+              {jobsData.jobs.slice(0, 5).map((job, index) => (
+                <div key={job.id}>
+                  {index > 0 ? <div className="glass-divider" aria-hidden="true" /> : null}
+                  <Link
+                    href={`/jobs/${job.id}`}
+                    className="flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:bg-white/[0.04] hover:pl-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{job.title}</p>
+                      <p className="text-xs" style={{ opacity: 0.7 }}>{job.category_name}</p>
+                    </div>
+                    <div className="ml-3 flex items-center gap-2">
+                      <Badge variant="secondary">
+                        {String(job.bid_count)} bid{job.bid_count !== 1 ? 's' : ''}
+                      </Badge>
+                      <Badge variant="outline" className="capitalize">
+                        {job.status.replace(/_/g, ' ')}
+                      </Badge>
+                    </div>
+                  </Link>
+                </div>
               ))}
             </div>
           )}
@@ -454,14 +452,12 @@ function ProviderDashboardSection() {
         />
       </div>
 
-      {/* Section divider */}
-      <div className="flex items-center gap-3" aria-hidden="true">
-        <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
-      </div>
+      {/* Section divider — glass */}
+      <div className="glass-divider" aria-hidden="true" />
 
       {/* Recent bids */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+      <Card className="glass glass-highlight border">
+        <CardHeader className="glass-header relative z-[2] flex flex-row items-center justify-between rounded-t-[1.25rem]">
           <CardTitle className="text-base font-semibold tracking-tight">Active Bids</CardTitle>
           <Link href="/bids">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
@@ -477,31 +473,33 @@ function ProviderDashboardSection() {
               ))}
             </div>
           ) : !bidsData?.bids.length ? (
-            <p className="text-muted-foreground py-4 text-center text-sm">
+            <p className="py-4 text-center text-sm" style={{ opacity: 0.7 }}>
               No active bids. Browse jobs to start bidding.
             </p>
           ) : (
-            <div className="divide-y">
-              {bidsData.bids.slice(0, 5).map((bid) => (
-                <Link
-                  key={bid.id}
-                  href={`/jobs/${bid.job_id}`}
-                  className="hover:bg-muted/50 flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:pl-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">Bid: {formatCents(bid.amount_cents)}</p>
-                    <p className="text-muted-foreground text-xs">
-                      Placed{' '}
-                      {new Date(bid.created_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="capitalize">
-                    {bid.status.replace(/_/g, ' ')}
-                  </Badge>
-                </Link>
+            <div className="relative z-[2]">
+              {bidsData.bids.slice(0, 5).map((bid, index) => (
+                <div key={bid.id}>
+                  {index > 0 ? <div className="glass-divider" aria-hidden="true" /> : null}
+                  <Link
+                    href={`/jobs/${bid.job_id}`}
+                    className="flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:bg-white/[0.04] hover:pl-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">Bid: {formatCents(bid.amount_cents)}</p>
+                      <p className="text-xs" style={{ opacity: 0.7 }}>
+                        Placed{' '}
+                        {new Date(bid.created_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="capitalize">
+                      {bid.status.replace(/_/g, ' ')}
+                    </Badge>
+                  </Link>
+                </div>
               ))}
             </div>
           )}
@@ -569,9 +567,7 @@ export default function DashboardPage() {
           <div>
             {isProvider ? (
               <>
-                <div className="flex items-center gap-3" aria-hidden="true">
-                  <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
-                </div>
+                <div className="glass-divider" aria-hidden="true" />
                 <h2 className="mt-6 mb-4 text-lg font-bold tracking-tight">Customer Overview</h2>
               </>
             ) : null}
@@ -583,9 +579,7 @@ export default function DashboardPage() {
           <div>
             {isCustomer ? (
               <>
-                <div className="flex items-center gap-3" aria-hidden="true">
-                  <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
-                </div>
+                <div className="glass-divider" aria-hidden="true" />
                 <h2 className="mt-6 mb-4 text-lg font-bold tracking-tight">Provider Overview</h2>
               </>
             ) : null}

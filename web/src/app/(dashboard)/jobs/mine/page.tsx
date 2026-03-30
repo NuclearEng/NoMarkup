@@ -77,11 +77,11 @@ export default function MyJobsPage() {
                 <ContentLoader preset="job-card" count={6} className="contents" />
               </div>
             ) : isError ? (
-              <div className="rounded-lg border border-destructive/50 p-8 text-center">
+              <div className="glass rounded-lg border border-destructive/50 p-8 text-center">
                 <p className="text-destructive">Failed to load jobs. Please try again.</p>
               </div>
             ) : !data?.jobs.length ? (
-              <div className="flex flex-col items-center rounded-lg border p-8 text-center">
+              <div className="glass-empty-state flex flex-col items-center p-8 text-center">
                 <AnimatedIllustration
                   type={tab.value === 'all' ? 'no-jobs' : 'search-empty'}
                   size="md"

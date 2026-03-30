@@ -52,13 +52,13 @@ export function ForgotPasswordForm() {
 
   if (submitted) {
     return (
-      <Card className="border-border/50 overflow-hidden shadow-xl shadow-black/5 backdrop-blur-sm">
-        <div className="h-[3px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400" />
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/10">
+      <Card className="glass-auth-card border-0 shadow-none">
+        <div className="relative z-[2] h-[3px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400" />
+        <CardHeader className="relative z-[2] text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10">
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6 text-emerald-600 dark:text-emerald-400"
+              className="h-6 w-6 text-emerald-400"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -72,16 +72,16 @@ export function ForgotPasswordForm() {
               />
             </svg>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight">Check your email</CardTitle>
-          <CardDescription className="leading-relaxed">
+          <CardTitle className="text-2xl font-bold tracking-tight text-white">Check your email</CardTitle>
+          <CardDescription className="leading-relaxed text-white/50">
             If an account exists with that email address, we sent a password reset link. Check your
             inbox and follow the instructions.
           </CardDescription>
         </CardHeader>
-        <CardFooter className="border-border/50 justify-center border-t pt-6">
+        <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
           <Link
             href="/login"
-            className="text-primary text-sm font-medium underline-offset-4 hover:underline"
+            className="text-[var(--brand-gold)] text-sm font-medium underline-offset-4 hover:underline"
           >
             Back to sign in
           </Link>
@@ -91,13 +91,13 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <Card className="border-border/50 overflow-hidden shadow-xl shadow-black/5 backdrop-blur-sm">
-      <div className="h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-bold tracking-tight">Forgot your password?</CardTitle>
-        <CardDescription>Enter your email and we&apos;ll send you a reset link</CardDescription>
+    <Card className="glass-auth-card border-0 shadow-none">
+      <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+      <CardHeader className="relative z-[2] text-center">
+        <CardTitle className="text-2xl font-bold tracking-tight text-white">Forgot your password?</CardTitle>
+        <CardDescription className="text-white/50">Enter your email and we&apos;ll send you a reset link</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative z-[2]">
         <Form {...form}>
           <form
             onSubmit={(e) => void form.handleSubmit(onSubmit)(e)}
@@ -108,7 +108,7 @@ export function ForgotPasswordForm() {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="animate-auth-error bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+                className="glass-tinted-red animate-auth-error text-destructive rounded-lg p-3 text-sm"
               >
                 {formError}
               </div>
@@ -119,12 +119,13 @@ export function ForgotPasswordForm() {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel className="text-white/80">Email</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
+                      className="glass-input rounded-lg text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -135,7 +136,7 @@ export function ForgotPasswordForm() {
 
             <Button
               type="submit"
-              className="min-h-[44px] w-full bg-[var(--brand-gold)] font-semibold text-white shadow-[var(--brand-gold)]/20 shadow-md transition-all hover:bg-[var(--brand-gold-bright)] hover:shadow-[var(--brand-gold)]/25 hover:shadow-lg"
+              className="glass-cta-gold min-h-[44px] w-full rounded-lg font-semibold"
               disabled={form.formState.isSubmitting}
             >
               {form.formState.isSubmitting ? 'Sending...' : 'Send reset link'}
@@ -143,12 +144,12 @@ export function ForgotPasswordForm() {
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="border-border/50 justify-center border-t pt-6">
-        <p className="text-muted-foreground text-sm">
+      <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
+        <p className="text-white/50 text-sm">
           Remember your password?{' '}
           <Link
             href="/login"
-            className="text-primary font-medium underline-offset-4 hover:underline"
+            className="text-[var(--brand-gold)] font-medium underline-offset-4 hover:underline"
           >
             Sign in
           </Link>
