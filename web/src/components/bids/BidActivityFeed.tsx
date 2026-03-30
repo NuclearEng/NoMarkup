@@ -40,7 +40,7 @@ export function BidActivityFeed({
     <div className={cn('bg-transparent', showHeader && 'rounded-xl border border-white/[0.06]', className)}>
       <style>{`
         @keyframes activityFlashIn {
-          0% { background-color: rgba(34, 197, 94, 0.18); }
+          0% { background-color: rgba(34, 197, 94, 0.25); }
           100% { background-color: transparent; }
         }
         @keyframes lowestGlow {
@@ -88,11 +88,11 @@ export function BidActivityFeed({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-zinc-200">{activity.providerName}</span>
+                  <span className="text-sm font-medium text-zinc-100">{activity.providerName}</span>
                   {activity.isLowest && (
                     <span
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full glass-tinted-green border border-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400"
-                      style={{ animation: 'lowestGlow 3s ease-in-out infinite' }}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300"
+                      style={{ animation: 'lowestGlow 3s ease-in-out infinite', boxShadow: '0 0 8px rgba(34,197,94,0.3)' }}
                     >
                       <span
                         className="h-1.5 w-1.5 rounded-full bg-emerald-400"
@@ -102,11 +102,11 @@ export function BidActivityFeed({
                     </span>
                   )}
                 </div>
-                <span className="text-xs text-zinc-500">{activity.timestamp}</span>
+                <span className="text-xs text-zinc-400">{activity.timestamp}</span>
               </div>
               <span
-                className="text-sm font-semibold text-zinc-200"
-                style={{ fontVariantNumeric: 'tabular-nums' }}
+                className="text-sm font-bold text-zinc-50"
+                style={{ fontVariantNumeric: 'tabular-nums', textShadow: '0 0 6px rgba(255,255,255,0.1)' }}
               >
                 {priceStr}
               </span>

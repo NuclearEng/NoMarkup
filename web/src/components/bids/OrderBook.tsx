@@ -153,7 +153,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
           // Green gradient: lower price = more vibrant green against dark bg
           const greenIntensity =
             startingPrice > 0
-              ? Math.max(0.06, 0.3 - (bid.amount_cents / startingPrice) * 0.24)
+              ? Math.max(0.08, 0.4 - (bid.amount_cents / startingPrice) * 0.32)
               : 0.12;
 
           const tierKey = bid.trust_tier as keyof typeof TRUST_TIER_CONFIG;
@@ -167,13 +167,13 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                 'relative grid items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03]',
                 GRID_COLS,
                 GRID_COLS_SM,
-                isLowest && 'border-l-2 border-l-amber-500/60 glass-tinted-amber',
+                isLowest && 'border-l-2 border-l-[var(--brand-gold)] glass-tinted-amber',
                 !isLowest && 'border-b border-b-white/[0.04]',
               )}
               style={{
                 animation: bid.is_new ? 'orderBookFlash 2s ease-out forwards' : undefined,
                 ...(isLowest
-                  ? { animation: 'lowestPulse 3s ease-in-out infinite' }
+                  ? { animation: 'lowestPulse 3s ease-in-out infinite', boxShadow: 'inset 0 0 20px rgba(201,168,76,0.08)' }
                   : {}),
               }}
               role="listitem"
@@ -192,9 +192,9 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               <span
                 className={cn(
                   'relative z-10 text-xs font-bold tabular-nums',
-                  isLowest ? 'text-amber-400' : 'text-zinc-400',
+                  isLowest ? 'text-[var(--brand-gold)]' : 'text-zinc-300',
                 )}
-                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
+                style={{ textShadow: isLowest ? '0 0 8px rgba(201,168,76,0.4)' : '0 1px 2px rgba(0,0,0,0.3)' }}
               >
                 #{String(index + 1)}
               </span>
@@ -223,7 +223,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                   )}
                 </div>
                 <span
-                  className="text-xs font-medium min-w-0 break-words leading-tight text-zinc-200"
+                  className="text-xs font-medium min-w-0 break-words leading-tight text-zinc-100"
                   style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
                 >
                   {bid.provider_name}
@@ -251,9 +251,9 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               <span
                 className={cn(
                   'relative z-10 text-right text-xs font-bold tabular-nums',
-                  isLowest ? 'text-green-400' : 'text-foreground',
+                  isLowest ? 'text-emerald-400' : 'text-zinc-100',
                 )}
-                style={{ textShadow: isLowest ? '0 0 8px rgba(34,197,94,0.3)' : '0 1px 2px rgba(0,0,0,0.2)' }}
+                style={{ textShadow: isLowest ? '0 0 8px rgba(34,197,94,0.4)' : '0 1px 2px rgba(0,0,0,0.2)' }}
               >
                 {formatPrice(bid.amount_cents)}
               </span>

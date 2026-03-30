@@ -125,6 +125,9 @@ export function SavingsHero({
         isAnimating && 'scale-[1.02] transition-transform duration-300',
         className,
       )}
+      style={{
+        boxShadow: 'inset 0 0 30px rgba(34,197,94,0.06), 0 0 20px rgba(34,197,94,0.08)',
+      }}
       role="status"
       aria-label={`You are saving ${formattedSavings}, ${String(savingsPercent)} percent off the starting price of ${formattedStarting}`}
     >
@@ -164,16 +167,16 @@ export function SavingsHero({
         ) : null}
 
         {/* Main savings label */}
-        <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+        <p className="text-sm font-medium text-emerald-600 dark:text-emerald-300">
           You&apos;re saving
         </p>
 
         {/* Hero savings amount with green glow */}
         <div className="flex items-baseline gap-2.5">
           <span
-            className="text-3xl font-black tracking-tight text-emerald-500 sm:text-4xl"
+            className="text-3xl font-black tracking-tight text-emerald-400 sm:text-4xl"
             style={{
-              textShadow: '0 0 20px rgba(16, 185, 129, 0.35), 0 0 40px rgba(16, 185, 129, 0.15)',
+              textShadow: '0 0 20px rgba(34,197,94,0.5), 0 0 40px rgba(34,197,94,0.2)',
             }}
           >
             <RollingDigits value={formattedSavings} />
@@ -182,8 +185,8 @@ export function SavingsHero({
           <span
             className={cn(
               'flex items-center gap-1 rounded-full px-3 py-1 text-sm font-extrabold',
-              'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
-              'border border-emerald-500/20',
+              'bg-emerald-500/25 text-emerald-600 dark:text-emerald-400',
+              'border border-emerald-400/30',
             )}
           >
             {trendUp ? (
@@ -196,9 +199,9 @@ export function SavingsHero({
         </div>
 
         {/* Comparison text */}
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-zinc-400">
           vs. starting price of{' '}
-          <span className="font-medium text-foreground/70 line-through">
+          <span className="font-medium text-zinc-400 line-through">
             {formattedStarting}
           </span>
         </p>

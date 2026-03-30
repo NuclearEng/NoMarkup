@@ -185,8 +185,21 @@ export function TerminalGrid({
                 className={`group/widget overflow-hidden rounded-2xl transition-shadow ${
                   isEditing
                     ? 'border border-dashed border-[var(--brand-gold)]/30 bg-[#0c0f18] hover:border-[var(--brand-gold)]/50 hover:shadow-md'
-                    : `border bg-[#0c0f18] shadow-[0_0_0_1px_rgba(201,168,76,0.06),0_20px_50px_-12px_rgba(0,0,0,0.5)] ${isLive ? 'border-[var(--brand-gold)]/20' : 'border-[var(--brand-gold)]/10'}`
+                    : 'bg-[#0c0f18]'
                 }`}
+                style={
+                  !isEditing
+                    ? {
+                        border: '1px solid transparent',
+                        backgroundImage: isLive
+                          ? 'linear-gradient(#0c0f18, #0c0f18), linear-gradient(135deg, rgba(34,197,94,0.3), rgba(201,168,76,0.08), rgba(201,168,76,0.2))'
+                          : 'linear-gradient(#0c0f18, #0c0f18), linear-gradient(135deg, rgba(201,168,76,0.3), rgba(201,168,76,0.08), rgba(201,168,76,0.2))',
+                        backgroundOrigin: 'border-box',
+                        backgroundClip: 'padding-box, border-box',
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 20px 50px -12px rgba(0,0,0,0.5)',
+                      }
+                    : undefined
+                }
               >
                 {/* Edit mode header */}
                 {isEditing && (

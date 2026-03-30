@@ -11,7 +11,7 @@ export function JobDetailsWidget(_props: WidgetProps) {
           Job Details
         </h3>
       </div>
-      <p className="text-zinc-400 text-sm leading-relaxed">
+      <p className="text-zinc-300 text-sm leading-relaxed">
         Complete kitchen renovation including cabinet replacement, countertop installation
         (quartz), backsplash tiling, new plumbing fixtures, electrical updates for
         under-cabinet lighting, and premium appliance installation. Kitchen is approximately
@@ -20,7 +20,7 @@ export function JobDetailsWidget(_props: WidgetProps) {
       </p>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {['Kitchen', 'Renovation', 'Plumbing', 'Electrical', 'Tiling'].map((t) => (
-          <Badge key={t} variant="secondary" className="border-zinc-700 bg-zinc-800/60 text-zinc-300 text-[10px]">
+          <Badge key={t} variant="secondary" className="border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-[var(--brand-gold)] text-[10px]">
             {t}
           </Badge>
         ))}

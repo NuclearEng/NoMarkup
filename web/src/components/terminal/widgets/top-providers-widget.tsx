@@ -6,10 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import type { WidgetProps } from '../types';
 
 const TIER_COLORS = {
-  top_rated: { bg: 'bg-amber-500/15', text: 'text-amber-500', ring: 'ring-amber-500/30' },
-  trusted: { bg: 'bg-violet-500/15', text: 'text-violet-500', ring: 'ring-violet-500/30' },
-  rising: { bg: 'bg-emerald-500/15', text: 'text-emerald-500', ring: 'ring-emerald-500/30' },
-  new: { bg: 'bg-sky-500/15', text: 'text-sky-500', ring: 'ring-sky-500/30' },
+  top_rated: { bg: 'bg-amber-500/15', text: 'text-amber-500', ring: 'ring-amber-500/50' },
+  trusted: { bg: 'bg-violet-500/15', text: 'text-violet-500', ring: 'ring-violet-500/50' },
+  rising: { bg: 'bg-emerald-500/15', text: 'text-emerald-500', ring: 'ring-emerald-500/50' },
+  new: { bg: 'bg-sky-500/15', text: 'text-sky-500', ring: 'ring-sky-500/50' },
 } as const;
 
 function fmt(cents: number): string {
@@ -49,17 +49,17 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
             <div key={bid.id}>
               {idx > 0 && <div className="mx-4 h-px bg-white/[0.06]" />}
               <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]">
-              <span className="text-xl" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>{medal}</span>
+              <span className="text-2xl" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>{medal}</span>
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 ${colors.bg} ${colors.text} ${colors.ring}`}
               >
                 {provider?.initial ?? '?'}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-zinc-200">{bid.provider_name}</p>
+                <p className="truncate text-sm font-medium text-zinc-100">{bid.provider_name}</p>
                 <div className="mt-0.5 flex items-center gap-1.5">
                   <Star className="h-3 w-3 text-amber-400" style={{ filter: 'drop-shadow(0 0 3px rgba(245,158,11,0.4))' }} />
-                  <span className="text-zinc-400 text-xs">
+                  <span className={`text-xs ${colors.text}`}>
                     {String(bid.trust_score)}
                   </span>
                   <Badge variant="outline" className="border-zinc-700 px-1 py-0 text-[9px] text-zinc-400">
@@ -70,11 +70,11 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
               <div className="text-right">
                 <p
                   className={`text-sm font-bold tabular-nums ${idx === 0 ? 'text-emerald-400' : 'text-zinc-200'}`}
-                  style={idx === 0 ? { textShadow: '0 0 8px rgba(16,185,129,0.3)' } : undefined}
+                  style={idx === 0 ? { textShadow: '0 0 10px rgba(34,197,94,0.4), 0 0 20px rgba(34,197,94,0.15)' } : undefined}
                 >
                   {fmt(bid.amount_cents)}
                 </p>
-                <p className="text-[10px] text-emerald-400 tabular-nums">
+                <p className="text-[10px] text-emerald-300 tabular-nums">
                   {String(
                     Math.round(
                       ((startingPriceCents - bid.amount_cents) / startingPriceCents) * 100,

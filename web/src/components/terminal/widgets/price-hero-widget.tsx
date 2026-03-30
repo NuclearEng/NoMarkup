@@ -51,10 +51,12 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
                 <span
                   className="text-[11px] font-bold tracking-[0.15em] uppercase"
                   style={{
-                    background: 'linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold-bright))',
+                    background: 'linear-gradient(135deg, var(--brand-gold), var(--brand-gold-bright), var(--brand-gold))',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
+                    textShadow: 'none',
+                    filter: 'brightness(1.2)',
                   }}
                 >
                   Current Lowest Bid
@@ -65,7 +67,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-60" />
                       <span
                         className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500"
-                        style={{ boxShadow: '0 0 6px rgba(34,197,94,0.6), 0 0 12px rgba(34,197,94,0.3)' }}
+                        style={{ boxShadow: '0 0 8px rgba(34,197,94,0.6), 0 0 16px rgba(34,197,94,0.3)' }}
                       />
                     </span>
                     <span className="text-[10px] font-bold tracking-wider text-green-400">LIVE</span>
@@ -79,7 +81,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
                 <span
                   className="text-5xl font-black tracking-tight text-green-500 sm:text-6xl"
                   style={{
-                    textShadow: '0 0 40px rgba(34,197,94,0.3), 0 0 80px rgba(34,197,94,0.1)',
+                    textShadow: '0 0 30px rgba(34,197,94,0.4), 0 0 60px rgba(34,197,94,0.15), 0 0 100px rgba(34,197,94,0.05)',
                   }}
                 >
                   {sim.currentLowest > 0 ? (
@@ -97,7 +99,10 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
               {savingsCents > 0 && (
                 <div className="mt-2 flex items-center gap-2">
                   <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-sm font-bold text-emerald-400">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-sm font-bold text-emerald-300"
+                    style={{ boxShadow: '0 0 12px rgba(34,197,94,0.2)' }}
+                  >
                     Save {fmt(savingsCents)} ({String(savingsPct)}%)
                   </span>
                 </div>
@@ -107,10 +112,10 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
 
           {/* Bids stat */}
           <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
-            <div className="hero-stat-accent-blue absolute top-0 left-0 right-0 h-[2px]" />
+            <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent)' }} />
             <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Users className="mb-1 h-4 w-4 text-blue-400/70" />
-            <p className="text-3xl font-black tabular-nums text-zinc-100">{String(sim.bidCount)}</p>
+            <p className="text-3xl font-black tabular-nums text-white/95">{String(sim.bidCount)}</p>
             <p className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500">
               Bids
             </p>
@@ -118,7 +123,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
 
           {/* Timer */}
           <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
-            <div className="hero-stat-accent-amber absolute top-0 left-0 right-0 h-[2px]" />
+            <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(245,158,11,0.5), transparent)' }} />
             <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Clock className="mb-1 h-4 w-4 text-amber-400/70" />
             <AuctionTimer auctionEndsAt={auctionEndsAt} compact />
@@ -129,7 +134,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
 
           {/* Snipe */}
           <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
-            <div className="hero-stat-accent-violet absolute top-0 left-0 right-0 h-[2px]" />
+            <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.5), transparent)' }} />
             <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Shield className="mb-1 h-4 w-4 text-violet-400/70" />
             <SnipeIndicator count={0} max={3} />
