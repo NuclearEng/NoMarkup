@@ -187,18 +187,20 @@ export function AuctionTimer({
   );
 
   useEffect(() => {
-    if (timeRemaining.totalMs <= 0) return;
+    const remaining = calculateTimeRemaining(auctionEndsAt);
+    setTimeRemaining(remaining);
+    if (remaining.totalMs <= 0) return;
 
     const interval = setInterval(() => {
-      const remaining = calculateTimeRemaining(auctionEndsAt);
-      setTimeRemaining(remaining);
-      if (remaining.totalMs <= 0) {
+      const updated = calculateTimeRemaining(auctionEndsAt);
+      setTimeRemaining(updated);
+      if (updated.totalMs <= 0) {
         clearInterval(interval);
       }
     }, 1000);
 
     return () => { clearInterval(interval); };
-  }, [auctionEndsAt, timeRemaining.totalMs]);
+  }, [auctionEndsAt]);
 
   const urgency = useMemo(
     () => (timeRemaining.totalMs > 0 ? getUrgencyLevel(timeRemaining.totalMs) : URGENCY_LEVEL.FINAL),

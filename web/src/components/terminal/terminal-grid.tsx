@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import { GripVertical, X } from 'lucide-react';
@@ -89,9 +89,17 @@ export function TerminalGrid({
     return { lg, md, sm };
   }, [widgets, isEditing]);
 
+  const layoutChangeRef = useRef(false);
+
   const handleLayoutChange = useCallback(
     (layout: Layout, _layouts: ResponsiveLayouts) => {
       if (!isEditing) return;
+      // Prevent infinite loop: only update store on user-initiated changes
+      if (layoutChangeRef.current) {
+        layoutChangeRef.current = false;
+        return;
+      }
+      layoutChangeRef.current = true;
       const mapped = layout.map((item) => ({
         i: item.i,
         x: item.x,

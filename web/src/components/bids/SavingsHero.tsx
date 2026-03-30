@@ -101,14 +101,12 @@ export function SavingsHero({
   const prevSavings = useRef(savingsCents);
 
   useEffect(() => {
-    if (prevSavings.current !== savingsCents && savingsCents > 0) {
-      setIsAnimating(true);
-      const timer = setTimeout(() => { setIsAnimating(false); }, 600);
-      prevSavings.current = savingsCents;
-      return () => { clearTimeout(timer); };
-    }
+    if (prevSavings.current === savingsCents) return;
     prevSavings.current = savingsCents;
-    return undefined;
+    if (savingsCents <= 0) return;
+    setIsAnimating(true);
+    const timer = setTimeout(() => { setIsAnimating(false); }, 600);
+    return () => { clearTimeout(timer); };
   }, [savingsCents]);
 
   // Don't render if no savings
