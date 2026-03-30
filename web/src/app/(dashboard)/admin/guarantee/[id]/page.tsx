@@ -1,11 +1,10 @@
 'use client';
 
-import { ArrowLeft } from 'lucide-react';
 import type { Route } from 'next';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
 import { GuaranteeClaimReview } from '@/components/admin/GuaranteeClaimReview';
+import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminDispute } from '@/hooks/useAdmin';
 
@@ -22,10 +21,37 @@ export default function AdminGuaranteeClaimDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-64 w-full" />
-        <Skeleton className="h-48 w-full" />
+      <div className="mx-auto max-w-3xl space-y-6">
+        <Skeleton variant="text" className="h-4 w-64" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-5 w-5" />
+            <Skeleton className="h-7 w-40" />
+          </div>
+          <Skeleton className="h-6 w-24" />
+        </div>
+        <div className="space-y-4 rounded-lg border p-6">
+          <Skeleton className="h-5 w-28" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="space-y-2">
+                <Skeleton variant="text" className="h-3 w-20" />
+                <Skeleton variant="text" className="h-4 w-32" />
+              </div>
+            ))}
+          </div>
+          <Skeleton variant="text" className="mt-2 h-3 w-20" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+        <div className="space-y-4 rounded-lg border p-6">
+          <Skeleton className="h-5 w-36" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <div className="flex gap-3">
+            <Skeleton className="h-10 flex-1" />
+            <Skeleton className="h-10 flex-1" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -33,14 +59,14 @@ export default function AdminGuaranteeClaimDetailPage() {
   if (isError || !data?.dispute) {
     return (
       <div className="space-y-6">
-        <Link
-          href={'/admin/guarantee' as Route}
-          className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to Guarantee Claims
-        </Link>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+        <Breadcrumb
+          items={[
+            { label: 'Admin', href: '/admin' },
+            { label: 'Guarantee Claims', href: '/admin/guarantee' },
+            { label: 'Detail' },
+          ]}
+        />
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
           Failed to load guarantee claim details.
         </div>
       </div>
@@ -49,18 +75,15 @@ export default function AdminGuaranteeClaimDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <Link
-        href={'/admin/guarantee' as Route}
-        className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        Back to Guarantee Claims
-      </Link>
-
-      <GuaranteeClaimReview
-        claim={data.dispute}
-        onResolved={handleResolved}
+      <Breadcrumb
+        items={[
+          { label: 'Admin', href: '/admin' },
+          { label: 'Guarantee Claims', href: '/admin/guarantee' },
+          { label: `Claim ${data.dispute.id.slice(0, 8)}...` },
+        ]}
       />
+
+      <GuaranteeClaimReview claim={data.dispute} onResolved={handleResolved} />
     </div>
   );
 }

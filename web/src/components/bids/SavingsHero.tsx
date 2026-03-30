@@ -29,6 +29,8 @@ function formatCompactCents(cents: number): string {
 function RollingDigits({ value, className }: { value: string; className?: string }) {
   const [displayChars, setDisplayChars] = useState<string[]>(() => value.split(''));
   const prevValue = useRef(value);
+  const displayCharsRef = useRef(displayChars);
+  displayCharsRef.current = displayChars;
   const [changingIndices, setChangingIndices] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -36,9 +38,10 @@ function RollingDigits({ value, className }: { value: string; className?: string
     prevValue.current = value;
 
     const newChars = value.split('');
+    const currentChars = displayCharsRef.current;
     const changed = new Set<number>();
     newChars.forEach((char, i) => {
-      if (displayChars[i] !== char) {
+      if (currentChars[i] !== char) {
         changed.add(i);
       }
     });
@@ -49,12 +52,14 @@ function RollingDigits({ value, className }: { value: string; className?: string
         setDisplayChars(newChars);
         setChangingIndices(new Set());
       }, 200);
-      return () => { clearTimeout(timer); };
+      return () => {
+        clearTimeout(timer);
+      };
     }
 
     setDisplayChars(newChars);
     return undefined;
-  }, [value, displayChars]);
+  }, [value]);
 
   return (
     <span className={cn('inline-flex', className)} aria-hidden="true">
@@ -105,8 +110,12 @@ export function SavingsHero({
     prevSavings.current = savingsCents;
     if (savingsCents <= 0) return;
     setIsAnimating(true);
-    const timer = setTimeout(() => { setIsAnimating(false); }, 600);
-    return () => { clearTimeout(timer); };
+    const timer = setTimeout(() => {
+      setIsAnimating(false);
+    }, 600);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [savingsCents]);
 
   // Don't render if no savings
@@ -134,14 +143,14 @@ export function SavingsHero({
       {/* Background shimmer for great deals */}
       {isGreatDeal ? (
         <div
-          className="pointer-events-none absolute inset-0 animate-shimmer opacity-30"
+          className="animate-shimmer pointer-events-none absolute inset-0 opacity-30"
           aria-hidden="true"
         />
       ) : null}
 
       {/* Subtle decorative trending-down arrow background */}
       <div
-        className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 opacity-[0.04] sm:right-8"
+        className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 opacity-[0.04] sm:right-8"
         aria-hidden="true"
       >
         <ArrowDown className="h-24 w-24 text-emerald-500 sm:h-32 sm:w-32" strokeWidth={1.5} />
@@ -153,11 +162,11 @@ export function SavingsHero({
           <div className="relative inline-flex items-center gap-1.5 rounded-full bg-orange-500/15 px-3.5 py-1.5 text-xs font-bold text-orange-500">
             {/* Pulsing rings around badge */}
             <span
-              className="absolute inset-0 rounded-full border border-orange-500/30 animate-savings-ring-pulse"
+              className="animate-savings-ring-pulse absolute inset-0 rounded-full border border-orange-500/30"
               aria-hidden="true"
             />
             <span
-              className="absolute -inset-1 rounded-full border border-orange-500/15 animate-savings-ring-pulse"
+              className="animate-savings-ring-pulse absolute -inset-1 rounded-full border border-orange-500/15"
               style={{ animationDelay: '0.3s' }}
               aria-hidden="true"
             />
@@ -201,9 +210,7 @@ export function SavingsHero({
         {/* Comparison text */}
         <p className="text-xs text-zinc-400">
           vs. starting price of{' '}
-          <span className="font-medium text-zinc-400 line-through">
-            {formattedStarting}
-          </span>
+          <span className="font-medium text-zinc-400 line-through">{formattedStarting}</span>
         </p>
 
         {/* Trend indicator */}

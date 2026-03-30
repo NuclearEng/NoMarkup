@@ -23,10 +23,10 @@ import { DISPUTE_STATUS } from '@/types';
 const ALL_FILTER = '__all__';
 
 const DISPUTE_STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800 border-blue-200',
-  investigating: 'bg-purple-100 text-purple-800 border-purple-200',
-  resolved: 'bg-green-100 text-green-800 border-green-200',
-  escalated: 'bg-red-100 text-red-800 border-red-200',
+  open: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+  investigating: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
+  resolved: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  escalated: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
 };
 
 const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {

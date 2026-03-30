@@ -16,13 +16,11 @@ export const displayNameSchema = z
   .min(2, 'Display name must be at least 2 characters')
   .max(100, 'Display name must be at most 100 characters');
 
-export const phoneSchema = z
-  .string()
-  .regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number');
+export const phoneSchema = z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number');
 
 export const loginSchema = z.object({
   email: emailSchema,
-  password: passwordSchema,
+  password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().default(false),
 });
 
@@ -30,7 +28,7 @@ export const registerSchema = z
   .object({
     email: emailSchema,
     password: passwordSchema,
-    confirmPassword: z.string(),
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
     displayName: displayNameSchema,
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -198,7 +196,10 @@ export const bidSchema = z.object({
 export type BidFormValues = z.infer<typeof bidSchema>;
 
 // Contract schemas
-export const revisionNotesSchema = z.string().min(10, 'Revision notes must be at least 10 characters').max(2000);
+export const revisionNotesSchema = z
+  .string()
+  .min(10, 'Revision notes must be at least 10 characters')
+  .max(2000);
 
 // Review schemas
 export const reviewSchema = z.object({
@@ -207,14 +208,23 @@ export const reviewSchema = z.object({
   communicationRating: z.number().int().min(1).max(5).optional(),
   timelinessRating: z.number().int().min(1).max(5).optional(),
   valueRating: z.number().int().min(1).max(5).optional(),
-  comment: z.string().min(50, 'Comment must be at least 50 characters').max(2000, 'Comment must be at most 2000 characters'),
+  comment: z
+    .string()
+    .min(50, 'Comment must be at least 50 characters')
+    .max(2000, 'Comment must be at most 2000 characters'),
 });
 export type ReviewFormValues = z.infer<typeof reviewSchema>;
 
-export const reviewResponseSchema = z.string().min(10, 'Response must be at least 10 characters').max(2000, 'Response must be at most 2000 characters');
+export const reviewResponseSchema = z
+  .string()
+  .min(10, 'Response must be at least 10 characters')
+  .max(2000, 'Response must be at most 2000 characters');
 
 // Chat schemas
-export const chatMessageSchema = z.string().min(1, 'Message cannot be empty').max(2000, 'Message too long');
+export const chatMessageSchema = z
+  .string()
+  .min(1, 'Message cannot be empty')
+  .max(2000, 'Message too long');
 
 // MFA schema
 export const mfaCodeSchema = z

@@ -1,14 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ArrowLeft,
-  MapPin,
-  Pause,
-  Play,
-  RotateCcw,
-  Zap,
-} from 'lucide-react';
+import { ArrowLeft, MapPin, Pause, Play, RotateCcw, Zap } from 'lucide-react';
 import Link from 'next/link';
 
 import { SavingsCelebration } from '@/components/bids/SavingsCelebration';
@@ -250,17 +243,20 @@ export default function AuctionDemoPage() {
   const sim = useAuctionSimulation();
 
   const auctionEndsAt = useMemo(() => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), []);
-  const savingsCents = STARTING_PRICE_CENTS - sim.currentLowest;
+  const savingsCents = sim.currentLowest > 0 ? STARTING_PRICE_CENTS - sim.currentLowest : 0;
   const savingsPct =
     sim.currentLowest > 0 ? Math.round((savingsCents / STARTING_PRICE_CENTS) * 100) : 0;
 
   return (
-    <div className="dark relative min-h-screen overflow-hidden bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
       {/* Animated gradient mesh — same as landing page */}
       <GradientMesh />
 
       {/* Cinematic vignette — dark corners for depth */}
-      <div className="hero-vignette pointer-events-none fixed inset-0 z-[1]" aria-hidden="true" />
+      <div
+        className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
+        aria-hidden="true"
+      />
 
       {/* ─── Sticky top bar ─── */}
       <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
@@ -268,7 +264,7 @@ export default function AuctionDemoPage() {
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="flex items-center gap-1.5 text-sm text-white/50 transition-colors hover:text-white/80"
+              className="flex items-center gap-1.5 text-sm text-white/65 transition-colors hover:text-white/80"
             >
               <ArrowLeft className="h-4 w-4" />
               <span className="hidden sm:inline">Back</span>
@@ -283,7 +279,7 @@ export default function AuctionDemoPage() {
           {/* Job info — inline on desktop */}
           <div className="hidden items-center gap-3 text-sm md:flex">
             <h1 className="font-semibold text-white/90">Kitchen Renovation — Full Remodel</h1>
-            <div className="flex items-center gap-2 text-white/40">
+            <div className="flex items-center gap-2 text-white/60">
               <MapPin className="h-3.5 w-3.5" />
               <span>Austin, TX</span>
             </div>
@@ -308,7 +304,7 @@ export default function AuctionDemoPage() {
             )}
             <button
               onClick={sim.reset}
-              className="flex h-8 min-h-0 min-w-0 items-center gap-1 rounded-md border border-white/[0.06] bg-transparent px-3 text-xs text-white/40 transition-colors hover:bg-white/5 hover:text-white/70"
+              className="flex h-8 min-h-0 min-w-0 items-center gap-1 rounded-md border border-white/[0.06] bg-transparent px-3 text-xs text-white/60 transition-colors hover:bg-white/5 hover:text-white/70"
             >
               <RotateCcw className="h-3 w-3" />
             </button>

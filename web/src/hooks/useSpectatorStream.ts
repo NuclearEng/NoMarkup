@@ -67,9 +67,7 @@ export function useSpectatorStream(jobId: string | undefined): SpectatorStreamSt
     const unsubMessage = spectatorWsManager.onMessage(handleMessage);
     const unsubStatus = spectatorWsManager.onStatusChange((status) => {
       setConnectionStatus(status);
-      if (status === 'error') {
-        setError('WebSocket connection error');
-      } else if (status === 'disconnected') {
+      if (status === 'disconnected') {
         setError('WebSocket disconnected');
       } else if (status === 'connected') {
         setError(null);

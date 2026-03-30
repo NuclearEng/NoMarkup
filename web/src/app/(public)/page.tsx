@@ -296,18 +296,18 @@ export default function LandingPage() {
           <MarketTickerStrip items={[...TICKER_ITEMS]} speed="normal" />
         </div>
 
-        <div className="relative z-[2] mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8 lg:pt-28 lg:pb-36">
-          <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-20">
+        <div className="relative z-[2] mx-auto max-w-7xl px-4 pt-12 pb-16 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8 lg:pt-28 lg:pb-36">
+          <div className="grid items-center gap-8 sm:gap-14 lg:grid-cols-2 lg:gap-20">
             {/* Left column — text content */}
             <div className="mx-auto max-w-xl text-center lg:mx-0 lg:text-left">
               {/* Eyebrow badge — glass pill */}
-              <div className="glass-pill animate-fade-in mb-8 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm text-white/60">
+              <div className="glass-pill animate-fade-in mb-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm text-white/70 sm:mb-8">
                 <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
                 <span>Providers compete. You save.</span>
               </div>
 
               {/* Main headline — cinematic scale with gradient text */}
-              <h1 className="animate-fade-in-up text-5xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl">
+              <h1 className="animate-fade-in-up text-4xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl">
                 Home services at{' '}
                 <span
                   className="bg-clip-text text-transparent"
@@ -325,7 +325,7 @@ export default function LandingPage() {
 
               {/* Sub-headline — more breathing room */}
               <p
-                className="animate-fade-in-up mt-8 text-lg leading-relaxed text-white/55 sm:text-xl sm:leading-relaxed"
+                className="animate-fade-in-up mt-4 text-base leading-relaxed text-white/65 sm:mt-8 sm:text-xl sm:leading-relaxed"
                 style={{ animationDelay: '100ms' }}
               >
                 Post what you need, then watch qualified providers compete for your business. A
@@ -335,12 +335,12 @@ export default function LandingPage() {
 
               {/* CTAs — glow effect on primary */}
               <div
-                className="animate-fade-in-up mt-12 flex flex-col items-center gap-4 sm:flex-row lg:justify-start"
+                className="animate-fade-in-up mt-6 flex flex-col items-center gap-3 sm:mt-12 sm:flex-row sm:gap-4 lg:justify-start"
                 style={{ animationDelay: '200ms' }}
               >
                 <Button
                   size="lg"
-                  className="glass-cta-gold min-h-[52px] rounded-xl px-9 text-base font-semibold"
+                  className="glass-cta-gold min-h-[52px] w-full rounded-xl px-9 text-base font-semibold sm:w-auto"
                   asChild
                 >
                   <Link href="/register">
@@ -351,14 +351,14 @@ export default function LandingPage() {
                 <Button
                   variant="outline"
                   size="lg"
-                  className="glass-cta-secondary min-h-[52px] rounded-xl px-9 text-base"
+                  className="glass-cta-secondary min-h-[52px] w-full rounded-xl px-9 text-base sm:w-auto"
                   asChild
                 >
                   <Link href="/jobs">Browse jobs</Link>
                 </Button>
                 <Link
                   href="/demo/auction"
-                  className="flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-amber-400 transition-colors hover:text-amber-300"
+                  className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-amber-400 transition-colors hover:text-amber-300"
                 >
                   <Zap className="h-4 w-4" />
                   Try Live Demo
@@ -367,7 +367,7 @@ export default function LandingPage() {
 
               {/* Social proof — avatar stack + star rating + stats */}
               <div
-                className="animate-fade-in-up mt-12 flex flex-wrap items-center gap-6 lg:justify-start"
+                className="animate-fade-in-up mt-6 flex flex-wrap items-center justify-center gap-4 sm:mt-12 sm:gap-6 lg:justify-start"
                 style={{ animationDelay: '350ms' }}
               >
                 {/* Avatar stack */}
@@ -384,7 +384,7 @@ export default function LandingPage() {
                       </div>
                     ))}
                   </div>
-                  <span className="text-sm text-white/45">10,000+ jobs completed</span>
+                  <span className="text-sm text-white/60">10,000+ jobs completed</span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
@@ -403,10 +403,10 @@ export default function LandingPage() {
                       </svg>
                     ))}
                   </div>
-                  <span className="text-sm font-medium text-white/50">4.9</span>
+                  <span className="text-sm font-medium text-white/70">4.9</span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-sm text-white/45">
+                <div className="flex items-center gap-1.5 text-sm text-white/60">
                   <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
                   <span>Avg. 23% savings</span>
                 </div>
@@ -424,7 +424,7 @@ export default function LandingPage() {
         </div>
 
         {/* Gradient bridge from hero to stats — smooth fade */}
-        <div className="hero-stats-bridge relative z-[2] h-20 sm:h-24" aria-hidden="true" />
+        <div className="hero-stats-bridge relative z-[2] h-10 sm:h-24" aria-hidden="true" />
       </section>
 
       {/* ================================================================= */}
@@ -432,19 +432,19 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={statsSection.ref}
-        className="border-b border-white/[0.06] bg-[#0c0f18] py-14 sm:py-16"
+        className="border-b border-white/[0.06] bg-[#0c0f18] py-10 sm:py-16"
         aria-label="Platform statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 gap-10 sm:grid-cols-3 sm:gap-8">
+          <div className="grid grid-cols-3 gap-3 sm:gap-8">
             {STATS.map((stat, i) => (
               <div
                 key={stat.label}
-                className={`glass-stat-card glass-highlight glass-specular-anim flex flex-col items-center px-6 py-8 text-center transition-all duration-700 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
+                className={`glass-stat-card glass-highlight glass-specular-anim flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
                 style={{ transitionDelay: `${String(i * 120)}ms` }}
               >
                 <p
-                  className="relative z-[3] text-4xl font-black tracking-tight sm:text-5xl"
+                  className="relative z-[3] text-2xl font-black tracking-tight sm:text-5xl"
                   style={{ color: stat.color }}
                 >
                   {'display' in stat && stat.display ? (
@@ -453,7 +453,7 @@ export default function LandingPage() {
                     <AnimatedCounter end={stat.value} prefix={stat.prefix} suffix={stat.suffix} />
                   )}
                 </p>
-                <p className="text-muted-foreground relative z-[3] mt-2 text-sm font-medium tracking-wide uppercase">
+                <p className="text-muted-foreground relative z-[3] mt-1 text-[10px] font-medium tracking-wide uppercase sm:mt-2 sm:text-sm">
                   {stat.label}
                 </p>
                 {statsSection.inView ? (
@@ -472,7 +472,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={howItWorks.ref}
-        className="border-t border-white/[0.06] bg-[#070b14] py-28 sm:py-36"
+        className="border-t border-white/[0.06] bg-[#070b14] py-16 sm:py-36"
         aria-labelledby="how-it-works-heading"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -490,7 +490,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="mx-auto mt-20 grid max-w-5xl gap-8 sm:grid-cols-3 sm:gap-14">
+          <div className="mx-auto mt-10 grid max-w-5xl gap-6 sm:mt-20 sm:grid-cols-3 sm:gap-14">
             {[
               {
                 step: 1,
@@ -516,11 +516,14 @@ export default function LandingPage() {
             ].map((item, i) => (
               <div
                 key={item.step}
-                className={`glass glass-interactive glass-highlight glass-specular-anim step-card-glow relative rounded-2xl p-8 text-center transition-all duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
+                className={`glass glass-interactive glass-highlight glass-specular-anim step-card-glow relative rounded-2xl p-6 text-center transition-all duration-700 sm:p-8 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
                 style={{ transitionDelay: `${String(200 + i * 150)}ms` }}
               >
                 {/* Large step number — gradient gold */}
-                <div className="gold-text relative z-[3] mx-auto text-5xl font-black" aria-hidden="true">
+                <div
+                  className="gold-text relative z-[3] mx-auto text-5xl font-black"
+                  aria-hidden="true"
+                >
                   {String(item.step)}
                 </div>
 
@@ -542,10 +545,13 @@ export default function LandingPage() {
       {/* ================================================================= */}
       {/* TESTIMONIAL + TRUST                                               */}
       {/* ================================================================= */}
-      <section className="bg-[#0c0f18] py-28 sm:py-36" aria-labelledby="trust-heading">
+      <section
+        className="bg-[#0c0f18] py-16 sm:py-36"
+        aria-label="Customer testimonial and trust signals"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Testimonial — glass elevated card */}
-          <div className="glass glass-elevated glass-highlight glass-specular-anim mx-auto max-w-2xl rounded-2xl p-10 text-center sm:p-12">
+          <div className="glass glass-elevated glass-highlight glass-specular-anim mx-auto max-w-2xl rounded-2xl p-6 text-center sm:p-12">
             {/* Decorative quote mark */}
             <div
               className="gold-text relative z-[3] mx-auto mb-6 text-6xl leading-none font-black"
@@ -590,7 +596,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={categories.ref}
-        className="border-t border-white/[0.06] bg-[#070b14] py-28 sm:py-36"
+        className="border-t border-white/[0.06] bg-[#070b14] py-16 sm:py-36"
         aria-labelledby="categories-heading"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -608,19 +614,19 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="mx-auto mt-16 grid max-w-5xl grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:gap-6">
+          <div className="mx-auto mt-10 grid max-w-5xl grid-cols-2 gap-3 sm:mt-16 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:gap-6">
             {CATEGORIES.map((cat, i) => (
               <Link
                 key={cat.name}
                 href="/jobs"
-                className={`glass glass-interactive glass-highlight group flex flex-col items-center gap-3 rounded-2xl p-7 text-center transition-all duration-300 hover:border-[var(--brand-gold)]/20 ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+                className={`glass glass-interactive glass-highlight group flex flex-col items-center gap-2 rounded-2xl p-4 text-center transition-all duration-300 hover:border-[var(--brand-gold)]/20 sm:gap-3 sm:p-7 ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
                 style={{
                   transitionDelay: categories.inView ? `${String(200 + i * 75)}ms` : '0ms',
                 }}
               >
-                <div className="relative z-[3] flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-gold)]/[0.08] ring-1 ring-[var(--brand-gold)]/10 transition-colors group-hover:bg-[var(--brand-gold)]/[0.14]">
+                <div className="relative z-[3] flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--brand-gold)]/[0.08] ring-1 ring-[var(--brand-gold)]/10 transition-colors group-hover:bg-[var(--brand-gold)]/[0.14] sm:h-14 sm:w-14 sm:rounded-2xl">
                   <cat.icon
-                    className="animate-icon-hover h-6 w-6 transition-transform"
+                    className="animate-icon-hover h-5 w-5 transition-transform sm:h-6 sm:w-6"
                     style={{ color: 'var(--brand-gold)' }}
                   />
                 </div>
@@ -639,19 +645,22 @@ export default function LandingPage() {
       {/* ================================================================= */}
       {/* FINAL CTA                                                         */}
       {/* ================================================================= */}
-      <section className="bg-[#0c0f18] py-28 sm:py-36" aria-labelledby="cta-heading">
+      <section className="bg-[#0c0f18] py-16 sm:py-36" aria-labelledby="cta-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="glass glass-elevated glass-highlight glass-tinted-gold glass-specular-anim mx-auto max-w-2xl rounded-2xl p-10 text-center sm:p-14">
-            <h2 id="cta-heading" className="relative z-[3] text-3xl font-black tracking-tight sm:text-4xl">
+          <div className="glass glass-elevated glass-highlight glass-tinted-gold glass-specular-anim mx-auto max-w-2xl rounded-2xl p-6 text-center sm:p-14">
+            <h2
+              id="cta-heading"
+              className="relative z-[3] text-3xl font-black tracking-tight sm:text-4xl"
+            >
               Ready to save?
             </h2>
             <p className="text-muted-foreground relative z-[3] mt-5 text-lg">
               Join thousands of homeowners who stopped overpaying for quality service.
             </p>
-            <div className="relative z-[3] mt-12">
+            <div className="relative z-[3] mt-8 sm:mt-12">
               <Button
                 size="lg"
-                className="glass-cta-gold min-h-[52px] rounded-xl px-10 text-base font-semibold"
+                className="glass-cta-gold min-h-[52px] w-full rounded-xl px-10 text-base font-semibold sm:w-auto"
                 asChild
               >
                 <Link href="/register">

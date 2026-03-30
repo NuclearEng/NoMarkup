@@ -224,8 +224,8 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
     return (
       <div className={className}>
         {!mapboxToken ? (
-          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-            Configure NEXT_PUBLIC_MAPBOX_TOKEN to enable the interactive map.
+          <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-400">
+            Interactive map is not available at this time.
           </div>
         ) : null}
         <MapFallback jobs={jobs} onJobSelect={onJobSelect} />

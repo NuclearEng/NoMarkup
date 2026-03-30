@@ -13,6 +13,7 @@ import {
   MessageSquare,
   PlusCircle,
   Shield,
+  Trophy,
   User,
   Users,
   Zap,
@@ -45,6 +46,7 @@ const PROVIDER_NAV_ITEMS: NavItem[] = [
   { href: '/provider/team' as Route, label: 'Team', icon: Users },
   { href: '/provider/advances' as Route, label: 'Working Capital', icon: Banknote },
   { href: '/provider/business' as Route, label: 'Business Tools', icon: Building2 },
+  { href: '/provider/challenges' as Route, label: 'Challenges', icon: Trophy },
 ];
 
 const ADMIN_NAV_ITEMS: NavItem[] = [
@@ -62,7 +64,15 @@ const COMMON_NAV_ITEMS: NavItem[] = [
 ];
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === '/dashboard' || href === '/bids' || href === '/jobs/mine' || href === '/jobs/new' || href === '/provider/advances' || href === '/provider/business' || href === '/provider/team') {
+  if (
+    href === '/dashboard' ||
+    href === '/bids' ||
+    href === '/jobs/mine' ||
+    href === '/jobs/new' ||
+    href === '/provider/advances' ||
+    href === '/provider/business' ||
+    href === '/provider/team'
+  ) {
     return pathname === href || pathname.startsWith(href + '/');
   }
   return pathname.startsWith(href);

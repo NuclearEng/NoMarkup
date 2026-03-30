@@ -34,9 +34,10 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Find a submitted milestone to use for revision requests (last one)
-  const lastMilestone = contract.milestones.length > 0
-    ? [...contract.milestones].sort((a, b) => b.sort_order - a.sort_order)[0]
-    : undefined;
+  const lastMilestone =
+    contract.milestones.length > 0
+      ? [...contract.milestones].sort((a, b) => b.sort_order - a.sort_order)[0]
+      : undefined;
 
   const requestRevision = useRequestRevision();
 
@@ -98,12 +99,12 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total Approved</span>
+              <span className="text-muted-foreground text-sm">Total Approved</span>
               <span className="text-sm font-bold">{formatCents(approvedAmount)}</span>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Milestones</span>
+              <span className="text-muted-foreground text-sm">Milestones</span>
               <Badge variant="default">
                 {String(contract.milestones.length)} / {String(contract.milestones.length)} Approved
               </Badge>
@@ -116,14 +117,19 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
             disabled={markComplete.isPending}
           >
             {markComplete.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Marking Complete...
+              </>
             ) : (
-              <Check className="h-4 w-4" aria-hidden="true" />
+              <>
+                <Check className="h-4 w-4" aria-hidden="true" />
+                Mark Work Complete
+              </>
             )}
-            Mark Work Complete
           </Button>
           {markComplete.isError ? (
-            <p className="text-sm text-destructive">
+            <p className="text-destructive text-sm">
               Failed to mark as complete. Please try again.
             </p>
           ) : null}
@@ -144,9 +150,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
             <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
             You have marked this work as complete. Waiting for customer approval.
           </div>
-          {contract.completed_at ? (
-            <AutoReleaseTimer completedAt={contract.completed_at} />
-          ) : null}
+          {contract.completed_at ? <AutoReleaseTimer completedAt={contract.completed_at} /> : null}
         </CardContent>
       </Card>
     );
@@ -162,20 +166,23 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2 rounded-lg border bg-blue-50 p-3 text-sm text-blue-700">
             <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
-            The provider has marked this work as complete. Please review and approve or request a revision.
+            The provider has marked this work as complete. Please review and approve or request a
+            revision.
           </div>
 
           {/* Contract completion summary */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Contract Amount</span>
+              <span className="text-muted-foreground text-sm">Contract Amount</span>
               <span className="text-sm font-bold">{formatCents(contract.amount_cents)}</span>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Milestones Approved</span>
+              <span className="text-muted-foreground text-sm">Milestones Approved</span>
               <span className="text-sm font-medium">
-                {String(contract.milestones.filter((m) => m.status === MILESTONE_STATUS.APPROVED).length)}{' '}
+                {String(
+                  contract.milestones.filter((m) => m.status === MILESTONE_STATUS.APPROVED).length,
+                )}{' '}
                 / {String(contract.milestones.length)}
               </span>
             </div>
@@ -183,7 +190,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
               <>
                 <Separator />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Marked Complete</span>
+                  <span className="text-muted-foreground text-sm">Marked Complete</span>
                   <span className="text-sm font-medium">
                     {new Date(contract.completed_at).toLocaleDateString('en-US', {
                       month: 'short',
@@ -196,9 +203,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
             ) : null}
           </div>
 
-          {contract.completed_at ? (
-            <AutoReleaseTimer completedAt={contract.completed_at} />
-          ) : null}
+          {contract.completed_at ? <AutoReleaseTimer completedAt={contract.completed_at} /> : null}
 
           {/* Actions */}
           {showRevisionForm ? (
@@ -213,7 +218,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
                 className="min-h-[80px]"
               />
               {validationError ? (
-                <p className="text-sm text-destructive">{validationError}</p>
+                <p className="text-destructive text-sm">{validationError}</p>
               ) : null}
               <div className="flex gap-3">
                 <Button
@@ -223,11 +228,16 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
                   disabled={requestRevision.isPending || !lastMilestone}
                 >
                   {requestRevision.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Submitting...
+                    </>
                   ) : (
-                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                    <>
+                      <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                      Submit Revision Request
+                    </>
                   )}
-                  Submit Revision Request
                 </Button>
                 <Button
                   variant="outline"
@@ -243,7 +253,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
                 </Button>
               </div>
               {requestRevision.isError ? (
-                <p className="text-sm text-destructive">
+                <p className="text-destructive text-sm">
                   Failed to request revision. Please try again.
                 </p>
               ) : null}
@@ -256,16 +266,23 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
                 disabled={approveCompletion.isPending}
               >
                 {approveCompletion.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Approving...
+                  </>
                 ) : (
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <>
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    Approve Completion
+                  </>
                 )}
-                Approve Completion
               </Button>
               <Button
                 variant="outline"
                 className="min-h-[44px]"
-                onClick={() => { setShowRevisionForm(true); }}
+                onClick={() => {
+                  setShowRevisionForm(true);
+                }}
                 disabled={approveCompletion.isPending}
               >
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
@@ -274,7 +291,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
             </div>
           )}
           {approveCompletion.isError ? (
-            <p className="text-sm text-destructive">
+            <p className="text-destructive text-sm">
               Failed to approve completion. Please try again.
             </p>
           ) : null}

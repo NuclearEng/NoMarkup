@@ -21,16 +21,16 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={syne.variable} suppressHydrationWarning>
-      <body className="min-h-screen bg-background font-sans antialiased">
+      <body className="bg-background min-h-screen font-sans antialiased">
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:bg-primary focus:p-4 focus:text-primary-foreground"
+          className="focus:bg-primary focus:text-primary-foreground sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:p-4"
         >
           Skip to main content
         </a>
         <QueryProvider>
           <AuthRestorer />
-          <div id="main-content">{children}</div>
+          <main id="main-content">{children}</main>
           <Toaster position="bottom-right" richColors closeButton />
         </QueryProvider>
       </body>

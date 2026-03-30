@@ -6,9 +6,11 @@ import { useParams } from 'next/navigation';
 
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { Badge } from '@/components/ui/badge';
+import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useAdminUser, useBanUser, useSuspendUser } from '@/hooks/useAdmin';
 import { cn } from '@/lib/utils';
@@ -16,10 +18,14 @@ import type { UserStatus } from '@/types';
 import { USER_STATUS } from '@/types';
 
 const STATUS_CLASSES: Record<UserStatus, string> = {
-  active: 'bg-green-100 text-green-800 border-green-200',
-  suspended: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  banned: 'bg-red-100 text-red-800 border-red-200',
-  deactivated: 'bg-gray-100 text-gray-800 border-gray-200',
+  active:
+    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  suspended:
+    'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
+  banned:
+    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
+  deactivated:
+    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
 };
 
 function formatDate(dateStr: string): string {
@@ -55,13 +61,46 @@ export default function AdminUserDetailPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+        <Skeleton variant="text" className="h-4 w-56" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton variant="text" className="h-4 w-56" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-20" />
+          </div>
+        </div>
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
-            <CardContent className="space-y-4 pt-6">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-4 w-full animate-pulse rounded bg-muted" />
-              ))}
+            <CardHeader>
+              <Skeleton className="h-5 w-24" />
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton variant="text" className="h-3 w-20" />
+                    <Skeleton variant="text" className="h-4 w-28" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton variant="text" className="h-3 w-20" />
+                    <Skeleton variant="text" className="h-4 w-28" />
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -72,8 +111,15 @@ export default function AdminUserDetailPage() {
   if (isError || !user) {
     return (
       <div className="space-y-6">
+        <Breadcrumb
+          items={[
+            { label: 'Admin', href: '/admin' },
+            { label: 'Users', href: '/admin/users' },
+            { label: 'Detail' },
+          ]}
+        />
         <h1 className="text-2xl font-bold tracking-tight">User Detail</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
           Failed to load user details. The user may not exist or you may not have permission.
         </div>
       </div>
@@ -82,19 +128,29 @@ export default function AdminUserDetailPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb
+        items={[
+          { label: 'Admin', href: '/admin' },
+          { label: 'Users', href: '/admin/users' },
+          { label: `${user.first_name} ${user.last_name}` },
+        ]}
+      />
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
             {user.first_name} {user.last_name}
           </h1>
-          <p className="mt-1 text-muted-foreground">{user.email}</p>
+          <p className="text-muted-foreground mt-1">{user.email}</p>
         </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
             className="min-h-[44px]"
             disabled={user.status === USER_STATUS.SUSPENDED}
-            onClick={() => { setActionType('suspend'); }}
+            onClick={() => {
+              setActionType('suspend');
+            }}
             aria-label="Suspend this user"
           >
             Suspend
@@ -103,7 +159,9 @@ export default function AdminUserDetailPage() {
             variant="destructive"
             className="min-h-[44px]"
             disabled={user.status === USER_STATUS.BANNED}
-            onClick={() => { setActionType('ban'); }}
+            onClick={() => {
+              setActionType('ban');
+            }}
             aria-label="Ban this user"
           >
             Ban
@@ -122,10 +180,7 @@ export default function AdminUserDetailPage() {
               <div>
                 <span className="text-muted-foreground">Status</span>
                 <div className="mt-1">
-                  <Badge
-                    variant="outline"
-                    className={cn('text-xs', STATUS_CLASSES[user.status])}
-                  >
+                  <Badge variant="outline" className={cn('text-xs', STATUS_CLASSES[user.status])}>
                     {user.status}
                   </Badge>
                 </div>
@@ -176,21 +231,15 @@ export default function AdminUserDetailPage() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="col-span-2">
                   <span className="text-muted-foreground">Display Name</span>
-                  <p className="mt-1 font-medium">
-                    {user.provider_profile.display_name}
-                  </p>
+                  <p className="mt-1 font-medium">{user.provider_profile.display_name}</p>
                 </div>
                 <div className="col-span-2">
                   <span className="text-muted-foreground">Business Name</span>
-                  <p className="mt-1">
-                    {user.provider_profile.business_name || 'N/A'}
-                  </p>
+                  <p className="mt-1">{user.provider_profile.business_name || 'N/A'}</p>
                 </div>
                 <div className="col-span-2">
                   <span className="text-muted-foreground">Bio</span>
-                  <p className="mt-1 text-muted-foreground">
-                    {user.provider_profile.bio || 'N/A'}
-                  </p>
+                  <p className="text-muted-foreground mt-1">{user.provider_profile.bio || 'N/A'}</p>
                 </div>
 
                 <Separator className="col-span-2" />
@@ -205,9 +254,7 @@ export default function AdminUserDetailPage() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Trust Tier</span>
-                  <p className="mt-1">
-                    {user.provider_profile.trust_tier ?? 'N/A'}
-                  </p>
+                  <p className="mt-1">{user.provider_profile.trust_tier ?? 'N/A'}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Jobs Completed</span>
@@ -218,7 +265,8 @@ export default function AdminUserDetailPage() {
                 <div>
                   <span className="text-muted-foreground">Avg Rating</span>
                   <p className="mt-1 tabular-nums">
-                    {user.provider_profile.average_rating.toFixed(1)} ({String(user.provider_profile.total_reviews)} reviews)
+                    {user.provider_profile.average_rating.toFixed(1)} (
+                    {String(user.provider_profile.total_reviews)} reviews)
                   </p>
                 </div>
               </div>
@@ -233,7 +281,9 @@ export default function AdminUserDetailPage() {
           setActionType(null);
           setReason('');
         }}
-        onConfirm={() => { void handleConfirmAction(); }}
+        onConfirm={() => {
+          void handleConfirmAction();
+        }}
         title={
           actionType === 'ban'
             ? `Ban ${user.first_name} ${user.last_name}`
@@ -256,7 +306,9 @@ export default function AdminUserDetailPage() {
             id="user-action-reason"
             placeholder="Provide a reason for this action..."
             value={reason}
-            onChange={(e) => { setReason(e.target.value); }}
+            onChange={(e) => {
+              setReason(e.target.value);
+            }}
             rows={3}
           />
         </div>

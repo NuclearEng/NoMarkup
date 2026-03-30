@@ -1,14 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  ArrowDown,
-  ChevronDown,
-  ChevronUp,
-  DollarSign,
-  ExternalLink,
-  Loader2,
-} from 'lucide-react';
+import { ArrowDown, ChevronDown, ChevronUp, DollarSign, ExternalLink, Loader2 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -37,9 +30,7 @@ interface ProviderBidCardProps {
   jobTitle?: string;
 }
 
-function getStatusVariant(
-  status: string,
-): 'default' | 'secondary' | 'destructive' | 'outline' {
+function getStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   switch (status) {
     case BID_STATUS.AWARDED:
       return 'default';
@@ -116,16 +107,8 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
 
   const isActive = bid.status === BID_STATUS.ACTIVE;
 
-  /** Map bid status to glass tint */
-  const bidGlassTint =
-    bid.status === BID_STATUS.AWARDED
-      ? 'glass-tinted-emerald'
-      : bid.status === BID_STATUS.ACTIVE
-        ? 'glass-tinted-blue'
-        : '';
-
   return (
-    <Card className={`glass glass-interactive glass-highlight border ${bidGlassTint}`}>
+    <Card className="glass glass-interactive glass-highlight border border-[var(--brand-gold)]/10">
       <CardHeader className="relative z-[2] pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -137,17 +120,12 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                 <h3 className="truncate text-base font-semibold group-hover:underline">
                   {jobTitle}
                 </h3>
-                <ExternalLink
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ opacity: 0.7 }}
-                  aria-hidden="true"
-                />
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
               </Link>
             ) : (
               <Link
                 href={`/jobs/${bid.job_id}` as Route}
-                className="text-sm hover:underline"
-                style={{ opacity: 0.7 }}
+                className="text-sm text-zinc-400 hover:underline"
               >
                 View Job
               </Link>
@@ -162,13 +140,18 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
         {/* Current bid amount */}
         <div className="flex items-baseline justify-between">
           <div>
-            <p className="text-xs" style={{ opacity: 0.7 }}>Your Bid</p>
-            <p className="text-2xl font-bold">{formatCents(bid.amount_cents)}</p>
+            <p className="text-xs text-zinc-400">Your Bid</p>
+            <p
+              className="text-2xl font-bold text-zinc-100"
+              style={{ textShadow: '0 0 16px rgba(16,185,129,0.15)' }}
+            >
+              {formatCents(bid.amount_cents)}
+            </p>
           </div>
           {bid.original_amount_cents !== bid.amount_cents ? (
             <div className="text-right">
-              <p className="text-xs" style={{ opacity: 0.7 }}>Original</p>
-              <p className="text-sm line-through" style={{ opacity: 0.7 }}>
+              <p className="text-xs text-zinc-400">Original</p>
+              <p className="text-sm text-zinc-400 line-through">
                 {formatCents(bid.original_amount_cents)}
               </p>
             </div>
@@ -187,8 +170,10 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
           <div>
             <button
               type="button"
-              className="flex min-h-[44px] w-full items-center justify-between text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => { setShowHistory(!showHistory); }}
+              className="text-muted-foreground hover:text-foreground flex min-h-[44px] w-full items-center justify-between text-sm"
+              onClick={() => {
+                setShowHistory(!showHistory);
+              }}
               aria-expanded={showHistory}
             >
               <span>
@@ -210,7 +195,7 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                       {formatRelativeTime(new Date(update.updated_at))}
                     </span>
                     {index === bid.bid_history.length - 1 ? (
-                      <span className="text-xs text-muted-foreground">(original)</span>
+                      <span className="text-muted-foreground text-xs">(original)</span>
                     ) : null}
                   </div>
                 ))}
@@ -220,11 +205,9 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
         ) : null}
 
         {/* Timestamps */}
-        <div className="text-xs" style={{ opacity: 0.7 }}>
+        <div className="text-xs text-zinc-400">
           Placed {formatRelativeTime(new Date(bid.created_at))}
-          {bid.awarded_at
-            ? ` \u2022 Awarded ${formatRelativeTime(new Date(bid.awarded_at))}`
-            : ''}
+          {bid.awarded_at ? ` \u2022 Awarded ${formatRelativeTime(new Date(bid.awarded_at))}` : ''}
           {bid.withdrawn_at
             ? ` \u2022 Withdrawn ${formatRelativeTime(new Date(bid.withdrawn_at))}`
             : ''}
@@ -235,7 +218,12 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
           <div className="space-y-3 border-t pt-3">
             {showLowerForm ? (
               <Form {...form}>
-                <form onSubmit={(e) => { void form.handleSubmit(handleLowerBid)(e); }} className="space-y-3">
+                <form
+                  onSubmit={(e) => {
+                    void form.handleSubmit(handleLowerBid)(e);
+                  }}
+                  className="space-y-3"
+                >
                   <FormField
                     control={form.control}
                     name="amountDollars"
@@ -245,7 +233,7 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                         <FormControl>
                           <div className="relative">
                             <DollarSign
-                              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                              className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
                               aria-hidden="true"
                             />
                             <Input
@@ -292,7 +280,7 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                     </Button>
                   </div>
                   {updateBid.isError ? (
-                    <p className="text-sm text-destructive">
+                    <p className="text-destructive text-sm">
                       Failed to update bid. Please try again.
                     </p>
                   ) : null}
@@ -318,14 +306,16 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                   <Button
                     variant="outline"
                     className="min-h-[44px]"
-                    onClick={() => { setShowWithdrawConfirm(false); }}
+                    onClick={() => {
+                      setShowWithdrawConfirm(false);
+                    }}
                     disabled={withdrawBid.isPending}
                   >
                     Cancel
                   </Button>
                 </div>
                 {withdrawBid.isError ? (
-                  <p className="text-sm text-destructive">
+                  <p className="text-destructive text-sm">
                     Failed to withdraw bid. Please try again.
                   </p>
                 ) : null}
@@ -335,7 +325,9 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                 <Button
                   variant="outline"
                   className="min-h-[44px] flex-1"
-                  onClick={() => { setShowLowerForm(true); }}
+                  onClick={() => {
+                    setShowLowerForm(true);
+                  }}
                 >
                   <ArrowDown className="h-4 w-4" aria-hidden="true" />
                   Lower Bid
@@ -343,7 +335,9 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
                 <Button
                   variant="outline"
                   className="min-h-[44px]"
-                  onClick={() => { setShowWithdrawConfirm(true); }}
+                  onClick={() => {
+                    setShowWithdrawConfirm(true);
+                  }}
                 >
                   Withdraw
                 </Button>

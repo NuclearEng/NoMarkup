@@ -8,7 +8,7 @@ const cardVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-card text-card-foreground hover:shadow-md',
+        default: 'bg-card text-card-foreground border-[var(--brand-gold)]/[0.08] hover:shadow-md',
         glass:
           'glass glass-specular text-foreground',
       },

@@ -9,6 +9,14 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,10 +25,10 @@ import { cn, formatCents } from '@/lib/utils';
 import type { Dispute, DisputeStatus } from '@/types';
 
 const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800',
-  investigating: 'bg-purple-100 text-purple-800',
-  resolved: 'bg-green-100 text-green-800',
-  escalated: 'bg-red-100 text-red-800',
+  open: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+  investigating: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
+  resolved: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+  escalated: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -65,6 +73,8 @@ export function GuaranteeClaimReview({
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [payoutDollars, setPayoutDollars] = useState('');
   const [formError, setFormError] = useState('');
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   const isResolved = claim.status === 'resolved' || (claim.status as string) === 'closed';
 
@@ -98,18 +108,27 @@ export function GuaranteeClaimReview({
     onResolved?.();
   }
 
-  async function handleReject() {
-    if (!resolutionNotes.trim()) {
-      setFormError('Resolution notes are required');
+  function openRejectDialog() {
+    setRejectReason('');
+    setRejectDialogOpen(true);
+  }
+
+  async function handleRejectConfirm() {
+    if (!rejectReason.trim()) {
       return;
     }
     setFormError('');
 
+    const combinedNotes = resolutionNotes.trim()
+      ? `${resolutionNotes.trim()}\n\nRejection reason: ${rejectReason.trim()}`
+      : rejectReason.trim();
+
     await reviewMutation.mutateAsync({
       claimId: claim.id,
       approved: false,
-      resolution_notes: resolutionNotes,
+      resolution_notes: combinedNotes,
     });
+    setRejectDialogOpen(false);
     onResolved?.();
   }
 
@@ -326,17 +345,73 @@ export function GuaranteeClaimReview({
                 variant="destructive"
                 className="min-h-[44px] flex-1 gap-2"
                 disabled={reviewMutation.isPending}
-                onClick={() => {
-                  void handleReject();
-                }}
+                onClick={openRejectDialog}
               >
                 <XCircle className="h-4 w-4" aria-hidden="true" />
-                {reviewMutation.isPending ? 'Processing...' : 'Reject Claim'}
+                Reject Claim
               </Button>
             </div>
           </CardContent>
         </Card>
       ) : null}
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Guarantee Claim</DialogTitle>
+            <DialogDescription>
+              Provide a reason for rejecting this claim. The customer will be notified with your
+              explanation.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="reject-reason">Rejection Reason</Label>
+              <Textarea
+                id="reject-reason"
+                placeholder="Explain why this claim is being rejected..."
+                value={rejectReason}
+                onChange={(e) => {
+                  setRejectReason(e.target.value);
+                }}
+                rows={4}
+                autoFocus
+              />
+            </div>
+            {reviewMutation.isError ? (
+              <p className="text-destructive text-sm" role="alert">
+                Failed to reject claim. Please try again.
+              </p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="min-h-[44px]"
+              onClick={() => {
+                setRejectDialogOpen(false);
+              }}
+              disabled={reviewMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="min-h-[44px] gap-2"
+              disabled={!rejectReason.trim() || reviewMutation.isPending}
+              onClick={() => {
+                void handleRejectConfirm();
+              }}
+            >
+              <XCircle className="h-4 w-4" aria-hidden="true" />
+              {reviewMutation.isPending ? 'Rejecting...' : 'Confirm Rejection'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

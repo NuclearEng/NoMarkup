@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import type { PaginationResponse } from '@/types';
 
 export interface Column<T> {
@@ -24,13 +25,15 @@ interface DataTableProps<T> {
 }
 
 function SkeletonRows({ columns, count }: { columns: Column<unknown>[]; count: number }) {
+  const widths = ['w-24', 'w-32', 'w-20', 'w-16', 'w-28', 'w-36'];
+
   return (
     <>
       {Array.from({ length: count }, (_, i) => (
         <tr key={i} className="border-b">
-          {columns.map((col) => (
+          {columns.map((col, colIndex) => (
             <td key={col.key} className="px-4 py-3">
-              <div className="h-4 w-full max-w-[120px] animate-pulse rounded bg-muted" />
+              <Skeleton variant="text" className={`h-4 ${widths[colIndex % widths.length]}`} />
             </td>
           ))}
         </tr>
@@ -56,11 +59,11 @@ export function DataTable<T>({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-muted/50">
+              <tr className="bg-muted/50 border-b">
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-4 py-3 text-left font-medium text-muted-foreground ${col.className ?? ''}`}
+                    className={`text-muted-foreground px-4 py-3 text-left font-medium ${col.className ?? ''}`}
                   >
                     {col.header}
                   </th>
@@ -74,7 +77,7 @@ export function DataTable<T>({
                 <tr>
                   <td
                     colSpan={columns.length}
-                    className="px-4 py-12 text-center text-muted-foreground"
+                    className="text-muted-foreground px-4 py-12 text-center"
                   >
                     {emptyMessage}
                   </td>
@@ -83,8 +86,14 @@ export function DataTable<T>({
                 data.map((row) => (
                   <tr
                     key={rowKey(row)}
-                    className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? 'cursor-pointer' : ''}`}
-                    onClick={onRowClick ? () => { onRowClick(row); } : undefined}
+                    className={`hover:bg-muted/50 border-b transition-colors ${onRowClick ? 'cursor-pointer' : ''}`}
+                    onClick={
+                      onRowClick
+                        ? () => {
+                            onRowClick(row);
+                          }
+                        : undefined
+                    }
                   >
                     {columns.map((col) => (
                       <td key={col.key} className={`px-4 py-3 ${col.className ?? ''}`}>
@@ -100,8 +109,9 @@ export function DataTable<T>({
 
         {pagination && pagination.totalPages > 1 ? (
           <div className="flex items-center justify-between border-t px-4 py-3">
-            <span className="text-sm text-muted-foreground">
-              Showing page {String(page)} of {String(pagination.totalPages)} ({String(pagination.totalCount)} total)
+            <span className="text-muted-foreground text-sm">
+              Showing page {String(page)} of {String(pagination.totalPages)} (
+              {String(pagination.totalCount)} total)
             </span>
             <div className="flex items-center gap-2">
               <Button
@@ -109,7 +119,9 @@ export function DataTable<T>({
                 size="sm"
                 className="min-h-[44px]"
                 disabled={page <= 1}
-                onClick={() => { onPageChange?.(page - 1); }}
+                onClick={() => {
+                  onPageChange?.(page - 1);
+                }}
                 aria-label="Go to previous page"
               >
                 Previous
@@ -119,7 +131,9 @@ export function DataTable<T>({
                 size="sm"
                 className="min-h-[44px]"
                 disabled={!pagination.hasNext}
-                onClick={() => { onPageChange?.(page + 1); }}
+                onClick={() => {
+                  onPageChange?.(page + 1);
+                }}
                 aria-label="Go to next page"
               >
                 Next

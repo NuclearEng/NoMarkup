@@ -1,23 +1,53 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { ArrowLeft, Eye, MapPin, Radio, Wifi, WifiOff, Zap } from 'lucide-react';
 
-import { AuctionSpectator } from '@/components/bids/AuctionSpectator';
+import { GradientMesh } from '@/components/landing/GradientMesh';
+import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
+import { TerminalGrid } from '@/components/terminal/terminal-grid';
+import { Badge } from '@/components/ui/badge';
 import { useJob } from '@/hooks/useJobs';
+import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
+import type { MarketRange } from '@/types';
+
+const FALLBACK_MARKET_RANGE: MarketRange = {
+  low_cents: 0,
+  median_cents: 0,
+  high_cents: 0,
+  sample_size: 0,
+};
 
 export default function SpectatorPage() {
   const params = useParams<{ id: string }>();
   const jobId = params.id;
   const { data: job, isLoading, isError } = useJob(jobId);
+  const { sim, providers, spectatorCount, isConnected, error } = useSpectatorTerminal(jobId);
+
+  const auctionEndsAt = useMemo(
+    () => job?.auction_ends_at ?? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    [job?.auction_ends_at],
+  );
+
+  const startingPriceCents = job?.starting_bid_cents ?? 0;
+  const marketRange = job?.market_range ?? FALLBACK_MARKET_RANGE;
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="space-y-6">
-          <div className="bg-muted h-8 w-2/3 animate-pulse rounded" />
-          <div className="bg-muted h-4 w-1/3 animate-pulse rounded" />
-          <div className="bg-muted h-96 animate-pulse rounded-xl border" />
+      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+        <GradientMesh />
+        <div
+          className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
+          aria-hidden="true"
+        />
+        <div className="relative z-[2] flex min-h-screen items-center justify-center">
+          <div className="space-y-6 text-center">
+            <div className="mx-auto h-8 w-2/3 max-w-xs animate-pulse rounded bg-white/10" />
+            <div className="mx-auto h-4 w-1/3 max-w-[140px] animate-pulse rounded bg-white/10" />
+            <div className="mx-auto h-96 w-full max-w-2xl animate-pulse rounded-xl border border-white/[0.06] bg-white/5" />
+          </div>
         </div>
       </div>
     );
@@ -25,76 +55,141 @@ export default function SpectatorPage() {
 
   if (isError || !job) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-8 text-center sm:px-6 lg:px-8">
-        <h1 className="text-foreground text-2xl font-bold">Auction Not Found</h1>
-        <p className="text-muted-foreground mt-2">
-          This auction could not be found. It may have ended or been removed.
-        </p>
-        <Link
-          href="/jobs"
-          className="text-primary mt-4 inline-block text-sm font-medium hover:underline"
-        >
-          Browse all jobs
-        </Link>
+      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+        <GradientMesh />
+        <div
+          className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
+          aria-hidden="true"
+        />
+        <div className="relative z-[2] flex min-h-screen items-center justify-center px-4">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-white">Auction Not Found</h1>
+            <p className="mt-2 text-white/65">
+              This auction could not be found. It may have ended or been removed.
+            </p>
+            <Link
+              href="/jobs"
+              className="mt-4 inline-block text-sm font-medium text-amber-400 hover:text-amber-300 hover:underline"
+            >
+              Browse all jobs
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="mb-6">
-        <ol className="text-muted-foreground flex items-center gap-1.5 text-sm">
-          <li>
-            <Link href="/jobs" className="hover:text-foreground transition-colors">
-              Jobs
-            </Link>
-          </li>
-          <li aria-hidden="true" className="text-muted-foreground/40">
-            /
-          </li>
-          <li>
-            <Link
-              href={`/jobs/${jobId}`}
-              className="hover:text-foreground transition-colors"
-            >
-              {job.title}
-            </Link>
-          </li>
-          <li aria-hidden="true" className="text-muted-foreground/40">
-            /
-          </li>
-          <li className="text-foreground font-medium" aria-current="page">
-            Live Spectator
-          </li>
-        </ol>
-      </nav>
+    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+      {/* Animated gradient mesh */}
+      <GradientMesh />
 
-      <AuctionSpectator
-        jobId={job.id}
-        jobTitle={job.title}
-        categoryName={job.category_name}
-        auctionEndsAt={job.auction_ends_at}
-        startingBidCents={job.starting_bid_cents}
+      {/* Cinematic vignette */}
+      <div
+        className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
+        aria-hidden="true"
       />
 
-      {/* Share section */}
-      <div className="mt-6 rounded-lg border border-border/50 bg-card p-4 text-center">
-        <p className="text-muted-foreground text-sm">
-          Share this live auction with friends
-        </p>
-        <div className="mt-2 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              void navigator.clipboard.writeText(window.location.href);
-            }}
-            className="inline-flex items-center rounded-md bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            style={{ minHeight: '44px', minWidth: '44px' }}
-          >
-            Copy Link
-          </button>
+      {/* Sticky top bar */}
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/jobs/${jobId}`}
+              className="flex items-center gap-1.5 text-sm text-white/65 transition-colors hover:text-white/80"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden sm:inline">Back</span>
+            </Link>
+            <div className="h-4 w-px bg-white/10" />
+            <Badge className="gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400">
+              <Radio className="h-3 w-3 animate-pulse" />
+              LIVE
+            </Badge>
+          </div>
+
+          {/* Job info */}
+          <div className="hidden items-center gap-3 text-sm md:flex">
+            <h1 className="font-semibold text-white/90">{job.title}</h1>
+            {job.location_address && (
+              <div className="flex items-center gap-2 text-white/60">
+                <MapPin className="h-3.5 w-3.5" />
+                <span>{job.location_address}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Right side: connection status + spectator count */}
+          <div className="flex items-center gap-3">
+            {spectatorCount > 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-white/60">
+                <Eye className="h-3.5 w-3.5" />
+                <span>{spectatorCount} watching</span>
+              </div>
+            )}
+            <div
+              className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs ${
+                isConnected
+                  ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
+                  : error
+                    ? 'border-red-500/20 bg-red-500/10 text-red-400'
+                    : 'border-white/10 bg-white/5 text-white/65'
+              }`}
+              role="status"
+              aria-label={
+                isConnected
+                  ? 'Connected to live stream'
+                  : error
+                    ? 'Connection error'
+                    : 'Connecting to live stream'
+              }
+            >
+              {isConnected ? (
+                <>
+                  <Wifi className="h-3 w-3" />
+                  <span className="hidden sm:inline">Spectating</span>
+                </>
+              ) : error ? (
+                <>
+                  <WifiOff className="h-3 w-3" />
+                  <span className="hidden sm:inline">Disconnected</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3 w-3 animate-pulse" />
+                  <span className="hidden sm:inline">Connecting</span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Mobile job info row */}
+        <div className="border-t border-white/[0.04] px-4 py-1.5 md:hidden">
+          <p className="truncate text-xs font-medium text-white/70">{job.title}</p>
+          {job.location_address && (
+            <p className="flex items-center gap-1 text-[10px] text-white/40">
+              <MapPin className="h-2.5 w-2.5" />
+              {job.location_address}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Terminal toolbar */}
+      <div className="relative z-[2] mx-auto max-w-[1400px] px-4 pt-4 sm:px-6">
+        <TerminalToolbar />
+      </div>
+
+      {/* Terminal grid */}
+      <div className="relative z-[2] mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
+        <TerminalGrid
+          sim={sim}
+          auctionEndsAt={auctionEndsAt}
+          startingPriceCents={startingPriceCents}
+          marketRange={marketRange}
+          mockProviders={providers}
+        />
       </div>
     </div>
   );

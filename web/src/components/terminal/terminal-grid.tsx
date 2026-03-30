@@ -54,7 +54,10 @@ export function TerminalGrid({
 
   // Serialize widgets to a stable key so we only recompute layouts when data actually changes
   const widgetsKey = useMemo(
-    () => widgets.map((w) => `${w.widgetId}:${String(w.x)},${String(w.y)},${String(w.w)},${String(w.h)}`).join('|'),
+    () =>
+      widgets
+        .map((w) => `${w.widgetId}:${String(w.x)},${String(w.y)},${String(w.w)},${String(w.h)}`)
+        .join('|'),
     [widgets],
   );
 
@@ -113,10 +116,18 @@ export function TerminalGrid({
     [isDragging, updateWidgetLayouts],
   );
 
-  const handleDragStart = useCallback(() => { setIsDragging(true); }, []);
-  const handleDragStop = useCallback(() => { setIsDragging(false); }, []);
-  const handleResizeStart = useCallback(() => { setIsDragging(true); }, []);
-  const handleResizeStop = useCallback(() => { setIsDragging(false); }, []);
+  const handleDragStart = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+  const handleDragStop = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+  const handleResizeStart = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+  const handleResizeStop = useCallback(() => {
+    setIsDragging(false);
+  }, []);
 
   const widgetProps: WidgetProps = useMemo(
     () => ({
@@ -133,7 +144,7 @@ export function TerminalGrid({
     return (
       <div ref={containerRef}>
         <div className="glass flex min-h-[200px] items-center justify-center border-dashed border-white/10 p-8">
-          <p className="text-zinc-400 text-sm">
+          <p className="text-sm text-zinc-400">
             No widgets added. Click &quot;Add Widget&quot; to get started.
           </p>
         </div>
@@ -184,26 +195,27 @@ export function TerminalGrid({
                 key={wp.widgetId}
                 className={`group/widget overflow-hidden rounded-2xl transition-shadow ${
                   isEditing
-                    ? 'border border-dashed border-[var(--brand-gold)]/30 bg-[#0c0f18] hover:border-[var(--brand-gold)]/50 hover:shadow-md'
-                    : 'bg-[#0c0f18]'
+                    ? 'border border-dashed border-[var(--brand-gold)]/30 bg-[#0d1120] hover:border-[var(--brand-gold)]/50 hover:shadow-md'
+                    : 'bg-[#0d1120]'
                 }`}
                 style={
                   !isEditing
                     ? {
                         border: '1px solid transparent',
                         backgroundImage: isLive
-                          ? 'linear-gradient(#0c0f18, #0c0f18), linear-gradient(135deg, rgba(34,197,94,0.3), rgba(201,168,76,0.08), rgba(201,168,76,0.2))'
-                          : 'linear-gradient(#0c0f18, #0c0f18), linear-gradient(135deg, rgba(201,168,76,0.3), rgba(201,168,76,0.08), rgba(201,168,76,0.2))',
+                          ? 'linear-gradient(#0d1120, #0d1120), linear-gradient(135deg, rgba(34,197,94,0.45), rgba(201,168,76,0.12), rgba(201,168,76,0.3))'
+                          : 'linear-gradient(#0d1120, #0d1120), linear-gradient(135deg, rgba(201,168,76,0.4), rgba(201,168,76,0.1), rgba(201,168,76,0.3))',
                         backgroundOrigin: 'border-box',
                         backgroundClip: 'padding-box, border-box',
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 20px 50px -12px rgba(0,0,0,0.5)',
+                        boxShadow:
+                          'inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.08)',
                       }
                     : undefined
                 }
               >
                 {/* Edit mode header */}
                 {isEditing && (
-                  <div className="flex h-7 shrink-0 items-center gap-1 glass-header px-2">
+                  <div className="glass-header flex h-7 shrink-0 items-center gap-1 px-2">
                     <div className="widget-drag-handle cursor-grab active:cursor-grabbing">
                       <GripVertical className="h-3.5 w-3.5 text-zinc-500" />
                     </div>

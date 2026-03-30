@@ -81,15 +81,10 @@ export default function JobsSearchPage() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="animate-fade-in-up mb-8">
-        <h1 className="text-4xl font-extrabold tracking-tight">
-          Find{' '}
-          <span className="from-foreground via-foreground/80 to-foreground bg-gradient-to-r bg-clip-text">
-            Jobs
-          </span>
+        <h1 className="text-4xl font-extrabold tracking-tight text-zinc-100">
+          Find <span className="gold-text">Jobs</span>
         </h1>
-        <p className="text-muted-foreground mt-2 text-lg">
-          Browse available jobs and place your bids
-        </p>
+        <p className="mt-2 text-lg text-zinc-400">Browse available jobs and place your bids</p>
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row">
@@ -97,7 +92,7 @@ export default function JobsSearchPage() {
         <div className="lg:hidden">
           <Button
             variant="outline"
-            className="min-h-[44px] w-full justify-between"
+            className="min-h-[44px] w-full justify-between border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
             onClick={() => {
               setFiltersOpen(!filtersOpen);
             }}
@@ -108,7 +103,7 @@ export default function JobsSearchPage() {
               <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
               Filters
               {hasActiveFilters ? (
-                <span className="bg-primary text-primary-foreground flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-gold)] text-[10px] font-semibold text-black">
                   !
                 </span>
               ) : null}
@@ -137,27 +132,31 @@ export default function JobsSearchPage() {
           {isLoading ? (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={`skeleton-${String(i)}`} className="animate-pulse rounded-xl border p-5">
+                <div
+                  key={`skeleton-${String(i)}`}
+                  className="glass glass-highlight animate-pulse rounded-xl border border-[var(--brand-gold)]/10 p-5"
+                >
                   <div className="mb-3 flex items-center gap-3">
-                    <div className="bg-muted h-5 w-16 rounded-full" />
-                    <div className="bg-muted h-4 w-12 rounded" />
+                    <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
+                    <div className="h-4 w-12 rounded bg-white/[0.06]" />
                   </div>
-                  <div className="bg-muted mb-2 h-5 w-3/4 rounded" />
+                  <div className="mb-2 h-5 w-3/4 rounded bg-white/[0.06]" />
                   <div className="mb-4 space-y-2">
-                    <div className="bg-muted h-3 w-full rounded" />
-                    <div className="bg-muted h-3 w-5/6 rounded" />
+                    <div className="h-3 w-full rounded bg-white/[0.06]" />
+                    <div className="h-3 w-5/6 rounded bg-white/[0.06]" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="bg-muted h-4 w-4 rounded" />
-                    <div className="bg-muted h-3 w-24 rounded" />
+                    <div className="h-4 w-4 rounded bg-white/[0.06]" />
+                    <div className="h-3 w-24 rounded bg-white/[0.06]" />
                   </div>
                   <div className="mt-3 flex items-center gap-2">
-                    <div className="bg-muted h-4 w-4 rounded" />
-                    <div className="bg-muted h-3 w-20 rounded" />
+                    <div className="h-4 w-4 rounded bg-white/[0.06]" />
+                    <div className="h-3 w-20 rounded bg-white/[0.06]" />
                   </div>
-                  <div className="mt-4 flex items-center justify-between border-t pt-3">
-                    <div className="bg-muted h-5 w-20 rounded" />
-                    <div className="bg-muted h-3 w-16 rounded" />
+                  <div className="glass-divider mt-4 mb-3" />
+                  <div className="flex items-center justify-between">
+                    <div className="h-5 w-20 rounded bg-white/[0.06]" />
+                    <div className="h-3 w-16 rounded bg-white/[0.06]" />
                   </div>
                 </div>
               ))}

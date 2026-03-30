@@ -42,7 +42,9 @@ export function OAuthDivider() {
         <span className="h-px w-full bg-white/10" />
       </div>
       <div className="relative flex justify-center text-xs uppercase">
-        <span className="bg-transparent px-2 text-white/40 backdrop-blur-sm">Or continue with email</span>
+        <span className="bg-transparent px-2 text-white/60 backdrop-blur-sm">
+          Or continue with email
+        </span>
       </div>
     </div>
   );

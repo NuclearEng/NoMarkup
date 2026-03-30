@@ -32,9 +32,7 @@ export function VerifyEmailContent() {
       setState('success');
     } catch (error) {
       setState('error');
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Verification failed',
-      );
+      setErrorMessage(error instanceof Error ? error.message : 'Verification failed');
     }
   }, []);
 
@@ -52,7 +50,7 @@ export function VerifyEmailContent() {
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-2xl text-white">Email Verification</CardTitle>
-        <CardDescription className="text-white/50">
+        <CardDescription className="text-white/65">
           {state === 'loading' && 'Verifying your email address...'}
           {state === 'success' && 'Your email has been verified'}
           {state === 'error' && 'Verification failed'}
@@ -60,18 +58,15 @@ export function VerifyEmailContent() {
       </CardHeader>
       <CardContent className="relative z-[2] text-center">
         {state === 'loading' && (
-          <p className="text-sm text-white/50">
-            Please wait while we verify your email.
-          </p>
+          <p className="text-sm text-white/65">Please wait while we verify your email.</p>
         )}
         {state === 'success' && (
-          <p className="text-sm text-white/50">
-            Your email address has been successfully verified. You can now sign
-            in to your account.
+          <p className="text-sm text-white/65">
+            Your email address has been successfully verified. You can now sign in to your account.
           </p>
         )}
         {state === 'error' && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-destructive text-sm">
             {errorMessage}
           </p>
         )}

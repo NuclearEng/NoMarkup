@@ -8,7 +8,8 @@ import {
   FileCheck,
   Flag,
   LayoutDashboard,
-  MessageSquareWarning,
+  LineChart,
+  Network,
   Shield,
   ShieldCheck,
   Trophy,
@@ -37,8 +38,9 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/payments' as Route, label: 'Payments', icon: CreditCard },
   { href: '/admin/advances' as Route, label: 'Advances', icon: Banknote },
   { href: '/admin/guarantee' as Route, label: 'Guarantee', icon: ShieldCheck },
+  { href: '/admin/taxonomy' as Route, label: 'Taxonomy', icon: Network },
   { href: '/admin/challenges' as Route, label: 'Challenges', icon: Trophy },
-  { href: '/admin/platform' as Route, label: 'Platform', icon: MessageSquareWarning },
+  { href: '/admin/platform' as Route, label: 'Platform', icon: LineChart },
 ];
 
 function isActive(pathname: string, href: string): boolean {

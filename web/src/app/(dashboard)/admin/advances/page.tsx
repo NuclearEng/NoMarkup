@@ -23,13 +23,13 @@ import { ADVANCE_STATUS } from '@/types';
 const ALL_FILTER = '__all__';
 
 const STATUS_CLASSES: Record<AdvanceStatus, string> = {
-  requested: 'bg-blue-100 text-blue-800 border-blue-200',
-  approved: 'bg-green-100 text-green-800 border-green-200',
-  disbursed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  repaying: 'bg-amber-100 text-amber-800 border-amber-200',
-  repaid: 'bg-gray-100 text-gray-800 border-gray-200',
-  defaulted: 'bg-red-100 text-red-800 border-red-200',
-  rejected: 'bg-red-100 text-red-800 border-red-200',
+  requested: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+  approved: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  disbursed: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
+  repaying: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
+  repaid: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
+  defaulted: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
+  rejected: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
 };
 
 const STATUS_LABELS: Record<AdvanceStatus, string> = {

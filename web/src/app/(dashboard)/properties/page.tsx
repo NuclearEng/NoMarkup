@@ -5,9 +5,11 @@ import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Form,
   FormControl,
@@ -17,17 +19,13 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import {
-  useCreateProperty,
-  useDeleteProperty,
-  useProperties,
-} from '@/hooks/useProperties';
+import { useCreateProperty, useDeleteProperty, useProperties } from '@/hooks/useProperties';
 import { propertySchema } from '@/lib/validations';
 import { formatCents } from '@/lib/utils';
 import type { PropertyFormValues } from '@/lib/validations';
 
 export default function PropertiesPage() {
-  const { data: properties, isLoading, isError } = useProperties();
+  const { data: properties, isLoading, isError, refetch } = useProperties();
   const createProperty = useCreateProperty();
   const deleteProperty = useDeleteProperty();
   const [showForm, setShowForm] = useState(false);
@@ -66,12 +64,12 @@ export default function PropertiesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">My Properties</h1>
-          <p className="mt-1 text-muted-foreground">
-            Manage your service locations
-          </p>
+          <p className="text-muted-foreground mt-1">Manage your service locations</p>
         </div>
         <Button
-          onClick={() => { setShowForm(!showForm); }}
+          onClick={() => {
+            setShowForm(!showForm);
+          }}
           className="min-h-[44px]"
         >
           <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -87,10 +85,7 @@ export default function PropertiesPage() {
           </CardHeader>
           <CardContent>
             <Form {...form}>
-              <form
-                onSubmit={(e) => void form.handleSubmit(onSubmit)(e)}
-                className="space-y-4"
-              >
+              <form onSubmit={(e) => void form.handleSubmit(onSubmit)(e)} className="space-y-4">
                 <FormField
                   control={form.control}
                   name="nickname"
@@ -205,24 +200,45 @@ export default function PropertiesPage() {
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-40 animate-pulse rounded-xl border bg-muted"
-            />
+            <div key={i} className="bg-muted h-40 animate-pulse rounded-xl border" />
           ))}
         </div>
       ) : isError ? (
-        <div className="rounded-lg border border-destructive/50 p-8 text-center">
-          <p className="text-destructive">
-            Failed to load properties. Please try again.
-          </p>
-        </div>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load properties"
+          description="Something went wrong. Check your connection and try again."
+          action={
+            <Button
+              variant="default"
+              className="min-h-[44px]"
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              Retry
+            </Button>
+          }
+          className="glass border-destructive/30"
+        />
       ) : !properties?.length ? (
-        <div className="rounded-lg border p-8 text-center">
-          <p className="text-muted-foreground">
-            No properties added yet. Add your first property to get started.
-          </p>
-        </div>
+        <EmptyState
+          icon={<AnimatedIllustration type="no-properties" size="sm" />}
+          title="No properties yet"
+          description="Add your first property to get started with service requests."
+          action={
+            <Button
+              className="min-h-[44px]"
+              onClick={() => {
+                setShowForm(true);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+              Add Property
+            </Button>
+          }
+          className="glass"
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {properties.map((property) => (
@@ -234,7 +250,9 @@ export default function PropertiesPage() {
                     variant={deletingId === property.id ? 'destructive' : 'ghost'}
                     size="sm"
                     className="min-h-[44px] min-w-[44px]"
-                    onClick={() => { handleDelete(property.id); }}
+                    onClick={() => {
+                      handleDelete(property.id);
+                    }}
                     aria-label={
                       deletingId === property.id
                         ? `Confirm delete ${property.nickname}`
@@ -244,14 +262,11 @@ export default function PropertiesPage() {
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {property.address}, {property.city}, {property.state}{' '}
-                  {property.zip_code}
+                <p className="text-muted-foreground text-sm">
+                  {property.address}, {property.city}, {property.state} {property.zip_code}
                 </p>
                 {property.notes ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {property.notes}
-                  </p>
+                  <p className="text-muted-foreground mt-1 text-xs">{property.notes}</p>
                 ) : null}
                 <div className="mt-3 flex items-center gap-3">
                   <Badge variant="secondary">

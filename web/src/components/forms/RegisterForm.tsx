@@ -50,7 +50,7 @@ export function RegisterForm() {
     setFormError(null);
     try {
       await register(values.email, values.password, values.displayName);
-      router.push('/');
+      router.push('/dashboard');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Registration failed';
       setFormError(message);
@@ -85,8 +85,12 @@ export function RegisterForm() {
     <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
-        <CardTitle className="text-3xl font-bold tracking-tight text-white">Create an account</CardTitle>
-        <CardDescription className="text-white/50">Enter your details below to get started</CardDescription>
+        <CardTitle className="text-3xl font-bold tracking-tight text-white">
+          Create an account
+        </CardTitle>
+        <CardDescription className="text-white/65">
+          Enter your details below to get started
+        </CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">
         <OAuthButtons />
@@ -117,7 +121,7 @@ export function RegisterForm() {
                     <Input
                       placeholder="Your name"
                       autoComplete="name"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -137,7 +141,7 @@ export function RegisterForm() {
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -157,7 +161,7 @@ export function RegisterForm() {
                       type="password"
                       placeholder="Create a password"
                       autoComplete="new-password"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -170,7 +174,7 @@ export function RegisterForm() {
                           style={{ width: `${(strength.score / 5) * 100}%` }}
                         />
                       </div>
-                      <p className="text-white/40 text-xs">{strength.label}</p>
+                      <p className="text-xs text-white/60">{strength.label}</p>
                     </div>
                   ) : null}
                   <FormMessage />
@@ -189,7 +193,7 @@ export function RegisterForm() {
                       type="password"
                       placeholder="Confirm your password"
                       autoComplete="new-password"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -209,11 +213,11 @@ export function RegisterForm() {
         </Form>
       </CardContent>
       <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
-        <p className="text-white/50 text-sm">
+        <p className="text-sm text-white/65">
           Already have an account?{' '}
           <Link
             href="/login"
-            className="text-[var(--brand-gold)] font-medium underline-offset-4 hover:underline"
+            className="font-medium text-[var(--brand-gold)] underline-offset-4 hover:underline"
           >
             Sign in
           </Link>

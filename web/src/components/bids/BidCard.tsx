@@ -96,7 +96,10 @@ function getInitials(displayName: string): string {
     .toUpperCase();
 }
 
-function getCompetitivePosition(rank: number, totalBids: number): {
+function getCompetitivePosition(
+  rank: number,
+  totalBids: number,
+): {
   label: string;
   color: string;
 } {
@@ -107,7 +110,10 @@ function getCompetitivePosition(rank: number, totalBids: number): {
   if (rank > medianPosition) {
     return { label: 'Above median', color: 'text-red-500 dark:text-red-400' };
   }
-  return { label: `${String(rank)}${getOrdinalSuffix(rank)} lowest`, color: 'text-amber-600 dark:text-amber-400' };
+  return {
+    label: `${String(rank)}${getOrdinalSuffix(rank)} lowest`,
+    color: 'text-amber-600 dark:text-amber-400',
+  };
 }
 
 function getOrdinalSuffix(n: number): string {
@@ -116,7 +122,10 @@ function getOrdinalSuffix(n: number): string {
   return s[(v - 20) % 10] || s[v] || s[0] || 'th';
 }
 
-function getWinProbability(rank: number, totalBids: number): {
+function getWinProbability(
+  rank: number,
+  totalBids: number,
+): {
   label: string;
   percent: number;
   color: string;
@@ -124,7 +133,8 @@ function getWinProbability(rank: number, totalBids: number): {
   if (totalBids === 0) return { label: 'N/A', percent: 0, color: 'text-muted-foreground' };
   if (rank === 1) return { label: 'High chance', percent: 85, color: 'text-emerald-500' };
   if (rank === 2) return { label: 'Competitive', percent: 55, color: 'text-amber-500' };
-  if (rank <= Math.ceil(totalBids / 3)) return { label: 'Competitive', percent: 35, color: 'text-amber-500' };
+  if (rank <= Math.ceil(totalBids / 3))
+    return { label: 'Competitive', percent: 35, color: 'text-amber-500' };
   return { label: 'Needs lower bid', percent: 15, color: 'text-red-500' };
 }
 
@@ -153,13 +163,7 @@ function TrustScoreGauge({ score, tier }: { score: number; tier: TrustTier }) {
       aria-label={`Trust score: ${String(scorePercent)} out of 100`}
       role="img"
     >
-      <svg
-        width="48"
-        height="48"
-        viewBox="0 0 48 48"
-        className="-rotate-90"
-        aria-hidden="true"
-      >
+      <svg width="48" height="48" viewBox="0 0 48 48" className="-rotate-90" aria-hidden="true">
         <defs>
           <filter id={`trust-glow-${tier}`}>
             <feGaussianBlur stdDeviation="2" result="blur" />
@@ -233,13 +237,7 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
 }
 
 /** Win probability bar indicator with gradient fill */
-function WinProbabilityBar({
-  rank,
-  totalBids,
-}: {
-  rank: number;
-  totalBids: number;
-}) {
+function WinProbabilityBar({ rank, totalBids }: { rank: number; totalBids: number }) {
   const { label, percent, color } = getWinProbability(rank, totalBids);
 
   const barGradient = cn(
@@ -258,10 +256,7 @@ function WinProbabilityBar({
       </div>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
         <div
-          className={cn(
-            'h-full rounded-full transition-all duration-500',
-            barGradient,
-          )}
+          className={cn('h-full rounded-full transition-all duration-500', barGradient)}
           style={{ width: `${String(percent)}%` }}
           role="progressbar"
           aria-valuenow={percent}
@@ -336,22 +331,30 @@ export function BidCard({
     );
   }
 
-  const CardWrapper = isAwarded ? GoldAccentCard : Card;
-  const wrapperProps = isAwarded
-    ? { variant: 'winning' as const }
-    : {
-        className: 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg',
-      };
+  const baseCardClass = cn(
+    'relative',
+    isGoldRank && !isAwarded && 'border-amber-400/50 dark:border-amber-500/40',
+  );
+
+  const Wrapper = isAwarded
+    ? ({ children, className }: { children: React.ReactNode; className?: string }) => (
+        <GoldAccentCard variant="winning" className={className}>
+          {children}
+        </GoldAccentCard>
+      )
+    : ({ children, className }: { children: React.ReactNode; className?: string }) => (
+        <Card
+          className={cn(
+            'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg',
+            className,
+          )}
+        >
+          {children}
+        </Card>
+      );
 
   return (
-    <CardWrapper
-      {...wrapperProps}
-      className={cn(
-        wrapperProps.className,
-        'relative',
-        isGoldRank && !isAwarded && 'border-amber-400/50 dark:border-amber-500/40',
-      )}
-    >
+    <Wrapper className={baseCardClass}>
       {/* Gold shimmer overlay for #1 bid */}
       {isGoldRank && !isAwarded ? (
         <div
@@ -375,7 +378,7 @@ export function BidCard({
           <Avatar
             className={cn(
               'h-11 w-11 flex-shrink-0',
-              ringColor && `ring-[3px] ring-offset-2 ring-offset-card ${ringColor}`,
+              ringColor && `ring-offset-card ring-[3px] ring-offset-2 ${ringColor}`,
             )}
           >
             {provider_avatar_url ? (
@@ -400,7 +403,7 @@ export function BidCard({
             >
               {formatCents(bid.amount_cents)}
             </p>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
               <Clock className="h-3 w-3" aria-hidden="true" />
               <span>{bidAge}</span>
             </div>
@@ -409,9 +412,7 @@ export function BidCard({
           {/* Competitive position badges */}
           <div className="flex flex-wrap items-center gap-1.5">
             {/* Position indicator */}
-            {hasRank ? (
-              <CompetitivePositionBadge rank={rank} totalBids={displayTotalBids} />
-            ) : null}
+            {hasRank ? <CompetitivePositionBadge rank={rank} totalBids={displayTotalBids} /> : null}
 
             {/* Price vs starting */}
             {priceDiffVsStarting !== null && priceDiffVsStarting > 0 ? (
@@ -516,9 +517,7 @@ export function BidCard({
               </Badge>
             ) : null}
 
-            {isAwarded ? (
-              <WinBadge type="awarded" animate />
-            ) : null}
+            {isAwarded ? <WinBadge type="awarded" animate /> : null}
           </div>
         ) : null}
 
@@ -606,7 +605,7 @@ export function BidCard({
           )
         ) : null}
       </CardContent>
-    </CardWrapper>
+    </Wrapper>
   );
 }
 
@@ -617,9 +616,8 @@ function RankBadge({ rank, totalBids }: { rank: number; totalBids: number }) {
   if (style) {
     // Gold crown for #1, silver medal for #2, bronze medal for #3
     const RankIcon = rank === 1 ? Crown : Medal;
-    const iconExtra = rank === 1
-      ? 'h-3.5 w-3.5 drop-shadow-[0_0_3px_rgba(245,158,11,0.6)]'
-      : 'h-3 w-3';
+    const iconExtra =
+      rank === 1 ? 'h-3.5 w-3.5 drop-shadow-[0_0_3px_rgba(245,158,11,0.6)]' : 'h-3 w-3';
 
     return (
       <div
@@ -632,8 +630,8 @@ function RankBadge({ rank, totalBids }: { rank: number; totalBids: number }) {
         )}
         aria-label={`Rank ${String(rank)} of ${String(totalBids)} bids`}
       >
-        <RankIcon className={cn(iconExtra)} aria-hidden="true" />
-        #{String(rank)} of {String(totalBids)}
+        <RankIcon className={cn(iconExtra)} aria-hidden="true" />#{String(rank)} of{' '}
+        {String(totalBids)}
       </div>
     );
   }
@@ -664,7 +662,10 @@ function CompetitivePositionBadge({ rank, totalBids }: { rank: number; totalBids
       )}
     >
       {rank === 1 ? (
-        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+        <span
+          className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"
+          aria-hidden="true"
+        />
       ) : null}
       {label}
     </span>

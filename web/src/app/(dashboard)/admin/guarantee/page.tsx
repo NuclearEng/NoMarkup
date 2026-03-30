@@ -24,10 +24,13 @@ import { DISPUTE_STATUS } from '@/types';
 const ALL_FILTER = '__all__';
 
 const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800 border-blue-200',
-  investigating: 'bg-purple-100 text-purple-800 border-purple-200',
-  resolved: 'bg-green-100 text-green-800 border-green-200',
-  escalated: 'bg-red-100 text-red-800 border-red-200',
+  open: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+  investigating:
+    'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
+  resolved:
+    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  escalated:
+    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
 };
 
 const STATUS_LABELS: Record<DisputeStatus, string> = {
@@ -64,7 +67,7 @@ export default function AdminGuaranteePage() {
       render: (claim) => (
         <Link
           href={`/admin/guarantee/${claim.id}` as Route}
-          className="font-medium text-primary hover:underline"
+          className="text-primary font-medium hover:underline"
         >
           {claim.id.slice(0, 8)}...
         </Link>
@@ -75,8 +78,8 @@ export default function AdminGuaranteePage() {
       header: 'Contract',
       render: (claim) => (
         <Link
-          href={`/admin/disputes/${claim.id}` as Route}
-          className="font-mono text-xs text-primary hover:underline"
+          href={`/contracts/${claim.contract_id}` as Route}
+          className="text-primary font-mono text-xs hover:underline"
         >
           {claim.contract_id.slice(0, 8)}...
         </Link>
@@ -86,26 +89,19 @@ export default function AdminGuaranteePage() {
       key: 'customer',
       header: 'Customer',
       render: (claim) => (
-        <span className="text-sm">
-          {claim.initiator_name ?? claim.initiated_by.slice(0, 8)}
-        </span>
+        <span className="text-sm">{claim.initiator_name ?? claim.initiated_by.slice(0, 8)}</span>
       ),
     },
     {
       key: 'reason',
       header: 'Claim Type',
-      render: (claim) => (
-        <span className="line-clamp-2 text-sm">{claim.reason}</span>
-      ),
+      render: (claim) => <span className="line-clamp-2 text-sm">{claim.reason}</span>,
     },
     {
       key: 'status',
       header: 'Status',
       render: (claim) => (
-        <Badge
-          variant="outline"
-          className={cn('text-xs', STATUS_CLASSES[claim.status])}
-        >
+        <Badge variant="outline" className={cn('text-xs', STATUS_CLASSES[claim.status])}>
           {STATUS_LABELS[claim.status] ?? claim.status}
         </Badge>
       ),
@@ -145,7 +141,7 @@ export default function AdminGuaranteePage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold tracking-tight">Guarantee Claims</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
           Failed to load guarantee claims. Please try refreshing the page.
         </div>
       </div>
@@ -156,13 +152,13 @@ export default function AdminGuaranteePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Guarantee Claims</h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="text-muted-foreground mt-1">
           Review and resolve NoMarkup Guarantee claims filed by customers.
         </p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Status:</span>
+        <span className="text-muted-foreground text-sm font-medium">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {
@@ -170,7 +166,7 @@ export default function AdminGuaranteePage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-[180px] min-h-[44px]" aria-label="Filter claims by status">
+          <SelectTrigger className="min-h-[44px] w-[180px]" aria-label="Filter claims by status">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>

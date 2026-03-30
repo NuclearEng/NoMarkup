@@ -6,6 +6,7 @@ import type { Route } from 'next';
 import { useParams, useRouter } from 'next/navigation';
 
 import { Badge } from '@/components/ui/badge';
+import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useAdminDispute, useResolveDispute } from '@/hooks/useAdmin';
 import { cn, formatCents } from '@/lib/utils';
@@ -24,10 +26,13 @@ import type { DisputeResolutionType, DisputeStatus } from '@/types';
 import { DISPUTE_RESOLUTION_TYPE, DISPUTE_STATUS } from '@/types';
 
 const DISPUTE_STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800 border-blue-200',
-  investigating: 'bg-purple-100 text-purple-800 border-purple-200',
-  resolved: 'bg-green-100 text-green-800 border-green-200',
-  escalated: 'bg-red-100 text-red-800 border-red-200',
+  open: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+  investigating:
+    'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
+  resolved:
+    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  escalated:
+    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
 };
 
 const RESOLUTION_LABELS: Record<DisputeResolutionType, string> = {
@@ -79,12 +84,34 @@ export default function AdminDisputeDetailPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+        <Skeleton variant="text" className="h-4 w-64" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton variant="text" className="h-4 w-72" />
+          </div>
+          <Skeleton className="h-6 w-24" />
+        </div>
         <Card>
           <CardContent className="space-y-4 pt-6">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-4 w-full animate-pulse rounded bg-muted" />
-            ))}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton variant="text" className="h-3 w-20" />
+                  <Skeleton variant="text" className="h-4 w-32" />
+                </div>
+              ))}
+            </div>
+            <Skeleton variant="text" className="mt-4 h-3 w-16" />
+            <Skeleton className="h-16 w-full" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-4 pt-6">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-10 w-36" />
           </CardContent>
         </Card>
       </div>
@@ -94,8 +121,15 @@ export default function AdminDisputeDetailPage() {
   if (isError || !dispute) {
     return (
       <div className="space-y-6">
+        <Breadcrumb
+          items={[
+            { label: 'Admin', href: '/admin' },
+            { label: 'Disputes', href: '/admin/disputes' },
+            { label: 'Detail' },
+          ]}
+        />
         <h1 className="text-2xl font-bold tracking-tight">Dispute Detail</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
           Failed to load dispute details.
         </div>
       </div>
@@ -104,12 +138,18 @@ export default function AdminDisputeDetailPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb
+        items={[
+          { label: 'Admin', href: '/admin' },
+          { label: 'Disputes', href: '/admin/disputes' },
+          { label: `${dispute.id.slice(0, 8)}...` },
+        ]}
+      />
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dispute Detail</h1>
-          <p className="mt-1 font-mono text-sm text-muted-foreground">
-            {dispute.id}
-          </p>
+          <p className="text-muted-foreground mt-1 font-mono text-sm">{dispute.id}</p>
         </div>
         <Badge
           variant="outline"
@@ -132,15 +172,11 @@ export default function AdminDisputeDetailPage() {
             </div>
             <div>
               <span className="text-muted-foreground">Initiated By</span>
-              <p className="mt-1">
-                {dispute.initiator_name ?? dispute.initiated_by.slice(0, 12)}
-              </p>
+              <p className="mt-1">{dispute.initiator_name ?? dispute.initiated_by.slice(0, 12)}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Respondent</span>
-              <p className="mt-1">
-                {dispute.respondent_name ? dispute.respondent_name : 'N/A'}
-              </p>
+              <p className="mt-1">{dispute.respondent_name ? dispute.respondent_name : 'N/A'}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Opened</span>
@@ -163,20 +199,20 @@ export default function AdminDisputeDetailPage() {
           </div>
 
           <div className="mt-4">
-            <span className="text-sm text-muted-foreground">Reason</span>
+            <span className="text-muted-foreground text-sm">Reason</span>
             <p className="mt-1 text-sm">{dispute.reason}</p>
           </div>
 
           {dispute.resolution_notes ? (
             <div className="mt-4">
-              <span className="text-sm text-muted-foreground">Resolution Notes</span>
+              <span className="text-muted-foreground text-sm">Resolution Notes</span>
               <p className="mt-1 text-sm">{dispute.resolution_notes}</p>
             </div>
           ) : null}
 
           {dispute.resolution_type ? (
             <div className="mt-4">
-              <span className="text-sm text-muted-foreground">Resolution</span>
+              <span className="text-muted-foreground text-sm">Resolution</span>
               <p className="mt-1 text-sm font-medium">
                 {RESOLUTION_LABELS[dispute.resolution_type]}
               </p>
@@ -194,10 +230,7 @@ export default function AdminDisputeDetailPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="dispute-resolution-type">Resolution Type</Label>
-              <Select
-                value={resolutionType}
-                onValueChange={setResolutionType}
-              >
+              <Select value={resolutionType} onValueChange={setResolutionType}>
                 <SelectTrigger id="dispute-resolution-type" className="min-h-[44px]">
                   <SelectValue placeholder="Select resolution type" />
                 </SelectTrigger>
@@ -217,7 +250,9 @@ export default function AdminDisputeDetailPage() {
                 id="dispute-notes"
                 placeholder="Describe the resolution and rationale..."
                 value={notes}
-                onChange={(e) => { setNotes(e.target.value); }}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                }}
                 rows={4}
               />
             </div>
@@ -231,7 +266,9 @@ export default function AdminDisputeDetailPage() {
                 min="0"
                 placeholder="0.00"
                 value={refundCents}
-                onChange={(e) => { setRefundCents(e.target.value); }}
+                onChange={(e) => {
+                  setRefundCents(e.target.value);
+                }}
                 className="min-h-[44px]"
               />
             </div>
@@ -241,7 +278,9 @@ export default function AdminDisputeDetailPage() {
                 id="dispute-guarantee"
                 type="checkbox"
                 checked={guaranteeClaim}
-                onChange={(e) => { setGuaranteeClaim(e.target.checked); }}
+                onChange={(e) => {
+                  setGuaranteeClaim(e.target.checked);
+                }}
                 className="h-5 w-5 rounded border-gray-300"
               />
               <Label htmlFor="dispute-guarantee" className="cursor-pointer">
@@ -252,13 +291,15 @@ export default function AdminDisputeDetailPage() {
             <Button
               className="min-h-[44px]"
               disabled={!resolutionType || resolveMutation.isPending}
-              onClick={() => { void handleResolve(); }}
+              onClick={() => {
+                void handleResolve();
+              }}
             >
               {resolveMutation.isPending ? 'Resolving...' : 'Resolve Dispute'}
             </Button>
 
             {resolveMutation.isError ? (
-              <p className="text-sm text-destructive">
+              <p className="text-destructive text-sm">
                 Failed to resolve dispute. Please try again.
               </p>
             ) : null}

@@ -28,7 +28,8 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
   const isCustomer = user?.id === contract.customer_id;
   const isProvider = user?.id === contract.provider_id;
 
-  const currentUserAccepted = (isCustomer && contract.customer_accepted) || (isProvider && contract.provider_accepted);
+  const currentUserAccepted =
+    (isCustomer && contract.customer_accepted) || (isProvider && contract.provider_accepted);
 
   function handleAccept() {
     acceptContract.mutate(contract.id);
@@ -52,21 +53,22 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
         {/* Contract terms summary */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Total Amount</span>
+            <span className="text-muted-foreground text-sm">Total Amount</span>
             <span className="text-lg font-bold">{formatCents(contract.amount_cents)}</span>
           </div>
           <Separator />
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Payment Timing</span>
+            <span className="text-muted-foreground text-sm">Payment Timing</span>
             <span className="text-sm font-medium">
               {getPaymentTimingLabel(contract.payment_timing)}
             </span>
           </div>
           <Separator />
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Milestones</span>
+            <span className="text-muted-foreground text-sm">Milestones</span>
             <span className="text-sm font-medium">
-              {String(contract.milestones.length)} milestone{contract.milestones.length !== 1 ? 's' : ''}
+              {String(contract.milestones.length)} milestone
+              {contract.milestones.length !== 1 ? 's' : ''}
             </span>
           </div>
           {contract.milestones.length > 0 ? (
@@ -115,7 +117,7 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
         </div>
 
         {/* Actions */}
-        {(isCustomer || isProvider) ? (
+        {isCustomer || isProvider ? (
           <div className="space-y-3 border-t pt-4">
             {currentUserAccepted ? (
               <div className="flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm text-green-700">
@@ -135,21 +137,27 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
                     disabled={cancelContract.isPending}
                   >
                     {cancelContract.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    ) : null}
-                    Confirm Decline
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Declining...
+                      </>
+                    ) : (
+                      'Confirm Decline'
+                    )}
                   </Button>
                   <Button
                     variant="outline"
                     className="min-h-[44px]"
-                    onClick={() => { setShowDeclineConfirm(false); }}
+                    onClick={() => {
+                      setShowDeclineConfirm(false);
+                    }}
                     disabled={cancelContract.isPending}
                   >
                     Cancel
                   </Button>
                 </div>
                 {cancelContract.isError ? (
-                  <p className="text-sm text-destructive">
+                  <p className="text-destructive text-sm">
                     Failed to decline contract. Please try again.
                   </p>
                 ) : null}
@@ -162,14 +170,20 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
                   disabled={acceptContract.isPending}
                 >
                   {acceptContract.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : null}
-                  Accept Contract
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Accepting...
+                    </>
+                  ) : (
+                    'Accept Contract'
+                  )}
                 </Button>
                 <Button
                   variant="outline"
                   className="min-h-[44px]"
-                  onClick={() => { setShowDeclineConfirm(true); }}
+                  onClick={() => {
+                    setShowDeclineConfirm(true);
+                  }}
                   disabled={acceptContract.isPending}
                 >
                   Decline
@@ -177,7 +191,7 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
               </div>
             )}
             {acceptContract.isError ? (
-              <p className="text-sm text-destructive">
+              <p className="text-destructive text-sm">
                 Failed to accept contract. Please try again.
               </p>
             ) : null}

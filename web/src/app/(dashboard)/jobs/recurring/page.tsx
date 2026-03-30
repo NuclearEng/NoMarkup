@@ -4,9 +4,11 @@ import { Calendar, Pause, Play, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCancelJob, useCustomerJobs, useUpdateJob } from '@/hooks/useJobs';
 import { formatCents } from '@/lib/utils';
@@ -72,7 +74,10 @@ function RecurringJobCard({ job }: { job: Job }) {
   const statusBadge = isPaused ? (
     <Badge variant="secondary">Paused</Badge>
   ) : (
-    <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300">
+    <Badge
+      variant="outline"
+      className="border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300"
+    >
       Active
     </Badge>
   );
@@ -82,7 +87,11 @@ function RecurringJobCard({ job }: { job: Job }) {
     setIsPaused(newPaused);
     updateJob.mutate(
       { id: job.id, input: { is_recurring: !newPaused } },
-      { onError: () => { setIsPaused(!newPaused); } },
+      {
+        onError: () => {
+          setIsPaused(!newPaused);
+        },
+      },
     );
   }
 
@@ -104,20 +113,16 @@ function RecurringJobCard({ job }: { job: Job }) {
               </Link>
               {statusBadge}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">{job.category_name}</p>
+            <p className="text-muted-foreground mt-1 text-sm">{job.category_name}</p>
 
             <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-              <div className="flex items-center gap-1.5 text-muted-foreground">
+              <div className="text-muted-foreground flex items-center gap-1.5">
                 <Calendar className="h-4 w-4" aria-hidden="true" />
                 <span>{FREQUENCY_LABELS[job.recurrence_frequency ?? ''] ?? 'Unknown'}</span>
               </div>
-              <span className="text-muted-foreground">
-                Next: {getNextOccurrence(job)}
-              </span>
+              <span className="text-muted-foreground">Next: {getNextOccurrence(job)}</span>
               {job.starting_bid_cents ? (
-                <span className="font-medium">
-                  {formatCents(job.starting_bid_cents)}
-                </span>
+                <span className="font-medium">{formatCents(job.starting_bid_cents)}</span>
               ) : null}
             </div>
           </div>
@@ -143,7 +148,7 @@ function RecurringJobCard({ job }: { job: Job }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-11 w-11 text-destructive hover:text-destructive"
+              className="text-destructive hover:text-destructive h-11 w-11"
               onClick={handleCancel}
               disabled={cancelJob.isPending}
               aria-label="Cancel recurring job"
@@ -159,7 +164,7 @@ function RecurringJobCard({ job }: { job: Job }) {
 }
 
 export default function RecurringJobsPage() {
-  const { data, isLoading, isError } = useCustomerJobs({ page: 1, page_size: 50 });
+  const { data, isLoading, isError, refetch } = useCustomerJobs({ page: 1, page_size: 50 });
 
   // Filter to recurring jobs only
   const recurringJobs = data?.jobs.filter((job) => job.is_recurring) ?? [];
@@ -169,14 +174,12 @@ export default function RecurringJobsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Recurring Jobs</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="text-muted-foreground mt-1">
             Manage your recurring job schedules, pause, or cancel them.
           </p>
         </div>
         <Link href="/jobs/new">
-          <Button className="min-h-[44px]">
-            Post New Job
-          </Button>
+          <Button className="min-h-[44px]">Post New Job</Button>
         </Link>
       </div>
 
@@ -187,35 +190,42 @@ export default function RecurringJobsPage() {
           ))}
         </div>
       ) : isError ? (
-        <Card>
-          <CardContent className="py-8 text-center">
-            <p className="text-sm text-destructive">
-              Failed to load recurring jobs. Please try again.
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load recurring jobs"
+          description="Something went wrong. Check your connection and try again."
+          action={
+            <Button
+              variant="default"
+              className="min-h-[44px]"
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              Retry
+            </Button>
+          }
+          className="glass border-destructive/30"
+        />
       ) : recurringJobs.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Calendar className="mx-auto mb-3 h-12 w-12 text-muted-foreground" aria-hidden="true" />
-            <p className="text-lg font-medium">No recurring jobs</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              When you post a job and mark it as recurring, it will appear here.
-            </p>
-            <Link href="/jobs/new" className="mt-4 inline-block">
-              <Button variant="outline" className="min-h-[44px]">
-                Post a Recurring Job
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={<AnimatedIllustration type="no-recurring" size="sm" />}
+          title="No recurring jobs"
+          description="When you post a job and mark it as recurring, it will appear here."
+          action={
+            <Button asChild variant="outline" className="min-h-[44px]">
+              <Link href="/jobs/new">Post a Recurring Job</Link>
+            </Button>
+          }
+          className="glass"
+        />
       ) : (
         <div className="space-y-3">
           {/* Summary */}
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="text-muted-foreground text-sm font-medium">
                   Total Recurring
                 </CardTitle>
               </CardHeader>
@@ -225,19 +235,20 @@ export default function RecurringJobsPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Active
-                </CardTitle>
+                <CardTitle className="text-muted-foreground text-sm font-medium">Active</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold tabular-nums text-green-600 dark:text-emerald-400">
-                  {String(recurringJobs.filter((j) => j.status === 'active' || j.status === 'in_progress').length)}
+                <p className="text-2xl font-bold text-green-600 tabular-nums dark:text-emerald-400">
+                  {String(
+                    recurringJobs.filter((j) => j.status === 'active' || j.status === 'in_progress')
+                      .length,
+                  )}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="text-muted-foreground text-sm font-medium">
                   Most Common
                 </CardTitle>
               </CardHeader>
@@ -254,7 +265,7 @@ export default function RecurringJobsPage() {
                     return mostCommon ? (FREQUENCY_LABELS[mostCommon[0]] ?? mostCommon[0]) : '--';
                   })()}
                 </p>
-                <p className="text-xs text-muted-foreground">frequency</p>
+                <p className="text-muted-foreground text-xs">frequency</p>
               </CardContent>
             </Card>
           </div>

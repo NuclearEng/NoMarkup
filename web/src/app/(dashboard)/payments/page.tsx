@@ -128,8 +128,8 @@ export default function PaymentsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Payments</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Payments</h1>
+        <p className="mt-1 text-zinc-400">
           Track your payments, view fee breakdowns, and manage payment methods.
         </p>
       </div>

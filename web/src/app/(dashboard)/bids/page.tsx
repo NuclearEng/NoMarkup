@@ -7,6 +7,7 @@ import { ProviderBidCard } from '@/components/bids/ProviderBidCard';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMyBids } from '@/hooks/useBids';
 
@@ -28,7 +29,7 @@ function tabToStatusFilter(tab: BidTab): string | undefined {
 function BidTabContent({ tab }: { tab: BidTab }) {
   const [page, setPage] = useState(1);
   const statusFilter = tabToStatusFilter(tab);
-  const { data, isLoading, isError } = useMyBids(statusFilter, page);
+  const { data, isLoading, isError, refetch } = useMyBids(statusFilter, page);
 
   if (isLoading) {
     return (
@@ -50,9 +51,23 @@ function BidTabContent({ tab }: { tab: BidTab }) {
 
   if (isError) {
     return (
-      <div className="glass rounded-lg border border-destructive/50 p-4 text-sm text-destructive">
-        Failed to load bids. Please try refreshing the page.
-      </div>
+      <EmptyState
+        icon={<AnimatedIllustration type="error" size="sm" />}
+        title="Failed to load bids"
+        description="Something went wrong. Check your connection and try again."
+        action={
+          <Button
+            variant="default"
+            className="min-h-[44px]"
+            onClick={() => {
+              void refetch();
+            }}
+          >
+            Retry
+          </Button>
+        }
+        className="glass border-destructive/30"
+      />
     );
   }
 
@@ -68,14 +83,17 @@ function BidTabContent({ tab }: { tab: BidTab }) {
     };
 
     return (
-      <div className="glass-empty-state flex flex-col items-center justify-center py-12">
-        <AnimatedIllustration type="no-bids" size="md" />
-        <p className="mt-4 text-lg font-medium">No bids</p>
-        <p className="mt-1 text-sm" style={{ opacity: 0.7 }}>{emptyMessages[tab]}</p>
-        <Button asChild className="mt-4 min-h-[44px]">
-          <Link href="/jobs">Browse Jobs</Link>
-        </Button>
-      </div>
+      <EmptyState
+        icon={<AnimatedIllustration type="no-bids" size="sm" />}
+        title="No bids"
+        description={emptyMessages[tab]}
+        action={
+          <Button asChild className="min-h-[44px]">
+            <Link href="/jobs">Browse Jobs</Link>
+          </Button>
+        }
+        className="glass"
+      />
     );
   }
 
@@ -94,7 +112,9 @@ function BidTabContent({ tab }: { tab: BidTab }) {
             variant="outline"
             className="min-h-[44px]"
             disabled={page <= 1}
-            onClick={() => { setPage((p) => p - 1); }}
+            onClick={() => {
+              setPage((p) => p - 1);
+            }}
           >
             Previous
           </Button>
@@ -105,7 +125,9 @@ function BidTabContent({ tab }: { tab: BidTab }) {
             variant="outline"
             className="min-h-[44px]"
             disabled={!pagination.hasNext}
-            onClick={() => { setPage((p) => p + 1); }}
+            onClick={() => {
+              setPage((p) => p + 1);
+            }}
           >
             Next
           </Button>
@@ -120,9 +142,7 @@ export default function MyBidsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-zinc-100">My Bids</h1>
-        <p className="mt-1 text-zinc-400">
-          Track and manage your bids across all jobs.
-        </p>
+        <p className="mt-1 text-zinc-400">Track and manage your bids across all jobs.</p>
       </div>
 
       <Tabs defaultValue="all">

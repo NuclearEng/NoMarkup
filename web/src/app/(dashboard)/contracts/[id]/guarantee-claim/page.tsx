@@ -32,11 +32,11 @@ const CLAIM_STATUS_LABELS: Record<string, string> = {
 };
 
 const CLAIM_STATUS_CLASSES: Record<string, string> = {
-  open: 'bg-blue-100 text-blue-800',
-  under_review: 'bg-amber-100 text-amber-800',
-  resolved: 'bg-green-100 text-green-800',
-  escalated: 'bg-red-100 text-red-800',
-  closed: 'bg-gray-100 text-gray-800',
+  open: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+  under_review: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  resolved: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+  escalated: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+  closed: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
 };
 
 export default function GuaranteeClaimPage() {

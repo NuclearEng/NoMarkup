@@ -92,7 +92,7 @@ export function LoginForm() {
           <CardTitle className="text-2xl font-bold tracking-tight text-white">
             Two-factor authentication
           </CardTitle>
-          <CardDescription className="text-white/50">
+          <CardDescription className="text-white/65">
             Enter the 6-digit code from your authenticator app, or use a backup code
           </CardDescription>
         </CardHeader>
@@ -122,9 +122,9 @@ export function LoginForm() {
                 maxLength={8}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-center text-lg tracking-widest text-white placeholder:text-white/30"
+                className="rounded-lg border-white/10 bg-white/5 text-center text-lg tracking-widest text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
               />
-              <p className="text-white/40 text-xs">You can also enter a backup code</p>
+              <p className="text-xs text-white/60">You can also enter a backup code</p>
             </div>
 
             <Button
@@ -158,7 +158,7 @@ export function LoginForm() {
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-3xl font-bold tracking-tight text-white">Welcome back</CardTitle>
-        <CardDescription className="text-sm text-white/50">Sign in to your account</CardDescription>
+        <CardDescription className="text-sm text-white/65">Sign in to your account</CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">
         <OAuthButtons />
@@ -190,7 +190,7 @@ export function LoginForm() {
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -210,7 +210,7 @@ export function LoginForm() {
                       type="password"
                       placeholder="Enter your password"
                       autoComplete="current-password"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -229,15 +229,15 @@ export function LoginForm() {
                       type="checkbox"
                       checked={field.value}
                       onChange={field.onChange}
-                      className="border-white/20 accent-[var(--brand-gold)] h-4 w-4 rounded bg-white/5"
+                      className="h-4 w-4 rounded border-white/20 bg-white/5 accent-[var(--brand-gold)]"
                     />
-                    <span className="text-white/50 text-sm">Remember me</span>
+                    <span className="text-sm text-white/65">Remember me</span>
                   </label>
                 )}
               />
               <Link
                 href="/forgot-password"
-                className="text-white/50 hover:text-white flex min-h-[44px] items-center text-sm font-medium underline-offset-4 transition-colors hover:underline"
+                className="flex min-h-[44px] items-center text-sm font-medium text-white/65 underline-offset-4 transition-colors hover:text-white hover:underline"
               >
                 Forgot password?
               </Link>
@@ -254,11 +254,11 @@ export function LoginForm() {
         </Form>
       </CardContent>
       <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
-        <p className="text-white/50 text-sm">
+        <p className="text-sm text-white/65">
           Don&apos;t have an account?{' '}
           <Link
             href="/register"
-            className="text-[var(--brand-gold)] font-medium underline-offset-4 hover:underline"
+            className="font-medium text-[var(--brand-gold)] underline-offset-4 hover:underline"
           >
             Create one
           </Link>

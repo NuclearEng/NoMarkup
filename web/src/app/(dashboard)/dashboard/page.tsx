@@ -72,14 +72,8 @@ function useCountUp(target: number, duration = 600): number {
   return current;
 }
 
-/** Glass tint class per stat card icon — maps to CSS glass-tinted-* classes */
-const STAT_GLASS_TINT: Record<string, string> = {
-  Briefcase: 'glass-tinted-blue',
-  Gavel: 'glass-tinted-violet',
-  FileText: 'glass-tinted-amber',
-  DollarSign: 'glass-tinted-emerald',
-  TrendingUp: 'glass-tinted-cyan',
-};
+/** Glass tint removed — all stat cards use the same uniform background */
+const STAT_GLASS_TINT: Record<string, string> = {};
 
 function StatCard({
   title,
@@ -114,8 +108,7 @@ function StatCard({
         : String(animatedNum)
       : value;
 
-  const glassTintClass =
-    STAT_GLASS_TINT[Icon.displayName ?? ''] ?? '';
+  const glassTintClass = STAT_GLASS_TINT[Icon.displayName ?? ''] ?? '';
 
   return (
     <Card
@@ -137,7 +130,7 @@ function StatCard({
           <div className="flex items-end justify-between gap-2">
             <div className="min-w-0">
               <p
-                className="animate-count-up-fade text-2xl font-bold tracking-tight tabular-nums text-zinc-100"
+                className="animate-count-up-fade text-2xl font-bold tracking-tight text-zinc-100 tabular-nums"
                 style={isCurrency ? { textShadow: '0 0 16px rgba(16,185,129,0.2)' } : undefined}
               >
                 {displayValue}
@@ -147,11 +140,11 @@ function StatCard({
                   <TrendArrow value={trendValue} label={trendLabel} size="sm" />
                 ) : null}
                 {description && trendValue === undefined ? (
-                  <p className="text-xs" style={{ opacity: 0.7 }}>{description}</p>
+                  <p className="text-xs text-zinc-400">{description}</p>
                 ) : null}
               </div>
               {description && trendValue !== undefined ? (
-                <p className="mt-0.5 text-xs" style={{ opacity: 0.7 }}>{description}</p>
+                <p className="mt-0.5 text-xs text-zinc-400">{description}</p>
               ) : null}
             </div>
             {sparklineData && sparklineData.length >= 2 ? (
@@ -327,7 +320,9 @@ function CustomerDashboard() {
       {/* Recent jobs */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader className="glass-header relative z-[2] flex flex-row items-center justify-between rounded-t-[1.25rem]">
-          <CardTitle className="gold-text text-base font-semibold tracking-tight">Recent Jobs</CardTitle>
+          <CardTitle className="gold-text text-base font-semibold tracking-tight">
+            Recent Jobs
+          </CardTitle>
           <Link href="/jobs/mine">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
               View all
@@ -356,7 +351,7 @@ function CustomerDashboard() {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{job.title}</p>
-                      <p className="text-xs" style={{ opacity: 0.7 }}>{job.category_name}</p>
+                      <p className="text-xs text-zinc-400">{job.category_name}</p>
                     </div>
                     <div className="ml-3 flex items-center gap-2">
                       <Badge variant="secondary">
@@ -462,7 +457,9 @@ function ProviderDashboardSection() {
       {/* Recent bids */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader className="glass-header relative z-[2] flex flex-row items-center justify-between rounded-t-[1.25rem]">
-          <CardTitle className="gold-text text-base font-semibold tracking-tight">Active Bids</CardTitle>
+          <CardTitle className="gold-text text-base font-semibold tracking-tight">
+            Active Bids
+          </CardTitle>
           <Link href="/bids">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
               View all
@@ -477,7 +474,7 @@ function ProviderDashboardSection() {
               ))}
             </div>
           ) : !bidsData?.bids.length ? (
-            <p className="py-4 text-center text-sm" style={{ opacity: 0.7 }}>
+            <p className="py-4 text-center text-sm text-zinc-400">
               No active bids. Browse jobs to start bidding.
             </p>
           ) : (
@@ -491,7 +488,7 @@ function ProviderDashboardSection() {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">Bid: {formatCents(bid.amount_cents)}</p>
-                      <p className="text-xs" style={{ opacity: 0.7 }}>
+                      <p className="text-xs text-zinc-400">
                         Placed{' '}
                         {new Date(bid.created_at).toLocaleDateString('en-US', {
                           month: 'short',
@@ -560,9 +557,7 @@ export default function DashboardPage() {
               {'\u{1F44B}'}
             </span>
           </h1>
-          <p className="mt-1 text-zinc-400">
-            Here is what is happening across your account today.
-          </p>
+          <p className="mt-1 text-zinc-400">Here is what is happening across your account today.</p>
         </div>
 
         <QuickActions isProvider={isProvider} />
@@ -572,7 +567,9 @@ export default function DashboardPage() {
             {isProvider ? (
               <>
                 <div className="glass-divider" aria-hidden="true" />
-                <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">Customer Overview</h2>
+                <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">
+                  Customer Overview
+                </h2>
               </>
             ) : null}
             <CustomerDashboard />
@@ -584,7 +581,9 @@ export default function DashboardPage() {
             {isCustomer ? (
               <>
                 <div className="glass-divider" aria-hidden="true" />
-                <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">Provider Overview</h2>
+                <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">
+                  Provider Overview
+                </h2>
               </>
             ) : null}
             <ProviderDashboardSection />

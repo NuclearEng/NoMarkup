@@ -35,17 +35,13 @@ function TickerItemDisplay({ item }: { item: TickerItem }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-2 whitespace-nowrap px-5 text-sm',
+        'inline-flex items-center gap-2 px-5 text-sm whitespace-nowrap',
         isEndingSoon && 'animate-ticker-pulse',
       )}
     >
-      <span className="font-medium text-white/80">
-        {item.category}
-      </span>
+      <span className="font-medium text-white/80">{item.category}</span>
       <span className="text-white/25">in</span>
-      <span className="font-medium text-white/80">
-        {item.location}
-      </span>
+      <span className="font-medium text-white/80">{item.location}</span>
       <span
         className={cn(
           'text-base font-bold tabular-nums',
@@ -55,36 +51,40 @@ function TickerItemDisplay({ item }: { item: TickerItem }) {
         {formatPrice(item.currentPrice)}
       </span>
       {item.originalPrice ? (
-        <span className="text-xs tabular-nums text-white/35 line-through">
+        <span className="text-xs text-white/65 tabular-nums line-through">
           {formatPrice(item.originalPrice)}
         </span>
       ) : null}
       {isCompleted ? (
         <span className="inline-flex items-center justify-center rounded-full bg-emerald-500/15 p-0.5">
-          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="#34d399"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <polyline points="3.5 8.5 6.5 11.5 12.5 5" />
           </svg>
         </span>
       ) : null}
       {item.bidCount !== undefined ? (
-        <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] tabular-nums text-white/50">
+        <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-white/65 tabular-nums">
           {String(item.bidCount)} bids
         </span>
       ) : null}
       {item.timeRemaining ? (
-        <span className="text-xs font-medium text-amber-400">
-          {item.timeRemaining}
-        </span>
+        <span className="text-xs font-medium text-amber-400">{item.timeRemaining}</span>
       ) : null}
     </span>
   );
 }
 
-export function MarketTickerStrip({
-  items,
-  speed = 'normal',
-  className,
-}: MarketTickerStripProps) {
+export function MarketTickerStrip({ items, speed = 'normal', className }: MarketTickerStripProps) {
   const duration = SPEED_DURATION[speed];
 
   // Duplicate items for seamless infinite loop
@@ -107,12 +107,12 @@ export function MarketTickerStrip({
         }}
       >
         {allItems.map((item, i) => (
-          <span key={`${item.category}-${item.location}-${String(i)}`} className="inline-flex items-center">
+          <span
+            key={`${item.category}-${item.location}-${String(i)}`}
+            className="inline-flex items-center"
+          >
             <TickerItemDisplay item={item} />
-            <span
-              className="mx-1 inline-block h-3 w-px bg-white/15"
-              aria-hidden="true"
-            />
+            <span className="mx-1 inline-block h-3 w-px bg-white/15" aria-hidden="true" />
           </span>
         ))}
       </div>

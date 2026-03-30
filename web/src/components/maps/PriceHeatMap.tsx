@@ -24,9 +24,7 @@ interface PriceHeatMapProps {
  * a deterministic hash of the category name so placement is stable
  * across renders.
  */
-function buildGeoJSON(
-  categories: PricingOverviewCategory[],
-): GeoJSON.FeatureCollection {
+function buildGeoJSON(categories: PricingOverviewCategory[]): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: categories.map((cat) => {
@@ -136,30 +134,26 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
       type: 'heatmap',
       source: 'pricing',
       paint: {
-        'heatmap-weight': [
-          'interpolate', ['linear'], ['get', 'median_price'],
-          0, 0,
-          500, 1,
-        ],
-        'heatmap-intensity': [
-          'interpolate', ['linear'], ['zoom'],
-          0, 1,
-          15, 3,
-        ],
+        'heatmap-weight': ['interpolate', ['linear'], ['get', 'median_price'], 0, 0, 500, 1],
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
         'heatmap-color': [
-          'interpolate', ['linear'], ['heatmap-density'],
-          0, 'rgba(16, 185, 129, 0)',
-          0.2, 'rgb(167, 243, 208)',
-          0.4, 'rgb(110, 231, 183)',
-          0.6, 'rgb(52, 211, 153)',
-          0.8, 'rgb(16, 185, 129)',
-          1, 'rgb(5, 150, 105)',
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0,
+          'rgba(16, 185, 129, 0)',
+          0.2,
+          'rgb(167, 243, 208)',
+          0.4,
+          'rgb(110, 231, 183)',
+          0.6,
+          'rgb(52, 211, 153)',
+          0.8,
+          'rgb(16, 185, 129)',
+          1,
+          'rgb(5, 150, 105)',
         ],
-        'heatmap-radius': [
-          'interpolate', ['linear'], ['zoom'],
-          0, 20,
-          15, 40,
-        ],
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 20, 15, 40],
         'heatmap-opacity': 0.7,
       },
     });
@@ -169,10 +163,10 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
   if (!MAPBOX_TOKEN) {
     return (
       <div
-        className={`flex items-center justify-center rounded-lg border bg-muted ${className ?? ''}`}
+        className={`bg-muted flex items-center justify-center rounded-lg border ${className ?? ''}`}
       >
-        <p className="text-sm text-muted-foreground">
-          Configure NEXT_PUBLIC_MAPBOX_TOKEN to enable the price heat map.
+        <p className="text-muted-foreground text-sm">
+          Price heat map is not available at this time.
         </p>
       </div>
     );
@@ -181,9 +175,9 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
   if (mapError) {
     return (
       <div
-        className={`flex items-center justify-center rounded-lg border bg-muted ${className ?? ''}`}
+        className={`bg-muted flex items-center justify-center rounded-lg border ${className ?? ''}`}
       >
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Failed to load the map. Please try again later.
         </p>
       </div>
@@ -192,12 +186,10 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
 
   return (
     <div className={`relative ${className ?? ''}`}>
-      {(!mapLoaded || isLoading) ? (
-        <Skeleton className="h-full w-full rounded-lg" />
-      ) : null}
+      {!mapLoaded || isLoading ? <Skeleton className="h-full w-full rounded-lg" /> : null}
       <div
         ref={mapContainerRef}
-        className={`h-full w-full rounded-lg ${(!mapLoaded || isLoading) ? 'invisible absolute inset-0' : ''}`}
+        className={`h-full w-full rounded-lg ${!mapLoaded || isLoading ? 'invisible absolute inset-0' : ''}`}
         aria-label="Neighborhood price heat map"
         role="application"
       />

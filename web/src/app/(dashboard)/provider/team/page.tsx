@@ -52,13 +52,13 @@ function getRoleBadgeVariant(role: EmployeeRole): 'default' | 'secondary' | 'out
 function getStatusColor(status: EmployeeStatus): string {
   switch (status) {
     case 'active':
-      return 'text-green-700 bg-green-50 border-green-200';
+      return 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30';
     case 'pending':
-      return 'text-amber-700 bg-amber-50 border-amber-200';
+      return 'text-amber-400 bg-amber-500/15 border-amber-500/30';
     case 'suspended':
-      return 'text-orange-700 bg-orange-50 border-orange-200';
+      return 'text-orange-400 bg-orange-500/15 border-orange-500/30';
     case 'terminated':
-      return 'text-red-700 bg-red-50 border-red-200';
+      return 'text-red-400 bg-red-500/15 border-red-500/30';
   }
 }
 
@@ -66,21 +66,21 @@ function BackgroundCheckBadge({ status }: { status: BackgroundCheckStatus }) {
   switch (status) {
     case 'passed':
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-green-700">
+        <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
           <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
           Verified
         </span>
       );
     case 'pending':
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-amber-700">
+        <span className="inline-flex items-center gap-1 text-xs text-amber-400">
           <Clock className="h-3.5 w-3.5" aria-hidden="true" />
           Check Pending
         </span>
       );
     case 'failed':
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-red-700">
+        <span className="inline-flex items-center gap-1 text-xs text-red-400">
           <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
           Check Failed
         </span>
@@ -88,7 +88,7 @@ function BackgroundCheckBadge({ status }: { status: BackgroundCheckStatus }) {
     case 'not_started':
     default:
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
           <Shield className="h-3.5 w-3.5" aria-hidden="true" />
           Not Started
         </span>
@@ -112,7 +112,7 @@ function EmployeeCard({
       <CardContent className="p-4">
         <button
           type="button"
-          className="flex w-full min-h-[44px] items-start gap-4 text-left"
+          className="flex min-h-[44px] w-full items-start gap-4 text-left"
           onClick={() => {
             setExpanded(!expanded);
           }}
@@ -120,7 +120,7 @@ function EmployeeCard({
           aria-label={`${employee.first_name} ${employee.last_name} details`}
         >
           {/* Avatar placeholder */}
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
+          <div className="bg-muted text-muted-foreground flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
             {employee.first_name.charAt(0)}
             {employee.last_name.charAt(0)}
           </div>
@@ -143,7 +143,7 @@ function EmployeeCard({
               </span>
             </div>
 
-            <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-3 text-xs">
               {employee.hire_date ? (
                 <span>Hired {new Date(employee.hire_date).toLocaleDateString()}</span>
               ) : null}
@@ -151,7 +151,7 @@ function EmployeeCard({
             </div>
           </div>
 
-          <span className="shrink-0 text-xs text-muted-foreground" aria-hidden="true">
+          <span className="text-muted-foreground shrink-0 text-xs" aria-hidden="true">
             {expanded ? 'Collapse' : 'Expand'}
           </span>
         </button>
@@ -161,23 +161,23 @@ function EmployeeCard({
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Contact info */}
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <h4 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                   Contact
                 </h4>
                 {employee.email ? (
                   <div className="flex items-center gap-2 text-sm">
-                    <Mail className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                    <Mail className="text-muted-foreground h-3.5 w-3.5" aria-hidden="true" />
                     {employee.email}
                   </div>
                 ) : null}
                 {employee.phone ? (
                   <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                    <Phone className="text-muted-foreground h-3.5 w-3.5" aria-hidden="true" />
                     {employee.phone}
                   </div>
                 ) : null}
                 {employee.date_of_birth ? (
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-muted-foreground text-sm">
                     DOB: {new Date(employee.date_of_birth).toLocaleDateString()}
                   </div>
                 ) : null}
@@ -185,7 +185,7 @@ function EmployeeCard({
 
               {/* License info */}
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <h4 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                   Licenses & Insurance
                 </h4>
                 {employee.license_number ? (
@@ -193,25 +193,25 @@ function EmployeeCard({
                     License: {employee.license_number}
                     {employee.license_state ? ` (${employee.license_state})` : ''}
                     {employee.license_expiry ? (
-                      <span className="ml-1 text-muted-foreground">
+                      <span className="text-muted-foreground ml-1">
                         exp. {new Date(employee.license_expiry).toLocaleDateString()}
                       </span>
                     ) : null}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No license on file</p>
+                  <p className="text-muted-foreground text-sm">No license on file</p>
                 )}
                 {employee.insurance_policy_number ? (
                   <div className="text-sm">
                     Insurance: {employee.insurance_policy_number}
                     {employee.insurance_expiry ? (
-                      <span className="ml-1 text-muted-foreground">
+                      <span className="text-muted-foreground ml-1">
                         exp. {new Date(employee.insurance_expiry).toLocaleDateString()}
                       </span>
                     ) : null}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No insurance on file</p>
+                  <p className="text-muted-foreground text-sm">No insurance on file</p>
                 )}
               </div>
             </div>
@@ -319,9 +319,7 @@ export default function TeamManagementPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Add Employee</h1>
-            <p className="text-sm text-muted-foreground">
-              Add a new team member to your company.
-            </p>
+            <p className="text-muted-foreground text-sm">Add a new team member to your company.</p>
           </div>
           <Button
             type="button"
@@ -344,7 +342,7 @@ export default function TeamManagementPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Team Management</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Manage your company employees and their verification status.
           </p>
         </div>
@@ -365,19 +363,17 @@ export default function TeamManagementPage() {
       ) : error ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-12">
-            <AlertCircle className="h-10 w-10 text-destructive" aria-hidden="true" />
-            <p className="text-sm text-destructive">Failed to load team members.</p>
-            <p className="text-xs text-muted-foreground">Please try again later.</p>
+            <AlertCircle className="text-destructive h-10 w-10" aria-hidden="true" />
+            <p className="text-destructive text-sm">Failed to load team members.</p>
+            <p className="text-muted-foreground text-xs">Please try again later.</p>
           </CardContent>
         </Card>
       ) : employees.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12">
-            <Users className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
+            <Users className="text-muted-foreground h-12 w-12" aria-hidden="true" />
             <h2 className="text-lg font-semibold">No team members yet</h2>
-            <p className="text-sm text-muted-foreground">
-              Add your first employee to get started.
-            </p>
+            <p className="text-muted-foreground text-sm">Add your first employee to get started.</p>
             <Button
               type="button"
               onClick={() => {

@@ -17,17 +17,37 @@ interface JobCardProps {
   job: Job;
 }
 
-function getStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+function getStatusVariant(
+  status: string,
+):
+  | 'active'
+  | 'draft'
+  | 'awarded'
+  | 'in-progress'
+  | 'completed'
+  | 'disputed'
+  | 'cancelled'
+  | 'secondary' {
   switch (status) {
     case JOB_STATUS.ACTIVE:
-      return 'default';
+      return 'active';
     case JOB_STATUS.DRAFT:
-      return 'secondary';
+      return 'draft';
+    case JOB_STATUS.AWARDED:
+    case JOB_STATUS.CONTRACT_PENDING:
+      return 'awarded';
+    case JOB_STATUS.IN_PROGRESS:
+      return 'in-progress';
+    case JOB_STATUS.COMPLETED:
+    case JOB_STATUS.REVIEWED:
+      return 'completed';
+    case JOB_STATUS.SUSPENDED:
+      return 'disputed';
     case JOB_STATUS.CANCELLED:
     case JOB_STATUS.EXPIRED:
-      return 'destructive';
+      return 'cancelled';
     default:
-      return 'outline';
+      return 'secondary';
   }
 }
 
@@ -80,38 +100,27 @@ function getAuctionElapsedPercent(
 }
 
 export function JobCard({ job }: JobCardProps) {
-  const urgency = useMemo(
-    () => getAuctionUrgency(job.auction_ends_at),
-    [job.auction_ends_at],
-  );
+  const urgency = useMemo(() => getAuctionUrgency(job.auction_ends_at), [job.auction_ends_at]);
 
   const elapsedPercent = useMemo(
     () => getAuctionElapsedPercent(job.created_at, job.auction_ends_at, job.auction_duration_hours),
     [job.created_at, job.auction_ends_at, job.auction_duration_hours],
   );
 
-  /** Map job status to a glass tint class */
-  const statusGlassTint = cn(
-    job.status === JOB_STATUS.ACTIVE && 'glass-tinted-emerald',
-    job.status === JOB_STATUS.IN_PROGRESS && 'glass-tinted-amber',
-    job.status === JOB_STATUS.AWARDED && 'glass-tinted-blue',
-    job.status === JOB_STATUS.COMPLETED && 'glass-tinted-emerald',
-    urgency === 'critical' && 'glass-tinted-red',
-    urgency === 'warning' && 'glass-tinted-amber',
-  );
-
   return (
     <Link href={`/jobs/${job.id}` as Route} className="block">
       <Card
+        variant="glass"
         className={cn(
-          'glass glass-interactive glass-highlight relative overflow-hidden border-l-[3px] border',
+          'glass-interactive glass-highlight relative overflow-hidden border border-l-[3px] border-[var(--brand-gold)]/10',
           getStatusBorderColor(job.status),
-          statusGlassTint,
         )}
       >
         <CardHeader className="relative z-[2] pb-3">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-2 text-base font-semibold leading-snug text-zinc-100">{job.title}</h3>
+            <h3 className="line-clamp-2 text-base leading-snug font-semibold text-zinc-100">
+              {job.title}
+            </h3>
             <Badge variant={getStatusVariant(job.status)} className="shrink-0">
               {job.status.replace(/_/g, ' ')}
             </Badge>
@@ -119,22 +128,22 @@ export function JobCard({ job }: JobCardProps) {
         </CardHeader>
         <CardContent className="relative z-[2] space-y-3">
           {/* Category */}
-          <div className="flex items-center gap-2 text-sm" style={{ opacity: 0.7 }}>
-            <Tag className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>{job.category_name}</span>
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <Tag className="h-3.5 w-3.5 text-[var(--brand-gold)]/60" aria-hidden="true" />
+            <span>{job.category_name || 'Uncategorized'}</span>
           </div>
 
           {/* Location */}
           {job.location_address ? (
-            <div className="flex items-center gap-2 text-sm" style={{ opacity: 0.7 }}>
-              <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+            <div className="flex items-center gap-2 text-sm text-zinc-400">
+              <MapPin className="h-3.5 w-3.5 text-[var(--brand-gold)]/60" aria-hidden="true" />
               <span className="truncate">{job.location_address}</span>
             </div>
           ) : null}
 
           {/* Schedule */}
-          <div className="flex items-center gap-2 text-sm" style={{ opacity: 0.7 }}>
-            <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <Calendar className="h-3.5 w-3.5 text-[var(--brand-gold)]/60" aria-hidden="true" />
             <span>
               {job.schedule_type === 'specific_date' && job.scheduled_date
                 ? new Date(job.scheduled_date).toLocaleDateString('en-US', {
@@ -155,17 +164,13 @@ export function JobCard({ job }: JobCardProps) {
 
           {/* Bid count and starting bid */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-sm" style={{ opacity: 0.7 }}>
-              <Users className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="font-medium">
-                {String(job.bid_count)}
-              </span>
-              <span>
-                bid{job.bid_count !== 1 ? 's' : ''}
-              </span>
+            <div className="flex items-center gap-1.5 text-sm text-zinc-300">
+              <Users className="h-3.5 w-3.5 text-[var(--brand-gold)]/60" aria-hidden="true" />
+              <span className="font-medium">{String(job.bid_count)}</span>
+              <span className="text-zinc-400">bid{job.bid_count !== 1 ? 's' : ''}</span>
             </div>
             {job.starting_bid_cents ? (
-              <span className="text-sm font-medium" style={{ opacity: 0.7 }}>
+              <span className="text-sm font-medium text-zinc-300">
                 From {formatCents(job.starting_bid_cents)}
               </span>
             ) : null}
@@ -174,10 +179,12 @@ export function JobCard({ job }: JobCardProps) {
           {/* Lowest bid - prominent display with emerald glow */}
           {job.lowest_bid_cents ? (
             <div className="flex items-baseline gap-1.5">
-              <span className="text-xs font-medium text-zinc-400">Lowest:</span>
+              <span className="text-xs font-medium text-zinc-500">Lowest:</span>
               <span
-                className="text-lg font-bold tabular-nums text-emerald-400"
-                style={{ textShadow: '0 0 16px rgba(16,185,129,0.3), 0 0 32px rgba(16,185,129,0.1)' }}
+                className="text-lg font-bold text-emerald-400 tabular-nums"
+                style={{
+                  textShadow: '0 0 16px rgba(16,185,129,0.3), 0 0 32px rgba(16,185,129,0.1)',
+                }}
               >
                 {formatCents(job.lowest_bid_cents)}
               </span>
@@ -191,9 +198,9 @@ export function JobCard({ job }: JobCardProps) {
               {job.auction_ends_at ? (
                 <AuctionTimer auctionEndsAt={job.auction_ends_at} compact />
               ) : (
-                <span className="text-xs" style={{ opacity: 0.7 }}>No auction</span>
+                <span className="text-xs text-zinc-500">No auction</span>
               )}
-              <span className="text-xs" style={{ opacity: 0.7 }}>
+              <span className="text-xs text-zinc-500">
                 {formatRelativeTime(new Date(job.created_at))}
               </span>
             </div>
@@ -212,7 +219,7 @@ export function JobCard({ job }: JobCardProps) {
           >
             <div
               className={cn(
-                'h-full animate-auction-elapsed rounded-r-full transition-colors duration-300',
+                'animate-auction-elapsed h-full rounded-r-full transition-colors duration-300',
                 elapsedPercent >= 80
                   ? 'bg-red-500/70'
                   : elapsedPercent >= 50

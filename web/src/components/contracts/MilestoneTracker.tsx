@@ -154,7 +154,12 @@ function MilestoneCard({
           {getMilestoneIcon(milestone.status)}
         </div>
         {!isLast ? (
-          <div className={cn('w-0.5 flex-1 min-h-[24px]', statusColor === 'bg-green-500' ? 'bg-green-300' : 'bg-gray-200')} />
+          <div
+            className={cn(
+              'min-h-[24px] w-0.5 flex-1',
+              statusColor === 'bg-green-500' ? 'bg-green-300' : 'bg-gray-200',
+            )}
+          />
         ) : null}
       </div>
 
@@ -163,9 +168,7 @@ function MilestoneCard({
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">
-                Milestone {String(milestone.sort_order)}
-              </p>
+              <p className="text-sm font-medium">Milestone {String(milestone.sort_order)}</p>
               <p className="text-base font-semibold">{milestone.description}</p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
@@ -179,7 +182,7 @@ function MilestoneCard({
         <CardContent className="space-y-3">
           {/* Revision count */}
           {milestone.revision_count > 0 ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-2 text-xs">
               <RotateCcw className="h-3 w-3" aria-hidden="true" />
               {String(milestone.revision_count)}/{String(MAX_REVISIONS)} revisions used
             </div>
@@ -198,8 +201,9 @@ function MilestoneCard({
 
           {/* Approved date */}
           {milestone.status === MILESTONE_STATUS.APPROVED && milestone.approved_at ? (
-            <p className="text-xs text-muted-foreground">
-              Approved on {new Date(milestone.approved_at).toLocaleDateString('en-US', {
+            <p className="text-muted-foreground text-xs">
+              Approved on{' '}
+              {new Date(milestone.approved_at).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -209,8 +213,9 @@ function MilestoneCard({
 
           {/* Submitted date */}
           {milestone.status === MILESTONE_STATUS.SUBMITTED && milestone.submitted_at ? (
-            <p className="text-xs text-muted-foreground">
-              Submitted on {new Date(milestone.submitted_at).toLocaleDateString('en-US', {
+            <p className="text-muted-foreground text-xs">
+              Submitted on{' '}
+              {new Date(milestone.submitted_at).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -227,14 +232,19 @@ function MilestoneCard({
                 disabled={submitMilestone.isPending}
               >
                 {submitMilestone.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Submitting...
+                  </>
                 ) : (
-                  <Send className="h-4 w-4" aria-hidden="true" />
+                  <>
+                    <Send className="h-4 w-4" aria-hidden="true" />
+                    Submit for Review
+                  </>
                 )}
-                Submit for Review
               </Button>
               {submitMilestone.isError ? (
-                <p className="mt-2 text-sm text-destructive">
+                <p className="text-destructive mt-2 text-sm">
                   Failed to submit milestone. Please try again.
                 </p>
               ) : null}
@@ -250,14 +260,19 @@ function MilestoneCard({
                 disabled={submitMilestone.isPending}
               >
                 {submitMilestone.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Resubmitting...
+                  </>
                 ) : (
-                  <Send className="h-4 w-4" aria-hidden="true" />
+                  <>
+                    <Send className="h-4 w-4" aria-hidden="true" />
+                    Resubmit for Review
+                  </>
                 )}
-                Resubmit for Review
               </Button>
               {submitMilestone.isError ? (
-                <p className="mt-2 text-sm text-destructive">
+                <p className="text-destructive mt-2 text-sm">
                   Failed to submit milestone. Please try again.
                 </p>
               ) : null}
@@ -279,21 +294,28 @@ function MilestoneCard({
                     className="min-h-[80px]"
                   />
                   {validationError ? (
-                    <p className="text-sm text-destructive">{validationError}</p>
+                    <p className="text-destructive text-sm">{validationError}</p>
                   ) : null}
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
                       className="min-h-[44px] flex-1"
                       onClick={handleRequestRevision}
-                      disabled={requestRevision.isPending || milestone.revision_count >= MAX_REVISIONS}
+                      disabled={
+                        requestRevision.isPending || milestone.revision_count >= MAX_REVISIONS
+                      }
                     >
                       {requestRevision.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          Requesting...
+                        </>
                       ) : (
-                        <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                        <>
+                          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                          Request Revision
+                        </>
                       )}
-                      Request Revision
                     </Button>
                     <Button
                       variant="outline"
@@ -309,7 +331,7 @@ function MilestoneCard({
                     </Button>
                   </div>
                   {requestRevision.isError ? (
-                    <p className="text-sm text-destructive">
+                    <p className="text-destructive text-sm">
                       Failed to request revision. Please try again.
                     </p>
                   ) : null}
@@ -322,17 +344,24 @@ function MilestoneCard({
                     disabled={approveMilestone.isPending}
                   >
                     {approveMilestone.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Approving...
+                      </>
                     ) : (
-                      <Check className="h-4 w-4" aria-hidden="true" />
+                      <>
+                        <Check className="h-4 w-4" aria-hidden="true" />
+                        Approve
+                      </>
                     )}
-                    Approve
                   </Button>
                   {milestone.revision_count < MAX_REVISIONS ? (
                     <Button
                       variant="outline"
                       className="min-h-[44px]"
-                      onClick={() => { setShowRevisionForm(true); }}
+                      onClick={() => {
+                        setShowRevisionForm(true);
+                      }}
                       disabled={approveMilestone.isPending}
                     >
                       <RotateCcw className="h-4 w-4" aria-hidden="true" />
@@ -342,7 +371,7 @@ function MilestoneCard({
                 </div>
               )}
               {approveMilestone.isError ? (
-                <p className="text-sm text-destructive">
+                <p className="text-destructive text-sm">
                   Failed to approve milestone. Please try again.
                 </p>
               ) : null}
@@ -354,7 +383,12 @@ function MilestoneCard({
   );
 }
 
-export function MilestoneTracker({ milestones, contractId, customerId, providerId }: MilestoneTrackerProps) {
+export function MilestoneTracker({
+  milestones,
+  contractId,
+  customerId,
+  providerId,
+}: MilestoneTrackerProps) {
   const user = useAuthStore((state) => state.user);
   const isCustomer = user?.id === customerId;
   const isProvider = user?.id === providerId;

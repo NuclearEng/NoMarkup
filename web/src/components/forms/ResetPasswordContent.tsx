@@ -48,7 +48,7 @@ export function ResetPasswordContent() {
         <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
         <CardHeader className="relative z-[2] text-center">
           <CardTitle className="text-2xl text-white">Invalid reset link</CardTitle>
-          <CardDescription className="text-white/50">
+          <CardDescription className="text-white/65">
             This password reset link is invalid or has expired.
           </CardDescription>
         </CardHeader>
@@ -70,9 +70,8 @@ export function ResetPasswordContent() {
         <div className="relative z-[2] h-[3px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400" />
         <CardHeader className="relative z-[2] text-center">
           <CardTitle className="text-2xl text-white">Password reset</CardTitle>
-          <CardDescription className="text-white/50">
-            Your password has been successfully reset. You can now sign in with
-            your new password.
+          <CardDescription className="text-white/65">
+            Your password has been successfully reset. You can now sign in with your new password.
           </CardDescription>
         </CardHeader>
         <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
@@ -105,9 +104,7 @@ export function ResetPasswordContent() {
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-2xl text-white">Set new password</CardTitle>
-        <CardDescription className="text-white/50">
-          Enter your new password below
-        </CardDescription>
+        <CardDescription className="text-white/65">Enter your new password below</CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">
         <Form {...form}>
@@ -120,7 +117,7 @@ export function ResetPasswordContent() {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="glass-tinted-red rounded-lg p-3 text-sm text-destructive"
+                className="glass-tinted-red text-destructive rounded-lg p-3 text-sm"
               >
                 {formError}
               </div>
@@ -137,7 +134,7 @@ export function ResetPasswordContent() {
                       type="password"
                       placeholder="Enter new password"
                       autoComplete="new-password"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -157,7 +154,7 @@ export function ResetPasswordContent() {
                       type="password"
                       placeholder="Confirm new password"
                       autoComplete="new-password"
-                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
                       {...field}
                     />
                   </FormControl>
@@ -177,7 +174,7 @@ export function ResetPasswordContent() {
         </Form>
       </CardContent>
       <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
-        <p className="text-sm text-white/50">
+        <p className="text-sm text-white/65">
           Remember your password?{' '}
           <Link
             href="/login"

@@ -129,9 +129,9 @@ export function BidForm({
 
   if (auctionClosed) {
     return (
-      <div className="space-y-3 rounded-lg border bg-muted/50 p-4">
-        <p className="text-sm font-medium text-muted-foreground">Auction Closed</p>
-        <p className="text-sm text-muted-foreground">
+      <div className="bg-muted/50 space-y-3 rounded-lg border p-4">
+        <p className="text-muted-foreground text-sm font-medium">Auction Closed</p>
+        <p className="text-muted-foreground text-sm">
           This auction has ended. Bidding is no longer available.
         </p>
       </div>
@@ -142,13 +142,16 @@ export function BidForm({
     <div className="space-y-6">
       {/* Existing bid display */}
       {existingBid ? (
-        <div className="rounded-lg border bg-muted/50 p-4">
+        <div className="bg-muted/50 rounded-lg border p-4">
           <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600 dark:text-emerald-400" aria-hidden="true" />
+            <CheckCircle
+              className="h-4 w-4 text-green-600 dark:text-emerald-400"
+              aria-hidden="true"
+            />
             <p className="text-sm font-medium">Your Current Bid</p>
           </div>
           <p className="mt-1 text-2xl font-bold">{formatCents(existingBid.amount_cents)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="text-muted-foreground mt-1 text-xs">
             You can only lower your bid, never raise it.
           </p>
         </div>
@@ -160,17 +163,15 @@ export function BidForm({
       ) : null}
 
       {/* Fair Price Index suggestion */}
-      {categorySlug ? (
-        <BidSuggestion categorySlug={categorySlug} zipCode={zipCode} />
-      ) : null}
+      {categorySlug ? <BidSuggestion categorySlug={categorySlug} zipCode={zipCode} /> : null}
 
       {/* Bid form */}
       {showConfirm ? (
         <div className="space-y-4 rounded-lg border p-4">
           <h4 className="font-medium">Confirm Your Bid</h4>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             You are about to {isUpdate ? 'lower your bid to' : 'place a bid of'}{' '}
-            <span className="font-semibold text-foreground">{formatCents(amountCents)}</span>.
+            <span className="text-foreground font-semibold">{formatCents(amountCents)}</span>.
             {isUpdate ? ' This cannot be undone.' : ''}
           </p>
           <div className="flex gap-3">
@@ -180,28 +181,39 @@ export function BidForm({
               disabled={isPending}
             >
               {isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : null}
-              {isUpdate ? 'Confirm Lower Bid' : 'Confirm Bid'}
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  {isUpdate ? 'Confirming...' : 'Placing Bid...'}
+                </>
+              ) : isUpdate ? (
+                'Confirm Lower Bid'
+              ) : (
+                'Confirm Bid'
+              )}
             </Button>
             <Button
               variant="outline"
               className="min-h-[44px]"
-              onClick={() => { setShowConfirm(false); }}
+              onClick={() => {
+                setShowConfirm(false);
+              }}
               disabled={isPending}
             >
               Cancel
             </Button>
           </div>
           {placeBid.isError || updateBid.isError ? (
-            <p className="text-sm text-destructive">
-              Failed to submit bid. Please try again.
-            </p>
+            <p className="text-destructive text-sm">Failed to submit bid. Please try again.</p>
           ) : null}
         </div>
       ) : (
         <Form {...form}>
-          <form onSubmit={(e) => { void form.handleSubmit(handleFormSubmit)(e); }} className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              void form.handleSubmit(handleFormSubmit)(e);
+            }}
+            className="space-y-4"
+          >
             <FormField
               control={form.control}
               name="amountDollars"
@@ -211,7 +223,7 @@ export function BidForm({
                   <FormControl>
                     <div className="relative">
                       <DollarSign
-                        className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                        className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
                         aria-hidden="true"
                       />
                       <Input
@@ -231,16 +243,23 @@ export function BidForm({
                   </FormControl>
                   <FormDescription>
                     Enter your bid in dollars.
-                    {startingBidCents
-                      ? ` Must be less than ${formatCents(startingBidCents)}.`
-                      : ''}
+                    {startingBidCents ? ` Must be less than ${formatCents(startingBidCents)}.` : ''}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
             <Button type="submit" className="min-h-[44px] w-full" disabled={isPending}>
-              {isUpdate ? 'Lower Bid' : 'Place Bid'}
+              {isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  {isUpdate ? 'Lowering Bid...' : 'Placing Bid...'}
+                </>
+              ) : isUpdate ? (
+                'Lower Bid'
+              ) : (
+                'Place Bid'
+              )}
             </Button>
           </form>
         </Form>
@@ -262,8 +281,7 @@ export function BidForm({
           {showAcceptConfirm ? (
             <div className="space-y-3">
               <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                Are you sure? This will place a bid at{' '}
-                {formatCents(offerAcceptedCents)}.
+                Are you sure? This will place a bid at {formatCents(offerAcceptedCents)}.
               </p>
               <div className="flex gap-3">
                 <Button
@@ -272,21 +290,27 @@ export function BidForm({
                   disabled={acceptOffer.isPending}
                 >
                   {acceptOffer.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : null}
-                  Confirm Accept Offer
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Accepting Offer...
+                    </>
+                  ) : (
+                    'Confirm Accept Offer'
+                  )}
                 </Button>
                 <Button
                   variant="outline"
                   className="min-h-[44px]"
-                  onClick={() => { setShowAcceptConfirm(false); }}
+                  onClick={() => {
+                    setShowAcceptConfirm(false);
+                  }}
                   disabled={acceptOffer.isPending}
                 >
                   Cancel
                 </Button>
               </div>
               {acceptOffer.isError ? (
-                <p className="text-sm text-destructive">
+                <p className="text-destructive text-sm">
                   Failed to accept offer. Please try again.
                 </p>
               ) : null}

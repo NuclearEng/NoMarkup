@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { TrendingDown, TrendingUp } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 interface MetricsCardProps {
@@ -26,16 +27,12 @@ export function MetricsCard({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-        {Icon ? (
-          <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-        ) : null}
+        <CardTitle className="text-muted-foreground text-sm font-medium">{label}</CardTitle>
+        {Icon ? <Icon className="text-muted-foreground h-4 w-4" aria-hidden="true" /> : null}
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="h-8 w-24 animate-pulse rounded bg-muted" />
+          <Skeleton variant="price" className="h-8 w-24" />
         ) : (
           <p className="text-2xl font-bold tabular-nums">{value}</p>
         )}
@@ -44,7 +41,9 @@ export function MetricsCard({
             <span
               className={cn(
                 'inline-flex items-center gap-1 text-xs font-medium',
-                trend >= 0 ? 'text-green-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                trend >= 0
+                  ? 'text-green-600 dark:text-emerald-400'
+                  : 'text-red-600 dark:text-red-400',
               )}
             >
               {trend >= 0 ? (
@@ -57,7 +56,7 @@ export function MetricsCard({
             </span>
           ) : null}
           {description ? (
-            <span className="text-xs text-muted-foreground">{description}</span>
+            <span className="text-muted-foreground text-xs">{description}</span>
           ) : null}
         </div>
       </CardContent>

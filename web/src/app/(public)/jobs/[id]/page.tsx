@@ -1,31 +1,57 @@
 'use client';
 
-import { Calendar, ChevronRight, Clock, LogIn, MapPin, Tag, Users } from 'lucide-react';
+import { useMemo } from 'react';
+import {
+  ArrowLeft,
+  Calendar,
+  ChevronRight,
+  Clock,
+  Gavel,
+  LogIn,
+  MapPin,
+  Radio,
+  Tag,
+  Users,
+  Wifi,
+  WifiOff,
+  Zap,
+} from 'lucide-react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useParams } from 'next/navigation';
 
-import { AuctionArena } from '@/components/bids/AuctionArena';
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
 import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
 import { BidPlacementPanel } from '@/components/bids/BidPlacementPanel';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
+import { GradientMesh } from '@/components/landing/GradientMesh';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
+import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
+import { TerminalGrid } from '@/components/terminal/terminal-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
+import { useAuctionTerminal } from '@/hooks/useAuctionTerminal';
 import { useBidCount, useBidsForJob, usePlaceBid } from '@/hooks/useBids';
 import { useCountdown } from '@/hooks/useCountdown';
 import { useJob } from '@/hooks/useJobs';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { JOB_STATUS, USER_ROLE } from '@/types';
+import type { MarketRange } from '@/types';
+
+const FALLBACK_MARKET_RANGE: MarketRange = {
+  low_cents: 0,
+  median_cents: 0,
+  high_cents: 0,
+  sample_size: 0,
+};
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -48,6 +74,21 @@ export default function JobDetailPage() {
     isProvider && user && bidsData
       ? (bidsData.bids.find((b) => b.bid.provider_id === user.id)?.bid ?? null)
       : null;
+
+  // Determine if the job is a live auction that should render the terminal layout
+  const isLiveAuction =
+    ENABLE_LIVE_AUCTION && job?.auction_type === 'live' && job.status === JOB_STATUS.ACTIVE;
+
+  // Terminal hook for live auctions (only connects when isLiveAuction)
+  const terminal = useAuctionTerminal(isLiveAuction ? jobId : undefined);
+
+  const auctionEndsAt = useMemo(
+    () => job?.auction_ends_at ?? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    [job?.auction_ends_at],
+  );
+
+  const startingPriceCents = job?.starting_bid_cents ?? 0;
+  const marketRange = job?.market_range ?? FALLBACK_MARKET_RANGE;
 
   // Determine if the job is in a state where bidding/awarding is possible
   const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
@@ -134,6 +175,157 @@ export default function JobDetailPage() {
 
   const displayBidCount = bidCount ?? job.bid_count;
 
+  // ── Live auction: full terminal overlay ────────────────────────────────────
+  if (isLiveAuction) {
+    return (
+      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+        {/* Animated gradient mesh */}
+        <GradientMesh />
+
+        {/* Cinematic vignette */}
+        <div
+          className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
+          aria-hidden="true"
+        />
+
+        {/* Sticky top bar */}
+        <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+          <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
+            <div className="flex items-center gap-3">
+              <Link
+                href={`/jobs/${jobId}`}
+                className="flex items-center gap-1.5 text-sm text-white/65 transition-colors hover:text-white/80"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Job Details</span>
+              </Link>
+              <div className="h-4 w-px bg-white/10" />
+              <Badge className="gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400">
+                <Radio className="h-3 w-3 animate-pulse" />
+                LIVE
+              </Badge>
+              {isProvider && (
+                <Badge className="gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-400">
+                  <Gavel className="h-3 w-3" />
+                  {isJobOwner ? 'Owner' : 'Provider'}
+                </Badge>
+              )}
+            </div>
+
+            {/* Job info */}
+            <div className="hidden items-center gap-3 text-sm md:flex">
+              <h1 className="font-semibold text-white/90">{job.title}</h1>
+              {job.location_address && (
+                <div className="flex items-center gap-2 text-white/60">
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span>{job.location_address}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Right side: connection status */}
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs ${
+                  terminal.isConnected
+                    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
+                    : terminal.error
+                      ? 'border-red-500/20 bg-red-500/10 text-red-400'
+                      : 'border-white/10 bg-white/5 text-white/65'
+                }`}
+                role="status"
+                aria-label={
+                  terminal.isConnected
+                    ? 'Connected to live auction'
+                    : terminal.error
+                      ? 'Connection error'
+                      : 'Connecting to live auction'
+                }
+              >
+                {terminal.isConnected ? (
+                  <>
+                    <Wifi className="h-3 w-3" />
+                    <span className="hidden sm:inline">Connected</span>
+                  </>
+                ) : terminal.error ? (
+                  <>
+                    <WifiOff className="h-3 w-3" />
+                    <span className="hidden sm:inline">Disconnected</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-3 w-3 animate-pulse" />
+                    <span className="hidden sm:inline">Connecting</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile job info row */}
+          <div className="border-t border-white/[0.04] px-4 py-1.5 md:hidden">
+            <p className="truncate text-xs font-medium text-white/70">{job.title}</p>
+            {job.location_address && (
+              <p className="flex items-center gap-1 text-[10px] text-white/40">
+                <MapPin className="h-2.5 w-2.5" />
+                {job.location_address}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Terminal toolbar */}
+        <div className="relative z-[2] mx-auto max-w-[1400px] px-4 pt-4 sm:px-6">
+          <TerminalToolbar />
+        </div>
+
+        {/* Terminal grid */}
+        <div className="relative z-[2] mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
+          <TerminalGrid
+            sim={terminal.sim}
+            auctionEndsAt={auctionEndsAt}
+            startingPriceCents={startingPriceCents}
+            marketRange={marketRange}
+            mockProviders={terminal.providers}
+          />
+        </div>
+
+        {/* Provider bid form — pinned to bottom for providers who can bid */}
+        {canBid ? (
+          <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-[#070b14]/95 backdrop-blur-md">
+            <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
+              <BidForm
+                jobId={jobId}
+                existingBid={existingBid}
+                startingBidCents={job.starting_bid_cents}
+                offerAcceptedCents={job.offer_accepted_cents}
+                marketRange={job.market_range}
+                auctionEndsAt={job.auction_ends_at}
+                categorySlug={job.category_slug}
+              />
+            </div>
+          </div>
+        ) : !isAuthenticated ? (
+          <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-[#070b14]/95 backdrop-blur-md">
+            <div className="mx-auto flex max-w-[1400px] items-center justify-center gap-3 px-4 py-4 sm:px-6">
+              <p className="text-sm text-white/65">Sign in to place a bid on this auction</p>
+              <Link href={'/login' as Route}>
+                <Button
+                  variant="outline"
+                  className="min-h-[44px] border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                >
+                  <LogIn className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                  Sign in to bid
+                </Button>
+              </Link>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // ── Sealed bid / standard auction: normal job detail layout ────────────────
   return (
     <div className="animate-fade-in mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Breadcrumb */}
@@ -297,120 +489,116 @@ export default function JobDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {job.auction_type === 'live' && ENABLE_LIVE_AUCTION ? (
-            <AuctionArena job={job} isProvider={isProvider} isJobOwner={isJobOwner} />
-          ) : (
-            /* Sealed bid auction UI — enhanced with Polymarket/Robinhood-style ticker */
-            <div className="space-y-4">
-              {/* Live Bid Ticker — hero price display */}
-              {job.lowest_bid_cents && job.starting_bid_cents ? (
-                <LiveBidTicker
-                  currentBid={job.lowest_bid_cents}
-                  startingPrice={job.starting_bid_cents}
-                  totalBids={displayBidCount}
-                  timeRemaining={!auctionExpired ? timeLeft : undefined}
-                />
-              ) : null}
+          {/* Sealed bid auction UI — enhanced with Polymarket/Robinhood-style ticker */}
+          <div className="space-y-4">
+            {/* Live Bid Ticker — hero price display */}
+            {job.lowest_bid_cents && job.starting_bid_cents ? (
+              <LiveBidTicker
+                currentBid={job.lowest_bid_cents}
+                startingPrice={job.starting_bid_cents}
+                totalBids={displayBidCount}
+                timeRemaining={!auctionExpired ? timeLeft : undefined}
+              />
+            ) : null}
 
-              {/* Sparkline price chart — shows bid history trend */}
-              {job.lowest_bid_cents && job.starting_bid_cents ? (
-                <BidPriceChart
-                  bids={[job.starting_bid_cents, job.lowest_bid_cents]}
-                  height={80}
-                  className="bg-card rounded-xl border p-3"
-                />
-              ) : null}
+            {/* Sparkline price chart — shows bid history trend */}
+            {job.lowest_bid_cents && job.starting_bid_cents ? (
+              <BidPriceChart
+                bids={[job.starting_bid_cents, job.lowest_bid_cents]}
+                height={80}
+                className="bg-card rounded-xl border p-3"
+              />
+            ) : null}
 
-              {/* Original auction status card */}
-              <Card className="ring-border shadow-sm ring-1">
-                <CardHeader>
-                  <CardTitle className="text-base">Auction Status</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {job.auction_ends_at ? (
-                    <AuctionTimer auctionEndsAt={job.auction_ends_at} />
-                  ) : (
-                    <p className="text-muted-foreground text-sm">Auction not started</p>
-                  )}
+            {/* Original auction status card */}
+            <Card className="ring-border shadow-sm ring-1">
+              <CardHeader>
+                <CardTitle className="text-base">Auction Status</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {job.auction_ends_at ? (
+                  <AuctionTimer auctionEndsAt={job.auction_ends_at} />
+                ) : (
+                  <p className="text-muted-foreground text-sm">Auction not started</p>
+                )}
 
-                  {job.starting_bid_cents ? (
-                    <div>
-                      <p className="text-muted-foreground text-xs">Starting Bid</p>
-                      <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
-                    </div>
-                  ) : null}
-
-                  {job.offer_accepted_cents ? (
-                    <div>
-                      <p className="text-muted-foreground text-xs">Instant Accept Price</p>
-                      <p className="text-lg font-semibold text-green-600">
-                        {formatCents(job.offer_accepted_cents)}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {/* Bid count badge */}
-                  <div className="flex items-center gap-2">
-                    <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
-                    <span className="text-muted-foreground text-sm">
-                      {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
-                    </span>
+                {job.starting_bid_cents ? (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Starting Bid</p>
+                    <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
                   </div>
+                ) : null}
 
-                  {/* Bidding section based on user role */}
-                  {canBid && existingBid !== null ? (
-                    <BidForm
-                      jobId={jobId}
-                      existingBid={existingBid}
-                      startingBidCents={job.starting_bid_cents}
-                      offerAcceptedCents={job.offer_accepted_cents}
-                      marketRange={job.market_range}
-                      auctionEndsAt={job.auction_ends_at}
-                      categorySlug={job.category_slug}
-                    />
-                  ) : !isAuthenticated ? (
-                    <Link href={'/login' as Route}>
-                      <Button variant="outline" className="min-h-[44px] w-full">
-                        <LogIn className="h-4 w-4" aria-hidden="true" />
-                        Sign in to bid
-                      </Button>
-                    </Link>
-                  ) : !isProvider && !isJobOwner ? (
-                    <p className="text-muted-foreground text-sm">
-                      Only providers can place bids on jobs.
+                {job.offer_accepted_cents ? (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Instant Accept Price</p>
+                    <p className="text-lg font-semibold text-green-600">
+                      {formatCents(job.offer_accepted_cents)}
                     </p>
-                  ) : null}
-                </CardContent>
-              </Card>
+                  </div>
+                ) : null}
 
-              {/* BidPlacementPanel — shown for providers placing a new bid */}
-              {canBid && existingBid === null && job.lowest_bid_cents && job.starting_bid_cents ? (
-                <BidPlacementPanel
-                  currentLowest={job.lowest_bid_cents}
-                  startingPrice={job.starting_bid_cents}
-                  onPlaceBid={(amountCents) => {
-                    placeBid.mutate({ jobId, input: { amount_cents: amountCents } });
-                  }}
-                  isSubmitting={placeBid.isPending}
-                />
-              ) : null}
+                {/* Bid count badge */}
+                <div className="flex items-center gap-2">
+                  <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+                  <span className="text-muted-foreground text-sm">
+                    {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
+                  </span>
+                </div>
 
-              {/* Bid activity feed — historical bids for sealed auctions */}
-              {bidsData && bidsData.bids.length > 0 ? (
-                <BidActivityFeed
-                  activities={bidsData.bids.map((b) => ({
-                    id: b.bid.id,
-                    providerName: b.provider_display_name || b.provider_business_name,
-                    amount: b.bid.amount_cents,
-                    timestamp: formatRelativeTime(new Date(b.bid.created_at)),
-                    isLowest:
-                      b.bid.amount_cents ===
-                      Math.min(...bidsData.bids.map((x) => x.bid.amount_cents)),
-                  }))}
-                />
-              ) : null}
-            </div>
-          )}
+                {/* Bidding section based on user role */}
+                {canBid && existingBid !== null ? (
+                  <BidForm
+                    jobId={jobId}
+                    existingBid={existingBid}
+                    startingBidCents={job.starting_bid_cents}
+                    offerAcceptedCents={job.offer_accepted_cents}
+                    marketRange={job.market_range}
+                    auctionEndsAt={job.auction_ends_at}
+                    categorySlug={job.category_slug}
+                  />
+                ) : !isAuthenticated ? (
+                  <Link href={'/login' as Route}>
+                    <Button variant="outline" className="min-h-[44px] w-full">
+                      <LogIn className="h-4 w-4" aria-hidden="true" />
+                      Sign in to bid
+                    </Button>
+                  </Link>
+                ) : !isProvider && !isJobOwner ? (
+                  <p className="text-muted-foreground text-sm">
+                    Only providers can place bids on jobs.
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            {/* BidPlacementPanel — shown for providers placing a new bid */}
+            {canBid && existingBid === null && job.lowest_bid_cents && job.starting_bid_cents ? (
+              <BidPlacementPanel
+                currentLowest={job.lowest_bid_cents}
+                startingPrice={job.starting_bid_cents}
+                onPlaceBid={(amountCents) => {
+                  placeBid.mutate({ jobId, input: { amount_cents: amountCents } });
+                }}
+                isSubmitting={placeBid.isPending}
+              />
+            ) : null}
+
+            {/* Bid activity feed — historical bids for sealed auctions */}
+            {bidsData && bidsData.bids.length > 0 ? (
+              <BidActivityFeed
+                activities={bidsData.bids.map((b) => ({
+                  id: b.bid.id,
+                  providerName: b.provider_display_name || b.provider_business_name,
+                  amount: b.bid.amount_cents,
+                  timestamp: formatRelativeTime(new Date(b.bid.created_at)),
+                  isLowest:
+                    b.bid.amount_cents ===
+                    Math.min(...bidsData.bids.map((x) => x.bid.amount_cents)),
+                }))}
+              />
+            ) : null}
+          </div>
 
           {/* Customer info card */}
           <Card>

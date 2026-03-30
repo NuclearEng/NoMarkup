@@ -2,7 +2,16 @@
 
 import { cn } from '@/lib/utils';
 
-type IllustrationType = 'no-jobs' | 'no-bids' | 'no-messages' | 'no-contracts' | 'search-empty';
+type IllustrationType =
+  | 'no-jobs'
+  | 'no-bids'
+  | 'no-messages'
+  | 'no-contracts'
+  | 'no-notifications'
+  | 'no-properties'
+  | 'no-recurring'
+  | 'search-empty'
+  | 'error';
 
 interface AnimatedIllustrationProps {
   type: IllustrationType;
@@ -10,7 +19,10 @@ interface AnimatedIllustrationProps {
   className?: string;
 }
 
-const SIZE_MAP: Record<NonNullable<AnimatedIllustrationProps['size']>, { width: number; height: number }> = {
+const SIZE_MAP: Record<
+  NonNullable<AnimatedIllustrationProps['size']>,
+  { width: number; height: number }
+> = {
   sm: { width: 80, height: 80 },
   md: { width: 120, height: 120 },
   lg: { width: 160, height: 160 },
@@ -93,18 +105,8 @@ function NoJobsIllustration({ width, height }: { width: number; height: number }
 
       {/* Emerald accent checkmark circle (faded) */}
       <circle cx="60" cy="95" r="0" className="fill-emerald-500/20">
-        <animate
-          attributeName="r"
-          values="0;6;0"
-          dur="4s"
-          repeatCount="indefinite"
-        />
-        <animate
-          attributeName="opacity"
-          values="0;0.3;0"
-          dur="4s"
-          repeatCount="indefinite"
-        />
+        <animate attributeName="r" values="0;6;0" dur="4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0;0.3;0" dur="4s" repeatCount="indefinite" />
       </circle>
     </svg>
   );
@@ -155,7 +157,13 @@ function NoBidsIllustration({ width, height }: { width: number; height: number }
           strokeLinejoin="round"
         />
         {/* Hole at top */}
-        <circle cx="60" cy="46" r="4" className="fill-background stroke-muted-foreground/20" strokeWidth="1" />
+        <circle
+          cx="60"
+          cy="46"
+          r="4"
+          className="fill-background stroke-muted-foreground/20"
+          strokeWidth="1"
+        />
 
         {/* Dollar sign */}
         <text
@@ -172,24 +180,14 @@ function NoBidsIllustration({ width, height }: { width: number; height: number }
 
         {/* Subtle gold accent pulse */}
         <circle cx="60" cy="46" r="4" fill="none" strokeWidth="1">
-          <animate
-            attributeName="r"
-            values="4;8;4"
-            dur="3s"
-            repeatCount="indefinite"
-          />
+          <animate attributeName="r" values="4;8;4" dur="3s" repeatCount="indefinite" />
           <animate
             attributeName="stroke"
             values="rgba(201,168,76,0);rgba(201,168,76,0.3);rgba(201,168,76,0)"
             dur="3s"
             repeatCount="indefinite"
           />
-          <animate
-            attributeName="opacity"
-            values="0;0.5;0"
-            dur="3s"
-            repeatCount="indefinite"
-          />
+          <animate attributeName="opacity" values="0;0.5;0" dur="3s" repeatCount="indefinite" />
         </circle>
       </g>
     </svg>
@@ -221,18 +219,8 @@ function NoMessagesIllustration({ width, height }: { width: number; height: numb
 
       {/* Typing dots */}
       <circle cx="46" cy="50" r="4" className="fill-muted-foreground/25">
-        <animate
-          attributeName="r"
-          values="3;4.5;3"
-          dur="1.2s"
-          repeatCount="indefinite"
-        />
-        <animate
-          attributeName="opacity"
-          values="0.2;0.5;0.2"
-          dur="1.2s"
-          repeatCount="indefinite"
-        />
+        <animate attributeName="r" values="3;4.5;3" dur="1.2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.2;0.5;0.2" dur="1.2s" repeatCount="indefinite" />
       </circle>
       <circle cx="60" cy="50" r="4" className="fill-muted-foreground/25">
         <animate
@@ -296,11 +284,7 @@ function NoContractsIllustration({ width, height }: { width: number; height: num
         strokeWidth="1.5"
       />
       {/* Document fold */}
-      <path
-        d="M72 16 L90 34"
-        className="stroke-muted-foreground/10"
-        strokeWidth="1.5"
-      />
+      <path d="M72 16 L90 34" className="stroke-muted-foreground/10" strokeWidth="1.5" />
       <path
         d="M72 16 L72 34 L90 34"
         className="fill-muted/40 stroke-muted-foreground/15"
@@ -344,12 +328,7 @@ function NoContractsIllustration({ width, height }: { width: number; height: num
 
       {/* Subtle pulse ring */}
       <circle cx="60" cy="56" r="16" fill="none" strokeWidth="1">
-        <animate
-          attributeName="r"
-          values="16;28;16"
-          dur="3.5s"
-          repeatCount="indefinite"
-        />
+        <animate attributeName="r" values="16;28;16" dur="3.5s" repeatCount="indefinite" />
         <animate
           attributeName="stroke"
           values="rgba(16,185,129,0);rgba(16,185,129,0.15);rgba(16,185,129,0)"
@@ -433,31 +412,403 @@ function SearchEmptyIllustration({ width, height }: { width: number; height: num
         <animate attributeName="opacity" values="0;0.2;0" dur="3s" repeatCount="indefinite" />
       </circle>
       <circle cx="96" cy="36" r="1.5" className="fill-muted-foreground/10">
-        <animate attributeName="opacity" values="0;0.2;0" dur="3s" begin="0.5s" repeatCount="indefinite" />
+        <animate
+          attributeName="opacity"
+          values="0;0.2;0"
+          dur="3s"
+          begin="0.5s"
+          repeatCount="indefinite"
+        />
       </circle>
       <circle cx="18" cy="72" r="1.5" className="fill-muted-foreground/10">
-        <animate attributeName="opacity" values="0;0.2;0" dur="3s" begin="1s" repeatCount="indefinite" />
+        <animate
+          attributeName="opacity"
+          values="0;0.2;0"
+          dur="3s"
+          begin="1s"
+          repeatCount="indefinite"
+        />
       </circle>
       <circle cx="100" cy="70" r="2" className="fill-muted-foreground/10">
-        <animate attributeName="opacity" values="0;0.2;0" dur="3s" begin="1.5s" repeatCount="indefinite" />
+        <animate
+          attributeName="opacity"
+          values="0;0.2;0"
+          dur="3s"
+          begin="1.5s"
+          repeatCount="indefinite"
+        />
       </circle>
     </svg>
   );
 }
 
-const ILLUSTRATION_MAP: Record<IllustrationType, (props: { width: number; height: number }) => React.JSX.Element> = {
+// ---------------------------------------------------------------
+// No Notifications — Bell with gentle rock + silent waves
+// ---------------------------------------------------------------
+function NoNotificationsIllustration({ width, height }: { width: number; height: number }) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 120 120"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="No notifications"
+      className="illustration-float"
+    >
+      {/* Bell body */}
+      <path
+        d="M40 56 C40 38 48 26 60 26 C72 26 80 38 80 56 L80 68 C80 72 82 76 86 78 L34 78 C38 76 40 72 40 68 Z"
+        className="fill-muted/60 stroke-muted-foreground/20"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      {/* Bell top knob */}
+      <circle
+        cx="60"
+        cy="26"
+        r="4"
+        className="fill-muted/60 stroke-muted-foreground/20"
+        strokeWidth="1.5"
+      />
+      {/* Clapper */}
+      <path
+        d="M52 78 C52 84 56 88 60 88 C64 88 68 84 68 78"
+        className="fill-muted/40 stroke-muted-foreground/20"
+        strokeWidth="1.5"
+      />
+
+      {/* Silent wave arcs */}
+      <path
+        d="M28 50 C26 54 26 58 28 62"
+        className="stroke-muted-foreground/10"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        fill="none"
+      >
+        <animate attributeName="opacity" values="0;0.3;0" dur="3s" repeatCount="indefinite" />
+      </path>
+      <path
+        d="M92 50 C94 54 94 58 92 62"
+        className="stroke-muted-foreground/10"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        fill="none"
+      >
+        <animate
+          attributeName="opacity"
+          values="0;0.3;0"
+          dur="3s"
+          begin="0.3s"
+          repeatCount="indefinite"
+        />
+      </path>
+
+      {/* Subtle gold pulse at top */}
+      <circle cx="60" cy="26" r="4" fill="none" strokeWidth="1">
+        <animate attributeName="r" values="4;10;4" dur="3.5s" repeatCount="indefinite" />
+        <animate
+          attributeName="stroke"
+          values="rgba(201,168,76,0);rgba(201,168,76,0.2);rgba(201,168,76,0)"
+          dur="3.5s"
+          repeatCount="indefinite"
+        />
+      </circle>
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------
+// No Properties — House with shimmer + address lines
+// ---------------------------------------------------------------
+function NoPropertiesIllustration({ width, height }: { width: number; height: number }) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 120 120"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="No properties"
+      className="illustration-float"
+    >
+      {/* Roof */}
+      <path
+        d="M20 56 L60 24 L100 56"
+        className="stroke-muted-foreground/25"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      {/* House body */}
+      <rect
+        x="32"
+        y="56"
+        width="56"
+        height="40"
+        rx="4"
+        className="fill-muted/60 stroke-muted-foreground/20"
+        strokeWidth="1.5"
+      />
+      {/* Door */}
+      <rect
+        x="50"
+        y="72"
+        width="20"
+        height="24"
+        rx="2"
+        className="fill-muted/40 stroke-muted-foreground/15"
+        strokeWidth="1"
+      />
+      {/* Door knob */}
+      <circle cx="66" cy="84" r="1.5" className="fill-muted-foreground/20" />
+      {/* Window left */}
+      <rect
+        x="38"
+        y="62"
+        width="10"
+        height="8"
+        rx="1"
+        className="fill-background/40 stroke-muted-foreground/15"
+        strokeWidth="1"
+      />
+      {/* Window right */}
+      <rect
+        x="72"
+        y="62"
+        width="10"
+        height="8"
+        rx="1"
+        className="fill-background/40 stroke-muted-foreground/15"
+        strokeWidth="1"
+      />
+
+      {/* Chimney */}
+      <rect
+        x="76"
+        y="32"
+        width="8"
+        height="20"
+        rx="1"
+        className="fill-muted/50 stroke-muted-foreground/15"
+        strokeWidth="1"
+      />
+
+      {/* Smoke particles */}
+      <circle cx="80" cy="28" r="2" className="fill-muted-foreground/10">
+        <animate attributeName="cy" values="28;18;28" dur="4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.1;0.25;0.1" dur="4s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="84" cy="22" r="1.5" className="fill-muted-foreground/10">
+        <animate
+          attributeName="cy"
+          values="22;12;22"
+          dur="4s"
+          begin="0.5s"
+          repeatCount="indefinite"
+        />
+        <animate
+          attributeName="opacity"
+          values="0.08;0.2;0.08"
+          dur="4s"
+          begin="0.5s"
+          repeatCount="indefinite"
+        />
+      </circle>
+
+      {/* Subtle emerald pulse at door */}
+      <circle cx="60" cy="84" r="0" fill="none" strokeWidth="1">
+        <animate attributeName="r" values="0;14;0" dur="4s" repeatCount="indefinite" />
+        <animate
+          attributeName="stroke"
+          values="rgba(16,185,129,0);rgba(16,185,129,0.12);rgba(16,185,129,0)"
+          dur="4s"
+          repeatCount="indefinite"
+        />
+      </circle>
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------
+// No Recurring — Calendar with rotating arrows
+// ---------------------------------------------------------------
+function NoRecurringIllustration({ width, height }: { width: number; height: number }) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 120 120"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="No recurring jobs"
+      className="illustration-pulse"
+    >
+      {/* Calendar body */}
+      <rect
+        x="24"
+        y="28"
+        width="72"
+        height="68"
+        rx="8"
+        className="fill-muted/60 stroke-muted-foreground/20"
+        strokeWidth="1.5"
+      />
+      {/* Calendar header strip */}
+      <rect
+        x="24"
+        y="28"
+        width="72"
+        height="18"
+        rx="8"
+        className="fill-muted/40 stroke-muted-foreground/20"
+        strokeWidth="1.5"
+      />
+      <rect x="24" y="38" width="72" height="8" className="fill-muted/40" />
+      {/* Calendar hooks */}
+      <line
+        x1="44"
+        y1="22"
+        x2="44"
+        y2="34"
+        className="stroke-muted-foreground/25"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <line
+        x1="76"
+        y1="22"
+        x2="76"
+        y2="34"
+        className="stroke-muted-foreground/25"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+
+      {/* Circular arrows (recurrence symbol) in center */}
+      <g
+        transform="translate(60, 70)"
+        className="illustration-spin-slow"
+        style={{ transformOrigin: '0px 0px' }}
+      >
+        {/* Circular path */}
+        <path
+          d="M-12 0 A12 12 0 1 1 0 12"
+          className="stroke-muted-foreground/20"
+          strokeWidth="2"
+          strokeLinecap="round"
+          fill="none"
+        />
+        {/* Arrow head 1 */}
+        <path
+          d="M-4 10 L0 14 L4 10"
+          className="stroke-muted-foreground/20"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+        {/* Second arc */}
+        <path
+          d="M12 0 A12 12 0 1 1 0 -12"
+          className="stroke-muted-foreground/20"
+          strokeWidth="2"
+          strokeLinecap="round"
+          fill="none"
+        />
+        {/* Arrow head 2 */}
+        <path
+          d="M-4 -10 L0 -14 L4 -10"
+          className="stroke-muted-foreground/20"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </g>
+
+      {/* Subtle gold accent pulse */}
+      <circle cx="60" cy="70" r="12" fill="none" strokeWidth="1">
+        <animate attributeName="r" values="12;22;12" dur="3.5s" repeatCount="indefinite" />
+        <animate
+          attributeName="stroke"
+          values="rgba(201,168,76,0);rgba(201,168,76,0.15);rgba(201,168,76,0)"
+          dur="3.5s"
+          repeatCount="indefinite"
+        />
+      </circle>
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------
+// Error — Warning triangle with pulse
+// ---------------------------------------------------------------
+function ErrorIllustration({ width, height }: { width: number; height: number }) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 120 120"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Error occurred"
+      className="illustration-pulse"
+    >
+      {/* Triangle */}
+      <path
+        d="M60 22 L100 92 L20 92 Z"
+        className="fill-muted/60 stroke-destructive/30"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      {/* Exclamation mark */}
+      <line
+        x1="60"
+        y1="48"
+        x2="60"
+        y2="70"
+        className="stroke-destructive/50"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <circle cx="60" cy="80" r="2.5" className="fill-destructive/50" />
+
+      {/* Pulsing ring */}
+      <circle cx="60" cy="64" r="20" fill="none" strokeWidth="1">
+        <animate attributeName="r" values="20;35;20" dur="3s" repeatCount="indefinite" />
+        <animate
+          attributeName="stroke"
+          values="rgba(239,68,68,0);rgba(239,68,68,0.15);rgba(239,68,68,0)"
+          dur="3s"
+          repeatCount="indefinite"
+        />
+      </circle>
+    </svg>
+  );
+}
+
+const ILLUSTRATION_MAP: Record<
+  IllustrationType,
+  (props: { width: number; height: number }) => React.JSX.Element
+> = {
   'no-jobs': NoJobsIllustration,
   'no-bids': NoBidsIllustration,
   'no-messages': NoMessagesIllustration,
   'no-contracts': NoContractsIllustration,
+  'no-notifications': NoNotificationsIllustration,
+  'no-properties': NoPropertiesIllustration,
+  'no-recurring': NoRecurringIllustration,
   'search-empty': SearchEmptyIllustration,
+  error: ErrorIllustration,
 };
 
-export function AnimatedIllustration({
-  type,
-  size = 'md',
-  className,
-}: AnimatedIllustrationProps) {
+export function AnimatedIllustration({ type, size = 'md', className }: AnimatedIllustrationProps) {
   const dimensions = SIZE_MAP[size];
   const Illustration = ILLUSTRATION_MAP[type];
 

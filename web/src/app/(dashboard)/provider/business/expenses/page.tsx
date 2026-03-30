@@ -37,15 +37,15 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
 };
 
 const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
-  materials: 'bg-blue-100 text-blue-800',
-  tools: 'bg-purple-100 text-purple-800',
-  transportation: 'bg-amber-100 text-amber-800',
-  insurance: 'bg-green-100 text-green-800',
-  licensing: 'bg-cyan-100 text-cyan-800',
-  marketing: 'bg-pink-100 text-pink-800',
-  subcontractor: 'bg-orange-100 text-orange-800',
-  office: 'bg-gray-100 text-gray-800',
-  other: 'bg-slate-100 text-slate-800',
+  materials: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+  tools: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
+  transportation: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  insurance: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+  licensing: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300',
+  marketing: 'bg-pink-100 text-pink-800 dark:bg-pink-950 dark:text-pink-300',
+  subcontractor: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
+  office: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  other: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300',
 };
 
 function formatDate(dateStr: string): string {

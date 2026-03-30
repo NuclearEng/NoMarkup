@@ -27,10 +27,10 @@ import { USER_ROLE, USER_STATUS } from '@/types';
 const ALL_FILTER = '__all__';
 
 const STATUS_CLASSES: Record<UserStatus, string> = {
-  active: 'bg-green-100 text-green-800 border-green-200',
-  suspended: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  banned: 'bg-red-100 text-red-800 border-red-200',
-  deactivated: 'bg-gray-100 text-gray-800 border-gray-200',
+  active: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  suspended: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
+  banned: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
+  deactivated: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
 };
 
 function formatDate(dateStr: string): string {

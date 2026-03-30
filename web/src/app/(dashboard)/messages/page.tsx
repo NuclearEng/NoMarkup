@@ -8,6 +8,7 @@ import { MessageThread } from '@/components/chat/MessageThread';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { useChannel } from '@/hooks/useChannels';
 import { CONNECTION_STATUS } from '@/lib/websocket';
 import { cn } from '@/lib/utils';
@@ -32,10 +33,7 @@ function ConnectionStatusDot() {
 
   return (
     <span className="inline-flex items-center gap-1.5" title={label}>
-      <span
-        className={cn('inline-block h-2 w-2 rounded-full', color)}
-        aria-hidden="true"
-      />
+      <span className={cn('inline-block h-2 w-2 rounded-full', color)} aria-hidden="true" />
       <span className="sr-only">{label}</span>
     </span>
   );
@@ -54,14 +52,15 @@ function ActiveThread({ channelId }: { channelId: string }) {
   );
 }
 
-function EmptyState() {
+function NoConversationSelected() {
   return (
-    <div className="flex h-full flex-col items-center justify-center">
-      <AnimatedIllustration type="no-messages" size="lg" />
-      <h2 className="mt-4 text-lg font-medium">Select a conversation</h2>
-      <p className="mt-1 text-sm" style={{ opacity: 0.7 }}>
-        Choose a conversation from the list to start messaging.
-      </p>
+    <div className="flex h-full items-center justify-center">
+      <EmptyState
+        icon={<AnimatedIllustration type="no-messages" size="sm" />}
+        title="Select a conversation"
+        description="Choose a conversation from the list to start messaging."
+        className="border-none bg-transparent"
+      />
     </div>
   );
 }
@@ -75,9 +74,7 @@ export default function MessagesPage() {
       <div className="mb-4 flex items-center gap-2">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Messages</h1>
-          <p className="mt-1 text-zinc-400">
-            Communicate with customers and providers.
-          </p>
+          <p className="mt-1 text-zinc-400">Communicate with customers and providers.</p>
         </div>
         <div className="ml-auto">
           <ConnectionStatusDot />
@@ -91,7 +88,7 @@ export default function MessagesPage() {
         {/* Channel list sidebar — glass panel */}
         <div
           className={cn(
-            'w-full md:w-80 md:block',
+            'w-full md:block md:w-80',
             'border-r border-white/[0.06]',
             'bg-white/[0.02]',
             activeChannelId ? 'hidden md:block' : 'block',
@@ -101,12 +98,7 @@ export default function MessagesPage() {
         </div>
 
         {/* Main thread area */}
-        <div
-          className={cn(
-            'flex-1',
-            activeChannelId ? 'block' : 'hidden md:block',
-          )}
-        >
+        <div className={cn('flex-1', activeChannelId ? 'block' : 'hidden md:block')}>
           {activeChannelId ? (
             <div className="flex h-full flex-col">
               {/* Mobile back button */}
@@ -115,7 +107,9 @@ export default function MessagesPage() {
                   variant="ghost"
                   size="sm"
                   className="min-h-[44px]"
-                  onClick={() => { setActiveChannel(null); }}
+                  onClick={() => {
+                    setActiveChannel(null);
+                  }}
                   aria-label="Back to conversations"
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -127,7 +121,7 @@ export default function MessagesPage() {
               </div>
             </div>
           ) : (
-            <EmptyState />
+            <NoConversationSelected />
           )}
         </div>
       </div>
