@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Shield, TrendingUp, Users, Zap } from 'lucide-react';
+import { Shield, Users, Zap } from 'lucide-react';
 
 import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
 import { BidForm } from '@/components/bids/BidForm';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { PriceDropChart } from '@/components/bids/PriceDropChart';
+import { SavingsHero } from '@/components/bids/SavingsHero';
 import { SnipeIndicator } from '@/components/bids/SnipeIndicator';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { SavingsCelebration } from '@/components/ui/SavingsCelebration';
@@ -46,6 +47,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
 
   const [showCelebration, setShowCelebration] = useState(false);
   const celebrationShownRef = useRef(false);
+  const previousLowestRef = useRef<number | undefined>(undefined);
 
   const handleCloseCelebration = useCallback(() => {
     setShowCelebration(false);
@@ -63,6 +65,14 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
   const startingPrice = job.starting_bid_cents || 0;
   const medianPrice = job.market_range?.median_cents || 0;
   const savingsCents = medianPrice > 0 && displayLowest > 0 ? medianPrice - displayLowest : 0;
+
+  // Track the previous lowest bid for SavingsHero trend
+  const previousLowest = previousLowestRef.current;
+  useEffect(() => {
+    if (displayLowest > 0 && displayLowest !== previousLowestRef.current) {
+      previousLowestRef.current = displayLowest;
+    }
+  }, [displayLowest]);
 
   // Map displayEvents to BidActivity[] for the activity feed (reverse chronological)
   const bidActivities = useMemo(() => {
@@ -206,22 +216,18 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
 
         <p className="text-muted-foreground mt-1 text-xs">Current Lowest Bid</p>
-
-        {/* Savings pill */}
-        {savingsCents > 0 ? (
-          <div
-            className="mx-auto mt-3 inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-3.5 py-1.5"
-            role="status"
-            aria-label={`Saving ${formatCurrency(savingsCents)} versus market average`}
-            style={{ animation: 'savingsPulse 3s ease-in-out infinite' }}
-          >
-            <TrendingUp className="h-3.5 w-3.5 text-green-400" aria-hidden="true" />
-            <span className="text-xs font-bold text-green-400">
-              Saving {formatCurrency(savingsCents)} vs market avg
-            </span>
-          </div>
-        ) : null}
       </div>
+
+      {/* ── Savings Hero ── */}
+      {startingPrice > 0 && displayLowest > 0 && displayLowest < startingPrice ? (
+        <div className="px-4 pb-2 sm:px-6">
+          <SavingsHero
+            startingPriceCents={startingPrice}
+            currentLowestCents={displayLowest}
+            previousLowestCents={previousLowest}
+          />
+        </div>
+      ) : null}
 
       {/* ── Stats row ── */}
       <div className="border-border/30 bg-border/20 mx-4 my-4 grid grid-cols-3 gap-px overflow-hidden rounded-lg border-y sm:mx-6">
