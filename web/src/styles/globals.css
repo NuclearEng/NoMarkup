@@ -564,7 +564,113 @@ body {
   .animate-confetti-fall,
   .animate-shimmer,
   .animate-float,
-  .animate-gradient {
+  .animate-gradient,
+  .ticker-track,
+  .gradient-blob-1,
+  .gradient-blob-2,
+  .gradient-blob-3,
+  .gradient-blob-4,
+  .illustration-float,
+  .illustration-swing,
+  .illustration-bounce,
+  .illustration-pulse,
+  .illustration-search-motion,
+  .illustration-pendulum,
+  .sparkline-path {
     animation: none !important;
   }
+  .ticker-track {
+    overflow-x: auto;
+  }
+}
+
+/* ================================================================
+   Market Ticker Strip — infinite horizontal scroll
+   ================================================================ */
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.ticker-track {
+  animation: ticker-scroll 40s linear infinite;
+  width: max-content;
+}
+
+/* ================================================================
+   Gradient Mesh — slow drifting blobs
+   ================================================================ */
+@keyframes gradient-blob-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(60px, 40px) scale(1.05); }
+  50% { transform: translate(30px, -30px) scale(0.95); }
+  75% { transform: translate(-40px, 20px) scale(1.02); }
+}
+@keyframes gradient-blob-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-50px, 30px) scale(0.97); }
+  50% { transform: translate(-20px, -40px) scale(1.04); }
+  75% { transform: translate(40px, -20px) scale(0.98); }
+}
+@keyframes gradient-blob-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -50px) scale(1.03); }
+  50% { transform: translate(-40px, 30px) scale(0.96); }
+  75% { transform: translate(20px, 40px) scale(1.01); }
+}
+@keyframes gradient-blob-drift-4 {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  33% { transform: translate(calc(-50% + 30px), calc(-50% - 20px)) scale(1.06); }
+  66% { transform: translate(calc(-50% - 20px), calc(-50% + 30px)) scale(0.94); }
+}
+.gradient-blob-1 { animation: gradient-blob-drift-1 45s ease-in-out infinite; }
+.gradient-blob-2 { animation: gradient-blob-drift-2 50s ease-in-out infinite; }
+.gradient-blob-3 { animation: gradient-blob-drift-3 55s ease-in-out infinite; }
+.gradient-blob-4 { animation: gradient-blob-drift-4 40s ease-in-out infinite; }
+
+/* ================================================================
+   Animated Illustrations — idle animations
+   ================================================================ */
+@keyframes illustration-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes illustration-swing {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(4deg); }
+  75% { transform: rotate(-4deg); }
+}
+@keyframes illustration-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes illustration-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.9; }
+}
+@keyframes illustration-search-motion {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(3px, -2px); }
+  50% { transform: translate(-2px, 2px); }
+  75% { transform: translate(2px, 1px); }
+}
+@keyframes illustration-pendulum {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(6deg); }
+  75% { transform: rotate(-6deg); }
+}
+.illustration-float { animation: illustration-float 4s ease-in-out infinite; }
+.illustration-swing { animation: illustration-swing 4s ease-in-out infinite; }
+.illustration-bounce { animation: illustration-bounce 3s ease-in-out infinite; }
+.illustration-pulse { animation: illustration-pulse 4s ease-in-out infinite; }
+.illustration-search { /* container — no animation itself */ }
+.illustration-search-motion { animation: illustration-search-motion 5s ease-in-out infinite; }
+.illustration-pendulum { animation: illustration-pendulum 4s ease-in-out infinite; transform-origin: top center; }
+
+/* ================================================================
+   Sparkline — micro trend chart for stats (landing page)
+   ================================================================ */
+.sparkline-path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: sparkline-draw 1.5s ease-out forwards;
 }

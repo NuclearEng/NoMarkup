@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { JobCard } from '@/components/jobs/JobCard';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCustomerJobs } from '@/hooks/useJobs';
@@ -82,8 +83,12 @@ export default function MyJobsPage() {
                 <p className="text-destructive">Failed to load jobs. Please try again.</p>
               </div>
             ) : !data?.jobs.length ? (
-              <div className="rounded-lg border p-8 text-center">
-                <p className="text-muted-foreground">
+              <div className="flex flex-col items-center rounded-lg border p-8 text-center">
+                <AnimatedIllustration
+                  type={tab.value === 'all' ? 'no-jobs' : 'search-empty'}
+                  size="md"
+                />
+                <p className="mt-4 text-muted-foreground">
                   {tab.value === 'draft'
                     ? 'No drafts yet. Start posting a job to save drafts.'
                     : tab.value === 'all'
