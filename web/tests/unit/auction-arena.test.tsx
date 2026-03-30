@@ -52,6 +52,11 @@ const defaultStreamReturn = {
   auctionEndsAt: null,
   snipeExtensionCount: 0,
   isConnected: false,
+  orderBook: [] as [],
+  priceHistory: [] as [],
+  velocity: 0,
+  momentum: 'stable' as const,
+  velocityBuckets: [] as number[],
 };
 
 function createTestQueryClient(): QueryClient {
@@ -145,7 +150,7 @@ describe('AuctionArena', () => {
   });
 
   it('shows LIVE when connected', () => {
-    vi.mocked(useAuctionStream).mockReturnValue({
+    vi.mocked(useAuctionStream).mockReturnValue({ ...defaultStreamReturn,
       events: [],
       connectionStatus: 'connected',
       currentLowest: 0,
@@ -167,7 +172,7 @@ describe('AuctionArena', () => {
   });
 
   it('shows CONNECTING when connecting', () => {
-    vi.mocked(useAuctionStream).mockReturnValue({
+    vi.mocked(useAuctionStream).mockReturnValue({ ...defaultStreamReturn,
       events: [],
       connectionStatus: 'connecting',
       currentLowest: 0,
@@ -189,7 +194,7 @@ describe('AuctionArena', () => {
   });
 
   it('displays current lowest bid formatted as currency', () => {
-    vi.mocked(useAuctionStream).mockReturnValue({
+    vi.mocked(useAuctionStream).mockReturnValue({ ...defaultStreamReturn,
       events: [],
       connectionStatus: 'connected',
       currentLowest: 25000,
@@ -211,7 +216,7 @@ describe('AuctionArena', () => {
   });
 
   it('displays bid count', () => {
-    vi.mocked(useAuctionStream).mockReturnValue({
+    vi.mocked(useAuctionStream).mockReturnValue({ ...defaultStreamReturn,
       events: [],
       connectionStatus: 'connected',
       currentLowest: 25000,
@@ -245,7 +250,7 @@ describe('AuctionArena', () => {
   });
 
   it('displays snipe extension count via SnipeIndicator', () => {
-    vi.mocked(useAuctionStream).mockReturnValue({
+    vi.mocked(useAuctionStream).mockReturnValue({ ...defaultStreamReturn,
       events: [],
       connectionStatus: 'connected',
       currentLowest: 25000,
@@ -341,7 +346,7 @@ describe('AuctionArena', () => {
   });
 
   it('falls back to REST auction state when WebSocket data is absent', () => {
-    vi.mocked(useAuctionStream).mockReturnValue({
+    vi.mocked(useAuctionStream).mockReturnValue({ ...defaultStreamReturn,
       events: [],
       connectionStatus: 'disconnected',
       currentLowest: 0,

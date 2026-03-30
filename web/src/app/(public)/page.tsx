@@ -28,7 +28,7 @@ import { AuctionDemo } from '@/components/landing/AuctionDemo';
 // ---------------------------------------------------------------------------
 // Intersection Observer hook for scroll-triggered animations
 // ---------------------------------------------------------------------------
-function useInView<T extends HTMLElement>(options?: IntersectionObserverInit) {
+function useInView<T extends Element>(options?: IntersectionObserverInit) {
   const ref = useRef<T>(null);
   const [inView, setInView] = useState(false);
 
@@ -151,16 +151,76 @@ function MicroSparkline({ data, color }: { data: readonly number[]; color: strin
 // Ticker data (mock marketplace activity)
 // ---------------------------------------------------------------------------
 const TICKER_ITEMS = [
-  { category: 'Plumbing', location: 'Austin', currentPrice: 34000, originalPrice: 80000, status: 'completed' as const },
-  { category: 'House Cleaning', location: 'SF', currentPrice: 8900, bidCount: 12, status: 'active' as const },
-  { category: 'Lawn Care', location: 'Denver', currentPrice: 15500, timeRemaining: 'Ending in 2h', status: 'ending-soon' as const },
-  { category: 'Painting', location: 'Seattle', currentPrice: 120000, originalPrice: 185000, status: 'completed' as const },
-  { category: 'Electrical', location: 'Chicago', currentPrice: 42000, bidCount: 8, status: 'active' as const },
-  { category: 'Roofing', location: 'Portland', currentPrice: 680000, originalPrice: 950000, status: 'completed' as const },
-  { category: 'HVAC Repair', location: 'Miami', currentPrice: 28000, timeRemaining: 'Ending in 45m', status: 'ending-soon' as const },
-  { category: 'Moving', location: 'Dallas', currentPrice: 95000, bidCount: 15, status: 'active' as const },
-  { category: 'Tree Removal', location: 'Atlanta', currentPrice: 45000, originalPrice: 72000, status: 'completed' as const },
-  { category: 'Carpet Cleaning', location: 'Phoenix', currentPrice: 19500, bidCount: 6, status: 'active' as const },
+  {
+    category: 'Plumbing',
+    location: 'Austin',
+    currentPrice: 34000,
+    originalPrice: 80000,
+    status: 'completed' as const,
+  },
+  {
+    category: 'House Cleaning',
+    location: 'SF',
+    currentPrice: 8900,
+    bidCount: 12,
+    status: 'active' as const,
+  },
+  {
+    category: 'Lawn Care',
+    location: 'Denver',
+    currentPrice: 15500,
+    timeRemaining: 'Ending in 2h',
+    status: 'ending-soon' as const,
+  },
+  {
+    category: 'Painting',
+    location: 'Seattle',
+    currentPrice: 120000,
+    originalPrice: 185000,
+    status: 'completed' as const,
+  },
+  {
+    category: 'Electrical',
+    location: 'Chicago',
+    currentPrice: 42000,
+    bidCount: 8,
+    status: 'active' as const,
+  },
+  {
+    category: 'Roofing',
+    location: 'Portland',
+    currentPrice: 680000,
+    originalPrice: 950000,
+    status: 'completed' as const,
+  },
+  {
+    category: 'HVAC Repair',
+    location: 'Miami',
+    currentPrice: 28000,
+    timeRemaining: 'Ending in 45m',
+    status: 'ending-soon' as const,
+  },
+  {
+    category: 'Moving',
+    location: 'Dallas',
+    currentPrice: 95000,
+    bidCount: 15,
+    status: 'active' as const,
+  },
+  {
+    category: 'Tree Removal',
+    location: 'Atlanta',
+    currentPrice: 45000,
+    originalPrice: 72000,
+    status: 'completed' as const,
+  },
+  {
+    category: 'Carpet Cleaning',
+    location: 'Phoenix',
+    currentPrice: 19500,
+    bidCount: 6,
+    status: 'active' as const,
+  },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -258,10 +318,9 @@ export default function LandingPage() {
                 className="animate-fade-in-up mt-6 text-lg leading-relaxed text-white/60 sm:text-xl"
                 style={{ animationDelay: '100ms' }}
               >
-                Post what you need, then watch qualified providers compete for
-                your business. A reverse auction means the price goes{' '}
-                <span className="font-semibold text-white/90">down</span>,
-                not up.
+                Post what you need, then watch qualified providers compete for your business. A
+                reverse auction means the price goes{' '}
+                <span className="font-semibold text-white/90">down</span>, not up.
               </p>
 
               {/* CTAs */}
@@ -331,7 +390,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={statsSection.ref}
-        className="border-b bg-card py-10 sm:py-12"
+        className="bg-card border-b py-10 sm:py-12"
         aria-label="Platform statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -343,17 +402,13 @@ export default function LandingPage() {
                 style={{ transitionDelay: `${String(i * 120)}ms` }}
               >
                 <p className="text-3xl font-bold tracking-tight sm:text-4xl">
-                  {stat.display ? (
+                  {'display' in stat && stat.display ? (
                     stat.display
                   ) : (
-                    <AnimatedCounter
-                      end={stat.value}
-                      prefix={stat.prefix}
-                      suffix={stat.suffix}
-                    />
+                    <AnimatedCounter end={stat.value} prefix={stat.prefix} suffix={stat.suffix} />
                   )}
                 </p>
-                <p className="mt-1 text-sm text-muted-foreground">{stat.label}</p>
+                <p className="text-muted-foreground mt-1 text-sm">{stat.label}</p>
                 {statsSection.inView ? (
                   <MicroSparkline data={stat.sparkline} color={stat.color} />
                 ) : null}
