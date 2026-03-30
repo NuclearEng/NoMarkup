@@ -111,7 +111,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
           </div>
 
           {/* Bids stat */}
-          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
+          <div className="relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
             <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent)' }} />
             <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Users className="mb-1 h-4 w-4 text-blue-400/70" />
@@ -122,7 +122,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
           </div>
 
           {/* Timer */}
-          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
+          <div className="relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
             <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(245,158,11,0.5), transparent)' }} />
             <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Clock className="mb-1 h-4 w-4 text-amber-400/70" />
@@ -133,7 +133,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
           </div>
 
           {/* Snipe */}
-          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
+          <div className="relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
             <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.5), transparent)' }} />
             <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Shield className="mb-1 h-4 w-4 text-violet-400/70" />

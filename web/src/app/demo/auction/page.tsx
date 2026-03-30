@@ -292,29 +292,26 @@ export default function AuctionDemoPage() {
           {/* Controls */}
           <div className="flex items-center gap-1.5">
             {sim.isRunning ? (
-              <Button
-                size="sm"
+              <button
                 onClick={sim.pause}
-                className="h-8 gap-1 border border-white/10 bg-white/5 px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+                className="flex h-8 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-3 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <Pause className="h-3 w-3" /> Pause
-              </Button>
+              </button>
             ) : (
-              <Button
-                size="sm"
+              <button
                 onClick={sim.start}
-                className="h-8 gap-1 border border-emerald-500/20 bg-emerald-500/10 px-3 text-xs text-emerald-400 hover:bg-emerald-500/20"
+                className="flex h-8 items-center gap-1 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 text-xs text-emerald-400 transition-colors hover:bg-emerald-500/20"
               >
                 <Play className="h-3 w-3" /> {sim.bidCount > 0 ? 'Resume' : 'Start'}
-              </Button>
+              </button>
             )}
-            <Button
-              size="sm"
+            <button
               onClick={sim.reset}
-              className="h-8 gap-1 px-3 text-xs text-white/40 hover:bg-white/5 hover:text-white/70"
+              className="flex h-8 min-h-0 min-w-0 items-center gap-1 rounded-md border border-white/[0.06] bg-transparent px-3 text-xs text-white/40 transition-colors hover:bg-white/5 hover:text-white/70"
             >
               <RotateCcw className="h-3 w-3" />
-            </Button>
+            </button>
           </div>
         </div>
       </div>
