@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
@@ -296,6 +297,178 @@ func (s *Server) GetFeeConfig(ctx context.Context, req *paymentv1.GetFeeConfigRe
 	}
 
 	return resp, nil
+}
+
+// --- Admin RPCs ---
+
+func (s *Server) AdminListPayments(ctx context.Context, req *paymentv1.AdminListPaymentsRequest) (*paymentv1.AdminListPaymentsResponse, error) {
+	userID := ""
+	if req.UserId != nil {
+		userID = *req.UserId
+	}
+
+	statusFilter := ""
+	if req.StatusFilter != nil {
+		statusFilter = paymentStatusToString(*req.StatusFilter)
+	}
+
+	var startTime, endTime *time.Time
+	if dr := req.GetDateRange(); dr != nil {
+		if dr.GetStart() != nil {
+			t := dr.GetStart().AsTime()
+			startTime = &t
+		}
+		if dr.GetEnd() != nil {
+			t := dr.GetEnd().AsTime()
+			endTime = &t
+		}
+	}
+
+	page := int32(1)
+	pageSize := int32(20)
+	if pg := req.GetPagination(); pg != nil {
+		if pg.GetPage() > 0 {
+			page = pg.GetPage()
+		}
+		if pg.GetPageSize() > 0 {
+			pageSize = pg.GetPageSize()
+		}
+	}
+
+	payments, totalCount, totalAmountCents, totalFeesCents, err := s.svc.AdminListPayments(ctx, userID, statusFilter, startTime, endTime, int(page), int(pageSize))
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoPayments := make([]*paymentv1.Payment, 0, len(payments))
+	for _, p := range payments {
+		protoPayments = append(protoPayments, domainPaymentToProto(p))
+	}
+
+	totalPages := int32(0)
+	if totalCount > 0 {
+		totalPages = (int32(totalCount) + pageSize - 1) / pageSize
+	}
+
+	return &paymentv1.AdminListPaymentsResponse{
+		Payments: protoPayments,
+		Pagination: &commonv1.PaginationResponse{
+			TotalCount: int32(totalCount),
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+			HasNext:    page < totalPages,
+		},
+		TotalAmountCents: totalAmountCents,
+		TotalFeesCents:   totalFeesCents,
+	}, nil
+}
+
+func (s *Server) AdminGetPaymentDetails(ctx context.Context, req *paymentv1.AdminGetPaymentDetailsRequest) (*paymentv1.AdminGetPaymentDetailsResponse, error) {
+	if req.GetPaymentId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "payment_id is required")
+	}
+
+	payment, err := s.svc.AdminGetPaymentDetails(ctx, req.GetPaymentId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	breakdown := &paymentv1.PaymentBreakdown{
+		SubtotalCents:       payment.AmountCents,
+		PlatformFeeCents:    payment.PlatformFeeCents,
+		GuaranteeFeeCents:   payment.GuaranteeFeeCents,
+		TotalCents:          payment.AmountCents,
+		ProviderPayoutCents: payment.ProviderPayoutCents,
+	}
+	if payment.AmountCents > 0 {
+		breakdown.FeePercentage = float64(payment.PlatformFeeCents) / float64(payment.AmountCents)
+		breakdown.GuaranteePercentage = float64(payment.GuaranteeFeeCents) / float64(payment.AmountCents)
+	}
+
+	return &paymentv1.AdminGetPaymentDetailsResponse{
+		Payment:                domainPaymentToProto(payment),
+		Breakdown:              breakdown,
+		StripePaymentIntentId:  payment.StripePaymentIntentID,
+		StripeChargeId:         payment.StripeChargeID,
+		StripeTransferId:       payment.StripeTransferID,
+	}, nil
+}
+
+func (s *Server) AdminUpdateFeeConfig(ctx context.Context, req *paymentv1.AdminUpdateFeeConfigRequest) (*paymentv1.AdminUpdateFeeConfigResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	var categoryID *string
+	if req.CategoryId != nil {
+		categoryID = req.CategoryId
+	}
+
+	var maxFeeCents *int64
+	if req.MaxFeeCents != nil {
+		maxFeeCents = req.MaxFeeCents
+	}
+
+	fc, err := s.svc.AdminUpdateFeeConfig(ctx, categoryID, req.GetFeePercentage(), req.GetGuaranteePercentage(), req.GetMinFeeCents(), maxFeeCents)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	resp := &paymentv1.GetFeeConfigResponse{
+		FeePercentage:       fc.FeePercentage,
+		GuaranteePercentage: fc.GuaranteePercentage,
+		MinFeeCents:         fc.MinFeeCents,
+	}
+	if fc.MaxFeeCents != nil {
+		resp.MaxFeeCents = *fc.MaxFeeCents
+	}
+
+	return &paymentv1.AdminUpdateFeeConfigResponse{
+		Config: resp,
+	}, nil
+}
+
+func (s *Server) GetRevenueReport(ctx context.Context, req *paymentv1.GetRevenueReportRequest) (*paymentv1.GetRevenueReportResponse, error) {
+	var startTime, endTime *time.Time
+	if dr := req.GetDateRange(); dr != nil {
+		if dr.GetStart() != nil {
+			t := dr.GetStart().AsTime()
+			startTime = &t
+		}
+		if dr.GetEnd() != nil {
+			t := dr.GetEnd().AsTime()
+			endTime = &t
+		}
+	}
+
+	groupBy := req.GetGroupBy()
+	if groupBy == "" {
+		groupBy = "month"
+	}
+
+	report, err := s.svc.GetRevenueReport(ctx, startTime, endTime, groupBy)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	dataPoints := make([]*paymentv1.RevenueDataPoint, 0, len(report.DataPoints))
+	for _, dp := range report.DataPoints {
+		dataPoints = append(dataPoints, &paymentv1.RevenueDataPoint{
+			PeriodStart:      timestamppb.New(dp.PeriodStart),
+			GmvCents:         dp.GMVCents,
+			RevenueCents:     dp.RevenueCents,
+			TransactionCount: dp.TransactionCount,
+		})
+	}
+
+	return &paymentv1.GetRevenueReportResponse{
+		DataPoints:            dataPoints,
+		TotalGmvCents:         report.TotalGMVCents,
+		TotalRevenueCents:     report.TotalRevenueCents,
+		TotalGuaranteeFundCents: report.TotalGuaranteeFundCents,
+		EffectiveTakeRate:     report.EffectiveTakeRate,
+	}, nil
 }
 
 // --- Conversion helpers ---

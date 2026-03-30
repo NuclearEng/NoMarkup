@@ -341,3 +341,36 @@ func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerStripeI
 func (s *PaymentService) DeletePaymentMethod(ctx context.Context, paymentMethodID string) error {
 	return s.stripe.DeletePaymentMethod(ctx, paymentMethodID)
 }
+
+// AdminListPayments lists payments with optional filters for admin use.
+func (s *PaymentService) AdminListPayments(ctx context.Context, userID string, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error) {
+	return s.repo.AdminListPayments(ctx, userID, statusFilter, startTime, endTime, page, pageSize)
+}
+
+// AdminGetPaymentDetails retrieves a payment by ID with full details for admin.
+func (s *PaymentService) AdminGetPaymentDetails(ctx context.Context, paymentID string) (*domain.Payment, error) {
+	return s.repo.AdminGetPaymentDetails(ctx, paymentID)
+}
+
+// AdminUpdateFeeConfig updates the fee configuration for a category or the default.
+func (s *PaymentService) AdminUpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64) (*domain.FeeConfig, error) {
+	if feePercentage < 0 || feePercentage > 1 {
+		return nil, fmt.Errorf("admin update fee config: fee_percentage must be between 0 and 1: %w", domain.ErrInvalidAmount)
+	}
+	if guaranteePercentage < 0 || guaranteePercentage > 1 {
+		return nil, fmt.Errorf("admin update fee config: guarantee_percentage must be between 0 and 1: %w", domain.ErrInvalidAmount)
+	}
+	if minFeeCents < 0 {
+		return nil, fmt.Errorf("admin update fee config: min_fee_cents must be non-negative: %w", domain.ErrInvalidAmount)
+	}
+	if maxFeeCents != nil && *maxFeeCents < minFeeCents {
+		return nil, fmt.Errorf("admin update fee config: max_fee_cents must be >= min_fee_cents: %w", domain.ErrInvalidAmount)
+	}
+
+	return s.repo.UpdateFeeConfig(ctx, categoryID, feePercentage, guaranteePercentage, minFeeCents, maxFeeCents)
+}
+
+// GetRevenueReport returns aggregated revenue data for a date range.
+func (s *PaymentService) GetRevenueReport(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*domain.RevenueReport, error) {
+	return s.repo.GetRevenueReport(ctx, startTime, endTime, groupBy)
+}

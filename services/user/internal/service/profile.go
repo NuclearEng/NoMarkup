@@ -157,6 +157,30 @@ func (s *Profile) GetCategoryTree(ctx context.Context) ([]domain.ServiceCategory
 	return s.repo.GetCategoryTree(ctx)
 }
 
+func (s *Profile) SearchProviders(ctx context.Context, input domain.ProviderSearchInput) ([]domain.ProviderSearchResult, int, error) {
+	results, total, err := s.repo.SearchProviders(ctx, input)
+	if err != nil {
+		return nil, 0, fmt.Errorf("search providers: %w", err)
+	}
+
+	// Enrich each result with trust scores if the client is available.
+	if s.trust != nil {
+		for i := range results {
+			ts, tsErr := s.trust.GetTrustScore(ctx, results[i].UserID)
+			if tsErr != nil {
+				slog.Warn("failed to fetch trust score for search result",
+					"user_id", results[i].UserID,
+					"error", tsErr,
+				)
+				continue
+			}
+			results[i].TrustScore = ts
+		}
+	}
+
+	return results, total, nil
+}
+
 // MarshalSchedule converts AvailabilityWindow proto objects into JSON for DB storage.
 func MarshalSchedule(data interface{}) ([]byte, error) {
 	b, err := json.Marshal(data)

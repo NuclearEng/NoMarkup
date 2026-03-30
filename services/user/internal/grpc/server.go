@@ -793,6 +793,152 @@ func (s *Server) AdminGetUser(ctx context.Context, req *userv1.AdminGetUserReque
 	return resp, nil
 }
 
+func (s *Server) SearchProviders(ctx context.Context, req *userv1.SearchProvidersRequest) (*userv1.SearchProvidersResponse, error) {
+	page := int(req.GetPagination().GetPage())
+	pageSize := int(req.GetPagination().GetPageSize())
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	input := domain.ProviderSearchInput{
+		CategoryIDs: req.GetCategoryIds(),
+		RadiusKm:    req.GetRadiusKm(),
+		Page:        page,
+		PageSize:    pageSize,
+	}
+
+	if loc := req.GetLocation(); loc != nil {
+		lat := loc.GetLatitude()
+		lng := loc.GetLongitude()
+		input.Latitude = &lat
+		input.Longitude = &lng
+	}
+
+	if req.MinRating != nil {
+		input.MinRating = req.MinRating
+	}
+
+	if req.MinTrustTier != nil {
+		tier := protoTrustTierToString(*req.MinTrustTier)
+		input.MinTrustTier = &tier
+	}
+
+	if req.VerifiedOnly != nil {
+		input.VerifiedOnly = req.VerifiedOnly
+	}
+
+	if req.InstantAvailable != nil {
+		input.InstantAvailable = req.InstantAvailable
+	}
+
+	if sort := req.GetSort(); sort != nil {
+		input.SortField = sort.GetField()
+		if sort.GetDirection() == commonv1.SortDirection_SORT_DIRECTION_DESC {
+			input.SortDirection = "desc"
+		} else {
+			input.SortDirection = "asc"
+		}
+	}
+
+	results, total, err := s.profile.SearchProviders(ctx, input)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoResults := make([]*userv1.ProviderSearchResult, 0, len(results))
+	for _, r := range results {
+		pr := &userv1.ProviderSearchResult{
+			UserId:           r.UserID,
+			DisplayName:      r.DisplayName,
+			BusinessName:     r.BusinessName,
+			AvatarUrl:        r.AvatarURL,
+			DistanceKm:       r.DistanceKm,
+			InstantAvailable: r.InstantAvailable,
+			ReviewSummary: &userv1.ReviewSummary{
+				AverageRating: r.AverageRating,
+				ReviewCount:   int32(r.ReviewCount),
+				OnTimeRate:    r.OnTimeRate,
+			},
+		}
+
+		if r.TrustScore != nil {
+			pr.TrustScore = &userv1.TrustScoreSummary{
+				OverallScore:  r.TrustScore.OverallScore,
+				Tier:          stringToProtoTrustTier(r.TrustScore.Tier),
+				FeedbackScore: r.TrustScore.FeedbackScore,
+				VolumeScore:   r.TrustScore.VolumeScore,
+				RiskScore:     r.TrustScore.RiskScore,
+				FraudScore:    r.TrustScore.FraudScore,
+			}
+		}
+
+		for _, b := range r.Badges {
+			badge := &userv1.VerificationBadge{
+				DocumentType: b.DocumentType,
+				Status:       stringToProtoVerificationStatus(b.Status),
+			}
+			if b.VerifiedAt != nil {
+				badge.VerifiedAt = timestamppb.New(*b.VerifiedAt)
+			}
+			if b.ExpiresAt != nil {
+				badge.ExpiresAt = timestamppb.New(*b.ExpiresAt)
+			}
+			pr.Badges = append(pr.Badges, badge)
+		}
+
+		for _, c := range r.Categories {
+			pr.Categories = append(pr.Categories, &userv1.ServiceCategorySummary{
+				Id:         c.ID,
+				Name:       c.Name,
+				Slug:       c.Slug,
+				Level:      int32(c.Level),
+				ParentName: c.ParentName,
+			})
+		}
+
+		protoResults = append(protoResults, pr)
+	}
+
+	totalPages := int32(total) / int32(pageSize)
+	if int32(total)%int32(pageSize) > 0 {
+		totalPages++
+	}
+
+	return &userv1.SearchProvidersResponse{
+		Providers: protoResults,
+		Pagination: &commonv1.PaginationResponse{
+			TotalCount: int32(total),
+			Page:       int32(page),
+			PageSize:   int32(pageSize),
+			TotalPages: totalPages,
+			HasNext:    int32(page) < totalPages,
+		},
+	}, nil
+}
+
+func protoTrustTierToString(t commonv1.TrustTier) string {
+	switch t {
+	case commonv1.TrustTier_TRUST_TIER_UNDER_REVIEW:
+		return "under_review"
+	case commonv1.TrustTier_TRUST_TIER_NEW:
+		return "new"
+	case commonv1.TrustTier_TRUST_TIER_RISING:
+		return "rising"
+	case commonv1.TrustTier_TRUST_TIER_TRUSTED:
+		return "trusted"
+	case commonv1.TrustTier_TRUST_TIER_TOP_RATED:
+		return "top_rated"
+	default:
+		return ""
+	}
+}
+
 func protoUserStatusToString(s commonv1.UserStatus) string {
 	switch s {
 	case commonv1.UserStatus_USER_STATUS_ACTIVE:

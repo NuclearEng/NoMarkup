@@ -216,6 +216,46 @@ type TrustScore struct {
 	FraudScore    float64
 }
 
+// ProviderSearchInput holds the parameters for searching providers.
+type ProviderSearchInput struct {
+	CategoryIDs      []string
+	Latitude         *float64
+	Longitude        *float64
+	RadiusKm         float64
+	MinRating        *float64
+	MinTrustTier     *string
+	VerifiedOnly     *bool
+	InstantAvailable *bool
+	SortField        string
+	SortDirection    string // "asc" or "desc"
+	Page             int
+	PageSize         int
+}
+
+// ProviderSearchResult holds a single result from a provider search.
+type ProviderSearchResult struct {
+	UserID           string
+	DisplayName      string
+	BusinessName     string
+	AvatarURL        string
+	DistanceKm       float64
+	AverageRating    float64
+	ReviewCount      int
+	OnTimeRate       float64
+	TrustScore       *TrustScore
+	Badges           []VerificationBadge
+	Categories       []ServiceCategory
+	InstantAvailable bool
+}
+
+// VerificationBadge represents a verification badge for a provider.
+type VerificationBadge struct {
+	DocumentType string
+	Status       string
+	VerifiedAt   *time.Time
+	ExpiresAt    *time.Time
+}
+
 // DocumentType represents a type of verification document.
 type DocumentType string
 
@@ -307,4 +347,7 @@ type UserRepository interface {
 	BanUser(ctx context.Context, userID, reason, adminID string) error
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
 	AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]User, int, error)
+
+	// Provider search
+	SearchProviders(ctx context.Context, input ProviderSearchInput) ([]ProviderSearchResult, int, error)
 }

@@ -140,6 +140,23 @@ type Advance struct {
 	UpdatedAt          time.Time
 }
 
+// RevenueDataPoint holds revenue data for a single time period.
+type RevenueDataPoint struct {
+	PeriodStart      time.Time
+	GMVCents         int64
+	RevenueCents     int64
+	TransactionCount int32
+}
+
+// RevenueReport holds aggregated revenue data.
+type RevenueReport struct {
+	DataPoints            []RevenueDataPoint
+	TotalGMVCents         int64
+	TotalRevenueCents     int64
+	TotalGuaranteeFundCents int64
+	EffectiveTakeRate     float64
+}
+
 // Sentinel errors for expenses and advances.
 var (
 	ErrExpenseNotFound = errors.New("expense not found")
@@ -159,6 +176,12 @@ type PaymentRepository interface {
 	UpdateRefund(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
 	GetStripeAccountID(ctx context.Context, userID string) (string, error)
 	SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error
+
+	// Admin operations
+	AdminListPayments(ctx context.Context, userID string, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*Payment, int, int64, int64, error)
+	AdminGetPaymentDetails(ctx context.Context, paymentID string) (*Payment, error)
+	UpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64) (*FeeConfig, error)
+	GetRevenueReport(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*RevenueReport, error)
 
 	// Expense operations
 	CreateExpense(ctx context.Context, expense *Expense) error

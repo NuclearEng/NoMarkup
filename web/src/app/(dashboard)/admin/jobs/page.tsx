@@ -89,7 +89,7 @@ export default function AdminJobsPage() {
       render: (job) => (
         <Badge
           variant="outline"
-          className={cn('text-xs', STATUS_CLASSES[job.status] ?? '')}
+          className={cn('text-xs capitalize', STATUS_CLASSES[job.status] ?? '')}
         >
           {job.status.replace(/_/g, ' ')}
         </Badge>

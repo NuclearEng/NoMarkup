@@ -123,7 +123,7 @@ func (h *PricingHandler) GetPricingOverview(w http.ResponseWriter, r *http.Reque
 		`SELECT category_name, category_slug,
 		        SUM(completed_jobs) AS total_jobs,
 		        ROUND(AVG(median_price_cents)) AS avg_median_cents,
-		        ROUND(AVG(avg_savings_cents)) FILTER (WHERE avg_savings_cents IS NOT NULL) AS avg_savings_cents
+		        ROUND(AVG(avg_savings_cents) FILTER (WHERE avg_savings_cents IS NOT NULL)) AS avg_savings_cents
 		 FROM fair_price_index
 		 GROUP BY category_name, category_slug
 		 ORDER BY total_jobs DESC`)

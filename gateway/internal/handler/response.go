@@ -5,10 +5,24 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// protoEnumToString converts a protobuf enum string like "USER_ROLE_CUSTOMER"
+// to a lowercase, frontend-friendly form like "customer".
+// It strips the prefix (everything up to and including the type portion),
+// lowercases the remainder, and replaces underscores with underscores (kept for
+// multi-word values like "in_progress").
+func protoEnumToString(enumStr string, prefixes ...string) string {
+	s := enumStr
+	for _, p := range prefixes {
+		s = strings.TrimPrefix(s, p)
+	}
+	return strings.ToLower(s)
+}
 
 var uuidRegex = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 

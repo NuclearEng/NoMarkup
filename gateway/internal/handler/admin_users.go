@@ -126,7 +126,7 @@ func (h *AdminUsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		for _, d := range docs {
 			docList = append(docList, map[string]interface{}{
 				"document_type": d.GetDocumentType(),
-				"status":        d.GetStatus().String(),
+				"status":        protoEnumToString(d.GetStatus().String(), "VERIFICATION_STATUS_"),
 			})
 		}
 		result["documents"] = docList
@@ -228,7 +228,7 @@ func adminUserToJSON(u *userv1.User) map[string]interface{} {
 
 	roles := make([]string, 0, len(u.GetRoles()))
 	for _, r := range u.GetRoles() {
-		roles = append(roles, r.String())
+		roles = append(roles, protoEnumToString(r.String(), "USER_ROLE_"))
 	}
 
 	result := map[string]interface{}{
@@ -236,7 +236,7 @@ func adminUserToJSON(u *userv1.User) map[string]interface{} {
 		"email":        u.GetEmail(),
 		"display_name": u.GetDisplayName(),
 		"phone":        u.GetPhone(),
-		"status":       u.GetStatus().String(),
+		"status":       protoEnumToString(u.GetStatus().String(), "USER_STATUS_"),
 		"roles":        roles,
 		"avatar_url":   u.GetAvatarUrl(),
 		"created_at":   formatTimestamp(u.GetCreatedAt()),

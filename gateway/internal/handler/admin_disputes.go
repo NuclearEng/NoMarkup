@@ -274,9 +274,9 @@ func disputeToJSON(d *contractv1.Dispute) map[string]interface{} {
 		"id":                 d.GetId(),
 		"contract_id":       d.GetContractId(),
 		"opened_by":         d.GetOpenedBy(),
-		"dispute_type":      d.GetDisputeType().String(),
+		"dispute_type":      protoEnumToString(d.GetDisputeType().String(), "DISPUTE_TYPE_"),
 		"description":       d.GetDescription(),
-		"status":            d.GetStatus().String(),
+		"status":            protoEnumToString(d.GetStatus().String(), "DISPUTE_STATUS_"),
 		"is_guarantee_claim": d.GetIsGuaranteeClaim(),
 		"created_at":        formatTimestamp(d.GetCreatedAt()),
 	}

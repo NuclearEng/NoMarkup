@@ -1196,6 +1196,249 @@ func (r *PostgresRepository) IsMFAEnabled(ctx context.Context, userID string) (b
 	return enabled, nil
 }
 
+// --- Provider Search ---
+
+func (r *PostgresRepository) SearchProviders(ctx context.Context, input domain.ProviderSearchInput) ([]domain.ProviderSearchResult, int, error) {
+	whereClauses := []string{
+		"u.deleted_at IS NULL",
+		"u.status = 'active'",
+		"'provider' = ANY(u.roles)",
+	}
+	args := []interface{}{}
+	argIdx := 1
+
+	// Distance calculation and filtering by location/radius.
+	distanceExpr := "0"
+	if input.Latitude != nil && input.Longitude != nil {
+		// ST_DistanceSphere returns metres; divide by 1000 for km.
+		distanceExpr = fmt.Sprintf(
+			"ST_DistanceSphere(pp.service_location, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)) / 1000.0",
+			argIdx, argIdx+1,
+		)
+		args = append(args, *input.Longitude, *input.Latitude)
+		argIdx += 2
+
+		if input.RadiusKm > 0 {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				"pp.service_location IS NOT NULL AND ST_DistanceSphere(pp.service_location, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)) / 1000.0 <= $%d",
+				argIdx, argIdx+1, argIdx+2,
+			))
+			args = append(args, *input.Longitude, *input.Latitude, input.RadiusKm)
+			argIdx += 3
+		}
+	}
+
+	// Filter by category IDs.
+	if len(input.CategoryIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM provider_service_categories psc WHERE psc.provider_id = pp.id AND psc.category_id = ANY($%d))",
+			argIdx,
+		))
+		args = append(args, input.CategoryIDs)
+		argIdx++
+	}
+
+	// Filter by minimum rating.
+	if input.MinRating != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf(
+			"COALESCE(rs.average_rating, 0) >= $%d",
+			argIdx,
+		))
+		args = append(args, *input.MinRating)
+		argIdx++
+	}
+
+	// Filter by verified providers only (at least one verified document).
+	if input.VerifiedOnly != nil && *input.VerifiedOnly {
+		whereClauses = append(whereClauses, `
+			EXISTS (SELECT 1 FROM verification_documents vd WHERE vd.user_id = u.id AND vd.status = 'verified')`)
+	}
+
+	// Filter by instant availability.
+	if input.InstantAvailable != nil && *input.InstantAvailable {
+		whereClauses = append(whereClauses, "pp.instant_available = true")
+	}
+
+	whereSQL := strings.Join(whereClauses, " AND ")
+
+	// Count total matching providers.
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM users u
+		JOIN provider_profiles pp ON pp.user_id = u.id
+		LEFT JOIN LATERAL (
+			SELECT AVG(r.overall_rating)::float8 AS average_rating
+			FROM reviews r WHERE r.reviewee_id = u.id
+		) rs ON true
+		WHERE %s`, whereSQL)
+
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("search providers count: %w", err)
+	}
+
+	// Determine ORDER BY clause.
+	orderBy := "pp.created_at DESC"
+	if input.SortField != "" {
+		dir := "ASC"
+		if input.SortDirection == "desc" {
+			dir = "DESC"
+		}
+		switch input.SortField {
+		case "rating":
+			orderBy = fmt.Sprintf("COALESCE(rs.average_rating, 0) %s", dir)
+		case "distance":
+			if input.Latitude != nil && input.Longitude != nil {
+				orderBy = fmt.Sprintf("%s %s", distanceExpr, dir)
+			}
+		case "review_count":
+			orderBy = fmt.Sprintf("COALESCE(rs.review_count, 0) %s", dir)
+		case "jobs_completed":
+			orderBy = fmt.Sprintf("pp.jobs_completed %s", dir)
+		}
+	}
+
+	offset := (input.Page - 1) * input.PageSize
+
+	dataQuery := fmt.Sprintf(`
+		SELECT
+			u.id AS user_id,
+			u.display_name,
+			COALESCE(pp.business_name, '') AS business_name,
+			COALESCE(u.avatar_url, '') AS avatar_url,
+			(%s)::float8 AS distance_km,
+			COALESCE(rs.average_rating, 0)::float8 AS average_rating,
+			COALESCE(rs.review_count, 0) AS review_count,
+			COALESCE(pp.on_time_rate, 0)::float8 AS on_time_rate,
+			pp.instant_available,
+			pp.id AS provider_id
+		FROM users u
+		JOIN provider_profiles pp ON pp.user_id = u.id
+		LEFT JOIN LATERAL (
+			SELECT AVG(r.overall_rating)::float8 AS average_rating, COUNT(*)::int AS review_count
+			FROM reviews r WHERE r.reviewee_id = u.id
+		) rs ON true
+		WHERE %s
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d`,
+		distanceExpr, whereSQL, orderBy, argIdx, argIdx+1)
+	args = append(args, input.PageSize, offset)
+
+	rows, err := r.pool.Query(ctx, dataQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("search providers query: %w", err)
+	}
+	defer rows.Close()
+
+	var results []domain.ProviderSearchResult
+	var providerIDs []string
+	providerByUser := make(map[string]int) // user_id -> index in results
+
+	for rows.Next() {
+		var res domain.ProviderSearchResult
+		var providerID string
+		err := rows.Scan(
+			&res.UserID,
+			&res.DisplayName,
+			&res.BusinessName,
+			&res.AvatarURL,
+			&res.DistanceKm,
+			&res.AverageRating,
+			&res.ReviewCount,
+			&res.OnTimeRate,
+			&res.InstantAvailable,
+			&providerID,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("search providers scan: %w", err)
+		}
+		providerByUser[res.UserID] = len(results)
+		providerIDs = append(providerIDs, providerID)
+		results = append(results, res)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("search providers rows: %w", err)
+	}
+
+	if len(results) == 0 {
+		return results, total, nil
+	}
+
+	// Batch-load categories for returned providers.
+	catQuery := `
+		SELECT psc.provider_id, sc.id, sc.name, sc.slug, sc.level,
+		       COALESCE(p.name, '') AS parent_name
+		FROM provider_service_categories psc
+		JOIN service_categories sc ON sc.id = psc.category_id
+		LEFT JOIN service_categories p ON p.id = sc.parent_id
+		WHERE psc.provider_id = ANY($1)
+		ORDER BY sc.level, sc.sort_order`
+
+	catRows, err := r.pool.Query(ctx, catQuery, providerIDs)
+	if err != nil {
+		return nil, 0, fmt.Errorf("search providers categories: %w", err)
+	}
+	defer catRows.Close()
+
+	// Map provider_id -> user_id so we can attach categories to results.
+	providerToIdx := make(map[string]int, len(providerIDs))
+	for i, pid := range providerIDs {
+		providerToIdx[pid] = i
+	}
+
+	for catRows.Next() {
+		var pid, catID, catName, catSlug, parentName string
+		var catLevel int
+		if err := catRows.Scan(&pid, &catID, &catName, &catSlug, &catLevel, &parentName); err != nil {
+			return nil, 0, fmt.Errorf("search providers categories scan: %w", err)
+		}
+		if idx, ok := providerToIdx[pid]; ok {
+			results[idx].Categories = append(results[idx].Categories, domain.ServiceCategory{
+				ID:         catID,
+				Name:       catName,
+				Slug:       catSlug,
+				Level:      catLevel,
+				ParentName: parentName,
+			})
+		}
+	}
+
+	// Batch-load verification badges for returned providers.
+	badgeQuery := `
+		SELECT vd.user_id, vd.document_type, vd.status, vd.updated_at, vd.expires_at
+		FROM verification_documents vd
+		WHERE vd.user_id = ANY($1) AND vd.status = 'verified'`
+
+	userIDs := make([]string, 0, len(results))
+	for _, res := range results {
+		userIDs = append(userIDs, res.UserID)
+	}
+
+	badgeRows, err := r.pool.Query(ctx, badgeQuery, userIDs)
+	if err != nil {
+		return nil, 0, fmt.Errorf("search providers badges: %w", err)
+	}
+	defer badgeRows.Close()
+
+	for badgeRows.Next() {
+		var userID, docType, docStatus string
+		var verifiedAt, expiresAt *time.Time
+		if err := badgeRows.Scan(&userID, &docType, &docStatus, &verifiedAt, &expiresAt); err != nil {
+			return nil, 0, fmt.Errorf("search providers badges scan: %w", err)
+		}
+		if idx, ok := providerByUser[userID]; ok {
+			results[idx].Badges = append(results[idx].Badges, domain.VerificationBadge{
+				DocumentType: docType,
+				Status:       docStatus,
+				VerifiedAt:   verifiedAt,
+				ExpiresAt:    expiresAt,
+			})
+		}
+	}
+
+	return results, total, nil
+}
+
 // parseIP parses an IP address string, stripping any CIDR suffix from PostgreSQL inet type.
 func parseIP(s string) net.IP {
 	// PostgreSQL inet may include /32 or /128 suffix

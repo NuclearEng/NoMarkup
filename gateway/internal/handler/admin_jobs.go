@@ -181,7 +181,7 @@ func adminJobToJSON(j *jobv1.Job) map[string]interface{} {
 		"title":              j.GetTitle(),
 		"description":        j.GetDescription(),
 		"customer_id":        j.GetCustomerId(),
-		"status":             j.GetStatus().String(),
+		"status":             protoEnumToString(j.GetStatus().String(), "JOB_STATUS_"),
 		"starting_bid_cents": j.GetStartingBidCents(),
 		"bid_count":          j.GetBidCount(),
 		"created_at":         formatTimestamp(j.GetCreatedAt()),

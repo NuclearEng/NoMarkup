@@ -342,3 +342,237 @@ func (r *PostgresRepository) SetStripeAccountID(ctx context.Context, userID stri
 	}
 	return nil
 }
+
+// AdminListPayments lists payments with optional filters for admin use.
+// Returns payments, total count, total amount cents, and total fees cents.
+func (r *PostgresRepository) AdminListPayments(ctx context.Context, userID string, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error) {
+	where := []string{"1=1"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if userID != "" {
+		where = append(where, fmt.Sprintf("(customer_id = $%d OR provider_id = $%d)", argIdx, argIdx))
+		args = append(args, userID)
+		argIdx++
+	}
+
+	if statusFilter != "" {
+		where = append(where, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, statusFilter)
+		argIdx++
+	}
+
+	if startTime != nil {
+		where = append(where, fmt.Sprintf("created_at >= $%d", argIdx))
+		args = append(args, *startTime)
+		argIdx++
+	}
+
+	if endTime != nil {
+		where = append(where, fmt.Sprintf("created_at <= $%d", argIdx))
+		args = append(args, *endTime)
+		argIdx++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	// Get aggregates (count, total amount, total fees).
+	var totalCount int
+	var totalAmountCents, totalFeesCents int64
+	aggQuery := fmt.Sprintf(`
+		SELECT COUNT(*), COALESCE(SUM(amount_cents), 0), COALESCE(SUM(platform_fee_cents + guarantee_fee_cents), 0)
+		FROM payments WHERE %s`, whereClause)
+	err := r.pool.QueryRow(ctx, aggQuery, args...).Scan(&totalCount, &totalAmountCents, &totalFeesCents)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("admin list payments count: %w", err)
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+
+	selectQuery := fmt.Sprintf(`
+		SELECT id, contract_id, milestone_id, recurring_instance_id,
+		       customer_id, provider_id, amount_cents,
+		       platform_fee_cents, guarantee_fee_cents, provider_payout_cents,
+		       COALESCE(stripe_payment_intent_id, ''), COALESCE(stripe_charge_id, ''), COALESCE(stripe_transfer_id, ''), COALESCE(stripe_refund_id, ''),
+		       COALESCE(idempotency_key, ''), status, COALESCE(failure_reason, ''),
+		       refund_amount_cents, COALESCE(refund_reason, ''), refunded_at,
+		       installment_number, total_installments,
+		       retry_count, next_retry_at,
+		       escrow_at, released_at, completed_at,
+		       created_at, updated_at
+		FROM payments
+		WHERE %s
+		ORDER BY created_at DESC
+		LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1)
+
+	args = append(args, pageSize, offset)
+
+	rows, err := r.pool.Query(ctx, selectQuery, args...)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("admin list payments query: %w", err)
+	}
+	defer rows.Close()
+
+	var payments []*domain.Payment
+	for rows.Next() {
+		p := &domain.Payment{}
+		err := rows.Scan(
+			&p.ID, &p.ContractID, &p.MilestoneID, &p.RecurringInstanceID,
+			&p.CustomerID, &p.ProviderID, &p.AmountCents,
+			&p.PlatformFeeCents, &p.GuaranteeFeeCents, &p.ProviderPayoutCents,
+			&p.StripePaymentIntentID, &p.StripeChargeID, &p.StripeTransferID, &p.StripeRefundID,
+			&p.IdempotencyKey, &p.Status, &p.FailureReason,
+			&p.RefundAmountCents, &p.RefundReason, &p.RefundedAt,
+			&p.InstallmentNumber, &p.TotalInstallments,
+			&p.RetryCount, &p.NextRetryAt,
+			&p.EscrowAt, &p.ReleasedAt, &p.CompletedAt,
+			&p.CreatedAt, &p.UpdatedAt,
+		)
+		if err != nil {
+			return nil, 0, 0, 0, fmt.Errorf("admin list payments scan: %w", err)
+		}
+		payments = append(payments, p)
+	}
+
+	return payments, totalCount, totalAmountCents, totalFeesCents, nil
+}
+
+// AdminGetPaymentDetails returns a payment including its Stripe metadata fields.
+func (r *PostgresRepository) AdminGetPaymentDetails(ctx context.Context, paymentID string) (*domain.Payment, error) {
+	return r.GetPayment(ctx, paymentID)
+}
+
+// UpdateFeeConfig deactivates the current active config (for the given category or default)
+// and inserts a new active config row.
+func (r *PostgresRepository) UpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64) (*domain.FeeConfig, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("update fee config begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Deactivate current active config for this category (or default).
+	if categoryID != nil && *categoryID != "" {
+		_, err = tx.Exec(ctx, `
+			UPDATE platform_fee_config SET active = false, updated_at = now()
+			WHERE category_id = $1 AND active = true`, *categoryID)
+	} else {
+		_, err = tx.Exec(ctx, `
+			UPDATE platform_fee_config SET active = false, updated_at = now()
+			WHERE category_id IS NULL AND active = true`)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update fee config deactivate: %w", err)
+	}
+
+	// Insert new active config.
+	fc := &domain.FeeConfig{}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO platform_fee_config (category_id, fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active, effective_from)
+		VALUES ($1, $2, $3, $4, $5, true, now())
+		RETURNING id, category_id, fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active, effective_from, created_at, updated_at`,
+		categoryID, feePercentage, guaranteePercentage, minFeeCents, maxFeeCents).Scan(
+		&fc.ID, &fc.CategoryID, &fc.FeePercentage, &fc.GuaranteePercentage,
+		&fc.MinFeeCents, &fc.MaxFeeCents, &fc.Active, &fc.EffectiveFrom,
+		&fc.CreatedAt, &fc.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update fee config insert: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("update fee config commit: %w", err)
+	}
+
+	return fc, nil
+}
+
+// GetRevenueReport aggregates payment data grouped by the specified interval.
+func (r *PostgresRepository) GetRevenueReport(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*domain.RevenueReport, error) {
+	// Validate and map groupBy to a PostgreSQL date_trunc interval.
+	truncInterval := "month"
+	switch groupBy {
+	case "day":
+		truncInterval = "day"
+	case "week":
+		truncInterval = "week"
+	case "month":
+		truncInterval = "month"
+	}
+
+	where := []string{"status IN ('escrow', 'released', 'completed')"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if startTime != nil {
+		where = append(where, fmt.Sprintf("created_at >= $%d", argIdx))
+		args = append(args, *startTime)
+		argIdx++
+	}
+	if endTime != nil {
+		where = append(where, fmt.Sprintf("created_at <= $%d", argIdx))
+		args = append(args, *endTime)
+		argIdx++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	// Get totals.
+	report := &domain.RevenueReport{}
+	totalsQuery := fmt.Sprintf(`
+		SELECT COALESCE(SUM(amount_cents), 0),
+		       COALESCE(SUM(platform_fee_cents), 0),
+		       COALESCE(SUM(guarantee_fee_cents), 0)
+		FROM payments
+		WHERE %s`, whereClause)
+
+	var totalGMV, totalRevenue, totalGuarantee int64
+	err := r.pool.QueryRow(ctx, totalsQuery, args...).Scan(&totalGMV, &totalRevenue, &totalGuarantee)
+	if err != nil {
+		return nil, fmt.Errorf("revenue report totals: %w", err)
+	}
+
+	report.TotalGMVCents = totalGMV
+	report.TotalRevenueCents = totalRevenue
+	report.TotalGuaranteeFundCents = totalGuarantee
+	if totalGMV > 0 {
+		report.EffectiveTakeRate = float64(totalRevenue) / float64(totalGMV)
+	}
+
+	// Get grouped data points.
+	groupQuery := fmt.Sprintf(`
+		SELECT date_trunc('%s', created_at) AS period_start,
+		       COALESCE(SUM(amount_cents), 0),
+		       COALESCE(SUM(platform_fee_cents), 0),
+		       COUNT(*)
+		FROM payments
+		WHERE %s
+		GROUP BY period_start
+		ORDER BY period_start`, truncInterval, whereClause)
+
+	rows, err := r.pool.Query(ctx, groupQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("revenue report query: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var dp domain.RevenueDataPoint
+		err := rows.Scan(&dp.PeriodStart, &dp.GMVCents, &dp.RevenueCents, &dp.TransactionCount)
+		if err != nil {
+			return nil, fmt.Errorf("revenue report scan: %w", err)
+		}
+		report.DataPoints = append(report.DataPoints, dp)
+	}
+
+	return report, nil
+}

@@ -98,6 +98,6 @@ func (h *AdminVerificationHandler) ReviewDocument(w http.ResponseWriter, r *http
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status": resp.GetStatus().String(),
+		"status": protoEnumToString(resp.GetStatus().String(), "VERIFICATION_STATUS_"),
 	})
 }

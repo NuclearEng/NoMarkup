@@ -353,11 +353,10 @@ func (r *PostgresRepository) GetPlatformMetrics(ctx context.Context, startDate, 
 
 	// GMV and revenue from analytics_transactions.
 	err := r.pool.QueryRow(ctx, `
-		SELECT COALESCE(SUM(amount_cents), 0)::bigint,
-		       COALESCE(SUM(platform_fee_cents), 0)::bigint
+		SELECT COALESCE(SUM(amount_cents), 0)::bigint
 		FROM analytics_transactions
 		WHERE completed_at >= $1 AND completed_at <= $2`,
-		startDate, endDate).Scan(&m.TotalGMVCents, &m.TotalRevenueCents)
+		startDate, endDate).Scan(&m.TotalGMVCents)
 	if err != nil {
 		return nil, fmt.Errorf("platform metrics gmv: %w", err)
 	}

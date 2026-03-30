@@ -317,7 +317,7 @@ func adminPaymentToJSON(p *paymentv1.Payment) map[string]interface{} {
 		"platform_fee_cents":   p.GetPlatformFeeCents(),
 		"guarantee_fee_cents":  p.GetGuaranteeFeeCents(),
 		"provider_payout_cents": p.GetProviderPayoutCents(),
-		"status":               p.GetStatus().String(),
+		"status":               protoEnumToString(p.GetStatus().String(), "PAYMENT_STATUS_"),
 		"created_at":           formatTimestamp(p.GetCreatedAt()),
 	}
 }

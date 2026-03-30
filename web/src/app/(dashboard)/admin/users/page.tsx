@@ -106,7 +106,7 @@ export default function AdminUsersPage() {
       render: (user) => (
         <div className="flex flex-wrap gap-1">
           {user.roles.map((role) => (
-            <Badge key={role} variant="outline" className="text-xs">
+            <Badge key={role} variant="outline" className="text-xs capitalize">
               {role}
             </Badge>
           ))}
@@ -119,7 +119,7 @@ export default function AdminUsersPage() {
       render: (user) => (
         <Badge
           variant="outline"
-          className={cn('text-xs', STATUS_CLASSES[user.status])}
+          className={cn('text-xs capitalize', STATUS_CLASSES[user.status])}
         >
           {user.status}
         </Badge>

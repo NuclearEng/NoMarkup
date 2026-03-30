@@ -259,7 +259,7 @@ func adminSubscriptionToJSON(sub *subscriptionv1.Subscription) map[string]interf
 		"id":         sub.GetId(),
 		"user_id":    sub.GetUserId(),
 		"tier_id":    sub.GetTierId(),
-		"status":     sub.GetStatus().String(),
+		"status":     protoEnumToString(sub.GetStatus().String(), "SUBSCRIPTION_STATUS_"),
 		"created_at": formatTimestamp(sub.GetCreatedAt()),
 	}
 }
