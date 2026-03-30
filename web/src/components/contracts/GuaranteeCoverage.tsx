@@ -51,7 +51,7 @@ export function GuaranteeCoverage({ contract, className }: GuaranteeCoverageProp
         <ul className="space-y-2" aria-label="Guarantee coverage items">
           {COVERAGE_ITEMS.map((item) => (
             <li key={item} className="flex items-center gap-2 text-sm">
-              <CheckCircle className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+              <CheckCircle className="h-4 w-4 shrink-0 text-green-600 dark:text-emerald-400" aria-hidden="true" />
               {item}
             </li>
           ))}

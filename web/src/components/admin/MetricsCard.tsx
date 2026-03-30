@@ -44,7 +44,7 @@ export function MetricsCard({
             <span
               className={cn(
                 'inline-flex items-center gap-1 text-xs font-medium',
-                trend >= 0 ? 'text-green-600' : 'text-red-600',
+                trend >= 0 ? 'text-green-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
               )}
             >
               {trend >= 0 ? (

@@ -7,6 +7,8 @@ import { ContractCard } from '@/components/contracts/ContractCard';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useContracts } from '@/hooks/useContracts';
 
@@ -38,18 +40,8 @@ function ContractTabContent({ tab }: { tab: ContractTab }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <Card key={i}>
-            <CardContent className="pt-6">
-              <div className="space-y-3">
-                <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
-                <div className="h-8 w-1/4 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid gap-4 md:grid-cols-2">
+        <ContentLoader preset="contract-card" count={4} className="contents" />
       </div>
     );
   }
@@ -124,6 +116,7 @@ function ContractTabContent({ tab }: { tab: ContractTab }) {
 
 export default function ContractsPage() {
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Contracts</h1>
@@ -167,5 +160,6 @@ export default function ContractsPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </PageTransition>
   );
 }

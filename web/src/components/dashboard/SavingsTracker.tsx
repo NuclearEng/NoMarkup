@@ -2,6 +2,7 @@
 
 import { Coins, TrendingDown } from 'lucide-react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { useSavings } from '@/hooks/useBids';
 
 export function SavingsTracker() {
@@ -10,8 +11,8 @@ export function SavingsTracker() {
   if (isLoading) {
     return (
       <div className="rounded-lg border bg-card p-6">
-        <div className="h-6 w-32 animate-pulse rounded bg-muted" />
-        <div className="mt-4 h-10 w-48 animate-pulse rounded bg-muted" />
+        <Skeleton variant="text" className="h-6 w-32" />
+        <Skeleton variant="price" className="mt-4 h-10 w-48" />
       </div>
     );
   }
@@ -37,14 +38,14 @@ export function SavingsTracker() {
         <Coins className="h-5 w-5 text-green-500" aria-hidden="true" />
         <h3 className="font-semibold">Your Savings</h3>
       </div>
-      <p className="mt-3 text-3xl font-bold text-green-600">
+      <p className="mt-3 text-3xl font-bold text-green-600 dark:text-emerald-400">
         {formatCurrency(totalSavingsCents)}
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
         saved across {String(totalJobs)} {totalJobs === 1 ? 'job' : 'jobs'}
       </p>
       {totalSavingsCents > 0 ? (
-        <div className="mt-3 flex items-center gap-1 text-sm text-green-600">
+        <div className="mt-3 flex items-center gap-1 text-sm text-green-600 dark:text-emerald-400">
           <TrendingDown className="h-4 w-4" aria-hidden="true" />
           <span>vs. market median</span>
         </div>

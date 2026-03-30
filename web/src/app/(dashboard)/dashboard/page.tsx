@@ -16,6 +16,8 @@ import { SavingsTracker } from '@/components/dashboard/SavingsTracker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/ui/sparkline';
 import { TrendArrow } from '@/components/ui/trend-arrow';
@@ -290,7 +292,7 @@ function CustomerDashboard() {
           {jobsLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={`skel-job-${String(i)}`} className="h-12 w-full" />
+                <Skeleton key={`skel-job-${String(i)}`} className="h-12 w-full rounded-md" />
               ))}
             </div>
           ) : !jobsData?.jobs.length ? (
@@ -407,7 +409,7 @@ function ProviderDashboardSection() {
           {bidsLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={`skel-bid-${String(i)}`} className="h-12 w-full" />
+                <Skeleton key={`skel-bid-${String(i)}`} className="h-12 w-full rounded-md" />
               ))}
             </div>
           ) : !bidsData?.bids.length ? (
@@ -459,46 +461,46 @@ export default function DashboardPage() {
           <Skeleton className="mt-2 h-4 w-64" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={`skel-stat-${String(i)}`} className="h-28" />
-          ))}
+          <ContentLoader preset="stat-card" count={4} className="contents" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Welcome back{user?.displayName ? `, ${user.displayName}` : ''}.
-        </p>
-      </div>
-
-      <QuickActions isProvider={isProvider} />
-
-      {isCustomer ? (
+    <PageTransition>
+      <div className="space-y-6">
         <div>
-          {isProvider ? (
-            <h2 className="mb-4 text-lg font-semibold">Customer Overview</h2>
-          ) : null}
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Welcome back{user?.displayName ? `, ${user.displayName}` : ''}.
+          </p>
+        </div>
+
+        <QuickActions isProvider={isProvider} />
+
+        {isCustomer ? (
+          <div>
+            {isProvider ? (
+              <h2 className="mb-4 text-lg font-semibold">Customer Overview</h2>
+            ) : null}
+            <CustomerDashboard />
+          </div>
+        ) : null}
+
+        {isProvider ? (
+          <div>
+            {isCustomer ? (
+              <h2 className="mb-4 text-lg font-semibold">Provider Overview</h2>
+            ) : null}
+            <ProviderDashboardSection />
+          </div>
+        ) : null}
+
+        {!isCustomer && !isProvider ? (
           <CustomerDashboard />
-        </div>
-      ) : null}
-
-      {isProvider ? (
-        <div>
-          {isCustomer ? (
-            <h2 className="mb-4 text-lg font-semibold">Provider Overview</h2>
-          ) : null}
-          <ProviderDashboardSection />
-        </div>
-      ) : null}
-
-      {!isCustomer && !isProvider ? (
-        <CustomerDashboard />
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </PageTransition>
   );
 }

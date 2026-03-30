@@ -209,7 +209,7 @@ function MessageBubble({
           </span>
           <ReadReceipt isOwnMessage={isOwnMessage} isRead={isLastRead} />
           {message.flagged_contact_info ? (
-            <span className="flex items-center gap-0.5 text-[10px] text-amber-600" title="May contain contact information">
+            <span className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400" title="May contain contact information">
               <AlertTriangle className="h-3 w-3" aria-hidden="true" />
               <span className="sr-only">May contain contact information</span>
             </span>

@@ -55,8 +55,8 @@ export function InstallmentSchedule({ installments, className }: InstallmentSche
                   <div
                     className={cn(
                       'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-                      state === 'paid' && 'bg-green-100 text-green-700',
-                      state === 'current' && 'bg-blue-100 text-blue-700',
+                      state === 'paid' && 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400',
+                      state === 'current' && 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',
                       state === 'upcoming' && 'bg-muted text-muted-foreground',
                     )}
                     aria-label={`Installment ${String(installment.installment_number)}: ${state}`}
@@ -73,7 +73,7 @@ export function InstallmentSchedule({ installments, className }: InstallmentSche
                     <div
                       className={cn(
                         'w-0.5 flex-1 min-h-[24px]',
-                        state === 'paid' ? 'bg-green-200' : 'bg-muted',
+                        state === 'paid' ? 'bg-green-200 dark:bg-green-900' : 'bg-muted',
                       )}
                     />
                   ) : null}
@@ -88,7 +88,7 @@ export function InstallmentSchedule({ installments, className }: InstallmentSche
                         {String(installment.total_installments)}
                       </p>
                       {installment.paid_at ? (
-                        <p className="text-xs text-green-600">
+                        <p className="text-xs text-green-600 dark:text-green-400">
                           Paid {formatDate(installment.paid_at)}
                         </p>
                       ) : installment.due_date ? (

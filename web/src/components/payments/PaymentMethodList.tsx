@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useDeletePaymentMethod, usePaymentMethods } from '@/hooks/usePayments';
 import type { PaymentMethod } from '@/types';
 
@@ -97,10 +98,10 @@ export function PaymentMethodList() {
           <Card key={i}>
             <CardContent className="py-4">
               <div className="flex items-center gap-4">
-                <div className="h-10 w-10 animate-pulse rounded-md bg-muted" />
+                <Skeleton className="h-10 w-10 rounded-md" />
                 <div className="space-y-2">
-                  <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                  <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+                  <Skeleton variant="text" className="h-4 w-32" />
+                  <Skeleton variant="text" className="h-3 w-20" />
                 </div>
               </div>
             </CardContent>

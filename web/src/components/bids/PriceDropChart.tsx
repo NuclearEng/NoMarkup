@@ -297,7 +297,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
                 cy={cy}
                 r={isLast ? 5 : 3.5}
                 fill="#22c55e"
-                stroke="#0a0a0a"
+                className="stroke-card"
                 strokeWidth={2}
               >
                 <title>{`${formatPrice(step.amount)} at ${new Date(step.time).toLocaleTimeString()}`}</title>
