@@ -299,7 +299,10 @@ test.describe('Admin: Regular Page Access', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/dashboard', 'admin');
 
-    await expectPageLoaded(page, /Dashboard/i);
+    // Dashboard h1 is a greeting: "Good morning/afternoon/evening"
+    await expect(
+      page.getByRole('heading', { name: /Good (morning|afternoon|evening)/i, level: 1 }),
+    ).toBeVisible({ timeout: 15_000 });
     await expectNotErrorPage(page);
     expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
   });

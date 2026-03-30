@@ -889,3 +889,74 @@ body {
     transform: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   react-grid-layout — inlined essential styles
+   ═══════════════════════════════════════════════════════════ */
+
+/* Core grid layout */
+.react-grid-layout {
+  position: relative;
+  transition: height 200ms ease;
+}
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top, width, height;
+}
+.react-grid-item img {
+  pointer-events: none;
+  user-select: none;
+}
+.react-grid-item.cssTransforms {
+  transition-property: transform, width, height;
+}
+.react-grid-item.resizing {
+  z-index: 1;
+  will-change: width, height;
+  transition: none;
+}
+.react-grid-item.react-draggable-dragging {
+  z-index: 3;
+  will-change: transform;
+  transition: none;
+  opacity: 0.9;
+}
+.react-grid-item.dropping {
+  visibility: hidden;
+}
+
+/* Placeholder shown during drag/resize */
+.react-grid-item.react-grid-placeholder {
+  background: oklch(0.6 0.15 160 / 15%);
+  border: 2px dashed oklch(0.6 0.15 160 / 40%);
+  border-radius: 0.75rem;
+  opacity: 1;
+  transition-duration: 100ms;
+  z-index: 2;
+  user-select: none;
+}
+
+/* Resize handle (bottom-right corner) */
+.react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  z-index: 10;
+}
+.react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid oklch(0.556 0 0 / 40%);
+  border-bottom: 2px solid oklch(0.556 0 0 / 40%);
+  border-radius: 0 0 2px 0;
+}
+.react-resizable-handle:hover::after {
+  border-color: oklch(0.6 0.15 160 / 70%);
+}

@@ -64,21 +64,22 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
     });
   }, [priceEvents]);
 
-  // Compute significant drops (> 5% of previous price)
+  // Compute significant drops (> 5% of previous price), then filter out
+  // labels that would overlap vertically (minimum 20px spacing).
   const significantDrops = useMemo(() => {
     if (steps.length < 2) return [];
-    const drops: Array<{ index: number; dropCents: number }> = [];
+    const candidates: Array<{ index: number; dropCents: number }> = [];
     for (let i = 1; i < steps.length; i++) {
       const prev = steps[i - 1];
       const curr = steps[i];
       if (prev && curr && curr.price < prev.price) {
         const dropPercent = (prev.price - curr.price) / prev.price;
         if (dropPercent > 0.05) {
-          drops.push({ index: i, dropCents: prev.price - curr.price });
+          candidates.push({ index: i, dropCents: prev.price - curr.price });
         }
       }
     }
-    return drops;
+    return candidates;
   }, [steps]);
 
   if (steps.length === 0 || width === 0) {
@@ -337,30 +338,43 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
           );
         })}
 
-        {/* Significant drop annotations */}
-        {significantDrops.map((drop) => {
-          const step = steps[drop.index];
-          if (!step) return null;
-          const cx = scaleX(step.time);
-          const cy = scaleY(step.price);
-          return (
-            <text
-              key={`drop-${String(drop.index)}`}
-              x={cx}
-              y={cy - 12}
-              textAnchor="middle"
-              className="fill-green-400 text-[10px] font-bold"
-              style={{
-                opacity: mounted ? 1 : 0,
-                animation: mounted
-                  ? `dropLabelAppear 0.3s ease-out ${String(1 + drop.index * 0.1)}s both`
-                  : 'none',
-              }}
-            >
-              {`-${formatPrice(drop.dropCents)}`}
-            </text>
-          );
-        })}
+        {/* Significant drop annotations — skip labels that would overlap vertically */}
+        {(() => {
+          const MIN_LABEL_SPACING = 20;
+          const placedYPositions: number[] = [];
+          return significantDrops.map((drop) => {
+            const step = steps[drop.index];
+            if (!step) return null;
+            const cx = scaleX(step.time);
+            const labelY = scaleY(step.price) - 12;
+
+            // Check if this label would overlap any previously placed label
+            const tooClose = placedYPositions.some(
+              (prevY) => Math.abs(labelY - prevY) < MIN_LABEL_SPACING,
+            );
+            if (tooClose) return null;
+
+            placedYPositions.push(labelY);
+            return (
+              <text
+                key={`drop-${String(drop.index)}`}
+                x={cx}
+                y={labelY}
+                textAnchor="middle"
+                className="fill-green-400 font-bold"
+                style={{
+                  fontSize: '9px',
+                  opacity: mounted ? 1 : 0,
+                  animation: mounted
+                    ? `dropLabelAppear 0.3s ease-out ${String(1 + drop.index * 0.1)}s both`
+                    : 'none',
+                }}
+              >
+                {`-${formatPrice(drop.dropCents)}`}
+              </text>
+            );
+          });
+        })()}
 
         {/* Current price label (right side) */}
         <g

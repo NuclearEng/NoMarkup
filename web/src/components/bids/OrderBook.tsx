@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Award, Shield, Star, TrendingDown, User } from 'lucide-react';
+import { Shield, Star, TrendingDown, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -197,17 +197,28 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                 #{String(index + 1)}
               </span>
 
-              {/* Provider — name truncates, badge is separate and never overlaps */}
+              {/* Provider — name gets full width, badge floats above */}
               <div className="relative z-10 flex items-center gap-2 min-w-0">
-                <div
-                  className={cn(
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                    isLowest
-                      ? 'bg-amber-500/20 text-amber-400'
-                      : 'bg-muted text-muted-foreground',
+                <div className="relative shrink-0">
+                  <div
+                    className={cn(
+                      'flex h-6 w-6 items-center justify-center rounded-full',
+                      isLowest
+                        ? 'bg-amber-500/20 text-amber-400'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    <User className="h-3 w-3" aria-hidden="true" />
+                  </div>
+                  {isLowest && (
+                    <span
+                      className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[7px] font-black text-black"
+                      style={{ animation: 'lowestBadgePulse 2s ease-in-out infinite' }}
+                      aria-label="Lowest bid"
+                    >
+                      1
+                    </span>
                   )}
-                >
-                  <User className="h-3 w-3" aria-hidden="true" />
                 </div>
                 <span
                   className="truncate text-xs font-medium min-w-0"
@@ -215,16 +226,6 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                 >
                   {bid.provider_name}
                 </span>
-                {isLowest && (
-                  <span
-                    className="inline-flex items-center gap-0.5 shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap"
-                    style={{ animation: 'lowestBadgePulse 2s ease-in-out infinite' }}
-                  >
-                    <Award className="h-2.5 w-2.5" aria-hidden="true" />
-                    <span className="hidden sm:inline">Lowest</span>
-                    <span className="sm:hidden">#1</span>
-                  </span>
-                )}
               </div>
 
               {/* Trust badge — hidden on mobile to save space */}
