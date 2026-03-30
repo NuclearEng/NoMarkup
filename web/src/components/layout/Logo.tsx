@@ -18,7 +18,7 @@ export function Logo({ size = 'md', className = '', asLink = true }: LogoProps) 
       className={`font-[var(--font-brand),sans-serif] font-extrabold -tracking-[0.02em] ${sizeClasses[size]} ${className}`}
     >
       No
-      <span className="text-[var(--brand-gold)]">Markup</span>
+      <span className="gold-text">Markup</span>
     </span>
   );
 

@@ -26,7 +26,8 @@
   /* NoMarkup brand */
   --brand-gold: #c9a84c;
   --brand-gold-dim: #a08839;
-  --brand-gold-bright: #e4c566;
+  --brand-gold-bright: #e0c060;
+  --brand-gold-glow: rgba(201, 168, 76, 0.4);
 
   /* NoMarkup trust tier colors */
   --trust-low: 0 84% 60%;
@@ -86,6 +87,7 @@
   --brand-gold: #d4af57;
   --brand-gold-dim: #b89a45;
   --brand-gold-bright: #e8c76e;
+  --brand-gold-glow: rgba(212, 175, 87, 0.4);
 
   --trust-low: 0 63% 45%;
   --trust-medium: 38 80% 45%;
@@ -359,4 +361,180 @@ body {
 }
 .stagger-children > *:nth-child(8) {
   animation-delay: 525ms;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Brand Gold Utility Classes
+   ═══════════════════════════════════════════════════════════ */
+
+.gold-gradient {
+  background: linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold), var(--brand-gold-bright));
+}
+
+.gold-text {
+  background: linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold-bright));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gold-glow {
+  box-shadow: 0 0 20px var(--brand-gold-glow), 0 0 40px rgba(201, 168, 76, 0.15);
+}
+
+.gold-border {
+  border-color: var(--brand-gold);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Celebration & Brand Keyframes
+   ═══════════════════════════════════════════════════════════ */
+
+@keyframes celebration-burst {
+  0% {
+    transform: scale(0);
+    opacity: 0.8;
+    border-width: 6px;
+  }
+  50% {
+    opacity: 0.4;
+    border-width: 3px;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+@keyframes celebration-scale-bounce {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.15);
+  }
+  60% {
+    transform: scale(0.97);
+  }
+  80% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes confetti-cascade {
+  0% {
+    transform: translateY(-10px) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  25% {
+    transform: translateY(25vh) rotate(180deg) scale(0.9);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(50vh) rotate(360deg) scale(0.8);
+    opacity: 0.8;
+  }
+  75% {
+    transform: translateY(75vh) rotate(540deg) scale(0.6);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg) scale(0.3);
+    opacity: 0;
+  }
+}
+
+@keyframes gold-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(201, 168, 76, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px var(--brand-gold-glow), 0 0 40px rgba(201, 168, 76, 0.1);
+  }
+}
+
+@keyframes success-check {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ripple-out {
+  0% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes glow-breathe {
+  0%, 100% {
+    box-shadow: 0 0 8px var(--brand-gold-glow), 0 0 16px rgba(201, 168, 76, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 16px var(--brand-gold-glow), 0 0 32px rgba(201, 168, 76, 0.2), 0 0 48px rgba(201, 168, 76, 0.08);
+  }
+}
+
+/* Utility animation classes for new keyframes */
+.animate-celebration-burst {
+  animation: celebration-burst 0.6s ease-out forwards;
+}
+.animate-celebration-scale-bounce {
+  animation: celebration-scale-bounce 0.5s ease-out forwards;
+}
+.animate-confetti-cascade {
+  animation: confetti-cascade 3s ease-in forwards;
+}
+.animate-gold-pulse {
+  animation: gold-pulse 2s ease-in-out infinite;
+}
+.animate-success-check {
+  animation: success-check 0.35s ease-out forwards;
+}
+.animate-ripple-out {
+  animation: ripple-out 0.6s ease-out forwards;
+}
+.animate-shimmer-sweep {
+  animation: shimmer-sweep 1.5s ease-in-out infinite;
+}
+.animate-glow-breathe {
+  animation: glow-breathe 3s ease-in-out infinite;
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animate-celebration-burst,
+  .animate-celebration-scale-bounce,
+  .animate-confetti-cascade,
+  .animate-gold-pulse,
+  .animate-success-check,
+  .animate-ripple-out,
+  .animate-shimmer-sweep,
+  .animate-glow-breathe,
+  .animate-confetti-fall,
+  .animate-shimmer,
+  .animate-float,
+  .animate-gradient {
+    animation: none !important;
+  }
 }

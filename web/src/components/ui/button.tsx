@@ -12,12 +12,20 @@ const buttonVariants = cva(
         default:
           'bg-primary text-primary-foreground shadow hover:bg-primary/90 hover:shadow-md hover:-translate-y-0.5',
         destructive:
-          'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md hover:shadow-red-200',
+          'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md hover:shadow-red-200 hover:animate-[shimmer_0.5s_ease-in-out]',
         outline:
           'border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground',
         secondary: 'bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
+        accept:
+          'bg-emerald-600 text-white shadow-sm hover:bg-emerald-500 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-[0.97]',
+        bid:
+          'bg-blue-600 text-white shadow-sm hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-[0.97]',
+        urgent:
+          'bg-amber-500 text-black shadow-sm hover:bg-amber-400 animate-[gold-pulse_2s_ease-in-out_infinite]',
+        premium:
+          'gold-gradient text-white shadow-sm hover:shadow-[0_0_24px_var(--brand-gold-glow)] relative overflow-hidden after:absolute after:inset-0 after:translate-x-[-100%] after:bg-gradient-to-r after:from-transparent after:via-white/20 after:to-transparent hover:after:animate-[shimmer-sweep_1.5s_ease-in-out]',
       },
       size: {
         default: 'h-9 px-4 py-2',
