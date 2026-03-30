@@ -24,20 +24,20 @@ function fmt(cents: number): string {
 export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: WidgetProps) {
   if (sim.orderBookBids.length < 3) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground text-sm">Waiting for more bids...</p>
+      <div className="flex h-full items-center justify-center bg-zinc-950/40">
+        <p className="text-zinc-500 text-sm">Waiting for more bids...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="border-border/30 shrink-0 border-b px-4 py-2.5">
-        <h3 className="text-muted-foreground/70 text-xs font-semibold tracking-wider uppercase">
+    <div className="flex h-full flex-col overflow-hidden bg-zinc-950/40">
+      <div className="shrink-0 border-b border-zinc-800/60 bg-zinc-900/80 px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
           Top Providers
         </h3>
       </div>
-      <div className="divide-border/20 min-h-0 flex-1 divide-y overflow-y-auto">
+      <div className="divide-zinc-800/40 min-h-0 flex-1 divide-y overflow-y-auto">
         {sim.orderBookBids.slice(0, 3).map((bid, idx) => {
           const provider = mockProviders.find((p) => p.name === bid.provider_name);
           const tierKey = (bid.trust_tier as keyof typeof TIER_COLORS) || 'new';
@@ -46,32 +46,33 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
           const medal = medals[idx] ?? '';
 
           return (
-            <div key={bid.id} className="flex items-center gap-3 px-4 py-3">
-              <span className="text-lg">{medal}</span>
+            <div key={bid.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-800/30">
+              <span className="text-xl" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>{medal}</span>
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 ${colors.bg} ${colors.text} ${colors.ring}`}
               >
                 {provider?.initial ?? '?'}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{bid.provider_name}</p>
+                <p className="truncate text-sm font-medium text-zinc-200">{bid.provider_name}</p>
                 <div className="mt-0.5 flex items-center gap-1.5">
-                  <Star className="h-3 w-3 text-amber-400" />
-                  <span className="text-muted-foreground text-xs">
+                  <Star className="h-3 w-3 text-amber-400" style={{ filter: 'drop-shadow(0 0 3px rgba(245,158,11,0.4))' }} />
+                  <span className="text-zinc-400 text-xs">
                     {String(bid.trust_score)}
                   </span>
-                  <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                  <Badge variant="outline" className="border-zinc-700 px-1 py-0 text-[9px] text-zinc-400">
                     {bid.trust_tier.replace('_', ' ')}
                   </Badge>
                 </div>
               </div>
               <div className="text-right">
                 <p
-                  className={`text-sm font-bold tabular-nums ${idx === 0 ? 'text-emerald-500' : ''}`}
+                  className={`text-sm font-bold tabular-nums ${idx === 0 ? 'text-emerald-400' : 'text-zinc-200'}`}
+                  style={idx === 0 ? { textShadow: '0 0 8px rgba(16,185,129,0.3)' } : undefined}
                 >
                   {fmt(bid.amount_cents)}
                 </p>
-                <p className="text-[10px] text-emerald-600 tabular-nums dark:text-emerald-400">
+                <p className="text-[10px] text-emerald-400 tabular-nums">
                   {String(
                     Math.round(
                       ((startingPriceCents - bid.amount_cents) / startingPriceCents) * 100,

@@ -11,6 +11,15 @@ import { WidgetRenderer } from './widget-renderer';
 import type { SimulationData, WidgetProps } from './types';
 import type { MarketRange } from '@/types';
 
+/** Widget IDs whose data is "live" — these get the animated green border glow */
+const LIVE_WIDGET_IDS = new Set([
+  'price-chart',
+  'depth-chart',
+  'bid-trend',
+  'activity-feed',
+  'order-book',
+]);
+
 interface MockProvider {
   name: string;
   trust: number;
@@ -109,8 +118,8 @@ export function TerminalGrid({
   if (widgets.length === 0) {
     return (
       <div ref={containerRef}>
-        <div className="flex min-h-[200px] items-center justify-center rounded-xl border border-dashed p-8">
-          <p className="text-muted-foreground text-sm">
+        <div className="flex min-h-[200px] items-center justify-center rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 backdrop-blur-sm p-8">
+          <p className="text-zinc-400 text-sm">
             No widgets added. Click &quot;Add Widget&quot; to get started.
           </p>
         </div>
@@ -120,6 +129,12 @@ export function TerminalGrid({
 
   return (
     <div ref={containerRef}>
+      <style>{`
+        @keyframes terminalGlow {
+          0%, 100% { border-color: rgba(34, 197, 94, 0.15); box-shadow: 0 0 6px rgba(34, 197, 94, 0.05); }
+          50% { border-color: rgba(34, 197, 94, 0.35); box-shadow: 0 0 12px rgba(34, 197, 94, 0.1); }
+        }
+      `}</style>
       {mounted && (
         <ResponsiveGridLayout
           className="terminal-grid"
@@ -145,27 +160,33 @@ export function TerminalGrid({
         >
           {widgets.map((wp) => {
             const def = getWidgetById(wp.widgetId);
+            const isLive = LIVE_WIDGET_IDS.has(wp.widgetId) && sim.isRunning;
             return (
               <div
                 key={wp.widgetId}
-                className={`group/widget border-border/50 bg-card overflow-hidden rounded-xl border shadow-sm transition-shadow ${
+                className={`group/widget overflow-hidden rounded-xl transition-shadow ${
                   isEditing
-                    ? 'ring-dashed ring-border/60 hover:ring-primary/30 ring-1 hover:shadow-md'
-                    : ''
+                    ? 'border border-dashed border-zinc-600 bg-zinc-900/60 backdrop-blur-sm hover:border-zinc-500 hover:shadow-md'
+                    : 'bg-zinc-900/40 backdrop-blur-sm border border-zinc-800/50 shadow-sm'
                 }`}
+                style={
+                  isLive && !isEditing
+                    ? { animation: 'terminalGlow 4s ease-in-out infinite' }
+                    : undefined
+                }
               >
                 {/* Edit mode header */}
                 {isEditing && (
-                  <div className="border-border/30 bg-muted/30 flex h-7 shrink-0 items-center gap-1 border-b px-2">
+                  <div className="flex h-7 shrink-0 items-center gap-1 border-b border-zinc-700/50 bg-zinc-800 px-2">
                     <div className="widget-drag-handle cursor-grab active:cursor-grabbing">
-                      <GripVertical className="text-muted-foreground/60 h-3.5 w-3.5" />
+                      <GripVertical className="h-3.5 w-3.5 text-zinc-500" />
                     </div>
-                    <span className="text-muted-foreground flex-1 truncate text-[10px] font-medium">
+                    <span className="flex-1 truncate text-[10px] font-medium text-zinc-400">
                       {def?.label ?? wp.widgetId}
                     </span>
                     <button
                       onClick={() => removeWidget(wp.widgetId)}
-                      className="text-muted-foreground hover:text-destructive rounded p-0.5 transition-colors"
+                      className="rounded p-0.5 text-zinc-500 transition-colors hover:text-red-400"
                       title="Remove widget"
                     >
                       <X className="h-3 w-3" />

@@ -627,7 +627,9 @@ body {
   .animate-arrow-bounce-down,
   .animate-ticker-pulse,
   .animate-savings-ring-pulse,
-  .arena-live-border {
+  .arena-live-border,
+  .hero-gold-line-animated,
+  .hero-strip-live-glow {
     animation: none !important;
   }
   .ticker-track {
@@ -888,6 +890,65 @@ body {
     opacity: 1 !important;
     transform: none !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Hero Strip — Dark Terminal Aesthetic
+   ═══════════════════════════════════════════════════════════ */
+
+/* Animated gold accent line at the top of the hero strip */
+@keyframes hero-gold-sweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.hero-gold-line-animated {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--brand-gold-dim) 20%,
+    var(--brand-gold) 35%,
+    var(--brand-gold-bright) 50%,
+    var(--brand-gold) 65%,
+    var(--brand-gold-dim) 80%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: hero-gold-sweep 4s linear infinite;
+}
+
+/* Breathing glow shadow around the entire hero strip when live */
+@keyframes hero-strip-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 15px rgba(34, 197, 94, 0.06),
+      0 0 30px rgba(34, 197, 94, 0.03),
+      0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 25px rgba(34, 197, 94, 0.1),
+      0 0 50px rgba(34, 197, 94, 0.05),
+      0 2px 12px rgba(0, 0, 0, 0.3);
+  }
+}
+.hero-strip-live-glow {
+  animation: hero-strip-breathe 3s ease-in-out infinite;
+}
+
+/* Stat cell colored top accent lines */
+.hero-stat-accent-blue {
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.6), transparent);
+}
+.hero-stat-accent-amber {
+  background: linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.6), transparent);
+}
+.hero-stat-accent-violet {
+  background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.6), transparent);
+}
+
+/* Stat cells dark background */
+.hero-stat-cell {
+  background: rgba(24, 24, 27, 0.8);
 }
 
 /* ═══════════════════════════════════════════════════════════

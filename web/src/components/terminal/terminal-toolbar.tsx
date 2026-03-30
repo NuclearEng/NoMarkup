@@ -104,15 +104,16 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
   return (
     <div
       className={cn(
-        'bg-card/80 border-border/50 flex h-11 items-center gap-1.5 rounded-xl border px-3 backdrop-blur-sm',
+        'flex h-10 items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 backdrop-blur-xl',
         className,
       )}
     >
       {/* ── Layout Selector ── */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-xs">
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 border-zinc-700/60 bg-zinc-800/50 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
             <Layout className="h-3.5 w-3.5" />
+            <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
             <span className="max-w-[140px] truncate">{activeLayout?.name ?? 'Layout'}</span>
             <ChevronDown className="h-3 w-3 opacity-50" />
           </Button>
@@ -167,7 +168,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
       ) : (
         <button
           onClick={handleStartRename}
-          className="text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-1 rounded px-1 py-0.5 text-xs transition-colors"
+          className="flex items-center gap-1 rounded px-1 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
           title="Rename layout"
           aria-label="Rename layout"
         >
@@ -175,13 +176,20 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
         </button>
       )}
 
-      <div className="bg-border mx-0.5 hidden h-4 w-px sm:block" />
+      <div className="mx-0.5 hidden h-4 w-px bg-zinc-700/50 sm:block" />
 
       {/* ── Add Widget ── */}
       <Popover open={addWidgetOpen} onOpenChange={setAddWidgetOpen}>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-xs">
-            <Plus className="h-3.5 w-3.5" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 border-zinc-700/60 px-2.5 text-xs text-zinc-300 hover:text-zinc-100"
+            style={{
+              background: 'linear-gradient(135deg, rgba(39,39,42,0.8), rgba(39,39,42,0.5))',
+            }}
+          >
+            <Plus className="h-3.5 w-3.5 text-amber-400/80" />
             <span className="hidden sm:inline">Add Widget</span>
           </Button>
         </PopoverTrigger>
@@ -236,8 +244,10 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
         size="sm"
         onClick={toggleEditing}
         className={cn(
-          'h-8 gap-1.5 px-3 text-xs',
-          isEditing && 'ring-ring ring-offset-background ring-2 ring-offset-1',
+          'h-7 gap-1.5 px-2.5 text-xs',
+          isEditing
+            ? 'bg-zinc-700 text-zinc-100 shadow-inner ring-1 ring-zinc-600'
+            : 'border-zinc-700/60 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100',
         )}
         aria-pressed={isEditing}
       >
@@ -259,7 +269,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
         variant="outline"
         size="sm"
         onClick={handleSave}
-        className="h-8 gap-1.5 px-3 text-xs"
+        className="h-7 gap-1.5 border-zinc-700/60 bg-zinc-800/50 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
         title="Save layout"
       >
         <Save className="h-3.5 w-3.5" />
@@ -275,7 +285,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 px-2 text-xs"
+            className="h-7 gap-1.5 px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
             title="Reset to default"
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -307,7 +317,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
             <Button
               variant="ghost"
               size="sm"
-              className="text-destructive hover:text-destructive h-8 px-2 text-xs"
+              className="h-7 px-2 text-xs text-red-400/70 hover:bg-red-500/10 hover:text-red-400"
               title="Delete layout"
             >
               <Trash2 className="h-3.5 w-3.5" />

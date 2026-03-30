@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, Shield, TrendingDown, Users, Zap } from 'lucide-react';
+import { Clock, Shield, TrendingDown, Users } from 'lucide-react';
 
 import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
 import { BidVelocityIndicator } from '@/components/bids/BidVelocityIndicator';
@@ -23,86 +23,117 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
     sim.currentLowest > 0 ? Math.round((savingsCents / startingPriceCents) * 100) : 0;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className={`flex h-full flex-col overflow-hidden rounded-2xl ${sim.isRunning ? 'hero-strip-live-glow' : ''}`}>
+      {/* Animated gold accent line at top */}
+      <div className="hero-gold-line-animated h-[2px] shrink-0" />
+
+      {/* Noise texture overlay */}
       <div
-        className="h-0.5 shrink-0"
+        className="relative flex min-h-0 flex-1 flex-col"
         style={{
-          background:
-            'linear-gradient(90deg, transparent, var(--brand-gold-dim), var(--brand-gold), var(--brand-gold-bright), transparent)',
+          background: 'linear-gradient(to right, #18181b, rgba(24,24,27,0.97), #18181b)',
         }}
-      />
-      <div className="divide-border/30 grid min-h-0 flex-1 gap-0 divide-x sm:grid-cols-[1fr_auto_auto_auto]">
-        {/* Price cell */}
-        <div className="relative flex items-center gap-5 px-6 py-4">
-          <div className="flex-1">
-            <div className="mb-1 flex items-center gap-2">
-              <Zap className="h-4 w-4 text-green-400" />
-              <span className="text-muted-foreground text-[11px] font-bold tracking-widest uppercase">
-                Current Lowest Bid
-              </span>
-              {sim.isRunning ? (
-                <span className="flex items-center gap-1">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+      >
+        {/* Subtle noise texture */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E")`,
+            backgroundSize: '128px 128px',
+          }}
+        />
+
+        <div className="relative z-10 grid min-h-0 flex-1 gap-0 sm:grid-cols-[1fr_auto_auto_auto]">
+          {/* Price cell */}
+          <div className="relative flex items-center gap-5 px-6 py-4">
+            <div className="flex-1">
+              <div className="mb-1.5 flex items-center gap-2">
+                <span
+                  className="text-[11px] font-bold tracking-[0.15em] uppercase"
+                  style={{
+                    background: 'linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold-bright))',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  Current Lowest Bid
+                </span>
+                {sim.isRunning ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-60" />
+                      <span
+                        className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500"
+                        style={{ boxShadow: '0 0 6px rgba(34,197,94,0.6), 0 0 12px rgba(34,197,94,0.3)' }}
+                      />
+                    </span>
+                    <span className="text-[10px] font-bold tracking-wider text-green-400">LIVE</span>
                   </span>
-                  <span className="text-[10px] font-medium text-green-400">LIVE</span>
-                </span>
-              ) : null}
-              {sim.velocity > 0 && (
-                <BidVelocityIndicator velocity={sim.velocity} buckets={sim.velocityBuckets} />
-              )}
-            </div>
-            <div className="flex items-baseline gap-3">
-              <span
-                className="text-4xl font-black tracking-tight text-green-500 sm:text-5xl"
-                style={{ textShadow: '0 0 30px rgba(34,197,94,0.2)' }}
-              >
-                {sim.currentLowest > 0 ? (
-                  <AnimatedPrice cents={sim.currentLowest} formatCurrency={fmt} />
-                ) : (
-                  <span className="text-muted-foreground/40">Waiting...</span>
+                ) : null}
+                {sim.velocity > 0 && (
+                  <BidVelocityIndicator velocity={sim.velocity} buckets={sim.velocityBuckets} />
                 )}
-              </span>
-              {sim.currentLowest > 0 && (
-                <span className="text-muted-foreground text-sm tabular-nums line-through">
-                  {fmt(startingPriceCents)}
+              </div>
+              <div className="flex items-baseline gap-3">
+                <span
+                  className="text-5xl font-black tracking-tight text-green-500 sm:text-6xl"
+                  style={{
+                    textShadow: '0 0 40px rgba(34,197,94,0.3), 0 0 80px rgba(34,197,94,0.1)',
+                  }}
+                >
+                  {sim.currentLowest > 0 ? (
+                    <AnimatedPrice cents={sim.currentLowest} formatCurrency={fmt} />
+                  ) : (
+                    <span className="text-zinc-600">Waiting...</span>
+                  )}
                 </span>
+                {sim.currentLowest > 0 && (
+                  <span className="text-sm tabular-nums text-zinc-400 line-through">
+                    {fmt(startingPriceCents)}
+                  </span>
+                )}
+              </div>
+              {savingsCents > 0 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-sm font-bold text-emerald-400">
+                    Save {fmt(savingsCents)} ({String(savingsPct)}%)
+                  </span>
+                </div>
               )}
             </div>
-            {savingsCents > 0 && (
-              <div className="mt-1.5 flex items-center gap-2">
-                <TrendingDown className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                  Save {fmt(savingsCents)} ({String(savingsPct)}%)
-                </span>
-              </div>
-            )}
           </div>
-        </div>
 
-        {/* Bids stat */}
-        <div className="flex flex-col items-center justify-center px-6 py-3 sm:px-8">
-          <Users className="text-muted-foreground mb-1 h-4 w-4" />
-          <p className="text-2xl font-bold tabular-nums">{String(sim.bidCount)}</p>
-          <p className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
-            Bids
-          </p>
-        </div>
+          {/* Bids stat */}
+          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
+            <div className="hero-stat-accent-blue absolute top-0 left-0 right-0 h-[2px]" />
+            <div className="absolute top-0 bottom-0 left-0 w-px bg-zinc-700/60" />
+            <Users className="mb-1 h-4 w-4 text-blue-400/70" />
+            <p className="text-3xl font-black tabular-nums text-zinc-100">{String(sim.bidCount)}</p>
+            <p className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500">
+              Bids
+            </p>
+          </div>
 
-        {/* Timer */}
-        <div className="flex flex-col items-center justify-center px-6 py-3 sm:px-8">
-          <Clock className="text-muted-foreground mb-1 h-4 w-4" />
-          <AuctionTimer auctionEndsAt={auctionEndsAt} compact />
-          <p className="text-muted-foreground mt-0.5 text-[10px] font-medium tracking-wider uppercase">
-            Time Left
-          </p>
-        </div>
+          {/* Timer */}
+          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
+            <div className="hero-stat-accent-amber absolute top-0 left-0 right-0 h-[2px]" />
+            <div className="absolute top-0 bottom-0 left-0 w-px bg-zinc-700/60" />
+            <Clock className="mb-1 h-4 w-4 text-amber-400/70" />
+            <AuctionTimer auctionEndsAt={auctionEndsAt} compact />
+            <p className="mt-0.5 text-[10px] font-semibold tracking-wider uppercase text-zinc-500">
+              Time Left
+            </p>
+          </div>
 
-        {/* Snipe */}
-        <div className="flex flex-col items-center justify-center px-6 py-3 sm:px-8">
-          <Shield className="text-muted-foreground mb-1 h-4 w-4" />
-          <SnipeIndicator count={0} max={3} />
+          {/* Snipe */}
+          <div className="hero-stat-cell relative flex flex-col items-center justify-center px-6 py-3 sm:px-8">
+            <div className="hero-stat-accent-violet absolute top-0 left-0 right-0 h-[2px]" />
+            <div className="absolute top-0 bottom-0 left-0 w-px bg-zinc-700/60" />
+            <Shield className="mb-1 h-4 w-4 text-violet-400/70" />
+            <SnipeIndicator count={0} max={3} />
+          </div>
         </div>
       </div>
     </div>

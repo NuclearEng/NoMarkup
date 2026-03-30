@@ -52,9 +52,9 @@ function getTimeAgo(dateStr: string): string {
   return `${String(diffHr)}h ago`;
 }
 
-/** Grid column template that prevents text overlap with explicit min-widths */
-const GRID_COLS = 'grid-cols-[2rem_minmax(0,1fr)_4.5rem_4.5rem]';
-const GRID_COLS_SM = 'sm:grid-cols-[2rem_minmax(0,1fr)_3.5rem_4.5rem_3.5rem]';
+/** Grid column template — wider provider column to show full names */
+const GRID_COLS = 'grid-cols-[2rem_minmax(8rem,1fr)_4.5rem_4.5rem]';
+const GRID_COLS_SM = 'sm:grid-cols-[2rem_minmax(8rem,1fr)_3.5rem_5rem_3.5rem]';
 
 export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -74,13 +74,13 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
     return (
       <div
         className={cn(
-          'rounded-xl border border-border/50 bg-card p-6 text-center',
+          'rounded-xl border border-zinc-800/50 bg-zinc-900/60 p-6 text-center',
           className,
         )}
         role="region"
         aria-label={`Order book for job ${jobId}`}
       >
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-zinc-500">
           No bids yet. The order book will populate as providers compete.
         </p>
       </div>
@@ -89,7 +89,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
 
   return (
     <div
-      className={cn('rounded-xl border border-border/50 bg-card overflow-hidden', className)}
+      className={cn('rounded-xl border border-zinc-800/50 bg-zinc-950/60 overflow-hidden', className)}
       role="region"
       aria-label={`Order book showing ${String(sortedBids.length)} bids for job`}
     >
@@ -109,11 +109,11 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
       `}</style>
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border/30 px-4 py-2.5">
-        <h3 className="text-xs font-semibold tracking-wider uppercase text-muted-foreground/70">
+      <div className="flex items-center justify-between border-b border-zinc-800/60 bg-zinc-900/80 px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
           Order Book
         </h3>
-        <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+        <span className="text-[10px] font-medium tabular-nums text-zinc-500">
           {String(sortedBids.length)} bid{sortedBids.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -121,7 +121,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
       {/* Column headers — mobile hides Trust, desktop shows all 5 */}
       <div
         className={cn(
-          'grid items-center gap-3 border-b border-border/20 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50',
+          'grid items-center gap-3 border-b border-zinc-800/40 bg-zinc-900/40 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600',
           GRID_COLS,
           GRID_COLS_SM,
         )}
@@ -149,11 +149,11 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               ? Math.max(5, Math.min(100, (bid.amount_cents / startingPrice) * 100))
               : 50;
 
-          // Green gradient: lower price = darker green
+          // Green gradient: lower price = more vibrant green against dark bg
           const greenIntensity =
             startingPrice > 0
-              ? Math.max(0.04, 0.2 - (bid.amount_cents / startingPrice) * 0.16)
-              : 0.08;
+              ? Math.max(0.06, 0.3 - (bid.amount_cents / startingPrice) * 0.24)
+              : 0.12;
 
           const tierKey = bid.trust_tier as keyof typeof TRUST_TIER_CONFIG;
           const tierConfig = TRUST_TIER_CONFIG[tierKey] ?? TRUST_TIER_CONFIG.new;
@@ -163,10 +163,11 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
             <div
               key={bid.id}
               className={cn(
-                'relative grid items-center gap-3 px-4 py-2.5 transition-colors',
+                'relative grid items-center gap-3 px-4 py-2.5 transition-colors hover:bg-zinc-800/40',
                 GRID_COLS,
                 GRID_COLS_SM,
                 isLowest && 'border-l-2 border-l-amber-500/60',
+                !isLowest && 'border-b border-b-zinc-800/30',
               )}
               style={{
                 animation: bid.is_new ? 'orderBookFlash 2s ease-out forwards' : undefined,
@@ -205,7 +206,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                       'flex h-6 w-6 items-center justify-center rounded-full',
                       isLowest
                         ? 'bg-amber-500/20 text-amber-400'
-                        : 'bg-muted text-muted-foreground',
+                        : 'bg-zinc-800 text-zinc-400',
                     )}
                   >
                     <User className="h-3 w-3" aria-hidden="true" />
@@ -221,8 +222,8 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                   )}
                 </div>
                 <span
-                  className="truncate text-xs font-medium min-w-0"
-                  style={{ textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
+                  className="text-xs font-medium min-w-0 break-words leading-tight text-zinc-200"
+                  style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
                 >
                   {bid.provider_name}
                 </span>
