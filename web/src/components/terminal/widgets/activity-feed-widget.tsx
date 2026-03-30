@@ -19,7 +19,7 @@ export function ActivityFeedWidget({ sim }: WidgetProps) {
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <BidActivityFeed activities={sim.activities} />
+        <BidActivityFeed activities={sim.activities} showHeader={false} />
       </div>
     </div>
   );
