@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import {
   Briefcase,
   DollarSign,
@@ -16,6 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Sparkline } from '@/components/ui/sparkline';
+import { TrendArrow } from '@/components/ui/trend-arrow';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useMyBids } from '@/hooks/useBids';
 import { useContracts } from '@/hooks/useContracts';
@@ -25,19 +28,81 @@ import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
+/** Hook that counts up from 0 to a target number on mount/change. */
+function useCountUp(target: number, duration = 600): number {
+  const [current, setCurrent] = useState(0);
+  const rafRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const startValueRef = useRef(0);
+
+  useEffect(() => {
+    startValueRef.current = current;
+    startTimeRef.current = null;
+
+    function tick(timestamp: number) {
+      if (startTimeRef.current === null) {
+        startTimeRef.current = timestamp;
+      }
+      const elapsed = timestamp - startTimeRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(
+        startValueRef.current + (target - startValueRef.current) * eased,
+      );
+      setCurrent(value);
+
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when target changes
+  }, [target, duration]);
+
+  return current;
+}
+
 function StatCard({
   title,
   value,
+  numericValue,
+  isCurrency,
   description,
   icon: Icon,
   loading,
+  sparklineData,
+  trendValue,
+  trendLabel,
 }: {
   title: string;
   value: string;
+  numericValue?: number;
+  isCurrency?: boolean;
   description?: string;
   icon: typeof Briefcase;
   loading: boolean;
+  sparklineData?: number[];
+  trendValue?: number;
+  trendLabel?: string;
 }) {
+  // Count-up animation for the numeric value
+  const animatedNum = useCountUp(loading ? 0 : (numericValue ?? 0));
+  const displayValue = loading
+    ? ''
+    : numericValue !== undefined
+      ? isCurrency
+        ? formatCents(animatedNum)
+        : String(animatedNum)
+      : value;
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -50,11 +115,32 @@ function StatCard({
         {loading ? (
           <Skeleton className="h-8 w-24" />
         ) : (
-          <p className="text-2xl font-bold tabular-nums">{value}</p>
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <p className="animate-count-up-fade text-2xl font-bold tabular-nums">
+                {displayValue}
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                {description ? (
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                ) : null}
+                {trendValue !== undefined ? (
+                  <TrendArrow value={trendValue} label={trendLabel} size="sm" />
+                ) : null}
+              </div>
+            </div>
+            {sparklineData && sparklineData.length >= 2 ? (
+              <Sparkline
+                data={sparklineData}
+                width={80}
+                height={32}
+                gradientFill
+                showLastDot
+                className="shrink-0"
+              />
+            ) : null}
+          </div>
         )}
-        {description ? (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        ) : null}
       </CardContent>
     </Card>
   );
@@ -116,12 +202,23 @@ function QuickActions({ isProvider }: { isProvider: boolean }) {
   );
 }
 
+// TODO: Replace with real historical data from API
+const MOCK_SPARKLINE_ACTIVE_JOBS = [2, 3, 5, 4, 6, 5, 7];
+const MOCK_SPARKLINE_BIDS_RECEIVED = [8, 12, 10, 15, 14, 18, 22];
+const MOCK_SPARKLINE_PENDING = [1, 2, 1, 3, 2, 1, 2];
+const MOCK_SPARKLINE_SPEND = [12000, 15000, 18000, 22000, 21000, 25000, 30000];
+const MOCK_SPARKLINE_ACTIVE_BIDS = [5, 4, 7, 6, 8, 7, 9];
+const MOCK_SPARKLINE_CONTRACTS = [2, 3, 2, 4, 3, 5, 4];
+const MOCK_SPARKLINE_EARNINGS = [8000, 10000, 14000, 13000, 17000, 20000, 24000];
+const MOCK_SPARKLINE_WIN_RATE = [30, 35, 28, 40, 42, 38, 45];
+
 function CustomerDashboard() {
   const { data: jobsData, isLoading: jobsLoading } = useCustomerJobs({ status: 'active', page: 1, page_size: 5 });
   const { data: contractsData, isLoading: contractsLoading } = useContracts({ status: 'pending_acceptance', page: 1, page_size: 5 });
   const { data: paymentsData, isLoading: paymentsLoading } = usePayments({ status: 'completed', page: 1, per_page: 100 });
 
   const activeJobCount = jobsData?.pagination.totalCount ?? 0;
+  const bidsReceived = jobsData?.jobs.reduce((sum, j) => sum + j.bid_count, 0) ?? 0;
   const pendingContracts = contractsData?.pagination.totalCount ?? 0;
   const totalSpent = paymentsData?.payments.reduce((sum, p) => sum + p.amount_cents, 0) ?? 0;
 
@@ -133,30 +230,47 @@ function CustomerDashboard() {
         <StatCard
           title="Active Jobs"
           value={String(activeJobCount)}
+          numericValue={activeJobCount}
           description="Currently accepting bids"
           icon={Briefcase}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_ACTIVE_JOBS}
+          trendValue={2}
+          trendLabel="+2 this week"
         />
         <StatCard
           title="Bids Received"
-          value={String(jobsData?.jobs.reduce((sum, j) => sum + j.bid_count, 0) ?? 0)}
+          value={String(bidsReceived)}
+          numericValue={bidsReceived}
           description="Across active jobs"
           icon={Gavel}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_BIDS_RECEIVED}
+          trendValue={4}
+          trendLabel="+22%"
         />
         <StatCard
           title="Pending Actions"
           value={String(pendingContracts)}
+          numericValue={pendingContracts}
           description="Contracts awaiting acceptance"
           icon={FileText}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_PENDING}
+          trendValue={-1}
+          trendLabel="-1"
         />
         <StatCard
           title="Total Spend"
           value={formatCents(totalSpent)}
+          numericValue={totalSpent}
+          isCurrency
           description="Completed payments"
           icon={DollarSign}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_SPEND}
+          trendValue={5000}
+          trendLabel="+$50"
         />
       </div>
 
@@ -222,6 +336,10 @@ function ProviderDashboardSection() {
   const activeBidCount = bidsData?.pagination.totalCount ?? 0;
   const activeContracts = contractsData?.pagination.totalCount ?? 0;
   const totalEarnings = paymentsData?.payments.reduce((sum, p) => sum + p.provider_payout_cents, 0) ?? 0;
+  const winRate =
+    allBidsData && allBidsData.bids.length > 0
+      ? Math.round((allBidsData.bids.filter((b) => b.status === 'awarded').length / allBidsData.bids.length) * 100)
+      : 0;
 
   const isLoading = bidsLoading || allBidsLoading || contractsLoading || paymentsLoading;
 
@@ -231,34 +349,47 @@ function ProviderDashboardSection() {
         <StatCard
           title="Active Bids"
           value={String(activeBidCount)}
+          numericValue={activeBidCount}
           description="Awaiting decision"
           icon={Gavel}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_ACTIVE_BIDS}
+          trendValue={2}
+          trendLabel="+2"
         />
         <StatCard
           title="Active Contracts"
           value={String(activeContracts)}
+          numericValue={activeContracts}
           description="Jobs in progress"
           icon={Briefcase}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_CONTRACTS}
+          trendValue={1}
+          trendLabel="+1"
         />
         <StatCard
           title="Total Earnings"
           value={formatCents(totalEarnings)}
+          numericValue={totalEarnings}
+          isCurrency
           description="Net provider payouts"
           icon={DollarSign}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_EARNINGS}
+          trendValue={4000}
+          trendLabel="+$40"
         />
         <StatCard
           title="Win Rate"
-          value={
-            allBidsData && allBidsData.bids.length > 0
-              ? `${String(Math.round((allBidsData.bids.filter((b) => b.status === 'awarded').length / allBidsData.bids.length) * 100))}%`
-              : '--'
-          }
+          value={winRate > 0 ? `${String(winRate)}%` : '--'}
+          numericValue={winRate}
           description="Based on bid outcomes"
           icon={TrendingUp}
           loading={isLoading}
+          sparklineData={MOCK_SPARKLINE_WIN_RATE}
+          trendValue={7}
+          trendLabel="+7%"
         />
       </div>
 

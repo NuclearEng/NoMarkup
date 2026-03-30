@@ -360,3 +360,160 @@ body {
 .stagger-children > *:nth-child(8) {
   animation-delay: 525ms;
 }
+
+/* ─── Animated Price Digit Rolling ─── */
+@keyframes digit-roll-up {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes digit-roll-down {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes digit-flash-green {
+  0% {
+    color: inherit;
+    text-shadow: none;
+  }
+  15% {
+    color: #22c55e;
+    text-shadow:
+      0 0 8px rgba(34, 197, 94, 0.6),
+      0 0 20px rgba(34, 197, 94, 0.3);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+
+@keyframes digit-flash-red {
+  0% {
+    color: inherit;
+    text-shadow: none;
+  }
+  15% {
+    color: #ef4444;
+    text-shadow:
+      0 0 8px rgba(239, 68, 68, 0.6),
+      0 0 20px rgba(239, 68, 68, 0.3);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+
+/* ─── Sparkline Animations ─── */
+@keyframes sparkline-draw {
+  from {
+    stroke-dashoffset: var(--sparkline-length, 1000);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    r: 3;
+    opacity: 1;
+  }
+  50% {
+    r: 5;
+    opacity: 0.7;
+  }
+}
+
+/* ─── Trend Arrow Animation ─── */
+@keyframes trend-bounce {
+  0% {
+    transform: translateY(0) rotate(var(--trend-rotation, 0deg));
+  }
+  30% {
+    transform: translateY(-3px) rotate(var(--trend-rotation, 0deg));
+  }
+  50% {
+    transform: translateY(0) rotate(var(--trend-rotation, 0deg));
+  }
+  70% {
+    transform: translateY(-1.5px) rotate(var(--trend-rotation, 0deg));
+  }
+  100% {
+    transform: translateY(0) rotate(var(--trend-rotation, 0deg));
+  }
+}
+
+/* ─── Count Up Animation ─── */
+@keyframes count-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Utility Classes for Animations ─── */
+.animate-digit-roll-up {
+  animation: digit-roll-up 400ms ease-out forwards;
+}
+
+.animate-digit-roll-down {
+  animation: digit-roll-down 400ms ease-out forwards;
+}
+
+.animate-digit-flash-green {
+  animation: digit-flash-green 800ms ease-out forwards;
+}
+
+.animate-digit-flash-red {
+  animation: digit-flash-red 800ms ease-out forwards;
+}
+
+.animate-sparkline-draw {
+  animation: sparkline-draw 1s ease-out forwards;
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.animate-trend-bounce {
+  animation: trend-bounce 600ms ease-out forwards;
+}
+
+.animate-count-up-fade {
+  animation: count-up-fade 500ms ease-out both;
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animate-digit-roll-up,
+  .animate-digit-roll-down,
+  .animate-digit-flash-green,
+  .animate-digit-flash-red,
+  .animate-sparkline-draw,
+  .animate-pulse-dot,
+  .animate-trend-bounce,
+  .animate-count-up-fade {
+    animation: none !important;
+  }
+}
