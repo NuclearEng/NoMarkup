@@ -74,7 +74,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
     return (
       <div
         className={cn(
-          'glass p-6 text-center',
+          'rounded-xl border border-white/[0.06] bg-zinc-900/60 p-6 text-center',
           className,
         )}
         role="region"
@@ -89,7 +89,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
 
   return (
     <div
-      className={cn('glass overflow-hidden', className)}
+      className={cn('overflow-hidden rounded-xl', className)}
       role="region"
       aria-label={`Order book showing ${String(sortedBids.length)} bids for job`}
     >
@@ -109,7 +109,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
       `}</style>
 
       {/* Header */}
-      <div className="flex items-center justify-between glass-header px-4 py-2.5">
+      <div className="flex items-center justify-between border-b border-white/[0.06] bg-zinc-900/40 px-4 py-2.5">
         <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
           Order Book
         </h3>
@@ -121,8 +121,8 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
       {/* Column headers — mobile hides Trust, desktop shows all 5 */}
       <div
         className={cn(
-          'grid items-center gap-3 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600',
-          'border-b border-white/[0.04] bg-white/[0.02]',
+          'grid items-center gap-3 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500',
+          'border-b border-white/[0.06]',
           GRID_COLS,
           GRID_COLS_SM,
         )}
@@ -192,7 +192,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               <span
                 className={cn(
                   'relative z-10 text-xs font-bold tabular-nums',
-                  isLowest ? 'text-amber-400' : 'text-muted-foreground',
+                  isLowest ? 'text-amber-400' : 'text-zinc-400',
                 )}
                 style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
               >
@@ -260,7 +260,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
 
               {/* Time — hidden on mobile */}
               <span
-                className="relative z-10 hidden text-right text-[10px] tabular-nums text-muted-foreground sm:block"
+                className="relative z-10 hidden text-right text-[10px] tabular-nums text-zinc-500 sm:block"
                 style={{ textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
               >
                 {getTimeAgo(bid.created_at)}

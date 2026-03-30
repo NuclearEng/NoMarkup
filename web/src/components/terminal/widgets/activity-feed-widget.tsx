@@ -6,7 +6,7 @@ import type { WidgetProps } from '../types';
 export function ActivityFeedWidget({ sim }: WidgetProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between glass-header px-4 py-2.5">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
         <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
           Live Activity
         </h3>

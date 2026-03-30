@@ -32,7 +32,7 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 glass-header px-4 py-2.5">
+      <div className="shrink-0 border-b border-white/[0.06] px-4 py-2.5">
         <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
           Top Providers
         </h3>
@@ -47,7 +47,7 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
 
           return (
             <div key={bid.id}>
-              {idx > 0 && <div className="glass-divider mx-4" />}
+              {idx > 0 && <div className="mx-4 h-px bg-white/[0.06]" />}
               <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]">
               <span className="text-xl" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}>{medal}</span>
               <div

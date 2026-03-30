@@ -27,7 +27,7 @@ export function BidActivityFeed({
     return (
       <div
         className={cn(
-          'glass text-zinc-500 p-6 text-center text-sm',
+          'rounded-xl border border-white/[0.06] text-zinc-500 p-6 text-center text-sm',
           className,
         )}
       >
@@ -37,7 +37,7 @@ export function BidActivityFeed({
   }
 
   return (
-    <div className={cn('bg-transparent', showHeader && 'glass', className)}>
+    <div className={cn('bg-transparent', showHeader && 'rounded-xl border border-white/[0.06]', className)}>
       <style>{`
         @keyframes activityFlashIn {
           0% { background-color: rgba(34, 197, 94, 0.18); }
@@ -49,7 +49,7 @@ export function BidActivityFeed({
         }
       `}</style>
       {showHeader && (
-        <div className="flex items-center justify-between glass-header px-4 py-2.5">
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
           <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">Live Activity</h3>
           <span className="flex items-center gap-1.5 text-xs text-green-400">
             <span
