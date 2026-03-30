@@ -279,43 +279,53 @@ export default function LandingPage() {
   return (
     <>
       {/* ================================================================= */}
-      {/* HERO — Dark immersive section with gradient mesh background        */}
+      {/* HERO — Dark immersive cinematic section                            */}
       {/* ================================================================= */}
       <section className="relative isolate overflow-hidden bg-[#070b14]">
         {/* Animated gradient mesh background */}
         <GradientMesh />
 
-        {/* Market ticker strip at top */}
-        <MarketTickerStrip items={[...TICKER_ITEMS]} speed="normal" />
+        {/* Vignette overlay — cinematic dark corners */}
+        <div
+          className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
+          aria-hidden="true"
+        />
 
-        <div className="mx-auto max-w-7xl px-4 pt-16 pb-20 sm:px-6 sm:pt-20 sm:pb-28 lg:px-8 lg:pt-24 lg:pb-32">
-          <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+        {/* Market ticker strip at top */}
+        <div className="relative z-[2]">
+          <MarketTickerStrip items={[...TICKER_ITEMS]} speed="normal" />
+        </div>
+
+        <div className="relative z-[2] mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8 lg:pt-28 lg:pb-36">
+          <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-20">
             {/* Left column — text content */}
             <div className="mx-auto max-w-xl text-center lg:mx-0 lg:text-left">
               {/* Eyebrow badge */}
-              <div className="animate-fade-in mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-sm text-white/60 backdrop-blur-sm">
+              <div className="animate-fade-in mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-1.5 text-sm text-white/50 backdrop-blur-sm">
                 <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
                 <span>Providers compete. You save.</span>
               </div>
 
-              {/* Main headline */}
-              <h1 className="animate-fade-in-up text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
+              {/* Main headline — cinematic scale with gradient text */}
+              <h1 className="animate-fade-in-up text-5xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl">
                 Home services at{' '}
                 <span
-                  className="bg-gradient-to-r bg-clip-text text-transparent"
+                  className="bg-clip-text text-transparent"
                   style={{
-                    backgroundImage: 'linear-gradient(135deg, #e4c566, #c9a84c, #e4c566)',
-                    backgroundSize: '200% 200%',
-                    animation: 'gradient-shift 4s ease infinite',
+                    backgroundImage:
+                      'linear-gradient(135deg, #f0d97a, #c9a84c, #a08839, #c9a84c, #f0d97a)',
+                    backgroundSize: '300% 300%',
+                    animation: 'gradient-shift 5s ease infinite',
+                    letterSpacing: '-0.02em',
                   }}
                 >
                   market prices
                 </span>
               </h1>
 
-              {/* Sub-headline */}
+              {/* Sub-headline — more breathing room */}
               <p
-                className="animate-fade-in-up mt-6 text-lg leading-relaxed text-white/60 sm:text-xl"
+                className="animate-fade-in-up mt-8 text-lg leading-relaxed text-white/55 sm:text-xl sm:leading-relaxed"
                 style={{ animationDelay: '100ms' }}
               >
                 Post what you need, then watch qualified providers compete for your business. A
@@ -323,53 +333,80 @@ export default function LandingPage() {
                 <span className="font-semibold text-white/90">down</span>, not up.
               </p>
 
-              {/* CTAs */}
+              {/* CTAs — glow effect on primary */}
               <div
-                className="animate-fade-in-up mt-10 flex flex-col items-center gap-4 sm:flex-row lg:justify-start"
+                className="animate-fade-in-up mt-12 flex flex-col items-center gap-4 sm:flex-row lg:justify-start"
                 style={{ animationDelay: '200ms' }}
               >
                 <Button
                   size="lg"
-                  className="min-h-[48px] px-8 text-base"
+                  className="cta-glow-btn min-h-[52px] rounded-xl px-9 text-base font-semibold"
                   style={{
-                    background: 'linear-gradient(135deg, #c9a84c, #a08839)',
+                    background: 'linear-gradient(135deg, #d4b55a, #c9a84c, #a08839)',
                     color: '#fff',
+                    boxShadow: '0 0 16px rgba(201,168,76,0.25), 0 4px 12px rgba(0,0,0,0.3)',
                   }}
                   asChild
                 >
                   <Link href="/register">
                     Get started
-                    <ArrowRight className="ml-1 h-4 w-4" />
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
                   </Link>
                 </Button>
                 <Button
                   variant="outline"
                   size="lg"
-                  className="min-h-[48px] border-white/15 bg-white/[0.04] px-8 text-base text-white/80 hover:bg-white/[0.08] hover:text-white"
+                  className="min-h-[52px] rounded-xl border-white/[0.1] bg-white/[0.03] px-9 text-base text-white/70 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
                   asChild
                 >
                   <Link href="/jobs">Browse jobs</Link>
                 </Button>
               </div>
 
-              {/* Social proof micro-stats */}
+              {/* Social proof — avatar stack + star rating + stats */}
               <div
-                className="animate-fade-in-up mt-10 flex flex-wrap items-center gap-6 lg:justify-start"
+                className="animate-fade-in-up mt-12 flex flex-wrap items-center gap-6 lg:justify-start"
                 style={{ animationDelay: '350ms' }}
               >
-                <div className="flex items-center gap-2 text-sm text-white/50">
-                  <TrendingDown className="h-4 w-4 text-emerald-400" />
+                {/* Avatar stack */}
+                <div className="flex items-center gap-3">
+                  <div className="avatar-stack flex">
+                    {['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'].map((color, i) => (
+                      <div
+                        key={color}
+                        className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#070b14] text-[10px] font-bold text-white"
+                        style={{ background: color, zIndex: 5 - i }}
+                        aria-hidden="true"
+                      >
+                        {['S', 'M', 'J', 'A', 'R'][i]}
+                      </div>
+                    ))}
+                  </div>
+                  <span className="text-sm text-white/45">10,000+ jobs completed</span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="flex gap-0.5" aria-label="4.9 out of 5 stars">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <svg
+                        key={star}
+                        width="14"
+                        height="14"
+                        viewBox="0 0 16 16"
+                        fill={star <= 4 ? '#eab308' : '#eab308'}
+                        opacity={star === 5 ? 0.7 : 1}
+                        aria-hidden="true"
+                      >
+                        <path d="M8 0l2.2 5.5L16 6.3l-4 3.7 1 5.5L8 12.8 2.9 15.5l1-5.5-4-3.7 5.9-.8z" />
+                      </svg>
+                    ))}
+                  </div>
+                  <span className="text-sm font-medium text-white/50">4.9</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-sm text-white/45">
+                  <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
                   <span>Avg. 23% savings</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-white/50">
-                  <BadgeCheck className="h-4 w-4 text-blue-400" />
-                  <span>10,000+ jobs completed</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-white/50">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="#eab308" aria-hidden="true">
-                    <path d="M8 0l2.2 5.5L16 6.3l-4 3.7 1 5.5L8 12.8 2.9 15.5l1-5.5-4-3.7 5.9-.8z" />
-                  </svg>
-                  <span>4.9 average rating</span>
                 </div>
               </div>
             </div>
@@ -383,6 +420,9 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
+
+        {/* Gradient bridge from hero to stats — smooth fade */}
+        <div className="hero-stats-bridge relative z-[2] h-20 sm:h-24" aria-hidden="true" />
       </section>
 
       {/* ================================================================= */}
@@ -390,25 +430,30 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={statsSection.ref}
-        className="bg-card border-b py-10 sm:py-12"
+        className="bg-card border-b py-14 sm:py-16"
         aria-label="Platform statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-10 sm:grid-cols-3 sm:gap-8">
             {STATS.map((stat, i) => (
               <div
                 key={stat.label}
                 className={`flex flex-col items-center text-center transition-all duration-700 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
                 style={{ transitionDelay: `${String(i * 120)}ms` }}
               >
-                <p className="text-3xl font-bold tracking-tight sm:text-4xl">
+                <p
+                  className="text-4xl font-black tracking-tight sm:text-5xl"
+                  style={{ color: stat.color }}
+                >
                   {'display' in stat && stat.display ? (
                     stat.display
                   ) : (
                     <AnimatedCounter end={stat.value} prefix={stat.prefix} suffix={stat.suffix} />
                   )}
                 </p>
-                <p className="text-muted-foreground mt-1 text-sm">{stat.label}</p>
+                <p className="text-muted-foreground mt-2 text-sm font-medium tracking-wide uppercase">
+                  {stat.label}
+                </p>
                 {statsSection.inView ? (
                   <MicroSparkline data={stat.sparkline} color={stat.color} />
                 ) : null}
@@ -423,25 +468,25 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={howItWorks.ref}
-        className="bg-muted/30 border-t py-24 sm:py-32"
+        className="bg-muted/30 border-t py-28 sm:py-36"
         aria-labelledby="how-it-works-heading"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
             <h2
               id="how-it-works-heading"
-              className={`text-3xl font-bold tracking-tight transition-all duration-700 sm:text-4xl ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+              className={`text-3xl font-black tracking-tight transition-all duration-700 sm:text-4xl ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
             >
               How it works
             </h2>
             <p
-              className={`text-muted-foreground mt-4 text-lg transition-all delay-100 duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+              className={`text-muted-foreground mt-5 text-lg transition-all delay-100 duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
             >
               Three simple steps to better prices on home services.
             </p>
           </div>
 
-          <div className="mx-auto mt-16 grid max-w-5xl gap-8 sm:grid-cols-3 sm:gap-12">
+          <div className="mx-auto mt-20 grid max-w-5xl gap-8 sm:grid-cols-3 sm:gap-14">
             {[
               {
                 step: 1,
@@ -467,18 +512,21 @@ export default function LandingPage() {
             ].map((item, i) => (
               <div
                 key={item.step}
-                className={`relative text-center transition-all duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
+                className={`step-card-glow bg-card relative rounded-2xl border p-8 text-center transition-all duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
                 style={{ transitionDelay: `${String(200 + i * 150)}ms` }}
               >
-                {/* Step number + icon */}
-                <div className="bg-primary/5 ring-primary/10 mx-auto flex h-16 w-16 items-center justify-center rounded-2xl ring-1">
-                  <item.icon className="text-primary h-7 w-7" />
+                {/* Large step number — gradient gold */}
+                <div className="gold-text mx-auto text-5xl font-black" aria-hidden="true">
+                  {String(item.step)}
                 </div>
-                <span className="bg-primary text-primary-foreground mt-4 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold">
-                  Step {item.step}
-                </span>
-                <h3 className="mt-3 text-lg font-semibold">{item.title}</h3>
-                <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+
+                {/* Icon */}
+                <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-gold)]/10 ring-1 ring-[var(--brand-gold)]/15">
+                  <item.icon className="h-7 w-7" style={{ color: 'var(--brand-gold)' }} />
+                </div>
+
+                <h3 className="mt-5 text-lg font-bold">{item.title}</h3>
+                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
                   {item.description}
                 </p>
               </div>
@@ -490,35 +538,43 @@ export default function LandingPage() {
       {/* ================================================================= */}
       {/* TESTIMONIAL + TRUST                                               */}
       {/* ================================================================= */}
-      <section className="py-24 sm:py-32" aria-labelledby="trust-heading">
+      <section className="py-28 sm:py-36" aria-labelledby="trust-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Testimonial */}
           <div className="mx-auto max-w-2xl text-center">
+            {/* Decorative quote mark */}
+            <div
+              className="gold-text mx-auto mb-6 text-6xl leading-none font-black"
+              aria-hidden="true"
+            >
+              &ldquo;
+            </div>
             <blockquote>
-              <p className="text-muted-foreground text-lg leading-relaxed sm:text-xl">
-                &ldquo;I posted a bathroom remodel expecting to pay $8,000. Four providers competed
-                and I picked an incredible contractor for $5,400. Same quality, 32% less. NoMarkup
-                changed how I hire.&rdquo;
+              <p className="text-foreground/70 text-lg leading-relaxed sm:text-xl">
+                I posted a bathroom remodel expecting to pay $8,000. Four providers competed and I
+                picked an incredible contractor for{' '}
+                <span className="gold-text font-bold">$5,400</span>. Same quality, 32% less.
+                NoMarkup changed how I hire.
               </p>
-              <footer className="mt-6">
-                <p className="font-semibold">Sarah M.</p>
-                <p className="text-muted-foreground text-sm">Homeowner in Austin, TX</p>
+              <footer className="mt-8">
+                <p className="text-lg font-bold">Sarah M.</p>
+                <p className="text-muted-foreground mt-1 text-sm">Homeowner in Austin, TX</p>
               </footer>
             </blockquote>
           </div>
 
           {/* Trust signals */}
-          <div className="text-muted-foreground mx-auto mt-12 flex max-w-lg flex-wrap items-center justify-center gap-6 text-sm">
-            <span className="flex items-center gap-1.5">
-              <Shield className="h-4 w-4" />
+          <div className="text-muted-foreground mx-auto mt-14 flex max-w-lg flex-wrap items-center justify-center gap-8 text-sm">
+            <span className="flex items-center gap-2">
+              <Shield className="h-4 w-4" style={{ color: 'var(--brand-gold)' }} />
               Payment protection
             </span>
-            <span className="flex items-center gap-1.5">
-              <BadgeCheck className="h-4 w-4" />
+            <span className="flex items-center gap-2">
+              <BadgeCheck className="h-4 w-4" style={{ color: 'var(--brand-gold)' }} />
               Verified providers
             </span>
-            <span className="flex items-center gap-1.5">
-              <Clock className="h-4 w-4" />
+            <span className="flex items-center gap-2">
+              <Clock className="h-4 w-4" style={{ color: 'var(--brand-gold)' }} />
               Free to post
             </span>
           </div>
@@ -530,39 +586,42 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={categories.ref}
-        className="bg-muted/30 border-t py-24 sm:py-32"
+        className="bg-muted/30 border-t py-28 sm:py-36"
         aria-labelledby="categories-heading"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
             <h2
               id="categories-heading"
-              className={`text-3xl font-bold tracking-tight transition-all duration-700 sm:text-4xl ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+              className={`text-3xl font-black tracking-tight transition-all duration-700 sm:text-4xl ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
             >
               Popular categories
             </h2>
             <p
-              className={`text-muted-foreground mt-4 text-lg transition-all delay-100 duration-700 ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+              className={`text-muted-foreground mt-5 text-lg transition-all delay-100 duration-700 ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
             >
               Whatever the project, there are providers ready to compete for it.
             </p>
           </div>
 
-          <div className="mx-auto mt-14 grid max-w-5xl grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:gap-5">
+          <div className="mx-auto mt-16 grid max-w-5xl grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:gap-6">
             {CATEGORIES.map((cat, i) => (
               <Link
                 key={cat.name}
                 href="/jobs"
-                className={`group bg-card hover:border-primary/20 hover:shadow-primary/5 flex flex-col items-center gap-3 rounded-xl border p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+                className={`group bg-card flex flex-col items-center gap-3 rounded-2xl border p-7 text-center transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--brand-gold)]/20 hover:shadow-[var(--brand-gold)]/5 hover:shadow-xl ${categories.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
                 style={{
                   transitionDelay: categories.inView ? `${String(200 + i * 75)}ms` : '0ms',
                 }}
               >
-                <div className="bg-primary/5 group-hover:bg-primary/10 flex h-12 w-12 items-center justify-center rounded-xl transition-colors">
-                  <cat.icon className="text-primary h-6 w-6" />
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-gold)]/[0.08] ring-1 ring-[var(--brand-gold)]/10 transition-colors group-hover:bg-[var(--brand-gold)]/[0.14]">
+                  <cat.icon
+                    className="animate-icon-hover h-6 w-6 transition-transform"
+                    style={{ color: 'var(--brand-gold)' }}
+                  />
                 </div>
                 <div>
-                  <p className="font-semibold">{cat.name}</p>
+                  <p className="font-bold">{cat.name}</p>
                   <p className="text-muted-foreground mt-0.5 text-xs">
                     {cat.providers.toLocaleString()} providers
                   </p>
@@ -576,20 +635,29 @@ export default function LandingPage() {
       {/* ================================================================= */}
       {/* FINAL CTA                                                         */}
       {/* ================================================================= */}
-      <section className="py-24 sm:py-32" aria-labelledby="cta-heading">
+      <section className="py-28 sm:py-36" aria-labelledby="cta-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 id="cta-heading" className="text-3xl font-bold tracking-tight sm:text-4xl">
+            <h2 id="cta-heading" className="text-3xl font-black tracking-tight sm:text-4xl">
               Ready to save?
             </h2>
-            <p className="text-muted-foreground mt-4 text-lg">
+            <p className="text-muted-foreground mt-5 text-lg">
               Join thousands of homeowners who stopped overpaying for quality service.
             </p>
-            <div className="mt-10">
-              <Button size="lg" className="min-h-[48px] px-10 text-base" asChild>
+            <div className="mt-12">
+              <Button
+                size="lg"
+                className="cta-glow-btn min-h-[52px] rounded-xl px-10 text-base font-semibold"
+                style={{
+                  background: 'linear-gradient(135deg, #d4b55a, #c9a84c, #a08839)',
+                  color: '#fff',
+                  boxShadow: '0 0 16px rgba(201,168,76,0.2), 0 4px 12px rgba(0,0,0,0.15)',
+                }}
+                asChild
+              >
                 <Link href="/register">
                   Post your first job &mdash; it&apos;s free
-                  <ArrowRight className="ml-1 h-4 w-4" />
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Link>
               </Button>
             </div>

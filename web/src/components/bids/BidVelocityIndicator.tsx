@@ -60,6 +60,14 @@ const LEVEL_CONFIG = {
   },
 } as const;
 
+/** Map velocity levels to glow shadow colors */
+const GLOW_COLORS: Record<VelocityLevel, string> = {
+  [VELOCITY_LEVEL.HOT]: 'rgba(248, 113, 113, 0.4)',
+  [VELOCITY_LEVEL.HEATING]: 'rgba(251, 191, 36, 0.35)',
+  [VELOCITY_LEVEL.COOLING]: 'rgba(96, 165, 250, 0.3)',
+  [VELOCITY_LEVEL.QUIET]: 'transparent',
+};
+
 export function BidVelocityIndicator({
   velocity,
   buckets,
@@ -69,44 +77,58 @@ export function BidVelocityIndicator({
   const config = LEVEL_CONFIG[level];
   const { Icon } = config;
   const maxBucket = Math.max(1, ...buckets);
+  const glowColor = GLOW_COLORS[level];
 
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1',
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5',
+        'border border-transparent',
         config.bgClass,
         config.pulseClass,
         className,
       )}
+      style={{
+        borderColor: level !== VELOCITY_LEVEL.QUIET
+          ? `color-mix(in srgb, ${glowColor} 40%, transparent)`
+          : undefined,
+      }}
       role="status"
       aria-label={`Bid velocity: ${String(velocity)} bids per minute, ${config.label}`}
     >
       <Icon
-        className={cn('h-3 w-3', config.textClass)}
+        className={cn('h-3 w-3 shrink-0', config.textClass)}
         aria-hidden="true"
       />
 
-      {/* Mini sparkline bars */}
+      {/* Mini sparkline bars with glow */}
       <div className="flex items-end gap-px h-3" aria-hidden="true">
         {buckets.map((count, i) => {
           const barHeight = Math.max(2, (count / maxBucket) * 12);
           return (
             <div
               key={`bucket-${String(i)}`}
-              className={cn('w-[3px] rounded-full transition-all duration-300', config.barClass)}
+              className={cn('w-[2.5px] rounded-full transition-all duration-300', config.barClass)}
               style={{
                 height: `${String(barHeight)}px`,
                 opacity: 0.4 + (i / buckets.length) * 0.6,
+                boxShadow: count > 0 ? `0 0 3px ${glowColor}` : undefined,
               }}
             />
           );
         })}
       </div>
 
-      <span className={cn('text-[10px] font-bold tabular-nums', config.textClass)}>
-        {String(velocity)}/min
+      <span className={cn('text-[10px] font-bold tabular-nums leading-none', config.textClass)}>
+        {String(velocity)}/m
       </span>
-      <span className={cn('text-[9px] font-medium', config.textClass)}>
+      <span
+        className={cn(
+          'text-[9px] font-extrabold uppercase tracking-wider leading-none',
+          config.textClass,
+          level === VELOCITY_LEVEL.HOT && 'tracking-widest',
+        )}
+      >
         {config.label}
       </span>
     </div>

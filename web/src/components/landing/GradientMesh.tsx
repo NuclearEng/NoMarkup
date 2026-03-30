@@ -18,47 +18,48 @@ export function GradientMesh({ className }: GradientMeshProps) {
       {/* Base dark background */}
       <div className="absolute inset-0 bg-[#070b14]" />
 
-      {/* Blob 1 — deep navy/blue, top-left drift */}
+      {/* Blob 1 — rich deep navy/blue, top-left drift — larger for atmospheric coverage */}
       <div
-        className="gradient-blob-1 absolute -top-1/4 -left-1/4 h-[800px] w-[800px] rounded-full opacity-60 will-change-transform"
+        className="gradient-blob-1 absolute -top-1/4 -left-1/4 h-[1000px] w-[1000px] rounded-full opacity-70 will-change-transform"
         style={{
-          background: 'radial-gradient(circle, #0f1b3d 0%, transparent 70%)',
-          filter: 'blur(80px)',
-        }}
-      />
-
-      {/* Blob 2 — violet, center-right drift */}
-      <div
-        className="gradient-blob-2 absolute -right-1/4 top-1/4 h-[700px] w-[700px] rounded-full opacity-50 will-change-transform"
-        style={{
-          background: 'radial-gradient(circle, #2d1b69 0%, transparent 70%)',
-          filter: 'blur(90px)',
-        }}
-      />
-
-      {/* Blob 3 — emerald, bottom drift */}
-      <div
-        className="gradient-blob-3 absolute -bottom-1/4 left-1/3 h-[600px] w-[600px] rounded-full opacity-40 will-change-transform"
-        style={{
-          background: 'radial-gradient(circle, #0d3b2e 0%, transparent 70%)',
+          background: 'radial-gradient(circle, #0d1f4a 0%, #091333 40%, transparent 70%)',
           filter: 'blur(100px)',
         }}
       />
 
-      {/* Blob 4 — subtle dark blue accent */}
+      {/* Blob 2 — saturated violet, center-right drift */}
       <div
-        className="gradient-blob-4 absolute top-1/2 left-1/2 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-30 will-change-transform"
+        className="gradient-blob-2 absolute -right-1/4 top-1/4 h-[900px] w-[900px] rounded-full opacity-55 will-change-transform"
         style={{
-          background: 'radial-gradient(circle, #0a0f1e 0%, transparent 70%)',
-          filter: 'blur(70px)',
+          background: 'radial-gradient(circle, #3d1f8e 0%, #241260 40%, transparent 70%)',
+          filter: 'blur(110px)',
         }}
       />
 
-      {/* Subtle grain overlay for texture */}
+      {/* Blob 3 — brighter emerald accent, bottom drift */}
       <div
-        className="absolute inset-0 opacity-[0.03]"
+        className="gradient-blob-3 absolute -bottom-1/4 left-1/3 h-[800px] w-[800px] rounded-full opacity-45 will-change-transform"
         style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          background: 'radial-gradient(circle, #0f4d3a 0%, #0a3328 40%, transparent 70%)',
+          filter: 'blur(120px)',
+        }}
+      />
+
+      {/* Blob 4 — subtle warm gold accent, drifting center */}
+      <div
+        className="gradient-blob-4 absolute top-1/2 left-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 will-change-transform"
+        style={{
+          background: 'radial-gradient(circle, #2a1f0e 0%, #0f0c05 40%, transparent 70%)',
+          filter: 'blur(90px)',
+        }}
+      />
+
+      {/* Film grain/noise overlay — slightly more visible for cinematic texture */}
+      <div
+        className="absolute inset-0 opacity-[0.045]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='5' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          backgroundSize: '256px 256px',
         }}
       />
     </div>

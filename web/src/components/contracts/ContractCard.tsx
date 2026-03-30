@@ -6,8 +6,7 @@ import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { formatCents } from '@/lib/utils';
+import { cn, formatCents } from '@/lib/utils';
 import type { Contract } from '@/types';
 import { CONTRACT_STATUS, MILESTONE_STATUS, PAYMENT_TIMING } from '@/types';
 
@@ -34,6 +33,28 @@ function getStatusVariant(status: string): 'default' | 'secondary' | 'destructiv
       return 'outline';
     default:
       return 'outline';
+  }
+}
+
+/** Background tint colors for status badges to add visual weight */
+function getStatusBadgeTint(status: string): string {
+  switch (status) {
+    case CONTRACT_STATUS.ACTIVE:
+      return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20';
+    case CONTRACT_STATUS.PENDING_ACCEPTANCE:
+      return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
+    case CONTRACT_STATUS.COMPLETED:
+      return 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20';
+    case CONTRACT_STATUS.CANCELLED:
+    case CONTRACT_STATUS.VOIDED:
+    case CONTRACT_STATUS.ABANDONED:
+      return 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20';
+    case CONTRACT_STATUS.DISPUTED:
+      return 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20';
+    case CONTRACT_STATUS.SUSPENDED:
+      return 'bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20';
+    default:
+      return '';
   }
 }
 
@@ -77,6 +98,13 @@ function getPaymentTimingLabel(timing: string): string {
   }
 }
 
+/** Gradient color for progress bar based on completion */
+function getProgressGradient(percent: number): string {
+  if (percent >= 100) return 'bg-gradient-to-r from-emerald-500 to-emerald-400';
+  if (percent >= 60) return 'bg-gradient-to-r from-blue-500 to-emerald-500';
+  return 'bg-gradient-to-r from-blue-500 to-blue-400';
+}
+
 export function ContractCard({ contract }: ContractCardProps) {
   const approvedCount = contract.milestones.filter(
     (m) => m.status === MILESTONE_STATUS.APPROVED,
@@ -87,14 +115,17 @@ export function ContractCard({ contract }: ContractCardProps) {
 
   return (
     <Link href={`/contracts/${contract.id}` as Route} className="block">
-      <Card className="hover:bg-muted/50 transition-colors">
+      <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <FileText className="text-muted-foreground h-4 w-4 shrink-0" aria-hidden="true" />
               <h3 className="truncate text-base font-semibold">{contract.contract_number}</h3>
             </div>
-            <Badge variant={getStatusVariant(contract.status)} className="shrink-0">
+            <Badge
+              variant="outline"
+              className={cn('shrink-0 border font-medium', getStatusBadgeTint(contract.status))}
+            >
               {getStatusLabel(contract.status)}
             </Badge>
           </div>
@@ -102,23 +133,51 @@ export function ContractCard({ contract }: ContractCardProps) {
         <CardContent className="space-y-3">
           {/* Amount and payment timing */}
           <div className="flex items-baseline justify-between">
-            <p className="text-2xl font-bold">{formatCents(contract.amount_cents)}</p>
+            <p className="text-2xl font-bold tabular-nums tracking-tight">
+              {formatCents(contract.amount_cents)}
+            </p>
             <div className="text-muted-foreground flex items-center gap-1 text-sm">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               {getPaymentTimingLabel(contract.payment_timing)}
             </div>
           </div>
 
-          {/* Milestone progress */}
+          {/* Milestone progress with gradient bar */}
           {totalMilestones > 0 ? (
             <div className="space-y-1.5">
               <div className="text-muted-foreground flex items-center justify-between text-xs">
-                <span>Milestones</span>
-                <span>
-                  {String(approvedCount)} / {String(totalMilestones)} completed
+                <span className="font-medium">Milestones</span>
+                <span className="flex items-center gap-1.5">
+                  <span>
+                    {String(approvedCount)} / {String(totalMilestones)} completed
+                  </span>
+                  <span className="font-semibold text-foreground">
+                    {String(progressPercent)}%
+                  </span>
                 </span>
               </div>
-              <Progress value={progressPercent} />
+              {/* Custom gradient progress bar */}
+              <div className="relative h-2 w-full overflow-hidden rounded-full bg-primary/10">
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all duration-500',
+                    getProgressGradient(progressPercent),
+                  )}
+                  style={{ width: `${String(progressPercent)}%` }}
+                  role="progressbar"
+                  aria-valuenow={progressPercent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                />
+                {/* Glow dot at the progress edge */}
+                {progressPercent > 0 && progressPercent < 100 ? (
+                  <div
+                    className="progress-glow-dot absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-[0_0_6px_rgba(59,130,246,0.5)]"
+                    style={{ left: `calc(${String(progressPercent)}% - 6px)` }}
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </div>
             </div>
           ) : null}
 

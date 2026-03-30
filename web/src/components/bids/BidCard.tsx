@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Crown,
   Loader2,
   Medal,
   ShieldCheck,
@@ -127,7 +128,7 @@ function getWinProbability(rank: number, totalBids: number): {
   return { label: 'Needs lower bid', percent: 15, color: 'text-red-500' };
 }
 
-/** Renders a small SVG circular gauge for the trust score */
+/** Renders a small SVG circular gauge for the trust score with glow effect */
 function TrustScoreGauge({ score, tier }: { score: number; tier: TrustTier }) {
   const scorePercent = Math.round(score * 100);
   const radius = 18;
@@ -136,25 +137,51 @@ function TrustScoreGauge({ score, tier }: { score: number; tier: TrustTier }) {
   const strokeColor = TRUST_GAUGE_STROKE[tier];
   const textColor = TRUST_SCORE_TEXT[tier];
 
+  // Glow color for the gauge arc
+  const TRUST_GLOW_MAP: Record<TrustTier, string> = {
+    [TRUST_TIER.TOP_RATED]: 'rgba(245,158,11,0.4)',
+    [TRUST_TIER.TRUSTED]: 'rgba(139,92,246,0.4)',
+    [TRUST_TIER.RISING]: 'rgba(16,185,129,0.4)',
+    [TRUST_TIER.NEW]: 'rgba(56,189,248,0.3)',
+    [TRUST_TIER.UNDER_REVIEW]: 'rgba(156,163,175,0.2)',
+  };
+  const glowColor = TRUST_GLOW_MAP[tier];
+
   return (
     <div
       className="relative flex-shrink-0"
       aria-label={`Trust score: ${String(scorePercent)} out of 100`}
       role="img"
     >
-      <svg width="44" height="44" viewBox="0 0 44 44" className="-rotate-90" aria-hidden="true">
+      <svg
+        width="48"
+        height="48"
+        viewBox="0 0 48 48"
+        className="-rotate-90"
+        aria-hidden="true"
+      >
+        <defs>
+          <filter id={`trust-glow-${tier}`}>
+            <feGaussianBlur stdDeviation="2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
         {/* Background track */}
-        <circle cx="22" cy="22" r={radius} fill="none" className="stroke-muted" strokeWidth="3" />
-        {/* Filled arc */}
+        <circle cx="24" cy="24" r={radius} fill="none" className="stroke-muted" strokeWidth="3" />
+        {/* Filled arc with glow */}
         <circle
-          cx="22"
-          cy="22"
+          cx="24"
+          cy="24"
           r={radius}
           fill="none"
           className={strokeColor}
-          strokeWidth="3"
+          strokeWidth="3.5"
           strokeLinecap="round"
           strokeDasharray={`${String(filled)} ${String(circumference - filled)}`}
+          style={{ filter: `drop-shadow(0 0 3px ${glowColor})` }}
         />
       </svg>
       <span
@@ -205,7 +232,7 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   );
 }
 
-/** Win probability bar indicator */
+/** Win probability bar indicator with gradient fill */
 function WinProbabilityBar({
   rank,
   totalBids,
@@ -215,16 +242,25 @@ function WinProbabilityBar({
 }) {
   const { label, percent, color } = getWinProbability(rank, totalBids);
 
+  const barGradient = cn(
+    percent >= 70 && 'bg-gradient-to-r from-emerald-600 to-emerald-400',
+    percent >= 30 && percent < 70 && 'bg-gradient-to-r from-amber-600 to-amber-400',
+    percent < 30 && 'bg-gradient-to-r from-red-600 to-red-400',
+  );
+
   return (
-    <div className="flex items-center gap-2">
-      <span className={cn('text-xs font-medium', color)}>{label}</span>
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className={cn('text-xs font-bold', color)}>{label}</span>
+        <span className={cn('text-[10px] font-semibold tabular-nums', color)}>
+          {String(percent)}%
+        </span>
+      </div>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
             'h-full rounded-full transition-all duration-500',
-            percent >= 70 && 'bg-emerald-500',
-            percent >= 30 && percent < 70 && 'bg-amber-500',
-            percent < 30 && 'bg-red-500',
+            barGradient,
           )}
           style={{ width: `${String(percent)}%` }}
           role="progressbar"
@@ -304,7 +340,7 @@ export function BidCard({
   const wrapperProps = isAwarded
     ? { variant: 'winning' as const }
     : {
-        className: 'transition-shadow duration-200',
+        className: 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg',
       };
 
   return (
@@ -337,7 +373,10 @@ export function BidCard({
         {/* ── 1. Provider identity ── */}
         <div className="flex items-start gap-3">
           <Avatar
-            className={cn('h-11 w-11 flex-shrink-0', ringColor && `ring-[2.5px] ${ringColor}`)}
+            className={cn(
+              'h-11 w-11 flex-shrink-0',
+              ringColor && `ring-[3px] ring-offset-2 ring-offset-card ${ringColor}`,
+            )}
           >
             {provider_avatar_url ? (
               <AvatarImage src={provider_avatar_url} alt={provider_display_name} />
@@ -568,22 +607,29 @@ export function BidCard({
   );
 }
 
-/** Rank badge displayed in the top-right corner */
+/** Rank badge displayed in the top-right corner with cinematic icons */
 function RankBadge({ rank, totalBids }: { rank: number; totalBids: number }) {
   const style = RANK_STYLES[rank];
 
   if (style) {
+    // Gold crown for #1, silver medal for #2, bronze medal for #3
+    const RankIcon = rank === 1 ? Crown : Medal;
+    const iconExtra = rank === 1
+      ? 'h-3.5 w-3.5 drop-shadow-[0_0_3px_rgba(245,158,11,0.6)]'
+      : 'h-3 w-3';
+
     return (
       <div
         className={cn(
-          'flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold',
+          'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold shadow-sm',
           style.bg,
           style.text,
           style.border,
+          rank === 1 && 'shadow-amber-500/20',
         )}
         aria-label={`Rank ${String(rank)} of ${String(totalBids)} bids`}
       >
-        <Medal className="h-3 w-3" aria-hidden="true" />
+        <RankIcon className={cn(iconExtra)} aria-hidden="true" />
         #{String(rank)} of {String(totalBids)}
       </div>
     );
@@ -601,19 +647,22 @@ function RankBadge({ rank, totalBids }: { rank: number; totalBids: number }) {
 
 /** Competitive position badge next to the bid amount */
 function CompetitivePositionBadge({ rank, totalBids }: { rank: number; totalBids: number }) {
-  const { label, color } = getCompetitivePosition(rank, totalBids);
+  const { label } = getCompetitivePosition(rank, totalBids);
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold',
         rank === 1
-          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          ? 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(52,211,153,0.2)]'
           : rank <= 3
             ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
             : 'bg-red-500/10 text-red-500',
       )}
     >
+      {rank === 1 ? (
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+      ) : null}
       {label}
     </span>
   );

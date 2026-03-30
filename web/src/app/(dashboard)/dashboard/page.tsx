@@ -9,7 +9,9 @@ import {
   Plus,
   Search,
   TrendingUp,
+  type LucideIcon,
 } from 'lucide-react';
+import type { Route } from 'next';
 import Link from 'next/link';
 
 import { SavingsTracker } from '@/components/dashboard/SavingsTracker';
@@ -49,9 +51,7 @@ function useCountUp(target: number, duration = 600): number {
       const progress = Math.min(elapsed / duration, 1);
       // Ease-out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
-      const value = Math.round(
-        startValueRef.current + (target - startValueRef.current) * eased,
-      );
+      const value = Math.round(startValueRef.current + (target - startValueRef.current) * eased);
       setCurrent(value);
 
       if (progress < 1) {
@@ -66,11 +66,20 @@ function useCountUp(target: number, duration = 600): number {
         cancelAnimationFrame(rafRef.current);
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when target changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when target changes
   }, [target, duration]);
 
   return current;
 }
+
+/** Subtle gradient tint colors per stat card icon for premium feel */
+const STAT_GRADIENT: Record<string, string> = {
+  Briefcase: 'from-blue-500/[0.03] to-transparent dark:from-blue-400/[0.04]',
+  Gavel: 'from-violet-500/[0.03] to-transparent dark:from-violet-400/[0.04]',
+  FileText: 'from-amber-500/[0.03] to-transparent dark:from-amber-400/[0.04]',
+  DollarSign: 'from-emerald-500/[0.03] to-transparent dark:from-emerald-400/[0.04]',
+  TrendingUp: 'from-cyan-500/[0.03] to-transparent dark:from-cyan-400/[0.04]',
+};
 
 function StatCard({
   title,
@@ -89,7 +98,7 @@ function StatCard({
   numericValue?: number;
   isCurrency?: boolean;
   description?: string;
-  icon: typeof Briefcase;
+  icon: LucideIcon;
   loading: boolean;
   sparklineData?: number[];
   trendValue?: number;
@@ -105,41 +114,50 @@ function StatCard({
         : String(animatedNum)
       : value;
 
+  const gradientClass =
+    STAT_GRADIENT[Icon.displayName ?? ''] ?? 'from-primary/[0.02] to-transparent';
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+    <Card className="relative overflow-hidden">
+      {/* Subtle gradient background tint */}
+      <div
+        className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${gradientClass}`}
+        aria-hidden="true"
+      />
+      <CardHeader className="relative flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-muted-foreground text-sm font-medium">{title}</CardTitle>
+        <div className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-md">
+          <Icon className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative">
         {loading ? (
           <Skeleton className="h-8 w-24" />
         ) : (
           <div className="flex items-end justify-between gap-2">
             <div className="min-w-0">
-              <p className="animate-count-up-fade text-2xl font-bold tabular-nums">
+              <p className="animate-count-up-fade text-2xl font-bold tracking-tight tabular-nums">
                 {displayValue}
               </p>
-              <div className="mt-1 flex items-center gap-2">
-                {description ? (
-                  <p className="text-xs text-muted-foreground">{description}</p>
-                ) : null}
+              <div className="mt-1.5 flex items-center gap-2">
                 {trendValue !== undefined ? (
                   <TrendArrow value={trendValue} label={trendLabel} size="sm" />
                 ) : null}
+                {description && trendValue === undefined ? (
+                  <p className="text-muted-foreground text-xs">{description}</p>
+                ) : null}
               </div>
+              {description && trendValue !== undefined ? (
+                <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>
+              ) : null}
             </div>
             {sparklineData && sparklineData.length >= 2 ? (
-              <Sparkline
-                data={sparklineData}
-                width={80}
-                height={32}
-                gradientFill
-                showLastDot
+              <div
                 className="shrink-0"
-              />
+                style={{ filter: 'drop-shadow(0 0 4px rgba(34,197,94,0.2))' }}
+              >
+                <Sparkline data={sparklineData} width={80} height={32} gradientFill showLastDot />
+              </div>
             ) : null}
           </div>
         )}
@@ -148,58 +166,69 @@ function StatCard({
   );
 }
 
+function QuickActionCard({
+  href,
+  icon: Icon,
+  title,
+  description,
+  accentColor,
+}: {
+  href: Route;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  accentColor: string;
+}) {
+  return (
+    <Link href={href} className="block">
+      <Card className="group hover:border-l-primary h-full border-l-2 border-l-transparent transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+        <CardContent className="flex items-center gap-3 p-4">
+          <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${accentColor}`}
+          >
+            <Icon
+              className="text-primary h-5 w-5 transition-transform duration-200 group-hover:scale-110"
+              aria-hidden="true"
+            />
+          </div>
+          <div>
+            <p className="font-medium">{title}</p>
+            <p className="text-muted-foreground text-xs">{description}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
 function QuickActions({ isProvider }: { isProvider: boolean }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <Link href="/jobs/new" className="block">
-        <Card className="h-full transition-shadow hover:shadow-md">
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <Plus className="h-5 w-5 text-primary" aria-hidden="true" />
-            </div>
-            <div>
-              <p className="font-medium">Post a Job</p>
-              <p className="text-xs text-muted-foreground">
-                Get competitive bids from providers
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </Link>
+      <QuickActionCard
+        href="/jobs/new"
+        icon={Plus}
+        title="Post a Job"
+        description="Get competitive bids from providers"
+        accentColor="bg-primary/10"
+      />
 
       {isProvider ? (
-        <Link href="/jobs" className="block">
-          <Card className="h-full transition-shadow hover:shadow-md">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                <Search className="h-5 w-5 text-primary" aria-hidden="true" />
-              </div>
-              <div>
-                <p className="font-medium">Browse Jobs</p>
-                <p className="text-xs text-muted-foreground">
-                  Find new jobs to bid on
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+        <QuickActionCard
+          href="/jobs"
+          icon={Search}
+          title="Browse Jobs"
+          description="Find new jobs to bid on"
+          accentColor="bg-primary/10"
+        />
       ) : null}
 
-      <Link href="/contracts" className="block">
-        <Card className="h-full transition-shadow hover:shadow-md">
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <FileText className="h-5 w-5 text-primary" aria-hidden="true" />
-            </div>
-            <div>
-              <p className="font-medium">My Contracts</p>
-              <p className="text-xs text-muted-foreground">
-                Manage active contracts
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </Link>
+      <QuickActionCard
+        href="/contracts"
+        icon={FileText}
+        title="My Contracts"
+        description="Manage active contracts"
+        accentColor="bg-primary/10"
+      />
     </div>
   );
 }
@@ -215,9 +244,21 @@ const MOCK_SPARKLINE_EARNINGS = [8000, 10000, 14000, 13000, 17000, 20000, 24000]
 const MOCK_SPARKLINE_WIN_RATE = [30, 35, 28, 40, 42, 38, 45];
 
 function CustomerDashboard() {
-  const { data: jobsData, isLoading: jobsLoading } = useCustomerJobs({ status: 'active', page: 1, page_size: 5 });
-  const { data: contractsData, isLoading: contractsLoading } = useContracts({ status: 'pending_acceptance', page: 1, page_size: 5 });
-  const { data: paymentsData, isLoading: paymentsLoading } = usePayments({ status: 'completed', page: 1, per_page: 100 });
+  const { data: jobsData, isLoading: jobsLoading } = useCustomerJobs({
+    status: 'active',
+    page: 1,
+    page_size: 5,
+  });
+  const { data: contractsData, isLoading: contractsLoading } = useContracts({
+    status: 'pending_acceptance',
+    page: 1,
+    page_size: 5,
+  });
+  const { data: paymentsData, isLoading: paymentsLoading } = usePayments({
+    status: 'completed',
+    page: 1,
+    per_page: 100,
+  });
 
   const activeJobCount = jobsData?.pagination.totalCount ?? 0;
   const bidsReceived = jobsData?.jobs.reduce((sum, j) => sum + j.bid_count, 0) ?? 0;
@@ -278,10 +319,15 @@ function CustomerDashboard() {
 
       {ENABLE_LIVE_AUCTION ? <SavingsTracker /> : null}
 
+      {/* Section divider */}
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
+      </div>
+
       {/* Recent jobs */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Recent Jobs</CardTitle>
+          <CardTitle className="text-base font-semibold tracking-tight">Recent Jobs</CardTitle>
           <Link href="/jobs/mine">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
               View all
@@ -296,20 +342,20 @@ function CustomerDashboard() {
               ))}
             </div>
           ) : !jobsData?.jobs.length ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
+            <p className="text-muted-foreground py-4 text-center text-sm">
               No active jobs. Post your first job to get started.
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="divide-y">
               {jobsData.jobs.slice(0, 5).map((job) => (
                 <Link
                   key={job.id}
                   href={`/jobs/${job.id}`}
-                  className="flex items-center justify-between rounded-md border p-3 transition-colors hover:bg-muted/50"
+                  className="hover:bg-muted/50 flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:pl-4"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{job.title}</p>
-                    <p className="text-xs text-muted-foreground">{job.category_name}</p>
+                    <p className="text-muted-foreground text-xs">{job.category_name}</p>
                   </div>
                   <div className="ml-3 flex items-center gap-2">
                     <Badge variant="secondary">
@@ -332,15 +378,28 @@ function CustomerDashboard() {
 function ProviderDashboardSection() {
   const { data: bidsData, isLoading: bidsLoading } = useMyBids('active');
   const { data: allBidsData, isLoading: allBidsLoading } = useMyBids(undefined, undefined);
-  const { data: contractsData, isLoading: contractsLoading } = useContracts({ status: 'active', page: 1, page_size: 100 });
-  const { data: paymentsData, isLoading: paymentsLoading } = usePayments({ status: 'completed', page: 1, per_page: 100 });
+  const { data: contractsData, isLoading: contractsLoading } = useContracts({
+    status: 'active',
+    page: 1,
+    page_size: 100,
+  });
+  const { data: paymentsData, isLoading: paymentsLoading } = usePayments({
+    status: 'completed',
+    page: 1,
+    per_page: 100,
+  });
 
   const activeBidCount = bidsData?.pagination.totalCount ?? 0;
   const activeContracts = contractsData?.pagination.totalCount ?? 0;
-  const totalEarnings = paymentsData?.payments.reduce((sum, p) => sum + p.provider_payout_cents, 0) ?? 0;
+  const totalEarnings =
+    paymentsData?.payments.reduce((sum, p) => sum + p.provider_payout_cents, 0) ?? 0;
   const winRate =
     allBidsData && allBidsData.bids.length > 0
-      ? Math.round((allBidsData.bids.filter((b) => b.status === 'awarded').length / allBidsData.bids.length) * 100)
+      ? Math.round(
+          (allBidsData.bids.filter((b) => b.status === 'awarded').length /
+            allBidsData.bids.length) *
+            100,
+        )
       : 0;
 
   const isLoading = bidsLoading || allBidsLoading || contractsLoading || paymentsLoading;
@@ -395,10 +454,15 @@ function ProviderDashboardSection() {
         />
       </div>
 
+      {/* Section divider */}
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
+      </div>
+
       {/* Recent bids */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Active Bids</CardTitle>
+          <CardTitle className="text-base font-semibold tracking-tight">Active Bids</CardTitle>
           <Link href="/bids">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
               View all
@@ -413,23 +477,25 @@ function ProviderDashboardSection() {
               ))}
             </div>
           ) : !bidsData?.bids.length ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
+            <p className="text-muted-foreground py-4 text-center text-sm">
               No active bids. Browse jobs to start bidding.
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="divide-y">
               {bidsData.bids.slice(0, 5).map((bid) => (
                 <Link
                   key={bid.id}
                   href={`/jobs/${bid.job_id}`}
-                  className="flex items-center justify-between rounded-md border p-3 transition-colors hover:bg-muted/50"
+                  className="hover:bg-muted/50 flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:pl-4"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      Bid: {formatCents(bid.amount_cents)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Placed {new Date(bid.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    <p className="text-sm font-medium">Bid: {formatCents(bid.amount_cents)}</p>
+                    <p className="text-muted-foreground text-xs">
+                      Placed{' '}
+                      {new Date(bid.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
                     </p>
                   </div>
                   <Badge variant="outline" className="capitalize">
@@ -443,6 +509,13 @@ function ProviderDashboardSection() {
       </Card>
     </div>
   );
+}
+
+function getTimeOfDayGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 export default function DashboardPage() {
@@ -467,13 +540,26 @@ export default function DashboardPage() {
     );
   }
 
+  const greeting = getTimeOfDayGreeting();
+  const firstName = user?.displayName?.split(' ')[0];
+
   return (
     <PageTransition>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Welcome back{user?.displayName ? `, ${user.displayName}` : ''}.
+          <h1 className="text-2xl font-bold tracking-tight">
+            {greeting}
+            {firstName ? `, ${firstName}` : ''}{' '}
+            <span
+              className="inline-block origin-[70%_70%] animate-[illustration-swing_2s_ease-in-out_2]"
+              role="img"
+              aria-label="waving hand"
+            >
+              {'\u{1F44B}'}
+            </span>
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Here is what is happening across your account today.
           </p>
         </div>
 
@@ -482,7 +568,12 @@ export default function DashboardPage() {
         {isCustomer ? (
           <div>
             {isProvider ? (
-              <h2 className="mb-4 text-lg font-semibold">Customer Overview</h2>
+              <>
+                <div className="flex items-center gap-3" aria-hidden="true">
+                  <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
+                </div>
+                <h2 className="mt-6 mb-4 text-lg font-bold tracking-tight">Customer Overview</h2>
+              </>
             ) : null}
             <CustomerDashboard />
           </div>
@@ -491,15 +582,18 @@ export default function DashboardPage() {
         {isProvider ? (
           <div>
             {isCustomer ? (
-              <h2 className="mb-4 text-lg font-semibold">Provider Overview</h2>
+              <>
+                <div className="flex items-center gap-3" aria-hidden="true">
+                  <div className="via-border h-px flex-1 bg-gradient-to-r from-transparent to-transparent" />
+                </div>
+                <h2 className="mt-6 mb-4 text-lg font-bold tracking-tight">Provider Overview</h2>
+              </>
             ) : null}
             <ProviderDashboardSection />
           </div>
         ) : null}
 
-        {!isCustomer && !isProvider ? (
-          <CustomerDashboard />
-        ) : null}
+        {!isCustomer && !isProvider ? <CustomerDashboard /> : null}
       </div>
     </PageTransition>
   );

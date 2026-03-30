@@ -139,12 +139,30 @@ export function SavingsHero({
         />
       ) : null}
 
+      {/* Subtle decorative trending-down arrow background */}
+      <div
+        className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 opacity-[0.04] sm:right-8"
+        aria-hidden="true"
+      >
+        <ArrowDown className="h-24 w-24 text-emerald-500 sm:h-32 sm:w-32" strokeWidth={1.5} />
+      </div>
+
       <div className="relative flex flex-col items-center gap-2 text-center">
-        {/* Incredible deal badge */}
+        {/* Incredible deal badge with pulsing ring */}
         {isIncredibleDeal ? (
-          <div className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-3 py-1 text-xs font-bold text-orange-500">
-            <Flame className="h-3.5 w-3.5" aria-hidden="true" />
-            Incredible Deal
+          <div className="relative inline-flex items-center gap-1.5 rounded-full bg-orange-500/15 px-3.5 py-1.5 text-xs font-bold text-orange-500">
+            {/* Pulsing rings around badge */}
+            <span
+              className="absolute inset-0 rounded-full border border-orange-500/30 animate-savings-ring-pulse"
+              aria-hidden="true"
+            />
+            <span
+              className="absolute -inset-1 rounded-full border border-orange-500/15 animate-savings-ring-pulse"
+              style={{ animationDelay: '0.3s' }}
+              aria-hidden="true"
+            />
+            <Flame className="relative h-3.5 w-3.5" aria-hidden="true" />
+            <span className="relative">Incredible Deal</span>
           </div>
         ) : null}
 
@@ -153,16 +171,22 @@ export function SavingsHero({
           You&apos;re saving
         </p>
 
-        {/* Hero savings amount */}
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-black tracking-tight text-emerald-500 sm:text-4xl">
+        {/* Hero savings amount with green glow */}
+        <div className="flex items-baseline gap-2.5">
+          <span
+            className="text-3xl font-black tracking-tight text-emerald-500 sm:text-4xl"
+            style={{
+              textShadow: '0 0 20px rgba(16, 185, 129, 0.35), 0 0 40px rgba(16, 185, 129, 0.15)',
+            }}
+          >
             <RollingDigits value={formattedSavings} />
             <span className="sr-only">{formattedSavings}</span>
           </span>
           <span
             className={cn(
-              'flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm font-bold',
-              'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+              'flex items-center gap-1 rounded-full px-3 py-1 text-sm font-extrabold',
+              'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+              'border border-emerald-500/20',
             )}
           >
             {trendUp ? (

@@ -52,6 +52,10 @@ function getTimeAgo(dateStr: string): string {
   return `${String(diffHr)}h ago`;
 }
 
+/** Grid column template that prevents text overlap with explicit min-widths */
+const GRID_COLS = 'grid-cols-[2rem_minmax(0,1fr)_4.5rem_4.5rem]';
+const GRID_COLS_SM = 'sm:grid-cols-[2rem_minmax(0,1fr)_3.5rem_4.5rem_3.5rem]';
+
 export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -114,13 +118,21 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
         </span>
       </div>
 
-      {/* Column headers */}
-      <div className="grid grid-cols-[2rem_1fr_auto_auto_auto] items-center gap-2 border-b border-border/20 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+      {/* Column headers — mobile hides Trust, desktop shows all 5 */}
+      <div
+        className={cn(
+          'grid items-center gap-3 border-b border-border/20 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50',
+          GRID_COLS,
+          GRID_COLS_SM,
+        )}
+      >
         <span>#</span>
         <span>Provider</span>
-        <span className="text-right">Trust</span>
-        <span className="min-w-[4.5rem] text-right">Price</span>
-        <span className="min-w-[3.5rem] text-right">Time</span>
+        {/* Trust — hidden on mobile */}
+        <span className="hidden text-right sm:block">Trust</span>
+        <span className="text-right">Price</span>
+        {/* Time — hidden on mobile, visible sm+ */}
+        <span className="hidden text-right sm:block">Time</span>
       </div>
 
       {/* Bid rows */}
@@ -151,7 +163,9 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
             <div
               key={bid.id}
               className={cn(
-                'relative grid grid-cols-[2rem_1fr_auto_auto_auto] items-center gap-2 px-4 py-2.5 transition-colors',
+                'relative grid items-center gap-3 px-4 py-2.5 transition-colors',
+                GRID_COLS,
+                GRID_COLS_SM,
                 isLowest && 'border-l-2 border-l-amber-500/60',
               )}
               style={{
@@ -178,11 +192,12 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                   'relative z-10 text-xs font-bold tabular-nums',
                   isLowest ? 'text-amber-400' : 'text-muted-foreground',
                 )}
+                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
               >
                 #{String(index + 1)}
               </span>
 
-              {/* Provider */}
+              {/* Provider — name truncates, badge is separate and never overlaps */}
               <div className="relative z-10 flex items-center gap-2 min-w-0">
                 <div
                   className={cn(
@@ -194,28 +209,37 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                 >
                   <User className="h-3 w-3" aria-hidden="true" />
                 </div>
-                <span className="truncate text-xs font-medium">{bid.provider_name}</span>
+                <span
+                  className="truncate text-xs font-medium min-w-0"
+                  style={{ textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
+                >
+                  {bid.provider_name}
+                </span>
                 {isLowest && (
                   <span
-                    className="inline-flex items-center gap-0.5 shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400"
+                    className="inline-flex items-center gap-0.5 shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap"
                     style={{ animation: 'lowestBadgePulse 2s ease-in-out infinite' }}
                   >
                     <Award className="h-2.5 w-2.5" aria-hidden="true" />
-                    Lowest
+                    <span className="hidden sm:inline">Lowest</span>
+                    <span className="sm:hidden">#1</span>
                   </span>
                 )}
               </div>
 
-              {/* Trust badge */}
+              {/* Trust badge — hidden on mobile to save space */}
               <div
                 className={cn(
-                  'relative z-10 flex items-center gap-1',
+                  'relative z-10 hidden items-center justify-end gap-1 sm:flex',
                   tierConfig.colorClass,
                 )}
                 title={`${tierConfig.label} (${String(bid.trust_score)})`}
               >
                 <TierIcon className="h-3 w-3" aria-hidden="true" />
-                <span className="text-[10px] font-medium tabular-nums">
+                <span
+                  className="text-[10px] font-medium tabular-nums"
+                  style={{ textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
+                >
                   {String(bid.trust_score)}
                 </span>
               </div>
@@ -223,15 +247,19 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               {/* Price */}
               <span
                 className={cn(
-                  'relative z-10 min-w-[4.5rem] text-right text-xs font-bold tabular-nums',
+                  'relative z-10 text-right text-xs font-bold tabular-nums',
                   isLowest ? 'text-green-400' : 'text-foreground',
                 )}
+                style={{ textShadow: isLowest ? '0 0 8px rgba(34,197,94,0.3)' : '0 1px 2px rgba(0,0,0,0.2)' }}
               >
                 {formatPrice(bid.amount_cents)}
               </span>
 
-              {/* Time */}
-              <span className="relative z-10 min-w-[3.5rem] text-right text-[10px] tabular-nums text-muted-foreground">
+              {/* Time — hidden on mobile */}
+              <span
+                className="relative z-10 hidden text-right text-[10px] tabular-nums text-muted-foreground sm:block"
+                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
+              >
                 {getTimeAgo(bid.created_at)}
               </span>
             </div>

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Shield, Users, Zap } from 'lucide-react';
 
+import { cn } from '@/lib/utils';
+
 import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
 import { BidDepthChart } from '@/components/bids/BidDepthChart';
@@ -189,7 +191,13 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
   };
 
   return (
-    <div className="border-border/50 bg-card overflow-hidden rounded-xl border shadow-lg">
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-xl shadow-lg',
+        'bg-card',
+        isConnected && 'arena-live-border',
+      )}
+    >
       <style>{`
         @keyframes livePulse {
           0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
@@ -203,11 +211,50 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
+        @keyframes arenaBorderGlow {
+          0%, 100% {
+            border-color: rgba(34, 197, 94, 0.25);
+            box-shadow: 0 0 12px rgba(34, 197, 94, 0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+          }
+          50% {
+            border-color: rgba(34, 197, 94, 0.45);
+            box-shadow: 0 0 24px rgba(34, 197, 94, 0.15), 0 0 48px rgba(34, 197, 94, 0.05), inset 0 1px 0 rgba(255,255,255,0.06);
+          }
+        }
+        .arena-live-border {
+          border: 1px solid rgba(34, 197, 94, 0.25);
+          animation: arenaBorderGlow 4s ease-in-out infinite;
+        }
+        .arena-live-border:not(.arena-live-border) {
+          border: 1px solid var(--border);
+        }
       `}</style>
 
+      {/* Dormant border when not connected */}
+      {!isConnected && (
+        <div className="absolute inset-0 rounded-xl border border-border/50 pointer-events-none" aria-hidden="true" />
+      )}
+
+      {/* ── Gold accent line at very top ── */}
+      <div
+        className="h-[2px] w-full"
+        style={{
+          background: 'linear-gradient(90deg, transparent 5%, var(--brand-gold-dim) 20%, var(--brand-gold-bright) 50%, var(--brand-gold-dim) 80%, transparent 95%)',
+        }}
+        aria-hidden="true"
+      />
+
       {/* ── Premium header banner ── */}
-      <div className="relative bg-muted/60 px-4 py-3 sm:px-6">
-        <div className="flex items-center justify-between">
+      <div className="relative bg-muted/60 px-5 py-3.5 sm:px-6">
+        {/* Subtle top gradient shimmer */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+          style={{
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.8) 0%, transparent 100%)',
+          }}
+          aria-hidden="true"
+        />
+        <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <Zap className="h-5 w-5 text-green-400" aria-hidden="true" />
             <h2 className="text-foreground text-sm font-bold tracking-widest uppercase">
@@ -253,9 +300,9 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
       </div>
 
       {/* -- Hero price display -- */}
-      <div className="px-4 pt-5 pb-2 text-center sm:px-6 sm:pt-6">
+      <div className="px-5 pt-6 pb-3 text-center sm:px-6 sm:pt-8">
         {startingPrice > 0 && displayLowest > 0 ? (
-          <p className="text-muted-foreground mb-1 text-xs font-medium">
+          <p className="text-muted-foreground mb-1.5 text-xs font-medium tracking-wide">
             Starting at {formatCurrency(startingPrice)}
           </p>
         ) : null}
@@ -269,16 +316,23 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
               ? `Current lowest bid: ${formatCurrency(displayLowest)}`
               : 'No bids yet'
           }
+          style={{
+            textShadow: displayLowest > 0
+              ? '0 0 30px rgba(34, 197, 94, 0.25), 0 0 60px rgba(34, 197, 94, 0.1)'
+              : undefined,
+          }}
         >
           <AnimatedPrice cents={displayLowest} formatCurrency={formatCurrency} />
         </div>
 
-        <p className="text-muted-foreground mt-1 text-xs">Current Lowest Bid</p>
+        <p className="text-muted-foreground mt-1.5 text-[11px] font-medium tracking-wider uppercase">
+          Current Lowest Bid
+        </p>
       </div>
 
       {/* ── Savings Hero ── */}
       {startingPrice > 0 && displayLowest > 0 && displayLowest < startingPrice ? (
-        <div className="px-4 pb-2 sm:px-6">
+        <div className="px-5 pb-3 sm:px-6">
           <SavingsHero
             startingPriceCents={startingPrice}
             currentLowestCents={displayLowest}
@@ -287,10 +341,15 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
       ) : null}
 
+      {/* ── Section divider ── */}
+      <div className="mx-5 sm:mx-6" aria-hidden="true">
+        <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent" />
+      </div>
+
       {/* ── Stats row ── */}
-      <div className="border-border/30 bg-border/20 mx-4 my-4 grid grid-cols-3 gap-px overflow-hidden rounded-lg border-y sm:mx-6">
+      <div className="bg-border/20 mx-5 my-5 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border/30 sm:mx-6">
         {/* Total Bids */}
-        <div className="bg-card flex flex-col items-center gap-0.5 px-3 py-3">
+        <div className="bg-card flex flex-col items-center gap-1 px-3 py-3.5">
           <div className="flex items-center gap-1">
             <Users className="text-muted-foreground h-3.5 w-3.5" aria-hidden="true" />
             <span className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
@@ -307,41 +366,64 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
           </p>
         </div>
 
-        {/* Countdown */}
+        {/* Countdown — center cell gets subtle side borders via gap-px trick */}
         <CountdownCell endsAt={displayEndsAt} />
 
         {/* Anti-snipe */}
-        <div className="bg-card flex flex-col items-center justify-center px-3 py-3">
+        <div className="bg-card flex flex-col items-center justify-center px-3 py-3.5">
           <SnipeIndicator count={displaySnipeCount} max={3} />
         </div>
       </div>
 
+      {/* ── Section divider ── */}
+      <div className="mx-5 sm:mx-6" aria-hidden="true">
+        <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent" />
+      </div>
+
       {/* -- Visualization tabs: Price History / Depth Chart -- */}
-      <div className="px-4 sm:px-6">
-        <div className="flex items-center gap-1 mb-2" role="tablist" aria-label="Chart visualization">
+      <div className="px-5 pt-5 sm:px-6">
+        <div className="relative flex items-center gap-1 mb-3" role="tablist" aria-label="Chart visualization">
+          {/* Tab underline track */}
+          <div className="absolute bottom-0 left-0 right-0 h-px bg-border/30" aria-hidden="true" />
+
           <button
             role="tab"
             aria-selected={activeTab === VISUALIZATION_TAB.PRICE_HISTORY}
             onClick={() => setActiveTab(VISUALIZATION_TAB.PRICE_HISTORY)}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={cn(
+              'relative px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors',
               activeTab === VISUALIZATION_TAB.PRICE_HISTORY
-                ? 'bg-muted text-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground/80',
+            )}
           >
             Price History
+            {/* Active underline indicator */}
+            {activeTab === VISUALIZATION_TAB.PRICE_HISTORY && (
+              <span
+                className="absolute bottom-0 left-1 right-1 h-[2px] rounded-full bg-green-500"
+                aria-hidden="true"
+              />
+            )}
           </button>
           <button
             role="tab"
             aria-selected={activeTab === VISUALIZATION_TAB.DEPTH_CHART}
             onClick={() => setActiveTab(VISUALIZATION_TAB.DEPTH_CHART)}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={cn(
+              'relative px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors',
               activeTab === VISUALIZATION_TAB.DEPTH_CHART
-                ? 'bg-muted text-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground/80',
+            )}
           >
             Depth Chart
+            {activeTab === VISUALIZATION_TAB.DEPTH_CHART && (
+              <span
+                className="absolute bottom-0 left-1 right-1 h-[2px] rounded-full bg-green-500"
+                aria-hidden="true"
+              />
+            )}
           </button>
         </div>
 
@@ -359,18 +441,30 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
       </div>
 
+      {/* ── Section divider ── */}
+      <div className="mx-5 mt-3 sm:mx-6" aria-hidden="true">
+        <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent" />
+      </div>
+
       {/* -- Sparkline + Activity Feed -- */}
-      <div className="px-4 pb-2 sm:px-6">
-        <h3 className="text-muted-foreground/70 mb-2 text-xs font-medium tracking-wider uppercase">
+      <div className="px-5 pt-5 pb-3 sm:px-6">
+        <h3 className="mb-3 text-[11px] font-semibold tracking-widest uppercase text-muted-foreground/60">
           Bid Trend
         </h3>
         <BidPriceChart bids={sparklineBids} height={100} className="mb-4" />
         <BidActivityFeed activities={bidActivities} />
       </div>
 
+      {/* ── Section divider ── */}
+      {orderBookBids.length > 0 && (
+        <div className="mx-5 sm:mx-6" aria-hidden="true">
+          <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent" />
+        </div>
+      )}
+
       {/* -- Order Book -- */}
       {orderBookBids.length > 0 && (
-        <div className="px-4 pb-2 sm:px-6">
+        <div className="px-5 pt-5 pb-3 sm:px-6">
           <OrderBook
             jobId={job.id}
             bids={orderBookBids}
@@ -379,9 +473,16 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         </div>
       )}
 
+      {/* ── Section divider ── */}
+      {job.market_range && job.market_range.sample_size > 0 ? (
+        <div className="mx-5 sm:mx-6" aria-hidden="true">
+          <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent" />
+        </div>
+      ) : null}
+
       {/* -- Market Intelligence -- */}
       {job.market_range && job.market_range.sample_size > 0 ? (
-        <div className="px-4 pb-2 sm:px-6">
+        <div className="px-5 pt-5 pb-3 sm:px-6">
           <MarketRangeDisplay
             marketRange={job.market_range}
             currentBidCents={displayLowest > 0 ? displayLowest : undefined}
@@ -391,7 +492,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
 
       {/* -- Social proof -- */}
       {displayBidCount > 0 ? (
-        <div className="px-4 pb-4 text-center sm:px-6">
+        <div className="px-5 pt-3 pb-6 text-center sm:px-6">
           <p className="text-muted-foreground text-xs">
             <span className="text-foreground font-semibold">
               {String(displayBidCount)} provider{displayBidCount !== 1 ? 's' : ''}
@@ -403,7 +504,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
 
       {/* -- Bid form for providers -- */}
       {isProvider && !isJobOwner && job.status === 'active' ? (
-        <div className="border-border/30 border-t px-4 py-4 sm:px-6">
+        <div className="border-border/30 border-t px-5 py-5 sm:px-6">
           <BidForm
             jobId={job.id}
             existingBid={null}
@@ -441,7 +542,7 @@ function CountdownCell({ endsAt }: { endsAt: string | null | undefined }) {
   } as const;
 
   return (
-    <div className="bg-card flex flex-col items-center gap-0.5 px-3 py-3">
+    <div className="bg-card flex flex-col items-center gap-1 px-3 py-3.5">
       <div className="flex items-center gap-1">
         <Shield className="text-muted-foreground h-3.5 w-3.5" aria-hidden="true" />
         <span className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
