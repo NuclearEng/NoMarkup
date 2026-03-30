@@ -504,6 +504,144 @@ body {
   animation: count-up-fade 500ms ease-out both;
 }
 
+/* ── Auction urgency animations ── */
+@keyframes urgency-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes urgency-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 0.85;
+  }
+}
+
+@keyframes urgency-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px 2px currentColor;
+    opacity: 0.4;
+  }
+  50% {
+    box-shadow: 0 0 20px 6px currentColor;
+    opacity: 0.7;
+  }
+}
+
+@keyframes urgency-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(1px);
+  }
+}
+
+@keyframes gold-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes savings-sparkle {
+  0%,
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0px transparent);
+  }
+  25% {
+    filter: brightness(1.15) drop-shadow(0 0 6px rgba(34, 197, 94, 0.5));
+  }
+  50% {
+    filter: brightness(1) drop-shadow(0 0 0px transparent);
+  }
+  75% {
+    filter: brightness(1.1) drop-shadow(0 0 4px rgba(34, 197, 94, 0.4));
+  }
+}
+
+@keyframes ring-deplete {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: var(--ring-circumference);
+  }
+}
+
+@keyframes digit-roll-in {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes digit-roll-out {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+/* Urgency utility classes */
+.animate-urgency-pulse {
+  animation: urgency-pulse 2s ease-in-out infinite;
+}
+.animate-urgency-breathe {
+  animation: urgency-breathe 2s ease-in-out infinite;
+}
+.animate-urgency-glow {
+  animation: urgency-glow 2s ease-in-out infinite;
+}
+.animate-urgency-shake {
+  animation: urgency-shake 0.5s ease-in-out infinite;
+}
+.animate-gold-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 20%,
+    rgba(201, 168, 76, 0.3) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: gold-shimmer 3s linear infinite;
+}
+.animate-savings-sparkle {
+  animation: savings-sparkle 3s ease-in-out infinite;
+}
+
 /* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   .animate-digit-roll-up,
@@ -513,7 +651,13 @@ body {
   .animate-sparkline-draw,
   .animate-pulse-dot,
   .animate-trend-bounce,
-  .animate-count-up-fade {
+  .animate-count-up-fade,
+  .animate-urgency-pulse,
+  .animate-urgency-breathe,
+  .animate-urgency-glow,
+  .animate-urgency-shake,
+  .animate-gold-shimmer,
+  .animate-savings-sparkle {
     animation: none !important;
   }
 }

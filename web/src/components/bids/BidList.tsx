@@ -18,6 +18,8 @@ import type { BidWithProvider } from '@/types';
 interface BidListProps {
   jobId: string;
   canAward: boolean;
+  startingPriceCents?: number;
+  marketMedianCents?: number;
 }
 
 type SortOption = 'price_asc' | 'rating' | 'trust' | 'jobs_completed';
@@ -46,7 +48,7 @@ function sortBids(bids: BidWithProvider[], sortBy: SortOption): BidWithProvider[
   }
 }
 
-export function BidList({ jobId, canAward }: BidListProps) {
+export function BidList({ jobId, canAward, startingPriceCents, marketMedianCents }: BidListProps) {
   const { data, isLoading, isError } = useBidsForJob(jobId);
   const [sortBy, setSortBy] = useState<SortOption>('price_asc');
 
@@ -79,6 +81,13 @@ export function BidList({ jobId, canAward }: BidListProps) {
 
   const bids = data?.bids ?? [];
   const sortedBids = sortBids(bids, sortBy);
+
+  // Compute price-based ranks for competitive context (always by price, regardless of sort)
+  const priceRankedBids = [...bids].sort((a, b) => a.bid.amount_cents - b.bid.amount_cents);
+  const bidRankMap = new Map<string, number>();
+  priceRankedBids.forEach((b, i) => {
+    bidRankMap.set(b.bid.id, i + 1);
+  });
 
   if (bids.length === 0) {
     return (
@@ -120,6 +129,10 @@ export function BidList({ jobId, canAward }: BidListProps) {
             bidWithProvider={bidWithProvider}
             jobId={jobId}
             canAward={canAward}
+            rank={bidRankMap.get(bidWithProvider.bid.id)}
+            totalBids={bids.length}
+            startingPriceCents={startingPriceCents}
+            marketMedianCents={marketMedianCents}
           />
         ))}
       </div>

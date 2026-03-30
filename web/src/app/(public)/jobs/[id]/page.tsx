@@ -284,7 +284,12 @@ export default function JobDetailPage() {
               <Separator />
               <div>
                 <h2 className="mb-4 text-lg font-semibold">Bids</h2>
-                <BidList jobId={jobId} canAward={canAward} />
+                <BidList
+                  jobId={jobId}
+                  canAward={canAward}
+                  startingPriceCents={job.starting_bid_cents ?? undefined}
+                  marketMedianCents={job.market_range?.median_cents}
+                />
               </div>
             </>
           ) : null}
