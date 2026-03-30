@@ -120,14 +120,14 @@ function StatCard({
   return (
     <Card
       className={cn(
-        'glass glass-highlight glass-refraction relative overflow-hidden border',
+        'glass glass-highlight glass-refraction relative overflow-hidden border border-[var(--brand-gold)]/10',
         glassTintClass,
       )}
     >
       <CardHeader className="relative z-[2] flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-zinc-400">{title}</CardTitle>
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/[0.06]">
-          <Icon className="h-4 w-4" style={{ opacity: 0.4 }} aria-hidden="true" />
+          <Icon className="h-4 w-4 text-zinc-500" aria-hidden="true" />
         </div>
       </CardHeader>
       <CardContent className="relative z-[2]">
@@ -136,7 +136,10 @@ function StatCard({
         ) : (
           <div className="flex items-end justify-between gap-2">
             <div className="min-w-0">
-              <p className="animate-count-up-fade text-2xl font-bold tracking-tight tabular-nums">
+              <p
+                className="animate-count-up-fade text-2xl font-bold tracking-tight tabular-nums text-zinc-100"
+                style={isCurrency ? { textShadow: '0 0 16px rgba(16,185,129,0.2)' } : undefined}
+              >
                 {displayValue}
               </p>
               <div className="mt-1.5 flex items-center gap-2">
@@ -181,17 +184,18 @@ function QuickActionCard({
 }) {
   return (
     <Link href={href} className="block">
-      <Card className="glass glass-interactive glass-highlight group h-full border transition-all duration-200">
+      <Card className="glass glass-interactive glass-highlight group h-full border border-[var(--brand-gold)]/10 transition-all duration-200">
         <CardContent className="relative z-[2] flex items-center gap-3 p-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.06]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-gold)]/[0.08] ring-1 ring-[var(--brand-gold)]/10">
             <Icon
-              className="text-primary h-5 w-5 transition-transform duration-200 group-hover:scale-110"
+              className="h-5 w-5 transition-transform duration-200 group-hover:scale-110"
+              style={{ color: 'var(--brand-gold)' }}
               aria-hidden="true"
             />
           </div>
           <div>
-            <p className="font-medium">{title}</p>
-            <p className="text-xs" style={{ opacity: 0.7 }}>{description}</p>
+            <p className="font-medium text-zinc-100">{title}</p>
+            <p className="text-xs text-zinc-400">{description}</p>
           </div>
         </CardContent>
       </Card>
@@ -321,9 +325,9 @@ function CustomerDashboard() {
       <div className="glass-divider" aria-hidden="true" />
 
       {/* Recent jobs */}
-      <Card className="glass glass-highlight border">
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader className="glass-header relative z-[2] flex flex-row items-center justify-between rounded-t-[1.25rem]">
-          <CardTitle className="text-base font-semibold tracking-tight">Recent Jobs</CardTitle>
+          <CardTitle className="gold-text text-base font-semibold tracking-tight">Recent Jobs</CardTitle>
           <Link href="/jobs/mine">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
               View all
@@ -338,7 +342,7 @@ function CustomerDashboard() {
               ))}
             </div>
           ) : !jobsData?.jobs.length ? (
-            <p className="text-muted-foreground py-4 text-center text-sm">
+            <p className="py-4 text-center text-sm text-zinc-400">
               No active jobs. Post your first job to get started.
             </p>
           ) : (
@@ -456,9 +460,9 @@ function ProviderDashboardSection() {
       <div className="glass-divider" aria-hidden="true" />
 
       {/* Recent bids */}
-      <Card className="glass glass-highlight border">
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader className="glass-header relative z-[2] flex flex-row items-center justify-between rounded-t-[1.25rem]">
-          <CardTitle className="text-base font-semibold tracking-tight">Active Bids</CardTitle>
+          <CardTitle className="gold-text text-base font-semibold tracking-tight">Active Bids</CardTitle>
           <Link href="/bids">
             <Button variant="ghost" size="sm" className="min-h-[44px]">
               View all
@@ -545,7 +549,7 @@ export default function DashboardPage() {
     <PageTransition>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
             {greeting}
             {firstName ? `, ${firstName}` : ''}{' '}
             <span
@@ -556,7 +560,7 @@ export default function DashboardPage() {
               {'\u{1F44B}'}
             </span>
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="mt-1 text-zinc-400">
             Here is what is happening across your account today.
           </p>
         </div>
@@ -568,7 +572,7 @@ export default function DashboardPage() {
             {isProvider ? (
               <>
                 <div className="glass-divider" aria-hidden="true" />
-                <h2 className="mt-6 mb-4 text-lg font-bold tracking-tight">Customer Overview</h2>
+                <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">Customer Overview</h2>
               </>
             ) : null}
             <CustomerDashboard />
@@ -580,7 +584,7 @@ export default function DashboardPage() {
             {isCustomer ? (
               <>
                 <div className="glass-divider" aria-hidden="true" />
-                <h2 className="mt-6 mb-4 text-lg font-bold tracking-tight">Provider Overview</h2>
+                <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">Provider Overview</h2>
               </>
             ) : null}
             <ProviderDashboardSection />

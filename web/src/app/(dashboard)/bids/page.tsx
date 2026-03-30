@@ -37,9 +37,9 @@ function BidTabContent({ tab }: { tab: BidTab }) {
           <Card key={i}>
             <CardContent className="pt-6">
               <div className="space-y-3">
-                <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
-                <div className="h-8 w-1/4 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+                <div className="h-6 w-2/3 animate-pulse rounded bg-white/[0.06]" />
+                <div className="h-8 w-1/4 animate-pulse rounded bg-white/[0.06]" />
+                <div className="h-4 w-1/3 animate-pulse rounded bg-white/[0.06]" />
               </div>
             </CardContent>
           </Card>
@@ -98,7 +98,7 @@ function BidTabContent({ tab }: { tab: BidTab }) {
           >
             Previous
           </Button>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-zinc-400">
             Page {String(page)} of {String(pagination.totalPages)}
           </span>
           <Button
@@ -119,8 +119,8 @@ export default function MyBidsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">My Bids</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">My Bids</h1>
+        <p className="mt-1 text-zinc-400">
           Track and manage your bids across all jobs.
         </p>
       </div>

@@ -52,7 +52,7 @@ export function ForgotPasswordForm() {
 
   if (submitted) {
     return (
-      <Card className="glass-auth-card border-0 shadow-none">
+      <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
         <div className="relative z-[2] h-[3px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400" />
         <CardHeader className="relative z-[2] text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10">
@@ -91,7 +91,7 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <Card className="glass-auth-card border-0 shadow-none">
+    <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-2xl font-bold tracking-tight text-white">Forgot your password?</CardTitle>
@@ -125,7 +125,7 @@ export function ForgotPasswordForm() {
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>

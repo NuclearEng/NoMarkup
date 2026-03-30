@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+import { Zap } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -27,6 +29,13 @@ export function Header() {
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
+          <Link
+            href="/demo/auction"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300"
+          >
+            <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+            Live Demo
+          </Link>
           {isHydrating ? null : isAuthenticated ? (
             <>
               <NotificationBell />
@@ -90,6 +99,13 @@ export function Header() {
       {mobileMenuOpen && (
         <nav id="mobile-menu" className="glass-elevated border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
           <div className="flex flex-col gap-3">
+            <Link
+              href="/demo/auction"
+              className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/20 hover:text-amber-300"
+            >
+              <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+              Live Demo
+            </Link>
             {isHydrating ? null : isAuthenticated ? (
               <>
                 <div className="flex items-center justify-between">

@@ -97,7 +97,7 @@ function ContractTabContent({ tab }: { tab: ContractTab }) {
           >
             Previous
           </Button>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-zinc-400">
             Page {String(page)} of {String(pagination.totalPages)}
           </span>
           <Button
@@ -119,8 +119,8 @@ export default function ContractsPage() {
     <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Contracts</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Contracts</h1>
+        <p className="mt-1 text-zinc-400">
           Manage your contracts, track milestones, and handle payments.
         </p>
       </div>

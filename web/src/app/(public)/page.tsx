@@ -356,6 +356,13 @@ export default function LandingPage() {
                 >
                   <Link href="/jobs">Browse jobs</Link>
                 </Button>
+                <Link
+                  href="/demo/auction"
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-amber-400 transition-colors hover:text-amber-300"
+                >
+                  <Zap className="h-4 w-4" />
+                  Try Live Demo
+                </Link>
               </div>
 
               {/* Social proof — avatar stack + star rating + stats */}
@@ -425,7 +432,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={statsSection.ref}
-        className="bg-card border-b py-14 sm:py-16"
+        className="border-b border-white/[0.06] bg-[#0c0f18] py-14 sm:py-16"
         aria-label="Platform statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -465,7 +472,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={howItWorks.ref}
-        className="bg-muted/30 border-t py-28 sm:py-36"
+        className="border-t border-white/[0.06] bg-[#070b14] py-28 sm:py-36"
         aria-labelledby="how-it-works-heading"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -535,7 +542,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       {/* TESTIMONIAL + TRUST                                               */}
       {/* ================================================================= */}
-      <section className="py-28 sm:py-36" aria-labelledby="trust-heading">
+      <section className="bg-[#0c0f18] py-28 sm:py-36" aria-labelledby="trust-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Testimonial — glass elevated card */}
           <div className="glass glass-elevated glass-highlight glass-specular-anim mx-auto max-w-2xl rounded-2xl p-10 text-center sm:p-12">
@@ -583,7 +590,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       <section
         ref={categories.ref}
-        className="bg-muted/30 border-t py-28 sm:py-36"
+        className="border-t border-white/[0.06] bg-[#070b14] py-28 sm:py-36"
         aria-labelledby="categories-heading"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -632,7 +639,7 @@ export default function LandingPage() {
       {/* ================================================================= */}
       {/* FINAL CTA                                                         */}
       {/* ================================================================= */}
-      <section className="py-28 sm:py-36" aria-labelledby="cta-heading">
+      <section className="bg-[#0c0f18] py-28 sm:py-36" aria-labelledby="cta-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="glass glass-elevated glass-highlight glass-tinted-gold glass-specular-anim mx-auto max-w-2xl rounded-2xl p-10 text-center sm:p-14">
             <h2 id="cta-heading" className="relative z-[3] text-3xl font-black tracking-tight sm:text-4xl">

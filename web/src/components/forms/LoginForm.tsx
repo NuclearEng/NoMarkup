@@ -86,7 +86,7 @@ export function LoginForm() {
 
   if (mfaStep) {
     return (
-      <Card className="glass-auth-card border-0 shadow-none">
+      <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
         <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
         <CardHeader className="relative z-[2] text-center">
           <CardTitle className="text-2xl font-bold tracking-tight text-white">
@@ -122,7 +122,7 @@ export function LoginForm() {
                 maxLength={8}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                className="glass-input rounded-lg text-center text-lg tracking-widest text-white placeholder:text-white/30"
+                className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-center text-lg tracking-widest text-white placeholder:text-white/30"
               />
               <p className="text-white/40 text-xs">You can also enter a backup code</p>
             </div>
@@ -154,7 +154,7 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="glass-auth-card border-0 shadow-none">
+    <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-3xl font-bold tracking-tight text-white">Welcome back</CardTitle>
@@ -190,7 +190,7 @@ export function LoginForm() {
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -210,7 +210,7 @@ export function LoginForm() {
                       type="password"
                       placeholder="Enter your password"
                       autoComplete="current-password"
-                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>

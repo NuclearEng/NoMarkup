@@ -15,6 +15,7 @@ import {
   Shield,
   User,
   Users,
+  Zap,
 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
@@ -82,10 +83,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
-      <div className="flex min-h-screen flex-col">
+      <div className="dark flex min-h-screen flex-col bg-[#070b14]">
         <Header />
 
-        {/* Mobile nav bar - glass treatment with backdrop blur */}
+        {/* Mobile nav bar - vivid dark terminal treatment */}
         <nav
           className="glass-nav flex overflow-x-auto px-2 py-1 lg:hidden"
           aria-label="Dashboard navigation (mobile)"
@@ -99,8 +100,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 className={cn(
                   'flex min-h-[44px] min-w-[44px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-3 py-1 text-[0.625rem] font-medium transition-colors duration-200',
                   active
-                    ? 'bg-white/10 text-foreground'
-                    : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
+                    ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
+                    : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200',
                 )}
               >
                 <item.icon className="h-5 w-5" aria-hidden="true" />
@@ -108,10 +109,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Link>
             );
           })}
+          <Link
+            href={'/demo/auction' as Route}
+            className="flex min-h-[44px] min-w-[44px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-3 py-1 text-[0.625rem] font-semibold text-amber-400 transition-colors duration-200 hover:bg-amber-500/10 hover:text-amber-300"
+          >
+            <Zap className="h-5 w-5" aria-hidden="true" />
+            <span className="whitespace-nowrap">Live Demo</span>
+          </Link>
         </nav>
 
         <div className="flex flex-1">
-          {/* Sidebar - glass panel with specular highlight */}
+          {/* Sidebar - dark terminal panel with gold accent */}
           <aside className="glass-sidebar hidden w-64 lg:block">
             <nav className="space-y-1 p-4" aria-label="Dashboard navigation">
               {allNavItems.map((item) => {
@@ -123,19 +131,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     className={cn(
                       'relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                       active
-                        ? 'bg-white/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
-                        : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
+                        ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)] shadow-[inset_0_1px_0_rgba(201,168,76,0.1)]'
+                        : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200',
                     )}
                   >
-                    <item.icon className="h-4 w-4" style={{ opacity: active ? 1 : 0.7 }} aria-hidden="true" />
+                    <item.icon
+                      className={cn('h-4 w-4', active ? 'text-[var(--brand-gold)]' : '')}
+                      style={{ opacity: active ? 1 : 0.6 }}
+                      aria-hidden="true"
+                    />
                     {item.label}
                   </Link>
                 );
               })}
+              <div className="my-2 border-t border-[var(--brand-gold)]/10" />
+              <Link
+                href={'/demo/auction' as Route}
+                className="relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-all duration-200 hover:bg-amber-500/10 hover:text-amber-300"
+              >
+                <Zap className="h-4 w-4" aria-hidden="true" />
+                Live Demo
+              </Link>
             </nav>
           </aside>
           <WebSocketProvider>
-            {/* Main content area with ambient background for glass refraction */}
+            {/* Main content area with vivid dark ambient background */}
             <main className="dashboard-ambient flex-1 p-6">{children}</main>
           </WebSocketProvider>
         </div>

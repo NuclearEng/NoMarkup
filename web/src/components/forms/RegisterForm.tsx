@@ -82,7 +82,7 @@ export function RegisterForm() {
   const strength = getPasswordStrength(passwordValue);
 
   return (
-    <Card className="glass-auth-card border-0 shadow-none">
+    <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-3xl font-bold tracking-tight text-white">Create an account</CardTitle>
@@ -117,7 +117,7 @@ export function RegisterForm() {
                     <Input
                       placeholder="Your name"
                       autoComplete="name"
-                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -137,7 +137,7 @@ export function RegisterForm() {
                       type="email"
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -157,7 +157,7 @@ export function RegisterForm() {
                       type="password"
                       placeholder="Create a password"
                       autoComplete="new-password"
-                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>
@@ -189,7 +189,7 @@ export function RegisterForm() {
                       type="password"
                       placeholder="Confirm your password"
                       autoComplete="new-password"
-                      className="glass-input rounded-lg text-white placeholder:text-white/30"
+                      className="rounded-lg border-white/10 bg-white/5 focus:border-[var(--brand-gold)]/30 focus:bg-white/[0.08] text-white placeholder:text-white/30"
                       {...field}
                     />
                   </FormControl>

@@ -74,8 +74,8 @@ export default function MessagesPage() {
     <div className="flex h-[calc(100vh-theme(spacing.24))] flex-col">
       <div className="mb-4 flex items-center gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Messages</h1>
-          <p className="mt-1 text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Messages</h1>
+          <p className="mt-1 text-zinc-400">
             Communicate with customers and providers.
           </p>
         </div>
