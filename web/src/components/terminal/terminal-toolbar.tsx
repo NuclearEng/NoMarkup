@@ -104,7 +104,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
   return (
     <div
       className={cn(
-        'flex h-10 items-center gap-1.5 rounded-2xl border border-white/[0.06] bg-zinc-900/80 px-3',
+        'flex h-10 items-center gap-1.5 rounded-2xl border border-[var(--brand-gold)]/10 bg-[#0c0f18] px-3',
         className,
       )}
     >
@@ -118,7 +118,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
             <ChevronDown className="h-3 w-3 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="start" className="w-56 border-white/[0.08] bg-zinc-900 text-zinc-200 shadow-xl">
           {layouts.map((layout) => (
             <DropdownMenuItem
               key={layout.id}
@@ -193,13 +193,13 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
             <span className="hidden sm:inline">Add Widget</span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
+        <PopoverContent align="start" className="w-72 border-white/[0.08] bg-zinc-900 p-0 text-zinc-200 shadow-xl">
           <div className="max-h-80 overflow-y-auto">
             {(Object.entries(WIDGET_CATEGORIES) as Array<[string, WidgetDefinition[]]>).map(
               ([category, widgets]) => (
                 <div key={category}>
-                  <div className="bg-muted/50 px-3 py-1.5">
-                    <p className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
+                  <div className="bg-zinc-800/50 px-3 py-1.5">
+                    <p className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500">
                       {CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS] ?? category}
                     </p>
                   </div>
@@ -218,13 +218,13 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
                         disabled={isActive}
                         className={cn(
                           'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
-                          isActive ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted/50',
+                          isActive ? 'cursor-not-allowed opacity-40' : 'hover:bg-white/[0.04]',
                         )}
                       >
-                        <Icon className="h-4 w-4 shrink-0" />
+                        <Icon className="h-4 w-4 shrink-0 text-zinc-400" />
                         <span className="flex-1">{w.label}</span>
                         {isActive && (
-                          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                          <Badge className="h-5 border-zinc-700 bg-zinc-800 px-1.5 text-[10px] text-zinc-400">
                             Active
                           </Badge>
                         )}
@@ -292,13 +292,13 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
             <span className="hidden sm:inline">Reset</span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-56 p-3">
+        <PopoverContent align="end" className="w-56 border-white/[0.08] bg-zinc-900 p-3 text-zinc-200 shadow-xl">
           <p className="mb-3 text-sm">Reset this layout to its default configuration?</p>
           <div className="flex justify-end gap-2">
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs"
+              className="h-7 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
               onClick={() => setResetConfirmOpen(false)}
             >
               Cancel
@@ -323,16 +323,16 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-56 p-3">
+          <PopoverContent align="end" className="w-56 border-white/[0.08] bg-zinc-900 p-3 text-zinc-200 shadow-xl">
             <p className="mb-1 text-sm font-medium">Delete layout?</p>
-            <p className="text-muted-foreground mb-3 text-xs">
+            <p className="mb-3 text-xs text-zinc-400">
               &ldquo;{activeLayout?.name}&rdquo; will be permanently removed.
             </p>
             <div className="flex justify-end gap-2">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-7 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 onClick={() => setDeleteConfirmOpen(false)}
               >
                 Cancel
