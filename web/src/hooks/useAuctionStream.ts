@@ -1,14 +1,10 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useShallow } from 'zustand/react/shallow';
 
-import {
-  useAuctionStore,
-  getBidVelocity,
-  getMomentum,
-  getVelocityBuckets,
-} from '@/stores/auction-store';
+import { useAuctionStore } from '@/stores/auction-store';
 import { auctionWsManager } from '@/lib/auction-websocket';
 import { useAuthStore } from '@/stores/auth-store';
 import type { AuctionBidEvent } from '@/types';
@@ -31,9 +27,44 @@ export function useAuctionStream(jobId: string | undefined) {
     priceHistory,
   } = useAuctionStore();
 
-  const velocity = useAuctionStore(getBidVelocity);
-  const momentum = useAuctionStore(getMomentum);
-  const velocityBuckets = useAuctionStore(getVelocityBuckets);
+  // Derive velocity/momentum/buckets from bidTimestamps with stable references
+  const bidTimestamps = useAuctionStore((s) => s.bidTimestamps);
+
+  const velocity = useMemo(() => {
+    const cutoff = Date.now() - 60_000;
+    return bidTimestamps.filter((t) => t >= cutoff).length;
+  }, [bidTimestamps]);
+
+  const momentum = useMemo(() => {
+    const now = Date.now();
+    const halfWindow = 30_000;
+    let recent = 0;
+    let older = 0;
+    for (const ts of bidTimestamps) {
+      const age = now - ts;
+      if (age > 60_000) continue;
+      if (age <= halfWindow) recent++;
+      else older++;
+    }
+    if (recent > older + 1) return 'accelerating' as const;
+    if (older > recent + 1) return 'decelerating' as const;
+    return 'stable' as const;
+  }, [bidTimestamps]);
+
+  const velocityBuckets = useAuctionStore(
+    useShallow((s) => {
+      const now = Date.now();
+      const buckets = [0, 0, 0, 0, 0, 0];
+      for (const ts of s.bidTimestamps) {
+        const age = now - ts;
+        if (age > 60_000) continue;
+        const idx = Math.min(5, Math.floor(age / 10_000));
+        const bi = 5 - idx;
+        if (buckets[bi] !== undefined) buckets[bi]++;
+      }
+      return buckets;
+    }),
+  );
 
   const handleMessage = useCallback(
     (message: {

@@ -1,16 +1,10 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useShallow } from 'zustand/react/shallow';
 import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
-import {
-  useAuctionStore,
-  getOrderBook,
-  getBidVelocity,
-  getMomentum,
-  getPriceHistory,
-  getVelocityBuckets,
-} from '@/stores/auction-store';
+import { useAuctionStore } from '@/stores/auction-store';
 import { useCountdown } from '@/hooks/useCountdown';
 import type {
   AuctionBidEvent,
@@ -218,12 +212,44 @@ export function useBidStream() {
   const currentLowest = useAuctionStore((s) => s.currentLowest);
   const bidCount = useAuctionStore((s) => s.bidCount);
   const connectionStatus = useAuctionStore((s) => s.connectionStatus);
-  const orderBook = useAuctionStore(getOrderBook);
-  const priceHistory = useAuctionStore(getPriceHistory);
+  const orderBook = useAuctionStore((s) => s.orderBook);
+  const priceHistory = useAuctionStore((s) => s.priceHistory);
+  const bidTimestamps = useAuctionStore((s) => s.bidTimestamps);
 
-  const velocity = useAuctionStore(getBidVelocity);
-  const momentum = useAuctionStore(getMomentum);
-  const velocityBuckets = useAuctionStore(getVelocityBuckets);
+  const velocity = useMemo(() => {
+    const cutoff = Date.now() - 60_000;
+    return bidTimestamps.filter((t) => t >= cutoff).length;
+  }, [bidTimestamps]);
+
+  const momentum = useMemo(() => {
+    const now = Date.now();
+    let recent = 0;
+    let older = 0;
+    for (const ts of bidTimestamps) {
+      const age = now - ts;
+      if (age > 60_000) continue;
+      if (age <= 30_000) recent++;
+      else older++;
+    }
+    if (recent > older + 1) return 'accelerating' as const;
+    if (older > recent + 1) return 'decelerating' as const;
+    return 'stable' as const;
+  }, [bidTimestamps]);
+
+  const velocityBuckets = useAuctionStore(
+    useShallow((s) => {
+      const now = Date.now();
+      const buckets = [0, 0, 0, 0, 0, 0];
+      for (const ts of s.bidTimestamps) {
+        const age = now - ts;
+        if (age > 60_000) continue;
+        const idx = Math.min(5, Math.floor(age / 10_000));
+        const bi = 5 - idx;
+        if (buckets[bi] !== undefined) buckets[bi]++;
+      }
+      return buckets;
+    }),
+  );
 
   return {
     events,
@@ -255,7 +281,7 @@ interface OrderBookComputedEntry {
 
 /** Returns sorted bids with computed fields (rank, % of starting price, time ago) */
 export function useOrderBook(startingPrice: number): OrderBookComputedEntry[] {
-  const orderBook = useAuctionStore(getOrderBook);
+  const orderBook = useAuctionStore((s) => s.orderBook);
 
   return useMemo(() => {
     const now = Date.now();
@@ -281,9 +307,7 @@ export function useOrderBook(startingPrice: number): OrderBookComputedEntry[] {
         ...entry,
         rank: index + 1,
         percentage_of_total:
-          startingPrice > 0
-            ? Math.round((entry.amount_cents / startingPrice) * 100)
-            : 0,
+          startingPrice > 0 ? Math.round((entry.amount_cents / startingPrice) * 100) : 0,
         time_since_bid: timeSince,
       };
     });
