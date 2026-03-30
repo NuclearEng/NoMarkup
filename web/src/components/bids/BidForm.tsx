@@ -144,7 +144,7 @@ export function BidForm({
       {existingBid ? (
         <div className="rounded-lg border bg-muted/50 p-4">
           <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" aria-hidden="true" />
+            <CheckCircle className="h-4 w-4 text-green-600 dark:text-emerald-400" aria-hidden="true" />
             <p className="text-sm font-medium">Your Current Bid</p>
           </div>
           <p className="mt-1 text-2xl font-bold">{formatCents(existingBid.amount_cents)}</p>
@@ -250,7 +250,7 @@ export function BidForm({
       {offerAcceptedCents && !existingBid ? (
         <div className="space-y-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
           <div className="flex items-center gap-2">
-            <Zap className="h-4 w-4 text-green-600" aria-hidden="true" />
+            <Zap className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden="true" />
             <h4 className="text-sm font-medium text-green-800 dark:text-green-200">
               Instant Accept
             </h4>

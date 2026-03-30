@@ -7,6 +7,8 @@ import { useState } from 'react';
 
 import { JobCard } from '@/components/jobs/JobCard';
 import { Button } from '@/components/ui/button';
+import { ContentLoader } from '@/components/ui/content-loader';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCustomerJobs } from '@/hooks/useJobs';
 
@@ -39,6 +41,7 @@ export default function MyJobsPage() {
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -70,12 +73,7 @@ export default function MyJobsPage() {
           <TabsContent key={tab.value} value={tab.value}>
             {isLoading ? (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div
-                    key={`skeleton-${String(i)}`}
-                    className="h-64 animate-pulse rounded-xl border bg-muted"
-                  />
-                ))}
+                <ContentLoader preset="job-card" count={6} className="contents" />
               </div>
             ) : isError ? (
               <div className="rounded-lg border border-destructive/50 p-8 text-center">
@@ -140,5 +138,6 @@ export default function MyJobsPage() {
         ))}
       </Tabs>
     </div>
+    </PageTransition>
   );
 }

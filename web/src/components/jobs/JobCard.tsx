@@ -97,7 +97,7 @@ export function JobCard({ job }: JobCardProps) {
           {job.lowest_bid_cents ? (
             <div className="text-sm">
               <span className="text-muted-foreground">Lowest bid: </span>
-              <span className="font-semibold text-green-600">
+              <span className="font-semibold text-green-600 dark:text-emerald-400">
                 {formatCents(job.lowest_bid_cents)}
               </span>
             </div>

@@ -12,27 +12,27 @@ interface PaymentStatusBadgeProps {
 function getStatusColor(status: string): string {
   switch (status) {
     case PAYMENT_STATUS.PENDING:
-      return 'bg-gray-100 text-gray-700 border-gray-200';
+      return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
     case PAYMENT_STATUS.PROCESSING:
-      return 'bg-blue-100 text-blue-700 border-blue-200';
+      return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800';
     case PAYMENT_STATUS.ESCROW:
-      return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800';
     case PAYMENT_STATUS.RELEASED:
-      return 'bg-green-100 text-green-700 border-green-200';
+      return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800';
     case PAYMENT_STATUS.COMPLETED:
-      return 'bg-green-100 text-green-700 border-green-200';
+      return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800';
     case PAYMENT_STATUS.FAILED:
-      return 'bg-red-100 text-red-700 border-red-200';
+      return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800';
     case PAYMENT_STATUS.REFUNDED:
-      return 'bg-orange-100 text-orange-700 border-orange-200';
+      return 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800';
     case PAYMENT_STATUS.PARTIALLY_REFUNDED:
-      return 'bg-orange-100 text-orange-700 border-orange-200';
+      return 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800';
     case PAYMENT_STATUS.DISPUTED:
-      return 'bg-red-100 text-red-700 border-red-200';
+      return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800';
     case PAYMENT_STATUS.CHARGEBACK:
-      return 'bg-red-100 text-red-700 border-red-200';
+      return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800';
     default:
-      return 'bg-gray-100 text-gray-700 border-gray-200';
+      return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
   }
 }
 
@@ -63,7 +63,7 @@ function getStatusLabel(status: string): string {
   }
 }
 
-export function PaymentStatusBadge({ status, className }: PaymentStatusBadgeProps) {
+function PaymentStatusBadge({ status, className }: PaymentStatusBadgeProps) {
   return (
     <Badge variant="outline" className={cn(getStatusColor(status), className)}>
       {getStatusLabel(status)}
@@ -71,4 +71,4 @@ export function PaymentStatusBadge({ status, className }: PaymentStatusBadgeProp
   );
 }
 
-export { getStatusLabel, getStatusColor };
+export { PaymentStatusBadge, getStatusLabel, getStatusColor };

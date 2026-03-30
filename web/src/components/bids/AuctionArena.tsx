@@ -142,13 +142,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
       `}</style>
 
       {/* ── Premium header banner ── */}
-      <div
-        className="relative px-4 py-3 sm:px-6"
-        style={{
-          background:
-            'linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(20, 20, 20, 0.8) 50%, transparent 100%)',
-        }}
-      >
+      <div className="relative bg-muted/60 px-4 py-3 sm:px-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <Zap className="h-5 w-5 text-green-400" aria-hidden="true" />

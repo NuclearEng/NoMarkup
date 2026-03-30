@@ -103,14 +103,14 @@ export function BidPlacementPanel({
           <span
             className={cn(
               'font-semibold',
-              savings > 0 ? 'text-emerald-600' : 'text-muted-foreground',
+              savings > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
             )}
           >
             {savings}% below starting price
           </span>
         </div>
         {isBelowCurrent && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-emerald-600">
+          <div className="mt-1 flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
             <Zap className="h-3 w-3" aria-hidden="true" />
             This would be the new lowest bid!
           </div>

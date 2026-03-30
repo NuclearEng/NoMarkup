@@ -360,3 +360,76 @@ body {
 .stagger-children > *:nth-child(8) {
   animation-delay: 525ms;
 }
+
+/* ── Premium shimmer skeleton ── */
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ── Page transition entrance ── */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 200ms ease-out both;
+}
+
+/* ── Stagger animation variants ── */
+@keyframes stagger-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes stagger-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes stagger-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .stagger-animated {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

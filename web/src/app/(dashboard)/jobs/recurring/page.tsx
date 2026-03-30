@@ -230,7 +230,7 @@ export default function RecurringJobsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold tabular-nums text-green-600">
+                <p className="text-2xl font-bold tabular-nums text-green-600 dark:text-emerald-400">
                   {String(recurringJobs.filter((j) => j.status === 'active' || j.status === 'in_progress').length)}
                 </p>
               </CardContent>
