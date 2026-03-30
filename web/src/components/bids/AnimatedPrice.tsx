@@ -37,6 +37,8 @@ export function AnimatedPrice({
 }: AnimatedPriceProps) {
   const prevCentsRef = useRef(cents);
   const keyCounterRef = useRef(0);
+  const formatRef = useRef(formatCurrency);
+  formatRef.current = formatCurrency;
   const [charStates, setCharStates] = useState<CharState[]>(() =>
     buildCharStates(cents > 0 ? formatCurrency(cents) : '\u2014', 0),
   );
@@ -50,8 +52,8 @@ export function AnimatedPrice({
         return;
       }
 
-      const prevFormatted = prevCents > 0 ? formatCurrency(prevCents) : '';
-      const nextFormatted = formatCurrency(nextCents);
+      const prevFormatted = prevCents > 0 ? formatRef.current(prevCents) : '';
+      const nextFormatted = formatRef.current(nextCents);
 
       // Determine direction: price decrease = green (good for customer), increase = red
       const direction = nextCents < prevCents ? 'green' : 'red';
@@ -93,7 +95,7 @@ export function AnimatedPrice({
         setFlashDirection(null);
       }, ANIMATION_DURATION_MS + 100);
     },
-    [formatCurrency],
+    [],
   );
 
   useEffect(() => {

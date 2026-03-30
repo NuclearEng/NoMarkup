@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import { GripVertical, X } from 'lucide-react';
@@ -52,7 +52,13 @@ export function TerminalGrid({
   const activeLayout = layouts.find((l) => l.id === activeLayoutId);
   const widgets = activeLayout?.widgets ?? [];
 
-  // Build RGL layouts for each breakpoint
+  // Serialize widgets to a stable key so we only recompute layouts when data actually changes
+  const widgetsKey = useMemo(
+    () => widgets.map((w) => `${w.widgetId}:${String(w.x)},${String(w.y)},${String(w.w)},${String(w.h)}`).join('|'),
+    [widgets],
+  );
+
+  // Build RGL layouts — only recompute when widget positions or editing state actually change
   const rglLayouts = useMemo(() => {
     const lg: LayoutItem[] = widgets.map((wp) => {
       const def = getWidgetById(wp.widgetId);
@@ -71,14 +77,12 @@ export function TerminalGrid({
       };
     });
 
-    // Medium: clamp to 8 cols
     const md: LayoutItem[] = lg.map((item) => ({
       ...item,
       w: Math.min(item.w, 8),
       x: Math.min(item.x, Math.max(0, 8 - Math.min(item.w, 8))),
     }));
 
-    // Small: force full width
     const sm: LayoutItem[] = lg.map((item, idx) => ({
       ...item,
       w: 6,
@@ -87,19 +91,16 @@ export function TerminalGrid({
     }));
 
     return { lg, md, sm };
-  }, [widgets, isEditing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widgetsKey, isEditing]);
 
-  const layoutChangeRef = useRef(false);
+  // Track whether a drag/resize is in progress to avoid loop
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleLayoutChange = useCallback(
     (layout: Layout, _layouts: ResponsiveLayouts) => {
-      if (!isEditing) return;
-      // Prevent infinite loop: only update store on user-initiated changes
-      if (layoutChangeRef.current) {
-        layoutChangeRef.current = false;
-        return;
-      }
-      layoutChangeRef.current = true;
+      // Only persist to store when user is actively dragging/resizing
+      if (!isDragging) return;
       const mapped = layout.map((item) => ({
         i: item.i,
         x: item.x,
@@ -109,8 +110,13 @@ export function TerminalGrid({
       }));
       updateWidgetLayouts(mapped);
     },
-    [isEditing, updateWidgetLayouts],
+    [isDragging, updateWidgetLayouts],
   );
+
+  const handleDragStart = useCallback(() => { setIsDragging(true); }, []);
+  const handleDragStop = useCallback(() => { setIsDragging(false); }, []);
+  const handleResizeStart = useCallback(() => { setIsDragging(true); }, []);
+  const handleResizeStop = useCallback(() => { setIsDragging(false); }, []);
 
   const widgetProps: WidgetProps = useMemo(
     () => ({
@@ -165,6 +171,10 @@ export function TerminalGrid({
             handles: ['se'] as const,
           }}
           onLayoutChange={handleLayoutChange}
+          onDragStart={handleDragStart}
+          onDragStop={handleDragStop}
+          onResizeStart={handleResizeStart}
+          onResizeStop={handleResizeStop}
         >
           {widgets.map((wp) => {
             const def = getWidgetById(wp.widgetId);
