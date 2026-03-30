@@ -263,7 +263,7 @@ export default function AuctionDemoPage() {
       <div className="hero-vignette pointer-events-none fixed inset-0 z-[1]" aria-hidden="true" />
 
       {/* ─── Sticky top bar ─── */}
-      <div className="glass-nav sticky top-0 z-50 border-b border-white/[0.06]">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link

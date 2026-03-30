@@ -106,12 +106,15 @@ export function AnimatedPrice({
   }, [cents, animateTransition]);
 
   // Initialize on first render if cents > 0
+  const initializedRef = useRef(false);
   useEffect(() => {
-    if (cents > 0 && charStates.length === 1 && charStates[0]?.char === '\u2014') {
+    if (initializedRef.current) return;
+    if (cents > 0) {
+      initializedRef.current = true;
       keyCounterRef.current += 1;
-      setCharStates(buildCharStates(formatCurrency(cents), keyCounterRef.current));
+      setCharStates(buildCharStates(formatRef.current(cents), keyCounterRef.current));
     }
-  }, [cents, charStates, formatCurrency]);
+  }, [cents]);
 
   const flashClass =
     flashDirection === 'green'
