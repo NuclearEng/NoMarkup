@@ -38,10 +38,10 @@ const TIER_COLORS: Record<TrustTier, { bg: string; text: string; border: string;
     icon: 'text-violet-500',
   },
   [TRUST_TIER.TOP_RATED]: {
-    bg: 'bg-amber-50 dark:bg-amber-950',
-    text: 'text-amber-700 dark:text-amber-300',
-    border: 'border-amber-300 dark:border-amber-700',
-    icon: 'text-amber-500',
+    bg: 'gold-gradient',
+    text: 'text-white dark:text-white',
+    border: 'border-[var(--brand-gold)] dark:border-[var(--brand-gold)]',
+    icon: 'text-white',
   },
 };
 

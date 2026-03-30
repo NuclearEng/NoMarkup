@@ -19,6 +19,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { GoldAccentCard } from '@/components/ui/gold-accent-card';
+import { WinBadge } from '@/components/ui/win-badge';
 import { useAwardBid } from '@/hooks/useBids';
 import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
 import type { BidWithProvider, TrustTier } from '@/types';
@@ -298,12 +300,19 @@ export function BidCard({
     );
   }
 
+  const CardWrapper = isAwarded ? GoldAccentCard : Card;
+  const wrapperProps = isAwarded
+    ? { variant: 'winning' as const }
+    : {
+        className: 'transition-shadow duration-200',
+      };
+
   return (
-    <Card
+    <CardWrapper
+      {...wrapperProps}
       className={cn(
-        'relative transition-shadow duration-200',
-        isAwarded &&
-          'border-green-400 shadow-[0_0_12px_-3px_rgba(34,197,94,0.3)] dark:border-green-600 dark:shadow-[0_0_12px_-3px_rgba(34,197,94,0.2)]',
+        wrapperProps.className,
+        'relative',
         isGoldRank && !isAwarded && 'border-amber-400/50 dark:border-amber-500/40',
       )}
     >
@@ -466,10 +475,7 @@ export function BidCard({
             ) : null}
 
             {isAwarded ? (
-              <Badge variant="default" className="gap-1 bg-green-600 hover:bg-green-700">
-                <Award className="h-3 w-3" aria-hidden="true" />
-                Awarded
-              </Badge>
+              <WinBadge type="awarded" animate />
             ) : null}
           </div>
         ) : null}
@@ -558,7 +564,7 @@ export function BidCard({
           )
         ) : null}
       </CardContent>
-    </Card>
+    </CardWrapper>
   );
 }
 

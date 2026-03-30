@@ -26,7 +26,8 @@
   /* NoMarkup brand */
   --brand-gold: #c9a84c;
   --brand-gold-dim: #a08839;
-  --brand-gold-bright: #e4c566;
+  --brand-gold-bright: #e0c060;
+  --brand-gold-glow: rgba(201, 168, 76, 0.4);
 
   /* NoMarkup trust tier colors */
   --trust-low: 0 84% 60%;
@@ -86,6 +87,7 @@
   --brand-gold: #d4af57;
   --brand-gold-dim: #b89a45;
   --brand-gold-bright: #e8c76e;
+  --brand-gold-glow: rgba(212, 175, 87, 0.4);
 
   --trust-low: 0 63% 45%;
   --trust-medium: 38 80% 45%;
@@ -363,284 +365,177 @@ body {
 
 /* ─── Animated Price Digit Rolling ─── */
 @keyframes digit-roll-up {
-  0% {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(-100%);
-    opacity: 0;
-  }
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-100%); opacity: 0; }
 }
-
 @keyframes digit-roll-down {
-  0% {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
-  }
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
 }
-
 @keyframes digit-flash-green {
-  0% {
-    color: inherit;
-    text-shadow: none;
-  }
-  15% {
-    color: #22c55e;
-    text-shadow:
-      0 0 8px rgba(34, 197, 94, 0.6),
-      0 0 20px rgba(34, 197, 94, 0.3);
-  }
-  100% {
-    color: inherit;
-    text-shadow: none;
-  }
+  0% { color: inherit; text-shadow: none; }
+  15% { color: #22c55e; text-shadow: 0 0 8px rgba(34,197,94,0.6), 0 0 20px rgba(34,197,94,0.3); }
+  100% { color: inherit; text-shadow: none; }
 }
-
 @keyframes digit-flash-red {
-  0% {
-    color: inherit;
-    text-shadow: none;
-  }
-  15% {
-    color: #ef4444;
-    text-shadow:
-      0 0 8px rgba(239, 68, 68, 0.6),
-      0 0 20px rgba(239, 68, 68, 0.3);
-  }
-  100% {
-    color: inherit;
-    text-shadow: none;
-  }
+  0% { color: inherit; text-shadow: none; }
+  15% { color: #ef4444; text-shadow: 0 0 8px rgba(239,68,68,0.6), 0 0 20px rgba(239,68,68,0.3); }
+  100% { color: inherit; text-shadow: none; }
 }
 
 /* ─── Sparkline Animations ─── */
 @keyframes sparkline-draw {
-  from {
-    stroke-dashoffset: var(--sparkline-length, 1000);
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
+  from { stroke-dashoffset: var(--sparkline-length, 1000); }
+  to { stroke-dashoffset: 0; }
 }
-
 @keyframes pulse-dot {
-  0%,
-  100% {
-    r: 3;
-    opacity: 1;
-  }
-  50% {
-    r: 5;
-    opacity: 0.7;
-  }
+  0%, 100% { r: 3; opacity: 1; }
+  50% { r: 5; opacity: 0.7; }
 }
 
 /* ─── Trend Arrow Animation ─── */
 @keyframes trend-bounce {
-  0% {
-    transform: translateY(0) rotate(var(--trend-rotation, 0deg));
-  }
-  30% {
-    transform: translateY(-3px) rotate(var(--trend-rotation, 0deg));
-  }
-  50% {
-    transform: translateY(0) rotate(var(--trend-rotation, 0deg));
-  }
-  70% {
-    transform: translateY(-1.5px) rotate(var(--trend-rotation, 0deg));
-  }
-  100% {
-    transform: translateY(0) rotate(var(--trend-rotation, 0deg));
-  }
+  0% { transform: translateY(0) rotate(var(--trend-rotation, 0deg)); }
+  30% { transform: translateY(-3px) rotate(var(--trend-rotation, 0deg)); }
+  50% { transform: translateY(0) rotate(var(--trend-rotation, 0deg)); }
+  70% { transform: translateY(-1.5px) rotate(var(--trend-rotation, 0deg)); }
+  100% { transform: translateY(0) rotate(var(--trend-rotation, 0deg)); }
 }
 
 /* ─── Count Up Animation ─── */
 @keyframes count-up-fade {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* ─── Utility Classes for Animations ─── */
-.animate-digit-roll-up {
-  animation: digit-roll-up 400ms ease-out forwards;
-}
-
-.animate-digit-roll-down {
-  animation: digit-roll-down 400ms ease-out forwards;
-}
-
-.animate-digit-flash-green {
-  animation: digit-flash-green 800ms ease-out forwards;
-}
-
-.animate-digit-flash-red {
-  animation: digit-flash-red 800ms ease-out forwards;
-}
-
-.animate-sparkline-draw {
-  animation: sparkline-draw 1s ease-out forwards;
-}
-
-.animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-.animate-trend-bounce {
-  animation: trend-bounce 600ms ease-out forwards;
-}
-
-.animate-count-up-fade {
-  animation: count-up-fade 500ms ease-out both;
-}
+/* ─── Price / Sparkline Utility Classes ─── */
+.animate-digit-roll-up { animation: digit-roll-up 400ms ease-out forwards; }
+.animate-digit-roll-down { animation: digit-roll-down 400ms ease-out forwards; }
+.animate-digit-flash-green { animation: digit-flash-green 800ms ease-out forwards; }
+.animate-digit-flash-red { animation: digit-flash-red 800ms ease-out forwards; }
+.animate-sparkline-draw { animation: sparkline-draw 1s ease-out forwards; }
+.animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+.animate-trend-bounce { animation: trend-bounce 600ms ease-out forwards; }
+.animate-count-up-fade { animation: count-up-fade 500ms ease-out both; }
 
 /* ── Auction urgency animations ── */
 @keyframes urgency-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
-
 @keyframes urgency-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.04);
-    opacity: 0.85;
-  }
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.04); opacity: 0.85; }
 }
-
 @keyframes urgency-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 8px 2px currentColor;
-    opacity: 0.4;
-  }
-  50% {
-    box-shadow: 0 0 20px 6px currentColor;
-    opacity: 0.7;
-  }
+  0%, 100% { box-shadow: 0 0 8px 2px currentColor; opacity: 0.4; }
+  50% { box-shadow: 0 0 20px 6px currentColor; opacity: 0.7; }
 }
-
 @keyframes urgency-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  10%,
-  30%,
-  50%,
-  70%,
-  90% {
-    transform: translateX(-1px);
-  }
-  20%,
-  40%,
-  60%,
-  80% {
-    transform: translateX(1px);
-  }
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-1px); }
+  20%, 40%, 60%, 80% { transform: translateX(1px); }
 }
-
 @keyframes gold-shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
-
 @keyframes savings-sparkle {
-  0%,
-  100% {
-    filter: brightness(1) drop-shadow(0 0 0px transparent);
-  }
-  25% {
-    filter: brightness(1.15) drop-shadow(0 0 6px rgba(34, 197, 94, 0.5));
-  }
-  50% {
-    filter: brightness(1) drop-shadow(0 0 0px transparent);
-  }
-  75% {
-    filter: brightness(1.1) drop-shadow(0 0 4px rgba(34, 197, 94, 0.4));
-  }
+  0%, 100% { filter: brightness(1) drop-shadow(0 0 0px transparent); }
+  25% { filter: brightness(1.15) drop-shadow(0 0 6px rgba(34,197,94,0.5)); }
+  50% { filter: brightness(1) drop-shadow(0 0 0px transparent); }
+  75% { filter: brightness(1.1) drop-shadow(0 0 4px rgba(34,197,94,0.4)); }
 }
-
 @keyframes ring-deplete {
-  from {
-    stroke-dashoffset: 0;
-  }
-  to {
-    stroke-dashoffset: var(--ring-circumference);
-  }
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: var(--ring-circumference); }
 }
-
 @keyframes digit-roll-in {
-  0% {
-    transform: translateY(-100%);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
-  }
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
 }
-
 @keyframes digit-roll-out {
-  0% {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(100%);
-    opacity: 0;
-  }
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
 }
 
 /* Urgency utility classes */
-.animate-urgency-pulse {
-  animation: urgency-pulse 2s ease-in-out infinite;
-}
-.animate-urgency-breathe {
-  animation: urgency-breathe 2s ease-in-out infinite;
-}
-.animate-urgency-glow {
-  animation: urgency-glow 2s ease-in-out infinite;
-}
-.animate-urgency-shake {
-  animation: urgency-shake 0.5s ease-in-out infinite;
-}
+.animate-urgency-pulse { animation: urgency-pulse 2s ease-in-out infinite; }
+.animate-urgency-breathe { animation: urgency-breathe 2s ease-in-out infinite; }
+.animate-urgency-glow { animation: urgency-glow 2s ease-in-out infinite; }
+.animate-urgency-shake { animation: urgency-shake 0.5s ease-in-out infinite; }
 .animate-gold-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 20%,
-    rgba(201, 168, 76, 0.3) 50%,
-    transparent 80%
-  );
+  background: linear-gradient(90deg, transparent 20%, rgba(201,168,76,0.3) 50%, transparent 80%);
   background-size: 200% 100%;
   animation: gold-shimmer 3s linear infinite;
 }
-.animate-savings-sparkle {
-  animation: savings-sparkle 3s ease-in-out infinite;
+.animate-savings-sparkle { animation: savings-sparkle 3s ease-in-out infinite; }
+
+/* ═══════════════════════════════════════════════════════════
+   Brand Gold Utility Classes
+   ═══════════════════════════════════════════════════════════ */
+.gold-gradient { background: linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold), var(--brand-gold-bright)); }
+.gold-text {
+  background: linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold-bright));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
+.gold-glow { box-shadow: 0 0 20px var(--brand-gold-glow), 0 0 40px rgba(201,168,76,0.15); }
+.gold-border { border-color: var(--brand-gold); }
+
+/* ═══════════════════════════════════════════════════════════
+   Celebration & Brand Keyframes
+   ═══════════════════════════════════════════════════════════ */
+@keyframes celebration-burst {
+  0% { transform: scale(0); opacity: 0.8; border-width: 6px; }
+  50% { opacity: 0.4; border-width: 3px; }
+  100% { transform: scale(2.5); opacity: 0; border-width: 1px; }
+}
+@keyframes celebration-scale-bounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.15); }
+  60% { transform: scale(0.97); }
+  80% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+@keyframes confetti-cascade {
+  0% { transform: translateY(-10px) rotate(0deg) scale(1); opacity: 1; }
+  25% { transform: translateY(25vh) rotate(180deg) scale(0.9); opacity: 1; }
+  50% { transform: translateY(50vh) rotate(360deg) scale(0.8); opacity: 0.8; }
+  75% { transform: translateY(75vh) rotate(540deg) scale(0.6); opacity: 0.5; }
+  100% { transform: translateY(100vh) rotate(720deg) scale(0.3); opacity: 0; }
+}
+@keyframes gold-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(201,168,76,0.2); }
+  50% { box-shadow: 0 0 20px var(--brand-gold-glow), 0 0 40px rgba(201,168,76,0.1); }
+}
+@keyframes success-check {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+@keyframes ripple-out {
+  0% { transform: scale(0); opacity: 0.5; }
+  100% { transform: scale(4); opacity: 0; }
+}
+@keyframes shimmer-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes glow-breathe {
+  0%, 100% { box-shadow: 0 0 8px var(--brand-gold-glow), 0 0 16px rgba(201,168,76,0.1); }
+  50% { box-shadow: 0 0 16px var(--brand-gold-glow), 0 0 32px rgba(201,168,76,0.2), 0 0 48px rgba(201,168,76,0.08); }
+}
+
+/* Celebration utility classes */
+.animate-celebration-burst { animation: celebration-burst 0.6s ease-out forwards; }
+.animate-celebration-scale-bounce { animation: celebration-scale-bounce 0.5s ease-out forwards; }
+.animate-confetti-cascade { animation: confetti-cascade 3s ease-in forwards; }
+.animate-gold-pulse { animation: gold-pulse 2s ease-in-out infinite; }
+.animate-success-check { animation: success-check 0.35s ease-out forwards; }
+.animate-ripple-out { animation: ripple-out 0.6s ease-out forwards; }
+.animate-shimmer-sweep { animation: shimmer-sweep 1.5s ease-in-out infinite; }
+.animate-glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
 
 /* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
@@ -657,7 +552,19 @@ body {
   .animate-urgency-glow,
   .animate-urgency-shake,
   .animate-gold-shimmer,
-  .animate-savings-sparkle {
+  .animate-savings-sparkle,
+  .animate-celebration-burst,
+  .animate-celebration-scale-bounce,
+  .animate-confetti-cascade,
+  .animate-gold-pulse,
+  .animate-success-check,
+  .animate-ripple-out,
+  .animate-shimmer-sweep,
+  .animate-glow-breathe,
+  .animate-confetti-fall,
+  .animate-shimmer,
+  .animate-float,
+  .animate-gradient {
     animation: none !important;
   }
 }
