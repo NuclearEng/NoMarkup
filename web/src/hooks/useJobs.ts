@@ -52,7 +52,7 @@ export function useSearchJobs(params: SearchJobsParams) {
 export function useJob(id: string) {
   return useQuery({
     queryKey: ['jobs', id],
-    queryFn: () => api.get<{ job: JobDetail }>(`/api/v1/jobs/${id}`).then((res) => res.job),
+    queryFn: () => api.getPublic<{ job: JobDetail }>(`/api/v1/jobs/${id}`).then((res) => res.job),
     enabled: !!id,
   });
 }

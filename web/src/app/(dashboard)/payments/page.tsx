@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { PaymentHistory } from '@/components/payments/PaymentHistory';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePayments } from '@/hooks/usePayments';
 
@@ -32,7 +34,7 @@ function tabToStatusFilter(tab: PaymentTab): string | undefined {
 function PaymentTabContent({ tab }: { tab: PaymentTab }) {
   const [page, setPage] = useState(1);
   const statusFilter = tabToStatusFilter(tab);
-  const { data, isLoading, isError } = usePayments({
+  const { data, isLoading, isError, refetch } = usePayments({
     status: statusFilter,
     page,
     per_page: 20,
@@ -45,12 +47,12 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
           <Card key={i}>
             <CardContent className="py-4">
               <div className="flex items-center gap-4">
-                <div className="h-4 w-4 animate-pulse rounded bg-muted" />
+                <div className="bg-muted h-4 w-4 animate-pulse rounded" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-                  <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+                  <div className="bg-muted h-4 w-2/3 animate-pulse rounded" />
+                  <div className="bg-muted h-3 w-1/3 animate-pulse rounded" />
                 </div>
-                <div className="h-6 w-20 animate-pulse rounded bg-muted" />
+                <div className="bg-muted h-6 w-20 animate-pulse rounded" />
               </div>
             </CardContent>
           </Card>
@@ -61,9 +63,23 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
 
   if (isError) {
     return (
-      <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-        Failed to load payments. Please try refreshing the page.
-      </div>
+      <EmptyState
+        icon={<AnimatedIllustration type="error" size="md" />}
+        title="Failed to load payments"
+        description="Something went wrong while fetching your payment data. Please try again."
+        action={
+          <Button
+            variant="default"
+            className="min-h-[44px]"
+            onClick={() => {
+              void refetch();
+            }}
+          >
+            Retry
+          </Button>
+        }
+        className="glass border-destructive/30"
+      />
     );
   }
 
@@ -81,10 +97,10 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
     };
 
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border bg-muted/50 py-12">
-        <CreditCard className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
+      <div className="bg-muted/50 flex flex-col items-center justify-center rounded-lg border py-12">
+        <CreditCard className="text-muted-foreground h-12 w-12" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No payments</p>
-        <p className="mt-1 text-sm text-muted-foreground">{emptyMessages[tab]}</p>
+        <p className="text-muted-foreground mt-1 text-sm">{emptyMessages[tab]}</p>
         <Button asChild className="mt-4 min-h-[44px]">
           <Link href="/jobs">Browse Jobs</Link>
         </Button>
@@ -103,18 +119,22 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
             variant="outline"
             className="min-h-[44px]"
             disabled={page <= 1}
-            onClick={() => { setPage((p) => p - 1); }}
+            onClick={() => {
+              setPage((p) => p - 1);
+            }}
           >
             Previous
           </Button>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-muted-foreground text-sm">
             Page {String(page)} of {String(pagination.totalPages)}
           </span>
           <Button
             variant="outline"
             className="min-h-[44px]"
             disabled={!pagination.hasNext}
-            onClick={() => { setPage((p) => p + 1); }}
+            onClick={() => {
+              setPage((p) => p + 1);
+            }}
           >
             Next
           </Button>

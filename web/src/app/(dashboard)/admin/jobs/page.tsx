@@ -23,15 +23,24 @@ import { JOB_STATUS } from '@/types';
 const ALL_FILTER = '__all__';
 
 const STATUS_CLASSES: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  active: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  closed: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  awarded: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  in_progress: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
-  completed: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  cancelled: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  suspended: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
-  expired: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
+  draft:
+    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
+  active:
+    'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+  closed:
+    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
+  awarded:
+    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  in_progress:
+    'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
+  completed:
+    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  cancelled:
+    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
+  suspended:
+    'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
+  expired:
+    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
 };
 
 function formatDate(dateStr: string): string {
@@ -62,8 +71,7 @@ export default function AdminJobsPage() {
 
   async function handleConfirmAction() {
     if (!actionTarget) return;
-    const mutation =
-      actionTarget.action === 'suspend' ? suspendMutation : removeMutation;
+    const mutation = actionTarget.action === 'suspend' ? suspendMutation : removeMutation;
     await mutation.mutateAsync({
       jobId: actionTarget.job.id,
       reason,
@@ -79,7 +87,7 @@ export default function AdminJobsPage() {
       render: (job) => (
         <div>
           <p className="font-medium">{job.title}</p>
-          <p className="text-xs text-muted-foreground">{job.category_name}</p>
+          <p className="text-muted-foreground text-xs">{job.category_name}</p>
         </div>
       ),
     },
@@ -98,16 +106,14 @@ export default function AdminJobsPage() {
     {
       key: 'bids',
       header: 'Bids',
-      render: (job) => (
-        <span className="tabular-nums">{String(job.bid_count)}</span>
-      ),
+      render: (job) => <span className="tabular-nums">{String(job.bid_count)}</span>,
     },
     {
       key: 'lowest_bid',
       header: 'Lowest Bid',
       render: (job) => (
         <span className="tabular-nums">
-          {job.lowest_bid_cents !== null
+          {job.lowest_bid_cents != null && job.lowest_bid_cents > 0
             ? formatCents(job.lowest_bid_cents)
             : '--'}
         </span>
@@ -116,9 +122,7 @@ export default function AdminJobsPage() {
     {
       key: 'created_at',
       header: 'Created',
-      render: (job) => (
-        <span className="text-muted-foreground">{formatDate(job.created_at)}</span>
-      ),
+      render: (job) => <span className="text-muted-foreground">{formatDate(job.created_at)}</span>,
     },
     {
       key: 'actions',
@@ -160,7 +164,7 @@ export default function AdminJobsPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold tracking-tight">Job Management</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
           Failed to load jobs. Please try refreshing the page.
         </div>
       </div>
@@ -171,13 +175,11 @@ export default function AdminJobsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Job Management</h1>
-        <p className="mt-1 text-muted-foreground">
-          Monitor and manage jobs across the platform.
-        </p>
+        <p className="text-muted-foreground mt-1">Monitor and manage jobs across the platform.</p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Status:</span>
+        <span className="text-muted-foreground text-sm font-medium">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {
@@ -185,7 +187,7 @@ export default function AdminJobsPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-[180px] min-h-[44px]" aria-label="Filter jobs by status">
+          <SelectTrigger className="min-h-[44px] w-[180px]" aria-label="Filter jobs by status">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -216,12 +218,10 @@ export default function AdminJobsPage() {
           setActionTarget(null);
           setReason('');
         }}
-        onConfirm={() => { void handleConfirmAction(); }}
-        title={
-          actionTarget?.action === 'remove'
-            ? 'Remove Job'
-            : 'Suspend Job'
-        }
+        onConfirm={() => {
+          void handleConfirmAction();
+        }}
+        title={actionTarget?.action === 'remove' ? 'Remove Job' : 'Suspend Job'}
         description={
           actionTarget?.action === 'remove'
             ? `Remove "${actionTarget.job.title}" from the platform? This cannot be undone.`
@@ -230,6 +230,7 @@ export default function AdminJobsPage() {
         confirmLabel={actionTarget?.action === 'remove' ? 'Remove Job' : 'Suspend Job'}
         destructive
         loading={suspendMutation.isPending || removeMutation.isPending}
+        confirmDisabled={!reason.trim()}
       >
         <div className="space-y-2">
           <label htmlFor="job-action-reason" className="text-sm font-medium">
@@ -239,7 +240,9 @@ export default function AdminJobsPage() {
             id="job-action-reason"
             placeholder="Provide a reason for this action..."
             value={reason}
-            onChange={(e) => { setReason(e.target.value); }}
+            onChange={(e) => {
+              setReason(e.target.value);
+            }}
             rows={3}
           />
         </div>

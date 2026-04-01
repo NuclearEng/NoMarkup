@@ -14,6 +14,7 @@ interface ActionConfirmDialogProps {
   confirmLabel?: string;
   destructive?: boolean;
   loading?: boolean;
+  confirmDisabled?: boolean;
   children?: React.ReactNode;
 }
 
@@ -26,6 +27,7 @@ export function ActionConfirmDialog({
   confirmLabel = 'Confirm',
   destructive = false,
   loading = false,
+  confirmDisabled = false,
   children,
 }: ActionConfirmDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -60,7 +62,7 @@ export function ActionConfirmDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="m-auto max-w-md rounded-lg border bg-background p-0 shadow-lg backdrop:bg-black/50"
+      className="bg-background m-auto max-w-md rounded-lg border p-0 shadow-lg backdrop:bg-black/50"
       onClose={onClose}
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-description"
@@ -69,7 +71,7 @@ export function ActionConfirmDialog({
         <h2 id="confirm-dialog-title" className="text-lg font-semibold">
           {title}
         </h2>
-        <p id="confirm-dialog-description" className="mt-2 text-sm text-muted-foreground">
+        <p id="confirm-dialog-description" className="text-muted-foreground mt-2 text-sm">
           {description}
         </p>
 
@@ -89,7 +91,7 @@ export function ActionConfirmDialog({
             variant={destructive ? 'destructive' : 'default'}
             className={cn('min-h-[44px]')}
             onClick={onConfirm}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
             aria-label={confirmLabel}
           >
             {loading ? 'Processing...' : confirmLabel}

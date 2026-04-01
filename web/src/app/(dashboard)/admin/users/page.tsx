@@ -27,10 +27,14 @@ import { USER_ROLE, USER_STATUS } from '@/types';
 const ALL_FILTER = '__all__';
 
 const STATUS_CLASSES: Record<UserStatus, string> = {
-  active: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  suspended: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
-  banned: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  deactivated: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
+  active:
+    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
+  suspended:
+    'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
+  banned:
+    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
+  deactivated:
+    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
 };
 
 function formatDate(dateStr: string): string {
@@ -70,8 +74,7 @@ export default function AdminUsersPage() {
 
   async function handleConfirmAction() {
     if (!actionTarget) return;
-    const mutation =
-      actionTarget.action === 'suspend' ? suspendMutation : banMutation;
+    const mutation = actionTarget.action === 'suspend' ? suspendMutation : banMutation;
     await mutation.mutateAsync({
       userId: actionTarget.user.id,
       reason,
@@ -87,18 +90,16 @@ export default function AdminUsersPage() {
       render: (user) => (
         <Link
           href={`/admin/users/${user.id}` as Route}
-          className="font-medium text-primary hover:underline"
+          className="text-primary font-medium hover:underline"
         >
-          {user.first_name} {user.last_name}
+          {user.display_name || user.email}
         </Link>
       ),
     },
     {
       key: 'email',
       header: 'Email',
-      render: (user) => (
-        <span className="text-muted-foreground">{user.email}</span>
-      ),
+      render: (user) => <span className="text-muted-foreground">{user.email}</span>,
     },
     {
       key: 'roles',
@@ -117,10 +118,7 @@ export default function AdminUsersPage() {
       key: 'status',
       header: 'Status',
       render: (user) => (
-        <Badge
-          variant="outline"
-          className={cn('text-xs capitalize', STATUS_CLASSES[user.status])}
-        >
+        <Badge variant="outline" className={cn('text-xs capitalize', STATUS_CLASSES[user.status])}>
           {user.status}
         </Badge>
       ),
@@ -173,7 +171,7 @@ export default function AdminUsersPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
           Failed to load users. Please try refreshing the page.
         </div>
       </div>
@@ -184,9 +182,7 @@ export default function AdminUsersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
-        <p className="mt-1 text-muted-foreground">
-          Search, view, and manage platform users.
-        </p>
+        <p className="text-muted-foreground mt-1">Search, view, and manage platform users.</p>
       </div>
 
       {/* Filters */}
@@ -195,14 +191,16 @@ export default function AdminUsersPage() {
           <Input
             placeholder="Search by name or email..."
             value={query}
-            onChange={(e) => { setQuery(e.target.value); }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
             className="min-h-[44px]"
             aria-label="Search users"
           />
         </form>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">Status:</span>
+          <span className="text-muted-foreground text-sm font-medium">Status:</span>
           <Select
             value={statusFilter ?? ALL_FILTER}
             onValueChange={(v) => {
@@ -210,7 +208,7 @@ export default function AdminUsersPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[150px] min-h-[44px]" aria-label="Filter by status">
+            <SelectTrigger className="min-h-[44px] w-[150px]" aria-label="Filter by status">
               <SelectValue placeholder="All" />
             </SelectTrigger>
             <SelectContent>
@@ -225,7 +223,7 @@ export default function AdminUsersPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">Role:</span>
+          <span className="text-muted-foreground text-sm font-medium">Role:</span>
           <Select
             value={roleFilter ?? ALL_FILTER}
             onValueChange={(v) => {
@@ -233,7 +231,7 @@ export default function AdminUsersPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[150px] min-h-[44px]" aria-label="Filter by role">
+            <SelectTrigger className="min-h-[44px] w-[150px]" aria-label="Filter by role">
               <SelectValue placeholder="All" />
             </SelectTrigger>
             <SelectContent>
@@ -265,11 +263,13 @@ export default function AdminUsersPage() {
           setActionTarget(null);
           setReason('');
         }}
-        onConfirm={() => { void handleConfirmAction(); }}
+        onConfirm={() => {
+          void handleConfirmAction();
+        }}
         title={
           actionTarget?.action === 'ban'
-            ? `Ban ${actionTarget.user.first_name} ${actionTarget.user.last_name}`
-            : `Suspend ${actionTarget?.user.first_name ?? ''} ${actionTarget?.user.last_name ?? ''}`
+            ? `Ban ${actionTarget.user.display_name || actionTarget.user.email}`
+            : `Suspend ${actionTarget?.user.display_name || actionTarget?.user.email || ''}`
         }
         description={
           actionTarget?.action === 'ban'
@@ -279,19 +279,19 @@ export default function AdminUsersPage() {
         confirmLabel={actionTarget?.action === 'ban' ? 'Ban User' : 'Suspend User'}
         destructive
         loading={suspendMutation.isPending || banMutation.isPending}
+        confirmDisabled={!reason.trim()}
       >
         <div className="space-y-2">
-          <label
-            htmlFor="action-reason"
-            className="text-sm font-medium"
-          >
+          <label htmlFor="action-reason" className="text-sm font-medium">
             Reason
           </label>
           <Textarea
             id="action-reason"
             placeholder="Provide a reason for this action..."
             value={reason}
-            onChange={(e) => { setReason(e.target.value); }}
+            onChange={(e) => {
+              setReason(e.target.value);
+            }}
             rows={3}
           />
         </div>

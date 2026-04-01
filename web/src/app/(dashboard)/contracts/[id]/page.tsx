@@ -283,9 +283,7 @@ export default function ContractDetailPage() {
       <GuaranteeCoverage contract={contract} />
 
       {/* Installment Schedule */}
-      {installments.length > 0 ? (
-        <InstallmentSchedule installments={installments} />
-      ) : null}
+      {installments.length > 0 ? <InstallmentSchedule installments={installments} /> : null}
 
       {/* Action buttons based on status and role */}
       {contract.status === CONTRACT_STATUS.ACTIVE && (isCustomer || isProvider) ? (
@@ -513,7 +511,7 @@ function ReviewSection({ contractId }: { contractId: string }) {
             </Button>
           </Link>
         ) : eligibility.already_reviewed ? (
-          <div className="flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm text-green-700">
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
             <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
             You have already reviewed this contract.
           </div>

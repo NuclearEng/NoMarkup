@@ -132,15 +132,13 @@ export default function AdminUserDetailPage() {
         items={[
           { label: 'Admin', href: '/admin' },
           { label: 'Users', href: '/admin/users' },
-          { label: `${user.first_name} ${user.last_name}` },
+          { label: user.display_name || user.email },
         ]}
       />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {user.first_name} {user.last_name}
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight">{user.display_name || user.email}</h1>
           <p className="text-muted-foreground mt-1">{user.email}</p>
         </div>
         <div className="flex gap-2">
@@ -286,8 +284,8 @@ export default function AdminUserDetailPage() {
         }}
         title={
           actionType === 'ban'
-            ? `Ban ${user.first_name} ${user.last_name}`
-            : `Suspend ${user.first_name} ${user.last_name}`
+            ? `Ban ${user.display_name || user.email}`
+            : `Suspend ${user.display_name || user.email}`
         }
         description={
           actionType === 'ban'

@@ -12,7 +12,7 @@ import { useReviewsForUser } from '@/hooks/useReviews';
 
 export default function ProviderProfilePage() {
   const params = useParams<{ id: string }>();
-  const { data: provider, isLoading, isError } = usePublicProviderProfile(params.id);
+  const { data: provider, isLoading, isError, refetch } = usePublicProviderProfile(params.id);
   const { data: reviewsData } = useReviewsForUser(provider?.user_id ?? '', {
     direction: 'customer_to_provider',
     per_page: 5,
@@ -38,7 +38,7 @@ export default function ProviderProfilePage() {
           <Button
             variant="outline"
             className="mt-4 min-h-[44px]"
-            onClick={() => { window.location.reload(); }}
+            onClick={() => { void refetch(); }}
           >
             Retry
           </Button>

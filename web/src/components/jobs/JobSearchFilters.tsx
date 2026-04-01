@@ -39,6 +39,7 @@ function flattenCategories(categories: ServiceCategory[]): ServiceCategory[] {
 export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
   const { data: categoryTree } = useCategoryTree();
   const [searchText, setSearchText] = useState(filters.query ?? '');
+  const [locationText, setLocationText] = useState('');
 
   const flatCategories = categoryTree ? flattenCategories(categoryTree) : [];
 
@@ -57,11 +58,14 @@ export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
       }
     }, DEBOUNCE_MS);
 
-    return () => { clearTimeout(timer); };
+    return () => {
+      clearTimeout(timer);
+    };
   }, [searchText, filters.query, updateFilters]);
 
   function handleReset() {
     setSearchText('');
+    setLocationText('');
     onChange({ page: 1, page_size: filters.page_size });
   }
 
@@ -71,13 +75,18 @@ export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
       <div className="space-y-2">
         <Label htmlFor="job-search">Search</Label>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Search
+            className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
+            aria-hidden="true"
+          />
           <Input
             id="job-search"
             type="search"
             placeholder="Search jobs..."
             value={searchText}
-            onChange={(e) => { setSearchText(e.target.value); }}
+            onChange={(e) => {
+              setSearchText(e.target.value);
+            }}
             className="min-h-[44px] pl-10"
           />
         </div>
@@ -114,9 +123,7 @@ export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
           onValueChange={(value) => {
             updateFilters({
               schedule_type:
-                value === 'all'
-                  ? undefined
-                  : (value as SearchJobsParams['schedule_type']),
+                value === 'all' ? undefined : (value as SearchJobsParams['schedule_type']),
             });
           }}
         >
@@ -140,7 +147,9 @@ export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
             type="number"
             placeholder="Min $"
             min={0}
-            value={filters.min_price_cents !== undefined ? String(filters.min_price_cents / 100) : ''}
+            value={
+              filters.min_price_cents !== undefined ? String(filters.min_price_cents / 100) : ''
+            }
             onChange={(e) => {
               const val = e.target.value ? Math.round(Number(e.target.value) * 100) : undefined;
               updateFilters({ min_price_cents: val });
@@ -152,7 +161,9 @@ export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
             type="number"
             placeholder="Max $"
             min={0}
-            value={filters.max_price_cents !== undefined ? String(filters.max_price_cents / 100) : ''}
+            value={
+              filters.max_price_cents !== undefined ? String(filters.max_price_cents / 100) : ''
+            }
             onChange={(e) => {
               const val = e.target.value ? Math.round(Number(e.target.value) * 100) : undefined;
               updateFilters({ max_price_cents: val });
@@ -170,6 +181,10 @@ export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
           id="location-filter"
           type="text"
           placeholder="City or zip code"
+          value={locationText}
+          onChange={(e) => {
+            setLocationText(e.target.value);
+          }}
           className="min-h-[44px]"
           aria-label="Location filter"
         />
@@ -206,12 +221,7 @@ export function JobSearchFilters({ filters, onChange }: JobSearchFiltersProps) {
       </div>
 
       {/* Reset */}
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleReset}
-        className="min-h-[44px] w-full"
-      >
+      <Button type="button" variant="outline" onClick={handleReset} className="min-h-[44px] w-full">
         Reset Filters
       </Button>
     </div>

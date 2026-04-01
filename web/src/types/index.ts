@@ -1199,16 +1199,18 @@ export type FlagStatus = (typeof FLAG_STATUS)[keyof typeof FLAG_STATUS];
 export interface AdminUser {
   id: string;
   email: string;
-  first_name: string;
-  last_name: string;
+  display_name: string;
+  first_name?: string;
+  last_name?: string;
   phone: string;
   roles: string[];
   status: UserStatus;
   avatar_url: string;
-  email_verified: boolean;
-  phone_verified: boolean;
+  email_verified?: boolean;
+  phone_verified?: boolean;
   created_at: string;
   last_login_at?: string;
+  last_active_at?: string;
   provider_profile?: AdminProviderProfile;
 }
 

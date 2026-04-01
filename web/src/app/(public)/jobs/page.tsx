@@ -63,7 +63,7 @@ export default function JobsSearchPage() {
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const { data, isLoading, isError } = useSearchJobs(filters);
+  const { data, isLoading, isError, refetch } = useSearchJobs(filters);
 
   const currentPage = filters.page ?? 1;
   const totalPages = data?.pagination?.totalPages ?? 1;
@@ -181,7 +181,7 @@ export default function JobsSearchPage() {
                   variant="default"
                   className="min-h-[44px]"
                   onClick={() => {
-                    setFilters({ ...filters });
+                    void refetch();
                   }}
                 >
                   Retry

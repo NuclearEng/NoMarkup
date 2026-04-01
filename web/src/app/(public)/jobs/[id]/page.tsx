@@ -56,7 +56,7 @@ const FALLBACK_MARKET_RANGE: MarketRange = {
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
   const jobId = params.id;
-  const { data: job, isLoading, isError } = useJob(jobId);
+  const { data: job, isLoading, isError, refetch } = useJob(jobId);
   const { data: bidCount } = useBidCount(jobId);
   const { timeLeft, isExpired: auctionExpired } = useCountdown(job?.auction_ends_at);
   const user = useAuthStore((state) => state.user);
@@ -149,7 +149,7 @@ export default function JobDetailPage() {
                 variant="default"
                 className="min-h-[44px]"
                 onClick={() => {
-                  window.location.reload();
+                  void refetch();
                 }}
               >
                 Retry

@@ -25,7 +25,7 @@ export default function JobsMapPage() {
 
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
-  const { data, isLoading, isError } = useSearchJobs(filters);
+  const { data, isLoading, isError, refetch } = useSearchJobs(filters);
 
   const handleJobSelect = useCallback((job: Job) => {
     setSelectedJob(job);
@@ -60,7 +60,7 @@ export default function JobsMapPage() {
             variant="outline"
             className="min-h-[44px]"
             onClick={() => {
-              window.location.reload();
+              void refetch();
             }}
           >
             Retry

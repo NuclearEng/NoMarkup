@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   PlusCircle,
+  Settings,
   Shield,
   Trophy,
   User,
@@ -61,6 +62,7 @@ const COMMON_NAV_ITEMS: NavItem[] = [
   { href: '/messages' as Route, label: 'Messages', icon: MessageSquare },
   { href: '/jobs/mine' as Route, label: 'My Jobs', icon: Briefcase },
   { href: '/jobs/new' as Route, label: 'Post Job', icon: PlusCircle },
+  { href: '/settings/security' as Route, label: 'Settings', icon: Settings },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -166,7 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </aside>
           <WebSocketProvider>
             {/* Main content area with vivid dark ambient background */}
-            <main className="dashboard-ambient flex-1 p-6">{children}</main>
+            <div className="dashboard-ambient flex-1 p-6">{children}</div>
           </WebSocketProvider>
         </div>
       </div>

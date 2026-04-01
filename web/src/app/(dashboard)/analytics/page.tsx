@@ -4,9 +4,18 @@ import { BarChart3, Clock, DollarSign, Star, TrendingUp, Trophy } from 'lucide-r
 import { useMemo, useState } from 'react';
 
 import { EarningsChart } from '@/components/analytics/EarningsChart';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { EmptyState } from '@/components/ui/empty-state';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import {
   useCustomerSpending,
@@ -68,15 +77,13 @@ function MetricCard({ label, value, icon: Icon, subValue }: MetricCardProps) {
   return (
     <Card>
       <CardContent className="flex items-center gap-4 py-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" aria-hidden="true" />
+        <div className="bg-primary/10 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+          <Icon className="text-primary h-5 w-5" aria-hidden="true" />
         </div>
         <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="text-muted-foreground text-xs">{label}</p>
           <p className="text-lg font-bold">{value}</p>
-          {subValue ? (
-            <p className="text-xs text-muted-foreground">{subValue}</p>
-          ) : null}
+          {subValue ? <p className="text-muted-foreground text-xs">{subValue}</p> : null}
         </div>
       </CardContent>
     </Card>
@@ -88,10 +95,17 @@ function ProviderAnalyticsView() {
   const { startDate, endDate } = useMemo(() => getDateRange(dateRange), [dateRange]);
   const groupBy = getGroupBy(dateRange);
 
-  const { data: analytics, isLoading: analyticsLoading, isError: analyticsError } =
-    useProviderAnalytics(startDate, endDate);
-  const { data: earnings, isLoading: earningsLoading } =
-    useProviderEarnings(startDate, endDate, groupBy);
+  const {
+    data: analytics,
+    isLoading: analyticsLoading,
+    isError: analyticsError,
+    refetch: refetchAnalytics,
+  } = useProviderAnalytics(startDate, endDate);
+  const { data: earnings, isLoading: earningsLoading } = useProviderEarnings(
+    startDate,
+    endDate,
+    groupBy,
+  );
 
   if (analyticsLoading || earningsLoading) {
     return (
@@ -101,10 +115,10 @@ function ProviderAnalyticsView() {
             <Card key={i}>
               <CardContent className="py-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
+                  <div className="bg-muted h-10 w-10 animate-pulse rounded-lg" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-                    <div className="h-5 w-16 animate-pulse rounded bg-muted" />
+                    <div className="bg-muted h-3 w-20 animate-pulse rounded" />
+                    <div className="bg-muted h-5 w-16 animate-pulse rounded" />
                   </div>
                 </div>
               </CardContent>
@@ -113,7 +127,7 @@ function ProviderAnalyticsView() {
         </div>
         <Card>
           <CardContent className="py-6">
-            <div className="h-48 animate-pulse rounded bg-muted" />
+            <div className="bg-muted h-48 animate-pulse rounded" />
           </CardContent>
         </Card>
       </div>
@@ -122,9 +136,23 @@ function ProviderAnalyticsView() {
 
   if (analyticsError) {
     return (
-      <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-        Failed to load analytics data. Please try refreshing the page.
-      </div>
+      <EmptyState
+        icon={<AnimatedIllustration type="error" size="md" />}
+        title="Failed to load analytics"
+        description="Something went wrong while fetching your analytics data. Please try again."
+        action={
+          <Button
+            variant="default"
+            className="min-h-[44px]"
+            onClick={() => {
+              void refetchAnalytics();
+            }}
+          >
+            Retry
+          </Button>
+        }
+        className="glass border-destructive/30"
+      />
     );
   }
 
@@ -134,9 +162,11 @@ function ProviderAnalyticsView() {
       <div className="flex items-center justify-end">
         <Select
           value={dateRange}
-          onValueChange={(val) => { setDateRange(val as DateRange); }}
+          onValueChange={(val) => {
+            setDateRange(val as DateRange);
+          }}
         >
-          <SelectTrigger className="w-[180px] min-h-[44px]" aria-label="Select date range">
+          <SelectTrigger className="min-h-[44px] w-[180px]" aria-label="Select date range">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -218,7 +248,7 @@ function ProviderAnalyticsView() {
           <CardContent>
             <div className="space-y-1">
               {/* Header */}
-              <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-muted-foreground sm:flex">
+              <div className="text-muted-foreground hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase sm:flex">
                 <div className="flex-1">Category</div>
                 <div className="w-20 text-right">Jobs</div>
                 <div className="w-28 text-right">Earnings</div>
@@ -230,7 +260,7 @@ function ProviderAnalyticsView() {
               {analytics.category_breakdown.map((cat) => (
                 <div
                   key={cat.category_id}
-                  className="flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 hover:bg-muted/50 sm:flex-row sm:items-center sm:gap-4"
+                  className="hover:bg-muted/50 flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 sm:flex-row sm:items-center sm:gap-4"
                 >
                   <div className="flex-1 text-sm font-medium">{cat.category_name}</div>
                   <div className="w-20 text-right text-sm tabular-nums">
@@ -259,8 +289,12 @@ function CustomerAnalyticsView() {
   const { startDate, endDate } = useMemo(() => getDateRange(dateRange), [dateRange]);
   const groupBy = getGroupBy(dateRange);
 
-  const { data: spending, isLoading, isError } =
-    useCustomerSpending(startDate, endDate, groupBy);
+  const {
+    data: spending,
+    isLoading,
+    isError,
+    refetch,
+  } = useCustomerSpending(startDate, endDate, groupBy);
 
   if (isLoading) {
     return (
@@ -270,10 +304,10 @@ function CustomerAnalyticsView() {
             <Card key={i}>
               <CardContent className="py-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
+                  <div className="bg-muted h-10 w-10 animate-pulse rounded-lg" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-                    <div className="h-5 w-16 animate-pulse rounded bg-muted" />
+                    <div className="bg-muted h-3 w-20 animate-pulse rounded" />
+                    <div className="bg-muted h-5 w-16 animate-pulse rounded" />
                   </div>
                 </div>
               </CardContent>
@@ -286,9 +320,23 @@ function CustomerAnalyticsView() {
 
   if (isError) {
     return (
-      <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-        Failed to load spending data. Please try refreshing the page.
-      </div>
+      <EmptyState
+        icon={<AnimatedIllustration type="error" size="md" />}
+        title="Failed to load spending data"
+        description="Something went wrong while fetching your spending data. Please try again."
+        action={
+          <Button
+            variant="default"
+            className="min-h-[44px]"
+            onClick={() => {
+              void refetch();
+            }}
+          >
+            Retry
+          </Button>
+        }
+        className="glass border-destructive/30"
+      />
     );
   }
 
@@ -298,9 +346,11 @@ function CustomerAnalyticsView() {
       <div className="flex items-center justify-end">
         <Select
           value={dateRange}
-          onValueChange={(val) => { setDateRange(val as DateRange); }}
+          onValueChange={(val) => {
+            setDateRange(val as DateRange);
+          }}
         >
-          <SelectTrigger className="w-[180px] min-h-[44px]" aria-label="Select date range">
+          <SelectTrigger className="min-h-[44px] w-[180px]" aria-label="Select date range">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -321,11 +371,7 @@ function CustomerAnalyticsView() {
               value={formatCents(spending.total_spent_cents)}
               icon={DollarSign}
             />
-            <MetricCard
-              label="Jobs Posted"
-              value={String(spending.total_jobs)}
-              icon={BarChart3}
-            />
+            <MetricCard label="Jobs Posted" value={String(spending.total_jobs)} icon={BarChart3} />
             <MetricCard
               label="Average Job Cost"
               value={formatCents(spending.average_job_cost_cents)}
@@ -348,10 +394,7 @@ function CustomerAnalyticsView() {
               <CardContent>
                 {/* Bar chart using CSS */}
                 <div className="space-y-2">
-                  <div
-                    className="flex items-end gap-1"
-                    style={{ minHeight: '200px' }}
-                  >
+                  <div className="flex items-end gap-1" style={{ minHeight: '200px' }}>
                     {spending.data_points.map((point) => {
                       const maxAmount = Math.max(
                         ...spending.data_points.map((d) => d.amount_cents),
@@ -368,7 +411,7 @@ function CustomerAnalyticsView() {
                           {/* Tooltip */}
                           <div
                             className={cn(
-                              'pointer-events-none absolute -top-2 z-10 -translate-y-full rounded-md border bg-popover px-2 py-1 text-xs shadow-md',
+                              'bg-popover pointer-events-none absolute -top-2 z-10 -translate-y-full rounded-md border px-2 py-1 text-xs shadow-md',
                               'opacity-0 transition-opacity group-hover:opacity-100',
                             )}
                           >
@@ -383,7 +426,7 @@ function CustomerAnalyticsView() {
                           </div>
 
                           <div
-                            className="w-full rounded-t bg-primary transition-all"
+                            className="bg-primary w-full rounded-t transition-all"
                             style={{ height: `${String(height)}%` }}
                             role="img"
                             aria-label={`${new Date(point.period_start).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}: ${formatCents(point.amount_cents)} spent on ${String(point.job_count)} jobs`}
@@ -398,7 +441,7 @@ function CustomerAnalyticsView() {
                     {spending.data_points.map((point) => (
                       <div
                         key={point.period_start}
-                        className="flex-1 text-center text-[10px] text-muted-foreground"
+                        className="text-muted-foreground flex-1 text-center text-[10px]"
                       >
                         {new Date(point.period_start).toLocaleDateString('en-US', {
                           month: 'short',
@@ -421,7 +464,7 @@ function CustomerAnalyticsView() {
               <CardContent>
                 <div className="space-y-1">
                   {/* Header */}
-                  <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-muted-foreground sm:flex">
+                  <div className="text-muted-foreground hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase sm:flex">
                     <div className="flex-1">Category</div>
                     <div className="w-20 text-right">Jobs</div>
                     <div className="w-28 text-right">Total Spent</div>
@@ -432,7 +475,7 @@ function CustomerAnalyticsView() {
                   {spending.category_breakdown.map((cat) => (
                     <div
                       key={cat.category_id}
-                      className="flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 hover:bg-muted/50 sm:flex-row sm:items-center sm:gap-4"
+                      className="hover:bg-muted/50 flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 sm:flex-row sm:items-center sm:gap-4"
                     >
                       <div className="flex-1 text-sm font-medium">{cat.category_name}</div>
                       <div className="w-20 text-right text-sm tabular-nums">
@@ -462,7 +505,7 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="text-muted-foreground mt-1">
           {isProvider
             ? 'Track your performance, earnings, and growth.'
             : 'Track your spending, job activity, and savings.'}

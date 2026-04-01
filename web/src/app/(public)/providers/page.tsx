@@ -104,7 +104,7 @@ export default function ProvidersPage() {
   });
   const [searchInput, setSearchInput] = useState('');
 
-  const { data, isLoading, isError } = useSearchProviders(filters);
+  const { data, isLoading, isError, refetch } = useSearchProviders(filters);
 
   const currentPage = filters.page ?? 1;
   const totalPages = data?.pagination.totalPages ?? 1;
@@ -158,7 +158,7 @@ export default function ProvidersPage() {
                 variant="default"
                 className="min-h-[44px]"
                 onClick={() => {
-                  setFilters({ ...filters });
+                  void refetch();
                 }}
               >
                 Retry
@@ -254,12 +254,12 @@ export default function ProvidersPage() {
                       ) : null}
 
                       <div className="flex flex-wrap gap-1">
-                        {provider.service_categories.slice(0, 3).map((cat) => (
+                        {(provider.service_categories ?? []).slice(0, 3).map((cat) => (
                           <Badge key={cat.id} variant="secondary" className="text-xs">
                             {cat.name}
                           </Badge>
                         ))}
-                        {provider.service_categories.length > 3 ? (
+                        {(provider.service_categories ?? []).length > 3 ? (
                           <Badge variant="secondary" className="text-xs">
                             +{String(provider.service_categories.length - 3)} more
                           </Badge>
