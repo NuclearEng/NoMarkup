@@ -29,6 +29,7 @@ var (
 	ErrMFAAlreadyEnabled       = errors.New("MFA already enabled")
 	ErrInvalidMFAChallengeToken = errors.New("invalid or expired MFA challenge token")
 	ErrEmailNotVerified         = errors.New("email not verified")
+	ErrPropertyNotFound         = errors.New("property not found")
 )
 
 // User represents a platform user.
@@ -291,6 +292,44 @@ type Document struct {
 	UpdatedAt       time.Time
 }
 
+// Property represents a customer's physical property (e.g., home address).
+type Property struct {
+	ID        string
+	UserID    string
+	Nickname  string
+	Address   string
+	City      string
+	State     string
+	ZipCode   string
+	Latitude  float64
+	Longitude float64
+	Notes     string
+	IsPrimary bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// CreatePropertyInput holds the data needed to create a new property.
+type CreatePropertyInput struct {
+	UserID    string
+	Nickname  string
+	Address   string
+	City      string
+	State     string
+	ZipCode   string
+	Latitude  float64
+	Longitude float64
+	Notes     string
+	IsPrimary bool
+}
+
+// UpdatePropertyInput holds optional fields for updating a property.
+type UpdatePropertyInput struct {
+	Nickname  *string
+	Notes     *string
+	IsPrimary *bool
+}
+
 // UserRepository defines persistence operations for users.
 type UserRepository interface {
 	CreateUser(ctx context.Context, user *User) error
@@ -350,4 +389,10 @@ type UserRepository interface {
 
 	// Provider search
 	SearchProviders(ctx context.Context, input ProviderSearchInput) ([]ProviderSearchResult, int, error)
+
+	// Property operations
+	CreateProperty(ctx context.Context, input CreatePropertyInput) (*Property, error)
+	ListProperties(ctx context.Context, userID string) ([]Property, error)
+	UpdateProperty(ctx context.Context, propertyID string, input UpdatePropertyInput) (*Property, error)
+	DeleteProperty(ctx context.Context, propertyID string) error
 }

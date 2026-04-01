@@ -650,6 +650,115 @@ func (s *Server) GetCategoryTree(ctx context.Context, _ *userv1.GetCategoryTreeR
 	return &userv1.GetCategoryTreeResponse{Categories: roots}, nil
 }
 
+// --- Property RPCs ---
+
+func (s *Server) ListProperties(ctx context.Context, req *userv1.ListPropertiesRequest) (*userv1.ListPropertiesResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	properties, err := s.profile.ListProperties(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoProps := make([]*userv1.Property, 0, len(properties))
+	for _, p := range properties {
+		protoProps = append(protoProps, domainPropertyToProto(&p))
+	}
+
+	return &userv1.ListPropertiesResponse{Properties: protoProps}, nil
+}
+
+func (s *Server) CreateProperty(ctx context.Context, req *userv1.CreatePropertyRequest) (*userv1.CreatePropertyResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	input := domain.CreatePropertyInput{
+		UserID:    req.GetUserId(),
+		Nickname:  req.GetNickname(),
+		Notes:     req.GetNotes(),
+		IsPrimary: req.GetIsPrimary(),
+	}
+
+	if addr := req.GetAddress(); addr != nil {
+		input.Address = addr.GetStreet()
+		input.City = addr.GetCity()
+		input.State = addr.GetState()
+		input.ZipCode = addr.GetZipCode()
+		if loc := addr.GetLocation(); loc != nil {
+			input.Latitude = loc.GetLatitude()
+			input.Longitude = loc.GetLongitude()
+		}
+	}
+
+	prop, err := s.profile.CreateProperty(ctx, input)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.CreatePropertyResponse{Property: domainPropertyToProto(prop)}, nil
+}
+
+func (s *Server) UpdateProperty(ctx context.Context, req *userv1.UpdatePropertyRequest) (*userv1.UpdatePropertyResponse, error) {
+	if req.GetPropertyId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "property_id is required")
+	}
+
+	input := domain.UpdatePropertyInput{
+		Nickname:  req.Nickname,
+		Notes:     req.Notes,
+		IsPrimary: req.IsPrimary,
+	}
+
+	prop, err := s.profile.UpdateProperty(ctx, req.GetPropertyId(), input)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.UpdatePropertyResponse{Property: domainPropertyToProto(prop)}, nil
+}
+
+func (s *Server) DeleteProperty(ctx context.Context, req *userv1.DeletePropertyRequest) (*userv1.DeletePropertyResponse, error) {
+	if req.GetPropertyId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "property_id is required")
+	}
+
+	if err := s.profile.DeleteProperty(ctx, req.GetPropertyId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.DeletePropertyResponse{}, nil
+}
+
+func domainPropertyToProto(p *domain.Property) *userv1.Property {
+	if p == nil {
+		return nil
+	}
+
+	prop := &userv1.Property{
+		Id:        p.ID,
+		UserId:    p.UserID,
+		Nickname:  p.Nickname,
+		Notes:     p.Notes,
+		IsPrimary: p.IsPrimary,
+		CreatedAt: timestamppb.New(p.CreatedAt),
+		Address: &commonv1.Address{
+			Street:  p.Address,
+			City:    p.City,
+			State:   p.State,
+			ZipCode: p.ZipCode,
+			Location: &commonv1.Location{
+				Latitude:  p.Latitude,
+				Longitude: p.Longitude,
+			},
+		},
+	}
+
+	return prop
+}
+
 func (s *Server) AdminSuspendUser(ctx context.Context, req *userv1.AdminSuspendUserRequest) (*userv1.AdminSuspendUserResponse, error) {
 	if req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")
@@ -1201,6 +1310,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.AlreadyExists, "MFA already enabled")
 	case errors.Is(err, domain.ErrInvalidMFAChallengeToken):
 		return status.Error(codes.Unauthenticated, "invalid or expired MFA challenge token")
+	case errors.Is(err, domain.ErrPropertyNotFound):
+		return status.Error(codes.NotFound, "property not found")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

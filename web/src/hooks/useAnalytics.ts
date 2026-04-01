@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { api, ApiError } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth-store';
 import type {
   AnalyticsMarketRange,
   CustomerSpendingResponse,
@@ -28,14 +29,16 @@ export function useMarketRange(
 }
 
 export function useProviderAnalytics(startDate?: string, endDate?: string) {
+  const userId = useAuthStore((s) => s.user?.id);
   const searchParams = new URLSearchParams();
   if (startDate) searchParams.set('start_date', startDate);
   if (endDate) searchParams.set('end_date', endDate);
   const query = searchParams.toString();
-  const path = `/api/v1/analytics/provider${query ? `?${query}` : ''}`;
+  const path = `/api/v1/analytics/providers/${userId ?? 'me'}${query ? `?${query}` : ''}`;
 
   return useQuery({
-    queryKey: ['provider-analytics', startDate, endDate],
+    queryKey: ['provider-analytics', userId, startDate, endDate],
+    enabled: !!userId,
     queryFn: async () => {
       try {
         return await api.get<ProviderAnalytics>(path);
@@ -58,10 +61,12 @@ export function useProviderEarnings(
   if (endDate) searchParams.set('end_date', endDate);
   if (groupBy) searchParams.set('group_by', groupBy);
   const query = searchParams.toString();
-  const path = `/api/v1/analytics/provider/earnings${query ? `?${query}` : ''}`;
+  const userId = useAuthStore((s) => s.user?.id);
+  const path = `/api/v1/analytics/providers/${userId ?? 'me'}/earnings${query ? `?${query}` : ''}`;
 
   return useQuery({
-    queryKey: ['provider-earnings', startDate, endDate, groupBy],
+    queryKey: ['provider-earnings', userId, startDate, endDate, groupBy],
+    enabled: !!userId,
     queryFn: async () => {
       try {
         return await api.get<ProviderEarningsResponse>(path);
@@ -84,7 +89,7 @@ export function useCustomerSpending(
   if (endDate) searchParams.set('end_date', endDate);
   if (groupBy) searchParams.set('group_by', groupBy);
   const query = searchParams.toString();
-  const path = `/api/v1/analytics/customer/spending${query ? `?${query}` : ''}`;
+  const path = `/api/v1/analytics/customers/me/spending${query ? `?${query}` : ''}`;
 
   return useQuery({
     queryKey: ['customer-spending', startDate, endDate, groupBy],

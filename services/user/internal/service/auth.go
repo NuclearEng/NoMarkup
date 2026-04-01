@@ -35,18 +35,22 @@ const verificationTokenExpiry = 24 * time.Hour
 
 // Auth implements authentication business logic.
 type Auth struct {
-	repo               domain.UserRepository
-	jwt                *JWTManager
-	verificationSecret []byte
+	repo                  domain.UserRepository
+	jwt                   *JWTManager
+	verificationSecret    []byte
+	skipEmailVerification bool
 }
 
 // NewAuth creates a new Auth service. The verificationSecret is used to sign
-// email verification tokens with HMAC-SHA256. It must not be empty.
-func NewAuth(repo domain.UserRepository, jwt *JWTManager, verificationSecret string) *Auth {
+// email verification tokens with HMAC-SHA256. It must not be empty. When
+// skipEmailVerification is true, newly registered users are automatically
+// marked as email-verified (useful when no email delivery service is configured).
+func NewAuth(repo domain.UserRepository, jwt *JWTManager, verificationSecret string, skipEmailVerification bool) *Auth {
 	return &Auth{
-		repo:               repo,
-		jwt:                jwt,
-		verificationSecret: []byte(verificationSecret),
+		repo:                  repo,
+		jwt:                   jwt,
+		verificationSecret:    []byte(verificationSecret),
+		skipEmailVerification: skipEmailVerification,
 	}
 }
 
@@ -59,12 +63,13 @@ func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string
 	}
 
 	user := &domain.User{
-		Email:        input.Email,
-		PasswordHash: hash,
-		DisplayName:  input.DisplayName,
-		Roles:        input.Roles,
-		Status:       "active",
-		Timezone:     "America/Los_Angeles",
+		Email:         input.Email,
+		EmailVerified: a.skipEmailVerification,
+		PasswordHash:  hash,
+		DisplayName:   input.DisplayName,
+		Roles:         input.Roles,
+		Status:        "active",
+		Timezone:      "America/Los_Angeles",
 	}
 
 	if err := a.repo.CreateUser(ctx, user); err != nil {
@@ -78,7 +83,11 @@ func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string
 
 	verificationToken := a.GenerateVerificationToken(user.ID)
 
-	slog.Info("user registered", "user_id", user.ID, "email", user.Email)
+	slog.Info("user registered",
+		"user_id", user.ID,
+		"email", user.Email,
+		"email_auto_verified", a.skipEmailVerification,
+	)
 	return user.ID, pair, verificationToken, nil
 }
 

@@ -27,12 +27,13 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 
 func (r *PostgresRepository) CreateUser(ctx context.Context, user *domain.User) error {
 	query := `
-		INSERT INTO users (email, password_hash, display_name, roles, status, timezone)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO users (email, email_verified, password_hash, display_name, roles, status, timezone)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at`
 
 	err := r.pool.QueryRow(ctx, query,
 		user.Email,
+		user.EmailVerified,
 		user.PasswordHash,
 		user.DisplayName,
 		user.Roles,
@@ -1449,4 +1450,161 @@ func parseIP(s string) net.IP {
 		}
 	}
 	return net.ParseIP(s)
+}
+
+// --- Property Repository Methods ---
+
+func (r *PostgresRepository) CreateProperty(ctx context.Context, input domain.CreatePropertyInput) (*domain.Property, error) {
+	p := &domain.Property{}
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO properties (user_id, nickname, address, city, state, zip_code, location, notes, is_primary)
+		VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10)
+		RETURNING id, user_id, nickname, address, city, state, zip_code,
+		          ST_X(location) AS longitude, ST_Y(location) AS latitude,
+		          COALESCE(notes, ''), is_primary, created_at, updated_at`,
+		input.UserID, input.Nickname, input.Address, input.City, input.State, input.ZipCode,
+		input.Longitude, input.Latitude, input.Notes, input.IsPrimary,
+	).Scan(
+		&p.ID, &p.UserID, &p.Nickname, &p.Address, &p.City, &p.State, &p.ZipCode,
+		&p.Longitude, &p.Latitude,
+		&p.Notes, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create property: %w", err)
+	}
+
+	// If this property is set as primary, unset other primaries for the user.
+	if input.IsPrimary {
+		_, err = r.pool.Exec(ctx, `
+			UPDATE properties SET is_primary = false, updated_at = now()
+			WHERE user_id = $1 AND id != $2 AND is_primary = true AND deleted_at IS NULL`,
+			input.UserID, p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("create property unset primary: %w", err)
+		}
+	}
+
+	return p, nil
+}
+
+func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) ([]domain.Property, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
+		       ST_X(location) AS longitude, ST_Y(location) AS latitude,
+		       COALESCE(notes, ''), is_primary, created_at, updated_at
+		FROM properties
+		WHERE user_id = $1 AND deleted_at IS NULL
+		ORDER BY is_primary DESC, created_at ASC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list properties: %w", err)
+	}
+	defer rows.Close()
+
+	var properties []domain.Property
+	for rows.Next() {
+		var p domain.Property
+		err := rows.Scan(
+			&p.ID, &p.UserID, &p.Nickname, &p.Address, &p.City, &p.State, &p.ZipCode,
+			&p.Longitude, &p.Latitude,
+			&p.Notes, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("list properties scan: %w", err)
+		}
+		properties = append(properties, p)
+	}
+
+	return properties, nil
+}
+
+func (r *PostgresRepository) UpdateProperty(ctx context.Context, propertyID string, input domain.UpdatePropertyInput) (*domain.Property, error) {
+	setClauses := []string{}
+	args := []interface{}{}
+	argIdx := 1
+
+	if input.Nickname != nil {
+		setClauses = append(setClauses, fmt.Sprintf("nickname = $%d", argIdx))
+		args = append(args, *input.Nickname)
+		argIdx++
+	}
+	if input.Notes != nil {
+		setClauses = append(setClauses, fmt.Sprintf("notes = $%d", argIdx))
+		args = append(args, *input.Notes)
+		argIdx++
+	}
+	if input.IsPrimary != nil {
+		setClauses = append(setClauses, fmt.Sprintf("is_primary = $%d", argIdx))
+		args = append(args, *input.IsPrimary)
+		argIdx++
+	}
+
+	if len(setClauses) == 0 {
+		// Nothing to update; return the current property.
+		return r.getPropertyByID(ctx, propertyID)
+	}
+
+	setClauses = append(setClauses, "updated_at = now()")
+	args = append(args, propertyID)
+
+	query := fmt.Sprintf(`UPDATE properties SET %s WHERE id = $%d AND deleted_at IS NULL`,
+		strings.Join(setClauses, ", "), argIdx)
+
+	tag, err := r.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("update property: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("update property: %w", domain.ErrPropertyNotFound)
+	}
+
+	// If this property was set as primary, unset others.
+	if input.IsPrimary != nil && *input.IsPrimary {
+		p, err := r.getPropertyByID(ctx, propertyID)
+		if err != nil {
+			return nil, err
+		}
+		_, err = r.pool.Exec(ctx, `
+			UPDATE properties SET is_primary = false, updated_at = now()
+			WHERE user_id = $1 AND id != $2 AND is_primary = true AND deleted_at IS NULL`,
+			p.UserID, propertyID)
+		if err != nil {
+			return nil, fmt.Errorf("update property unset primary: %w", err)
+		}
+	}
+
+	return r.getPropertyByID(ctx, propertyID)
+}
+
+func (r *PostgresRepository) DeleteProperty(ctx context.Context, propertyID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE properties SET deleted_at = now(), updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`, propertyID)
+	if err != nil {
+		return fmt.Errorf("delete property: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("delete property: %w", domain.ErrPropertyNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) getPropertyByID(ctx context.Context, propertyID string) (*domain.Property, error) {
+	p := &domain.Property{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
+		       ST_X(location) AS longitude, ST_Y(location) AS latitude,
+		       COALESCE(notes, ''), is_primary, created_at, updated_at
+		FROM properties
+		WHERE id = $1 AND deleted_at IS NULL`, propertyID).Scan(
+		&p.ID, &p.UserID, &p.Nickname, &p.Address, &p.City, &p.State, &p.ZipCode,
+		&p.Longitude, &p.Latitude,
+		&p.Notes, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get property: %w", domain.ErrPropertyNotFound)
+		}
+		return nil, fmt.Errorf("get property: %w", err)
+	}
+	return p, nil
 }

@@ -189,3 +189,25 @@ func MarshalSchedule(data interface{}) ([]byte, error) {
 	}
 	return b, nil
 }
+
+// --- Property operations ---
+
+// CreateProperty creates a new property for a customer.
+func (s *Profile) CreateProperty(ctx context.Context, input domain.CreatePropertyInput) (*domain.Property, error) {
+	return s.repo.CreateProperty(ctx, input)
+}
+
+// ListProperties returns all properties for a user.
+func (s *Profile) ListProperties(ctx context.Context, userID string) ([]domain.Property, error) {
+	return s.repo.ListProperties(ctx, userID)
+}
+
+// UpdateProperty updates a property's mutable fields.
+func (s *Profile) UpdateProperty(ctx context.Context, propertyID string, input domain.UpdatePropertyInput) (*domain.Property, error) {
+	return s.repo.UpdateProperty(ctx, propertyID, input)
+}
+
+// DeleteProperty soft-deletes a property.
+func (s *Profile) DeleteProperty(ctx context.Context, propertyID string) error {
+	return s.repo.DeleteProperty(ctx, propertyID)
+}

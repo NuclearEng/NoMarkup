@@ -59,14 +59,11 @@ function createWrapper(queryClient: QueryClient) {
 const mockAdminUser: AdminUser = {
   id: 'user-1',
   email: 'admin@example.com',
-  first_name: 'Admin',
-  last_name: 'User',
+  display_name: 'Admin User',
   phone: '',
   roles: ['admin'],
   status: 'active',
   avatar_url: '',
-  email_verified: true,
-  phone_verified: false,
   created_at: '2026-01-01T00:00:00Z',
 };
 

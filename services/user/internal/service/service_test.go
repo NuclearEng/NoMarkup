@@ -188,6 +188,21 @@ func (m *mockUserRepo) DisableMFA(_ context.Context, _ string) error {
 func (m *mockUserRepo) IsMFAEnabled(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
+func (m *mockUserRepo) SearchProviders(_ context.Context, _ domain.ProviderSearchInput) ([]domain.ProviderSearchResult, int, error) {
+	return nil, 0, nil
+}
+func (m *mockUserRepo) CreateProperty(_ context.Context, _ domain.CreatePropertyInput) (*domain.Property, error) {
+	return nil, nil
+}
+func (m *mockUserRepo) ListProperties(_ context.Context, _ string) ([]domain.Property, error) {
+	return nil, nil
+}
+func (m *mockUserRepo) UpdateProperty(_ context.Context, _ string, _ domain.UpdatePropertyInput) (*domain.Property, error) {
+	return nil, nil
+}
+func (m *mockUserRepo) DeleteProperty(_ context.Context, _ string) error {
+	return nil
+}
 
 // --- helpers ---
 
@@ -207,7 +222,7 @@ func newTestAuth(t *testing.T, repo *mockUserRepo) *Auth {
 	t.Helper()
 	key := testKeyPair(t)
 	jwtMgr := NewJWTManager(key)
-	return NewAuth(repo, jwtMgr, testHMACKey())
+	return NewAuth(repo, jwtMgr, testHMACKey(), false)
 }
 
 // --- Auth.Register tests ---
@@ -585,7 +600,7 @@ func TestAuth_VerifyEmail(t *testing.T) {
 	makeToken := func(userID string) string {
 		key := testKeyPair(t)
 		jwtMgr := NewJWTManager(key)
-		a := NewAuth(nil, jwtMgr, testHMACKey())
+		a := NewAuth(nil, jwtMgr, testHMACKey(), false)
 		return a.GenerateVerificationToken(userID)
 	}
 
@@ -672,7 +687,7 @@ func TestGenerateAndValidateVerificationToken(t *testing.T) {
 	assert.Equal(t, "user-abc-123", userID)
 
 	// Token signed with a different key is rejected.
-	otherAuth := NewAuth(nil, nil, "different-hmac-key-value-here")
+	otherAuth := NewAuth(nil, nil, "different-hmac-key-value-here", false)
 	_, err = otherAuth.ValidateVerificationToken(token)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
@@ -968,7 +983,7 @@ func TestAuth_generateTokenPair_stores_refresh_token(t *testing.T) {
 
 	key := testKeyPair(t)
 	jwtMgr := NewJWTManager(key)
-	auth := NewAuth(repo, jwtMgr, testHMACKey())
+	auth := NewAuth(repo, jwtMgr, testHMACKey(), false)
 
 	user := &domain.User{
 		ID:    "user-1",

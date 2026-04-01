@@ -111,6 +111,21 @@ func (m *mockPaymentRepo) UpdateAdvanceReview(ctx context.Context, advanceID str
 	}
 	return nil, domain.ErrAdvanceNotFound
 }
+func (m *mockPaymentRepo) GetStripeCustomerID(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+func (m *mockPaymentRepo) AdminListPayments(_ context.Context, _ string, _ string, _, _ *time.Time, _, _ int) ([]*domain.Payment, int, int64, int64, error) {
+	return nil, 0, 0, 0, nil
+}
+func (m *mockPaymentRepo) AdminGetPaymentDetails(_ context.Context, _ string) (*domain.Payment, error) {
+	return nil, domain.ErrPaymentNotFound
+}
+func (m *mockPaymentRepo) UpdateFeeConfig(_ context.Context, _ *string, _, _ float64, _ int64, _ *int64) (*domain.FeeConfig, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) GetRevenueReport(_ context.Context, _, _ *time.Time, _ string) (*domain.RevenueReport, error) {
+	return nil, nil
+}
 
 // --- Mock Stripe Service ---
 

@@ -155,9 +155,16 @@ func main() {
 	}
 
 	// Wire up dependencies.
+	// When no notification service is configured, auto-verify emails on registration
+	// so users are not blocked from logging in.
+	skipEmailVerification := notifClient == nil
+	if skipEmailVerification {
+		slog.Warn("email verification will be skipped on registration (no notification service)")
+	}
+
 	repo := repository.NewPostgresRepository(pool)
 	jwtManager := service.NewJWTManager(privateKey)
-	authService := service.NewAuth(repo, jwtManager, verificationSecret)
+	authService := service.NewAuth(repo, jwtManager, verificationSecret, skipEmailVerification)
 	profileService := service.NewProfile(repo)
 	adminService := service.NewAdmin(repo)
 	phoneService := service.NewPhoneVerification(repo, rdb, smsClient)

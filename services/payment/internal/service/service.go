@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -308,10 +309,20 @@ func (s *PaymentService) GetStripeOnboardingLink(ctx context.Context, userID, re
 }
 
 // GetStripeAccountStatus retrieves the Stripe account status for a user.
+// If no Stripe account exists, returns a default "not started" status instead of an error.
 func (s *PaymentService) GetStripeAccountStatus(ctx context.Context, userID string) (*domain.StripeAccountStatus, error) {
 	accountID, err := s.repo.GetStripeAccountID(ctx, userID)
 	if err != nil {
-		return nil, err
+		// If the user has no Stripe account, return a sensible default.
+		slog.Info("no stripe account for user, returning default status",
+			"user_id", userID,
+			"error", err,
+		)
+		return &domain.StripeAccountStatus{
+			ChargesEnabled:   false,
+			PayoutsEnabled:   false,
+			DetailsSubmitted: false,
+		}, nil
 	}
 
 	return s.stripe.GetAccountStatus(ctx, accountID)
@@ -329,12 +340,34 @@ func (s *PaymentService) GetStripeDashboardLink(ctx context.Context, userID stri
 
 // CreateSetupIntent creates a SetupIntent for saving customer payment methods.
 func (s *PaymentService) CreateSetupIntent(ctx context.Context, customerID string) (string, error) {
+	// Look up the user's Stripe customer ID if one exists.
+	stripeCustomerID, err := s.repo.GetStripeCustomerID(ctx, customerID)
+	if err != nil {
+		slog.Warn("failed to look up stripe customer id for setup intent",
+			"user_id", customerID,
+			"error", err,
+		)
+	}
+	// Pass the Stripe customer ID if available, otherwise pass the platform user ID
+	// (the Stripe service stores it as metadata).
+	if stripeCustomerID != "" {
+		return s.stripe.CreateSetupIntent(ctx, stripeCustomerID)
+	}
 	return s.stripe.CreateSetupIntent(ctx, customerID)
 }
 
 // ListPaymentMethods lists a customer's payment methods.
-func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerStripeID string) ([]domain.PaymentMethod, error) {
-	return s.stripe.ListPaymentMethods(ctx, customerStripeID)
+// If the customer has no Stripe customer ID configured, returns an empty list.
+func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerID string) ([]domain.PaymentMethod, error) {
+	// Look up the user's Stripe customer ID. If none exists, return empty.
+	stripeCustomerID, err := s.repo.GetStripeCustomerID(ctx, customerID)
+	if err != nil || stripeCustomerID == "" {
+		slog.Info("no stripe customer id for user, returning empty payment methods",
+			"user_id", customerID,
+		)
+		return []domain.PaymentMethod{}, nil
+	}
+	return s.stripe.ListPaymentMethods(ctx, stripeCustomerID)
 }
 
 // DeletePaymentMethod detaches a payment method.

@@ -74,7 +74,7 @@ export function useUsage() {
   return useQuery({
     queryKey: ['subscription-usage'],
     queryFn: () =>
-      api.get<SubscriptionUsage>('/api/v1/subscriptions/me/usage'),
+      api.get<SubscriptionUsage>('/api/v1/subscriptions/usage'),
   });
 }
 
@@ -82,6 +82,6 @@ export function useInvoices() {
   return useQuery({
     queryKey: ['subscription-invoices'],
     queryFn: () =>
-      api.get<{ invoices: Invoice[] }>('/api/v1/subscriptions/me/invoices'),
+      api.get<{ invoices: Invoice[] }>('/api/v1/subscriptions/invoices'),
   });
 }

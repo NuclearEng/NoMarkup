@@ -317,7 +317,7 @@ func (r *PostgresRepository) UpdateRefund(ctx context.Context, id string, refund
 func (r *PostgresRepository) GetStripeAccountID(ctx context.Context, userID string) (string, error) {
 	var accountID *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT stripe_account_id FROM users WHERE id = $1`, userID).Scan(&accountID)
+		SELECT stripe_account_id FROM provider_profiles WHERE user_id = $1`, userID).Scan(&accountID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("get stripe account: %w", domain.ErrStripeAccountNotFound)
@@ -332,15 +332,34 @@ func (r *PostgresRepository) GetStripeAccountID(ctx context.Context, userID stri
 
 func (r *PostgresRepository) SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error {
 	tag, err := r.pool.Exec(ctx, `
-		UPDATE users SET stripe_account_id = $2, updated_at = now() WHERE id = $1`,
+		UPDATE provider_profiles SET stripe_account_id = $2, updated_at = now() WHERE user_id = $1`,
 		userID, stripeAccountID)
 	if err != nil {
 		return fmt.Errorf("set stripe account: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("set stripe account: user not found")
+		return fmt.Errorf("set stripe account: provider profile not found")
 	}
 	return nil
+}
+
+func (r *PostgresRepository) GetStripeCustomerID(ctx context.Context, userID string) (string, error) {
+	var customerID *string
+	err := r.pool.QueryRow(ctx, `
+		SELECT stripe_customer_id FROM subscriptions
+		WHERE user_id = $1 AND status IN ('active', 'trialing', 'past_due')
+		ORDER BY created_at DESC
+		LIMIT 1`, userID).Scan(&customerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("get stripe customer id: %w", err)
+	}
+	if customerID == nil || *customerID == "" {
+		return "", nil
+	}
+	return *customerID, nil
 }
 
 // AdminListPayments lists payments with optional filters for admin use.
