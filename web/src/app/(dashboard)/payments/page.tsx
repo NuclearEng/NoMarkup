@@ -83,9 +83,9 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
 
     return (
       <div className="bg-muted/50 flex flex-col items-center justify-center rounded-lg border py-12">
-        <CreditCard className="text-zinc-400 h-12 w-12" aria-hidden="true" />
+        <CreditCard className="text-zinc-300 h-12 w-12" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No payments</p>
-        <p className="text-zinc-400 mt-1 text-sm">{emptyMessages[tab]}</p>
+        <p className="text-zinc-300 mt-1 text-sm">{emptyMessages[tab]}</p>
         <Button asChild className="mt-4 min-h-[44px]">
           <Link href="/jobs">Browse Jobs</Link>
         </Button>
@@ -110,7 +110,7 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
           >
             Previous
           </Button>
-          <span className="text-zinc-400 text-sm">
+          <span className="text-zinc-300 text-sm">
             Page {String(page)} of {String(pagination.totalPages)}
           </span>
           <Button
@@ -135,7 +135,7 @@ export default function PaymentsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Payments</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Track your payments, view fee breakdowns, and manage payment methods.
         </p>
       </div>

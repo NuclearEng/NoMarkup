@@ -70,7 +70,7 @@ export default function AdminJobsPage() {
       render: (job) => (
         <div>
           <p className="font-medium">{job.title}</p>
-          <p className="text-zinc-400 text-xs">{job.category_name}</p>
+          <p className="text-zinc-300 text-xs">{job.category_name}</p>
         </div>
       ),
     },
@@ -105,7 +105,7 @@ export default function AdminJobsPage() {
     {
       key: 'created_at',
       header: 'Created',
-      render: (job) => <span className="text-zinc-400">{formatDate(job.created_at)}</span>,
+      render: (job) => <span className="text-zinc-300">{formatDate(job.created_at)}</span>,
     },
     {
       key: 'actions',
@@ -145,7 +145,6 @@ export default function AdminJobsPage() {
 
   if (isError) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <h1 className="gold-text text-2xl font-bold tracking-tight">Job Management</h1>
         <EmptyState
@@ -154,7 +153,6 @@ export default function AdminJobsPage() {
           description="Please try refreshing the page."
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -163,11 +161,11 @@ export default function AdminJobsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Job Management</h1>
-        <p className="text-zinc-400 mt-1">Monitor and manage jobs across the platform.</p>
+        <p className="text-zinc-300 mt-1">Monitor and manage jobs across the platform.</p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-zinc-400 text-sm font-medium">Status:</span>
+        <span className="text-zinc-300 text-sm font-medium">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {

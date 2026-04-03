@@ -92,7 +92,7 @@ export default function AdminUsersPage() {
     {
       key: 'email',
       header: 'Email',
-      render: (user) => <span className="text-zinc-400">{user.email}</span>,
+      render: (user) => <span className="text-zinc-300">{user.email}</span>,
     },
     {
       key: 'roles',
@@ -120,7 +120,7 @@ export default function AdminUsersPage() {
       key: 'created_at',
       header: 'Joined',
       render: (user) => (
-        <span className="text-zinc-400">{formatDate(user.created_at)}</span>
+        <span className="text-zinc-300">{formatDate(user.created_at)}</span>
       ),
     },
     {
@@ -162,7 +162,6 @@ export default function AdminUsersPage() {
 
   if (isError) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <h1 className="gold-text text-2xl font-bold tracking-tight">User Management</h1>
         <EmptyState
@@ -171,7 +170,6 @@ export default function AdminUsersPage() {
           description="Please try refreshing the page."
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -180,7 +178,7 @@ export default function AdminUsersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">User Management</h1>
-        <p className="text-zinc-400 mt-1">Search, view, and manage platform users.</p>
+        <p className="text-zinc-300 mt-1">Search, view, and manage platform users.</p>
       </div>
 
       {/* Filters */}
@@ -198,7 +196,7 @@ export default function AdminUsersPage() {
         </form>
 
         <div className="flex items-center gap-2">
-          <span className="text-zinc-400 text-sm font-medium">Status:</span>
+          <span className="text-zinc-300 text-sm font-medium">Status:</span>
           <Select
             value={statusFilter ?? ALL_FILTER}
             onValueChange={(v) => {
@@ -221,7 +219,7 @@ export default function AdminUsersPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-zinc-400 text-sm font-medium">Role:</span>
+          <span className="text-zinc-300 text-sm font-medium">Role:</span>
           <Select
             value={roleFilter ?? ALL_FILTER}
             onValueChange={(v) => {

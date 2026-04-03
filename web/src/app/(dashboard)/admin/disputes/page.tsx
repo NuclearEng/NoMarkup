@@ -70,7 +70,7 @@ export default function AdminDisputesPage() {
       render: (dispute) => (
         <div className="text-sm">
           <p>{dispute.initiator_name ?? dispute.initiated_by.slice(0, 8)}</p>
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-zinc-300">
             vs {dispute.respondent_name ?? 'Respondent'}
           </p>
         </div>
@@ -112,14 +112,13 @@ export default function AdminDisputesPage() {
       key: 'created_at',
       header: 'Opened',
       render: (dispute) => (
-        <span className="text-zinc-400">{formatDate(dispute.created_at)}</span>
+        <span className="text-zinc-300">{formatDate(dispute.created_at)}</span>
       ),
     },
   ];
 
   if (isError) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Management</h1>
         <EmptyState
@@ -128,7 +127,6 @@ export default function AdminDisputesPage() {
           description="Please try refreshing the page."
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -137,13 +135,13 @@ export default function AdminDisputesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Management</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Review and resolve contract disputes between customers and providers.
         </p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-zinc-400">Status:</span>
+        <span className="text-sm font-medium text-zinc-300">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {

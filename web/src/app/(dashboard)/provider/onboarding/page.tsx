@@ -87,7 +87,7 @@ export default function ProviderOnboardingPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Provider Onboarding</h1>
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-zinc-300">
           Step {String(step + 1)} of {String(STEPS.length)}
         </p>
       </div>
@@ -106,7 +106,7 @@ export default function ProviderOnboardingPage() {
                 ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
                 : idx < step
                   ? 'bg-muted text-foreground'
-                  : 'text-zinc-400'
+                  : 'text-zinc-300'
             }`}
             aria-current={idx === step ? 'step' : undefined}
           >
@@ -192,7 +192,7 @@ function BusinessInfoStep({ onNext }: { onNext: () => void }) {
                   placeholder="Tell customers about your business..."
                 />
               </FormControl>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-300">
                 {String(field.value?.length ?? 0)}/500 characters
               </p>
               <FormMessage />
@@ -390,7 +390,7 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
           className="min-h-[44px] w-full accent-primary"
           aria-label={`Service radius: ${String(radius)} kilometers`}
         />
-        <div className="flex justify-between text-xs text-zinc-400">
+        <div className="flex justify-between text-xs text-zinc-300">
           <span>5 km</span>
           <span>100 km</span>
         </div>
@@ -402,7 +402,7 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
           <ServiceAreaMap radiusKm={radius} />
           <p className="text-center text-sm font-medium">
             {String(radius)} km service radius
-            <span className="ml-1 text-xs text-zinc-400">
+            <span className="ml-1 text-xs text-zinc-300">
               (~{String(Math.round(radius * 0.621))} miles)
             </span>
           </p>
@@ -421,7 +421,7 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
             <p className="mt-3 text-center text-sm font-medium">
               {String(radius)} km service radius
             </p>
-            <p className="text-center text-xs text-zinc-400">
+            <p className="text-center text-xs text-zinc-300">
               ~{String(Math.round(radius * 0.621))} miles
             </p>
           </div>
@@ -437,7 +437,7 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
           placeholder="Enter your base address for service area"
           className="mt-1 min-h-[44px]"
         />
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="mt-1 text-xs text-zinc-300">
           Your service area will be centered on this address.
         </p>
       </div>
@@ -674,7 +674,7 @@ function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-zinc-400">
+      <p className="text-sm text-zinc-300">
         Upload images showcasing your best work. Up to 10 portfolio images.
       </p>
 
@@ -864,7 +864,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-zinc-400">
+      <p className="text-sm text-zinc-300">
         Upload documents to verify your identity and business credentials.
         Accepted formats: JPG, PNG, WebP, PDF (max{' '}
         {formatDocumentSize(MAX_DOCUMENT_SIZE_BYTES)}).
@@ -989,7 +989,7 @@ function DocumentUploadField({
               {config.required ? 'Required' : 'Optional'}
             </Badge>
           </div>
-          <p className="mt-0.5 text-xs text-zinc-400">
+          <p className="mt-0.5 text-xs text-zinc-300">
             {config.description}
           </p>
         </div>
@@ -1000,10 +1000,10 @@ function DocumentUploadField({
 
       {document ? (
         <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-3">
-          <FileText className="h-8 w-8 shrink-0 text-zinc-400" aria-hidden="true" />
+          <FileText className="h-8 w-8 shrink-0 text-zinc-300" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{document.name}</p>
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-zinc-300">
               {formatDocumentSize(document.file.size)}
               {isPdf ? ' - PDF' : ` - ${document.file.type.replace('image/', '').toUpperCase()}`}
             </p>
@@ -1048,8 +1048,8 @@ function DocumentUploadField({
             aria-hidden="true"
             tabIndex={-1}
           />
-          <Upload className="mb-1 h-5 w-5 text-zinc-400" aria-hidden="true" />
-          <p className="text-sm text-zinc-400">
+          <Upload className="mb-1 h-5 w-5 text-zinc-300" aria-hidden="true" />
+          <p className="text-sm text-zinc-300">
             {isDragging ? 'Drop file here' : 'Click or drag file to upload'}
           </p>
         </div>

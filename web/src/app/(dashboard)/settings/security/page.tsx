@@ -146,7 +146,7 @@ function MFASection() {
         {/* Setup flow */}
         {setupData ? (
           <div className="max-w-md space-y-4">
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-zinc-300">
               Scan this QR code with your authenticator app (Google
               Authenticator, Authy, 1Password, etc.), then enter the 6-digit
               code below to confirm.
@@ -164,7 +164,7 @@ function MFASection() {
             </div>
 
             <div className="space-y-1">
-              <p className="text-xs font-medium text-zinc-400">
+              <p className="text-xs font-medium text-zinc-300">
                 Manual entry key
               </p>
               <code className="block break-all rounded bg-muted p-2 font-mono text-sm">
@@ -172,7 +172,7 @@ function MFASection() {
               </code>
             </div>
 
-            <div className="glass-divider" aria-hidden="true" />
+            <div className="glass-divider" role="separator" />
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -197,7 +197,7 @@ function MFASection() {
                   )}
                 </Button>
               </div>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-300">
                 Save these codes in a safe place. Each code can only be used
                 once.
               </p>
@@ -210,7 +210,7 @@ function MFASection() {
               </div>
             </div>
 
-            <div className="glass-divider" aria-hidden="true" />
+            <div className="glass-divider" role="separator" />
 
             <div className="space-y-2">
               <label
@@ -264,14 +264,14 @@ function MFASection() {
                 Two-factor authentication is enabled
               </p>
             </div>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-zinc-300">
               Your account is protected with an authenticator app. You will be
               asked for a verification code when you sign in.
             </p>
 
             {showDisable ? (
               <div className="max-w-md space-y-3">
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-zinc-300">
                   Enter your current authenticator code to disable MFA.
                 </p>
                 <Input
@@ -326,7 +326,7 @@ function MFASection() {
         ) : (
           /* MFA is not enabled */
           <div className="space-y-3">
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-zinc-300">
               Add an extra layer of security to your account. You will need an
               authenticator app such as Google Authenticator, Authy, or
               1Password.
@@ -380,7 +380,7 @@ export default function SecuritySettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Security</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Manage your password and account security
         </p>
       </div>
@@ -490,12 +490,12 @@ export default function SecuritySettingsPage() {
         </CardContent>
       </Card>
 
-      <div className="glass-divider" aria-hidden="true" />
+      <div className="glass-divider" role="separator" />
 
       {/* MFA */}
       <MFASection />
 
-      <div className="glass-divider" aria-hidden="true" />
+      <div className="glass-divider" role="separator" />
 
       {/* Active Sessions */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -503,7 +503,7 @@ export default function SecuritySettingsPage() {
           <CardTitle className="gold-text text-lg">Active Sessions</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-zinc-300">
             You are currently signed in. Your session will expire after 60
             minutes of inactivity.
           </p>

@@ -29,7 +29,7 @@ export default function ReviewPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" aria-hidden="true" />
+        <Loader2 className="h-8 w-8 animate-spin text-zinc-300" aria-hidden="true" />
       </div>
     );
   }
@@ -39,7 +39,7 @@ export default function ReviewPage() {
       <div className="space-y-4">
         <Link
           href={`/contracts/${contractId}` as Route}
-          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
+          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-300 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Contract
@@ -69,7 +69,7 @@ export default function ReviewPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <Link
         href={`/contracts/${contractId}` as Route}
-        className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
+        className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-300 hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to Contract
@@ -83,7 +83,7 @@ export default function ReviewPage() {
           <CardContent className="flex flex-col items-center justify-center py-12">
             <CheckCircle className="h-12 w-12 text-green-500" aria-hidden="true" />
             <p className="mt-4 text-lg font-medium">Already Reviewed</p>
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="mt-1 text-sm text-zinc-300">
               You have already submitted a review for this contract.
             </p>
             <Link
@@ -100,17 +100,17 @@ export default function ReviewPage() {
           <CardContent className="flex flex-col items-center justify-center py-12">
             {new Date(eligibility.review_window_closes_at) < new Date() ? (
               <>
-                <XCircle className="h-12 w-12 text-zinc-400" aria-hidden="true" />
+                <XCircle className="h-12 w-12 text-zinc-300" aria-hidden="true" />
                 <p className="mt-4 text-lg font-medium">Review Window Closed</p>
-                <p className="mt-1 text-sm text-zinc-400">
+                <p className="mt-1 text-sm text-zinc-300">
                   The review window for this contract has closed.
                 </p>
               </>
             ) : (
               <>
-                <Clock className="h-12 w-12 text-zinc-400" aria-hidden="true" />
+                <Clock className="h-12 w-12 text-zinc-300" aria-hidden="true" />
                 <p className="mt-4 text-lg font-medium">Not Eligible</p>
-                <p className="mt-1 text-sm text-zinc-400">
+                <p className="mt-1 text-sm text-zinc-300">
                   You are not eligible to review this contract at this time.
                 </p>
               </>

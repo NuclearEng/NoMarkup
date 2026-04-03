@@ -25,7 +25,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
           Provider Access Required
         </h1>
-        <p className="text-zinc-400">
+        <p className="text-zinc-300">
           You need a provider account to access this section. Upgrade your account from your profile
           page.
         </p>

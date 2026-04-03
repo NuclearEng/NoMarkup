@@ -102,7 +102,6 @@ export default function AdminUserDetailPage() {
 
   if (isError || !user) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <Breadcrumb
           items={[
@@ -118,7 +117,6 @@ export default function AdminUserDetailPage() {
           description="The user may not exist or you may not have permission."
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -136,7 +134,7 @@ export default function AdminUserDetailPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">{user.display_name || user.email}</h1>
-          <p className="text-zinc-400 mt-1">{user.email}</p>
+          <p className="text-zinc-300 mt-1">{user.email}</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -173,7 +171,7 @@ export default function AdminUserDetailPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-zinc-400">Status</span>
+                <span className="text-zinc-300">Status</span>
                 <div className="mt-1">
                   <Badge variant="outline" className={cn('text-xs', USER_STATUS_CLASSES[user.status])}>
                     {user.status}
@@ -181,7 +179,7 @@ export default function AdminUserDetailPage() {
                 </div>
               </div>
               <div>
-                <span className="text-zinc-400">Roles</span>
+                <span className="text-zinc-300">Roles</span>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {user.roles.map((role) => (
                     <Badge key={role} variant="outline" className="text-xs">
@@ -191,23 +189,23 @@ export default function AdminUserDetailPage() {
                 </div>
               </div>
               <div>
-                <span className="text-zinc-400">Phone</span>
+                <span className="text-zinc-300">Phone</span>
                 <p className="mt-1">{user.phone || 'N/A'}</p>
               </div>
               <div>
-                <span className="text-zinc-400">Email Verified</span>
+                <span className="text-zinc-300">Email Verified</span>
                 <p className="mt-1">{user.email_verified ? 'Yes' : 'No'}</p>
               </div>
               <div>
-                <span className="text-zinc-400">Phone Verified</span>
+                <span className="text-zinc-300">Phone Verified</span>
                 <p className="mt-1">{user.phone_verified ? 'Yes' : 'No'}</p>
               </div>
               <div>
-                <span className="text-zinc-400">Joined</span>
+                <span className="text-zinc-300">Joined</span>
                 <p className="mt-1">{formatDate(user.created_at)}</p>
               </div>
               <div className="col-span-2">
-                <span className="text-zinc-400">Last Login</span>
+                <span className="text-zinc-300">Last Login</span>
                 <p className="mt-1">
                   {user.last_login_at ? formatDate(user.last_login_at) : 'Never'}
                 </p>
@@ -225,22 +223,22 @@ export default function AdminUserDetailPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="col-span-2">
-                  <span className="text-zinc-400">Display Name</span>
+                  <span className="text-zinc-300">Display Name</span>
                   <p className="mt-1 font-medium">{user.provider_profile.display_name}</p>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-zinc-400">Business Name</span>
+                  <span className="text-zinc-300">Business Name</span>
                   <p className="mt-1">{user.provider_profile.business_name || 'N/A'}</p>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-zinc-400">Bio</span>
-                  <p className="text-zinc-400 mt-1">{user.provider_profile.bio || 'N/A'}</p>
+                  <span className="text-zinc-300">Bio</span>
+                  <p className="text-zinc-300 mt-1">{user.provider_profile.bio || 'N/A'}</p>
                 </div>
 
                 <Separator className="col-span-2" />
 
                 <div>
-                  <span className="text-zinc-400">Trust Score</span>
+                  <span className="text-zinc-300">Trust Score</span>
                   <p className="mt-1 font-medium tabular-nums">
                     {user.provider_profile.trust_score !== undefined
                       ? (user.provider_profile.trust_score * 100).toFixed(0)
@@ -248,17 +246,17 @@ export default function AdminUserDetailPage() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-zinc-400">Trust Tier</span>
+                  <span className="text-zinc-300">Trust Tier</span>
                   <p className="mt-1">{user.provider_profile.trust_tier ?? 'N/A'}</p>
                 </div>
                 <div>
-                  <span className="text-zinc-400">Jobs Completed</span>
+                  <span className="text-zinc-300">Jobs Completed</span>
                   <p className="mt-1 tabular-nums">
                     {String(user.provider_profile.jobs_completed)}
                   </p>
                 </div>
                 <div>
-                  <span className="text-zinc-400">Avg Rating</span>
+                  <span className="text-zinc-300">Avg Rating</span>
                   <p className="mt-1 tabular-nums">
                     {user.provider_profile.average_rating.toFixed(1)} (
                     {String(user.provider_profile.total_reviews)} reviews)

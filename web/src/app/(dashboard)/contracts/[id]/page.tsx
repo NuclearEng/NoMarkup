@@ -76,7 +76,7 @@ export default function ContractDetailPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="text-zinc-400 h-8 w-8 animate-spin" aria-hidden="true" />
+        <Loader2 className="text-zinc-300 h-8 w-8 animate-spin" aria-hidden="true" />
       </div>
     );
   }
@@ -86,7 +86,7 @@ export default function ContractDetailPage() {
       <div className="space-y-4">
         <Link
           href={'/contracts' as Route}
-          className="text-zinc-400 hover:text-foreground flex min-h-[44px] items-center gap-1 text-sm"
+          className="text-zinc-300 hover:text-foreground flex min-h-[44px] items-center gap-1 text-sm"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Contracts
@@ -135,7 +135,7 @@ export default function ContractDetailPage() {
       {/* Back link */}
       <Link
         href={'/contracts' as Route}
-        className="text-zinc-400 hover:text-foreground flex min-h-[44px] items-center gap-1 text-sm"
+        className="text-zinc-300 hover:text-foreground flex min-h-[44px] items-center gap-1 text-sm"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to Contracts
@@ -163,15 +163,15 @@ export default function ContractDetailPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-sm">Customer</span>
+              <span className="text-zinc-300 text-sm">Customer</span>
               <span className="text-sm font-medium">
                 {contract.customer_id.slice(0, 8)}...
                 {isCustomer ? ' (You)' : ''}
               </span>
             </div>
-            <div className="glass-divider" aria-hidden="true" />
+            <div className="glass-divider" role="separator" />
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-sm">Provider</span>
+              <span className="text-zinc-300 text-sm">Provider</span>
               <span className="text-sm font-medium">
                 {contract.provider_id.slice(0, 8)}...
                 {isProvider ? ' (You)' : ''}
@@ -187,14 +187,14 @@ export default function ContractDetailPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-sm">Payment Timing</span>
+              <span className="text-zinc-300 text-sm">Payment Timing</span>
               <span className="text-sm font-medium">
                 {getPaymentTimingLabel(contract.payment_timing)}
               </span>
             </div>
-            <div className="glass-divider" aria-hidden="true" />
+            <div className="glass-divider" role="separator" />
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-sm">Job</span>
+              <span className="text-zinc-300 text-sm">Job</span>
               <Link
                 href={`/jobs/${contract.job_id}` as Route}
                 className="text-primary text-sm font-medium hover:underline"
@@ -202,9 +202,9 @@ export default function ContractDetailPage() {
                 {contract.job_title || `${contract.job_id.slice(0, 8)}...`}
               </Link>
             </div>
-            <div className="glass-divider" aria-hidden="true" />
+            <div className="glass-divider" role="separator" />
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-sm">Created</span>
+              <span className="text-zinc-300 text-sm">Created</span>
               <span className="text-sm font-medium">
                 {new Date(contract.created_at).toLocaleDateString('en-US', {
                   month: 'short',
@@ -215,9 +215,9 @@ export default function ContractDetailPage() {
             </div>
             {contract.accepted_at ? (
               <>
-                <div className="glass-divider" aria-hidden="true" />
+                <div className="glass-divider" role="separator" />
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-400 text-sm">Accepted</span>
+                  <span className="text-zinc-300 text-sm">Accepted</span>
                   <span className="text-sm font-medium">
                     {new Date(contract.accepted_at).toLocaleDateString('en-US', {
                       month: 'short',
@@ -230,9 +230,9 @@ export default function ContractDetailPage() {
             ) : null}
             {contract.started_at ? (
               <>
-                <div className="glass-divider" aria-hidden="true" />
+                <div className="glass-divider" role="separator" />
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-400 text-sm">Started</span>
+                  <span className="text-zinc-300 text-sm">Started</span>
                   <span className="text-sm font-medium">
                     {new Date(contract.started_at).toLocaleDateString('en-US', {
                       month: 'short',
@@ -245,9 +245,9 @@ export default function ContractDetailPage() {
             ) : null}
             {contract.completed_at ? (
               <>
-                <div className="glass-divider" aria-hidden="true" />
+                <div className="glass-divider" role="separator" />
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-400 text-sm">Completed</span>
+                  <span className="text-zinc-300 text-sm">Completed</span>
                   <span className="text-sm font-medium">
                     {new Date(contract.completed_at).toLocaleDateString('en-US', {
                       month: 'short',
@@ -425,10 +425,10 @@ export default function ContractDetailPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{order.description}</p>
-                      <p className="text-zinc-400 mt-1 text-xs">
+                      <p className="text-zinc-300 mt-1 text-xs">
                         Proposed by: {order.proposed_by.slice(0, 8)}...
                       </p>
-                      <p className="text-zinc-400 text-xs">
+                      <p className="text-zinc-300 text-xs">
                         {new Date(order.created_at).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
@@ -457,7 +457,7 @@ export default function ContractDetailPage() {
           <CardContent className="flex items-center justify-between pt-6">
             <div>
               <h3 className="gold-text text-sm font-semibold">Auction Replay</h3>
-              <p className="text-zinc-400 text-xs">
+              <p className="text-zinc-300 text-xs">
                 Watch how providers competed for this job
               </p>
             </div>
@@ -496,7 +496,7 @@ function ReviewSection({ contractId }: { contractId: string }) {
     return (
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="text-zinc-400 h-6 w-6 animate-spin" aria-hidden="true" />
+          <Loader2 className="text-zinc-300 h-6 w-6 animate-spin" aria-hidden="true" />
         </CardContent>
       </Card>
     );
@@ -523,7 +523,7 @@ function ReviewSection({ contractId }: { contractId: string }) {
             You have already reviewed this contract.
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 text-sm text-zinc-400">
+          <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 text-sm text-zinc-300">
             <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
             The review window for this contract has closed.
           </div>

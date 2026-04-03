@@ -60,7 +60,7 @@ export default function ProviderChallengesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Challenges</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Complete challenges to earn rewards and climb the leaderboard.
         </p>
       </div>
@@ -74,7 +74,7 @@ export default function ProviderChallengesPage() {
             </div>
             <div>
               <p className="text-lg font-bold">{seasonalEvent}</p>
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-zinc-300">
                 Seasonal event is live. Complete seasonal challenges for bonus rewards.
               </p>
             </div>
@@ -124,8 +124,8 @@ export default function ProviderChallengesPage() {
           ) : availableChallenges.length === 0 ? (
             <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="flex flex-col items-center gap-3 py-12">
-                <Trophy className="h-10 w-10 text-zinc-400" aria-hidden="true" />
-                <p className="text-sm text-zinc-400">
+                <Trophy className="h-10 w-10 text-zinc-300" aria-hidden="true" />
+                <p className="text-sm text-zinc-300">
                   No new challenges available right now. Check back soon.
                 </p>
               </CardContent>
@@ -156,8 +156,8 @@ export default function ProviderChallengesPage() {
           ) : inProgressChallenges.length === 0 ? (
             <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="flex flex-col items-center gap-3 py-12">
-                <Trophy className="h-10 w-10 text-zinc-400" aria-hidden="true" />
-                <p className="text-sm text-zinc-400">
+                <Trophy className="h-10 w-10 text-zinc-300" aria-hidden="true" />
+                <p className="text-sm text-zinc-300">
                   You haven't joined any challenges yet. Browse available challenges to get started.
                 </p>
               </CardContent>
@@ -199,8 +199,8 @@ export default function ProviderChallengesPage() {
           ) : completedChallenges.length === 0 ? (
             <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="flex flex-col items-center gap-3 py-12">
-                <Trophy className="h-10 w-10 text-zinc-400" aria-hidden="true" />
-                <p className="text-sm text-zinc-400">
+                <Trophy className="h-10 w-10 text-zinc-300" aria-hidden="true" />
+                <p className="text-sm text-zinc-300">
                   No completed challenges yet. Keep working toward your goals.
                 </p>
               </CardContent>

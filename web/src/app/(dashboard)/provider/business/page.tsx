@@ -22,7 +22,7 @@ function StatCard({
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="p-4">
-        <p className="text-sm font-medium text-zinc-400">{title}</p>
+        <p className="text-sm font-medium text-zinc-300">{title}</p>
         {loading ? (
           <Skeleton className="mt-1 h-8 w-24" />
         ) : (
@@ -69,7 +69,7 @@ export default function ProviderBusinessPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Business Services</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Manage your business finances, taxes, and invoices.
         </p>
       </div>
@@ -107,7 +107,7 @@ export default function ProviderBusinessPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-zinc-400">{link.description}</p>
+                <p className="text-sm text-zinc-300">{link.description}</p>
               </CardContent>
             </Card>
           </Link>

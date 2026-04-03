@@ -113,7 +113,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   'flex min-h-[44px] min-w-[44px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-3 py-1 text-[0.625rem] font-medium transition-colors duration-200',
                   active
                     ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
-                    : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200',
+                    : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200',
                 )}
               >
                 <item.icon className="h-5 w-5" aria-hidden="true" />
@@ -144,7 +144,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       'relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                       active
                         ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)] shadow-[inset_0_1px_0_rgba(201,168,76,0.1)]'
-                        : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200',
+                        : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200',
                     )}
                   >
                     <item.icon

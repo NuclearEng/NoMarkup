@@ -77,7 +77,7 @@ function UsageBar({ label, current, max }: UsageBarProps) {
             'tabular-nums',
             isNearLimit
               ? 'font-semibold text-amber-600 dark:text-amber-400'
-              : 'text-zinc-400',
+              : 'text-zinc-300',
           )}
         >
           {String(current)} / {String(max)}
@@ -129,7 +129,7 @@ export default function SubscriptionPage() {
       <div className="space-y-6">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Subscription</h1>
-          <p className="mt-1 text-zinc-400">
+          <p className="mt-1 text-zinc-300">
             Manage your plan, view usage, and billing history.
           </p>
         </div>
@@ -168,7 +168,7 @@ export default function SubscriptionPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Subscription</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Manage your plan, view usage, and billing history.
         </p>
       </div>
@@ -188,12 +188,12 @@ export default function SubscriptionPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xl font-bold">{subscription.tier.name}</p>
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-zinc-300">
                   {formatCents(subscription.current_price_cents)}/
                   {subscription.billing_interval === BILLING_INTERVAL.ANNUAL ? 'year' : 'month'}
                 </p>
               </div>
-              <div className="text-sm text-zinc-400">
+              <div className="text-sm text-zinc-300">
                 <p>
                   Current period:{' '}
                   {new Date(subscription.current_period_start).toLocaleDateString('en-US', {
@@ -235,7 +235,7 @@ export default function SubscriptionPage() {
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <p className="text-lg font-medium">No active subscription</p>
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="mt-1 text-sm text-zinc-300">
               Choose a plan below to get started.
             </p>
           </CardContent>
@@ -264,9 +264,9 @@ export default function SubscriptionPage() {
               current={usage.portfolio_images}
               max={usage.max_portfolio_images}
             />
-            <div className="glass-divider" aria-hidden="true" />
+            <div className="glass-divider" role="separator" />
             <div className="flex items-center justify-between text-sm">
-              <span className="text-zinc-400">Current platform fee</span>
+              <span className="text-zinc-300">Current platform fee</span>
               <span className="font-semibold">
                 {String(usage.current_fee_percentage)}%
               </span>
@@ -369,7 +369,7 @@ export default function SubscriptionPage() {
           <CardContent>
             <div className="space-y-2">
               {/* Header */}
-              <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-400 sm:flex">
+              <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-300 sm:flex">
                 <div className="flex-1">Period</div>
                 <div className="w-24 text-right">Amount</div>
                 <div className="w-20 text-center">Status</div>
@@ -410,7 +410,7 @@ export default function SubscriptionPage() {
                         href={invoice.pdf_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-zinc-400 hover:text-foreground"
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-zinc-300 hover:text-foreground"
                         aria-label={`Download invoice for ${new Date(invoice.period_start).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`}
                       >
                         <Download className="h-4 w-4" aria-hidden="true" />
@@ -436,7 +436,7 @@ export default function SubscriptionPage() {
           <CardContent className="space-y-4">
             {!showCancelConfirm ? (
               <div>
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-zinc-300">
                   You can cancel your subscription at any time. Your plan will remain active until
                   the end of the current billing period.
                 </p>
@@ -468,7 +468,7 @@ export default function SubscriptionPage() {
                   </label>
                   <textarea
                     id="cancel-reason"
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring"
                     rows={3}
                     value={cancelReason}
                     onChange={(e) => { setCancelReason(e.target.value); }}

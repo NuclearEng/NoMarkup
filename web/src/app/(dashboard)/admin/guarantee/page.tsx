@@ -115,7 +115,7 @@ export default function AdminGuaranteePage() {
       key: 'created_at',
       header: 'Filed',
       render: (claim) => (
-        <span className="text-zinc-400">{formatDate(claim.created_at)}</span>
+        <span className="text-zinc-300">{formatDate(claim.created_at)}</span>
       ),
     },
     {
@@ -133,7 +133,6 @@ export default function AdminGuaranteePage() {
 
   if (isError) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <h1 className="gold-text text-2xl font-bold tracking-tight">Guarantee Claims</h1>
         <EmptyState
@@ -142,7 +141,6 @@ export default function AdminGuaranteePage() {
           description="Please try refreshing the page."
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -151,13 +149,13 @@ export default function AdminGuaranteePage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Guarantee Claims</h1>
-        <p className="text-zinc-400 mt-1">
+        <p className="text-zinc-300 mt-1">
           Review and resolve NoMarkup Guarantee claims filed by customers.
         </p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-zinc-400 text-sm font-medium">Status:</span>
+        <span className="text-zinc-300 text-sm font-medium">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {

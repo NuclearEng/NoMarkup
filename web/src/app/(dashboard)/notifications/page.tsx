@@ -47,7 +47,7 @@ export default function NotificationsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Notifications</h1>
-          <p className="mt-1 text-zinc-400">
+          <p className="mt-1 text-zinc-300">
             Stay up to date with your activity and updates.
           </p>
         </div>
@@ -69,7 +69,7 @@ export default function NotificationsPage() {
             'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors',
             !unreadOnly
               ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-zinc-400 hover:text-foreground',
+              : 'bg-muted text-zinc-300 hover:text-foreground',
           )}
           onClick={() => {
             if (unreadOnly) handleToggleUnread();
@@ -83,7 +83,7 @@ export default function NotificationsPage() {
             'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors',
             unreadOnly
               ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-zinc-400 hover:text-foreground',
+              : 'bg-muted text-zinc-300 hover:text-foreground',
           )}
           onClick={() => {
             if (!unreadOnly) handleToggleUnread();
@@ -160,7 +160,7 @@ export default function NotificationsPage() {
           >
             Previous
           </Button>
-          <span className="text-zinc-400 text-sm">
+          <span className="text-zinc-300 text-sm">
             Page {String(page)} of {String(pagination.totalPages)}
           </span>
           <Button

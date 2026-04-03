@@ -67,7 +67,7 @@ export default function PropertiesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">My Properties</h1>
-          <p className="mt-1 text-zinc-400">Manage your service locations</p>
+          <p className="mt-1 text-zinc-300">Manage your service locations</p>
         </div>
         <Button
           onClick={() => {
@@ -261,11 +261,11 @@ export default function PropertiesPage() {
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
-                <p className="text-zinc-400 text-sm">
+                <p className="text-zinc-300 text-sm">
                   {property.address}, {property.city}, {property.state} {property.zip_code}
                 </p>
                 {property.notes ? (
-                  <p className="text-zinc-400 mt-1 text-xs">{property.notes}</p>
+                  <p className="text-zinc-300 mt-1 text-xs">{property.notes}</p>
                 ) : null}
                 <div className="mt-3 flex items-center gap-3">
                   <Badge variant="secondary">

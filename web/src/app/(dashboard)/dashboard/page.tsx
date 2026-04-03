@@ -79,7 +79,7 @@ function StatCard({
       )}
     >
       <CardHeader className="relative z-[2] flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-zinc-400">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-zinc-300">{title}</CardTitle>
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/[0.06]">
           <Icon className="h-4 w-4 text-zinc-500" aria-hidden="true" />
         </div>
@@ -101,11 +101,11 @@ function StatCard({
                   <TrendArrow value={trendValue} label={trendLabel} size="sm" />
                 ) : null}
                 {description && trendValue === undefined ? (
-                  <p className="text-xs text-zinc-400">{description}</p>
+                  <p className="text-xs text-zinc-300">{description}</p>
                 ) : null}
               </div>
               {description && trendValue !== undefined ? (
-                <p className="mt-0.5 text-xs text-zinc-400">{description}</p>
+                <p className="mt-0.5 text-xs text-zinc-300">{description}</p>
               ) : null}
             </div>
             {sparklineData && sparklineData.length >= 2 ? (
@@ -149,7 +149,7 @@ function QuickActionCard({
           </div>
           <div>
             <p className="font-medium text-zinc-100">{title}</p>
-            <p className="text-xs text-zinc-400">{description}</p>
+            <p className="text-xs text-zinc-300">{description}</p>
           </div>
         </CardContent>
       </Card>
@@ -261,7 +261,7 @@ function CustomerDashboard() {
       {ENABLE_LIVE_AUCTION ? <SavingsTracker /> : null}
 
       {/* Section divider — glass */}
-      <div className="glass-divider" aria-hidden="true" />
+      <div className="glass-divider" role="separator" />
 
       {/* Recent jobs */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -283,21 +283,21 @@ function CustomerDashboard() {
               ))}
             </div>
           ) : !jobsData?.jobs.length ? (
-            <p className="py-4 text-center text-sm text-zinc-400">
+            <p className="py-4 text-center text-sm text-zinc-300">
               No active jobs. Post your first job to get started.
             </p>
           ) : (
             <div className="relative z-[2]">
               {jobsData.jobs.slice(0, 5).map((job, index) => (
                 <div key={job.id}>
-                  {index > 0 ? <div className="glass-divider" aria-hidden="true" /> : null}
+                  {index > 0 ? <div className="glass-divider" role="separator" /> : null}
                   <Link
                     href={`/jobs/${job.id}`}
                     className="flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:bg-white/[0.04] hover:pl-4"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{job.title}</p>
-                      <p className="text-xs text-zinc-400">{job.category_name}</p>
+                      <p className="text-xs text-zinc-300">{job.category_name}</p>
                     </div>
                     <div className="ml-3 flex items-center gap-2">
                       <Badge variant="secondary">
@@ -393,7 +393,7 @@ function ProviderDashboardSection() {
       </div>
 
       {/* Section divider — glass */}
-      <div className="glass-divider" aria-hidden="true" />
+      <div className="glass-divider" role="separator" />
 
       {/* Recent bids */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -415,21 +415,21 @@ function ProviderDashboardSection() {
               ))}
             </div>
           ) : !bidsData?.bids.length ? (
-            <p className="py-4 text-center text-sm text-zinc-400">
+            <p className="py-4 text-center text-sm text-zinc-300">
               No active bids. Browse jobs to start bidding.
             </p>
           ) : (
             <div className="relative z-[2]">
               {bidsData.bids.slice(0, 5).map((bid, index) => (
                 <div key={bid.id}>
-                  {index > 0 ? <div className="glass-divider" aria-hidden="true" /> : null}
+                  {index > 0 ? <div className="glass-divider" role="separator" /> : null}
                   <Link
                     href={`/jobs/${bid.job_id}`}
                     className="flex items-center justify-between rounded-md p-3 transition-all duration-150 hover:bg-white/[0.04] hover:pl-4"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">Bid: {formatCents(bid.amount_cents)}</p>
-                      <p className="text-xs text-zinc-400">
+                      <p className="text-xs text-zinc-300">
                         Placed{' '}
                         {new Date(bid.created_at).toLocaleDateString('en-US', {
                           month: 'short',
@@ -498,7 +498,7 @@ export default function DashboardPage() {
               {'\u{1F44B}'}
             </span>
           </h1>
-          <p className="mt-1 text-zinc-400">Here is what is happening across your account today.</p>
+          <p className="mt-1 text-zinc-300">Here is what is happening across your account today.</p>
         </div>
 
         <QuickActions isProvider={isProvider} />
@@ -507,7 +507,7 @@ export default function DashboardPage() {
           <div>
             {isProvider ? (
               <>
-                <div className="glass-divider" aria-hidden="true" />
+                <div className="glass-divider" role="separator" />
                 <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">
                   Customer Overview
                 </h2>
@@ -521,7 +521,7 @@ export default function DashboardPage() {
           <div>
             {isCustomer ? (
               <>
-                <div className="glass-divider" aria-hidden="true" />
+                <div className="glass-divider" role="separator" />
                 <h2 className="gold-text mt-6 mb-4 text-lg font-bold tracking-tight">
                   Provider Overview
                 </h2>

@@ -87,7 +87,7 @@ function SummaryCards() {
       {cards.map((card) => (
         <Card key={card.title}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-400">
+            <CardTitle className="text-sm font-medium text-zinc-300">
               {card.title}
             </CardTitle>
           </CardHeader>
@@ -99,7 +99,7 @@ function SummaryCards() {
                 {card.value}
               </p>
             )}
-            <p className="mt-1 text-xs text-zinc-400">{card.description}</p>
+            <p className="mt-1 text-xs text-zinc-300">{card.description}</p>
           </CardContent>
         </Card>
       ))}
@@ -113,7 +113,7 @@ export default function AdminFraudPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Fraud Detection</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Monitor fraud signals, investigate alerts, and manage user risk.
         </p>
       </div>

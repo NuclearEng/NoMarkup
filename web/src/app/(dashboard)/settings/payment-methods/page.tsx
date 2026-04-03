@@ -49,7 +49,7 @@ export default function PaymentMethodsPage() {
           <h1 className="gold-text text-2xl font-bold tracking-tight">
             Payment Methods
           </h1>
-          <p className="mt-1 text-zinc-400">
+          <p className="mt-1 text-zinc-300">
             Manage your payment methods and payout settings
           </p>
         </div>
@@ -101,7 +101,7 @@ export default function PaymentMethodsPage() {
             </div>
           ) : methods.length === 0 ? (
             <div className="rounded-lg border p-6 text-center">
-              <p className="text-zinc-400">
+              <p className="text-zinc-300">
                 No payment methods saved yet.
               </p>
             </div>
@@ -114,14 +114,14 @@ export default function PaymentMethodsPage() {
                 >
                   <div className="flex items-center gap-3">
                     <CreditCard
-                      className="h-5 w-5 text-zinc-400"
+                      className="h-5 w-5 text-zinc-300"
                       aria-hidden="true"
                     />
                     <div>
                       <p className="font-medium">
                         {method.brand} ending in {method.last_four}
                       </p>
-                      <p className="text-sm text-zinc-400">
+                      <p className="text-sm text-zinc-300">
                         Expires {method.exp_month}/{method.exp_year}
                       </p>
                     </div>
@@ -153,7 +153,7 @@ export default function PaymentMethodsPage() {
         </CardContent>
       </Card>
 
-      <div className="glass-divider" aria-hidden="true" />
+      <div className="glass-divider" role="separator" />
 
       {/* Stripe Connect Status (for providers) */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -164,7 +164,7 @@ export default function PaymentMethodsPage() {
           {stripeStatus.isLoading ? (
             <Skeleton className="h-16 w-full rounded-lg" />
           ) : stripeStatus.isError ? (
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-zinc-300">
               Payout settings are only available for provider accounts.
             </p>
           ) : stripeStatus.data ? (
@@ -184,19 +184,19 @@ export default function PaymentMethodsPage() {
                 </Badge>
               </div>
               {!stripeStatus.data.charges_enabled ? (
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-zinc-300">
                   Complete your Stripe account setup to receive payouts for
                   completed jobs.
                 </p>
               ) : (
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-zinc-300">
                   Your Stripe account is connected and ready to receive payouts.
                 </p>
               )}
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-zinc-300">
                 Connect a Stripe account to receive payouts for completed jobs.
               </p>
               <Button

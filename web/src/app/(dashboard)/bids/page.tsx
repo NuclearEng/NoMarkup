@@ -105,7 +105,7 @@ function BidTabContent({ tab }: { tab: BidTab }) {
           >
             Previous
           </Button>
-          <span className="text-sm text-zinc-400">
+          <span className="text-sm text-zinc-300">
             Page {String(page)} of {String(pagination.totalPages)}
           </span>
           <Button
@@ -130,7 +130,7 @@ export default function MyBidsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">My Bids</h1>
-        <p className="mt-1 text-zinc-400">Track and manage your bids across all jobs.</p>
+        <p className="mt-1 text-zinc-300">Track and manage your bids across all jobs.</p>
       </div>
 
       <Tabs defaultValue="all">

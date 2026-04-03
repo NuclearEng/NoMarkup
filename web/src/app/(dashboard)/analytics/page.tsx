@@ -82,9 +82,9 @@ function MetricCard({ label, value, icon: Icon, subValue }: MetricCardProps) {
           <Icon className="text-primary h-5 w-5" aria-hidden="true" />
         </div>
         <div className="min-w-0">
-          <p className="text-xs text-zinc-400">{label}</p>
+          <p className="text-xs text-zinc-300">{label}</p>
           <p className="text-lg font-bold">{value}</p>
-          {subValue ? <p className="text-xs text-zinc-400">{subValue}</p> : null}
+          {subValue ? <p className="text-xs text-zinc-300">{subValue}</p> : null}
         </div>
       </CardContent>
     </Card>
@@ -230,14 +230,14 @@ function ProviderAnalyticsView() {
           <CardContent>
             <div className="space-y-1">
               {/* Header */}
-              <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-400 sm:flex">
+              <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-300 sm:flex">
                 <div className="flex-1">Category</div>
                 <div className="w-20 text-right">Jobs</div>
                 <div className="w-28 text-right">Earnings</div>
                 <div className="w-16 text-right">Rating</div>
               </div>
 
-              <div className="glass-divider" aria-hidden="true" />
+              <div className="glass-divider" role="separator" />
 
               {analytics.category_breakdown.map((cat) => (
                 <div
@@ -409,7 +409,7 @@ function CustomerAnalyticsView() {
                     {spending.data_points.map((point) => (
                       <div
                         key={point.period_start}
-                        className="text-zinc-400 flex-1 text-center text-[10px]"
+                        className="text-zinc-300 flex-1 text-center text-[10px]"
                       >
                         {new Date(point.period_start).toLocaleDateString('en-US', {
                           month: 'short',
@@ -432,13 +432,13 @@ function CustomerAnalyticsView() {
               <CardContent>
                 <div className="space-y-1">
                   {/* Header */}
-                  <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-400 sm:flex">
+                  <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-300 sm:flex">
                     <div className="flex-1">Category</div>
                     <div className="w-20 text-right">Jobs</div>
                     <div className="w-28 text-right">Total Spent</div>
                   </div>
 
-                  <div className="glass-divider" aria-hidden="true" />
+                  <div className="glass-divider" role="separator" />
 
                   {spending.category_breakdown.map((cat) => (
                     <div
@@ -474,7 +474,7 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           {isProvider
             ? 'Track your performance, earnings, and growth.'
             : 'Track your spending, job activity, and savings.'}

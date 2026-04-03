@@ -60,7 +60,7 @@ function ExpenseItem({ expense }: { expense: ProviderExpense }) {
           </span>
         </div>
         <p className="mt-1 text-sm">{expense.description}</p>
-        <p className="text-xs text-zinc-400">{formatDate(expense.expense_date)}</p>
+        <p className="text-xs text-zinc-300">{formatDate(expense.expense_date)}</p>
         {expense.receipt_url ? (
           <a
             href={expense.receipt_url}
@@ -143,7 +143,7 @@ export default function ExpensesPage() {
       <div className="flex items-center gap-4">
         <Link
           href="/provider/business"
-          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
+          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-300 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Business Services
@@ -152,7 +152,7 @@ export default function ExpensesPage() {
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Expense Tracking</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Track business expenses for tax deductions and financial planning.
         </p>
       </div>
@@ -261,7 +261,7 @@ export default function ExpensesPage() {
             ) : (
               <p className="text-2xl font-bold tabular-nums">{formatCents(totalCents)}</p>
             )}
-            <p className="mt-1 text-xs text-zinc-400">
+            <p className="mt-1 text-xs text-zinc-300">
               {String(expenses.length)} expense{expenses.length !== 1 ? 's' : ''} recorded
             </p>
           </CardContent>
@@ -279,7 +279,7 @@ export default function ExpensesPage() {
                 ))}
               </div>
             ) : Object.keys(categoryBreakdown).length === 0 ? (
-              <p className="text-sm text-zinc-400">No expenses recorded yet.</p>
+              <p className="text-sm text-zinc-300">No expenses recorded yet.</p>
             ) : (
               <div className="space-y-2">
                 {Object.entries(categoryBreakdown)
@@ -322,7 +322,7 @@ export default function ExpensesPage() {
             </div>
           ) : expenses.length === 0 ? (
             <div className="py-6 text-center">
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-zinc-300">
                 No expenses recorded yet. Add your first expense above.
               </p>
             </div>

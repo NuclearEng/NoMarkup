@@ -45,7 +45,6 @@ export default function ProfilePage() {
 
   if (error || !user) {
     return (
-      <PageTransition>
         <div className="flex items-center justify-center p-12">
           <EmptyState
             icon={<AnimatedIllustration type="error" size="md" />}
@@ -53,7 +52,6 @@ export default function ProfilePage() {
             description="Something went wrong. Please try again."
           />
         </div>
-      </PageTransition>
     );
   }
 
@@ -100,7 +98,7 @@ export default function ProfilePage() {
 
               <div className="flex-1 space-y-1">
                 <h2 className="text-xl font-semibold">{user.displayName}</h2>
-                <p className="text-zinc-400 text-sm">{user.email}</p>
+                <p className="text-zinc-300 text-sm">{user.email}</p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {user.roles.map((role) => (
                     <Badge key={role} variant="secondary" className="glass-badge text-xs">
@@ -116,7 +114,7 @@ export default function ProfilePage() {
 
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <dt className="text-zinc-400 text-sm font-medium">Member Since</dt>
+                <dt className="text-zinc-300 text-sm font-medium">Member Since</dt>
                 <dd className="text-sm">
                   {new Date(user.createdAt).toLocaleDateString('en-US', {
                     year: 'numeric',
@@ -126,7 +124,7 @@ export default function ProfilePage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-400 text-sm font-medium">MFA</dt>
+                <dt className="text-zinc-300 text-sm font-medium">MFA</dt>
                 <dd className="text-sm">{user.mfaEnabled ? 'Enabled' : 'Disabled'}</dd>
               </div>
             </dl>
@@ -166,13 +164,13 @@ export default function ProfilePage() {
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {providerProfile.businessName ? (
                 <div>
-                  <dt className="text-zinc-400 text-sm font-medium">Business Name</dt>
+                  <dt className="text-zinc-300 text-sm font-medium">Business Name</dt>
                   <dd className="text-sm">{providerProfile.businessName}</dd>
                 </div>
               ) : null}
               {providerProfile.serviceCategories.length > 0 ? (
                 <div>
-                  <dt className="text-zinc-400 text-sm font-medium">Service Categories</dt>
+                  <dt className="text-zinc-300 text-sm font-medium">Service Categories</dt>
                   <dd className="flex flex-wrap gap-1 pt-1">
                     {providerProfile.serviceCategories.map((cat) => (
                       <Badge key={cat.id} variant="outline" className="glass-badge text-xs">
@@ -183,33 +181,33 @@ export default function ProfilePage() {
                 </div>
               ) : null}
               <div>
-                <dt className="text-zinc-400 text-sm font-medium">Service Radius</dt>
+                <dt className="text-zinc-300 text-sm font-medium">Service Radius</dt>
                 <dd className="text-sm">{String(providerProfile.serviceRadiusKm)} km</dd>
               </div>
               <div>
-                <dt className="text-zinc-400 text-sm font-medium">Jobs Completed</dt>
+                <dt className="text-zinc-300 text-sm font-medium">Jobs Completed</dt>
                 <dd className="text-sm">{String(providerProfile.jobsCompleted)}</dd>
               </div>
               {providerProfile.onTimeRate !== null ? (
                 <div>
-                  <dt className="text-zinc-400 text-sm font-medium">On-Time Rate</dt>
+                  <dt className="text-zinc-300 text-sm font-medium">On-Time Rate</dt>
                   <dd className="text-sm">{(providerProfile.onTimeRate * 100).toFixed(0)}%</dd>
                 </div>
               ) : null}
               <div>
-                <dt className="text-zinc-400 text-sm font-medium">Stripe</dt>
+                <dt className="text-zinc-300 text-sm font-medium">Stripe</dt>
                 <dd className="text-sm">
                   {providerProfile.stripeOnboardingComplete ? 'Connected' : 'Not connected'}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-400 text-sm font-medium">Profile Completeness</dt>
+                <dt className="text-zinc-300 text-sm font-medium">Profile Completeness</dt>
                 <dd className="text-sm">{String(providerProfile.profileCompleteness)}%</dd>
               </div>
             </dl>
             {providerProfile.bio ? (
               <div className="mt-4">
-                <p className="text-zinc-400 text-sm font-medium">Bio</p>
+                <p className="text-zinc-300 text-sm font-medium">Bio</p>
                 <p className="mt-1 text-sm">{providerProfile.bio}</p>
               </div>
             ) : null}

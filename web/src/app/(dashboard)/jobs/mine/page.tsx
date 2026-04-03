@@ -47,7 +47,7 @@ export default function MyJobsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">My Jobs</h1>
-          <p className="text-sm text-zinc-400">Manage your job postings</p>
+          <p className="text-sm text-zinc-300">Manage your job postings</p>
         </div>
         <Link href={'/jobs/new' as Route}>
           <Button className="min-h-[44px]">
@@ -86,7 +86,7 @@ export default function MyJobsPage() {
                   type={tab.value === 'all' ? 'no-jobs' : 'search-empty'}
                   size="md"
                 />
-                <p className="mt-4 text-zinc-400">
+                <p className="mt-4 text-zinc-300">
                   {tab.value === 'draft'
                     ? 'No drafts yet. Start posting a job to save drafts.'
                     : tab.value === 'all'
@@ -124,7 +124,7 @@ export default function MyJobsPage() {
                     >
                       Previous
                     </Button>
-                    <span className="px-4 text-sm text-zinc-400">
+                    <span className="px-4 text-sm text-zinc-300">
                       Page {String(page)} of {String(totalPages)}
                     </span>
                     <Button

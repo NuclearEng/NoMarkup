@@ -24,24 +24,34 @@ export const DISPUTE_STATUS_CLASSES: Record<string, string> = {
 /** Guarantee claim status (reuses dispute statuses) */
 export const GUARANTEE_STATUS_CLASSES: Record<string, string> = {
   open: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  under_review: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
   investigating: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
   resolved: 'bg-green-500/10 text-green-300 border-green-500/30',
   escalated: 'bg-red-500/10 text-red-300 border-red-500/30',
   approved: 'bg-green-500/10 text-green-300 border-green-500/30',
   denied: 'bg-red-500/10 text-red-300 border-red-500/30',
   paid: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  closed: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
 };
 
 /** Job status */
 export const JOB_STATUS_CLASSES: Record<string, string> = {
   draft: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  active: 'bg-green-500/10 text-green-300 border-green-500/30',
   open: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   bidding: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
   awarded: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+  contract_pending: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
   in_progress: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
   completed: 'bg-green-500/10 text-green-300 border-green-500/30',
+  reviewed: 'bg-green-500/10 text-green-300 border-green-500/30',
   disputed: 'bg-red-500/10 text-red-300 border-red-500/30',
   cancelled: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  reposted: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  closed: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  closed_zero_bids: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  expired: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  suspended: 'bg-red-500/10 text-red-300 border-red-500/30',
 };
 
 /** Payment status */

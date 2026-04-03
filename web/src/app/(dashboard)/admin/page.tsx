@@ -22,7 +22,7 @@ export default function AdminOverviewPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Admin Overview</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Platform health at a glance.
         </p>
       </div>

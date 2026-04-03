@@ -114,7 +114,6 @@ export default function AdminDisputeDetailPage() {
 
   if (isError || !dispute) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <Breadcrumb
           items={[
@@ -129,7 +128,6 @@ export default function AdminDisputeDetailPage() {
           title="Failed to load dispute details"
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -147,7 +145,7 @@ export default function AdminDisputeDetailPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Detail</h1>
-          <p className="text-zinc-400 mt-1 font-mono text-sm">{dispute.id}</p>
+          <p className="text-zinc-300 mt-1 font-mono text-sm">{dispute.id}</p>
         </div>
         <Badge
           variant="outline"
@@ -165,30 +163,30 @@ export default function AdminDisputeDetailPage() {
         <CardContent>
           <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <span className="text-zinc-400">Contract ID</span>
+              <span className="text-zinc-300">Contract ID</span>
               <p className="mt-1 font-mono text-xs">{dispute.contract_id}</p>
             </div>
             <div>
-              <span className="text-zinc-400">Initiated By</span>
+              <span className="text-zinc-300">Initiated By</span>
               <p className="mt-1">{dispute.initiator_name ?? dispute.initiated_by.slice(0, 12)}</p>
             </div>
             <div>
-              <span className="text-zinc-400">Respondent</span>
+              <span className="text-zinc-300">Respondent</span>
               <p className="mt-1">{dispute.respondent_name ? dispute.respondent_name : 'N/A'}</p>
             </div>
             <div>
-              <span className="text-zinc-400">Opened</span>
+              <span className="text-zinc-300">Opened</span>
               <p className="mt-1">{formatDate(dispute.created_at)}</p>
             </div>
             {dispute.resolved_at ? (
               <div>
-                <span className="text-zinc-400">Resolved</span>
+                <span className="text-zinc-300">Resolved</span>
                 <p className="mt-1">{formatDate(dispute.resolved_at)}</p>
               </div>
             ) : null}
             {dispute.refund_amount_cents !== undefined && dispute.refund_amount_cents > 0 ? (
               <div>
-                <span className="text-zinc-400">Refund Amount</span>
+                <span className="text-zinc-300">Refund Amount</span>
                 <p className="mt-1 font-medium tabular-nums">
                   {formatCents(dispute.refund_amount_cents)}
                 </p>
@@ -197,20 +195,20 @@ export default function AdminDisputeDetailPage() {
           </div>
 
           <div className="mt-4">
-            <span className="text-zinc-400 text-sm">Reason</span>
+            <span className="text-zinc-300 text-sm">Reason</span>
             <p className="mt-1 text-sm">{dispute.reason}</p>
           </div>
 
           {dispute.resolution_notes ? (
             <div className="mt-4">
-              <span className="text-zinc-400 text-sm">Resolution Notes</span>
+              <span className="text-zinc-300 text-sm">Resolution Notes</span>
               <p className="mt-1 text-sm">{dispute.resolution_notes}</p>
             </div>
           ) : null}
 
           {dispute.resolution_type ? (
             <div className="mt-4">
-              <span className="text-zinc-400 text-sm">Resolution</span>
+              <span className="text-zinc-300 text-sm">Resolution</span>
               <p className="mt-1 text-sm font-medium">
                 {RESOLUTION_LABELS[dispute.resolution_type]}
               </p>

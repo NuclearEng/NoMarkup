@@ -15,7 +15,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
         <ShieldAlert className="h-12 w-12 text-destructive" aria-hidden="true" />
         <h1 className="text-2xl font-bold">Access Denied</h1>
-        <p className="text-zinc-400">
+        <p className="text-zinc-300">
           You do not have permission to access the admin dashboard.
         </p>
       </div>

@@ -60,7 +60,7 @@ export default function GuaranteeClaimPage() {
       <div className="space-y-4">
         <Link
           href={`/contracts/${contractId}` as Route}
-          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
+          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-300 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Contract
@@ -82,7 +82,7 @@ export default function GuaranteeClaimPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <Link
         href={`/contracts/${contractId}` as Route}
-        className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
+        className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-300 hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to Contract {contractData.contract.contract_number}
@@ -99,28 +99,28 @@ export default function GuaranteeClaimPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Status</span>
+              <span className="text-sm text-zinc-300">Status</span>
               <Badge variant="outline" className={GUARANTEE_STATUS_CLASSES[existingClaim.status]}>
                 {CLAIM_STATUS_LABELS[existingClaim.status] ?? existingClaim.status}
               </Badge>
             </div>
             <div>
-              <span className="text-sm text-zinc-400">Filed</span>
+              <span className="text-sm text-zinc-300">Filed</span>
               <p className="mt-1 text-sm">{formatDate(existingClaim.created_at)}</p>
             </div>
             <div>
-              <span className="text-sm text-zinc-400">Description</span>
+              <span className="text-sm text-zinc-300">Description</span>
               <p className="mt-1 text-sm">{existingClaim.description}</p>
             </div>
             {existingClaim.resolution_notes ? (
               <div>
-                <span className="text-sm text-zinc-400">Resolution</span>
+                <span className="text-sm text-zinc-300">Resolution</span>
                 <p className="mt-1 text-sm">{existingClaim.resolution_notes}</p>
               </div>
             ) : null}
             {existingClaim.refund_amount_cents !== undefined && existingClaim.refund_amount_cents > 0 ? (
               <div>
-                <span className="text-sm text-zinc-400">Payout</span>
+                <span className="text-sm text-zinc-300">Payout</span>
                 <p className="mt-1 text-sm font-medium tabular-nums">
                   {formatCents(existingClaim.refund_amount_cents)}
                 </p>

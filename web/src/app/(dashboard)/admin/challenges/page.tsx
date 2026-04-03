@@ -9,7 +9,7 @@ export default function AdminChallengesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Challenge Management</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Create and manage provider challenges and seasonal events.
         </p>
       </div>

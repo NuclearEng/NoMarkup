@@ -76,7 +76,7 @@ export default function MessagesPage() {
       <div className="mb-4 flex items-center gap-2">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Messages</h1>
-          <p className="mt-1 text-zinc-400">Communicate with customers and providers.</p>
+          <p className="mt-1 text-zinc-300">Communicate with customers and providers.</p>
         </div>
         <div className="ml-auto">
           <ConnectionStatusDot />

@@ -52,7 +52,7 @@ export default function AdminVerificationPage() {
       render: (doc) => (
         <div>
           <p className="font-medium">{doc.user_name}</p>
-          <p className="text-xs text-zinc-400 font-mono">{doc.user_id.slice(0, 8)}...</p>
+          <p className="text-xs text-zinc-300 font-mono">{doc.user_id.slice(0, 8)}...</p>
         </div>
       ),
     },
@@ -78,7 +78,7 @@ export default function AdminVerificationPage() {
       key: 'submitted',
       header: 'Submitted',
       render: (doc) => (
-        <span className="text-zinc-400">{formatDate(doc.submitted_at)}</span>
+        <span className="text-zinc-300">{formatDate(doc.submitted_at)}</span>
       ),
     },
     {
@@ -120,7 +120,6 @@ export default function AdminVerificationPage() {
 
   if (isError) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <h1 className="gold-text text-2xl font-bold tracking-tight">Verification Queue</h1>
         <EmptyState
@@ -129,7 +128,6 @@ export default function AdminVerificationPage() {
           description="Please try refreshing the page."
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -138,7 +136,7 @@ export default function AdminVerificationPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Verification Queue</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Review and approve provider verification documents.
         </p>
       </div>

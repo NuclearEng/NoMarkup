@@ -21,7 +21,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="mt-1 text-zinc-400">Manage your account preferences.</p>
+        <p className="mt-1 text-zinc-300">Manage your account preferences.</p>
       </div>
 
       {/* Settings tab navigation */}
@@ -39,7 +39,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 'flex min-h-[44px] items-center gap-2 rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors',
                 active
                   ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
-                  : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200',
+                  : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200',
               )}
               aria-current={active ? 'page' : undefined}
             >

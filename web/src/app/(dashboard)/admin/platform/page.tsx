@@ -44,7 +44,7 @@ function AnalyticsToggle() {
       <CardContent className="flex items-center justify-between p-4">
         <div>
           <p className="font-medium">Enable analytics for all users</p>
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-zinc-300">
             When enabled, all users will see analytics dashboards with spending/earnings data.
           </p>
         </div>
@@ -95,7 +95,7 @@ export default function AdminPlatformPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Platform Analytics</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Comprehensive platform performance metrics and growth trends.
         </p>
       </div>
@@ -157,14 +157,14 @@ export default function AdminPlatformPage() {
               <div className="h-6 w-32 animate-pulse rounded bg-muted" />
             </div>
           ) : !growth || growth.data_points.length === 0 ? (
-            <div className="flex h-48 items-center justify-center text-sm text-zinc-400">
+            <div className="flex h-48 items-center justify-center text-sm text-zinc-300">
               No growth data available for the selected period.
             </div>
           ) : (
             <div className="space-y-4">
               {/* GMV Bars */}
               <div>
-                <h3 className="mb-3 text-sm font-medium text-zinc-400">
+                <h3 className="mb-3 text-sm font-medium text-zinc-300">
                   GMV by Period
                 </h3>
                 <div className="space-y-2">
@@ -177,7 +177,7 @@ export default function AdminPlatformPage() {
                     );
                     return (
                       <div key={dp.period_start} className="flex items-center gap-3">
-                        <span className="w-20 text-right text-xs text-zinc-400">
+                        <span className="w-20 text-right text-xs text-zinc-300">
                           {periodLabel}
                         </span>
                         <div className="flex-1">
@@ -201,7 +201,7 @@ export default function AdminPlatformPage() {
               {/* Summary stats row */}
               <div className="flex flex-wrap gap-6 border-t pt-4">
                 <div>
-                  <span className="text-xs text-zinc-400">GMV Growth</span>
+                  <span className="text-xs text-zinc-300">GMV Growth</span>
                   <p
                     className={cn(
                       'text-sm font-medium',
@@ -213,7 +213,7 @@ export default function AdminPlatformPage() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs text-zinc-400">User Growth</span>
+                  <span className="text-xs text-zinc-300">User Growth</span>
                   <p
                     className={cn(
                       'text-sm font-medium',
@@ -225,7 +225,7 @@ export default function AdminPlatformPage() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs text-zinc-400">Job Growth</span>
+                  <span className="text-xs text-zinc-300">Job Growth</span>
                   <p
                     className={cn(
                       'text-sm font-medium',
@@ -260,7 +260,7 @@ export default function AdminPlatformPage() {
               ))}
             </div>
           ) : !categories || categories.categories.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-400">
+            <p className="py-8 text-center text-sm text-zinc-300">
               No category data available.
             </p>
           ) : (
@@ -268,22 +268,22 @@ export default function AdminPlatformPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left font-medium text-zinc-400">
+                    <th className="px-4 py-3 text-left font-medium text-zinc-300">
                       Category
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
                       Jobs Posted
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
                       Jobs Completed
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
                       Total GMV
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
                       Avg Bid
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
                       Avg Bids/Job
                     </th>
                   </tr>

@@ -84,7 +84,7 @@ export default function AdminReviewsPage() {
       render: (flag) => (
         <div className="max-w-xs">
           <p className="line-clamp-2 text-sm">{flag.review_content}</p>
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-zinc-300">
             By {flag.reviewer_name} {renderStars(flag.review_rating)}
           </p>
         </div>
@@ -113,7 +113,7 @@ export default function AdminReviewsPage() {
       key: 'flagged_at',
       header: 'Flagged',
       render: (flag) => (
-        <span className="text-zinc-400">{formatDate(flag.created_at)}</span>
+        <span className="text-zinc-300">{formatDate(flag.created_at)}</span>
       ),
     },
     {
@@ -155,7 +155,6 @@ export default function AdminReviewsPage() {
 
   if (isError) {
     return (
-      <PageTransition>
       <div className="space-y-6">
         <h1 className="gold-text text-2xl font-bold tracking-tight">Flagged Reviews</h1>
         <EmptyState
@@ -164,7 +163,6 @@ export default function AdminReviewsPage() {
           description="Please try refreshing the page."
         />
       </div>
-      </PageTransition>
     );
   }
 
@@ -173,13 +171,13 @@ export default function AdminReviewsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Flagged Reviews</h1>
-        <p className="mt-1 text-zinc-400">
+        <p className="mt-1 text-zinc-300">
           Review flagged content and take action on policy violations.
         </p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-zinc-400">Status:</span>
+        <span className="text-sm font-medium text-zinc-300">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {
