@@ -307,7 +307,7 @@ impl FraudService for FraudServiceImpl {
     }
 
     // -----------------------------------------------------------------------
-    // Admin RPCs (unimplemented for now)
+    // Admin fraud management RPCs
     // -----------------------------------------------------------------------
 
     #[allow(clippy::cast_possible_truncation)]

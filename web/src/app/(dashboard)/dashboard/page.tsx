@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/ui/sparkline';
 import { TrendArrow } from '@/components/ui/trend-arrow';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
+import { useCustomerSpending, useProviderEarnings } from '@/hooks/useAnalytics';
 import { useMyBids } from '@/hooks/useBids';
 import { useContracts } from '@/hooks/useContracts';
 import { useCustomerJobs } from '@/hooks/useJobs';
@@ -228,16 +229,6 @@ function QuickActions({ isProvider }: { isProvider: boolean }) {
   );
 }
 
-// TODO: Replace with real historical data from API
-const MOCK_SPARKLINE_ACTIVE_JOBS = [2, 3, 5, 4, 6, 5, 7];
-const MOCK_SPARKLINE_BIDS_RECEIVED = [8, 12, 10, 15, 14, 18, 22];
-const MOCK_SPARKLINE_PENDING = [1, 2, 1, 3, 2, 1, 2];
-const MOCK_SPARKLINE_SPEND = [12000, 15000, 18000, 22000, 21000, 25000, 30000];
-const MOCK_SPARKLINE_ACTIVE_BIDS = [5, 4, 7, 6, 8, 7, 9];
-const MOCK_SPARKLINE_CONTRACTS = [2, 3, 2, 4, 3, 5, 4];
-const MOCK_SPARKLINE_EARNINGS = [8000, 10000, 14000, 13000, 17000, 20000, 24000];
-const MOCK_SPARKLINE_WIN_RATE = [30, 35, 28, 40, 42, 38, 45];
-
 function CustomerDashboard() {
   const { data: jobsData, isLoading: jobsLoading } = useCustomerJobs({
     status: 'active',
@@ -254,11 +245,16 @@ function CustomerDashboard() {
     page: 1,
     per_page: 100,
   });
+  const { data: spendingData } = useCustomerSpending(undefined, undefined, 'week');
 
   const activeJobCount = jobsData?.pagination.totalCount ?? 0;
   const bidsReceived = jobsData?.jobs.reduce((sum, j) => sum + j.bid_count, 0) ?? 0;
   const pendingContracts = contractsData?.pagination.totalCount ?? 0;
   const totalSpent = paymentsData?.payments.reduce((sum, p) => sum + p.amount_cents, 0) ?? 0;
+
+  // Derive sparkline data from weekly spending data points
+  const spendSparkline = spendingData?.data_points.map((dp) => dp.amount_cents);
+  const jobCountSparkline = spendingData?.data_points.map((dp) => dp.job_count);
 
   const isLoading = jobsLoading || contractsLoading || paymentsLoading;
 
@@ -272,9 +268,7 @@ function CustomerDashboard() {
           description="Currently accepting bids"
           icon={Briefcase}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_ACTIVE_JOBS}
-          trendValue={2}
-          trendLabel="+2 this week"
+          sparklineData={jobCountSparkline}
         />
         <StatCard
           title="Bids Received"
@@ -283,9 +277,6 @@ function CustomerDashboard() {
           description="Across active jobs"
           icon={Gavel}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_BIDS_RECEIVED}
-          trendValue={4}
-          trendLabel="+22%"
         />
         <StatCard
           title="Pending Actions"
@@ -294,9 +285,6 @@ function CustomerDashboard() {
           description="Contracts awaiting acceptance"
           icon={FileText}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_PENDING}
-          trendValue={-1}
-          trendLabel="-1"
         />
         <StatCard
           title="Total Spend"
@@ -306,9 +294,7 @@ function CustomerDashboard() {
           description="Completed payments"
           icon={DollarSign}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_SPEND}
-          trendValue={5000}
-          trendLabel="+$50"
+          sparklineData={spendSparkline}
         />
       </div>
 
@@ -385,6 +371,7 @@ function ProviderDashboardSection() {
     page: 1,
     per_page: 100,
   });
+  const { data: earningsData } = useProviderEarnings(undefined, undefined, 'week');
 
   const activeBidCount = bidsData?.pagination.totalCount ?? 0;
   const activeContracts = contractsData?.pagination.totalCount ?? 0;
@@ -399,6 +386,10 @@ function ProviderDashboardSection() {
         )
       : 0;
 
+  // Derive sparkline data from weekly earnings data points
+  const earningsSparkline = earningsData?.data_points.map((dp) => dp.earnings_cents);
+  const earningsJobSparkline = earningsData?.data_points.map((dp) => dp.job_count);
+
   const isLoading = bidsLoading || allBidsLoading || contractsLoading || paymentsLoading;
 
   return (
@@ -411,9 +402,6 @@ function ProviderDashboardSection() {
           description="Awaiting decision"
           icon={Gavel}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_ACTIVE_BIDS}
-          trendValue={2}
-          trendLabel="+2"
         />
         <StatCard
           title="Active Contracts"
@@ -422,9 +410,7 @@ function ProviderDashboardSection() {
           description="Jobs in progress"
           icon={Briefcase}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_CONTRACTS}
-          trendValue={1}
-          trendLabel="+1"
+          sparklineData={earningsJobSparkline}
         />
         <StatCard
           title="Total Earnings"
@@ -434,9 +420,7 @@ function ProviderDashboardSection() {
           description="Net provider payouts"
           icon={DollarSign}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_EARNINGS}
-          trendValue={4000}
-          trendLabel="+$40"
+          sparklineData={earningsSparkline}
         />
         <StatCard
           title="Win Rate"
@@ -445,9 +429,6 @@ function ProviderDashboardSection() {
           description="Based on bid outcomes"
           icon={TrendingUp}
           loading={isLoading}
-          sparklineData={MOCK_SPARKLINE_WIN_RATE}
-          trendValue={7}
-          trendLabel="+7%"
         />
       </div>
 
