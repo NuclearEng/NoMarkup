@@ -1,42 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { TrendingDown, TrendingUp } from 'lucide-react';
 
+import { useCountUp } from '@/hooks/useCountUp';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-
-/** Animate from 0 → target with ease-out cubic. */
-function useCountUp(target: number, duration = 600): number {
-  const [current, setCurrent] = useState(0);
-  const rafRef = useRef<number | null>(null);
-  const startTimeRef = useRef<number | null>(null);
-  const startValueRef = useRef(0);
-
-  useEffect(() => {
-    startValueRef.current = current;
-    startTimeRef.current = null;
-
-    function tick(timestamp: number) {
-      if (startTimeRef.current === null) startTimeRef.current = timestamp;
-      const elapsed = timestamp - startTimeRef.current;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCurrent(Math.round(startValueRef.current + (target - startValueRef.current) * eased));
-      if (progress < 1) rafRef.current = requestAnimationFrame(tick);
-    }
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, duration]);
-
-  return current;
-}
 
 interface MetricsCardProps {
   label: string;

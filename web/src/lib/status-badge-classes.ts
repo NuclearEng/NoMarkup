@@ -53,7 +53,9 @@ export const PAYMENT_STATUS_CLASSES: Record<string, string> = {
   completed: 'bg-green-500/10 text-green-300 border-green-500/30',
   failed: 'bg-red-500/10 text-red-300 border-red-500/30',
   refunded: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
+  partially_refunded: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
   disputed: 'bg-red-500/10 text-red-300 border-red-500/30',
+  chargeback: 'bg-red-500/10 text-red-300 border-red-500/30',
 };
 
 /** Advance (working capital) status */
@@ -80,4 +82,34 @@ export const VERIFICATION_STATUS_CLASSES: Record<string, string> = {
   approved: 'bg-green-500/10 text-green-300 border-green-500/30',
   rejected: 'bg-red-500/10 text-red-300 border-red-500/30',
   expired: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+};
+
+/** Fraud alert risk level */
+export const FRAUD_RISK_CLASSES: Record<string, string> = {
+  low: 'bg-green-500/10 text-green-300 border-green-500/30',
+  medium: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
+  high: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
+  critical: 'bg-red-500/10 text-red-300 border-red-500/30',
+};
+
+/** Fraud alert status */
+export const FRAUD_ALERT_STATUS_CLASSES: Record<string, string> = {
+  open: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  investigating: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+  resolved_fraud: 'bg-green-500/10 text-green-300 border-green-500/30',
+  resolved_legitimate: 'bg-green-500/10 text-green-300 border-green-500/30',
+  dismissed: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+};
+
+/** Expense category */
+export const EXPENSE_CATEGORY_CLASSES: Record<string, string> = {
+  materials: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  tools: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+  transportation: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+  insurance: 'bg-green-500/10 text-green-300 border-green-500/30',
+  licensing: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+  marketing: 'bg-pink-500/10 text-pink-300 border-pink-500/30',
+  subcontractor: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
+  office: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  other: 'bg-slate-500/10 text-slate-300 border-slate-500/30',
 };

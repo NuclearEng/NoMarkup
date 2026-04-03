@@ -52,7 +52,7 @@ export default function AdminVerificationPage() {
       render: (doc) => (
         <div>
           <p className="font-medium">{doc.user_name}</p>
-          <p className="text-xs text-muted-foreground font-mono">{doc.user_id.slice(0, 8)}...</p>
+          <p className="text-xs text-zinc-400 font-mono">{doc.user_id.slice(0, 8)}...</p>
         </div>
       ),
     },
@@ -78,7 +78,7 @@ export default function AdminVerificationPage() {
       key: 'submitted',
       header: 'Submitted',
       render: (doc) => (
-        <span className="text-muted-foreground">{formatDate(doc.submitted_at)}</span>
+        <span className="text-zinc-400">{formatDate(doc.submitted_at)}</span>
       ),
     },
     {

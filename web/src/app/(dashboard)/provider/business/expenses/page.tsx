@@ -20,6 +20,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateExpense, useDeleteExpense, useExpenses } from '@/hooks/useExpenses';
+import { EXPENSE_CATEGORY_CLASSES } from '@/lib/status-badge-classes';
 import { formatCents } from '@/lib/utils';
 import type { ExpenseCategory, ProviderExpense } from '@/types';
 import { EXPENSE_CATEGORY } from '@/types';
@@ -34,18 +35,6 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   subcontractor: 'Subcontractor',
   office: 'Office',
   other: 'Other',
-};
-
-const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
-  materials: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  tools: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
-  transportation: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  insurance: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  licensing: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300',
-  marketing: 'bg-pink-100 text-pink-800 dark:bg-pink-950 dark:text-pink-300',
-  subcontractor: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
-  office: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
-  other: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300',
 };
 
 function formatDate(dateStr: string): string {
@@ -63,7 +52,7 @@ function ExpenseItem({ expense }: { expense: ProviderExpense }) {
     <div className="flex items-center justify-between rounded-md border p-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className={CATEGORY_COLORS[expense.category]}>
+          <Badge variant="outline" className={EXPENSE_CATEGORY_CLASSES[expense.category]}>
             {CATEGORY_LABELS[expense.category]}
           </Badge>
           <span className="text-sm font-medium tabular-nums">
@@ -71,7 +60,7 @@ function ExpenseItem({ expense }: { expense: ProviderExpense }) {
           </span>
         </div>
         <p className="mt-1 text-sm">{expense.description}</p>
-        <p className="text-xs text-muted-foreground">{formatDate(expense.expense_date)}</p>
+        <p className="text-xs text-zinc-400">{formatDate(expense.expense_date)}</p>
         {expense.receipt_url ? (
           <a
             href={expense.receipt_url}
@@ -154,7 +143,7 @@ export default function ExpensesPage() {
       <div className="flex items-center gap-4">
         <Link
           href="/provider/business"
-          className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Business Services
@@ -163,7 +152,7 @@ export default function ExpensesPage() {
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Expense Tracking</h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="mt-1 text-zinc-400">
           Track business expenses for tax deductions and financial planning.
         </p>
       </div>
@@ -272,7 +261,7 @@ export default function ExpensesPage() {
             ) : (
               <p className="text-2xl font-bold tabular-nums">{formatCents(totalCents)}</p>
             )}
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-zinc-400">
               {String(expenses.length)} expense{expenses.length !== 1 ? 's' : ''} recorded
             </p>
           </CardContent>
@@ -290,7 +279,7 @@ export default function ExpensesPage() {
                 ))}
               </div>
             ) : Object.keys(categoryBreakdown).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No expenses recorded yet.</p>
+              <p className="text-sm text-zinc-400">No expenses recorded yet.</p>
             ) : (
               <div className="space-y-2">
                 {Object.entries(categoryBreakdown)
@@ -299,7 +288,7 @@ export default function ExpensesPage() {
                     <div key={cat} className="flex items-center justify-between">
                       <Badge
                         variant="outline"
-                        className={CATEGORY_COLORS[cat as ExpenseCategory]}
+                        className={EXPENSE_CATEGORY_CLASSES[cat as ExpenseCategory]}
                       >
                         {CATEGORY_LABELS[cat as ExpenseCategory]}
                       </Badge>
@@ -333,7 +322,7 @@ export default function ExpensesPage() {
             </div>
           ) : expenses.length === 0 ? (
             <div className="py-6 text-center">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-zinc-400">
                 No expenses recorded yet. Add your first expense above.
               </p>
             </div>

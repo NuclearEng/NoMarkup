@@ -144,7 +144,7 @@ export default function AdminAdvancesPage() {
       key: 'created_at',
       header: 'Date',
       render: (advance) => (
-        <span className="text-sm text-muted-foreground">{formatDate(advance.created_at)}</span>
+        <span className="text-sm text-zinc-400">{formatDate(advance.created_at)}</span>
       ),
     },
     {
@@ -180,7 +180,7 @@ export default function AdminAdvancesPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Status:</span>
+        <span className="text-sm font-medium text-zinc-400">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {

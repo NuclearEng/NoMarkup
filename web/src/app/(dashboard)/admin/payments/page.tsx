@@ -92,7 +92,7 @@ export default function AdminPaymentsPage() {
       key: 'fee',
       header: 'Platform Fee',
       render: (payment) => (
-        <span className="tabular-nums text-muted-foreground">
+        <span className="tabular-nums text-zinc-400">
           {formatCents(payment.platform_fee_cents)}
         </span>
       ),
@@ -113,7 +113,7 @@ export default function AdminPaymentsPage() {
       key: 'created_at',
       header: 'Date',
       render: (payment) => (
-        <span className="text-muted-foreground">{formatDate(payment.created_at)}</span>
+        <span className="text-zinc-400">{formatDate(payment.created_at)}</span>
       ),
     },
   ];
@@ -169,7 +169,7 @@ export default function AdminPaymentsPage() {
         <h2 className="text-lg font-semibold">Transactions</h2>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">Status:</span>
+          <span className="text-sm font-medium text-zinc-400">Status:</span>
           <Select
             value={statusFilter ?? ALL_FILTER}
             onValueChange={(v) => {

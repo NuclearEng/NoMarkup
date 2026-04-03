@@ -70,7 +70,7 @@ export default function AdminJobsPage() {
       render: (job) => (
         <div>
           <p className="font-medium">{job.title}</p>
-          <p className="text-muted-foreground text-xs">{job.category_name}</p>
+          <p className="text-zinc-400 text-xs">{job.category_name}</p>
         </div>
       ),
     },
@@ -105,7 +105,7 @@ export default function AdminJobsPage() {
     {
       key: 'created_at',
       header: 'Created',
-      render: (job) => <span className="text-muted-foreground">{formatDate(job.created_at)}</span>,
+      render: (job) => <span className="text-zinc-400">{formatDate(job.created_at)}</span>,
     },
     {
       key: 'actions',
@@ -167,7 +167,7 @@ export default function AdminJobsPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-sm font-medium">Status:</span>
+        <span className="text-zinc-400 text-sm font-medium">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {

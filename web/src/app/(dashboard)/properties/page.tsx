@@ -261,11 +261,11 @@ export default function PropertiesPage() {
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
-                <p className="text-muted-foreground text-sm">
+                <p className="text-zinc-400 text-sm">
                   {property.address}, {property.city}, {property.state} {property.zip_code}
                 </p>
                 {property.notes ? (
-                  <p className="text-muted-foreground mt-1 text-xs">{property.notes}</p>
+                  <p className="text-zinc-400 mt-1 text-xs">{property.notes}</p>
                 ) : null}
                 <div className="mt-3 flex items-center gap-3">
                   <Badge variant="secondary">

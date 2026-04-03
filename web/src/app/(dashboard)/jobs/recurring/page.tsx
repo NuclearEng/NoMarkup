@@ -114,14 +114,14 @@ function RecurringJobCard({ job }: { job: Job }) {
               </Link>
               {statusBadge}
             </div>
-            <p className="text-muted-foreground mt-1 text-sm">{job.category_name}</p>
+            <p className="text-zinc-400 mt-1 text-sm">{job.category_name}</p>
 
             <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-              <div className="text-muted-foreground flex items-center gap-1.5">
+              <div className="text-zinc-400 flex items-center gap-1.5">
                 <Calendar className="h-4 w-4" aria-hidden="true" />
                 <span>{FREQUENCY_LABELS[job.recurrence_frequency ?? ''] ?? 'Unknown'}</span>
               </div>
-              <span className="text-muted-foreground">Next: {getNextOccurrence(job)}</span>
+              <span className="text-zinc-400">Next: {getNextOccurrence(job)}</span>
               {job.starting_bid_cents ? (
                 <span className="font-medium">{formatCents(job.starting_bid_cents)}</span>
               ) : null}
@@ -263,7 +263,7 @@ export default function RecurringJobsPage() {
                     return mostCommon ? (FREQUENCY_LABELS[mostCommon[0]] ?? mostCommon[0]) : '--';
                   })()}
                 </p>
-                <p className="text-muted-foreground text-xs">frequency</p>
+                <p className="text-zinc-400 text-xs">frequency</p>
               </CardContent>
             </Card>
           </div>

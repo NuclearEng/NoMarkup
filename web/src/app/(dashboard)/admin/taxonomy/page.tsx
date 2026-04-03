@@ -36,20 +36,20 @@ function CategoryNode({
       >
         {hasChildren ? (
           expanded ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
           ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
           )
         ) : (
           <span className="w-4 shrink-0" />
         )}
-        <LevelIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <LevelIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
         <span className="flex-1 truncate text-sm font-medium">{category.name}</span>
         <Badge variant="outline" className="text-[10px]">
           {levelLabel}
         </Badge>
         {category.description ? (
-          <span className="hidden max-w-[200px] truncate text-xs text-muted-foreground lg:inline">
+          <span className="hidden max-w-[200px] truncate text-xs text-zinc-400 lg:inline">
             {category.description}
           </span>
         ) : null}
@@ -102,34 +102,34 @@ export default function AdminTaxonomyPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <FolderTree className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+            <FolderTree className="h-8 w-8 text-zinc-400" aria-hidden="true" />
             <div>
               <div className="text-2xl font-bold tabular-nums">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalCategories)}
               </div>
-              <p className="text-xs text-muted-foreground">Categories</p>
+              <p className="text-xs text-zinc-400">Categories</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <Layers className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+            <Layers className="h-8 w-8 text-zinc-400" aria-hidden="true" />
             <div>
               <div className="text-2xl font-bold tabular-nums">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalSubcategories)}
               </div>
-              <p className="text-xs text-muted-foreground">Subcategories</p>
+              <p className="text-xs text-zinc-400">Subcategories</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <Tag className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+            <Tag className="h-8 w-8 text-zinc-400" aria-hidden="true" />
             <div>
               <div className="text-2xl font-bold tabular-nums">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalServiceTypes)}
               </div>
-              <p className="text-xs text-muted-foreground">Service Types</p>
+              <p className="text-xs text-zinc-400">Service Types</p>
             </div>
           </CardContent>
         </Card>
@@ -155,7 +155,7 @@ export default function AdminTaxonomyPage() {
             </div>
           ) : !categories || categories.length === 0 ? (
             <div className="rounded-lg border p-8 text-center">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-zinc-400">
                 No categories found. Create your first category to get started.
               </p>
             </div>

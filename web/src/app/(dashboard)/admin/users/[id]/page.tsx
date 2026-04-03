@@ -173,7 +173,7 @@ export default function AdminUserDetailPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-muted-foreground">Status</span>
+                <span className="text-zinc-400">Status</span>
                 <div className="mt-1">
                   <Badge variant="outline" className={cn('text-xs', USER_STATUS_CLASSES[user.status])}>
                     {user.status}
@@ -181,7 +181,7 @@ export default function AdminUserDetailPage() {
                 </div>
               </div>
               <div>
-                <span className="text-muted-foreground">Roles</span>
+                <span className="text-zinc-400">Roles</span>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {user.roles.map((role) => (
                     <Badge key={role} variant="outline" className="text-xs">
@@ -191,23 +191,23 @@ export default function AdminUserDetailPage() {
                 </div>
               </div>
               <div>
-                <span className="text-muted-foreground">Phone</span>
+                <span className="text-zinc-400">Phone</span>
                 <p className="mt-1">{user.phone || 'N/A'}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Email Verified</span>
+                <span className="text-zinc-400">Email Verified</span>
                 <p className="mt-1">{user.email_verified ? 'Yes' : 'No'}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Phone Verified</span>
+                <span className="text-zinc-400">Phone Verified</span>
                 <p className="mt-1">{user.phone_verified ? 'Yes' : 'No'}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Joined</span>
+                <span className="text-zinc-400">Joined</span>
                 <p className="mt-1">{formatDate(user.created_at)}</p>
               </div>
               <div className="col-span-2">
-                <span className="text-muted-foreground">Last Login</span>
+                <span className="text-zinc-400">Last Login</span>
                 <p className="mt-1">
                   {user.last_login_at ? formatDate(user.last_login_at) : 'Never'}
                 </p>
@@ -225,22 +225,22 @@ export default function AdminUserDetailPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="col-span-2">
-                  <span className="text-muted-foreground">Display Name</span>
+                  <span className="text-zinc-400">Display Name</span>
                   <p className="mt-1 font-medium">{user.provider_profile.display_name}</p>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-muted-foreground">Business Name</span>
+                  <span className="text-zinc-400">Business Name</span>
                   <p className="mt-1">{user.provider_profile.business_name || 'N/A'}</p>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-muted-foreground">Bio</span>
-                  <p className="text-muted-foreground mt-1">{user.provider_profile.bio || 'N/A'}</p>
+                  <span className="text-zinc-400">Bio</span>
+                  <p className="text-zinc-400 mt-1">{user.provider_profile.bio || 'N/A'}</p>
                 </div>
 
                 <Separator className="col-span-2" />
 
                 <div>
-                  <span className="text-muted-foreground">Trust Score</span>
+                  <span className="text-zinc-400">Trust Score</span>
                   <p className="mt-1 font-medium tabular-nums">
                     {user.provider_profile.trust_score !== undefined
                       ? (user.provider_profile.trust_score * 100).toFixed(0)
@@ -248,17 +248,17 @@ export default function AdminUserDetailPage() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Trust Tier</span>
+                  <span className="text-zinc-400">Trust Tier</span>
                   <p className="mt-1">{user.provider_profile.trust_tier ?? 'N/A'}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Jobs Completed</span>
+                  <span className="text-zinc-400">Jobs Completed</span>
                   <p className="mt-1 tabular-nums">
                     {String(user.provider_profile.jobs_completed)}
                   </p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Avg Rating</span>
+                  <span className="text-zinc-400">Avg Rating</span>
                   <p className="mt-1 tabular-nums">
                     {user.provider_profile.average_rating.toFixed(1)} (
                     {String(user.provider_profile.total_reviews)} reviews)

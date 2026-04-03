@@ -61,7 +61,7 @@ export default function TaxCenterPage() {
         <div className="flex items-center gap-4">
           <Link
             href="/provider/business"
-            className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Business Services
@@ -80,7 +80,7 @@ export default function TaxCenterPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Tax Center</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-zinc-400">
             Track earnings and estimate tax obligations.
           </p>
         </div>
@@ -115,14 +115,14 @@ export default function TaxCenterPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Gross Earnings</span>
+                <span className="text-sm text-zinc-400">Gross Earnings</span>
                 <span className="text-sm font-bold tabular-nums">
                   {formatCents(ytdEarnings + totalFees)}
                 </span>
               </div>
               <Separator />
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Platform Fees</span>
+                <span className="text-sm text-zinc-400">Platform Fees</span>
                 <span className="text-sm tabular-nums text-destructive">
                   -{formatCents(totalFees)}
                 </span>
@@ -134,7 +134,7 @@ export default function TaxCenterPage() {
               </div>
               <Separator />
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Jobs Completed</span>
+                <span className="text-sm text-zinc-400">Jobs Completed</span>
                 <span className="text-sm font-medium">{String(totalJobs)}</span>
               </div>
             </CardContent>
@@ -149,20 +149,20 @@ export default function TaxCenterPage() {
               </Badge>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-zinc-400">
                 You will receive a 1099-NEC form if your earnings exceed $600 for the tax year.
               </p>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Your Earnings</span>
+                <span className="text-sm text-zinc-400">Your Earnings</span>
                 <span className="text-sm font-bold tabular-nums">{formatCents(ytdEarnings)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Threshold</span>
+                <span className="text-sm text-zinc-400">Threshold</span>
                 <span className="text-sm tabular-nums">{formatCents(THRESHOLD_1099)}</span>
               </div>
               {!will1099 ? (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Remaining</span>
+                  <span className="text-sm text-zinc-400">Remaining</span>
                   <span className="text-sm tabular-nums">
                     {formatCents(THRESHOLD_1099 - ytdEarnings)}
                   </span>
@@ -175,24 +175,24 @@ export default function TaxCenterPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <TrendingUp className="h-4 w-4 text-zinc-400" aria-hidden="true" />
                 <CardTitle className="text-base">Quarterly Tax Estimates</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-zinc-400">
                 Estimated quarterly tax payments based on your current earnings pace. These are
                 estimates only — consult a tax professional for accurate figures.
               </p>
               <Separator />
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-zinc-400">
                   Self-Employment Tax (15.3%)
                 </span>
                 <span className="text-sm tabular-nums">{formatCents(quarterlySETax)}/quarter</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-zinc-400">
                   Estimated Income Tax (22%)
                 </span>
                 <span className="text-sm tabular-nums">
@@ -206,7 +206,7 @@ export default function TaxCenterPage() {
                   {formatCents(quarterlyTotal)}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-zinc-400">
                 Quarterly due dates: Apr 15, Jun 15, Sep 15, Jan 15 (following year)
               </p>
             </CardContent>
@@ -222,7 +222,7 @@ export default function TaxCenterPage() {
                 <div className="space-y-2">
                   {earnings.data_points.map((dp) => (
                     <div key={dp.period_start} className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
+                      <span className="text-sm text-zinc-400">
                         {new Date(dp.period_start).toLocaleDateString('en-US', {
                           month: 'short',
                           year: 'numeric',
@@ -232,7 +232,7 @@ export default function TaxCenterPage() {
                         <span className="text-sm font-medium tabular-nums">
                           {formatCents(dp.earnings_cents)}
                         </span>
-                        <span className="ml-2 text-xs text-muted-foreground">
+                        <span className="ml-2 text-xs text-zinc-400">
                           ({String(dp.job_count)} job{dp.job_count !== 1 ? 's' : ''})
                         </span>
                       </div>

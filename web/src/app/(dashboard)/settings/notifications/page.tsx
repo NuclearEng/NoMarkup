@@ -188,7 +188,7 @@ export default function NotificationPreferencesPage() {
       {/* Header */}
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Notification Preferences</h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="mt-1 text-zinc-400">
           Choose how and when you want to be notified.
         </p>
       </div>
@@ -197,14 +197,14 @@ export default function NotificationPreferencesPage() {
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardContent className="py-6">
           <h2 className="gold-text text-lg font-semibold">Global Settings</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-zinc-400">
             Master toggles for each notification channel. Disabling a channel here turns it off for all notification types.
           </p>
           <div className="mt-4 space-y-4">
             <div className="flex min-h-[44px] items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Email notifications</p>
-                <p className="text-xs text-muted-foreground">Receive notifications via email</p>
+                <p className="text-xs text-zinc-400">Receive notifications via email</p>
               </div>
               <Switch
                 checked={globalEmail}
@@ -219,7 +219,7 @@ export default function NotificationPreferencesPage() {
             <div className="flex min-h-[44px] items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Push notifications</p>
-                <p className="text-xs text-muted-foreground">Receive push notifications on your device</p>
+                <p className="text-xs text-zinc-400">Receive push notifications on your device</p>
               </div>
               <Switch
                 checked={globalPush}
@@ -234,7 +234,7 @@ export default function NotificationPreferencesPage() {
             <div className="flex min-h-[44px] items-center justify-between">
               <div>
                 <p className="text-sm font-medium">SMS notifications</p>
-                <p className="text-xs text-muted-foreground">Receive notifications via text message</p>
+                <p className="text-xs text-zinc-400">Receive notifications via text message</p>
               </div>
               <Switch
                 checked={globalSms}
@@ -258,9 +258,9 @@ export default function NotificationPreferencesPage() {
               {/* Column headers */}
               <div className="mb-3 hidden items-center gap-4 sm:flex">
                 <div className="flex-1" />
-                <div className="w-16 text-center text-xs font-medium text-muted-foreground">In-App</div>
-                <div className="w-16 text-center text-xs font-medium text-muted-foreground">Email</div>
-                <div className="w-16 text-center text-xs font-medium text-muted-foreground">Push</div>
+                <div className="w-16 text-center text-xs font-medium text-zinc-400">In-App</div>
+                <div className="w-16 text-center text-xs font-medium text-zinc-400">Email</div>
+                <div className="w-16 text-center text-xs font-medium text-zinc-400">Push</div>
               </div>
 
               <div className="space-y-1">
@@ -274,7 +274,7 @@ export default function NotificationPreferencesPage() {
                         <div className="flex items-center gap-4">
                           {/* In-App: always on */}
                           <div className="flex w-16 flex-col items-center gap-1">
-                            <span className="text-xs text-muted-foreground sm:hidden">In-App</span>
+                            <span className="text-xs text-zinc-400 sm:hidden">In-App</span>
                             <Switch
                               checked={pref.in_app_enabled}
                               disabled
@@ -283,7 +283,7 @@ export default function NotificationPreferencesPage() {
                           </div>
                           {/* Email */}
                           <div className="flex w-16 flex-col items-center gap-1">
-                            <span className="text-xs text-muted-foreground sm:hidden">Email</span>
+                            <span className="text-xs text-zinc-400 sm:hidden">Email</span>
                             <Switch
                               checked={pref.email_enabled && globalEmail}
                               disabled={!globalEmail}
@@ -293,7 +293,7 @@ export default function NotificationPreferencesPage() {
                           </div>
                           {/* Push */}
                           <div className="flex w-16 flex-col items-center gap-1">
-                            <span className="text-xs text-muted-foreground sm:hidden">Push</span>
+                            <span className="text-xs text-zinc-400 sm:hidden">Push</span>
                             <Switch
                               checked={pref.push_enabled && globalPush}
                               disabled={!globalPush}

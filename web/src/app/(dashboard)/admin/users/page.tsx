@@ -92,7 +92,7 @@ export default function AdminUsersPage() {
     {
       key: 'email',
       header: 'Email',
-      render: (user) => <span className="text-muted-foreground">{user.email}</span>,
+      render: (user) => <span className="text-zinc-400">{user.email}</span>,
     },
     {
       key: 'roles',
@@ -120,7 +120,7 @@ export default function AdminUsersPage() {
       key: 'created_at',
       header: 'Joined',
       render: (user) => (
-        <span className="text-muted-foreground">{formatDate(user.created_at)}</span>
+        <span className="text-zinc-400">{formatDate(user.created_at)}</span>
       ),
     },
     {
@@ -198,7 +198,7 @@ export default function AdminUsersPage() {
         </form>
 
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-sm font-medium">Status:</span>
+          <span className="text-zinc-400 text-sm font-medium">Status:</span>
           <Select
             value={statusFilter ?? ALL_FILTER}
             onValueChange={(v) => {
@@ -221,7 +221,7 @@ export default function AdminUsersPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-sm font-medium">Role:</span>
+          <span className="text-zinc-400 text-sm font-medium">Role:</span>
           <Select
             value={roleFilter ?? ALL_FILTER}
             onValueChange={(v) => {

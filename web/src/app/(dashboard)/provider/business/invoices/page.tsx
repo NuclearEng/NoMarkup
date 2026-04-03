@@ -43,7 +43,7 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
         <div className="flex items-center gap-4">
           <div>
             <p className="text-sm font-medium">{contract.contract_number}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-zinc-400">
               {contract.job_title || contract.job_id.slice(0, 8)}
             </p>
           </div>
@@ -51,14 +51,14 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm font-bold tabular-nums">{formatCents(contract.amount_cents)}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-zinc-400">
               {contract.completed_at ? formatDate(contract.completed_at) : formatDate(contract.created_at)}
             </p>
           </div>
           {expanded ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <ChevronUp className="h-4 w-4 text-zinc-400" aria-hidden="true" />
           ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <ChevronDown className="h-4 w-4 text-zinc-400" aria-hidden="true" />
           )}
         </div>
       </button>
@@ -105,7 +105,7 @@ export default function InvoicesPage() {
       <div className="flex items-center gap-4">
         <Link
           href="/provider/business"
-          className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Business Services
@@ -114,7 +114,7 @@ export default function InvoicesPage() {
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Invoices</h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="mt-1 text-zinc-400">
           View and print invoices for your completed contracts.
         </p>
       </div>
@@ -130,7 +130,7 @@ export default function InvoicesPage() {
       ) : contracts.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-zinc-400">
               No completed contracts found. Invoices will appear here after you complete jobs.
             </p>
           </CardContent>

@@ -84,7 +84,7 @@ export default function AdminReviewsPage() {
       render: (flag) => (
         <div className="max-w-xs">
           <p className="line-clamp-2 text-sm">{flag.review_content}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-zinc-400">
             By {flag.reviewer_name} {renderStars(flag.review_rating)}
           </p>
         </div>
@@ -113,7 +113,7 @@ export default function AdminReviewsPage() {
       key: 'flagged_at',
       header: 'Flagged',
       render: (flag) => (
-        <span className="text-muted-foreground">{formatDate(flag.created_at)}</span>
+        <span className="text-zinc-400">{formatDate(flag.created_at)}</span>
       ),
     },
     {
@@ -179,7 +179,7 @@ export default function AdminReviewsPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Status:</span>
+        <span className="text-sm font-medium text-zinc-400">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {

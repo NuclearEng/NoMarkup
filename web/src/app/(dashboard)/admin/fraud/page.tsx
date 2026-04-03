@@ -87,7 +87,7 @@ function SummaryCards() {
       {cards.map((card) => (
         <Card key={card.title}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-zinc-400">
               {card.title}
             </CardTitle>
           </CardHeader>
@@ -99,7 +99,7 @@ function SummaryCards() {
                 {card.value}
               </p>
             )}
-            <p className="mt-1 text-xs text-muted-foreground">{card.description}</p>
+            <p className="mt-1 text-xs text-zinc-400">{card.description}</p>
           </CardContent>
         </Card>
       ))}

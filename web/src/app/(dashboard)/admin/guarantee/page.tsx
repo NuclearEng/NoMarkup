@@ -115,7 +115,7 @@ export default function AdminGuaranteePage() {
       key: 'created_at',
       header: 'Filed',
       render: (claim) => (
-        <span className="text-muted-foreground">{formatDate(claim.created_at)}</span>
+        <span className="text-zinc-400">{formatDate(claim.created_at)}</span>
       ),
     },
     {
@@ -157,7 +157,7 @@ export default function AdminGuaranteePage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-sm font-medium">Status:</span>
+        <span className="text-zinc-400 text-sm font-medium">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {

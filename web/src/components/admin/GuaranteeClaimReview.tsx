@@ -21,15 +21,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useReviewGuaranteeClaim } from '@/hooks/useGuarantee';
+import { GUARANTEE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import type { Dispute, DisputeStatus } from '@/types';
-
-const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  investigating: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
-  resolved: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  escalated: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-};
+import type { Dispute } from '@/types';
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Open',
@@ -140,7 +134,7 @@ export function GuaranteeClaimReview({
           <ShieldCheck className="text-primary h-5 w-5" aria-hidden="true" />
           <h2 className="text-xl font-bold tracking-tight">Guarantee Claim</h2>
         </div>
-        <Badge variant="outline" className={cn('w-fit text-sm', STATUS_CLASSES[claim.status])}>
+        <Badge variant="outline" className={cn('w-fit text-sm', GUARANTEE_STATUS_CLASSES[claim.status])}>
           {STATUS_LABELS[claim.status] ?? claim.status}
         </Badge>
       </div>

@@ -146,7 +146,7 @@ function MFASection() {
         {/* Setup flow */}
         {setupData ? (
           <div className="max-w-md space-y-4">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-zinc-400">
               Scan this QR code with your authenticator app (Google
               Authenticator, Authy, 1Password, etc.), then enter the 6-digit
               code below to confirm.
@@ -164,7 +164,7 @@ function MFASection() {
             </div>
 
             <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">
+              <p className="text-xs font-medium text-zinc-400">
                 Manual entry key
               </p>
               <code className="block break-all rounded bg-muted p-2 font-mono text-sm">
@@ -197,7 +197,7 @@ function MFASection() {
                   )}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-zinc-400">
                 Save these codes in a safe place. Each code can only be used
                 once.
               </p>
@@ -264,14 +264,14 @@ function MFASection() {
                 Two-factor authentication is enabled
               </p>
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-zinc-400">
               Your account is protected with an authenticator app. You will be
               asked for a verification code when you sign in.
             </p>
 
             {showDisable ? (
               <div className="max-w-md space-y-3">
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-zinc-400">
                   Enter your current authenticator code to disable MFA.
                 </p>
                 <Input
@@ -326,7 +326,7 @@ function MFASection() {
         ) : (
           /* MFA is not enabled */
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-zinc-400">
               Add an extra layer of security to your account. You will need an
               authenticator app such as Google Authenticator, Authy, or
               1Password.

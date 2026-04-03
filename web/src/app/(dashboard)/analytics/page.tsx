@@ -409,7 +409,7 @@ function CustomerAnalyticsView() {
                     {spending.data_points.map((point) => (
                       <div
                         key={point.period_start}
-                        className="text-muted-foreground flex-1 text-center text-[10px]"
+                        className="text-zinc-400 flex-1 text-center text-[10px]"
                       >
                         {new Date(point.period_start).toLocaleDateString('en-US', {
                           month: 'short',

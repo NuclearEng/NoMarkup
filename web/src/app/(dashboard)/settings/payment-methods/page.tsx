@@ -101,7 +101,7 @@ export default function PaymentMethodsPage() {
             </div>
           ) : methods.length === 0 ? (
             <div className="rounded-lg border p-6 text-center">
-              <p className="text-muted-foreground">
+              <p className="text-zinc-400">
                 No payment methods saved yet.
               </p>
             </div>
@@ -114,14 +114,14 @@ export default function PaymentMethodsPage() {
                 >
                   <div className="flex items-center gap-3">
                     <CreditCard
-                      className="h-5 w-5 text-muted-foreground"
+                      className="h-5 w-5 text-zinc-400"
                       aria-hidden="true"
                     />
                     <div>
                       <p className="font-medium">
                         {method.brand} ending in {method.last_four}
                       </p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-zinc-400">
                         Expires {method.exp_month}/{method.exp_year}
                       </p>
                     </div>
@@ -164,7 +164,7 @@ export default function PaymentMethodsPage() {
           {stripeStatus.isLoading ? (
             <Skeleton className="h-16 w-full rounded-lg" />
           ) : stripeStatus.isError ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-zinc-400">
               Payout settings are only available for provider accounts.
             </p>
           ) : stripeStatus.data ? (
@@ -184,19 +184,19 @@ export default function PaymentMethodsPage() {
                 </Badge>
               </div>
               {!stripeStatus.data.charges_enabled ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-zinc-400">
                   Complete your Stripe account setup to receive payouts for
                   completed jobs.
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-zinc-400">
                   Your Stripe account is connected and ready to receive payouts.
                 </p>
               )}
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-zinc-400">
                 Connect a Stripe account to receive payouts for completed jobs.
               </p>
               <Button

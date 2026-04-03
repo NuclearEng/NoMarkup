@@ -83,9 +83,9 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
 
     return (
       <div className="bg-muted/50 flex flex-col items-center justify-center rounded-lg border py-12">
-        <CreditCard className="text-muted-foreground h-12 w-12" aria-hidden="true" />
+        <CreditCard className="text-zinc-400 h-12 w-12" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No payments</p>
-        <p className="text-muted-foreground mt-1 text-sm">{emptyMessages[tab]}</p>
+        <p className="text-zinc-400 mt-1 text-sm">{emptyMessages[tab]}</p>
         <Button asChild className="mt-4 min-h-[44px]">
           <Link href="/jobs">Browse Jobs</Link>
         </Button>
@@ -110,7 +110,7 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
           >
             Previous
           </Button>
-          <span className="text-muted-foreground text-sm">
+          <span className="text-zinc-400 text-sm">
             Page {String(page)} of {String(pagination.totalPages)}
           </span>
           <Button
