@@ -1080,7 +1080,8 @@ func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) (
 		       rejection_reason, expires_at, created_at, updated_at
 		FROM verification_documents
 		WHERE user_id = $1
-		ORDER BY created_at DESC`
+		ORDER BY created_at DESC
+		LIMIT 50`
 
 	rows, err := r.pool.Query(ctx, query, userID)
 	if err != nil {

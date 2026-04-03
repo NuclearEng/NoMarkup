@@ -343,7 +343,8 @@ func (r *PostgresRepository) GetUnreadCounts(ctx context.Context, userID string)
 		       END AS unread_count
 		FROM chat_channels
 		WHERE (customer_id = $1 OR provider_id = $1)
-		  AND last_message_at IS NOT NULL`,
+		  AND last_message_at IS NOT NULL
+		LIMIT 200`,
 		userID,
 	)
 	if err != nil {

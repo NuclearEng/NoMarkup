@@ -1,0 +1,159 @@
+# NoMarkup Prometheus Configuration
+#
+# Deployed in K8s alongside Alertmanager and Grafana.
+# Local dev: runs via docker-compose with static targets.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+  external_labels:
+    cluster: nomarkup
+    environment: production
+
+# Alerting configuration — forward alerts to Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      # In K8s, use service discovery instead:
+      # kubernetes_sd_configs:
+      #   - role: pod
+      #     namespaces:
+      #       names: [monitoring]
+      # relabel_configs:
+      #   - source_labels: [__meta_kubernetes_pod_label_app]
+      #     regex: alertmanager
+      #     action: keep
+
+# Load alerting and recording rules
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+# Scrape configurations
+scrape_configs:
+  # -------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # -------------------------------------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  # -------------------------------------------------------------------------
+  # Kubernetes service discovery — pods with prometheus.io annotations
+  # -------------------------------------------------------------------------
+  # Discovers all pods annotated with:
+  #   prometheus.io/scrape: "true"
+  #   prometheus.io/port: "<port>"       (optional, defaults to container port)
+  #   prometheus.io/path: "<path>"       (optional, defaults to /metrics)
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - nomarkup
+    relabel_configs:
+      # Only scrape pods with prometheus.io/scrape=true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+
+      # Use custom metrics path if specified
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+
+      # Use custom port if specified
+      - source_labels:
+          - __address__
+          - __meta_kubernetes_pod_annotation_prometheus_io_port
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+
+      # Attach pod labels as Prometheus labels
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: replace
+        target_label: service
+
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+        action: replace
+        target_label: component
+
+  # -------------------------------------------------------------------------
+  # Kubernetes nodes (kubelet + cAdvisor)
+  # -------------------------------------------------------------------------
+  - job_name: kubernetes-nodes
+    kubernetes_sd_configs:
+      - role: node
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/$1/proxy/metrics
+
+  - job_name: kubernetes-cadvisor
+    kubernetes_sd_configs:
+      - role: node
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+
+  # -------------------------------------------------------------------------
+  # kube-state-metrics — deployment replicas, pod status, restart counts
+  # -------------------------------------------------------------------------
+  - job_name: kube-state-metrics
+    static_configs:
+      - targets:
+          - kube-state-metrics:8080
+
+  # -------------------------------------------------------------------------
+  # Local development — static targets (used in docker-compose)
+  # -------------------------------------------------------------------------
+  # Uncomment these and comment out kubernetes_sd_configs for local dev.
+  #
+  # - job_name: gateway
+  #   static_configs:
+  #     - targets: ["gateway:8080"]
+  #       labels:
+  #         service: gateway
+  #         component: gateway
+  #
+  # - job_name: pgbouncer
+  #   static_configs:
+  #     - targets: ["pgbouncer-exporter:9127"]
+  #       labels:
+  #         service: pgbouncer

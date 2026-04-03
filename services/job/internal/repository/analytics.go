@@ -183,7 +183,8 @@ func (r *PostgresRepository) GetProviderAnalytics(ctx context.Context, providerI
 		  AND c.status = 'completed'
 		  AND c.created_at >= $2 AND c.created_at <= $3
 		GROUP BY j.category_id, sc.name
-		ORDER BY total_earnings DESC`, providerID, startDate, endDate)
+		ORDER BY total_earnings DESC
+		LIMIT 50`, providerID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("provider analytics categories: %w", err)
 	}
@@ -299,7 +300,8 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		  AND p.created_at >= $2
 		  AND p.created_at <= $3
 		GROUP BY j.category_id, sc.name
-		ORDER BY total_spent DESC`,
+		ORDER BY total_spent DESC
+		LIMIT 50`,
 		customerID, startDate, endDate)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("customer spending categories: %w", err)
@@ -540,7 +542,8 @@ func (r *PostgresRepository) GetCategoryMetrics(ctx context.Context, startDate, 
 		LEFT JOIN analytics_transactions at ON at.category_id = sc.id
 		GROUP BY sc.id, sc.name
 		HAVING COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
-		ORDER BY gmv_cents DESC`,
+		ORDER BY gmv_cents DESC
+		LIMIT 100`,
 		startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("category metrics: %w", err)
@@ -576,7 +579,8 @@ func (r *PostgresRepository) GetGeographicMetrics(ctx context.Context, startDate
 		WHERE at.completed_at >= $1 AND at.completed_at <= $2
 		  AND at.region != ''
 		GROUP BY at.region
-		ORDER BY gmv_cents DESC`,
+		ORDER BY gmv_cents DESC
+		LIMIT 200`,
 		startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("geographic metrics: %w", err)

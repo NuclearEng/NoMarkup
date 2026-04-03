@@ -666,7 +666,8 @@ func (r *PostgresRepository) ListDrafts(ctx context.Context, customerID string) 
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE j.customer_id = $1 AND j.status = 'draft' AND j.deleted_at IS NULL
-		ORDER BY j.updated_at DESC`, customerID)
+		ORDER BY j.updated_at DESC
+		LIMIT 50`, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("list drafts: %w", err)
 	}

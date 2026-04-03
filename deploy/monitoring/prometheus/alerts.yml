@@ -1,0 +1,376 @@
+# NoMarkup Prometheus Alerting Rules
+#
+# Severity levels:
+#   P0 (critical) — immediate page, service is down or data loss imminent
+#   P1 (warning)  — investigate within 15 min, degraded performance
+#   P2 (info)     — investigate next business day, business metric anomaly
+#
+# Metric sources:
+#   - Gateway:   http_requests_total{method,path,status}, http_request_duration_seconds{method,path}
+#   - K8s:       kube_pod_info, kube_deployment_status_replicas, kube_pod_container_status_restarts_total
+#   - cAdvisor:  container_cpu_usage_seconds_total, container_memory_working_set_bytes
+#   - Custom:    bid_processing_duration_seconds, stripe_webhook_*, active_websocket_connections
+#                (these require instrumentation in the respective services)
+
+groups:
+  # ---------------------------------------------------------------------------
+  # Recording rules — pre-compute expensive queries for alerting efficiency
+  # ---------------------------------------------------------------------------
+  - name: nomarkup.recording
+    interval: 15s
+    rules:
+      # 5xx error rate over 5 min window
+      - record: nomarkup:http_error_rate_5m
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total[5m])), 1e-10)
+
+      # Per-service 5xx error rate
+      - record: nomarkup:http_error_rate_by_path_5m
+        expr: |
+          sum by (path) (rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum by (path) (rate(http_requests_total[5m])), 1e-10)
+
+      # Request rate (for dead-service detection)
+      - record: nomarkup:http_request_rate_5m
+        expr: sum(rate(http_requests_total[5m]))
+
+      # p95 latency
+      - record: nomarkup:http_latency_p95
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # p99 latency
+      - record: nomarkup:http_latency_p99
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # Auth failure rate per minute
+      - record: nomarkup:auth_failure_rate_1m
+        expr: |
+          sum(rate(http_requests_total{path=~"/api/v1/auth/login|/api/v1/auth/register",status=~"401|403|429"}[1m])) * 60
+
+      # Payment failure rate over 10 min window
+      - record: nomarkup:payment_failure_rate_10m
+        expr: |
+          sum(rate(http_requests_total{path=~"/api/v1/payments.*",status=~"4..|5.."}[10m]))
+          /
+          clamp_min(sum(rate(http_requests_total{path=~"/api/v1/payments.*"}[10m])), 1e-10)
+
+  # ---------------------------------------------------------------------------
+  # P0 — Availability (page immediately)
+  # ---------------------------------------------------------------------------
+  - name: nomarkup.availability
+    rules:
+      - alert: NoMarkupGatewayDown
+        expr: |
+          kube_deployment_status_replicas_available{namespace="nomarkup", deployment="gateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          team: platform
+        annotations:
+          summary: "API gateway has zero available replicas"
+          description: >-
+            The gateway deployment in namespace {{ $labels.namespace }} has had
+            0 available replicas for more than 2 minutes. All client traffic is
+            blocked. This is a total service outage.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupGatewayDown"
+
+      - alert: NoMarkupServiceDown
+        expr: |
+          kube_deployment_status_replicas_available{namespace="nomarkup"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.deployment }} has zero available replicas"
+          description: >-
+            Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }}
+            has had 0 available pods for over 2 minutes. Dependent features are
+            completely unavailable.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupServiceDown"
+
+      - alert: NoMarkupHighErrorRate
+        expr: nomarkup:http_error_rate_5m > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          team: platform
+        annotations:
+          summary: "5xx error rate exceeds 1%"
+          description: >-
+            The overall 5xx error rate has been {{ $value | humanizePercentage }}
+            for the last 5 minutes, exceeding the 1% threshold. Performance
+            budget requires < 0.1% error rate.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighErrorRate"
+
+  # ---------------------------------------------------------------------------
+  # P0 — Security (page immediately)
+  # ---------------------------------------------------------------------------
+  - name: nomarkup.security
+    rules:
+      - alert: NoMarkupAuthFailureSpike
+        expr: nomarkup:auth_failure_rate_1m > 50
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          team: security
+        annotations:
+          summary: "Possible brute-force attack: >50 auth failures/min"
+          description: >-
+            There have been {{ $value | humanize }} failed authentication
+            attempts per minute for the last 2 minutes. This exceeds the
+            threshold of 50/min and may indicate a brute-force or credential
+            stuffing attack.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupAuthFailureSpike"
+
+      - alert: NoMarkupWebhookSignatureFailures
+        expr: |
+          sum(rate(http_requests_total{path="/api/v1/webhooks/stripe",status="400"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          team: security
+        annotations:
+          summary: "Stripe webhook signature verification failures detected"
+          description: >-
+            Stripe webhook requests to /api/v1/webhooks/stripe are returning 400
+            at a sustained rate of {{ $value | humanize }}/s. This may indicate
+            tampered webhook payloads, a rotated signing secret, or an attacker
+            attempting to forge Stripe events.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupWebhookSignatureFailures"
+
+  # ---------------------------------------------------------------------------
+  # P1 — Latency
+  # ---------------------------------------------------------------------------
+  - name: nomarkup.latency
+    rules:
+      - alert: NoMarkupHighLatencyP95
+        expr: nomarkup:http_latency_p95 > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          team: platform
+        annotations:
+          summary: "API p95 latency exceeds 500ms"
+          description: >-
+            The API p95 response time is {{ $value | humanizeDuration }},
+            exceeding the 500ms threshold. Performance budget is p95 < 200ms;
+            this alert fires at 500ms as an escalation boundary.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighLatencyP95"
+
+      - alert: NoMarkupHighLatencyP99
+        expr: nomarkup:http_latency_p99 > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          team: platform
+        annotations:
+          summary: "API p99 latency exceeds 1s"
+          description: >-
+            The API p99 response time is {{ $value | humanizeDuration }},
+            exceeding the 1s threshold. Performance budget is p99 < 500ms;
+            this alert fires at 1s as an escalation boundary.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighLatencyP99"
+
+      # Requires bid_processing_duration_seconds histogram from the bidding engine.
+      # If the bidding engine does not yet expose this metric, this alert will
+      # remain inactive (absent data produces no alert).
+      - alert: NoMarkupBidProcessingSlow
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(bid_processing_duration_seconds_bucket[2m]))) > 0.005
+        for: 2m
+        labels:
+          severity: warning
+          priority: P1
+          team: engines
+        annotations:
+          summary: "Bid processing p99 exceeds 5ms"
+          description: >-
+            Bid processing p99 latency is {{ $value | humanizeDuration }},
+            exceeding the 5ms threshold. The performance budget for bid
+            processing is p99 < 1ms. Investigate the bidding engine for
+            contention or slow database queries.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupBidProcessingSlow"
+
+  # ---------------------------------------------------------------------------
+  # P1 — Resources
+  # ---------------------------------------------------------------------------
+  - name: nomarkup.resources
+    rules:
+      - alert: NoMarkupHighCPU
+        expr: |
+          (
+            sum by (pod, namespace) (rate(container_cpu_usage_seconds_total{namespace="nomarkup"}[5m]))
+            /
+            sum by (pod, namespace) (kube_pod_container_resource_limits{namespace="nomarkup", resource="cpu"})
+          ) > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          priority: P1
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} CPU usage >80% for 10 min"
+          description: >-
+            Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been
+            using {{ $value | humanizePercentage }} of its CPU limit for 10
+            minutes. Consider scaling the deployment or increasing limits.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighCPU"
+
+      - alert: NoMarkupHighMemory
+        expr: |
+          (
+            sum by (pod, namespace) (container_memory_working_set_bytes{namespace="nomarkup"})
+            /
+            sum by (pod, namespace) (kube_pod_container_resource_limits{namespace="nomarkup", resource="memory"})
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} memory usage >85% for 5 min"
+          description: >-
+            Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is using
+            {{ $value | humanizePercentage }} of its memory limit. OOM kill is
+            likely if usage continues to climb.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighMemory"
+
+      - alert: NoMarkupPodRestartLoop
+        expr: |
+          increase(kube_pod_container_status_restarts_total{namespace="nomarkup"}[15m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+          priority: P1
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} has restarted {{ $value }} times in 15 min"
+          description: >-
+            Container {{ $labels.container }} in pod {{ $labels.pod }} has
+            restarted {{ $value | humanize }} times in the last 15 minutes.
+            This is likely a crash loop. Check pod logs and events.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupPodRestartLoop"
+
+  # ---------------------------------------------------------------------------
+  # P1 — Database
+  # ---------------------------------------------------------------------------
+  - name: nomarkup.database
+    rules:
+      # Requires pgbouncer_pools_server_active / pgbouncer_pools_server_idle metrics
+      # from a PgBouncer exporter, or custom db_pool_* metrics from Go services.
+      - alert: NoMarkupDBConnectionPoolExhausted
+        expr: |
+          (
+            sum by (database) (pgbouncer_pools_server_active{database="nomarkup"})
+            /
+            clamp_min(sum by (database) (pgbouncer_pools_server_active{database="nomarkup"} + pgbouncer_pools_server_idle{database="nomarkup"}), 1)
+          ) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          team: platform
+        annotations:
+          summary: "Database connection pool >90% utilized"
+          description: >-
+            PgBouncer connection pool for database {{ $labels.database }} is
+            {{ $value | humanizePercentage }} utilized. New connections may
+            start queuing or timing out.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupDBConnectionPoolExhausted"
+
+      - alert: NoMarkupDBSlowQueries
+        expr: |
+          rate(pg_stat_activity_max_tx_duration{datname="nomarkup"}[5m]) > 0
+          and
+          pg_stat_activity_max_tx_duration{datname="nomarkup"} > 30
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          team: platform
+        annotations:
+          summary: "Long-running database transactions detected"
+          description: >-
+            PostgreSQL has transactions running longer than 30 seconds in
+            database {{ $labels.datname }}. This may indicate lock contention,
+            missing indexes, or runaway queries. Check pg_stat_activity.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupDBSlowQueries"
+
+  # ---------------------------------------------------------------------------
+  # P2 — Business Metrics
+  # ---------------------------------------------------------------------------
+  - name: nomarkup.business
+    rules:
+      - alert: NoMarkupPaymentFailureSpike
+        expr: nomarkup:payment_failure_rate_10m > 0.05
+        for: 10m
+        labels:
+          severity: info
+          priority: P2
+          team: payments
+        annotations:
+          summary: "Payment failure rate exceeds 5%"
+          description: >-
+            {{ $value | humanizePercentage }} of payment requests have failed
+            over the last 10 minutes. This may indicate a Stripe outage,
+            expired API keys, or a code regression in the payment service.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupPaymentFailureSpike"
+
+      # Requires active_websocket_connections gauge from the gateway/chat service.
+      - alert: NoMarkupWebSocketConnectionDrop
+        expr: |
+          (
+            (active_websocket_connections offset 5m) - active_websocket_connections
+          )
+          /
+          clamp_min(active_websocket_connections offset 5m, 1)
+          > 0.20
+        for: 5m
+        labels:
+          severity: info
+          priority: P2
+          team: platform
+        annotations:
+          summary: "WebSocket connections dropped >20% in 5 min"
+          description: >-
+            Active WebSocket connections have decreased by more than 20% in the
+            last 5 minutes. This may indicate a chat/auction service crash,
+            network partition, or load balancer issue.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupWebSocketConnectionDrop"
+
+      # Requires contract status tracking metrics from the job/contract service.
+      # Uses HTTP status codes on dispute endpoints as a proxy.
+      - alert: NoMarkupHighDisputeRate
+        expr: |
+          (
+            sum(rate(http_requests_total{path=~"/api/v1/contracts/.*/disputes",method="POST",status="201"}[1h]))
+            /
+            clamp_min(
+              sum(rate(http_requests_total{path=~"/api/v1/contracts/.*/approve-completion",method="POST",status=~"2.."}[1h])),
+              1e-10
+            )
+          ) > 0.05
+        for: 30m
+        labels:
+          severity: info
+          priority: P2
+          team: trust-safety
+        annotations:
+          summary: "Dispute rate exceeds 5% of completed jobs"
+          description: >-
+            The ratio of new disputes to completed jobs has exceeded 5% over
+            the last hour. This may indicate quality issues with providers,
+            unclear job scoping, or platform abuse.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighDisputeRate"
