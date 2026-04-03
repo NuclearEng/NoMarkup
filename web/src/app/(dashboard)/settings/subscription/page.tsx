@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   useCancelSubscription,
@@ -128,19 +128,19 @@ export default function SubscriptionPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Subscription</h1>
-          <p className="mt-1 text-muted-foreground">
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Subscription</h1>
+          <p className="mt-1 text-zinc-400">
             Manage your plan, view usage, and billing history.
           </p>
         </div>
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <Card key={i}>
+            <Card key={i} className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="py-6">
                 <div className="space-y-4">
-                  <div className="h-5 w-40 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-full animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
                 </div>
               </CardContent>
             </Card>
@@ -154,7 +154,7 @@ export default function SubscriptionPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Subscription</h1>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Subscription</h1>
         </div>
         <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
           Failed to load subscription details. Please try refreshing the page.
@@ -175,10 +175,10 @@ export default function SubscriptionPage() {
 
       {/* Current Plan */}
       {subscription ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Current Plan</CardTitle>
+              <CardTitle className="gold-text text-lg">Current Plan</CardTitle>
               <Badge variant={getStatusBadgeVariant(subscription.status)}>
                 {getStatusLabel(subscription.status)}
               </Badge>
@@ -232,7 +232,7 @@ export default function SubscriptionPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <p className="text-lg font-medium">No active subscription</p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -244,9 +244,9 @@ export default function SubscriptionPage() {
 
       {/* Usage */}
       {usage ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-lg">Usage</CardTitle>
+            <CardTitle className="gold-text text-lg">Usage</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <UsageBar
@@ -264,7 +264,7 @@ export default function SubscriptionPage() {
               current={usage.portfolio_images}
               max={usage.max_portfolio_images}
             />
-            <Separator />
+            <div className="glass-divider" aria-hidden="true" />
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Current platform fee</span>
               <span className="font-semibold">
@@ -362,9 +362,9 @@ export default function SubscriptionPage() {
 
       {/* Invoice History */}
       {invoices.length > 0 ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-lg">Invoice History</CardTitle>
+            <CardTitle className="gold-text text-lg">Invoice History</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -426,7 +426,7 @@ export default function SubscriptionPage() {
 
       {/* Cancel Subscription */}
       {subscription && !subscription.cancelled_at ? (
-        <Card className="border-destructive/30">
+        <Card className="glass glass-highlight border border-destructive/30">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg text-destructive">
               <AlertTriangle className="h-5 w-5" aria-hidden="true" />

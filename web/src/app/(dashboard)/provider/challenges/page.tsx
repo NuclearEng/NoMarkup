@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ChallengeCard } from '@/components/providers/ChallengeCard';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -55,28 +56,29 @@ export default function ProviderChallengesPage() {
   }, [activeChallenges]);
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Challenges</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Challenges</h1>
+        <p className="mt-1 text-zinc-400">
           Complete challenges to earn rewards and climb the leaderboard.
         </p>
       </div>
 
       {/* Seasonal event banner */}
       {seasonalEvent ? (
-        <Card className="border-primary bg-gradient-to-r from-primary/10 to-primary/5">
+        <Card className="glass glass-highlight border border-primary bg-gradient-to-r from-primary/10 to-primary/5">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
               <Flame className="h-6 w-6 text-primary" aria-hidden="true" />
             </div>
             <div>
               <p className="text-lg font-bold">{seasonalEvent}</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-zinc-400">
                 Seasonal event is live. Complete seasonal challenges for bonus rewards.
               </p>
             </div>
-            <Badge variant="default" className="ml-auto shrink-0">
+            <Badge variant="default" className="glass-badge ml-auto shrink-0">
               Live
             </Badge>
           </CardContent>
@@ -88,7 +90,7 @@ export default function ProviderChallengesPage() {
           <TabsTrigger value="available" className="min-h-[44px]">
             Available
             {availableChallenges.length > 0 ? (
-              <Badge variant="secondary" className="ml-2">
+              <Badge variant="secondary" className="glass-badge ml-2 text-xs">
                 {String(availableChallenges.length)}
               </Badge>
             ) : null}
@@ -96,7 +98,7 @@ export default function ProviderChallengesPage() {
           <TabsTrigger value="in-progress" className="min-h-[44px]">
             In Progress
             {inProgressChallenges.length > 0 ? (
-              <Badge variant="secondary" className="ml-2">
+              <Badge variant="secondary" className="glass-badge ml-2 text-xs">
                 {String(inProgressChallenges.length)}
               </Badge>
             ) : null}
@@ -104,7 +106,7 @@ export default function ProviderChallengesPage() {
           <TabsTrigger value="completed" className="min-h-[44px]">
             Completed
             {completedChallenges.length > 0 ? (
-              <Badge variant="secondary" className="ml-2">
+              <Badge variant="secondary" className="glass-badge ml-2 text-xs">
                 {String(completedChallenges.length)}
               </Badge>
             ) : null}
@@ -116,14 +118,14 @@ export default function ProviderChallengesPage() {
           {activeLoading ? (
             <div className="grid gap-4 sm:grid-cols-2">
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={`skel-avail-${String(i)}`} className="h-64" />
+                <Skeleton key={`skel-avail-${String(i)}`} className="h-64 rounded-xl" />
               ))}
             </div>
           ) : availableChallenges.length === 0 ? (
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="flex flex-col items-center gap-3 py-12">
-                <Trophy className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground">
+                <Trophy className="h-10 w-10 text-zinc-400" aria-hidden="true" />
+                <p className="text-sm text-zinc-400">
                   No new challenges available right now. Check back soon.
                 </p>
               </CardContent>
@@ -148,14 +150,14 @@ export default function ProviderChallengesPage() {
           {myLoading ? (
             <div className="grid gap-4 sm:grid-cols-2">
               {Array.from({ length: 2 }).map((_, i) => (
-                <Skeleton key={`skel-prog-${String(i)}`} className="h-64" />
+                <Skeleton key={`skel-prog-${String(i)}`} className="h-64 rounded-xl" />
               ))}
             </div>
           ) : inProgressChallenges.length === 0 ? (
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="flex flex-col items-center gap-3 py-12">
-                <Trophy className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground">
+                <Trophy className="h-10 w-10 text-zinc-400" aria-hidden="true" />
+                <p className="text-sm text-zinc-400">
                   You haven't joined any challenges yet. Browse available challenges to get started.
                 </p>
               </CardContent>
@@ -191,14 +193,14 @@ export default function ProviderChallengesPage() {
           {myLoading ? (
             <div className="grid gap-4 sm:grid-cols-2">
               {Array.from({ length: 2 }).map((_, i) => (
-                <Skeleton key={`skel-done-${String(i)}`} className="h-48" />
+                <Skeleton key={`skel-done-${String(i)}`} className="h-48 rounded-xl" />
               ))}
             </div>
           ) : completedChallenges.length === 0 ? (
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="flex flex-col items-center gap-3 py-12">
-                <Trophy className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground">
+                <Trophy className="h-10 w-10 text-zinc-400" aria-hidden="true" />
+                <p className="text-sm text-zinc-400">
                   No completed challenges yet. Keep working toward your goals.
                 </p>
               </CardContent>
@@ -230,5 +232,6 @@ export default function ProviderChallengesPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </PageTransition>
   );
 }

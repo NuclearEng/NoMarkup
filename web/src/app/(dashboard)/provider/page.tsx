@@ -9,6 +9,7 @@ import { TrustScoreBreakdown } from '@/components/providers/TrustScoreBreakdown'
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
@@ -33,10 +34,10 @@ function StatCard({
   loading: boolean;
 }) {
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-muted-foreground text-sm font-medium">{title}</CardTitle>
-        <Icon className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+        <CardTitle className="text-zinc-400 text-sm font-medium">{title}</CardTitle>
+        <Icon className="text-zinc-400 h-4 w-4" aria-hidden="true" />
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -44,7 +45,7 @@ function StatCard({
         ) : (
           <p className="text-2xl font-bold tabular-nums">{value}</p>
         )}
-        {description ? <p className="text-muted-foreground mt-1 text-xs">{description}</p> : null}
+        {description ? <p className="text-zinc-400 mt-1 text-xs">{description}</p> : null}
       </CardContent>
     </Card>
   );
@@ -68,11 +69,12 @@ export default function ProviderDashboardPage() {
   const isLoading = profileLoading || analyticsLoading;
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Provider Dashboard</h1>
-          <p className="text-muted-foreground">
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Provider Dashboard</h1>
+          <p className="text-zinc-400">
             Manage your provider profile and track performance.
           </p>
         </div>
@@ -85,11 +87,11 @@ export default function ProviderDashboardPage() {
 
       {/* Profile completeness */}
       {profile && profile.profileCompleteness < 100 ? (
-        <Card className="border-amber-500/20 bg-amber-500/10">
+        <Card className="glass glass-highlight border border-amber-500/20 bg-amber-500/10">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="min-w-0 flex-1">
               <p className="font-medium">Complete your profile</p>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-zinc-400 text-sm">
                 A complete profile helps you win more jobs. {String(profile.profileCompleteness)}%
                 complete.
               </p>
@@ -109,6 +111,7 @@ export default function ProviderDashboardPage() {
       ) : null}
 
       {/* Key metrics */}
+      <div className="glass-divider" aria-hidden="true" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Active Bids"
@@ -155,35 +158,36 @@ export default function ProviderDashboardPage() {
       {ENABLE_LIVE_AUCTION ? <ProviderRankCard /> : null}
 
       {/* Performance stats */}
+      <div className="glass-divider" aria-hidden="true" />
       {analytics ? (
         <div className="grid gap-4 sm:grid-cols-3">
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardContent className="p-4">
-              <p className="text-muted-foreground text-sm font-medium">Win Rate</p>
+              <p className="text-zinc-400 text-sm font-medium">Win Rate</p>
               <p className="text-xl font-bold">{(analytics.win_rate * 100).toFixed(1)}%</p>
-              <p className="text-muted-foreground text-xs">
+              <p className="text-zinc-400 text-xs">
                 {String(analytics.bids_won)} won of {String(analytics.total_bids)} bids
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardContent className="p-4">
-              <p className="text-muted-foreground text-sm font-medium">On-Time Rate</p>
+              <p className="text-zinc-400 text-sm font-medium">On-Time Rate</p>
               <p className="text-xl font-bold">{(analytics.on_time_rate * 100).toFixed(1)}%</p>
-              <p className="text-muted-foreground text-xs">
+              <p className="text-zinc-400 text-xs">
                 Completion rate: {(analytics.completion_rate * 100).toFixed(0)}%
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardContent className="p-4">
-              <p className="text-muted-foreground text-sm font-medium">Avg Response Time</p>
+              <p className="text-zinc-400 text-sm font-medium">Avg Response Time</p>
               <p className="text-xl font-bold">
                 {analytics.avg_response_time_minutes < 60
                   ? `${String(Math.round(analytics.avg_response_time_minutes))}m`
                   : `${String(Math.round(analytics.avg_response_time_minutes / 60))}h`}
               </p>
-              <p className="text-muted-foreground text-xs">Time to first bid</p>
+              <p className="text-zinc-400 text-xs">Time to first bid</p>
             </CardContent>
           </Card>
         </div>
@@ -206,7 +210,7 @@ export default function ProviderDashboardPage() {
             totalJobs={earnings.total_jobs}
           />
         ) : earningsLoading ? (
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader>
               <CardTitle className="text-lg">Earnings Overview</CardTitle>
             </CardHeader>
@@ -220,7 +224,7 @@ export default function ProviderDashboardPage() {
         {trustData?.score ? (
           <TrustScoreBreakdown score={trustData.score} tierRequirements={tierData?.tiers} />
         ) : trustLoading ? (
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader>
               <CardTitle className="text-lg">Trust Score</CardTitle>
             </CardHeader>
@@ -232,7 +236,8 @@ export default function ProviderDashboardPage() {
       </div>
 
       {/* Recent active bids */}
-      <Card>
+      <div className="glass-divider" aria-hidden="true" />
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Active Bids</CardTitle>
           <Link href="/bids">
@@ -250,7 +255,7 @@ export default function ProviderDashboardPage() {
             </div>
           ) : !bidsData?.bids.length ? (
             <div className="py-6 text-center">
-              <p className="text-muted-foreground text-sm">No active bids.</p>
+              <p className="text-zinc-400 text-sm">No active bids.</p>
               <Link href="/jobs" className="mt-2 inline-block">
                 <Button variant="outline" size="sm" className="min-h-[44px]">
                   Browse Jobs
@@ -267,7 +272,7 @@ export default function ProviderDashboardPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{formatCents(bid.amount_cents)}</p>
-                    <p className="text-muted-foreground text-xs">
+                    <p className="text-zinc-400 text-xs">
                       Placed{' '}
                       {new Date(bid.created_at).toLocaleDateString('en-US', {
                         month: 'short',
@@ -285,5 +290,6 @@ export default function ProviderDashboardPage() {
         </CardContent>
       </Card>
     </div>
+    </PageTransition>
   );
 }

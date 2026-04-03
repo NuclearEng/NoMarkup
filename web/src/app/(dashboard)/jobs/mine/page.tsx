@@ -46,7 +46,7 @@ export default function MyJobsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">My Jobs</h1>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">My Jobs</h1>
           <p className="text-sm text-zinc-400">Manage your job postings</p>
         </div>
         <Link href={'/jobs/new' as Route}>

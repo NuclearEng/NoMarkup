@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { MetricsCard } from '@/components/admin/MetricsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -90,10 +91,11 @@ export default function AdminPlatformPage() {
     ) ?? 0;
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Platform Analytics</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Platform Analytics</h1>
+        <p className="mt-1 text-zinc-400">
           Comprehensive platform performance metrics and growth trends.
         </p>
       </div>
@@ -314,5 +316,6 @@ export default function AdminPlatformPage() {
         </CardContent>
       </Card>
     </div>
+    </PageTransition>
   );
 }

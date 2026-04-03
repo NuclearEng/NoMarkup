@@ -4,7 +4,10 @@ import type { Route } from 'next';
 import { useParams, useRouter } from 'next/navigation';
 
 import { GuaranteeClaimReview } from '@/components/admin/GuaranteeClaimReview';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminDispute } from '@/hooks/useAdmin';
 
@@ -66,14 +69,18 @@ export default function AdminGuaranteeClaimDetailPage() {
             { label: 'Detail' },
           ]}
         />
-        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
-          Failed to load guarantee claim details.
-        </div>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load guarantee claim"
+          description="Something went wrong loading claim details."
+          className="glass border-destructive/30"
+        />
       </div>
     );
   }
 
   return (
+    <PageTransition>
     <div className="mx-auto max-w-3xl space-y-6">
       <Breadcrumb
         items={[
@@ -85,5 +92,6 @@ export default function AdminGuaranteeClaimDetailPage() {
 
       <GuaranteeClaimReview claim={data.dispute} onResolved={handleResolved} />
     </div>
+    </PageTransition>
   );
 }

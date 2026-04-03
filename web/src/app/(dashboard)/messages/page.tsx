@@ -9,6 +9,7 @@ import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { useChannel } from '@/hooks/useChannels';
 import { CONNECTION_STATUS } from '@/lib/websocket';
 import { cn } from '@/lib/utils';
@@ -70,10 +71,11 @@ export default function MessagesPage() {
   const setActiveChannel = useChatStore((state) => state.setActiveChannel);
 
   return (
+    <PageTransition>
     <div className="flex h-[calc(100vh-theme(spacing.24))] flex-col">
       <div className="mb-4 flex items-center gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Messages</h1>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Messages</h1>
           <p className="mt-1 text-zinc-400">Communicate with customers and providers.</p>
         </div>
         <div className="ml-auto">
@@ -126,5 +128,6 @@ export default function MessagesPage() {
         </div>
       </div>
     </div>
+    </PageTransition>
   );
 }

@@ -4,6 +4,7 @@ import { Calculator, FileText, Receipt } from 'lucide-react';
 import Link from 'next/link';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useProviderAnalytics } from '@/hooks/useAnalytics';
 import { useExpenses } from '@/hooks/useExpenses';
@@ -19,9 +20,9 @@ function StatCard({
   loading: boolean;
 }) {
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="p-4">
-        <p className="text-sm font-medium text-muted-foreground">{title}</p>
+        <p className="text-sm font-medium text-zinc-400">{title}</p>
         {loading ? (
           <Skeleton className="mt-1 h-8 w-24" />
         ) : (
@@ -64,10 +65,11 @@ export default function ProviderBusinessPage() {
   const isLoading = analyticsLoading || expensesLoading;
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Business Services</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Business Services</h1>
+        <p className="mt-1 text-zinc-400">
           Manage your business finances, taxes, and invoices.
         </p>
       </div>
@@ -95,7 +97,7 @@ export default function ProviderBusinessPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         {BUSINESS_LINKS.map((link) => (
           <Link key={link.href} href={link.href}>
-            <Card className="h-full transition-colors hover:bg-muted/50">
+            <Card className="glass glass-interactive h-full border border-[var(--brand-gold)]/10">
               <CardHeader className="flex flex-row items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                   <link.icon className="h-5 w-5 text-primary" aria-hidden="true" />
@@ -105,12 +107,13 @@ export default function ProviderBusinessPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">{link.description}</p>
+                <p className="text-sm text-zinc-400">{link.description}</p>
               </CardContent>
             </Card>
           </Link>
         ))}
       </div>
     </div>
+    </PageTransition>
   );
 }

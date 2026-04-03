@@ -6,8 +6,9 @@ import { useState } from 'react';
 import { ProviderBidCard } from '@/components/bids/ProviderBidCard';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMyBids } from '@/hooks/useBids';
 
@@ -32,21 +33,7 @@ function BidTabContent({ tab }: { tab: BidTab }) {
   const { data, isLoading, isError, refetch } = useMyBids(statusFilter, page);
 
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <Card key={i}>
-            <CardContent className="pt-6">
-              <div className="space-y-3">
-                <div className="h-6 w-2/3 animate-pulse rounded bg-white/[0.06]" />
-                <div className="h-8 w-1/4 animate-pulse rounded bg-white/[0.06]" />
-                <div className="h-4 w-1/3 animate-pulse rounded bg-white/[0.06]" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
+    return <ContentLoader preset="bid-card" count={3} className="space-y-4" />;
   }
 
   if (isError) {
@@ -139,9 +126,10 @@ function BidTabContent({ tab }: { tab: BidTab }) {
 
 export default function MyBidsPage() {
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">My Bids</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">My Bids</h1>
         <p className="mt-1 text-zinc-400">Track and manage your bids across all jobs.</p>
       </div>
 
@@ -174,5 +162,6 @@ export default function MyBidsPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </PageTransition>
   );
 }

@@ -6,8 +6,11 @@ import { Loader2 } from 'lucide-react';
 
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -16,21 +19,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAdminAdvances, useReviewAdvance } from '@/hooks/useWorkingCapital';
+import { ADVANCE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { AdvanceStatus, WorkingCapitalAdvance } from '@/types';
 import { ADVANCE_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
-
-const STATUS_CLASSES: Record<AdvanceStatus, string> = {
-  requested: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  approved: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  disbursed: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
-  repaying: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
-  repaid: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  defaulted: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  rejected: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-};
 
 const STATUS_LABELS: Record<AdvanceStatus, string> = {
   requested: 'Requested',
@@ -140,7 +134,7 @@ export default function AdminAdvancesPage() {
       render: (advance) => (
         <Badge
           variant="outline"
-          className={cn('text-xs', STATUS_CLASSES[advance.status])}
+          className={cn('text-xs', ADVANCE_STATUS_CLASSES[advance.status])}
         >
           {STATUS_LABELS[advance.status]}
         </Badge>
@@ -162,20 +156,25 @@ export default function AdminAdvancesPage() {
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Working Capital Advances</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-          Failed to load advances. Please try refreshing the page.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Working Capital Advances</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load advances"
+          description="Please try refreshing the page."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Working Capital Advances</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Working Capital Advances</h1>
+        <p className="mt-1 text-zinc-400">
           Review and manage provider working capital advance requests.
         </p>
       </div>
@@ -214,5 +213,6 @@ export default function AdminAdvancesPage() {
         emptyMessage="No advances found matching the current filters."
       />
     </div>
+    </PageTransition>
   );
 }

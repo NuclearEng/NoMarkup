@@ -5,11 +5,14 @@ import { useState } from 'react';
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
 import { MetricsCard } from '@/components/admin/MetricsCard';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -22,22 +25,12 @@ import {
   useRevenueReport,
   useUpdateFeeConfig,
 } from '@/hooks/useAdmin';
+import { PAYMENT_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { Payment } from '@/types';
 import { PAYMENT_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
-
-const PAYMENT_STATUS_CLASSES: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
-  processing: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  escrow: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
-  released: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  completed: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  failed: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  refunded: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800',
-  disputed: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-};
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -126,10 +119,11 @@ export default function AdminPaymentsPage() {
   ];
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Payment Administration</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Payment Administration</h1>
+        <p className="mt-1 text-zinc-400">
           Revenue overview, transaction management, and fee configuration.
         </p>
       </div>
@@ -198,9 +192,11 @@ export default function AdminPaymentsPage() {
         </div>
 
         {paymentsError ? (
-          <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-            Failed to load payments. Please try refreshing the page.
-          </div>
+          <EmptyState
+            icon={<AnimatedIllustration type="error" size="sm" />}
+            title="Failed to load payments"
+            description="Please try refreshing the page."
+          />
         ) : (
           <DataTable
             columns={columns}
@@ -216,9 +212,9 @@ export default function AdminPaymentsPage() {
       </div>
 
       {/* Fee Configuration */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-base">Fee Configuration</CardTitle>
+          <CardTitle className="gold-text text-base">Fee Configuration</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -310,5 +306,6 @@ export default function AdminPaymentsPage() {
         </CardContent>
       </Card>
     </div>
+    </PageTransition>
   );
 }

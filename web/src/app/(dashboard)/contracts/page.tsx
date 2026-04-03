@@ -140,7 +140,7 @@ export default function ContractsPage() {
     <PageTransition>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Contracts</h1>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Contracts</h1>
           <p className="mt-1 text-zinc-400">
             Manage your contracts, track milestones, and handle payments.
           </p>

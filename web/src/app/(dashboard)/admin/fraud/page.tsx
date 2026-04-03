@@ -2,6 +2,7 @@
 
 import { FraudAlertList } from '@/components/admin/FraudAlertList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFraudAlerts } from '@/hooks/useFraud';
 import { cn } from '@/lib/utils';
@@ -108,10 +109,11 @@ function SummaryCards() {
 
 export default function AdminFraudPage() {
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Fraud Detection</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Fraud Detection</h1>
+        <p className="mt-1 text-zinc-400">
           Monitor fraud signals, investigate alerts, and manage user risk.
         </p>
       </div>
@@ -123,5 +125,6 @@ export default function AdminFraudPage() {
         <FraudAlertList />
       </div>
     </div>
+    </PageTransition>
   );
 }

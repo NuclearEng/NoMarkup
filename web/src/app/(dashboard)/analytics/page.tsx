@@ -8,7 +8,9 @@ import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -16,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import {
   useCustomerSpending,
   useProviderAnalytics,
@@ -75,15 +76,15 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, icon: Icon, subValue }: MetricCardProps) {
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="flex items-center gap-4 py-4">
-        <div className="bg-primary/10 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/[0.06]">
           <Icon className="text-primary h-5 w-5" aria-hidden="true" />
         </div>
         <div className="min-w-0">
-          <p className="text-muted-foreground text-xs">{label}</p>
+          <p className="text-xs text-zinc-400">{label}</p>
           <p className="text-lg font-bold">{value}</p>
-          {subValue ? <p className="text-muted-foreground text-xs">{subValue}</p> : null}
+          {subValue ? <p className="text-xs text-zinc-400">{subValue}</p> : null}
         </div>
       </CardContent>
     </Card>
@@ -110,26 +111,7 @@ function ProviderAnalyticsView() {
   if (analyticsLoading || earningsLoading) {
     return (
       <div className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-4">
-                  <div className="bg-muted h-10 w-10 animate-pulse rounded-lg" />
-                  <div className="flex-1 space-y-2">
-                    <div className="bg-muted h-3 w-20 animate-pulse rounded" />
-                    <div className="bg-muted h-5 w-16 animate-pulse rounded" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <Card>
-          <CardContent className="py-6">
-            <div className="bg-muted h-48 animate-pulse rounded" />
-          </CardContent>
-        </Card>
+        <ContentLoader preset="stat-card" count={4} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" />
       </div>
     );
   }
@@ -241,21 +223,21 @@ function ProviderAnalyticsView() {
 
       {/* Category breakdown */}
       {analytics && analytics.category_breakdown.length > 0 ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
             <CardTitle className="text-lg">Category Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
               {/* Header */}
-              <div className="text-muted-foreground hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase sm:flex">
+              <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-400 sm:flex">
                 <div className="flex-1">Category</div>
                 <div className="w-20 text-right">Jobs</div>
                 <div className="w-28 text-right">Earnings</div>
                 <div className="w-16 text-right">Rating</div>
               </div>
 
-              <Separator />
+              <div className="glass-divider" aria-hidden="true" />
 
               {analytics.category_breakdown.map((cat) => (
                 <div
@@ -299,21 +281,7 @@ function CustomerAnalyticsView() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-4">
-                  <div className="bg-muted h-10 w-10 animate-pulse rounded-lg" />
-                  <div className="flex-1 space-y-2">
-                    <div className="bg-muted h-3 w-20 animate-pulse rounded" />
-                    <div className="bg-muted h-5 w-16 animate-pulse rounded" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <ContentLoader preset="stat-card" count={4} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" />
       </div>
     );
   }
@@ -387,7 +355,7 @@ function CustomerAnalyticsView() {
 
           {/* Spending chart */}
           {spending.data_points.length > 0 ? (
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader>
                 <CardTitle className="text-lg">Spending Over Time</CardTitle>
               </CardHeader>
@@ -457,20 +425,20 @@ function CustomerAnalyticsView() {
 
           {/* Category breakdown */}
           {spending.category_breakdown.length > 0 ? (
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader>
                 <CardTitle className="text-lg">Spending by Category</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-1">
                   {/* Header */}
-                  <div className="text-muted-foreground hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase sm:flex">
+                  <div className="hidden items-center gap-4 px-2 py-1 text-xs font-medium uppercase text-zinc-400 sm:flex">
                     <div className="flex-1">Category</div>
                     <div className="w-20 text-right">Jobs</div>
                     <div className="w-28 text-right">Total Spent</div>
                   </div>
 
-                  <Separator />
+                  <div className="glass-divider" aria-hidden="true" />
 
                   {spending.category_breakdown.map((cat) => (
                     <div
@@ -501,11 +469,12 @@ export default function AnalyticsPage() {
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="text-muted-foreground mt-1">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Analytics</h1>
+        <p className="mt-1 text-zinc-400">
           {isProvider
             ? 'Track your performance, earnings, and growth.'
             : 'Track your spending, job activity, and savings.'}
@@ -514,5 +483,6 @@ export default function AnalyticsPage() {
 
       {isProvider ? <ProviderAnalyticsView /> : <CustomerAnalyticsView />}
     </div>
+    </PageTransition>
   );
 }

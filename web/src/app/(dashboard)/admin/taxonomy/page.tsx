@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCategoryTree } from '@/hooks/useCategories';
 import type { ServiceCategory } from '@/types';
@@ -88,10 +89,11 @@ export default function AdminTaxonomyPage() {
   ) ?? 0;
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Service Taxonomy</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Service Taxonomy</h1>
+        <p className="mt-1 text-zinc-400">
           Manage service categories, subcategories, and service types.
         </p>
       </div>
@@ -171,5 +173,6 @@ export default function AdminTaxonomyPage() {
         </CardContent>
       </Card>
     </div>
+    </PageTransition>
   );
 }

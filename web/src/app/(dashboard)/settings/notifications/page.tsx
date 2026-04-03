@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useNotificationPreferences, useUpdatePreferences } from '@/hooks/useNotifications';
 import { NOTIFICATION_TYPE } from '@/types';
@@ -148,19 +148,19 @@ export default function NotificationPreferencesPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
-          <p className="mt-1 text-muted-foreground">
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Notification Preferences</h1>
+          <p className="mt-1 text-zinc-400">
             Choose how and when you want to be notified.
           </p>
         </div>
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <Card key={i}>
+            <Card key={i} className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="py-6">
                 <div className="space-y-4">
-                  <div className="h-5 w-32 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-full animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+                  <Skeleton className="h-5 w-32" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-3/4" />
                 </div>
               </CardContent>
             </Card>
@@ -174,7 +174,7 @@ export default function NotificationPreferencesPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Notification Preferences</h1>
         </div>
         <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
           Failed to load notification preferences. Please try refreshing the page.
@@ -187,16 +187,16 @@ export default function NotificationPreferencesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Notification Preferences</h1>
         <p className="mt-1 text-muted-foreground">
           Choose how and when you want to be notified.
         </p>
       </div>
 
       {/* Global toggles */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardContent className="py-6">
-          <h2 className="text-lg font-semibold">Global Settings</h2>
+          <h2 className="gold-text text-lg font-semibold">Global Settings</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Master toggles for each notification channel. Disabling a channel here turns it off for all notification types.
           </p>
@@ -215,7 +215,7 @@ export default function NotificationPreferencesPage() {
                 aria-label="Toggle email notifications globally"
               />
             </div>
-            <Separator />
+            <div className="glass-divider" aria-hidden="true" />
             <div className="flex min-h-[44px] items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Push notifications</p>
@@ -230,7 +230,7 @@ export default function NotificationPreferencesPage() {
                 aria-label="Toggle push notifications globally"
               />
             </div>
-            <Separator />
+            <div className="glass-divider" aria-hidden="true" />
             <div className="flex min-h-[44px] items-center justify-between">
               <div>
                 <p className="text-sm font-medium">SMS notifications</p>
@@ -251,9 +251,9 @@ export default function NotificationPreferencesPage() {
 
       {/* Per-type preferences */}
       {PREFERENCE_CATEGORIES.map((category) => (
-        <Card key={category.label}>
+        <Card key={category.label} className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="py-6">
-            <h2 className="text-lg font-semibold">{category.label}</h2>
+            <h2 className="gold-text text-lg font-semibold">{category.label}</h2>
             <div className="mt-4">
               {/* Column headers */}
               <div className="mb-3 hidden items-center gap-4 sm:flex">
@@ -268,7 +268,7 @@ export default function NotificationPreferencesPage() {
                   const pref = getPreference(item.type);
                   return (
                     <div key={item.type}>
-                      {idx > 0 ? <Separator className="my-1" /> : null}
+                      {idx > 0 ? <div className="glass-divider my-1" aria-hidden="true" /> : null}
                       <div className="flex min-h-[44px] flex-col gap-2 py-2 sm:flex-row sm:items-center sm:gap-4">
                         <p className="flex-1 text-sm font-medium">{item.label}</p>
                         <div className="flex items-center gap-4">

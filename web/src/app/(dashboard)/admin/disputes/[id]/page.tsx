@@ -5,12 +5,15 @@ import { useState } from 'react';
 import type { Route } from 'next';
 import { useParams, useRouter } from 'next/navigation';
 
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -21,19 +24,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useAdminDispute, useResolveDispute } from '@/hooks/useAdmin';
+import { DISPUTE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import type { DisputeResolutionType, DisputeStatus } from '@/types';
+import type { DisputeResolutionType } from '@/types';
 import { DISPUTE_RESOLUTION_TYPE, DISPUTE_STATUS } from '@/types';
-
-const DISPUTE_STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  investigating:
-    'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
-  resolved:
-    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  escalated:
-    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-};
 
 const RESOLUTION_LABELS: Record<DisputeResolutionType, string> = {
   favor_customer: 'Favor Customer',
@@ -92,7 +86,7 @@ export default function AdminDisputeDetailPage() {
           </div>
           <Skeleton className="h-6 w-24" />
         </div>
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="space-y-4 pt-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -106,7 +100,7 @@ export default function AdminDisputeDetailPage() {
             <Skeleton className="h-16 w-full" />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="space-y-4 pt-6">
             <Skeleton className="h-6 w-32" />
             <Skeleton className="h-10 w-full" />
@@ -120,6 +114,7 @@ export default function AdminDisputeDetailPage() {
 
   if (isError || !dispute) {
     return (
+      <PageTransition>
       <div className="space-y-6">
         <Breadcrumb
           items={[
@@ -128,15 +123,18 @@ export default function AdminDisputeDetailPage() {
             { label: 'Detail' },
           ]}
         />
-        <h1 className="text-2xl font-bold tracking-tight">Dispute Detail</h1>
-        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
-          Failed to load dispute details.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Detail</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load dispute details"
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <Breadcrumb
         items={[
@@ -148,8 +146,8 @@ export default function AdminDisputeDetailPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dispute Detail</h1>
-          <p className="text-muted-foreground mt-1 font-mono text-sm">{dispute.id}</p>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Detail</h1>
+          <p className="text-zinc-400 mt-1 font-mono text-sm">{dispute.id}</p>
         </div>
         <Badge
           variant="outline"
@@ -160,37 +158,37 @@ export default function AdminDisputeDetailPage() {
       </div>
 
       {/* Dispute Info */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-base">Dispute Information</CardTitle>
+          <CardTitle className="gold-text text-base">Dispute Information</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <span className="text-muted-foreground">Contract ID</span>
+              <span className="text-zinc-400">Contract ID</span>
               <p className="mt-1 font-mono text-xs">{dispute.contract_id}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Initiated By</span>
+              <span className="text-zinc-400">Initiated By</span>
               <p className="mt-1">{dispute.initiator_name ?? dispute.initiated_by.slice(0, 12)}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Respondent</span>
+              <span className="text-zinc-400">Respondent</span>
               <p className="mt-1">{dispute.respondent_name ? dispute.respondent_name : 'N/A'}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Opened</span>
+              <span className="text-zinc-400">Opened</span>
               <p className="mt-1">{formatDate(dispute.created_at)}</p>
             </div>
             {dispute.resolved_at ? (
               <div>
-                <span className="text-muted-foreground">Resolved</span>
+                <span className="text-zinc-400">Resolved</span>
                 <p className="mt-1">{formatDate(dispute.resolved_at)}</p>
               </div>
             ) : null}
             {dispute.refund_amount_cents !== undefined && dispute.refund_amount_cents > 0 ? (
               <div>
-                <span className="text-muted-foreground">Refund Amount</span>
+                <span className="text-zinc-400">Refund Amount</span>
                 <p className="mt-1 font-medium tabular-nums">
                   {formatCents(dispute.refund_amount_cents)}
                 </p>
@@ -199,20 +197,20 @@ export default function AdminDisputeDetailPage() {
           </div>
 
           <div className="mt-4">
-            <span className="text-muted-foreground text-sm">Reason</span>
+            <span className="text-zinc-400 text-sm">Reason</span>
             <p className="mt-1 text-sm">{dispute.reason}</p>
           </div>
 
           {dispute.resolution_notes ? (
             <div className="mt-4">
-              <span className="text-muted-foreground text-sm">Resolution Notes</span>
+              <span className="text-zinc-400 text-sm">Resolution Notes</span>
               <p className="mt-1 text-sm">{dispute.resolution_notes}</p>
             </div>
           ) : null}
 
           {dispute.resolution_type ? (
             <div className="mt-4">
-              <span className="text-muted-foreground text-sm">Resolution</span>
+              <span className="text-zinc-400 text-sm">Resolution</span>
               <p className="mt-1 text-sm font-medium">
                 {RESOLUTION_LABELS[dispute.resolution_type]}
               </p>
@@ -223,9 +221,9 @@ export default function AdminDisputeDetailPage() {
 
       {/* Resolution Form */}
       {!isResolved ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-base">Resolve Dispute</CardTitle>
+            <CardTitle className="gold-text text-base">Resolve Dispute</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -307,5 +305,6 @@ export default function AdminDisputeDetailPage() {
         </Card>
       ) : null}
     </div>
+    </PageTransition>
   );
 }

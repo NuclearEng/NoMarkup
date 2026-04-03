@@ -9,7 +9,9 @@ import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Form,
   FormControl,
@@ -60,11 +62,12 @@ export default function PropertiesPage() {
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">My Properties</h1>
-          <p className="text-muted-foreground mt-1">Manage your service locations</p>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">My Properties</h1>
+          <p className="mt-1 text-zinc-400">Manage your service locations</p>
         </div>
         <Button
           onClick={() => {
@@ -198,11 +201,7 @@ export default function PropertiesPage() {
 
       {/* Properties List */}
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-muted h-40 animate-pulse rounded-xl border" />
-          ))}
-        </div>
+        <ContentLoader preset="contract-card" count={3} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" />
       ) : isError ? (
         <EmptyState
           icon={<AnimatedIllustration type="error" size="sm" />}
@@ -242,7 +241,7 @@ export default function PropertiesPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {properties.map((property) => (
-            <Card key={property.id}>
+            <Card key={property.id} className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="p-5">
                 <div className="mb-2 flex items-start justify-between">
                   <h3 className="font-semibold">{property.nickname}</h3>
@@ -283,5 +282,6 @@ export default function PropertiesPage() {
         </div>
       )}
     </div>
+    </PageTransition>
   );
 }

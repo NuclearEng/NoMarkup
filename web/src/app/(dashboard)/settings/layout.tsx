@@ -20,7 +20,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Settings</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-zinc-400">Manage your account preferences.</p>
       </div>
 

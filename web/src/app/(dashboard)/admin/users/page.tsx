@@ -8,9 +8,12 @@ import Link from 'next/link';
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -20,22 +23,12 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useAdminUsers, useBanUser, useSuspendUser } from '@/hooks/useAdmin';
+import { USER_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
-import type { AdminUser, UserStatus } from '@/types';
+import type { AdminUser } from '@/types';
 import { USER_ROLE, USER_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
-
-const STATUS_CLASSES: Record<UserStatus, string> = {
-  active:
-    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  suspended:
-    'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
-  banned:
-    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  deactivated:
-    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-};
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -118,7 +111,7 @@ export default function AdminUsersPage() {
       key: 'status',
       header: 'Status',
       render: (user) => (
-        <Badge variant="outline" className={cn('text-xs capitalize', STATUS_CLASSES[user.status])}>
+        <Badge variant="outline" className={cn('text-xs capitalize', USER_STATUS_CLASSES[user.status])}>
           {user.status}
         </Badge>
       ),
@@ -169,20 +162,25 @@ export default function AdminUsersPage() {
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
-        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
-          Failed to load users. Please try refreshing the page.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">User Management</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load users"
+          description="Please try refreshing the page."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
-        <p className="text-muted-foreground mt-1">Search, view, and manage platform users.</p>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">User Management</h1>
+        <p className="text-zinc-400 mt-1">Search, view, and manage platform users.</p>
       </div>
 
       {/* Filters */}
@@ -297,5 +295,6 @@ export default function AdminUsersPage() {
         </div>
       </ActionConfirmDialog>
     </div>
+    </PageTransition>
   );
 }

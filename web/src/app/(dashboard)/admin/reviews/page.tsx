@@ -5,8 +5,11 @@ import { useState } from 'react';
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -19,17 +22,12 @@ import {
   useAdminFlaggedReviews,
   useResolveReviewFlag,
 } from '@/hooks/useAdmin';
+import { FLAG_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
 import type { FlaggedReview, FlagStatus } from '@/types';
 import { FLAG_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
-
-const FLAG_STATUS_CLASSES: Record<FlagStatus, string> = {
-  pending: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
-  upheld: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  dismissed: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-};
 
 const FLAG_STATUS_LABELS: Record<FlagStatus, string> = {
   pending: 'Pending',
@@ -157,20 +155,25 @@ export default function AdminReviewsPage() {
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Flagged Reviews</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-          Failed to load flagged reviews. Please try refreshing the page.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Flagged Reviews</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load flagged reviews"
+          description="Please try refreshing the page."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Flagged Reviews</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Flagged Reviews</h1>
+        <p className="mt-1 text-zinc-400">
           Review flagged content and take action on policy violations.
         </p>
       </div>
@@ -244,5 +247,6 @@ export default function AdminReviewsPage() {
         </div>
       </ActionConfirmDialog>
     </div>
+    </PageTransition>
   );
 }

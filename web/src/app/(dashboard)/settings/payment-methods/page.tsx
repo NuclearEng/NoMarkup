@@ -7,7 +7,7 @@ import { AddPaymentMethodForm } from '@/components/payments/AddPaymentMethodForm
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   useCreateStripeAccount,
   useDeletePaymentMethod,
@@ -46,10 +46,10 @@ export default function PaymentMethodsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="gold-text text-2xl font-bold tracking-tight">
             Payment Methods
           </h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-zinc-400">
             Manage your payment methods and payout settings
           </p>
         </div>
@@ -65,9 +65,9 @@ export default function PaymentMethodsPage() {
       </div>
 
       {showAddForm ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-lg">Add Payment Method</CardTitle>
+            <CardTitle className="gold-text text-lg">Add Payment Method</CardTitle>
           </CardHeader>
           <CardContent>
             <AddPaymentMethodForm
@@ -79,9 +79,9 @@ export default function PaymentMethodsPage() {
       ) : null}
 
       {/* Payment Methods List */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="gold-text flex items-center gap-2 text-lg">
             <CreditCard className="h-5 w-5" aria-hidden="true" />
             Saved Payment Methods
           </CardTitle>
@@ -90,10 +90,7 @@ export default function PaymentMethodsPage() {
           {isLoading ? (
             <div className="space-y-3">
               {[1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-16 animate-pulse rounded-lg border bg-muted"
-                />
+                <Skeleton key={i} className="h-16 w-full rounded-lg" />
               ))}
             </div>
           ) : isError ? (
@@ -156,16 +153,16 @@ export default function PaymentMethodsPage() {
         </CardContent>
       </Card>
 
-      <Separator />
+      <div className="glass-divider" aria-hidden="true" />
 
       {/* Stripe Connect Status (for providers) */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-lg">Provider Payouts</CardTitle>
+          <CardTitle className="gold-text text-lg">Provider Payouts</CardTitle>
         </CardHeader>
         <CardContent>
           {stripeStatus.isLoading ? (
-            <div className="h-16 animate-pulse rounded-lg bg-muted" />
+            <Skeleton className="h-16 w-full rounded-lg" />
           ) : stripeStatus.isError ? (
             <p className="text-sm text-muted-foreground">
               Payout settings are only available for provider accounts.

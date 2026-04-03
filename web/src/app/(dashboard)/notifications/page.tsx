@@ -5,8 +5,9 @@ import { useState } from 'react';
 import { NotificationItem } from '@/components/layout/NotificationItem';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { useMarkAllAsRead, useMarkAsRead, useNotifications } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 
@@ -40,12 +41,13 @@ export default function NotificationsPage() {
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Notifications</h1>
+          <p className="mt-1 text-zinc-400">
             Stay up to date with your activity and updates.
           </p>
         </div>
@@ -93,23 +95,7 @@ export default function NotificationsPage() {
 
       {/* Loading state */}
       {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Card key={i}>
-              <CardContent className="py-4">
-                <div className="flex items-start gap-3">
-                  <div className="bg-muted h-2 w-2 shrink-0 animate-pulse rounded-full" />
-                  <div className="bg-muted h-10 w-10 shrink-0 animate-pulse rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <div className="bg-muted h-4 w-2/3 animate-pulse rounded" />
-                    <div className="bg-muted h-3 w-full animate-pulse rounded" />
-                    <div className="bg-muted h-3 w-1/4 animate-pulse rounded" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <ContentLoader preset="message" count={5} className="space-y-3" />
       ) : null}
 
       {/* Error state */}
@@ -190,5 +176,6 @@ export default function NotificationsPage() {
         </div>
       ) : null}
     </div>
+    </PageTransition>
   );
 }

@@ -24,9 +24,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="flex gap-0">
-      <aside className="hidden w-56 shrink-0 border-r lg:block">
+      <aside className="hidden w-56 shrink-0 border-r border-white/[0.06] lg:block">
         <div className="sticky top-0 p-4">
-          <h2 className="mb-4 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <h2 className="mb-4 px-3 text-xs font-semibold uppercase tracking-wider text-[var(--brand-gold)]">
             Admin Panel
           </h2>
           <AdminSidebar />

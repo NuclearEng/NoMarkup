@@ -16,7 +16,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
 import { changePasswordSchema } from '@/lib/validations';
 import type { ChangePasswordFormValues } from '@/lib/validations';
@@ -47,15 +47,15 @@ function MFASection() {
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="gold-text flex items-center gap-2 text-lg">
             <Smartphone className="h-5 w-5" aria-hidden="true" />
             Two-Factor Authentication
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-20 animate-pulse rounded bg-muted" />
+          <Skeleton className="h-20 w-full" />
         </CardContent>
       </Card>
     );
@@ -116,9 +116,9 @@ function MFASection() {
   }
 
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
+        <CardTitle className="gold-text flex items-center gap-2 text-lg">
           <Smartphone className="h-5 w-5" aria-hidden="true" />
           Two-Factor Authentication
         </CardTitle>
@@ -172,7 +172,7 @@ function MFASection() {
               </code>
             </div>
 
-            <Separator />
+            <div className="glass-divider" aria-hidden="true" />
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -210,7 +210,7 @@ function MFASection() {
               </div>
             </div>
 
-            <Separator />
+            <div className="glass-divider" aria-hidden="true" />
 
             <div className="space-y-2">
               <label
@@ -379,16 +379,16 @@ export default function SecuritySettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Security</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Security</h1>
+        <p className="mt-1 text-zinc-400">
           Manage your password and account security
         </p>
       </div>
 
       {/* Change Password */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="gold-text flex items-center gap-2 text-lg">
             <Shield className="h-5 w-5" aria-hidden="true" />
             Change Password
           </CardTitle>
@@ -490,20 +490,20 @@ export default function SecuritySettingsPage() {
         </CardContent>
       </Card>
 
-      <Separator />
+      <div className="glass-divider" aria-hidden="true" />
 
       {/* MFA */}
       <MFASection />
 
-      <Separator />
+      <div className="glass-divider" aria-hidden="true" />
 
       {/* Active Sessions */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-lg">Active Sessions</CardTitle>
+          <CardTitle className="gold-text text-lg">Active Sessions</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-zinc-400">
             You are currently signed in. Your session will expire after 60
             minutes of inactivity.
           </p>

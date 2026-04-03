@@ -5,10 +5,14 @@ import { useState } from 'react';
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Textarea } from '@/components/ui/textarea';
 import { useReviewDocument, useVerificationQueue } from '@/hooks/useAdmin';
+import { VERIFICATION_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import type { VerificationDocument } from '@/types';
 
 function formatDate(dateStr: string): string {
@@ -17,19 +21,6 @@ function formatDate(dateStr: string): string {
     day: 'numeric',
     year: 'numeric',
   });
-}
-
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case 'pending':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800';
-    case 'approved':
-      return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800';
-    case 'rejected':
-      return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800';
-    default:
-      return 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
-  }
 }
 
 export default function AdminVerificationPage() {
@@ -78,7 +69,7 @@ export default function AdminVerificationPage() {
       key: 'status',
       header: 'Status',
       render: (doc) => (
-        <Badge variant="outline" className={statusBadgeClass(doc.status)}>
+        <Badge variant="outline" className={VERIFICATION_STATUS_CLASSES[doc.status] ?? ''}>
           {doc.status}
         </Badge>
       ),
@@ -129,20 +120,25 @@ export default function AdminVerificationPage() {
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Verification Queue</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-          Failed to load verification queue. Please try refreshing the page.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Verification Queue</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load verification queue"
+          description="Please try refreshing the page."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Verification Queue</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Verification Queue</h1>
+        <p className="mt-1 text-zinc-400">
           Review and approve provider verification documents.
         </p>
       </div>
@@ -195,5 +191,6 @@ export default function AdminVerificationPage() {
         ) : null}
       </ActionConfirmDialog>
     </div>
+    </PageTransition>
   );
 }

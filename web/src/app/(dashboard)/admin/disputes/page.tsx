@@ -7,7 +7,10 @@ import Link from 'next/link';
 
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -16,18 +19,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAdminDisputes } from '@/hooks/useAdmin';
+import { DISPUTE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { Dispute, DisputeStatus } from '@/types';
 import { DISPUTE_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
-
-const DISPUTE_STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  investigating: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
-  resolved: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  escalated: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-};
 
 const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
   open: 'Open',
@@ -73,7 +70,7 @@ export default function AdminDisputesPage() {
       render: (dispute) => (
         <div className="text-sm">
           <p>{dispute.initiator_name ?? dispute.initiated_by.slice(0, 8)}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-zinc-400">
             vs {dispute.respondent_name ?? 'Respondent'}
           </p>
         </div>
@@ -115,33 +112,38 @@ export default function AdminDisputesPage() {
       key: 'created_at',
       header: 'Opened',
       render: (dispute) => (
-        <span className="text-muted-foreground">{formatDate(dispute.created_at)}</span>
+        <span className="text-zinc-400">{formatDate(dispute.created_at)}</span>
       ),
     },
   ];
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Dispute Management</h1>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-          Failed to load disputes. Please try refreshing the page.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Management</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load disputes"
+          description="Please try refreshing the page."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dispute Management</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Management</h1>
+        <p className="mt-1 text-zinc-400">
           Review and resolve contract disputes between customers and providers.
         </p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Status:</span>
+        <span className="text-sm font-medium text-zinc-400">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
           onValueChange={(v) => {
@@ -174,5 +176,6 @@ export default function AdminDisputesPage() {
         emptyMessage="No disputes found matching the current filters."
       />
     </div>
+    </PageTransition>
   );
 }

@@ -5,28 +5,20 @@ import { useState } from 'react';
 import { useParams } from 'next/navigation';
 
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useAdminUser, useBanUser, useSuspendUser } from '@/hooks/useAdmin';
+import { USER_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
-import type { UserStatus } from '@/types';
 import { USER_STATUS } from '@/types';
-
-const STATUS_CLASSES: Record<UserStatus, string> = {
-  active:
-    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  suspended:
-    'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
-  banned:
-    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  deactivated:
-    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-};
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -110,6 +102,7 @@ export default function AdminUserDetailPage() {
 
   if (isError || !user) {
     return (
+      <PageTransition>
       <div className="space-y-6">
         <Breadcrumb
           items={[
@@ -118,15 +111,19 @@ export default function AdminUserDetailPage() {
             { label: 'Detail' },
           ]}
         />
-        <h1 className="text-2xl font-bold tracking-tight">User Detail</h1>
-        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
-          Failed to load user details. The user may not exist or you may not have permission.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">User Detail</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load user details"
+          description="The user may not exist or you may not have permission."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <Breadcrumb
         items={[
@@ -138,8 +135,8 @@ export default function AdminUserDetailPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{user.display_name || user.email}</h1>
-          <p className="text-muted-foreground mt-1">{user.email}</p>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">{user.display_name || user.email}</h1>
+          <p className="text-zinc-400 mt-1">{user.email}</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -169,16 +166,16 @@ export default function AdminUserDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Profile Info */}
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-base">User Profile</CardTitle>
+            <CardTitle className="gold-text text-base">User Profile</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-muted-foreground">Status</span>
                 <div className="mt-1">
-                  <Badge variant="outline" className={cn('text-xs', STATUS_CLASSES[user.status])}>
+                  <Badge variant="outline" className={cn('text-xs', USER_STATUS_CLASSES[user.status])}>
                     {user.status}
                   </Badge>
                 </div>
@@ -221,9 +218,9 @@ export default function AdminUserDetailPage() {
 
         {/* Provider Profile (if applicable) */}
         {user.provider_profile ? (
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader>
-              <CardTitle className="text-base">Provider Profile</CardTitle>
+              <CardTitle className="gold-text text-base">Provider Profile</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -312,5 +309,6 @@ export default function AdminUserDetailPage() {
         </div>
       </ActionConfirmDialog>
     </div>
+    </PageTransition>
   );
 }

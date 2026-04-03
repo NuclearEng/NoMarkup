@@ -5,8 +5,11 @@ import { useState } from 'react';
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -16,32 +19,12 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useAdminJobs, useRemoveJob, useSuspendJob } from '@/hooks/useAdmin';
+import { JOB_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { Job } from '@/types';
 import { JOB_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
-
-const STATUS_CLASSES: Record<string, string> = {
-  draft:
-    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  active:
-    'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  closed:
-    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  awarded:
-    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  in_progress:
-    'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
-  completed:
-    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  cancelled:
-    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  suspended:
-    'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800',
-  expired:
-    'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-};
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -97,7 +80,7 @@ export default function AdminJobsPage() {
       render: (job) => (
         <Badge
           variant="outline"
-          className={cn('text-xs capitalize', STATUS_CLASSES[job.status] ?? '')}
+          className={cn('text-xs capitalize', JOB_STATUS_CLASSES[job.status] ?? '')}
         >
           {job.status.replace(/_/g, ' ')}
         </Badge>
@@ -162,20 +145,25 @@ export default function AdminJobsPage() {
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Job Management</h1>
-        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
-          Failed to load jobs. Please try refreshing the page.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Job Management</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load jobs"
+          description="Please try refreshing the page."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Job Management</h1>
-        <p className="text-muted-foreground mt-1">Monitor and manage jobs across the platform.</p>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Job Management</h1>
+        <p className="text-zinc-400 mt-1">Monitor and manage jobs across the platform.</p>
       </div>
 
       <div className="flex items-center gap-2">
@@ -248,5 +236,6 @@ export default function AdminJobsPage() {
         </div>
       </ActionConfirmDialog>
     </div>
+    </PageTransition>
   );
 }

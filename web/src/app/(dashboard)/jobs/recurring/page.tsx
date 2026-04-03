@@ -8,8 +8,9 @@ import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
+import { PageTransition } from '@/components/ui/page-transition';
 import { useCancelJob, useCustomerJobs, useUpdateJob } from '@/hooks/useJobs';
 import { formatCents } from '@/lib/utils';
 import type { Job } from '@/types';
@@ -100,7 +101,7 @@ function RecurringJobCard({ job }: { job: Job }) {
   }
 
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -170,11 +171,12 @@ export default function RecurringJobsPage() {
   const recurringJobs = data?.jobs.filter((job) => job.is_recurring) ?? [];
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Recurring Jobs</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Recurring Jobs</h1>
+          <p className="mt-1 text-zinc-400">
             Manage your recurring job schedules, pause, or cancel them.
           </p>
         </div>
@@ -184,11 +186,7 @@ export default function RecurringJobsPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={`skel-${String(i)}`} className="h-28 w-full" />
-          ))}
-        </div>
+        <ContentLoader preset="job-card" count={3} className="space-y-4" />
       ) : isError ? (
         <EmptyState
           icon={<AnimatedIllustration type="error" size="sm" />}
@@ -223,9 +221,9 @@ export default function RecurringJobsPage() {
         <div className="space-y-3">
           {/* Summary */}
           <div className="grid gap-4 sm:grid-cols-3">
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader className="pb-2">
-                <CardTitle className="text-muted-foreground text-sm font-medium">
+                <CardTitle className="text-sm font-medium text-zinc-400">
                   Total Recurring
                 </CardTitle>
               </CardHeader>
@@ -233,9 +231,9 @@ export default function RecurringJobsPage() {
                 <p className="text-2xl font-bold tabular-nums">{String(recurringJobs.length)}</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader className="pb-2">
-                <CardTitle className="text-muted-foreground text-sm font-medium">Active</CardTitle>
+                <CardTitle className="text-sm font-medium text-zinc-400">Active</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold text-green-600 tabular-nums dark:text-emerald-400">
@@ -246,9 +244,9 @@ export default function RecurringJobsPage() {
                 </p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader className="pb-2">
-                <CardTitle className="text-muted-foreground text-sm font-medium">
+                <CardTitle className="text-sm font-medium text-zinc-400">
                   Most Common
                 </CardTitle>
               </CardHeader>
@@ -277,5 +275,6 @@ export default function RecurringJobsPage() {
         </div>
       )}
     </div>
+    </PageTransition>
   );
 }

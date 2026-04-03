@@ -8,7 +8,9 @@ import { PaymentHistory } from '@/components/payments/PaymentHistory';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePayments } from '@/hooks/usePayments';
 
@@ -41,24 +43,7 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
   });
 
   if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[1, 2, 3].map((i) => (
-          <Card key={i}>
-            <CardContent className="py-4">
-              <div className="flex items-center gap-4">
-                <div className="bg-muted h-4 w-4 animate-pulse rounded" />
-                <div className="flex-1 space-y-2">
-                  <div className="bg-muted h-4 w-2/3 animate-pulse rounded" />
-                  <div className="bg-muted h-3 w-1/3 animate-pulse rounded" />
-                </div>
-                <div className="bg-muted h-6 w-20 animate-pulse rounded" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
+    return <ContentLoader preset="contract-card" count={3} className="space-y-3" />;
   }
 
   if (isError) {
@@ -146,9 +131,10 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
 
 export default function PaymentsPage() {
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Payments</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Payments</h1>
         <p className="mt-1 text-zinc-400">
           Track your payments, view fee breakdowns, and manage payment methods.
         </p>
@@ -195,5 +181,6 @@ export default function PaymentsPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </PageTransition>
   );
 }

@@ -30,7 +30,7 @@ function SkeletonRows({ columns, count }: { columns: Column<unknown>[]; count: n
   return (
     <>
       {Array.from({ length: count }, (_, i) => (
-        <tr key={i} className="border-b">
+        <tr key={i} className="border-b border-white/[0.04]">
           {columns.map((col, colIndex) => (
             <td key={col.key} className="px-4 py-3">
               <Skeleton variant="text" className={`h-4 ${widths[colIndex % widths.length]}`} />
@@ -54,16 +54,16 @@ export function DataTable<T>({
   onRowClick,
 }: DataTableProps<T>) {
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-muted/50 border-b">
+              <tr className="border-b border-white/[0.06] bg-white/[0.03]">
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`text-muted-foreground px-4 py-3 text-left font-medium ${col.className ?? ''}`}
+                    className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 ${col.className ?? ''}`}
                   >
                     {col.header}
                   </th>
@@ -77,7 +77,7 @@ export function DataTable<T>({
                 <tr>
                   <td
                     colSpan={columns.length}
-                    className="text-muted-foreground px-4 py-12 text-center"
+                    className="px-4 py-12 text-center text-zinc-500"
                   >
                     {emptyMessage}
                   </td>
@@ -86,7 +86,7 @@ export function DataTable<T>({
                 data.map((row) => (
                   <tr
                     key={rowKey(row)}
-                    className={`hover:bg-muted/50 border-b transition-colors ${onRowClick ? 'cursor-pointer' : ''}`}
+                    className={`border-b border-white/[0.04] transition-colors hover:bg-white/[0.04] ${onRowClick ? 'cursor-pointer' : ''}`}
                     onClick={
                       onRowClick
                         ? () => {
@@ -108,8 +108,8 @@ export function DataTable<T>({
         </div>
 
         {pagination && pagination.totalPages > 1 ? (
-          <div className="flex items-center justify-between border-t px-4 py-3">
-            <span className="text-muted-foreground text-sm">
+          <div className="flex items-center justify-between border-t border-white/[0.06] px-4 py-3">
+            <span className="text-sm text-zinc-400">
               Showing page {String(page)} of {String(pagination.totalPages)} (
               {String(pagination.totalCount)} total)
             </span>

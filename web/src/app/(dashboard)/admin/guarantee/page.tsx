@@ -7,8 +7,11 @@ import Link from 'next/link';
 
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -17,21 +20,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAdminGuaranteeClaims } from '@/hooks/useGuarantee';
+import { GUARANTEE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { Dispute, DisputeStatus } from '@/types';
 import { DISPUTE_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
-
-const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  open: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  investigating:
-    'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
-  resolved:
-    'bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800',
-  escalated:
-    'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-};
 
 const STATUS_LABELS: Record<DisputeStatus, string> = {
   open: 'Open',
@@ -101,7 +95,7 @@ export default function AdminGuaranteePage() {
       key: 'status',
       header: 'Status',
       render: (claim) => (
-        <Badge variant="outline" className={cn('text-xs', STATUS_CLASSES[claim.status])}>
+        <Badge variant="outline" className={cn('text-xs', GUARANTEE_STATUS_CLASSES[claim.status])}>
           {STATUS_LABELS[claim.status] ?? claim.status}
         </Badge>
       ),
@@ -139,20 +133,25 @@ export default function AdminGuaranteePage() {
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Guarantee Claims</h1>
-        <div className="bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
-          Failed to load guarantee claims. Please try refreshing the page.
-        </div>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Guarantee Claims</h1>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load guarantee claims"
+          description="Please try refreshing the page."
+        />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Guarantee Claims</h1>
-        <p className="text-muted-foreground mt-1">
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Guarantee Claims</h1>
+        <p className="text-zinc-400 mt-1">
           Review and resolve NoMarkup Guarantee claims filed by customers.
         </p>
       </div>
@@ -191,5 +190,6 @@ export default function AdminGuaranteePage() {
         emptyMessage="No guarantee claims found matching the current filters."
       />
     </div>
+    </PageTransition>
   );
 }

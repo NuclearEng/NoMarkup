@@ -6,11 +6,15 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
 import { GuaranteeClaimForm } from '@/components/contracts/GuaranteeClaimForm';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContract } from '@/hooks/useContracts';
 import { useGuaranteeClaim } from '@/hooks/useGuarantee';
+import { GUARANTEE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { formatCents } from '@/lib/utils';
 
 function formatDate(dateStr: string): string {
@@ -29,14 +33,6 @@ const CLAIM_STATUS_LABELS: Record<string, string> = {
   resolved: 'Resolved',
   escalated: 'Escalated',
   closed: 'Closed',
-};
-
-const CLAIM_STATUS_CLASSES: Record<string, string> = {
-  open: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  under_review: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  resolved: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  escalated: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  closed: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
 };
 
 export default function GuaranteeClaimPage() {
@@ -64,14 +60,17 @@ export default function GuaranteeClaimPage() {
       <div className="space-y-4">
         <Link
           href={`/contracts/${contractId}` as Route}
-          className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Contract
         </Link>
-        <div className="rounded-lg border bg-destructive/10 p-4 text-sm text-destructive">
-          Failed to load contract details. Please try again.
-        </div>
+        <EmptyState
+          icon={<AnimatedIllustration type="error" size="sm" />}
+          title="Failed to load contract"
+          description="Something went wrong loading contract details. Please try again."
+          className="glass border-destructive/30"
+        />
       </div>
     );
   }
@@ -79,10 +78,11 @@ export default function GuaranteeClaimPage() {
   const existingClaim = claimData?.guarantee_claim;
 
   return (
+    <PageTransition>
     <div className="mx-auto max-w-2xl space-y-6">
       <Link
         href={`/contracts/${contractId}` as Route}
-        className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-400 hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to Contract {contractData.contract.contract_number}
@@ -90,37 +90,37 @@ export default function GuaranteeClaimPage() {
 
       {/* Show existing claim status if one exists */}
       {existingClaim ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
-              <CardTitle className="text-base">Guarantee Claim Status</CardTitle>
+              <CardTitle className="gold-text text-base">Guarantee Claim Status</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Status</span>
-              <Badge variant="outline" className={CLAIM_STATUS_CLASSES[existingClaim.status]}>
+              <span className="text-sm text-zinc-400">Status</span>
+              <Badge variant="outline" className={GUARANTEE_STATUS_CLASSES[existingClaim.status]}>
                 {CLAIM_STATUS_LABELS[existingClaim.status] ?? existingClaim.status}
               </Badge>
             </div>
             <div>
-              <span className="text-sm text-muted-foreground">Filed</span>
+              <span className="text-sm text-zinc-400">Filed</span>
               <p className="mt-1 text-sm">{formatDate(existingClaim.created_at)}</p>
             </div>
             <div>
-              <span className="text-sm text-muted-foreground">Description</span>
+              <span className="text-sm text-zinc-400">Description</span>
               <p className="mt-1 text-sm">{existingClaim.description}</p>
             </div>
             {existingClaim.resolution_notes ? (
               <div>
-                <span className="text-sm text-muted-foreground">Resolution</span>
+                <span className="text-sm text-zinc-400">Resolution</span>
                 <p className="mt-1 text-sm">{existingClaim.resolution_notes}</p>
               </div>
             ) : null}
             {existingClaim.refund_amount_cents !== undefined && existingClaim.refund_amount_cents > 0 ? (
               <div>
-                <span className="text-sm text-muted-foreground">Payout</span>
+                <span className="text-sm text-zinc-400">Payout</span>
                 <p className="mt-1 text-sm font-medium tabular-nums">
                   {formatCents(existingClaim.refund_amount_cents)}
                 </p>
@@ -132,5 +132,6 @@ export default function GuaranteeClaimPage() {
         <GuaranteeClaimForm contractId={contractId} onSuccess={handleSuccess} />
       )}
     </div>
+    </PageTransition>
   );
 }

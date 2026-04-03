@@ -5,11 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { ProfileForm } from '@/components/forms/ProfileForm';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { ContentLoader } from '@/components/ui/content-loader';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { useEnableRole, useProfile } from '@/hooks/useProfile';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
 import { USER_ROLE } from '@/types';
@@ -34,17 +37,23 @@ export default function ProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-12" role="status">
-        <p className="text-muted-foreground">Loading profile...</p>
-      </div>
+      <PageTransition>
+        <ContentLoader preset="profile" />
+      </PageTransition>
     );
   }
 
   if (error || !user) {
     return (
-      <div className="flex items-center justify-center p-12" role="alert">
-        <p className="text-destructive">Failed to load profile. Please try again.</p>
-      </div>
+      <PageTransition>
+        <div className="flex items-center justify-center p-12">
+          <EmptyState
+            icon={<AnimatedIllustration type="error" size="md" />}
+            title="Failed to load profile"
+            description="Something went wrong. Please try again."
+          />
+        </div>
+      </PageTransition>
     );
   }
 
@@ -57,13 +66,14 @@ export default function ProfilePage() {
   }
 
   return (
+    <PageTransition>
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">My Profile</h1>
+      <h1 className="gold-text text-2xl font-bold tracking-tight">My Profile</h1>
 
       {editing ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle>Edit Profile</CardTitle>
+            <CardTitle className="gold-text">Edit Profile</CardTitle>
           </CardHeader>
           <CardContent>
             <ProfileForm
@@ -78,10 +88,10 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="pt-6">
             <div className="flex items-start gap-4">
-              <Avatar className="h-16 w-16">
+              <Avatar className="h-16 w-16 ring-2 ring-[var(--brand-gold)]/20">
                 {user.avatarUrl ? (
                   <AvatarImage src={user.avatarUrl} alt={user.displayName} />
                 ) : null}
@@ -90,23 +100,23 @@ export default function ProfilePage() {
 
               <div className="flex-1 space-y-1">
                 <h2 className="text-xl font-semibold">{user.displayName}</h2>
-                <p className="text-muted-foreground text-sm">{user.email}</p>
+                <p className="text-zinc-400 text-sm">{user.email}</p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {user.roles.map((role) => (
-                    <Badge key={role} variant="secondary">
+                    <Badge key={role} variant="secondary" className="glass-badge text-xs">
                       {role}
                     </Badge>
                   ))}
-                  {user.emailVerified ? <Badge variant="outline">Email Verified</Badge> : null}
+                  {user.emailVerified ? <Badge variant="outline" className="glass-badge text-xs">Email Verified</Badge> : null}
                 </div>
               </div>
             </div>
 
-            <Separator className="my-6" />
+            <div className="glass-divider my-6" aria-hidden="true" />
 
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <dt className="text-muted-foreground text-sm font-medium">Member Since</dt>
+                <dt className="text-zinc-400 text-sm font-medium">Member Since</dt>
                 <dd className="text-sm">
                   {new Date(user.createdAt).toLocaleDateString('en-US', {
                     year: 'numeric',
@@ -116,7 +126,7 @@ export default function ProfilePage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground text-sm font-medium">MFA</dt>
+                <dt className="text-zinc-400 text-sm font-medium">MFA</dt>
                 <dd className="text-sm">{user.mfaEnabled ? 'Enabled' : 'Disabled'}</dd>
               </div>
             </dl>
@@ -148,24 +158,24 @@ export default function ProfilePage() {
 
       {/* Provider business info */}
       {isProvider && providerProfile ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle>Provider Information</CardTitle>
+            <CardTitle className="gold-text">Provider Information</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {providerProfile.businessName ? (
                 <div>
-                  <dt className="text-muted-foreground text-sm font-medium">Business Name</dt>
+                  <dt className="text-zinc-400 text-sm font-medium">Business Name</dt>
                   <dd className="text-sm">{providerProfile.businessName}</dd>
                 </div>
               ) : null}
               {providerProfile.serviceCategories.length > 0 ? (
                 <div>
-                  <dt className="text-muted-foreground text-sm font-medium">Service Categories</dt>
+                  <dt className="text-zinc-400 text-sm font-medium">Service Categories</dt>
                   <dd className="flex flex-wrap gap-1 pt-1">
                     {providerProfile.serviceCategories.map((cat) => (
-                      <Badge key={cat.id} variant="outline">
+                      <Badge key={cat.id} variant="outline" className="glass-badge text-xs">
                         {cat.name}
                       </Badge>
                     ))}
@@ -173,33 +183,33 @@ export default function ProfilePage() {
                 </div>
               ) : null}
               <div>
-                <dt className="text-muted-foreground text-sm font-medium">Service Radius</dt>
+                <dt className="text-zinc-400 text-sm font-medium">Service Radius</dt>
                 <dd className="text-sm">{String(providerProfile.serviceRadiusKm)} km</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground text-sm font-medium">Jobs Completed</dt>
+                <dt className="text-zinc-400 text-sm font-medium">Jobs Completed</dt>
                 <dd className="text-sm">{String(providerProfile.jobsCompleted)}</dd>
               </div>
               {providerProfile.onTimeRate !== null ? (
                 <div>
-                  <dt className="text-muted-foreground text-sm font-medium">On-Time Rate</dt>
+                  <dt className="text-zinc-400 text-sm font-medium">On-Time Rate</dt>
                   <dd className="text-sm">{(providerProfile.onTimeRate * 100).toFixed(0)}%</dd>
                 </div>
               ) : null}
               <div>
-                <dt className="text-muted-foreground text-sm font-medium">Stripe</dt>
+                <dt className="text-zinc-400 text-sm font-medium">Stripe</dt>
                 <dd className="text-sm">
                   {providerProfile.stripeOnboardingComplete ? 'Connected' : 'Not connected'}
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground text-sm font-medium">Profile Completeness</dt>
+                <dt className="text-zinc-400 text-sm font-medium">Profile Completeness</dt>
                 <dd className="text-sm">{String(providerProfile.profileCompleteness)}%</dd>
               </div>
             </dl>
             {providerProfile.bio ? (
               <div className="mt-4">
-                <p className="text-muted-foreground text-sm font-medium">Bio</p>
+                <p className="text-zinc-400 text-sm font-medium">Bio</p>
                 <p className="mt-1 text-sm">{providerProfile.bio}</p>
               </div>
             ) : null}
@@ -207,5 +217,6 @@ export default function ProfilePage() {
         </Card>
       ) : null}
     </div>
+    </PageTransition>
   );
 }

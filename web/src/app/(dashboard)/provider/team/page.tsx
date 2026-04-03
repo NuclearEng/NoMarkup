@@ -16,9 +16,12 @@ import {
 import { useState } from 'react';
 
 import { AddEmployeeForm } from '@/components/providers/AddEmployeeForm';
+import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useEmployees, useUpdateEmployee } from '@/hooks/useEmployees';
 import { cn } from '@/lib/utils';
@@ -88,7 +91,7 @@ function BackgroundCheckBadge({ status }: { status: BackgroundCheckStatus }) {
     case 'not_started':
     default:
       return (
-        <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+        <span className="text-zinc-400 inline-flex items-center gap-1 text-xs">
           <Shield className="h-3.5 w-3.5" aria-hidden="true" />
           Not Started
         </span>
@@ -108,7 +111,7 @@ function EmployeeCard({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="p-4">
         <button
           type="button"
@@ -120,7 +123,7 @@ function EmployeeCard({
           aria-label={`${employee.first_name} ${employee.last_name} details`}
         >
           {/* Avatar placeholder */}
-          <div className="bg-muted text-muted-foreground flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
+          <div className="bg-muted text-zinc-400 flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
             {employee.first_name.charAt(0)}
             {employee.last_name.charAt(0)}
           </div>
@@ -130,7 +133,7 @@ function EmployeeCard({
               <h3 className="text-sm font-semibold">
                 {employee.first_name} {employee.last_name}
               </h3>
-              <Badge variant={getRoleBadgeVariant(employee.role)}>
+              <Badge variant={getRoleBadgeVariant(employee.role)} className="glass-badge text-xs">
                 {ROLE_LABELS[employee.role]}
               </Badge>
               <span
@@ -143,7 +146,7 @@ function EmployeeCard({
               </span>
             </div>
 
-            <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-3 text-xs">
+            <div className="text-zinc-400 mt-1 flex flex-wrap items-center gap-3 text-xs">
               {employee.hire_date ? (
                 <span>Hired {new Date(employee.hire_date).toLocaleDateString()}</span>
               ) : null}
@@ -151,7 +154,7 @@ function EmployeeCard({
             </div>
           </div>
 
-          <span className="text-muted-foreground shrink-0 text-xs" aria-hidden="true">
+          <span className="text-zinc-400 shrink-0 text-xs" aria-hidden="true">
             {expanded ? 'Collapse' : 'Expand'}
           </span>
         </button>
@@ -161,23 +164,23 @@ function EmployeeCard({
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Contact info */}
               <div className="space-y-2">
-                <h4 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                <h4 className="text-zinc-400 text-xs font-semibold tracking-wider uppercase">
                   Contact
                 </h4>
                 {employee.email ? (
                   <div className="flex items-center gap-2 text-sm">
-                    <Mail className="text-muted-foreground h-3.5 w-3.5" aria-hidden="true" />
+                    <Mail className="text-zinc-400 h-3.5 w-3.5" aria-hidden="true" />
                     {employee.email}
                   </div>
                 ) : null}
                 {employee.phone ? (
                   <div className="flex items-center gap-2 text-sm">
-                    <Phone className="text-muted-foreground h-3.5 w-3.5" aria-hidden="true" />
+                    <Phone className="text-zinc-400 h-3.5 w-3.5" aria-hidden="true" />
                     {employee.phone}
                   </div>
                 ) : null}
                 {employee.date_of_birth ? (
-                  <div className="text-muted-foreground text-sm">
+                  <div className="text-zinc-400 text-sm">
                     DOB: {new Date(employee.date_of_birth).toLocaleDateString()}
                   </div>
                 ) : null}
@@ -185,7 +188,7 @@ function EmployeeCard({
 
               {/* License info */}
               <div className="space-y-2">
-                <h4 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                <h4 className="text-zinc-400 text-xs font-semibold tracking-wider uppercase">
                   Licenses & Insurance
                 </h4>
                 {employee.license_number ? (
@@ -193,25 +196,25 @@ function EmployeeCard({
                     License: {employee.license_number}
                     {employee.license_state ? ` (${employee.license_state})` : ''}
                     {employee.license_expiry ? (
-                      <span className="text-muted-foreground ml-1">
+                      <span className="text-zinc-400 ml-1">
                         exp. {new Date(employee.license_expiry).toLocaleDateString()}
                       </span>
                     ) : null}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground text-sm">No license on file</p>
+                  <p className="text-zinc-400 text-sm">No license on file</p>
                 )}
                 {employee.insurance_policy_number ? (
                   <div className="text-sm">
                     Insurance: {employee.insurance_policy_number}
                     {employee.insurance_expiry ? (
-                      <span className="text-muted-foreground ml-1">
+                      <span className="text-zinc-400 ml-1">
                         exp. {new Date(employee.insurance_expiry).toLocaleDateString()}
                       </span>
                     ) : null}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground text-sm">No insurance on file</p>
+                  <p className="text-zinc-400 text-sm">No insurance on file</p>
                 )}
               </div>
             </div>
@@ -284,7 +287,7 @@ function EmployeeListSkeleton() {
   return (
     <div className="space-y-4">
       {[1, 2, 3].map((i) => (
-        <Card key={i}>
+        <Card key={i} className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex items-center gap-4 p-4">
             <Skeleton className="h-12 w-12 rounded-full" />
             <div className="flex-1 space-y-2">
@@ -315,11 +318,12 @@ export default function TeamManagementPage() {
 
   if (showAddForm) {
     return (
+      <PageTransition>
       <div className="mx-auto max-w-2xl space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Add Employee</h1>
-            <p className="text-muted-foreground text-sm">Add a new team member to your company.</p>
+            <h1 className="gold-text text-2xl font-bold tracking-tight">Add Employee</h1>
+            <p className="text-zinc-400 text-sm">Add a new team member to your company.</p>
           </div>
           <Button
             type="button"
@@ -334,15 +338,17 @@ export default function TeamManagementPage() {
         </div>
         <AddEmployeeForm />
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Team Management</h1>
-          <p className="text-muted-foreground text-sm">
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Team Management</h1>
+          <p className="text-zinc-400 text-sm">
             Manage your company employees and their verification status.
           </p>
         </div>
@@ -361,29 +367,35 @@ export default function TeamManagementPage() {
       {isLoading ? (
         <EmployeeListSkeleton />
       ) : error ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12">
-            <AlertCircle className="text-destructive h-10 w-10" aria-hidden="true" />
-            <p className="text-destructive text-sm">Failed to load team members.</p>
-            <p className="text-muted-foreground text-xs">Please try again later.</p>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+          <CardContent className="py-12">
+            <EmptyState
+              icon={<AnimatedIllustration type="error" />}
+              title="Failed to load team members"
+              description="Please try again later."
+            />
           </CardContent>
         </Card>
       ) : employees.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-12">
-            <Users className="text-muted-foreground h-12 w-12" aria-hidden="true" />
-            <h2 className="text-lg font-semibold">No team members yet</h2>
-            <p className="text-muted-foreground text-sm">Add your first employee to get started.</p>
-            <Button
-              type="button"
-              onClick={() => {
-                setShowAddForm(true);
-              }}
-              className="mt-2 min-h-[44px]"
-            >
-              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-              Add Employee
-            </Button>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+          <CardContent className="py-12">
+            <EmptyState
+              icon={<Users className="text-zinc-400 h-12 w-12" aria-hidden="true" />}
+              title="No team members yet"
+              description="Add your first employee to get started."
+              action={
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setShowAddForm(true);
+                  }}
+                  className="mt-2 min-h-[44px]"
+                >
+                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Add Employee
+                </Button>
+              }
+            />
           </CardContent>
         </Card>
       ) : (
@@ -399,5 +411,6 @@ export default function TeamManagementPage() {
         </div>
       )}
     </div>
+    </PageTransition>
   );
 }
