@@ -9,15 +9,35 @@
 #       dockerfile: deploy/docker/engines.Dockerfile
 #       target: bidding
 
-# ── Stage 1: build all engines ────────────────────────────────
-FROM rust:latest AS builder
+# ── Stage 1: build workspace dependencies ─────────────────────
+FROM rust:1.86-bookworm AS builder
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
+# Copy proto definitions first (needed by build.rs / tonic-build).
 COPY proto/ proto/
-COPY engines/ engines/
-WORKDIR /app/engines
 
+# Copy workspace manifests, lockfile, and build.rs files for dep-layer caching.
+# Changes to source code alone won't invalidate this layer.
+COPY engines/Cargo.toml engines/Cargo.lock engines/
+COPY engines/bidding/Cargo.toml engines/bidding/build.rs engines/bidding/
+COPY engines/fraud/Cargo.toml engines/fraud/build.rs engines/fraud/
+COPY engines/trust/Cargo.toml engines/trust/build.rs engines/trust/
+COPY engines/imaging/Cargo.toml engines/imaging/build.rs engines/imaging/
+
+# Create dummy source files so cargo can resolve the workspace and compile deps.
+RUN for eng in bidding fraud trust imaging; do \
+        mkdir -p engines/$eng/src && \
+        echo "fn main() {}" > engines/$eng/src/main.rs; \
+    done
+
+WORKDIR /app/engines
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/engines/target \
+    cargo build --release --workspace 2>&1
+
+# ── Stage 2: build real source (deps already cached) ──────────
+COPY engines/ /app/engines/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/engines/target \
     cargo build --release --workspace 2>&1 && \

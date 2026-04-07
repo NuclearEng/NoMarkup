@@ -20,6 +20,15 @@ services/*/bin
 *.swo
 .DS_Store
 
+# Claude Code worktrees / agent data
+.claude/
+
+# QA screenshots
+qa/
+
+# Python ML training (not deployed as Docker services)
+ml/
+
 # Testing / CI
 coverage
 **/coverage
@@ -32,6 +41,7 @@ coverage
 # Keys (mounted as volumes, not baked into images)
 keys/
 
-# Deploy configs not needed in build context
+# Deploy configs not needed in build context (volume-mounted or unused)
 deploy/k8s
 deploy/terraform
+deploy/monitoring

@@ -13,9 +13,10 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nomarkup"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 3s
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.25.1-p0
@@ -32,9 +33,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 2s
     restart: unless-stopped
 
   redis:
@@ -46,9 +48,10 @@ services:
       - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 2s
 
   meilisearch:
     image: getmeili/meilisearch:v1.6
@@ -61,9 +64,10 @@ services:
       - meilidata:/meili_data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 3s
 
   jaeger:
     image: jaegertracing/all-in-one:1.54
@@ -74,9 +78,10 @@ services:
       COLLECTOR_OTLP_ENABLED: "true"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:14269/ || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 3s
 
   prometheus:
     image: prom/prometheus:v2.51.0
@@ -93,9 +98,10 @@ services:
       - "--web.enable-lifecycle"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/healthy || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     depends_on:
       gateway:
         condition: service_started
@@ -111,9 +117,10 @@ services:
       - "--storage.path=/alertmanager"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:9093/-/healthy || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   minio:
     image: minio/minio:latest
@@ -128,9 +135,10 @@ services:
       - miniodata:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 3s
 
   # ── Go Microservices ───────────────────────────────────────
 

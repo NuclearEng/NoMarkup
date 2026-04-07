@@ -92,9 +92,17 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
-		slog.Error("failed to ping database", "error", err)
-		os.Exit(1)
+	for attempt := 1; ; attempt++ {
+		if err := pool.Ping(ctx); err != nil {
+			if attempt >= 3 {
+				slog.Error("database not reachable after retries", "error", err)
+				os.Exit(1)
+			}
+			slog.Warn("database ping failed, retrying", "error", err, "attempt", attempt)
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+			continue
+		}
+		break
 	}
 	slog.Info("connected to database")
 
