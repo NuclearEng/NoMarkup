@@ -271,7 +271,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		ipKey := tierName + ":ip:" + ip
 		allowed, retryAfter := rl.allow(ipKey, limit)
 		if !allowed {
-			writeRateLimitResponse(w, ip, path, limit, retryAfter)
+			writeRateLimitResponse(w, ip, path, tierName, limit, retryAfter)
 			return
 		}
 
@@ -282,7 +282,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			userKey := tierName + ":user:" + claims.UserID
 			allowed, retryAfter = rl.allow(userKey, limit)
 			if !allowed {
-				writeRateLimitResponse(w, ip, path, limit, retryAfter)
+				writeRateLimitResponse(w, ip, path, tierName, limit, retryAfter)
 				return
 			}
 		}
@@ -291,7 +291,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-func writeRateLimitResponse(w http.ResponseWriter, ip, path string, limit, retryAfter int) {
+func writeRateLimitResponse(w http.ResponseWriter, ip, path, tier string, limit, retryAfter int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
 	w.WriteHeader(http.StatusTooManyRequests)
@@ -300,6 +300,7 @@ func writeRateLimitResponse(w http.ResponseWriter, ip, path string, limit, retry
 	slog.Warn("rate limit exceeded",
 		"ip", ip,
 		"path", path,
+		"tier", tier,
 		"limit", limit,
 		"retry_after", retryAfter,
 	)

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Syne } from 'next/font/google';
 import '@/styles/globals.css';
 
@@ -16,6 +16,13 @@ const syne = Syne({
 export const metadata: Metadata = {
   title: { default: 'NoMarkup', template: '%s | NoMarkup' },
   description: 'Reverse-auction marketplace for home services. Fair prices, verified providers.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#070b14',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

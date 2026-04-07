@@ -285,7 +285,7 @@ export function PricingPageContent() {
         aria-label="Pricing index statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-3 gap-3 sm:gap-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-6">
             {/* Stat 1 — Jobs tracked */}
             <div
               className={`glass-stat-card glass-highlight flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}

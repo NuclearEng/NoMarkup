@@ -5,7 +5,7 @@ import { CheckCircle2, FileText, Plus, Trash2, Upload, X } from 'lucide-react';
 import type { Route } from 'next';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 
 import { CategorySelector } from '@/components/providers/CategorySelector';
@@ -38,13 +38,16 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { StripeOnboarding } from '@/components/payments/StripeOnboarding';
 import {
+  useProviderProfile,
   useUpdateCategories,
   useUpdatePortfolio,
   useUpdateProviderProfile,
   useSetGlobalTerms,
   useUploadVerificationDocument,
 } from '@/hooks/useProviderProfile';
+import type { ProviderProfile } from '@/types';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import {
   businessInfoSchema,
@@ -60,15 +63,19 @@ const STEPS = [
   { title: 'Terms', description: 'Set your default terms' },
   { title: 'Portfolio', description: 'Showcase your work' },
   { title: 'Verification', description: 'Upload documents to verify your business' },
+  { title: 'Payments', description: 'Connect Stripe to receive payouts' },
 ] as const;
 
 export default function ProviderOnboardingPage() {
   const [step, setStep] = useState(0);
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const router = useRouter();
+  const { data: providerProfile } = useProviderProfile();
 
   const progress = ((step + 1) / STEPS.length) * 100;
 
   function goNext() {
+    setCompletedSteps((prev) => new Set([...prev, step]));
     if (step < STEPS.length - 1) {
       setStep(step + 1);
     } else {
@@ -88,9 +95,9 @@ export default function ProviderOnboardingPage() {
     <PageTransition>
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="gold-text text-2xl font-bold tracking-tight">Provider Onboarding</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Provider Setup</h1>
         <p className="text-sm text-zinc-300">
-          Step {String(step + 1)} of {String(STEPS.length)}
+          Step {String(step + 1)} of {String(STEPS.length)} — {currentStep?.description}
         </p>
       </div>
 
@@ -98,23 +105,31 @@ export default function ProviderOnboardingPage() {
 
       {/* Step indicators */}
       <nav aria-label="Onboarding steps" className="flex gap-2 overflow-x-auto pb-2">
-        {STEPS.map((s, idx) => (
-          <button
-            key={s.title}
-            type="button"
-            onClick={() => { setStep(idx); }}
-            className={`min-h-[44px] whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium ${
-              idx === step
-                ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
-                : idx < step
-                  ? 'bg-white/[0.08] text-zinc-200'
-                  : 'text-zinc-400'
-            }`}
-            aria-current={idx === step ? 'step' : undefined}
-          >
-            {s.title}
-          </button>
-        ))}
+        {STEPS.map((s, idx) => {
+          const isDone = completedSteps.has(idx);
+          const isCurrent = idx === step;
+          return (
+            <button
+              key={s.title}
+              type="button"
+              onClick={() => { setStep(idx); }}
+              className={cn(
+                'flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                isCurrent
+                  ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
+                  : isDone
+                    ? 'text-emerald-400 hover:text-emerald-300'
+                    : 'text-zinc-400 hover:text-zinc-200',
+              )}
+              aria-current={isCurrent ? 'step' : undefined}
+            >
+              {isDone ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              ) : null}
+              {s.title}
+            </button>
+          );
+        })}
       </nav>
 
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -123,12 +138,26 @@ export default function ProviderOnboardingPage() {
           <CardDescription>{currentStep?.description}</CardDescription>
         </CardHeader>
         <CardContent>
-          {step === 0 ? <BusinessInfoStep onNext={goNext} /> : null}
-          {step === 1 ? <CategoriesStep onNext={goNext} onPrev={goPrev} /> : null}
-          {step === 2 ? <ServiceAreaStep onNext={goNext} onPrev={goPrev} /> : null}
-          {step === 3 ? <GlobalTermsStep onNext={goNext} onPrev={goPrev} /> : null}
+          {step === 0 ? <BusinessInfoStep onNext={goNext} existingProfile={providerProfile} /> : null}
+          {step === 1 ? (
+            <CategoriesStep
+              onNext={goNext}
+              onPrev={goPrev}
+              existingIds={providerProfile?.serviceCategories.map((c) => c.id) ?? []}
+            />
+          ) : null}
+          {step === 2 ? (
+            <ServiceAreaStep
+              onNext={goNext}
+              onPrev={goPrev}
+              existingRadius={providerProfile?.serviceRadiusKm}
+              existingAddress={providerProfile?.serviceAddress ?? undefined}
+            />
+          ) : null}
+          {step === 3 ? <GlobalTermsStep onNext={goNext} onPrev={goPrev} existingProfile={providerProfile} /> : null}
           {step === 4 ? <PortfolioStep onNext={goNext} onPrev={goPrev} /> : null}
           {step === 5 ? <DocumentVerificationStep onNext={goNext} onPrev={goPrev} /> : null}
+          {step === 6 ? <PaymentsStep onNext={goNext} onPrev={goPrev} /> : null}
         </CardContent>
       </Card>
     </div>
@@ -137,7 +166,13 @@ export default function ProviderOnboardingPage() {
 }
 
 // -- Step 1: Business Info --
-function BusinessInfoStep({ onNext }: { onNext: () => void }) {
+function BusinessInfoStep({
+  onNext,
+  existingProfile,
+}: {
+  onNext: () => void;
+  existingProfile?: ProviderProfile | null;
+}) {
   const updateProvider = useUpdateProviderProfile();
 
   const form = useForm<BusinessInfoFormValues>({
@@ -153,6 +188,22 @@ function BusinessInfoStep({ onNext }: { onNext: () => void }) {
       insuranceCoverageDollars: undefined,
     },
   });
+
+  // Prefill form when existing profile data arrives
+  useEffect(() => {
+    if (existingProfile) {
+      form.reset({
+        businessName: existingProfile.businessName ?? '',
+        bio: existingProfile.bio ?? '',
+        serviceAddress: existingProfile.serviceAddress ?? '',
+        einTin: '',
+        insuranceProvider: '',
+        insurancePolicyNumber: '',
+        insuranceExpiry: '',
+        insuranceCoverageDollars: undefined,
+      });
+    }
+  }, [existingProfile, form]);
 
   async function onSubmit(values: BusinessInfoFormValues) {
     await updateProvider.mutateAsync({
@@ -330,8 +381,16 @@ function BusinessInfoStep({ onNext }: { onNext: () => void }) {
 }
 
 // -- Step 2: Categories --
-function CategoriesStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+function CategoriesStep({
+  onNext,
+  onPrev,
+  existingIds,
+}: {
+  onNext: () => void;
+  onPrev: () => void;
+  existingIds: string[];
+}) {
+  const [selectedIds, setSelectedIds] = useState<string[]>(existingIds);
   const updateCategories = useUpdateCategories();
 
   async function handleSave() {
@@ -366,9 +425,19 @@ function CategoriesStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => 
 }
 
 // -- Step 3: Service Area --
-function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
-  const [radius, setRadius] = useState(25);
-  const [serviceBaseAddress, setServiceBaseAddress] = useState('');
+function ServiceAreaStep({
+  onNext,
+  onPrev,
+  existingRadius,
+  existingAddress,
+}: {
+  onNext: () => void;
+  onPrev: () => void;
+  existingRadius?: number;
+  existingAddress?: string;
+}) {
+  const [radius, setRadius] = useState(existingRadius ?? 25);
+  const [serviceBaseAddress, setServiceBaseAddress] = useState(existingAddress ?? '');
   const updateProvider = useUpdateProviderProfile();
 
   async function handleSave() {
@@ -471,7 +540,15 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
 }
 
 // -- Step 4: Global Terms --
-function GlobalTermsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
+function GlobalTermsStep({
+  onNext,
+  onPrev,
+  existingProfile,
+}: {
+  onNext: () => void;
+  onPrev: () => void;
+  existingProfile?: ProviderProfile | null;
+}) {
   const setGlobalTerms = useSetGlobalTerms();
 
   const form = useForm<GlobalTermsFormValues>({
@@ -483,6 +560,17 @@ function GlobalTermsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
       warrantyTerms: '',
     },
   });
+
+  useEffect(() => {
+    if (existingProfile) {
+      form.reset({
+        paymentTiming: existingProfile.defaultPaymentTiming ?? 'completion',
+        milestones: existingProfile.defaultMilestones ?? [],
+        cancellationPolicy: existingProfile.cancellationPolicy ?? '',
+        warrantyTerms: existingProfile.warrantyTerms ?? '',
+      });
+    }
+  }, [existingProfile, form]);
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -1117,6 +1205,29 @@ function DocumentUploadField({
           {error}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+// -- Step 7: Payments (Stripe Connect) --
+function PaymentsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-zinc-300">
+        Connect your Stripe account to receive payments when jobs are completed. You won't be able to
+        accept payouts until this step is done.
+      </p>
+
+      <StripeOnboarding />
+
+      <div className="flex gap-3">
+        <Button type="button" variant="outline" onClick={onPrev} className="min-h-[44px]">
+          Previous
+        </Button>
+        <Button type="button" onClick={onNext} className="min-h-[44px]">
+          Finish setup
+        </Button>
+      </div>
     </div>
   );
 }

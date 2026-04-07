@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -66,10 +67,22 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		AmountCents: req.AmountCents,
 	})
 	if err != nil {
+		slog.WarnContext(r.Context(), "place bid failed",
+			"job_id", jobID,
+			"provider_id", claims.UserID,
+			"amount_cents", req.AmountCents,
+			"error", err,
+		)
 		writeGRPCError(w, err)
 		return
 	}
 
+	slog.InfoContext(r.Context(), "bid placed",
+		"job_id", jobID,
+		"provider_id", claims.UserID,
+		"amount_cents", req.AmountCents,
+		"bid_id", resp.GetBid().GetId(),
+	)
 	writeJSON(w, http.StatusCreated, protoBidToJSON(resp.GetBid()))
 }
 
@@ -104,10 +117,21 @@ func (h *BidHandler) UpdateBid(w http.ResponseWriter, r *http.Request) {
 		NewAmountCents: req.NewAmountCents,
 	})
 	if err != nil {
+		slog.WarnContext(r.Context(), "update bid failed",
+			"bid_id", bidID,
+			"provider_id", claims.UserID,
+			"new_amount_cents", req.NewAmountCents,
+			"error", err,
+		)
 		writeGRPCError(w, err)
 		return
 	}
 
+	slog.InfoContext(r.Context(), "bid updated",
+		"bid_id", bidID,
+		"provider_id", claims.UserID,
+		"new_amount_cents", req.NewAmountCents,
+	)
 	writeJSON(w, http.StatusOK, protoBidToJSON(resp.GetBid()))
 }
 
@@ -130,10 +154,19 @@ func (h *BidHandler) WithdrawBid(w http.ResponseWriter, r *http.Request) {
 		ProviderId: claims.UserID,
 	})
 	if err != nil {
+		slog.WarnContext(r.Context(), "withdraw bid failed",
+			"bid_id", bidID,
+			"provider_id", claims.UserID,
+			"error", err,
+		)
 		writeGRPCError(w, err)
 		return
 	}
 
+	slog.InfoContext(r.Context(), "bid withdrawn",
+		"bid_id", bidID,
+		"provider_id", claims.UserID,
+	)
 	writeJSON(w, http.StatusOK, protoBidToJSON(resp.GetBid()))
 }
 
@@ -199,10 +232,22 @@ func (h *BidHandler) AwardBid(w http.ResponseWriter, r *http.Request) {
 		CustomerId: claims.UserID,
 	})
 	if err != nil {
+		slog.WarnContext(r.Context(), "award bid failed",
+			"job_id", jobID,
+			"bid_id", bidID,
+			"customer_id", claims.UserID,
+			"error", err,
+		)
 		writeGRPCError(w, err)
 		return
 	}
 
+	slog.InfoContext(r.Context(), "bid awarded",
+		"job_id", jobID,
+		"bid_id", bidID,
+		"customer_id", claims.UserID,
+		"contract_id", resp.GetContractId(),
+	)
 	result := protoBidToJSON(resp.GetAwardedBid())
 	if resp.GetContractId() != "" {
 		result["contract_id"] = resp.GetContractId()

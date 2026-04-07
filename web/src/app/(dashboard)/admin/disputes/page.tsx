@@ -140,7 +140,7 @@ export default function AdminDisputesPage() {
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium text-zinc-300">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
@@ -149,7 +149,7 @@ export default function AdminDisputesPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-[180px] min-h-[44px]" aria-label="Filter disputes by status">
+          <SelectTrigger className="w-full min-h-[44px] sm:w-[180px]" aria-label="Filter disputes by status">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>

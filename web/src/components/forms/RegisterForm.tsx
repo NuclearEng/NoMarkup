@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
+import { Briefcase, Wrench } from 'lucide-react';
 import type { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
@@ -26,15 +27,20 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
+import { useEnableRole } from '@/hooks/useProfile';
+import { cn } from '@/lib/utils';
 import { registerSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
+import { USER_ROLE } from '@/types';
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export function RegisterForm() {
   const router = useRouter();
   const register = useAuthStore((s) => s.register);
+  const enableRole = useEnableRole();
   const [formError, setFormError] = useState<string | null>(null);
+  const [intent, setIntent] = useState<'customer' | 'provider'>('customer');
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -50,7 +56,12 @@ export function RegisterForm() {
     setFormError(null);
     try {
       await register(values.email, values.password, values.displayName);
-      router.push('/dashboard');
+      if (intent === 'provider') {
+        await enableRole.mutateAsync(USER_ROLE.PROVIDER);
+        router.push('/provider/onboarding');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Registration failed';
       setFormError(message);
@@ -93,6 +104,46 @@ export function RegisterForm() {
         </CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">
+        {/* Role intent picker */}
+        <div className="mb-5 grid grid-cols-2 gap-3" role="group" aria-label="Account type">
+          <button
+            type="button"
+            onClick={() => { setIntent('customer'); }}
+            aria-pressed={intent === 'customer'}
+            className={cn(
+              'rounded-lg border p-4 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60',
+              intent === 'customer'
+                ? 'border-[var(--brand-gold)]/60 bg-[var(--brand-gold)]/[0.07]'
+                : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]',
+            )}
+          >
+            <Briefcase
+              className={cn('mb-2 h-5 w-5', intent === 'customer' ? 'text-[var(--brand-gold)]' : 'text-white/40')}
+              aria-hidden="true"
+            />
+            <p className="text-sm font-semibold text-white">I need work done</p>
+            <p className="mt-0.5 text-xs text-white/50">Hire skilled providers</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setIntent('provider'); }}
+            aria-pressed={intent === 'provider'}
+            className={cn(
+              'rounded-lg border p-4 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60',
+              intent === 'provider'
+                ? 'border-[var(--brand-gold)]/60 bg-[var(--brand-gold)]/[0.07]'
+                : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]',
+            )}
+          >
+            <Wrench
+              className={cn('mb-2 h-5 w-5', intent === 'provider' ? 'text-[var(--brand-gold)]' : 'text-white/40')}
+              aria-hidden="true"
+            />
+            <p className="text-sm font-semibold text-white">I offer services</p>
+            <p className="mt-0.5 text-xs text-white/50">Grow your business</p>
+          </button>
+        </div>
+
         <OAuthButtons />
         <OAuthDivider />
         <Form {...form}>
@@ -205,9 +256,13 @@ export function RegisterForm() {
             <Button
               type="submit"
               className="glass-cta-gold min-h-[44px] w-full rounded-lg font-semibold"
-              disabled={form.formState.isSubmitting}
+              disabled={form.formState.isSubmitting || enableRole.isPending}
             >
-              {form.formState.isSubmitting ? 'Creating account...' : 'Create account'}
+              {form.formState.isSubmitting || enableRole.isPending
+                ? 'Creating account...'
+                : intent === 'provider'
+                  ? 'Create provider account'
+                  : 'Create account'}
             </Button>
           </form>
         </Form>

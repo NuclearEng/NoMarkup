@@ -2,17 +2,105 @@
 
 import {
   AlertTriangle,
+  ArrowRight,
   Briefcase,
+  CheckCircle2,
   CreditCard,
   DollarSign,
   Shield,
   Users,
 } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 
 import { MetricsCard } from '@/components/admin/MetricsCard';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageTransition } from '@/components/ui/page-transition';
 import { usePlatformMetrics } from '@/hooks/useAdmin';
 import { formatCents } from '@/lib/utils';
+
+interface AdminAction {
+  label: string;
+  description: string;
+  href: Route;
+  count?: number;
+  urgent?: boolean;
+}
+
+function AdminQuickActions({ metrics }: { metrics: ReturnType<typeof usePlatformMetrics>['data'] }) {
+  const actions: AdminAction[] = [
+    {
+      label: 'Pending Verifications',
+      description: 'Review provider identity documents',
+      href: '/admin/verification' as Route,
+      urgent: true,
+    },
+    {
+      label: 'Open Disputes',
+      description: 'Disputes awaiting admin review',
+      href: '/admin/disputes' as Route,
+      count: metrics?.disputes_opened,
+      urgent: (metrics?.disputes_opened ?? 0) > 0,
+    },
+    {
+      label: 'Manage Taxonomy',
+      description: 'Add or update service categories',
+      href: '/admin/taxonomy' as Route,
+    },
+    {
+      label: 'Platform Settings',
+      description: 'Fee rates, limits, and feature flags',
+      href: '/admin/platform' as Route,
+    },
+    {
+      label: 'Guarantee Fund',
+      description: 'Review claims and fund health',
+      href: '/admin/guarantee' as Route,
+    },
+    {
+      label: 'Fraud Review',
+      description: 'Flagged accounts and suspicious activity',
+      href: '/admin/fraud' as Route,
+    },
+  ];
+
+  return (
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+      <CardHeader>
+        <CardTitle className="gold-text text-base">Admin Actions</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="divide-y divide-white/[0.04]">
+          {actions.map((action) => (
+            <Link
+              key={action.href}
+              href={action.href}
+              className="group flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-white/[0.04]"
+            >
+              {action.urgent && (action.count ?? 0) > 0 ? (
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-zinc-100">
+                  {action.label}
+                  {action.count !== undefined ? (
+                    <span className="ml-2 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-400">
+                      {String(action.count)}
+                    </span>
+                  ) : null}
+                </p>
+                <p className="text-xs text-zinc-400">{action.description}</p>
+              </div>
+              <ArrowRight className="h-4 w-4 shrink-0 text-zinc-600 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-400" aria-hidden="true" />
+            </Link>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function AdminOverviewPage() {
   const { data: metrics, isLoading } = usePlatformMetrics();
@@ -125,6 +213,8 @@ export default function AdminOverviewPage() {
           loading={isLoading}
         />
       </div>
+
+      <AdminQuickActions metrics={metrics} />
     </div>
     </PageTransition>
   );

@@ -308,7 +308,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
         ) : null}
 
         <div
-          className="text-4xl font-black tracking-tight text-green-500 sm:text-5xl"
+          className="text-3xl font-black tracking-tight text-green-500 sm:text-4xl lg:text-5xl"
           role="status"
           aria-live="polite"
           aria-label={
@@ -347,7 +347,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
       </div>
 
       {/* ── Stats row ── */}
-      <div className="bg-border/20 mx-5 my-5 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border/30 sm:mx-6">
+      <div className="bg-border/20 mx-3 my-5 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border/30 sm:mx-6">
         {/* Total Bids */}
         <div className="bg-card flex flex-col items-center gap-1 px-3 py-3.5">
           <div className="flex items-center gap-1">
@@ -391,7 +391,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
             aria-selected={activeTab === VISUALIZATION_TAB.PRICE_HISTORY}
             onClick={() => setActiveTab(VISUALIZATION_TAB.PRICE_HISTORY)}
             className={cn(
-              'relative px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors',
+              'relative min-h-[44px] px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/40',
               activeTab === VISUALIZATION_TAB.PRICE_HISTORY
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground/80',
@@ -411,7 +411,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
             aria-selected={activeTab === VISUALIZATION_TAB.DEPTH_CHART}
             onClick={() => setActiveTab(VISUALIZATION_TAB.DEPTH_CHART)}
             className={cn(
-              'relative px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors',
+              'relative min-h-[44px] px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/40',
               activeTab === VISUALIZATION_TAB.DEPTH_CHART
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground/80',

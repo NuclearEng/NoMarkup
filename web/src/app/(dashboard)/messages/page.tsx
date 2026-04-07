@@ -72,7 +72,7 @@ export default function MessagesPage() {
 
   return (
     <PageTransition>
-    <div className="flex h-[calc(100vh-theme(spacing.24))] flex-col">
+    <div className="flex h-[calc(100dvh-theme(spacing.24))] flex-col">
       <div className="mb-4 flex items-center gap-2">
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Messages</h1>

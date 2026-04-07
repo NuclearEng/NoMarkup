@@ -28,11 +28,15 @@ import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
+import { BidPushPrompt } from '@/components/jobs/BidPushPrompt';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
+import { SavingsBadge } from '@/components/jobs/SavingsBadge';
+import { ViewerCount } from '@/components/jobs/ViewerCount';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { TerminalGrid } from '@/components/terminal/terminal-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
@@ -99,9 +103,9 @@ export default function JobDetailPage() {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="space-y-6">
-          <div className="h-8 w-2/3 animate-pulse rounded bg-white/[0.06]" />
-          <div className="h-4 w-1/3 animate-pulse rounded bg-white/[0.04]" />
-          <div className="glass glass-highlight h-64 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
+          <div className="bg-muted h-8 w-2/3 animate-pulse rounded" />
+          <div className="bg-muted h-4 w-1/3 animate-pulse rounded" />
+          <div className="bg-muted h-64 animate-pulse rounded-xl border" />
         </div>
       </div>
     );
@@ -330,32 +334,32 @@ export default function JobDetailPage() {
       {/* Breadcrumb */}
       <nav
         aria-label="Breadcrumb"
-        className="mb-6 flex items-center gap-1 text-sm text-zinc-500"
+        className="text-muted-foreground mb-6 hidden items-center gap-1 text-sm sm:flex"
       >
         <Link
           href={'/jobs' as Route}
-          className="inline-flex min-h-[44px] items-center px-1 text-zinc-400 transition-colors hover:text-zinc-200"
+          className="hover:text-foreground inline-flex min-h-[44px] items-center px-1"
         >
           Jobs
         </Link>
         <ChevronRight className="h-3 w-3" aria-hidden="true" />
         <Link
           href={'/jobs' as Route}
-          className="inline-flex min-h-[44px] items-center px-1 text-zinc-400 transition-colors hover:text-zinc-200"
+          className="hover:text-foreground inline-flex min-h-[44px] items-center px-1"
         >
           {job.category_name}
         </Link>
         <ChevronRight className="h-3 w-3" aria-hidden="true" />
-        <span className="truncate text-zinc-300">{job.title}</span>
+        <span className="text-foreground truncate">{job.title}</span>
       </nav>
 
       <div className="grid gap-8 lg:grid-cols-3">
         {/* Main content */}
         <div className="space-y-6 lg:col-span-2">
-          {/* Header card */}
-          <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-6">
+          {/* Header */}
+          <div>
             <div className="flex items-start justify-between gap-3">
-              <h1 className="gold-text text-2xl font-bold tracking-tight">{job.title}</h1>
+              <h1 className="text-2xl font-bold tracking-tight">{job.title}</h1>
               <Badge
                 variant={
                   job.status === 'active'
@@ -364,34 +368,36 @@ export default function JobDetailPage() {
                       ? 'secondary'
                       : 'outline'
                 }
-                className="shrink-0 border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]"
+                className="shrink-0"
               >
                 {job.status.replace(/_/g, ' ')}
               </Badge>
             </div>
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="text-muted-foreground mt-1 text-sm">
               Posted {formatRelativeTime(new Date(job.created_at))}
             </p>
-
-            {/* Category inline */}
-            <div className="mt-3 flex items-center gap-2 text-sm text-zinc-300">
-              <Tag className="h-4 w-4 text-[var(--brand-gold)]" aria-hidden="true" />
-              <span>{job.category_name}</span>
-            </div>
           </div>
 
-          {/* Description card */}
-          <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-6">
-            <h2 className="mb-3 text-lg font-semibold text-zinc-100">Description</h2>
-            <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-300">{job.description}</p>
+          {/* Category */}
+          <div className="flex items-center gap-2 text-sm">
+            <Tag className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+            <span>{job.category_name}</span>
           </div>
 
-          <Separator className="opacity-20" />
+          <Separator />
+
+          {/* Description */}
+          <div>
+            <h2 className="mb-2 text-lg font-semibold">Description</h2>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.description}</p>
+          </div>
+
+          <Separator />
 
           {/* Details grid */}
           {/* Map preview when location exists */}
           {job.location_lat && job.location_lng && process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ? (
-            <div className="relative mb-4 overflow-hidden rounded-xl border border-[var(--brand-gold)]/10">
+            <div className="relative mb-4 overflow-hidden rounded-lg border border-white/[0.06]">
               <img
                 src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/pin-l+d4a017(${String(job.location_lng)},${String(job.location_lat)})/${String(job.location_lng)},${String(job.location_lat)},13,0/800x200@2x?access_token=${process.env['NEXT_PUBLIC_MAPBOX_TOKEN']}`}
                 alt={`Map showing approximate job location${job.location_address ? ` near ${job.location_address}` : ''}`}
@@ -407,16 +413,16 @@ export default function JobDetailPage() {
             </div>
           ) : null}
 
-          <div className="glass glass-highlight grid gap-4 rounded-xl border border-[var(--brand-gold)]/10 p-5 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             {/* Location */}
             <div className="flex items-start gap-3">
               <MapPin
-                className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]"
+                className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0"
                 aria-hidden="true"
               />
               <div>
-                <h3 className="text-sm font-medium text-zinc-200">Location</h3>
-                <p className="text-sm text-zinc-400">
+                <h3 className="text-sm font-medium">Location</h3>
+                <p className="text-muted-foreground text-sm">
                   {job.location_address ?? 'Remote / Not specified'}
                 </p>
               </div>
@@ -425,14 +431,14 @@ export default function JobDetailPage() {
             {/* Schedule */}
             <div className="flex items-start gap-3">
               <Calendar
-                className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]"
+                className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0"
                 aria-hidden="true"
               />
               <div>
-                <h3 className="text-sm font-medium text-zinc-200">Schedule</h3>
-                <p className="text-sm text-zinc-400">{scheduleLabel}</p>
+                <h3 className="text-sm font-medium">Schedule</h3>
+                <p className="text-muted-foreground text-sm">{scheduleLabel}</p>
                 {job.scheduled_date ? (
-                  <p className="text-sm text-zinc-400">
+                  <p className="text-muted-foreground text-sm">
                     {new Date(job.scheduled_date).toLocaleDateString('en-US', {
                       weekday: 'long',
                       month: 'long',
@@ -442,7 +448,7 @@ export default function JobDetailPage() {
                   </p>
                 ) : null}
                 {job.is_recurring && job.recurrence_frequency ? (
-                  <Badge variant="outline" className="mt-1 border-[var(--brand-gold)]/20 text-zinc-300">
+                  <Badge variant="outline" className="mt-1">
                     Recurring: {job.recurrence_frequency}
                   </Badge>
                 ) : null}
@@ -451,14 +457,14 @@ export default function JobDetailPage() {
 
             {/* Bids */}
             <div className="flex items-start gap-3">
-              <Users className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]" aria-hidden="true" />
+              <Users className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <div>
-                <h3 className="text-sm font-medium text-zinc-200">Bids</h3>
-                <p className="text-sm text-zinc-400">
+                <h3 className="text-sm font-medium">Bids</h3>
+                <p className="text-muted-foreground text-sm">
                   {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''} placed
                 </p>
                 {job.lowest_bid_cents ? (
-                  <p className="text-sm font-semibold text-[var(--brand-gold)]">
+                  <p className="text-sm font-medium text-green-600">
                     Lowest: {formatCents(job.lowest_bid_cents)}
                   </p>
                 ) : null}
@@ -467,10 +473,10 @@ export default function JobDetailPage() {
 
             {/* Auction duration */}
             <div className="flex items-start gap-3">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]" aria-hidden="true" />
+              <Clock className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <div>
-                <h3 className="text-sm font-medium text-zinc-200">Auction Duration</h3>
-                <p className="text-sm text-zinc-400">
+                <h3 className="text-sm font-medium">Auction Duration</h3>
+                <p className="text-muted-foreground text-sm">
                   {String(job.auction_duration_hours)} hours
                 </p>
               </div>
@@ -480,7 +486,7 @@ export default function JobDetailPage() {
           {/* Market range */}
           {job.market_range && job.market_range.sample_size > 0 ? (
             <>
-              <Separator className="opacity-20" />
+              <Separator />
               <MarketRangeDisplay marketRange={job.market_range} />
             </>
           ) : null}
@@ -488,9 +494,9 @@ export default function JobDetailPage() {
           {/* Bids section for job owner */}
           {isJobOwner ? (
             <>
-              <Separator className="opacity-20" />
-              <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-6">
-                <h2 className="mb-4 text-lg font-semibold text-zinc-100">Bids</h2>
+              <Separator />
+              <div>
+                <h2 className="mb-4 text-lg font-semibold">Bids</h2>
                 <BidList
                   jobId={jobId}
                   canAward={canAward}
@@ -516,45 +522,56 @@ export default function JobDetailPage() {
               />
             ) : null}
 
+            {/* Savings badge — shown when lowest bid beats market median */}
+            {job.lowest_bid_cents && job.market_range?.median_cents ? (
+              <SavingsBadge
+                lowestBidCents={job.lowest_bid_cents}
+                marketMedianCents={job.market_range.median_cents}
+              />
+            ) : null}
+
             {/* Sparkline price chart — shows bid history trend */}
             {job.lowest_bid_cents && job.starting_bid_cents ? (
               <BidPriceChart
                 bids={[job.starting_bid_cents, job.lowest_bid_cents]}
                 height={80}
-                className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-3"
+                className="bg-card rounded-xl border p-3"
               />
             ) : null}
 
-            {/* Auction status card — glass treatment */}
-            <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5">
-              <h2 className="mb-4 text-sm font-semibold tracking-wide text-zinc-400 uppercase">Auction Status</h2>
-              <div className="space-y-4">
+            {/* Original auction status card */}
+            <Card className="ring-border shadow-sm ring-1">
+              <CardHeader>
+                <CardTitle className="text-base">Auction Status</CardTitle>
+                <ViewerCount jobId={jobId} />
+              </CardHeader>
+              <CardContent className="space-y-4">
                 {job.auction_ends_at ? (
                   <AuctionTimer auctionEndsAt={job.auction_ends_at} />
                 ) : (
-                  <p className="text-sm text-zinc-500">Auction not started</p>
+                  <p className="text-muted-foreground text-sm">Auction not started</p>
                 )}
 
                 {job.starting_bid_cents ? (
                   <div>
-                    <p className="text-xs text-zinc-500">Starting Bid</p>
-                    <p className="text-lg font-semibold text-zinc-200">{formatCents(job.starting_bid_cents)}</p>
+                    <p className="text-muted-foreground text-xs">Starting Bid</p>
+                    <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
                   </div>
                 ) : null}
 
                 {job.offer_accepted_cents ? (
                   <div>
-                    <p className="text-xs text-zinc-500">Instant Accept Price</p>
-                    <p className="text-lg font-semibold text-[var(--brand-gold)]">
+                    <p className="text-muted-foreground text-xs">Instant Accept Price</p>
+                    <p className="text-lg font-semibold text-green-600">
                       {formatCents(job.offer_accepted_cents)}
                     </p>
                   </div>
                 ) : null}
 
-                {/* Bid count */}
+                {/* Bid count badge */}
                 <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-[var(--brand-gold)]" aria-hidden="true" />
-                  <span className="text-sm text-zinc-400">
+                  <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+                  <span className="text-muted-foreground text-sm">
                     {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
                   </span>
                 </div>
@@ -572,18 +589,18 @@ export default function JobDetailPage() {
                   />
                 ) : !isAuthenticated ? (
                   <Link href={'/login' as Route}>
-                    <button className="glass-cta-gold min-h-[44px] w-full rounded-xl px-4 py-2.5 text-sm font-semibold">
-                      <LogIn className="mr-1.5 inline h-4 w-4" aria-hidden="true" />
+                    <Button variant="outline" className="min-h-[44px] w-full">
+                      <LogIn className="h-4 w-4" aria-hidden="true" />
                       Sign in to bid
-                    </button>
+                    </Button>
                   </Link>
                 ) : !isProvider && !isJobOwner ? (
-                  <p className="text-sm text-zinc-500">
+                  <p className="text-muted-foreground text-sm">
                     Only providers can place bids on jobs.
                   </p>
                 ) : null}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
             {/* BidPlacementPanel — shown for providers placing a new bid */}
             {canBid && existingBid === null && job.lowest_bid_cents && job.starting_bid_cents ? (
@@ -611,26 +628,36 @@ export default function JobDetailPage() {
                 }))}
               />
             ) : null}
+
+            {/* Push notification opt-in — shown to job owner before first bid */}
+            <BidPushPrompt
+              jobId={jobId}
+              isJobOwner={isJobOwner}
+              bidCount={displayBidCount}
+              status={job.status}
+            />
           </div>
 
-          {/* Customer info card — glass treatment */}
-          <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5">
-            <h2 className="mb-3 text-sm font-semibold tracking-wide text-zinc-400 uppercase">Posted By</h2>
-            <div className="space-y-1.5">
-              <p className="font-medium text-zinc-200">{job.customer_display_name}</p>
-              <p className="text-sm text-zinc-500">
+          {/* Customer info card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Posted By</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="font-medium">{job.customer_display_name}</p>
+              <p className="text-muted-foreground text-sm">
                 Member since{' '}
                 {new Date(job.customer_member_since).toLocaleDateString('en-US', {
                   month: 'long',
                   year: 'numeric',
                 })}
               </p>
-              <p className="text-sm text-zinc-500">
+              <p className="text-muted-foreground text-sm">
                 {String(job.customer_jobs_posted)} job{job.customer_jobs_posted !== 1 ? 's' : ''}{' '}
                 posted
               </p>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

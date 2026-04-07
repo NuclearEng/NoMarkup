@@ -75,7 +75,7 @@ export default function ProviderBusinessPage() {
       </div>
 
       {/* Summary stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           title="YTD Revenue"
           value={formatCents(ytdRevenue)}
@@ -94,7 +94,7 @@ export default function ProviderBusinessPage() {
       </div>
 
       {/* Business links */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         {BUSINESS_LINKS.map((link) => (
           <Link key={link.href} href={link.href}>
             <Card className="glass glass-interactive h-full border border-[var(--brand-gold)]/10">

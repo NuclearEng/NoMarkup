@@ -140,7 +140,7 @@ export default function PaymentsPage() {
       </div>
 
       <Tabs defaultValue="all">
-        <TabsList className="glass glass-highlight">
+        <TabsList className="glass glass-highlight flex w-full overflow-x-auto sm:w-auto">
           <TabsTrigger value="all" className="min-h-[44px]">
             All
           </TabsTrigger>

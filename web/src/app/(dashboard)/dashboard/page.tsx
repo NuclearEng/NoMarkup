@@ -2,6 +2,8 @@
 
 import {
   Briefcase,
+  CheckCircle2,
+  Circle,
   DollarSign,
   FileText,
   Gavel,
@@ -14,6 +16,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 
 import { useCountUp } from '@/hooks/useCountUp';
+import { useProfile } from '@/hooks/useProfile';
 import { SavingsTracker } from '@/components/dashboard/SavingsTracker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -186,6 +189,75 @@ function QuickActions({ isProvider }: { isProvider: boolean }) {
         accentColor="bg-primary/10"
       />
     </div>
+  );
+}
+
+function ChecklistItem({
+  completed,
+  label,
+  href,
+}: {
+  completed: boolean;
+  label: string;
+  href?: Route;
+}) {
+  const content = (
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-lg p-3 transition-colors',
+        completed ? '' : href ? 'hover:bg-white/[0.04]' : '',
+      )}
+    >
+      {completed ? (
+        <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" aria-hidden="true" />
+      ) : (
+        <Circle className="h-5 w-5 shrink-0 text-zinc-600" aria-hidden="true" />
+      )}
+      <span className={cn('text-sm font-medium', completed ? 'text-zinc-400 line-through' : 'text-zinc-100')}>
+        {label}
+      </span>
+    </div>
+  );
+  if (href && !completed) {
+    return <Link href={href}>{content}</Link>;
+  }
+  return content;
+}
+
+function CustomerOnboardingChecklist({ emailVerified }: { emailVerified: boolean }) {
+  const { data: jobsData } = useCustomerJobs({ page: 1, page_size: 1 });
+  const hasJobs = (jobsData?.pagination.totalCount ?? 0) > 0;
+
+  if (hasJobs && emailVerified) return null;
+
+  const doneCount = [true, emailVerified, hasJobs].filter(Boolean).length;
+  const total = 3;
+
+  return (
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/[0.03]">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="gold-text text-base">Get started</CardTitle>
+          <span className="text-xs text-zinc-400">{String(doneCount)}/{String(total)} complete</span>
+        </div>
+        <p className="text-xs text-zinc-400">Complete these steps to get the most out of NoMarkup.</p>
+      </CardHeader>
+      <CardContent className="pb-4">
+        <div className="divide-y divide-white/[0.04]">
+          <ChecklistItem completed label="Create your account" />
+          <ChecklistItem
+            completed={emailVerified}
+            label="Verify your email"
+            href={'/settings/security' as Route}
+          />
+          <ChecklistItem
+            completed={hasJobs}
+            label="Post your first job"
+            href={'/jobs/new' as Route}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -461,6 +533,7 @@ function getTimeOfDayGreeting(): string {
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const isHydrating = useAuthStore((state) => state.isHydrating);
+  const { data: profile } = useProfile();
 
   const roles = user?.roles ?? [];
   const isCustomer = roles.includes(USER_ROLE.CUSTOMER);
@@ -502,6 +575,10 @@ export default function DashboardPage() {
         </div>
 
         <QuickActions isProvider={isProvider} />
+
+        {isCustomer && !isProvider ? (
+          <CustomerOnboardingChecklist emailVerified={profile?.emailVerified ?? true} />
+        ) : null}
 
         {isCustomer ? (
           <div>

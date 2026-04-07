@@ -85,7 +85,7 @@ export function BidPlacementPanel({
             key={qa.label}
             onClick={() => setBidCents(qa.value)}
             className={cn(
-              'flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-all',
+              'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
               bidCents === qa.value
                 ? 'border-primary bg-primary/5 text-primary'
                 : 'text-muted-foreground hover:border-foreground/20',

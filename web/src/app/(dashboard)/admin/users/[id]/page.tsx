@@ -169,7 +169,7 @@ export default function AdminUserDetailPage() {
             <CardTitle className="gold-text text-base">User Profile</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
               <div>
                 <span className="text-zinc-300">Status</span>
                 <div className="mt-1">
@@ -221,7 +221,7 @@ export default function AdminUserDetailPage() {
               <CardTitle className="gold-text text-base">Provider Profile</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div className="col-span-2">
                   <span className="text-zinc-300">Display Name</span>
                   <p className="mt-1 font-medium">{user.provider_profile.display_name}</p>

@@ -2254,3 +2254,32 @@ body {
 .dashboard-ambient h3 {
   color: #e4e4e7; /* zinc-200 */
 }
+
+/* ─── Mobile bottom nav safe area padding ─── */
+/* Applied to the dashboard content wrapper on mobile to avoid the fixed bottom tab bar */
+.mobile-bottom-inset {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 1024px) {
+  .mobile-bottom-inset {
+    padding-bottom: 1.5rem; /* equivalent to p-6 */
+  }
+}
+
+/* ─── Reduced-motion: disable all page-enter animations ─── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-fade-in-up,
+  .animate-slide-in-right,
+  .animate-scale-in,
+  .animate-float,
+  .animate-gradient,
+  .animate-auth-card-enter,
+  .animate-confetti-fall,
+  .stagger-children > * {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

@@ -134,6 +134,8 @@ func main() {
 
 	s := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(loggingUnaryInterceptor),
+		grpc.ChainStreamInterceptor(loggingStreamInterceptor),
 	)
 	notificationgrpc.Register(s, srv)
 
@@ -189,4 +191,44 @@ func initTracer(ctx context.Context, serviceName string) (func(), error) {
 		defer cancel()
 		_ = tp.Shutdown(shutdownCtx)
 	}, nil
+}
+
+// loggingUnaryInterceptor logs every unary gRPC call with method name, duration, and any error.
+func loggingUnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	start := time.Now()
+	resp, err := handler(ctx, req)
+	duration := time.Since(start)
+	if err != nil {
+		slog.ErrorContext(ctx, "grpc call failed",
+			"method", info.FullMethod,
+			"duration_ms", duration.Milliseconds(),
+			"error", err,
+		)
+	} else {
+		slog.InfoContext(ctx, "grpc call",
+			"method", info.FullMethod,
+			"duration_ms", duration.Milliseconds(),
+		)
+	}
+	return resp, err
+}
+
+// loggingStreamInterceptor logs every streaming gRPC call with method name, duration, and any error.
+func loggingStreamInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	start := time.Now()
+	err := handler(srv, ss)
+	duration := time.Since(start)
+	if err != nil {
+		slog.ErrorContext(ss.Context(), "grpc stream failed",
+			"method", info.FullMethod,
+			"duration_ms", duration.Milliseconds(),
+			"error", err,
+		)
+	} else {
+		slog.InfoContext(ss.Context(), "grpc stream",
+			"method", info.FullMethod,
+			"duration_ms", duration.Milliseconds(),
+		)
+	}
+	return err
 }

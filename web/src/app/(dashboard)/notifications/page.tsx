@@ -66,7 +66,7 @@ export default function NotificationsPage() {
         <button
           type="button"
           className={cn(
-            'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors',
+            'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60',
             !unreadOnly
               ? 'bg-primary text-primary-foreground'
               : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.04] hover:text-foreground',
@@ -80,7 +80,7 @@ export default function NotificationsPage() {
         <button
           type="button"
           className={cn(
-            'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors',
+            'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60',
             unreadOnly
               ? 'bg-primary text-primary-foreground'
               : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.04] hover:text-foreground',

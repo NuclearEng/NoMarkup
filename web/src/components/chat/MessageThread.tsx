@@ -174,7 +174,7 @@ function MessageBubble({
       >
         {message.sender_id.charAt(0).toUpperCase()}
       </div>
-      <div className={cn('max-w-[70%]', isOwnMessage ? 'items-end' : 'items-start')}>
+      <div className={cn('max-w-[85%] sm:max-w-[70%]', isOwnMessage ? 'items-end' : 'items-start')}>
         <div className="mb-0.5 flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">{message.sender_id}</span>
         </div>

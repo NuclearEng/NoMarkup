@@ -345,16 +345,96 @@ function StepCategory({ form }: { form: FormType }) {
   );
 }
 
+// Minimal local interface for the Web Speech API (not yet in all TS DOM lib builds).
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: { results: { [i: number]: { [j: number]: { transcript: string } | undefined } | undefined } }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+}
+
+// Typed accessor for the browser's SpeechRecognition constructor (unprefixed + webkit prefix).
+function getSpeechRecognitionConstructor(): (new () => SpeechRecognitionInstance) | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as Window &
+    typeof globalThis & {
+      SpeechRecognition?: new () => SpeechRecognitionInstance;
+      webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+    };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 // -- Step 2: Details --
 function StepDetails({ form }: { form: FormType }) {
+  const { data: categories } = useCategories();
+  const [isListening, setIsListening] = useState(false);
+  const hasSpeechRecognition = getSpeechRecognitionConstructor() !== null;
+
+  function startVoiceInput() {
+    const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
+    if (!SpeechRecognitionCtor) return;
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    setIsListening(true);
+    recognition.onresult = (event: { results: { [i: number]: { [j: number]: { transcript: string } | undefined } | undefined } }) => {
+      const transcript = event.results[0]?.[0]?.transcript ?? '';
+      form.setValue('title', transcript.slice(0, 60), { shouldValidate: true, shouldDirty: true });
+    };
+    recognition.onerror = () => { setIsListening(false); };
+    recognition.onend = () => { setIsListening(false); };
+    recognition.start();
+  }
+
   return (
     <div className="space-y-6">
+      <ImageAnalysisButton
+        onResult={(result) => {
+          form.setValue('title', result.title, { shouldValidate: true, shouldDirty: true });
+          form.setValue('description', result.description, {
+            shouldValidate: true,
+            shouldDirty: true,
+          });
+          if (categories) {
+            const match = categories.find(
+              (c) => c.name.toLowerCase() === result.category.toLowerCase(),
+            );
+            if (match) {
+              form.setValue('categoryId', match.id, { shouldValidate: true, shouldDirty: true });
+            }
+          }
+        }}
+      />
+
       <FormField
         control={form.control}
         name="title"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Job Title</FormLabel>
+            <div className="flex items-center gap-2">
+              <FormLabel>Job Title</FormLabel>
+              {hasSpeechRecognition ? (
+                <button
+                  type="button"
+                  onClick={startVoiceInput}
+                  disabled={isListening}
+                  aria-label={isListening ? 'Listening for voice input' : 'Use voice input for title'}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  {isListening ? (
+                    <MicOff className="h-3.5 w-3.5 text-destructive" aria-hidden="true" />
+                  ) : (
+                    <Mic className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                </button>
+              ) : null}
+            </div>
             <FormControl>
               <Input
                 {...field}
@@ -897,10 +977,14 @@ function StepReview({
   form,
   marketRange,
   photoCount,
+  useInstantMatch,
+  onInstantMatchChange,
 }: {
   form: FormType;
   marketRange: MarketRange;
   photoCount: number;
+  useInstantMatch: boolean;
+  onInstantMatchChange: (value: boolean) => void;
 }) {
   const values = form.getValues();
 
@@ -978,6 +1062,60 @@ function StepReview({
               <p>Instant accept: {formatCents(Math.round(values.offerAcceptedDollars * 100))}</p>
             ) : null}
           </div>
+        </div>
+      </div>
+
+      {/* Instant Match toggle */}
+      <div className="rounded-md border p-4">
+        <p className="mb-3 text-sm font-medium" id="match-mode-label">
+          How would you like to find a provider?
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row" role="radiogroup" aria-labelledby="match-mode-label">
+          <label
+            className={`flex flex-1 cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+              !useInstantMatch ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/30'
+            }`}
+          >
+            <input
+              type="radio"
+              name="matchMode"
+              value="auction"
+              checked={!useInstantMatch}
+              onChange={() => onInstantMatchChange(false)}
+              className="mt-0.5 h-4 w-4"
+              aria-label="Run an auction"
+            />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Run an auction</p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Providers compete on price. You choose the best bid.
+              </p>
+            </div>
+          </label>
+          <label
+            className={`flex flex-1 cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+              useInstantMatch ? 'border-amber-500 bg-amber-500/5' : 'border-border hover:bg-muted/30'
+            }`}
+          >
+            <input
+              type="radio"
+              name="matchMode"
+              value="instant"
+              checked={useInstantMatch}
+              onChange={() => onInstantMatchChange(true)}
+              className="mt-0.5 h-4 w-4"
+              aria-label="Find me someone fast"
+            />
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+                <Zap className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+                Find me someone fast
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                We&apos;ll match you with a top-rated provider immediately. No waiting for bids.
+              </p>
+            </div>
+          </label>
         </div>
       </div>
 

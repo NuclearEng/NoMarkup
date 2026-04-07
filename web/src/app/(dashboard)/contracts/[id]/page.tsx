@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Loader2, Play, Shield, Star } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, Play, Shield, Star } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -301,7 +301,7 @@ export default function ContractDetailPage() {
             {/* Provider: Start Work */}
             {isProvider && !contract.started_at ? (
               <Button
-                className="min-h-[44px] w-full gap-2"
+                className="min-h-[44px] w-full"
                 onClick={handleStartWork}
                 disabled={startWork.isPending}
               >
@@ -315,7 +315,7 @@ export default function ContractDetailPage() {
             {/* Provider: Mark Complete */}
             {isProvider && contract.started_at ? (
               <Button
-                className="min-h-[44px] w-full gap-2"
+                className="min-h-[44px] w-full"
                 onClick={handleMarkComplete}
                 disabled={markComplete.isPending}
               >
@@ -330,7 +330,7 @@ export default function ContractDetailPage() {
             {isCustomer ? (
               <Button
                 variant="outline"
-                className="min-h-[44px] w-full gap-2"
+                className="min-h-[44px] w-full"
                 onClick={handleApproveCompletion}
                 disabled={approveCompletion.isPending}
               >
@@ -343,7 +343,7 @@ export default function ContractDetailPage() {
 
             {/* Cancel contract */}
             {showCancelConfirm ? (
-              <div className="glass glass-highlight space-y-3 rounded-lg border border-[var(--brand-gold)]/10 p-3">
+              <div className="space-y-3 rounded-lg border p-3">
                 <p className="text-sm">
                   Are you sure you want to cancel this contract? This action cannot be undone.
                 </p>
@@ -397,6 +397,14 @@ export default function ContractDetailPage() {
                 </Button>
               </Link>
             ) : null}
+
+            {/* File a Dispute */}
+            <Link href={`/disputes/new?contractId=${contract.id}` as Route}>
+              <Button variant="outline" className="min-h-[44px] w-full gap-2 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 border-orange-500/30">
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                File a Dispute
+              </Button>
+            </Link>
 
             {/* Error messages for other mutations */}
             {startWork.isError ? (

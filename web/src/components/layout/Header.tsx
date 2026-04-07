@@ -125,7 +125,7 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav id="mobile-menu" className="glass-elevated animate-fade-in rounded-none border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
+        <nav id="mobile-menu" className="glass-elevated animate-fade-in max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-none border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
           <div className="flex flex-col gap-3">
             {isHydrating ? null : isAuthenticated ? (
               <>

@@ -38,6 +38,8 @@ func (w *wrappedWriter) Flush() {
 }
 
 // Logging logs each HTTP request with structured fields.
+// It logs at INFO for 2xx/3xx, WARN for 4xx, and ERROR for 5xx.
+// When a valid JWT is present, the user_id is included in the log entry.
 func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -54,13 +56,31 @@ func Logging(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
-		slog.Info("request",
+		duration := time.Since(start)
+		attrs := []any{
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", wrapped.statusCode,
-			"duration_ms", time.Since(start).Milliseconds(),
+			"duration_ms", duration.Milliseconds(),
 			"request_id", requestID,
 			"remote_addr", r.RemoteAddr,
-		)
+		}
+
+		if q := r.URL.RawQuery; q != "" {
+			attrs = append(attrs, "query", q)
+		}
+
+		if claims, ok := GetClaims(r.Context()); ok {
+			attrs = append(attrs, "user_id", claims.UserID)
+		}
+
+		switch {
+		case wrapped.statusCode >= 500:
+			slog.ErrorContext(r.Context(), "request", attrs...)
+		case wrapped.statusCode >= 400:
+			slog.WarnContext(r.Context(), "request", attrs...)
+		default:
+			slog.InfoContext(r.Context(), "request", attrs...)
+		}
 	})
 }

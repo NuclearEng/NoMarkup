@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -39,11 +40,19 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			slog.WarnContext(r.Context(), "auth rejected: missing authorization header",
+				"path", r.URL.Path,
+				"remote_addr", r.RemoteAddr,
+			)
 			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
 			return
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
+			slog.WarnContext(r.Context(), "auth rejected: invalid header format",
+				"path", r.URL.Path,
+				"remote_addr", r.RemoteAddr,
+			)
 			http.Error(w, `{"error":"invalid authorization header format"}`, http.StatusUnauthorized)
 			return
 		}
@@ -52,6 +61,11 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 
 		claims, err := m.validateToken(tokenStr)
 		if err != nil {
+			slog.WarnContext(r.Context(), "auth rejected: invalid or expired token",
+				"path", r.URL.Path,
+				"remote_addr", r.RemoteAddr,
+				"error", err,
+			)
 			http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 			return
 		}
