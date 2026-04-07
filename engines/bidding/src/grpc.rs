@@ -29,6 +29,7 @@ use std::sync::Arc;
 
 use chrono::TimeZone;
 use tonic::{Request, Response, Status};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::engine::BiddingEngine;
@@ -58,18 +59,22 @@ impl BidService for BidServiceImpl {
         let provider_id = parse_uuid(&req.provider_id, "provider_id")?;
 
         if req.amount_cents <= 0 {
+            warn!(job_id = %job_id, provider_id = %provider_id, "place_bid rejected: amount_cents must be positive");
             return Err(Status::invalid_argument("amount_cents must be positive"));
         }
 
-        let bid = self
-            .engine
-            .place_bid(job_id, provider_id, req.amount_cents)
-            .await
-            .map_err(bid_error_to_status)?;
-
-        Ok(Response::new(bid_proto::PlaceBidResponse {
-            bid: Some(bid_to_proto(&bid)),
-        }))
+        match self.engine.place_bid(job_id, provider_id, req.amount_cents).await {
+            Ok(bid) => {
+                info!(bid_id = %bid.id, job_id = %job_id, provider_id = %provider_id, amount_cents = req.amount_cents, "grpc place_bid succeeded");
+                Ok(Response::new(bid_proto::PlaceBidResponse {
+                    bid: Some(bid_to_proto(&bid)),
+                }))
+            }
+            Err(e) => {
+                warn!(job_id = %job_id, provider_id = %provider_id, error = %e, "grpc place_bid failed");
+                Err(bid_error_to_status(e))
+            }
+        }
     }
 
     async fn update_bid(
@@ -148,16 +153,19 @@ impl BidService for BidServiceImpl {
         let bid_id = parse_uuid(&req.bid_id, "bid_id")?;
         let customer_id = parse_uuid(&req.customer_id, "customer_id")?;
 
-        let bid = self
-            .engine
-            .award_bid(job_id, bid_id, customer_id)
-            .await
-            .map_err(bid_error_to_status)?;
-
-        Ok(Response::new(bid_proto::AwardBidResponse {
-            awarded_bid: Some(bid_to_proto(&bid)),
-            contract_id: String::new(), // contract service will generate this
-        }))
+        match self.engine.award_bid(job_id, bid_id, customer_id).await {
+            Ok(bid) => {
+                info!(bid_id = %bid.id, job_id = %job_id, customer_id = %customer_id, "grpc award_bid succeeded");
+                Ok(Response::new(bid_proto::AwardBidResponse {
+                    awarded_bid: Some(bid_to_proto(&bid)),
+                    contract_id: String::new(), // contract service will generate this
+                }))
+            }
+            Err(e) => {
+                warn!(job_id = %job_id, bid_id = %bid_id, customer_id = %customer_id, error = %e, "grpc award_bid failed");
+                Err(bid_error_to_status(e))
+            }
+        }
     }
 
     async fn get_bid(

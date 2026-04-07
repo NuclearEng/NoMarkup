@@ -23,6 +23,7 @@ pub use nomarkup::trust::v1::trust_service_server::{TrustService, TrustServiceSe
 use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::engine::TrustScorer;
@@ -52,17 +53,27 @@ impl TrustService for TrustServiceImpl {
         let req = request.into_inner();
         let user_id = parse_uuid(&req.user_id, "user_id")?;
 
-        let (row, tier_changed, previous_tier) = self
-            .engine
-            .compute_score(user_id, &req.trigger_reason)
-            .await
-            .map_err(trust_error_to_status)?;
-
-        Ok(Response::new(trust_proto::ComputeTrustScoreResponse {
-            score: Some(score_row_to_proto(&row)),
-            tier_changed,
-            previous_tier: tier_str_to_proto_i32(&previous_tier),
-        }))
+        match self.engine.compute_score(user_id, &req.trigger_reason).await {
+            Ok((row, tier_changed, previous_tier)) => {
+                info!(
+                    user_id = %user_id,
+                    score = row.composite_score,
+                    tier = %row.tier,
+                    tier_changed = tier_changed,
+                    trigger = %req.trigger_reason,
+                    "grpc compute_trust_score completed"
+                );
+                Ok(Response::new(trust_proto::ComputeTrustScoreResponse {
+                    score: Some(score_row_to_proto(&row)),
+                    tier_changed,
+                    previous_tier: tier_str_to_proto_i32(&previous_tier),
+                }))
+            }
+            Err(e) => {
+                warn!(user_id = %user_id, error = %e, "grpc compute_trust_score failed");
+                Err(trust_error_to_status(e))
+            }
+        }
     }
 
     async fn batch_compute_trust_scores(

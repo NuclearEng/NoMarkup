@@ -45,11 +45,13 @@ deploy/        Docker, Kubernetes, Terraform
 - **Full Dark Mode** — cinematic `#070b14` dark theme across all 60+ pages with consistent gold accent system
 - **Best-in-Class Tooltips** — Radix UI tooltips across the full UI: trust tier explanations, win probability context, price-vs-market breakdowns, market confidence confidence indicators, and all icon-only toolbar actions (Tooltip+Popover coexistence pattern for destructive actions)
 - **Accessibility** — WCAG 2.2 AA: focus rings on all interactive elements, `aria-live` regions, `prefers-reduced-motion` support on all 30+ animations, 44px minimum touch targets throughout; tooltips accessible to keyboard users via `tabIndex={0}` on informational badges
-- **Active Nav Indicators** — gold left-border sidebar active state, gold underline on mobile bottom nav
+- **Best-in-Class Mobile** — fixed bottom tab bar (MD3 pattern, 4 primary + More drawer), `viewport-fit=cover` with `env(safe-area-inset-*)` for notched iPhones, `100dvh` for dynamic viewport height, responsive grids that collapse to single-column, scrollable tab lists, breadcrumbs hidden on small screens, and `prefers-reduced-motion` opt-out on all animations
+- **Active Nav Indicators** — gold left-border sidebar active state; active scale + gold tint on mobile bottom tab bar
 - **Best-in-Class Onboarding** — role picker at registration (hire vs. provide), email verification banner with resend, provider setup wizard (7 steps with ✓ completion indicators, prefilled from existing data, Stripe Connect as final step), customer "Get Started" checklist, admin quick-actions panel
 - **Provider Onboarding** — 7-step wizard: Business Info → Categories → Service Area → Terms → Portfolio → Verification → Stripe Connect; prefills existing profile data, tracks completion per-step
 - **Working Capital Advances** — credit utilization bars, fee preview, repayment progress tracking
 - **Business Suite** — expense tracking, invoice generation, 1099-NEC tax center, all glass-themed
+- **Best-in-Class Observability** — structured JSON slog with status-based severity (INFO/WARN/ERROR per HTTP status), `user_id` on every authenticated request, gRPC logging interceptors on all 5 Go services (method + duration_ms + error), `tracing::info!` on all 4 Rust engines (bidding, fraud, trust, imaging), payment processing audit trail, auth failure audit (suspended/banned/invalid credentials/unverified email), and OpenTelemetry distributed tracing end-to-end
 
 ## Tech Stack
 

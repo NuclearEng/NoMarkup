@@ -154,7 +154,7 @@ export default function AdminGuaranteePage() {
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-zinc-300 text-sm font-medium">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
@@ -163,7 +163,7 @@ export default function AdminGuaranteePage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="min-h-[44px] w-[180px]" aria-label="Filter claims by status">
+          <SelectTrigger className="min-h-[44px] w-full sm:w-[180px]" aria-label="Filter claims by status">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>

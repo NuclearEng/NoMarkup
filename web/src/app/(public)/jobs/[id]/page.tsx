@@ -30,6 +30,7 @@ import { GradientMesh } from '@/components/landing/GradientMesh';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { BidPushPrompt } from '@/components/jobs/BidPushPrompt';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
+import { PermitIntelligenceBanner } from '@/components/jobs/PermitIntelligenceBanner';
 import { SavingsBadge } from '@/components/jobs/SavingsBadge';
 import { ViewerCount } from '@/components/jobs/ViewerCount';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
@@ -391,6 +392,9 @@ export default function JobDetailPage() {
             <h2 className="mb-2 text-lg font-semibold">Description</h2>
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.description}</p>
           </div>
+
+          {/* Permit intelligence — shown for regulated categories */}
+          <PermitIntelligenceBanner categorySlug={job.category_slug} />
 
           <Separator />
 

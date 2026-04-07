@@ -23,6 +23,7 @@ pub use nomarkup::fraud::v1::fraud_service_server::{FraudService, FraudServiceSe
 use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::engine::FraudDetector;
@@ -55,7 +56,7 @@ impl FraudService for FraudServiceImpl {
         let req = request.into_inner();
         let user_id = parse_uuid(&req.user_id, "user_id")?;
 
-        let result = self
+        match self
             .engine
             .check_transaction(
                 user_id,
@@ -65,14 +66,28 @@ impl FraudService for FraudServiceImpl {
                 &req.device_fingerprint,
             )
             .await
-            .map_err(fraud_error_to_status)?;
-
-        Ok(Response::new(fraud_proto::CheckTransactionResponse {
-            decision: result.decision.to_proto_i32(),
-            risk_level: result.risk_level.to_proto_i32(),
-            risk_score: result.risk_score,
-            reasons: result.reasons,
-        }))
+        {
+            Ok(result) => {
+                info!(
+                    user_id = %user_id,
+                    payment_id = %req.payment_id,
+                    amount_cents = req.amount_cents,
+                    risk_score = result.risk_score,
+                    decision = ?result.decision,
+                    "grpc check_transaction completed"
+                );
+                Ok(Response::new(fraud_proto::CheckTransactionResponse {
+                    decision: result.decision.to_proto_i32(),
+                    risk_level: result.risk_level.to_proto_i32(),
+                    risk_score: result.risk_score,
+                    reasons: result.reasons,
+                }))
+            }
+            Err(e) => {
+                warn!(user_id = %user_id, payment_id = %req.payment_id, error = %e, "grpc check_transaction failed");
+                Err(fraud_error_to_status(e))
+            }
+        }
     }
 
     async fn check_registration(
@@ -81,7 +96,7 @@ impl FraudService for FraudServiceImpl {
     ) -> Result<Response<fraud_proto::CheckRegistrationResponse>, Status> {
         let req = request.into_inner();
 
-        let result = self
+        match self
             .engine
             .check_registration(
                 &req.email,
@@ -90,13 +105,25 @@ impl FraudService for FraudServiceImpl {
                 &req.phone,
             )
             .await
-            .map_err(fraud_error_to_status)?;
-
-        Ok(Response::new(fraud_proto::CheckRegistrationResponse {
-            decision: result.decision.to_proto_i32(),
-            risk_level: result.risk_level.to_proto_i32(),
-            reasons: result.reasons,
-        }))
+        {
+            Ok(result) => {
+                info!(
+                    email = %req.email,
+                    decision = ?result.decision,
+                    risk_level = ?result.risk_level,
+                    "grpc check_registration completed"
+                );
+                Ok(Response::new(fraud_proto::CheckRegistrationResponse {
+                    decision: result.decision.to_proto_i32(),
+                    risk_level: result.risk_level.to_proto_i32(),
+                    reasons: result.reasons,
+                }))
+            }
+            Err(e) => {
+                warn!(email = %req.email, error = %e, "grpc check_registration failed");
+                Err(fraud_error_to_status(e))
+            }
+        }
     }
 
     async fn check_bid(

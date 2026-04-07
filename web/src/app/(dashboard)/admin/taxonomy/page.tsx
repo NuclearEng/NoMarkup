@@ -99,7 +99,7 @@ export default function AdminTaxonomyPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex items-center gap-3 p-4">
             <FolderTree className="h-8 w-8 text-white/50" aria-hidden="true" />

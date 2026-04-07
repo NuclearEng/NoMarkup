@@ -12,6 +12,7 @@ import type { Job } from '@/types';
 import { JOB_STATUS } from '@/types';
 
 import { AuctionTimer } from './AuctionTimer';
+import { FairPriceWidget } from './FairPriceWidget';
 
 interface JobCardProps {
   job: Job;
@@ -190,6 +191,12 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
               </span>
             </div>
           ) : null}
+
+          {/* Fair price widget */}
+          <FairPriceWidget
+            categoryId={job.category_id}
+            currentLowestBidCents={job.lowest_bid_cents}
+          />
 
           {/* Auction timer + posted time — glass divider above */}
           <div className="pt-3">

@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { JobCard } from '@/components/jobs/JobCard';
 import { JobSearchFilters } from '@/components/jobs/JobSearchFilters';
+import { SeasonalDemandBanner } from '@/components/jobs/SeasonalDemandBanner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { useSearchJobs } from '@/hooks/useJobs';
@@ -219,6 +220,13 @@ export default function JobsSearchPage() {
                 {String(data.pagination?.totalCount ?? 0)} job
                 {(data.pagination?.totalCount ?? 0) !== 1 ? 's' : ''} found
               </p>
+
+              {/* Seasonal demand banner — derived from first result's category slug */}
+              {data.jobs[0]?.category_slug ? (
+                <div className="mb-4">
+                  <SeasonalDemandBanner categorySlug={data.jobs[0].category_slug} />
+                </div>
+              ) : null}
 
               {/* Job cards grid */}
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

@@ -168,7 +168,7 @@ export default function AdminPaymentsPage() {
       <div className="space-y-4">
         <h2 className="gold-text text-lg font-semibold">Transactions</h2>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-zinc-300">Status:</span>
           <Select
             value={statusFilter ?? ALL_FILTER}
@@ -177,7 +177,7 @@ export default function AdminPaymentsPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[180px] min-h-[44px]" aria-label="Filter payments by status">
+            <SelectTrigger className="w-full min-h-[44px] sm:w-[180px]" aria-label="Filter payments by status">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent>

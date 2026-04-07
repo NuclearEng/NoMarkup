@@ -4,7 +4,10 @@ import { Briefcase, DollarSign, Gavel, Star } from 'lucide-react';
 import Link from 'next/link';
 
 import { EarningsChart } from '@/components/analytics/EarningsChart';
+import { CreditScoreCard } from '@/components/providers/CreditScoreCard';
+import { InstantPayoutButton } from '@/components/providers/InstantPayoutButton';
 import { ProviderRankCard } from '@/components/providers/ProviderRankCard';
+import { TaxProjectionCard } from '@/components/providers/TaxProjectionCard';
 import { TrustScoreBreakdown } from '@/components/providers/TrustScoreBreakdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -233,6 +236,26 @@ export default function ProviderDashboardPage() {
             </CardContent>
           </Card>
         ) : null}
+      </div>
+
+      {/* Financial Tools */}
+      <div className="glass-divider" role="separator" />
+      <div>
+        <h2 className="gold-text mb-4 text-lg font-semibold">Financial Tools</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {earnings ? (
+            <TaxProjectionCard
+              ytdEarningsCents={earnings.total_earnings_cents}
+              taxYear={new Date().getFullYear()}
+            />
+          ) : earningsLoading ? (
+            <Skeleton className="h-44 rounded-xl" />
+          ) : null}
+          <CreditScoreCard />
+          <InstantPayoutButton
+            availableBalanceCents={analytics?.total_earnings_cents ?? 0}
+          />
+        </div>
       </div>
 
       {/* Recent active bids */}

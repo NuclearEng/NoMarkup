@@ -330,6 +330,7 @@ func New(
 			r.Get("/methods", paymentHandler.ListPaymentMethods)
 			r.Delete("/methods/{id}", paymentHandler.DeletePaymentMethod)
 			r.Post("/calculate-fees", paymentHandler.CalculateFees)
+			r.Post("/instant-payout", paymentHandler.InstantPayout)
 			r.Get("/{id}", paymentHandler.GetPayment)
 			r.Post("/{id}/process", paymentHandler.ProcessPayment)
 			r.Post("/{id}/refund", paymentHandler.RefundPayment)

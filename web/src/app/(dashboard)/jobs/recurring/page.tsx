@@ -220,7 +220,7 @@ export default function RecurringJobsPage() {
       ) : (
         <div className="space-y-3">
           {/* Summary */}
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-3">
             <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-zinc-300">

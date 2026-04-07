@@ -402,7 +402,7 @@ export default function ProviderAdvancesPage() {
             Access working capital against your awarded contracts.
           </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={`skel-stat-${String(i)}`} className="glass rounded-xl p-5">
               <Skeleton className="mb-3 h-4 w-24" />
@@ -456,7 +456,7 @@ export default function ProviderAdvancesPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           title="Total Advanced"
           value={formatCents(totalAdvanced)}

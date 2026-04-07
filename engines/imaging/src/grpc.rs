@@ -23,6 +23,7 @@ pub use nomarkup::imaging::v1::imaging_service_server::{ImagingService, ImagingS
 use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
+use tracing::{info, warn};
 
 use crate::engine::ImagePipeline;
 use crate::models::{
@@ -55,18 +56,27 @@ impl ImagingService for ImagingServiceImpl {
         let source_key = url_to_key(&req.source_url);
         let opts = proto_options_to_domain(req.options.as_ref())?;
 
-        let (variant, blur_hash) = self
-            .pipeline
-            .process_image(&source_key, &opts)
-            .await
-            .map_err(imaging_error_to_status)?;
-
-        Ok(Response::new(imaging_proto::ProcessImageResponse {
-            result: Some(variant_to_proto(&variant)),
-            blur_hash: blur_hash.unwrap_or_default(),
-            original_width: variant.width as i32,
-            original_height: variant.height as i32,
-        }))
+        match self.pipeline.process_image(&source_key, &opts).await {
+            Ok((variant, blur_hash)) => {
+                info!(
+                    source = %source_key,
+                    width = variant.width,
+                    height = variant.height,
+                    format = ?variant.format,
+                    "grpc process_image completed"
+                );
+                Ok(Response::new(imaging_proto::ProcessImageResponse {
+                    result: Some(variant_to_proto(&variant)),
+                    blur_hash: blur_hash.unwrap_or_default(),
+                    original_width: variant.width as i32,
+                    original_height: variant.height as i32,
+                }))
+            }
+            Err(e) => {
+                warn!(source = %source_key, error = %e, "grpc process_image failed");
+                Err(imaging_error_to_status(e))
+            }
+        }
     }
 
     async fn generate_thumbnail(

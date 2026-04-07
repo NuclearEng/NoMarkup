@@ -144,6 +144,32 @@ export interface StripeOnboardingLinkParams {
   refresh_url: string;
 }
 
+export interface InstantPayoutResponse {
+  payout_id: string;
+  amount_cents: number;
+  estimated_arrival: string;
+}
+
+export function useInstantPayout() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (amountCents: number) =>
+      api.post<InstantPayoutResponse>('/api/v1/payments/instant-payout', {
+        amount_cents: amountCents,
+      }),
+    onSuccess: () => {
+      toast.success('Payout initiated — funds arriving within minutes');
+      void queryClient.invalidateQueries({ queryKey: ['payments'] });
+      void queryClient.invalidateQueries({ queryKey: ['provider-analytics'] });
+      void queryClient.invalidateQueries({ queryKey: ['provider-earnings'] });
+    },
+    onError: () => {
+      toast.error('Instant payout failed — please try again');
+    },
+  });
+}
+
 export function useStripeOnboardingLink(params: StripeOnboardingLinkParams) {
   const searchParams = new URLSearchParams();
   searchParams.set('return_url', params.return_url);
