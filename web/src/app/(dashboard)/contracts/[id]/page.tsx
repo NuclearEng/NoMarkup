@@ -301,7 +301,7 @@ export default function ContractDetailPage() {
             {/* Provider: Start Work */}
             {isProvider && !contract.started_at ? (
               <Button
-                className="min-h-[44px] w-full"
+                className="min-h-[44px] w-full gap-2"
                 onClick={handleStartWork}
                 disabled={startWork.isPending}
               >
@@ -315,7 +315,7 @@ export default function ContractDetailPage() {
             {/* Provider: Mark Complete */}
             {isProvider && contract.started_at ? (
               <Button
-                className="min-h-[44px] w-full"
+                className="min-h-[44px] w-full gap-2"
                 onClick={handleMarkComplete}
                 disabled={markComplete.isPending}
               >
@@ -330,7 +330,7 @@ export default function ContractDetailPage() {
             {isCustomer ? (
               <Button
                 variant="outline"
-                className="min-h-[44px] w-full"
+                className="min-h-[44px] w-full gap-2"
                 onClick={handleApproveCompletion}
                 disabled={approveCompletion.isPending}
               >
@@ -343,7 +343,7 @@ export default function ContractDetailPage() {
 
             {/* Cancel contract */}
             {showCancelConfirm ? (
-              <div className="space-y-3 rounded-lg border p-3">
+              <div className="glass glass-highlight space-y-3 rounded-lg border border-[var(--brand-gold)]/10 p-3">
                 <p className="text-sm">
                   Are you sure you want to cancel this contract? This action cannot be undone.
                 </p>

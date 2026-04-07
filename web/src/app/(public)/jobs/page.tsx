@@ -84,7 +84,7 @@ export default function JobsSearchPage() {
         <h1 className="text-4xl font-extrabold tracking-tight text-zinc-100">
           Find <span className="gold-text">Jobs</span>
         </h1>
-        <p className="mt-2 text-lg text-zinc-400">Browse available jobs and place your bids</p>
+        <p className="mt-2 text-lg text-zinc-300">Browse available jobs and place your bids</p>
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row">
@@ -117,8 +117,8 @@ export default function JobsSearchPage() {
           id="job-filters-panel"
           className={`w-full shrink-0 lg:block lg:w-72 ${filtersOpen ? 'block' : 'hidden'}`}
         >
-          <div className="animate-fade-in sticky top-6 rounded-lg border p-4">
-            <h2 className="text-muted-foreground mb-4 text-sm font-semibold tracking-wide uppercase">
+          <div className="glass glass-highlight animate-fade-in sticky top-6 rounded-xl border border-[var(--brand-gold)]/10 p-4">
+            <h2 className="mb-4 text-sm font-semibold tracking-wide text-zinc-400 uppercase">
               Filters
             </h2>
             <div className="stagger-children">
@@ -215,7 +215,7 @@ export default function JobsSearchPage() {
           ) : (
             <>
               {/* Results count */}
-              <p className="text-muted-foreground mb-4 text-sm">
+              <p className="mb-4 text-sm text-zinc-400">
                 {String(data.pagination?.totalCount ?? 0)} job
                 {(data.pagination?.totalCount ?? 0) !== 1 ? 's' : ''} found
               </p>
@@ -239,11 +239,11 @@ export default function JobsSearchPage() {
                     onClick={() => {
                       setFilters({ ...filters, page: currentPage - 1 });
                     }}
-                    className="min-h-[44px]"
+                    className="min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
                   >
                     Previous
                   </Button>
-                  <span className="text-muted-foreground px-4 text-sm">
+                  <span className="px-4 text-sm text-zinc-400">
                     Page {String(currentPage)} of {String(totalPages)}
                   </span>
                   <Button
@@ -252,7 +252,7 @@ export default function JobsSearchPage() {
                     onClick={() => {
                       setFilters({ ...filters, page: currentPage + 1 });
                     }}
-                    className="min-h-[44px]"
+                    className="min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
                   >
                     Next
                   </Button>

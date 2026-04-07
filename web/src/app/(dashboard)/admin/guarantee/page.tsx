@@ -61,7 +61,7 @@ export default function AdminGuaranteePage() {
       render: (claim) => (
         <Link
           href={`/admin/guarantee/${claim.id}` as Route}
-          className="text-primary font-medium hover:underline"
+          className="text-[var(--brand-gold)] font-medium hover:underline"
         >
           {claim.id.slice(0, 8)}...
         </Link>
@@ -73,7 +73,7 @@ export default function AdminGuaranteePage() {
       render: (claim) => (
         <Link
           href={`/contracts/${claim.contract_id}` as Route}
-          className="text-primary font-mono text-xs hover:underline"
+          className="text-[var(--brand-gold)] font-mono text-xs hover:underline"
         >
           {claim.contract_id.slice(0, 8)}...
         </Link>

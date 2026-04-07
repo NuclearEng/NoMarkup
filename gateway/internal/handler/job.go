@@ -3,25 +3,32 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// viewerWindowSeconds is how long a viewer ping is considered "active".
+const viewerWindowSeconds = 120
+
 // JobHandler handles HTTP endpoints for jobs.
 type JobHandler struct {
 	jobClient jobv1.JobServiceClient
+	cache     *cache.Client
 }
 
 // NewJobHandler creates a new JobHandler.
-func NewJobHandler(jobClient jobv1.JobServiceClient) *JobHandler {
-	return &JobHandler{jobClient: jobClient}
+func NewJobHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client) *JobHandler {
+	return &JobHandler{jobClient: jobClient, cache: cacheClient}
 }
 
 type createJobRequest struct {
@@ -895,4 +902,89 @@ func trimSpace(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+// PingViewer handles POST /api/v1/jobs/{id}/ping-viewer (requires auth).
+// It records the authenticated user as an active viewer in a Redis sorted set,
+// using the current Unix timestamp as the score so stale entries can be pruned.
+func (h *JobHandler) PingViewer(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	jobID := chi.URLParam(r, "id")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job id required")
+		return
+	}
+
+	if h.cache == nil {
+		// Redis unavailable — succeed silently, viewer count will return 0.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	rdb := h.cache.Redis()
+	if rdb == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	now := time.Now()
+	key := fmt.Sprintf("job:viewers:%s", jobID)
+	userID := claims.UserID
+
+	pipe := rdb.Pipeline()
+	// Add or refresh the viewer entry with score = current Unix timestamp.
+	pipe.ZAdd(r.Context(), key, redis.Z{
+		Score:  float64(now.Unix()),
+		Member: userID,
+	})
+	// Remove viewers whose last ping is older than the active window.
+	cutoff := float64(now.Unix() - viewerWindowSeconds)
+	pipe.ZRemRangeByScore(r.Context(), key, "-inf", fmt.Sprintf("%f", cutoff))
+	// Auto-expire the key to avoid lingering empty sets.
+	pipe.Expire(r.Context(), key, time.Duration(viewerWindowSeconds*2)*time.Second)
+
+	if _, err := pipe.Exec(r.Context()); err != nil {
+		slog.Warn("ping-viewer: redis pipeline error", "job_id", jobID, "error", err)
+		// Non-fatal: still return 204 so the client does not see an error.
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetViewerCount handles GET /api/v1/jobs/{id}/viewer-count (public).
+// It counts members of the sorted set whose score is within the active window.
+func (h *JobHandler) GetViewerCount(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "id")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job id required")
+		return
+	}
+
+	if h.cache == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"count": 0})
+		return
+	}
+
+	rdb := h.cache.Redis()
+	if rdb == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"count": 0})
+		return
+	}
+
+	key := fmt.Sprintf("job:viewers:%s", jobID)
+	cutoff := float64(time.Now().Unix() - viewerWindowSeconds)
+
+	count, err := rdb.ZCount(r.Context(), key, fmt.Sprintf("%f", cutoff), "+inf").Result()
+	if err != nil {
+		slog.Warn("get-viewer-count: redis ZCount error", "job_id", jobID, "error", err)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"count": 0})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"count": count})
 }

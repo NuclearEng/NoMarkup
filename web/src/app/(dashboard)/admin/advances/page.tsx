@@ -186,6 +186,7 @@ export default function AdminAdvancesPage() {
 
   if (isError) {
     return (
+      <PageTransition>
       <div className="space-y-6">
         <h1 className="gold-text text-2xl font-bold tracking-tight">Working Capital Advances</h1>
         <EmptyState
@@ -194,6 +195,7 @@ export default function AdminAdvancesPage() {
           description="Please try refreshing the page."
         />
       </div>
+      </PageTransition>
     );
   }
 

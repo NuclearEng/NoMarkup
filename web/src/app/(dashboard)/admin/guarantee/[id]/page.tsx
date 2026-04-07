@@ -33,7 +33,7 @@ export default function AdminGuaranteeClaimDetailPage() {
           </div>
           <Skeleton className="h-6 w-24" />
         </div>
-        <div className="space-y-4 rounded-lg border p-6">
+        <div className="glass glass-highlight space-y-4 rounded-lg border border-[var(--brand-gold)]/10 p-6">
           <Skeleton className="h-5 w-28" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3, 4, 5].map((i) => (
@@ -46,7 +46,7 @@ export default function AdminGuaranteeClaimDetailPage() {
           <Skeleton variant="text" className="mt-2 h-3 w-20" />
           <Skeleton className="h-16 w-full" />
         </div>
-        <div className="space-y-4 rounded-lg border p-6">
+        <div className="glass glass-highlight space-y-4 rounded-lg border border-[var(--brand-gold)]/10 p-6">
           <Skeleton className="h-5 w-36" />
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-10 w-full" />
@@ -73,7 +73,7 @@ export default function AdminGuaranteeClaimDetailPage() {
           icon={<AnimatedIllustration type="error" size="sm" />}
           title="Failed to load guarantee claim"
           description="Something went wrong loading claim details."
-          className="glass border-destructive/30"
+          className="glass glass-highlight border border-red-500/30"
         />
       </div>
     );

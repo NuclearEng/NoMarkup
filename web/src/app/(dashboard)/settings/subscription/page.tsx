@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Download } from 'lucide-react';
+import { AlertTriangle, CreditCard, Download } from 'lucide-react';
 import { useState } from 'react';
 
 import { SubscriptionTierCard } from '@/components/payments/SubscriptionTierCard';
@@ -167,7 +167,7 @@ export default function SubscriptionPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Subscription</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Subscription</h1>
         <p className="mt-1 text-zinc-300">
           Manage your plan, view usage, and billing history.
         </p>
@@ -234,6 +234,9 @@ export default function SubscriptionPage() {
       ) : (
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex flex-col items-center justify-center py-12">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-gold)]/10 border border-[var(--brand-gold)]/20">
+              <CreditCard className="h-6 w-6 text-[var(--brand-gold)]" aria-hidden="true" />
+            </div>
             <p className="text-lg font-medium">No active subscription</p>
             <p className="mt-1 text-sm text-zinc-300">
               Choose a plan below to get started.
@@ -286,7 +289,7 @@ export default function SubscriptionPage() {
                 value={billingInterval}
                 onValueChange={(val) => { setBillingInterval(val as BillingInterval); }}
               >
-                <TabsList>
+                <TabsList className="glass glass-highlight">
                   <TabsTrigger value={BILLING_INTERVAL.MONTHLY} className="min-h-[44px]">
                     Monthly
                   </TabsTrigger>
@@ -353,7 +356,7 @@ export default function SubscriptionPage() {
             </div>
           ) : null}
           {changeTier.isSuccess ? (
-            <div className="rounded-lg border bg-emerald-50 p-3 text-sm text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+            <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg p-3 text-sm">
               Plan changed successfully.
             </div>
           ) : null}
@@ -379,7 +382,7 @@ export default function SubscriptionPage() {
               {invoices.map((invoice) => (
                 <div
                   key={invoice.id}
-                  className="flex min-h-[44px] flex-col gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center sm:gap-4"
+                  className="flex min-h-[44px] flex-col gap-2 rounded-md border border-white/5 px-3 py-2 sm:flex-row sm:items-center sm:gap-4 hover:bg-white/[0.04] transition-colors"
                 >
                   <div className="flex-1 text-sm">
                     {new Date(invoice.period_start).toLocaleDateString('en-US', {
@@ -468,7 +471,7 @@ export default function SubscriptionPage() {
                   </label>
                   <textarea
                     id="cancel-reason"
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring dark:bg-white/[0.03] dark:border-white/10 dark:text-white dark:placeholder:text-white/30"
                     rows={3}
                     value={cancelReason}
                     onChange={(e) => { setCancelReason(e.target.value); }}

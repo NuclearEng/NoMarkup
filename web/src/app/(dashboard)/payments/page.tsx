@@ -7,7 +7,6 @@ import { useState } from 'react';
 import { PaymentHistory } from '@/components/payments/PaymentHistory';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
@@ -82,8 +81,8 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
     };
 
     return (
-      <div className="bg-muted/50 flex flex-col items-center justify-center rounded-lg border py-12">
-        <CreditCard className="text-zinc-300 h-12 w-12" aria-hidden="true" />
+      <div className="glass glass-highlight flex flex-col items-center justify-center rounded-lg border border-[var(--brand-gold)]/10 py-12">
+        <CreditCard className="text-white/50 h-12 w-12" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No payments</p>
         <p className="text-zinc-300 mt-1 text-sm">{emptyMessages[tab]}</p>
         <Button asChild className="mt-4 min-h-[44px]">
@@ -141,7 +140,7 @@ export default function PaymentsPage() {
       </div>
 
       <Tabs defaultValue="all">
-        <TabsList>
+        <TabsList className="glass glass-highlight">
           <TabsTrigger value="all" className="min-h-[44px]">
             All
           </TabsTrigger>

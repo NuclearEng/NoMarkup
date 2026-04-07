@@ -56,28 +56,28 @@ function SummaryCards() {
       title: 'Open Alerts',
       value: openLoading ? null : String(openCount),
       description: 'Alerts awaiting review',
-      accentClass: openCount > 0 ? 'text-blue-600' : 'text-foreground',
+      accentClass: openCount > 0 ? 'text-blue-400' : 'text-white',
       loading: openLoading,
     },
     {
       title: 'Critical Alerts',
       value: criticalLoading ? null : String(criticalCount),
       description: 'High-priority open alerts',
-      accentClass: criticalCount > 0 ? 'text-red-600' : 'text-foreground',
+      accentClass: criticalCount > 0 ? 'text-red-400' : 'text-white',
       loading: criticalLoading,
     },
     {
       title: 'Open Signals',
       value: openLoading ? null : String(totalSignals),
       description: 'Signals in open alerts',
-      accentClass: 'text-foreground',
+      accentClass: 'text-white',
       loading: openLoading,
     },
     {
       title: 'False Positive Rate',
       value: resolvedLoading || dismissedLoading ? null : `${falsePositiveRate}%`,
       description: 'Dismissed / total resolved',
-      accentClass: 'text-foreground',
+      accentClass: 'text-white',
       loading: resolvedLoading || dismissedLoading,
     },
   ];
@@ -85,7 +85,7 @@ function SummaryCards() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {cards.map((card) => (
-        <Card key={card.title}>
+        <Card key={card.title} className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-zinc-300">
               {card.title}
@@ -121,7 +121,7 @@ export default function AdminFraudPage() {
       <SummaryCards />
 
       <div>
-        <h2 className="mb-4 text-lg font-semibold">Fraud Alerts</h2>
+        <h2 className="mb-4 text-lg font-bold text-white">Fraud Alerts</h2>
         <FraudAlertList />
       </div>
     </div>

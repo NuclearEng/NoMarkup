@@ -225,7 +225,7 @@ function ProviderAnalyticsView() {
       {analytics && analytics.category_breakdown.length > 0 ? (
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-lg">Category Breakdown</CardTitle>
+            <CardTitle className="gold-text text-lg">Category Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
@@ -242,7 +242,7 @@ function ProviderAnalyticsView() {
               {analytics.category_breakdown.map((cat) => (
                 <div
                   key={cat.category_id}
-                  className="hover:bg-muted/50 flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 sm:flex-row sm:items-center sm:gap-4"
+                  className="hover:bg-white/[0.04] flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 sm:flex-row sm:items-center sm:gap-4"
                 >
                   <div className="flex-1 text-sm font-medium">{cat.category_name}</div>
                   <div className="w-20 text-right text-sm tabular-nums">
@@ -357,7 +357,7 @@ function CustomerAnalyticsView() {
           {spending.data_points.length > 0 ? (
             <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader>
-                <CardTitle className="text-lg">Spending Over Time</CardTitle>
+                <CardTitle className="gold-text text-lg">Spending Over Time</CardTitle>
               </CardHeader>
               <CardContent>
                 {/* Bar chart using CSS */}
@@ -427,7 +427,7 @@ function CustomerAnalyticsView() {
           {spending.category_breakdown.length > 0 ? (
             <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader>
-                <CardTitle className="text-lg">Spending by Category</CardTitle>
+                <CardTitle className="gold-text text-lg">Spending by Category</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-1">
@@ -443,7 +443,7 @@ function CustomerAnalyticsView() {
                   {spending.category_breakdown.map((cat) => (
                     <div
                       key={cat.category_id}
-                      className="hover:bg-muted/50 flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 sm:flex-row sm:items-center sm:gap-4"
+                      className="hover:bg-white/[0.04] flex min-h-[44px] flex-col gap-1 rounded-md px-2 py-2 sm:flex-row sm:items-center sm:gap-4"
                     >
                       <div className="flex-1 text-sm font-medium">{cat.category_name}</div>
                       <div className="w-20 text-right text-sm tabular-nums">

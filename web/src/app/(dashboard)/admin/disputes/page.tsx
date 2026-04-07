@@ -58,7 +58,7 @@ export default function AdminDisputesPage() {
       render: (dispute) => (
         <Link
           href={`/admin/disputes/${dispute.id}` as Route}
-          className="font-medium text-primary hover:underline"
+          className="font-medium text-[var(--brand-gold)] hover:underline"
         >
           {dispute.id.slice(0, 8)}...
         </Link>

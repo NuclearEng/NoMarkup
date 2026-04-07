@@ -81,7 +81,9 @@ export default function ReviewPage() {
       {eligibility.already_reviewed ? (
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <CheckCircle className="h-12 w-12 text-green-500" aria-hidden="true" />
+            <div className="flex items-center justify-center rounded-full bg-emerald-500/10 p-4">
+              <CheckCircle className="h-10 w-10 text-emerald-400" aria-hidden="true" />
+            </div>
             <p className="mt-4 text-lg font-medium">Already Reviewed</p>
             <p className="mt-1 text-sm text-zinc-300">
               You have already submitted a review for this contract.

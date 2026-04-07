@@ -94,7 +94,7 @@ export function Header() {
         {/* Mobile hamburger */}
         <button
           type="button"
-          className="flex min-h-[44px] min-w-[44px] items-center justify-center md:hidden"
+          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070b14] md:hidden"
           onClick={() => {
             setMobileMenuOpen((prev) => !prev);
           }}
@@ -125,7 +125,7 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav id="mobile-menu" className="glass-elevated border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
+        <nav id="mobile-menu" className="glass-elevated animate-fade-in rounded-none border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
           <div className="flex flex-col gap-3">
             {isHydrating ? null : isAuthenticated ? (
               <>
@@ -213,15 +213,16 @@ export function Header() {
                 <Link
                   href="/demo/auction"
                   className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/20 hover:text-amber-300"
+                  onClick={() => { setMobileMenuOpen(false); }}
                 >
                   <Zap className="h-3.5 w-3.5" aria-hidden="true" />
                   Live Demo
                 </Link>
                 <Button variant="outline" className="min-h-[44px] w-full" asChild>
-                  <Link href="/login">Sign in</Link>
+                  <Link href="/login" onClick={() => { setMobileMenuOpen(false); }}>Sign in</Link>
                 </Button>
                 <Button className="min-h-[44px] w-full" asChild>
-                  <Link href="/register">Get started</Link>
+                  <Link href="/register" onClick={() => { setMobileMenuOpen(false); }}>Get started</Link>
                 </Button>
               </>
             )}

@@ -6,7 +6,6 @@ import { useState } from 'react';
 import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { useSearchProviders } from '@/hooks/useProviders';
@@ -63,35 +62,35 @@ function ErrorIllustration() {
 
 function ProviderCardSkeleton() {
   return (
-    <div className="animate-pulse rounded-xl border p-5">
+    <div className="glass glass-highlight animate-pulse rounded-xl border border-[var(--brand-gold)]/10 p-5">
       {/* Avatar + name row */}
       <div className="mb-3 flex items-start gap-3">
-        <div className="bg-muted h-12 w-12 shrink-0 rounded-full" />
+        <div className="h-12 w-12 shrink-0 rounded-full bg-white/[0.06]" />
         <div className="min-w-0 flex-1 space-y-2">
-          <div className="bg-muted h-4 w-3/4 rounded" />
-          <div className="bg-muted h-3 w-1/2 rounded" />
+          <div className="h-4 w-3/4 rounded bg-white/[0.06]" />
+          <div className="h-3 w-1/2 rounded bg-white/[0.04]" />
         </div>
-        <div className="bg-muted h-5 w-16 rounded-full" />
+        <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
       </div>
       {/* Bio lines */}
       <div className="mb-3 space-y-2">
-        <div className="bg-muted h-3 w-full rounded" />
-        <div className="bg-muted h-3 w-4/5 rounded" />
+        <div className="h-3 w-full rounded bg-white/[0.04]" />
+        <div className="h-3 w-4/5 rounded bg-white/[0.04]" />
       </div>
       {/* Rating + trust badge */}
       <div className="mb-3 flex items-center gap-4">
-        <div className="bg-muted h-4 w-20 rounded" />
-        <div className="bg-muted h-5 w-14 rounded-full" />
+        <div className="h-4 w-20 rounded bg-white/[0.06]" />
+        <div className="h-5 w-14 rounded-full bg-white/[0.06]" />
       </div>
       {/* Category badges */}
       <div className="flex gap-1">
-        <div className="bg-muted h-5 w-16 rounded-full" />
-        <div className="bg-muted h-5 w-20 rounded-full" />
-        <div className="bg-muted h-5 w-14 rounded-full" />
+        <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
+        <div className="h-5 w-20 rounded-full bg-white/[0.06]" />
+        <div className="h-5 w-14 rounded-full bg-white/[0.06]" />
       </div>
       {/* Jobs completed */}
       <div className="mt-3">
-        <div className="bg-muted h-3 w-28 rounded" />
+        <div className="h-3 w-28 rounded bg-white/[0.04]" />
       </div>
     </div>
   );
@@ -116,8 +115,10 @@ export default function ProvidersPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="animate-fade-in-up mb-8">
-        <h1 className="text-4xl font-extrabold tracking-tight">Find Providers</h1>
-        <p className="text-muted-foreground mt-2 text-lg">
+        <h1 className="text-4xl font-extrabold tracking-tight text-zinc-100">
+          Find <span className="gold-text">Providers</span>
+        </h1>
+        <p className="mt-2 text-lg text-zinc-300">
           Browse verified service providers in your area
         </p>
       </div>
@@ -133,9 +134,9 @@ export default function ProvidersPage() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') handleSearch();
           }}
-          className="max-w-md"
+          className="glass-input max-w-md min-h-[44px] text-zinc-200 placeholder:text-zinc-500"
         />
-        <Button onClick={handleSearch} className="min-h-[44px]">
+        <Button onClick={handleSearch} className="glass-cta-gold min-h-[44px] rounded-xl px-5 text-sm font-semibold">
           Search
         </Button>
       </div>
@@ -192,7 +193,7 @@ export default function ProvidersPage() {
           />
         ) : (
           <>
-            <p className="text-muted-foreground mb-4 text-sm">
+            <p className="mb-4 text-sm text-zinc-400">
               {String(data.pagination.totalCount)} provider
               {data.pagination.totalCount !== 1 ? 's' : ''} found
             </p>
@@ -200,77 +201,76 @@ export default function ProvidersPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {data.providers.map((provider) => (
                 <Link key={provider.id} href={`/providers/${provider.id}`} className="block">
-                  <Card className="h-full transition-shadow hover:shadow-md">
-                    <CardContent className="p-5">
-                      <div className="mb-3 flex items-start gap-3">
-                        <div className="bg-muted flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold">
-                          {(provider.business_name ?? provider.display_name)
-                            .charAt(0)
-                            .toUpperCase()}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold">
-                            {provider.business_name ?? provider.display_name}
-                          </p>
-                          {provider.business_name ? (
-                            <p className="text-muted-foreground truncate text-sm">
-                              {provider.display_name}
-                            </p>
-                          ) : null}
-                        </div>
-                        {provider.verified ? (
-                          <Badge variant="default" className="shrink-0 text-xs">
-                            Verified
-                          </Badge>
-                        ) : null}
+                  <div className="glass glass-highlight glass-interactive h-full rounded-xl border border-[var(--brand-gold)]/10 p-5">
+                    <div className="mb-3 flex items-start gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--brand-gold)]/10 text-lg font-semibold text-[var(--brand-gold)]">
+                        {(provider.business_name ?? provider.display_name)
+                          .charAt(0)
+                          .toUpperCase()}
                       </div>
-
-                      {provider.bio ? (
-                        <p className="text-muted-foreground mb-3 line-clamp-2 text-sm">
-                          {provider.bio}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-zinc-100">
+                          {provider.business_name ?? provider.display_name}
                         </p>
+                        {provider.business_name ? (
+                          <p className="truncate text-sm text-zinc-400">
+                            {provider.display_name}
+                          </p>
+                        ) : null}
+                      </div>
+                      {provider.verified ? (
+                        <Badge variant="default" className="shrink-0 border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-xs text-[var(--brand-gold)]">
+                          Verified
+                        </Badge>
                       ) : null}
+                    </div>
 
-                      <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
-                        {provider.review_summary ? (
-                          <span className="font-medium">
-                            {provider.review_summary.average_rating.toFixed(1)} stars
-                            <span className="text-muted-foreground ml-1">
-                              ({String(provider.review_summary.review_count)})
-                            </span>
+                    {provider.bio ? (
+                      <p className="mb-3 line-clamp-2 text-sm text-zinc-400">
+                        {provider.bio}
+                      </p>
+                    ) : null}
+
+                    <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
+                      {provider.review_summary ? (
+                        <span className="font-medium text-zinc-200">
+                          {provider.review_summary.average_rating.toFixed(1)} stars
+                          <span className="ml-1 text-zinc-500">
+                            ({String(provider.review_summary.review_count)})
                           </span>
-                        ) : null}
-                        {provider.trust_score ? (
-                          <Badge variant="outline" className="text-xs">
-                            {provider.trust_score.tier.replace('_', ' ')}
-                          </Badge>
-                        ) : null}
-                      </div>
-
-                      {provider.response_time_label ? (
-                        <div className="mb-3">
-                          <ResponseTimeBadge label={provider.response_time_label} />
-                        </div>
+                        </span>
                       ) : null}
+                      {provider.trust_score ? (
+                        <Badge variant="outline" className="border-[var(--brand-gold)]/20 text-xs text-zinc-300">
+                          {provider.trust_score.tier.replace('_', ' ')}
+                        </Badge>
+                      ) : null}
+                    </div>
 
-                      <div className="flex flex-wrap gap-1">
-                        {(provider.service_categories ?? []).slice(0, 3).map((cat) => (
-                          <Badge key={cat.id} variant="secondary" className="text-xs">
-                            {cat.name}
-                          </Badge>
-                        ))}
-                        {(provider.service_categories ?? []).length > 3 ? (
-                          <Badge variant="secondary" className="text-xs">
-                            +{String(provider.service_categories.length - 3)} more
-                          </Badge>
-                        ) : null}
+                    {provider.response_time_label ? (
+                      <div className="mb-3">
+                        <ResponseTimeBadge label={provider.response_time_label} />
                       </div>
+                    ) : null}
 
-                      <div className="text-muted-foreground mt-3 text-xs">
-                        {String(provider.jobs_completed)} jobs completed
-                      </div>
-                    </CardContent>
-                  </Card>
+                    <div className="flex flex-wrap gap-1">
+                      {(provider.service_categories ?? []).slice(0, 3).map((cat) => (
+                        <Badge key={cat.id} variant="secondary" className="border-white/10 bg-white/[0.06] text-xs text-zinc-300">
+                          {cat.name}
+                        </Badge>
+                      ))}
+                      {(provider.service_categories ?? []).length > 3 ? (
+                        <Badge variant="secondary" className="border-white/10 bg-white/[0.06] text-xs text-zinc-400">
+                          +{String(provider.service_categories.length - 3)} more
+                        </Badge>
+                      ) : null}
+                    </div>
+
+                    <div className="glass-divider mt-3 mb-2" />
+                    <div className="text-xs text-zinc-500">
+                      {String(provider.jobs_completed)} jobs completed
+                    </div>
+                  </div>
                 </Link>
               ))}
             </div>
@@ -287,11 +287,11 @@ export default function ProvidersPage() {
                   onClick={() => {
                     setFilters({ ...filters, page: currentPage - 1 });
                   }}
-                  className="min-h-[44px]"
+                  className="min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
                 >
                   Previous
                 </Button>
-                <span className="text-muted-foreground px-4 text-sm">
+                <span className="px-4 text-sm text-zinc-400">
                   Page {String(currentPage)} of {String(totalPages)}
                 </span>
                 <Button
@@ -300,7 +300,7 @@ export default function ProvidersPage() {
                   onClick={() => {
                     setFilters({ ...filters, page: currentPage + 1 });
                   }}
-                  className="min-h-[44px]"
+                  className="min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
                 >
                   Next
                 </Button>

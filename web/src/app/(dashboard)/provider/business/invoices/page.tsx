@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { InvoiceTemplate } from '@/components/providers/InvoiceTemplate';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
@@ -44,11 +45,11 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
   }
 
   return (
-    <div className="border-b last:border-0">
+    <div className="border-b border-white/5 last:border-0">
       <button
         type="button"
         onClick={() => { setExpanded(!expanded); }}
-        className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-muted/50 min-h-[44px]"
+        className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-white/[0.04] min-h-[44px]"
         aria-expanded={expanded}
       >
         <div className="flex items-center gap-4">
@@ -75,7 +76,7 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
       </button>
 
       {expanded ? (
-        <div className="border-t bg-muted/20 p-4">
+        <div className="border-t border-white/5 bg-white/[0.02] p-4">
           <div className="mb-4 flex justify-end gap-2 no-print">
             <Button
               variant="outline"
@@ -96,7 +97,7 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
                 href={downloadUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted/50"
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/[0.06]"
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Download PDF
@@ -113,9 +114,9 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
             </Button>
           </div>
           {generateInvoice.isError ? (
-            <p className="mb-3 text-sm text-destructive">
+            <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
               Failed to generate invoice. Please try again.
-            </p>
+            </div>
           ) : null}
           <InvoiceTemplate
             contract={contract}
@@ -142,6 +143,7 @@ export default function InvoicesPage() {
   const providerAddress = profile?.serviceAddress ?? undefined;
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link
@@ -154,14 +156,14 @@ export default function InvoicesPage() {
       </div>
 
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Invoices</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Invoices</h1>
         <p className="mt-1 text-zinc-300">
           View and print invoices for your completed contracts.
         </p>
       </div>
 
       {isLoading ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="space-y-3 pt-6">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={`skel-inv-${String(i)}`} className="h-16 w-full" />
@@ -169,7 +171,7 @@ export default function InvoicesPage() {
           </CardContent>
         </Card>
       ) : contracts.length === 0 ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="py-12 text-center">
             <p className="text-sm text-zinc-300">
               No completed contracts found. Invoices will appear here after you complete jobs.
@@ -177,9 +179,9 @@ export default function InvoicesPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-base">
+            <CardTitle className="gold-text text-base">
               Completed Contracts ({String(contracts.length)})
             </CardTitle>
           </CardHeader>
@@ -196,5 +198,6 @@ export default function InvoicesPage() {
         </Card>
       )}
     </div>
+    </PageTransition>
   );
 }

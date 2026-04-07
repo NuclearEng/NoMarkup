@@ -83,7 +83,7 @@ export default function MessagesPage() {
         </div>
       </div>
 
-      <div className="glass flex min-h-0 flex-1 overflow-hidden rounded-xl border">
+      <div className="glass glass-highlight flex min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--brand-gold)]/10">
         {/* Desktop: side-by-side layout */}
         {/* Mobile: show either channel list or thread */}
 
@@ -104,7 +104,7 @@ export default function MessagesPage() {
           {activeChannelId ? (
             <div className="flex h-full flex-col">
               {/* Mobile back button */}
-              <div className="flex items-center border-b p-2 md:hidden">
+              <div className="flex items-center border-b border-white/[0.06] p-2 md:hidden">
                 <Button
                   variant="ghost"
                   size="sm"

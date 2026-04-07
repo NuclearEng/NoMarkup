@@ -220,7 +220,7 @@ func main() {
 	userHandler := handler.NewUserHandler(userClient, dbPool)
 	providerHandler := handler.NewProviderHandler(userClient, dbPool)
 	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)
-	jobHandler := handler.NewJobHandler(jobClient)
+	jobHandler := handler.NewJobHandler(jobClient, cacheClient)
 	bidHandler := handler.NewBidHandler(bidClient)
 	contractHandler := handler.NewContractHandler(contractClient)
 
@@ -273,6 +273,9 @@ func main() {
 	challengeHandler := handler.NewChallengeHandler(dbPool)
 	installmentHandler := handler.NewInstallmentHandler(installmentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
+	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
+	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, cacheClient)
+	disputeHandler := handler.NewDisputeHandler(cacheClient)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
@@ -295,6 +298,9 @@ func main() {
 		challengeHandler,
 		installmentHandler,
 		insuranceHandler,
+		workspaceHandler,
+		instantMatchHandler,
+		disputeHandler,
 	)
 
 	srv := &http.Server{

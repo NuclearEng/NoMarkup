@@ -103,7 +103,7 @@ export default function ProviderBusinessPage() {
                   <link.icon className="h-5 w-5 text-primary" aria-hidden="true" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">{link.title}</CardTitle>
+                  <CardTitle className="gold-text text-base">{link.title}</CardTitle>
                 </div>
               </CardHeader>
               <CardContent>

@@ -94,7 +94,7 @@ export default function ProviderOnboardingPage() {
         </p>
       </div>
 
-      <Progress value={progress} className="h-2" aria-label="Onboarding progress" />
+      <Progress value={progress} className="h-2 [&>div]:bg-[var(--brand-gold)]/70" aria-label="Onboarding progress" />
 
       {/* Step indicators */}
       <nav aria-label="Onboarding steps" className="flex gap-2 overflow-x-auto pb-2">
@@ -107,8 +107,8 @@ export default function ProviderOnboardingPage() {
               idx === step
                 ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
                 : idx < step
-                  ? 'bg-muted text-foreground'
-                  : 'text-zinc-300'
+                  ? 'bg-white/[0.08] text-zinc-200'
+                  : 'text-zinc-400'
             }`}
             aria-current={idx === step ? 'step' : undefined}
           >
@@ -119,7 +119,7 @@ export default function ProviderOnboardingPage() {
 
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle>{currentStep?.title}</CardTitle>
+          <CardTitle className="gold-text">{currentStep?.title}</CardTitle>
           <CardDescription>{currentStep?.description}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -217,8 +217,8 @@ function BusinessInfoStep({ onNext }: { onNext: () => void }) {
         />
 
         {/* Business Identity */}
-        <div className="border-t pt-6">
-          <h3 className="mb-4 text-sm font-semibold">Business Identity (Optional)</h3>
+        <div className="border-t border-[var(--brand-gold)]/10 pt-6">
+          <h3 className="mb-4 text-sm font-semibold text-zinc-200">Business Identity (Optional)</h3>
 
           <div className="space-y-4">
             <FormField
@@ -414,7 +414,7 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
           </p>
         </div>
       ) : (
-        <div className="relative flex items-center justify-center rounded-md border bg-muted/30 p-8">
+        <div className="relative flex items-center justify-center rounded-md border border-[var(--brand-gold)]/10 bg-white/[0.04] p-8">
           <div className="relative">
             <div
               className="flex items-center justify-center rounded-full border-2 border-dashed border-primary/30 bg-primary/5"
@@ -532,7 +532,7 @@ function GlobalTermsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
         {paymentTiming === 'milestone' ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Milestone Templates</h3>
+              <h3 className="text-sm font-medium text-zinc-200">Milestone Templates</h3>
               <Button
                 type="button"
                 variant="outline"
@@ -1051,12 +1051,12 @@ function DocumentUploadField({
           </p>
         </div>
         {document ? (
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" aria-label="Uploaded" />
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" aria-label="Uploaded" />
         ) : null}
       </div>
 
       {document ? (
-        <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-3">
+        <div className="flex items-center gap-3 rounded-md border border-[var(--brand-gold)]/10 bg-white/[0.04] p-3">
           <FileText className="h-8 w-8 shrink-0 text-zinc-300" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{document.name}</p>
@@ -1085,8 +1085,8 @@ function DocumentUploadField({
             'flex min-h-[80px] cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-4 py-4 transition-colors',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             isDragging
-              ? 'border-primary bg-primary/5'
-              : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50',
+              ? 'border-[var(--brand-gold)]/40 bg-[var(--brand-gold)]/5'
+              : 'border-white/10 hover:border-[var(--brand-gold)]/30 hover:bg-white/[0.04]',
           )}
           onDragOver={handleDragOver}
           onDragEnter={handleDragEnter}

@@ -30,26 +30,26 @@ function CategoryNode({
       <button
         type="button"
         onClick={() => { setExpanded(!expanded); }}
-        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-muted/50"
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-white/[0.04]"
         style={{ paddingLeft: `${String(depth * 24 + 12)}px` }}
         aria-expanded={hasChildren ? expanded : undefined}
       >
         {hasChildren ? (
           expanded ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-white/40" aria-hidden="true" />
           ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-white/40" aria-hidden="true" />
           )
         ) : (
           <span className="w-4 shrink-0" />
         )}
-        <LevelIcon className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+        <LevelIcon className="h-4 w-4 shrink-0 text-white/40" aria-hidden="true" />
         <span className="flex-1 truncate text-sm font-medium">{category.name}</span>
         <Badge variant="outline" className="text-[10px]">
           {levelLabel}
         </Badge>
         {category.description ? (
-          <span className="hidden max-w-[200px] truncate text-xs text-zinc-300 lg:inline">
+          <span className="hidden max-w-[200px] truncate text-xs text-white/40 lg:inline">
             {category.description}
           </span>
         ) : null}
@@ -100,45 +100,45 @@ export default function AdminTaxonomyPage() {
 
       {/* Summary */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex items-center gap-3 p-4">
-            <FolderTree className="h-8 w-8 text-zinc-300" aria-hidden="true" />
+            <FolderTree className="h-8 w-8 text-white/50" aria-hidden="true" />
             <div>
-              <div className="text-2xl font-bold tabular-nums">
+              <div className="text-2xl font-bold tabular-nums text-white">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalCategories)}
               </div>
-              <p className="text-xs text-zinc-300">Categories</p>
+              <p className="text-xs text-white/50">Categories</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex items-center gap-3 p-4">
-            <Layers className="h-8 w-8 text-zinc-300" aria-hidden="true" />
+            <Layers className="h-8 w-8 text-white/50" aria-hidden="true" />
             <div>
-              <div className="text-2xl font-bold tabular-nums">
+              <div className="text-2xl font-bold tabular-nums text-white">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalSubcategories)}
               </div>
-              <p className="text-xs text-zinc-300">Subcategories</p>
+              <p className="text-xs text-white/50">Subcategories</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardContent className="flex items-center gap-3 p-4">
-            <Tag className="h-8 w-8 text-zinc-300" aria-hidden="true" />
+            <Tag className="h-8 w-8 text-white/50" aria-hidden="true" />
             <div>
-              <div className="text-2xl font-bold tabular-nums">
+              <div className="text-2xl font-bold tabular-nums text-white">
                 {isLoading ? <Skeleton className="h-8 w-12 inline-block" /> : String(totalServiceTypes)}
               </div>
-              <p className="text-xs text-zinc-300">Service Types</p>
+              <p className="text-xs text-white/50">Service Types</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Category tree */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-base">Category Tree</CardTitle>
+          <CardTitle className="gold-text text-base">Category Tree</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -148,19 +148,19 @@ export default function AdminTaxonomyPage() {
               ))}
             </div>
           ) : isError ? (
-            <div className="rounded-lg border border-destructive/50 p-8 text-center">
+            <div className="py-12 text-center rounded-lg border border-destructive/50">
               <p className="text-sm text-destructive">
                 Failed to load categories. Please try refreshing.
               </p>
             </div>
           ) : !categories || categories.length === 0 ? (
-            <div className="rounded-lg border p-8 text-center">
-              <p className="text-sm text-zinc-300">
+            <div className="py-12 text-center rounded-lg border border-white/[0.06]">
+              <p className="text-sm text-white/50">
                 No categories found. Create your first category to get started.
               </p>
             </div>
           ) : (
-            <div className="rounded-md border" role="tree" aria-label="Service categories">
+            <div className="rounded-md border border-white/[0.06]" role="tree" aria-label="Service categories">
               {categories.map((category) => (
                 <CategoryNode
                   key={category.id}

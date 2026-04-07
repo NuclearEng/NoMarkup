@@ -4,6 +4,8 @@ import { ArrowLeft, Download, FileText, Loader2, TrendingUp } from 'lucide-react
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { PageTransition } from '@/components/ui/page-transition';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -60,6 +62,7 @@ export default function TaxCenterPage() {
   const yearOptions = Array.from({ length: 3 }, (_, i) => currentYear - i);
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -83,7 +86,7 @@ export default function TaxCenterPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tax Center</h1>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Tax Center</h1>
           <p className="mt-1 text-zinc-300">
             Track earnings and estimate tax obligations.
           </p>
@@ -111,9 +114,9 @@ export default function TaxCenterPage() {
       ) : (
         <>
           {/* YTD Earnings */}
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader>
-              <CardTitle className="text-base">
+              <CardTitle className="gold-text text-base">
                 {taxYear} Earnings Summary
               </CardTitle>
             </CardHeader>
@@ -145,9 +148,9 @@ export default function TaxCenterPage() {
           </Card>
 
           {/* 1099 Threshold */}
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">1099-NEC Threshold</CardTitle>
+              <CardTitle className="gold-text text-base">1099-NEC Threshold</CardTitle>
               <Badge variant={will1099 ? 'default' : 'secondary'}>
                 {will1099 ? 'Will Receive 1099' : 'Below Threshold'}
               </Badge>
@@ -176,11 +179,11 @@ export default function TaxCenterPage() {
           </Card>
 
           {/* Quarterly Tax Estimates */}
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader>
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-zinc-300" aria-hidden="true" />
-                <CardTitle className="text-base">Quarterly Tax Estimates</CardTitle>
+                <CardTitle className="gold-text text-base">Quarterly Tax Estimates</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -210,7 +213,7 @@ export default function TaxCenterPage() {
                   {formatCents(quarterlyTotal)}
                 </span>
               </div>
-              <p className="text-xs text-zinc-300">
+              <p className="text-xs text-white/50">
                 Quarterly due dates: Apr 15, Jun 15, Sep 15, Jan 15 (following year)
               </p>
             </CardContent>
@@ -218,9 +221,9 @@ export default function TaxCenterPage() {
 
           {/* Quarterly breakdown */}
           {earnings?.data_points && earnings.data_points.length > 0 ? (
-            <Card>
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardHeader>
-                <CardTitle className="text-base">Quarterly Breakdown</CardTitle>
+                <CardTitle className="gold-text text-base">Quarterly Breakdown</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
@@ -248,9 +251,9 @@ export default function TaxCenterPage() {
           ) : null}
 
           {/* Generate 1099-NEC */}
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">1099-NEC Tax Forms</CardTitle>
+              <CardTitle className="gold-text text-base">1099-NEC Tax Forms</CardTitle>
               <Button
                 variant="outline"
                 className="min-h-[44px] gap-2"
@@ -269,9 +272,9 @@ export default function TaxCenterPage() {
             </CardHeader>
             <CardContent>
               {generateTaxForm.isError ? (
-                <p className="mb-3 text-sm text-destructive">
+                <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                   Failed to generate tax form. Please try again.
-                </p>
+                </div>
               ) : null}
 
               {taxFormsLoading ? (
@@ -288,7 +291,7 @@ export default function TaxCenterPage() {
                   {(taxFormsData?.forms ?? []).map((form) => (
                     <div
                       key={form.id}
-                      className="flex items-center justify-between rounded-lg border p-3"
+                      className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] p-3"
                     >
                       <div>
                         <p className="text-sm font-medium">
@@ -312,7 +315,7 @@ export default function TaxCenterPage() {
                             href={`${API_BASE_URL}/api/v1/providers/me/tax-forms/${String(form.tax_year)}/download`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex min-h-[44px] items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted/50"
+                            className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/[0.06]"
                           >
                             <Download className="h-4 w-4" aria-hidden="true" />
                             Download
@@ -328,5 +331,6 @@ export default function TaxCenterPage() {
         </>
       )}
     </div>
+    </PageTransition>
   );
 }

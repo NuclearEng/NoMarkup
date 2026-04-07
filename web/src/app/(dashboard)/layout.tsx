@@ -112,7 +112,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 className={cn(
                   'flex min-h-[44px] min-w-[44px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-3 py-1 text-[0.625rem] font-medium transition-colors duration-200',
                   active
-                    ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
+                    ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)] shadow-[0_2px_0_0_var(--brand-gold)]'
                     : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200',
                 )}
               >
@@ -141,10 +141,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
+                      'relative flex min-h-[44px] items-center gap-3 rounded-r-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                       active
-                        ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)] shadow-[inset_0_1px_0_rgba(201,168,76,0.1)]'
-                        : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200',
+                        ? 'rounded-l-none border-l-2 border-[var(--brand-gold)] bg-[var(--brand-gold)]/10 pl-[10px] text-[var(--brand-gold)] shadow-[inset_0_1px_0_rgba(201,168,76,0.1)]'
+                        : 'rounded-lg text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200',
                     )}
                   >
                     <item.icon
@@ -156,7 +156,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </Link>
                 );
               })}
-              <div className="my-2 border-t border-[var(--brand-gold)]/10" />
+              <div className="glass-divider my-2" aria-hidden="true" />
               <Link
                 href={'/demo/auction' as Route}
                 className="relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-all duration-200 hover:bg-amber-500/10 hover:text-amber-300"

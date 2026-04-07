@@ -86,7 +86,7 @@ export default function ProviderChallengesPage() {
       ) : null}
 
       <Tabs defaultValue="available" className="space-y-4">
-        <TabsList>
+        <TabsList className="glass glass-highlight">
           <TabsTrigger value="available" className="min-h-[44px]">
             Available
             {availableChallenges.length > 0 ? (

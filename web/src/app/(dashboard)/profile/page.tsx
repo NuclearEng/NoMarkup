@@ -45,6 +45,7 @@ export default function ProfilePage() {
 
   if (error || !user) {
     return (
+      <PageTransition>
         <div className="flex items-center justify-center p-12">
           <EmptyState
             icon={<AnimatedIllustration type="error" size="md" />}
@@ -52,6 +53,7 @@ export default function ProfilePage() {
             description="Something went wrong. Please try again."
           />
         </div>
+      </PageTransition>
     );
   }
 
@@ -97,7 +99,7 @@ export default function ProfilePage() {
               </Avatar>
 
               <div className="flex-1 space-y-1">
-                <h2 className="text-xl font-semibold">{user.displayName}</h2>
+                <h2 className="text-xl font-semibold text-white">{user.displayName}</h2>
                 <p className="text-zinc-300 text-sm">{user.email}</p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {user.roles.map((role) => (

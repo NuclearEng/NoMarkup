@@ -1,12 +1,13 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight, ImagePlus, MapPin, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus, MapPin, Mic, MicOff, X, Zap } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
+import { ImageAnalysisButton } from '@/components/forms/ImageAnalysisButton';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { CategorySelector } from '@/components/providers/CategorySelector';
 import { Badge } from '@/components/ui/badge';
@@ -33,8 +34,10 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
+import { useCategories } from '@/hooks/useCategories';
 import { useCreateJob } from '@/hooks/useJobs';
+import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
+import { api } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
 import { AUCTION_TYPE, type CreateJobInput, type MarketRange } from '@/types';
@@ -74,6 +77,7 @@ const EXAMPLE_MARKET_RANGE: MarketRange = {
 export function JobPostingForm() {
   const [step, setStep] = useState(0);
   const [photos, setPhotos] = useState<File[]>([]);
+  const [useInstantMatch, setUseInstantMatch] = useState(false);
   const router = useRouter();
   const createJob = useCreateJob();
 
@@ -155,7 +159,17 @@ export function JobPostingForm() {
       const values = form.getValues();
       const input = buildCreateInput(values);
       input.publish = true;
-      await createJob.mutateAsync(input);
+      const createdJob = await createJob.mutateAsync(input);
+
+      if (useInstantMatch && createdJob?.id) {
+        // Call instant match directly using the new job ID (avoids stale closure).
+        try {
+          await api.post<{ status: string; expires_at: string }>(`/api/v1/jobs/${createdJob.id}/instant-match`);
+        } catch {
+          // Non-fatal — job was created, instant match just didn't fire.
+        }
+      }
+
       router.push('/jobs/mine' as Route);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to publish job';
@@ -245,6 +259,8 @@ export function JobPostingForm() {
                   form={form}
                   marketRange={EXAMPLE_MARKET_RANGE}
                   photoCount={photos.length}
+                  useInstantMatch={useInstantMatch}
+                  onInstantMatchChange={setUseInstantMatch}
                 />
               ) : null}
 

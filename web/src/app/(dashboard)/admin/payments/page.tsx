@@ -166,7 +166,7 @@ export default function AdminPaymentsPage() {
 
       {/* Transactions Table */}
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Transactions</h2>
+        <h2 className="gold-text text-lg font-semibold">Transactions</h2>
 
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-zinc-300">Status:</span>

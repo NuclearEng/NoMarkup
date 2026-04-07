@@ -77,7 +77,7 @@ function RecurringJobCard({ job }: { job: Job }) {
   ) : (
     <Badge
       variant="outline"
-      className="border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300"
+      className="border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
     >
       Active
     </Badge>
@@ -236,7 +236,7 @@ export default function RecurringJobsPage() {
                 <CardTitle className="text-sm font-medium text-zinc-300">Active</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-green-600 tabular-nums dark:text-emerald-400">
+                <p className="text-2xl font-bold text-emerald-400 tabular-nums">
                   {String(
                     recurringJobs.filter((j) => j.status === 'active' || j.status === 'in_progress')
                       .length,

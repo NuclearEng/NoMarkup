@@ -65,7 +65,7 @@ export default function AdminUserDetailPage() {
           </div>
         </div>
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader>
               <Skeleton className="h-5 w-24" />
             </CardHeader>
@@ -80,7 +80,7 @@ export default function AdminUserDetailPage() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
             <CardHeader>
               <Skeleton className="h-5 w-32" />
             </CardHeader>
@@ -232,7 +232,7 @@ export default function AdminUserDetailPage() {
                 </div>
                 <div className="col-span-2">
                   <span className="text-zinc-300">Bio</span>
-                  <p className="text-zinc-300 mt-1">{user.provider_profile.bio || 'N/A'}</p>
+                  <p className="mt-1 text-white/80">{user.provider_profile.bio || 'N/A'}</p>
                 </div>
 
                 <Separator className="col-span-2" />

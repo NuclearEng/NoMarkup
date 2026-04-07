@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTerminalLayoutStore } from '@/stores/terminal-layout-store';
 import { WIDGET_CATEGORIES, CATEGORY_LABELS, type WidgetDefinition } from './widget-registry';
 
@@ -166,14 +167,18 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
           aria-label="Layout name"
         />
       ) : (
-        <button
-          onClick={handleStartRename}
-          className="flex items-center gap-1 rounded px-1 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-          title="Rename layout"
-          aria-label="Rename layout"
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleStartRename}
+              className="flex items-center gap-1 rounded px-1 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              aria-label="Rename layout"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Rename layout</TooltipContent>
+        </Tooltip>
       )}
 
       <div className="mx-0.5 hidden h-4 w-px bg-zinc-700/50 sm:block" />
@@ -239,115 +244,137 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
       </Popover>
 
       {/* ── Edit Layout Toggle ── */}
-      <Button
-        variant={isEditing ? 'default' : 'outline'}
-        size="sm"
-        onClick={toggleEditing}
-        className={cn(
-          'h-7 gap-1.5 px-2.5 text-xs',
-          isEditing
-            ? 'bg-zinc-700 text-zinc-100 shadow-inner ring-1 ring-zinc-600'
-            : 'border-zinc-700/60 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100',
-        )}
-        aria-pressed={isEditing}
-      >
-        {isEditing ? (
-          <>
-            <Check className="h-3.5 w-3.5" />
-            Done
-          </>
-        ) : (
-          <>
-            <Pencil className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Edit</span>
-          </>
-        )}
-      </Button>
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <Button
+            variant={isEditing ? 'default' : 'outline'}
+            size="sm"
+            onClick={toggleEditing}
+            className={cn(
+              'h-7 gap-1.5 px-2.5 text-xs',
+              isEditing
+                ? 'bg-zinc-700 text-zinc-100 shadow-inner ring-1 ring-zinc-600'
+                : 'border-zinc-700/60 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100',
+            )}
+            aria-pressed={isEditing}
+          >
+            {isEditing ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Done
+              </>
+            ) : (
+              <>
+                <Pencil className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Edit</span>
+              </>
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {isEditing ? 'Finish editing layout' : 'Rearrange and resize widgets'}
+        </TooltipContent>
+      </Tooltip>
 
       {/* ── Save ── */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleSave}
-        className="h-7 gap-1.5 border-zinc-700/60 bg-zinc-800/50 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
-        title="Save layout"
-      >
-        <Save className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Save</span>
-      </Button>
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSave}
+            className="h-7 gap-1.5 border-zinc-700/60 bg-zinc-800/50 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+            aria-label="Save layout"
+          >
+            <Save className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Save</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Save current layout</TooltipContent>
+      </Tooltip>
 
       {/* ── Spacer ── */}
       <div className="flex-1" />
 
       {/* ── Reset ── */}
-      <Popover open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-            title="Reset to default"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Reset</span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-56 border-white/[0.08] bg-zinc-900 p-3 text-zinc-200 shadow-xl">
-          <p className="mb-3 text-sm">Reset this layout to its default configuration?</p>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-              onClick={() => setResetConfirmOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={handleReset}>
-              Reset
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      {/* ── Delete Layout ── */}
-      {layouts.length > 1 && (
-        <Popover open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-red-400/70 hover:bg-red-500/10 hover:text-red-400"
-              title="Delete layout"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </PopoverTrigger>
+      <Tooltip delayDuration={0}>
+        <Popover open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                aria-label="Reset layout to default"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Reset</span>
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
           <PopoverContent align="end" className="w-56 border-white/[0.08] bg-zinc-900 p-3 text-zinc-200 shadow-xl">
-            <p className="mb-1 text-sm font-medium">Delete layout?</p>
-            <p className="mb-3 text-xs text-zinc-400">
-              &ldquo;{activeLayout?.name}&rdquo; will be permanently removed.
-            </p>
+            <p className="mb-3 text-sm">Reset this layout to its default configuration?</p>
             <div className="flex justify-end gap-2">
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                onClick={() => setDeleteConfirmOpen(false)}
+                onClick={() => setResetConfirmOpen(false)}
               >
                 Cancel
               </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={handleDeleteLayout}
-              >
-                Delete
+              <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={handleReset}>
+                Reset
               </Button>
             </div>
           </PopoverContent>
         </Popover>
+        <TooltipContent>Reset layout to default</TooltipContent>
+      </Tooltip>
+
+      {/* ── Delete Layout ── */}
+      {layouts.length > 1 && (
+        <Tooltip delayDuration={0}>
+          <Popover open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-red-400/70 hover:bg-red-500/10 hover:text-red-400"
+                  aria-label="Delete layout"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <PopoverContent align="end" className="w-56 border-white/[0.08] bg-zinc-900 p-3 text-zinc-200 shadow-xl">
+              <p className="mb-1 text-sm font-medium">Delete layout?</p>
+              <p className="mb-3 text-xs text-zinc-400">
+                &ldquo;{activeLayout?.name}&rdquo; will be permanently removed.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                  onClick={() => setDeleteConfirmOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={handleDeleteLayout}
+                >
+                  Delete
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+          <TooltipContent>Delete this layout</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

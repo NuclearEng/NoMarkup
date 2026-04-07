@@ -5,8 +5,6 @@ import { useParams } from 'next/navigation';
 import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { usePublicProviderProfile } from '@/hooks/useProviders';
 import { useReviewsForUser } from '@/hooks/useReviews';
 
@@ -22,9 +20,9 @@ export default function ProviderProfilePage() {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="space-y-6">
-          <div className="h-32 animate-pulse rounded-xl border bg-muted" />
-          <div className="h-48 animate-pulse rounded-xl border bg-muted" />
-          <div className="h-64 animate-pulse rounded-xl border bg-muted" />
+          <div className="glass glass-highlight h-32 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
+          <div className="glass glass-highlight h-24 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
+          <div className="glass glass-highlight h-64 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
         </div>
       </div>
     );
@@ -33,11 +31,11 @@ export default function ProviderProfilePage() {
   if (isError || !provider) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="rounded-lg border border-destructive/50 p-8 text-center">
-          <p className="text-destructive">Failed to load provider profile.</p>
+        <div className="glass glass-highlight rounded-xl border border-red-500/20 p-8 text-center">
+          <p className="text-red-400">Failed to load provider profile.</p>
           <Button
             variant="outline"
-            className="mt-4 min-h-[44px]"
+            className="mt-4 min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
             onClick={() => { void refetch(); }}
           >
             Retry
@@ -51,153 +49,147 @@ export default function ProviderProfilePage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Header */}
-      <Card className="mb-6">
-        <CardContent className="p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-bold">
-              {(provider.business_name ?? provider.display_name).charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold">
-                  {provider.business_name ?? provider.display_name}
-                </h1>
-                {provider.verified ? (
-                  <Badge variant="default">Verified</Badge>
-                ) : null}
-              </div>
-              {provider.business_name ? (
-                <p className="text-muted-foreground">{provider.display_name}</p>
-              ) : null}
-              {provider.bio ? (
-                <p className="mt-2 text-sm text-muted-foreground">{provider.bio}</p>
-              ) : null}
-              <p className="mt-1 text-xs text-muted-foreground">
-                Member since{' '}
-                {new Date(provider.member_since).toLocaleDateString('en-US', {
-                  month: 'long',
-                  year: 'numeric',
-                })}
-              </p>
-              {provider.response_time_label ? (
-                <div className="mt-2">
-                  <ResponseTimeBadge label={provider.response_time_label} />
-                </div>
-              ) : null}
-            </div>
-            {provider.trust_score ? (
-              <div className="text-center">
-                <p className="text-3xl font-bold">{String(provider.trust_score.overall_score)}</p>
-                <Badge variant="outline" className="mt-1">
-                  {provider.trust_score.tier.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+      {/* Hero / header */}
+      <div className="glass glass-highlight mb-6 rounded-xl border border-[var(--brand-gold)]/10 p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          {/* Avatar */}
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[var(--brand-gold)]/10 text-2xl font-bold text-[var(--brand-gold)]">
+            {(provider.business_name ?? provider.display_name).charAt(0).toUpperCase()}
+          </div>
+
+          {/* Info */}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="gold-text text-2xl font-bold">
+                {provider.business_name ?? provider.display_name}
+              </h1>
+              {provider.verified ? (
+                <Badge className="border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-xs text-[var(--brand-gold)]">
+                  Verified
                 </Badge>
+              ) : null}
+            </div>
+            {provider.business_name ? (
+              <p className="text-zinc-400">{provider.display_name}</p>
+            ) : null}
+            {provider.bio ? (
+              <p className="mt-2 text-sm text-zinc-300">{provider.bio}</p>
+            ) : null}
+            <p className="mt-1 text-xs text-zinc-500">
+              Member since{' '}
+              {new Date(provider.member_since).toLocaleDateString('en-US', {
+                month: 'long',
+                year: 'numeric',
+              })}
+            </p>
+            {provider.response_time_label ? (
+              <div className="mt-2">
+                <ResponseTimeBadge label={provider.response_time_label} />
               </div>
             ) : null}
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Trust score — prominent gold accent */}
+          {provider.trust_score ? (
+            <div className="flex flex-col items-center gap-1 rounded-xl border border-[var(--brand-gold)]/15 bg-[var(--brand-gold)]/5 px-5 py-3 text-center">
+              <p className="text-3xl font-bold text-[var(--brand-gold)]">
+                {String(provider.trust_score.overall_score)}
+              </p>
+              <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Trust Score</p>
+              <Badge className="mt-0.5 border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-xs text-[var(--brand-gold)]">
+                {provider.trust_score.tier.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              </Badge>
+            </div>
+          ) : null}
+        </div>
+      </div>
 
       {/* Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold">{String(provider.jobs_completed)}</p>
-            <p className="text-xs text-muted-foreground">Jobs Completed</p>
-          </CardContent>
-        </Card>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
+          <p className="text-2xl font-bold text-zinc-100">{String(provider.jobs_completed)}</p>
+          <p className="text-xs text-zinc-500">Jobs Completed</p>
+        </div>
         {provider.review_summary ? (
           <>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">
-                  {provider.review_summary.average_rating.toFixed(1)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Rating ({String(provider.review_summary.review_count)} reviews)
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">
-                  {Math.round(provider.review_summary.on_time_rate * 100)}%
-                </p>
-                <p className="text-xs text-muted-foreground">On-Time Rate</p>
-              </CardContent>
-            </Card>
+            <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
+              <p className="text-2xl font-bold text-zinc-100">
+                {provider.review_summary.average_rating.toFixed(1)}
+              </p>
+              <p className="text-xs text-zinc-500">
+                Rating ({String(provider.review_summary.review_count)})
+              </p>
+            </div>
+            <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
+              <p className="text-2xl font-bold text-zinc-100">
+                {Math.round(provider.review_summary.on_time_rate * 100)}%
+              </p>
+              <p className="text-xs text-zinc-500">On-Time Rate</p>
+            </div>
           </>
         ) : null}
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold">
-              {provider.trust_score ? String(provider.trust_score.overall_score) : '--'}
-            </p>
-            <p className="text-xs text-muted-foreground">Trust Score</p>
-          </CardContent>
-        </Card>
+        <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
+          <p className="text-2xl font-bold text-[var(--brand-gold)]">
+            {provider.trust_score ? String(provider.trust_score.overall_score) : '--'}
+          </p>
+          <p className="text-xs text-zinc-500">Trust Score</p>
+        </div>
       </div>
 
       {/* Service Categories */}
       {provider.service_categories.length > 0 ? (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-lg">Service Categories</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {provider.service_categories.map((cat) => (
-                <Badge key={cat.id} variant="secondary">
-                  {cat.name}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="glass glass-highlight mb-6 rounded-xl border border-[var(--brand-gold)]/10 p-5">
+          <h2 className="mb-3 text-base font-semibold text-zinc-200">Service Categories</h2>
+          <div className="flex flex-wrap gap-2">
+            {provider.service_categories.map((cat) => (
+              <Badge key={cat.id} className="border-white/10 bg-white/[0.06] text-zinc-300">
+                {cat.name}
+              </Badge>
+            ))}
+          </div>
+        </div>
       ) : null}
 
       {/* Reviews */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Reviews</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {reviews.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No reviews yet.</p>
-          ) : (
-            <div className="space-y-4">
-              {reviews.map((review) => (
-                <div key={review.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">
-                        {review.overall_rating.toFixed(1)} stars
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(review.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </span>
-                    </div>
+      <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5">
+        <h2 className="mb-4 text-base font-semibold text-zinc-200">Reviews</h2>
+        {reviews.length === 0 ? (
+          <p className="text-sm text-zinc-500">No reviews yet.</p>
+        ) : (
+          <div className="space-y-5">
+            {reviews.map((review, idx) => (
+              <div key={review.id}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-[var(--brand-gold)]">
+                      {review.overall_rating.toFixed(1)} ★
+                    </span>
+                    <span className="text-xs text-zinc-500">
+                      {new Date(review.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
                   </div>
-                  <p className="mt-1 text-sm">{review.comment}</p>
-                  {review.response ? (
-                    <div className="mt-2 rounded-md bg-muted p-3 text-sm">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">
-                        Provider Response
-                      </p>
-                      <p>{review.response.comment}</p>
-                    </div>
-                  ) : null}
-                  <Separator className="mt-4" />
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <p className="mt-1.5 text-sm text-zinc-300">{review.comment}</p>
+                {review.response ? (
+                  <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.03] p-3 text-sm">
+                    <p className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                      Provider Response
+                    </p>
+                    <p className="text-zinc-400">{review.response.comment}</p>
+                  </div>
+                ) : null}
+                {idx < reviews.length - 1 ? (
+                  <div className="glass-divider mt-4" />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

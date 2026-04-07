@@ -40,7 +40,7 @@ function AnalyticsToggle() {
   }, [enabled]);
 
   return (
-    <Card>
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="flex items-center justify-between p-4">
         <div>
           <p className="font-medium">Enable analytics for all users</p>
@@ -57,12 +57,12 @@ function AnalyticsToggle() {
             'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             'min-h-[44px] min-w-[44px] items-center',
-            enabled ? 'bg-primary' : 'bg-muted',
+            enabled ? 'bg-[var(--brand-gold)]/70' : 'bg-white/10',
           )}
         >
           <span
             className={cn(
-              'pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform',
+              'pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform',
               enabled ? 'translate-x-5' : 'translate-x-0',
             )}
           />
@@ -135,9 +135,9 @@ export default function AdminPlatformPage() {
       </div>
 
       {/* Growth Chart (CSS bars) */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Growth Trends</CardTitle>
+          <CardTitle className="gold-text text-base">Growth Trends</CardTitle>
           <Select value={groupBy} onValueChange={setGroupBy}>
             <SelectTrigger className="w-[140px] min-h-[44px]" aria-label="Group by period">
               <SelectValue />
@@ -183,7 +183,7 @@ export default function AdminPlatformPage() {
                         <div className="flex-1">
                           <div
                             className={cn(
-                              'h-6 rounded-sm bg-primary transition-all',
+                              'h-6 rounded bg-gradient-to-r from-[var(--brand-gold)]/30 to-[var(--brand-gold)]/70 transition-all',
                             )}
                             style={{ width: `${String(Math.max(percentage, 2))}%` }}
                             title={formatCents(dp.gmv_cents)}
@@ -205,7 +205,7 @@ export default function AdminPlatformPage() {
                   <p
                     className={cn(
                       'text-sm font-medium',
-                      growth.gmv_growth_rate >= 0 ? 'text-green-600' : 'text-red-600',
+                      growth.gmv_growth_rate >= 0 ? 'text-emerald-400' : 'text-red-400',
                     )}
                   >
                     {growth.gmv_growth_rate >= 0 ? '+' : ''}
@@ -217,7 +217,7 @@ export default function AdminPlatformPage() {
                   <p
                     className={cn(
                       'text-sm font-medium',
-                      growth.user_growth_rate >= 0 ? 'text-green-600' : 'text-red-600',
+                      growth.user_growth_rate >= 0 ? 'text-emerald-400' : 'text-red-400',
                     )}
                   >
                     {growth.user_growth_rate >= 0 ? '+' : ''}
@@ -229,7 +229,7 @@ export default function AdminPlatformPage() {
                   <p
                     className={cn(
                       'text-sm font-medium',
-                      growth.job_growth_rate >= 0 ? 'text-green-600' : 'text-red-600',
+                      growth.job_growth_rate >= 0 ? 'text-emerald-400' : 'text-red-400',
                     )}
                   >
                     {growth.job_growth_rate >= 0 ? '+' : ''}
@@ -243,9 +243,9 @@ export default function AdminPlatformPage() {
       </Card>
 
       {/* Category Performance Table */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-base">Category Performance</CardTitle>
+          <CardTitle className="gold-text text-base">Category Performance</CardTitle>
         </CardHeader>
         <CardContent>
           {categoriesLoading ? (
@@ -267,30 +267,30 @@ export default function AdminPlatformPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left font-medium text-zinc-300">
+                  <tr className="border-b bg-white/[0.03]">
+                    <th className="px-4 py-3 text-left font-medium text-white/40 uppercase text-xs tracking-wider">
                       Category
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
+                    <th className="px-4 py-3 text-right font-medium text-white/40 uppercase text-xs tracking-wider">
                       Jobs Posted
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
+                    <th className="px-4 py-3 text-right font-medium text-white/40 uppercase text-xs tracking-wider">
                       Jobs Completed
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
+                    <th className="px-4 py-3 text-right font-medium text-white/40 uppercase text-xs tracking-wider">
                       Total GMV
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
+                    <th className="px-4 py-3 text-right font-medium text-white/40 uppercase text-xs tracking-wider">
                       Avg Bid
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-zinc-300">
+                    <th className="px-4 py-3 text-right font-medium text-white/40 uppercase text-xs tracking-wider">
                       Avg Bids/Job
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {categories.categories.map((cat) => (
-                    <tr key={cat.category_id} className="border-b hover:bg-muted/50">
+                    <tr key={cat.category_id} className="border-b border-white/5 hover:bg-white/[0.04]">
                       <td className="px-4 py-3 font-medium">{cat.category_name}</td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {String(cat.jobs_posted)}

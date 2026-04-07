@@ -34,15 +34,20 @@ deploy/        Docker, Kubernetes, Terraform
 - **Digit-Rolling Prices** — Robinhood-style animated price tickers with green/red flash on changes
 - **5-Level Urgency Timer** — SVG progress ring with progressive pulse/glow/shake as auctions close
 - **Savings Hero** — prominent "You're saving $X (Y%)" display with rolling digit animation
+- **Fair Price Index** — animated market-data page showing real median prices by category and ZIP, with percentile range bars and price heat map
 - **Competitive Bid Context** — rank badges (gold/silver/bronze), win probability bars, market position
 - **Trust Scoring** — multi-dimensional provider trust with tier badges (Top Rated, Trusted, Rising, New)
 - **Multi-Tier Celebrations** — canvas confetti from Nice (10%) to Legendary (40%+) savings
-- **Brand Gold System** — gold gradient cards, shimmer effects, premium button variants
+- **Brand Gold System** — glass morphism throughout: `glass`, `glass-highlight`, `glass-elevated`, `glass-tinted-gold`, `glass-cta-gold` variants across all 69 routes
 - **Market Ticker Strip** — infinite-scroll live marketplace activity on landing page
 - **Animated Auction Demo** — self-playing reverse auction demonstration with staggered bids
 - **Shimmer Skeletons** — premium loading states with 7 content-aware presets
-- **Full Dark Mode** — consistent theming across 40+ components
-- **Accessibility** — WCAG 2.2 AA, `prefers-reduced-motion` support on all 30+ animations
+- **Full Dark Mode** — cinematic `#070b14` dark theme across all 60+ pages with consistent gold accent system
+- **Accessibility** — WCAG 2.2 AA: focus rings on all interactive elements, `aria-live` regions, `prefers-reduced-motion` support on all 30+ animations, 44px minimum touch targets throughout
+- **Active Nav Indicators** — gold left-border sidebar active state, gold underline on mobile bottom nav
+- **Provider Onboarding** — multi-step form with gold progress bar, dark drop zones, milestone templates
+- **Working Capital Advances** — credit utilization bars, fee preview, repayment progress tracking
+- **Business Suite** — expense tracking, invoice generation, 1099-NEC tax center, all glass-themed
 
 ## Tech Stack
 

@@ -57,6 +57,9 @@ func New(
 	challengeHandler *handler.ChallengeHandler,
 	installmentHandler *handler.InstallmentHandler,
 	insuranceHandler *handler.InsuranceHandler,
+	workspaceHandler *handler.WorkspaceHandler,
+	instantMatchHandler *handler.InstantMatchHandler,
+	disputeHandler *handler.DisputeHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -129,6 +132,13 @@ func New(
 		r.With(authMW.Handler).Post("/{id}/bids", bidHandler.PlaceBid)
 		r.With(authMW.Handler).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
 		r.With(authMW.Handler).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
+
+		// Viewer count (ping requires auth, count is public)
+		r.With(authMW.Handler).Post("/{id}/ping-viewer", jobHandler.PingViewer)
+		r.Get("/{id}/viewer-count", jobHandler.GetViewerCount)
+
+		// Instant match
+		r.With(authMW.Handler).Post("/{id}/instant-match", instantMatchHandler.CreateInstantMatch)
 
 		// Live auction endpoints
 		r.With(authMW.Handler).Get("/{id}/auction/state", bidHandler.GetLiveAuctionState)
@@ -290,6 +300,12 @@ func New(
 			// Invoice generation
 			r.Post("/{id}/invoice", taxHandler.GenerateInvoice)
 			r.Get("/{id}/invoice/download", taxHandler.DownloadInvoice)
+
+			// Provider workspace (check-in/out, completion photos)
+			r.Post("/{id}/checkin", workspaceHandler.CheckIn)
+			r.Post("/{id}/checkout", workspaceHandler.CheckOut)
+			r.Get("/{id}/work-session", workspaceHandler.GetWorkSession)
+			r.Post("/{id}/completion-photos", workspaceHandler.UploadCompletionPhoto)
 		})
 
 		// Review routes
@@ -474,6 +490,19 @@ func New(
 			r.Get("/usage", subscriptionHandler.GetUsage)
 			r.Get("/features/{feature}", subscriptionHandler.CheckFeatureAccess)
 			r.Get("/invoices", subscriptionHandler.ListInvoices)
+		})
+
+		// Provider instant match offer routes
+		r.Route("/provider/offers", func(r chi.Router) {
+			r.Get("/", instantMatchHandler.ListProviderOffers)
+			r.Post("/{jobId}/accept", instantMatchHandler.AcceptOffer)
+			r.Post("/{jobId}/decline", instantMatchHandler.DeclineOffer)
+		})
+
+		// Dispute filing routes
+		r.Route("/disputes", func(r chi.Router) {
+			r.Post("/", disputeHandler.FileDispute)
+			r.Get("/{id}", disputeHandler.GetDispute)
 		})
 
 		// Challenge routes (authenticated)

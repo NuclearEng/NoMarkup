@@ -134,7 +134,7 @@ export default function MyBidsPage() {
       </div>
 
       <Tabs defaultValue="all">
-        <TabsList>
+        <TabsList className="glass glass-highlight">
           <TabsTrigger value="all" className="min-h-[44px]">
             All
           </TabsTrigger>

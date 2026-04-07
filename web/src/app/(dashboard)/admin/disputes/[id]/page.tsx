@@ -277,7 +277,7 @@ export default function AdminDisputeDetailPage() {
                 onChange={(e) => {
                   setGuaranteeClaim(e.target.checked);
                 }}
-                className="h-5 w-5 rounded border-gray-300"
+                className="h-5 w-5 rounded border-white/20 bg-white/5 accent-[var(--brand-gold)]"
               />
               <Label htmlFor="dispute-guarantee" className="cursor-pointer">
                 File guarantee claim
@@ -295,7 +295,7 @@ export default function AdminDisputeDetailPage() {
             </Button>
 
             {resolveMutation.isError ? (
-              <p className="text-destructive text-sm">
+              <p className="text-red-400 text-sm">
                 Failed to resolve dispute. Please try again.
               </p>
             ) : null}

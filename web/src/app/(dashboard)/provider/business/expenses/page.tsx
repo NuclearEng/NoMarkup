@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageTransition } from '@/components/ui/page-transition';
 import {
   Select,
   SelectContent,
@@ -139,6 +140,7 @@ export default function ExpensesPage() {
   }
 
   return (
+    <PageTransition>
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link
@@ -151,16 +153,16 @@ export default function ExpensesPage() {
       </div>
 
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Expense Tracking</h1>
+        <h1 className="gold-text text-2xl font-bold tracking-tight">Expense Tracking</h1>
         <p className="mt-1 text-zinc-300">
           Track business expenses for tax deductions and financial planning.
         </p>
       </div>
 
       {/* Add expense form */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-base">Add Expense</CardTitle>
+          <CardTitle className="gold-text text-base">Add Expense</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -251,9 +253,9 @@ export default function ExpensesPage() {
 
       {/* Summary */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-base">Total Expenses</CardTitle>
+            <CardTitle className="gold-text text-base">Total Expenses</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -267,9 +269,9 @@ export default function ExpensesPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-base">By Category</CardTitle>
+            <CardTitle className="gold-text text-base">By Category</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -309,9 +311,9 @@ export default function ExpensesPage() {
       </div>
 
       {/* Expense list */}
-      <Card>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="text-base">All Expenses</CardTitle>
+          <CardTitle className="gold-text text-base">All Expenses</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -336,5 +338,6 @@ export default function ExpensesPage() {
         </CardContent>
       </Card>
     </div>
+    </PageTransition>
   );
 }

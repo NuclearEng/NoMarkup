@@ -82,9 +82,9 @@ export default function PropertiesPage() {
 
       {/* Add Property Form */}
       {showForm ? (
-        <Card>
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <CardTitle className="text-lg">Add New Property</CardTitle>
+            <CardTitle className="gold-text text-lg">Add New Property</CardTitle>
           </CardHeader>
           <CardContent>
             <Form {...form}>

@@ -69,7 +69,7 @@ export default function NotificationsPage() {
             'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors',
             !unreadOnly
               ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-zinc-300 hover:text-foreground',
+              : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.04] hover:text-foreground',
           )}
           onClick={() => {
             if (unreadOnly) handleToggleUnread();
@@ -83,7 +83,7 @@ export default function NotificationsPage() {
             'min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors',
             unreadOnly
               ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-zinc-300 hover:text-foreground',
+              : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.04] hover:text-foreground',
           )}
           onClick={() => {
             if (!unreadOnly) handleToggleUnread();
