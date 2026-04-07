@@ -22,17 +22,18 @@ services:
     image: edoburu/pgbouncer:v1.25.1-p0
     environment:
       DATABASE_URL: postgres://nomarkup:password@postgres:5432/nomarkup
+      AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
       DEFAULT_POOL_SIZE: 100
       MAX_CLIENT_CONN: 500
       MAX_DB_CONNECTIONS: 150
     ports:
-      - "6432:6432"
+      - "6432:5432"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
       interval: 2s
       timeout: 2s
       retries: 3
@@ -147,10 +148,12 @@ services:
       context: .
       dockerfile: deploy/docker/user.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       USER_SERVICE_PORT: "50051"
       JWT_PRIVATE_KEY_PATH: "/keys/private.pem"
+      SESSION_SECRET: "${SESSION_SECRET:-}"
+      NOTIFICATION_SERVICE_ADDR: "notification:50059"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "user-service"
     volumes:
@@ -160,13 +163,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      notification:
+        condition: service_started
 
   job:
     build:
       context: .
       dockerfile: deploy/docker/job.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       JOB_SERVICE_PORT: "50052"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -186,7 +191,7 @@ services:
       context: .
       dockerfile: deploy/docker/payment.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       PAYMENT_SERVICE_PORT: "50054"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -204,7 +209,7 @@ services:
       context: .
       dockerfile: deploy/docker/chat.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       CHAT_SERVICE_PORT: "50055"
       CHAT_WS_PORT: "50065"
@@ -221,7 +226,7 @@ services:
       context: .
       dockerfile: deploy/docker/notification.Dockerfile
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       NOTIFICATION_SERVICE_PORT: "50059"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -240,7 +245,7 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: bidding
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       BID_ENGINE_PORT: "50053"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -255,7 +260,7 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: fraud
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       FRAUD_ENGINE_PORT: "50056"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -270,7 +275,7 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: trust
     environment:
-      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:6432/nomarkup?sslmode=disable"
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       TRUST_ENGINE_PORT: "50057"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -308,6 +313,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       GATEWAY_PORT: "8080"
       JWT_PUBLIC_KEY_PATH: "/keys/public.pem"
       ALLOWED_ORIGINS: "http://localhost:3000"
@@ -328,15 +334,26 @@ services:
     volumes:
       - ./keys:/keys:ro
     depends_on:
-      - user
-      - job
-      - payment
-      - chat
-      - notification
-      - bidding
-      - fraud
-      - trust
-      - imaging
+      pgbouncer:
+        condition: service_healthy
+      user:
+        condition: service_started
+      job:
+        condition: service_started
+      payment:
+        condition: service_started
+      chat:
+        condition: service_started
+      notification:
+        condition: service_started
+      bidding:
+        condition: service_started
+      fraud:
+        condition: service_started
+      trust:
+        condition: service_started
+      imaging:
+        condition: service_started
 
   # ── Frontend ───────────────────────────────────────────────
 
@@ -347,6 +364,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      API_URL: "http://gateway:8080"
       NEXT_PUBLIC_API_URL: "http://localhost:8080"
       NEXT_PUBLIC_WS_URL: "ws://localhost:8080"
     depends_on:

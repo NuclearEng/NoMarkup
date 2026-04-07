@@ -54,6 +54,7 @@ func New(
 	oauthHandler *handler.OAuthHandler,
 	auctionReplayHandler *handler.AuctionReplayHandler,
 	challengeHandler *handler.ChallengeHandler,
+	installmentHandler *handler.InstallmentHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -300,6 +301,13 @@ func New(
 			r.Post("/{id}/process", paymentHandler.ProcessPayment)
 			r.Post("/{id}/refund", paymentHandler.RefundPayment)
 			r.Post("/{id}/release", paymentHandler.ReleasePayment)
+
+			// BNPL installment plan routes
+			r.Route("/installment-plans", func(r chi.Router) {
+				r.Post("/", installmentHandler.CreateInstallmentPlan)
+				r.Get("/", installmentHandler.ListInstallmentPlans)
+				r.Get("/{id}", installmentHandler.GetInstallmentPlan)
+			})
 		})
 
 		// Chat routes

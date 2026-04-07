@@ -116,9 +116,14 @@ func main() {
 	subscriptionSvc := service.NewSubscriptionService(repo, stripeSvc)
 	subscriptionGRPCServer := paymentgrpc.NewSubscriptionServer(subscriptionSvc)
 
-	// Wire subscription webhook delegation so payment webhooks route subscription
+	// Wire subscription event delegation so payment events route subscription
 	// events (customer.subscription.*, invoice.*) to the subscription service.
 	paymentSvc.SetSubscriptionWebhookHandler(subscriptionSvc)
+
+	// Wire up installment (BNPL) service.
+	installmentSvc := service.NewInstallmentService(repo, stripeSvc)
+	installmentGRPCServer := paymentgrpc.NewInstallmentServer(installmentSvc)
+	paymentSvc.SetInstallmentPaymentHandler(installmentSvc)
 
 	// Create and register gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
@@ -132,6 +137,7 @@ func main() {
 	)
 	paymentgrpc.Register(s, grpcServer)
 	paymentgrpc.RegisterSubscription(s, subscriptionGRPCServer)
+	paymentgrpc.RegisterInstallmentServer(s, installmentGRPCServer)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

@@ -10,7 +10,7 @@
 #       target: bidding
 
 # ── Stage 1: build workspace dependencies ─────────────────────
-FROM rust:1.86-bookworm AS builder
+FROM rust:1.92-bookworm AS builder
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
@@ -25,10 +25,11 @@ COPY engines/fraud/Cargo.toml engines/fraud/build.rs engines/fraud/
 COPY engines/trust/Cargo.toml engines/trust/build.rs engines/trust/
 COPY engines/imaging/Cargo.toml engines/imaging/build.rs engines/imaging/
 
-# Create dummy source files so cargo can resolve the workspace and compile deps.
+# Create dummy source and bench files so cargo can resolve the workspace and compile deps.
 RUN for eng in bidding fraud trust imaging; do \
-        mkdir -p engines/$eng/src && \
-        echo "fn main() {}" > engines/$eng/src/main.rs; \
+        mkdir -p engines/$eng/src engines/$eng/benches && \
+        echo "fn main() {}" > engines/$eng/src/main.rs && \
+        echo "fn main() {}" > engines/$eng/benches/${eng}_bench.rs; \
     done
 
 WORKDIR /app/engines
@@ -38,6 +39,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # ── Stage 2: build real source (deps already cached) ──────────
 COPY engines/ /app/engines/
+# Touch source files so cargo detects them as newer than the cached dummy
+# fingerprints. The dep-cache stage compiled placeholder `fn main() {}` stubs
+# and wrote fingerprints with the build-time mtime; without this touch, cargo
+# sees the real sources as "older" and skips recompilation.
+RUN find /app/engines -name '*.rs' -exec touch {} + && \
+    find /app/engines -name 'build.rs' -exec touch {} +
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/engines/target \
     cargo build --release --workspace 2>&1 && \

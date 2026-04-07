@@ -16,11 +16,18 @@ type SubscriptionWebhookHandler interface {
 	HandleSubscriptionWebhook(ctx context.Context, eventType, stripeSubscriptionID string, periodStart, periodEnd *time.Time) error
 }
 
+// InstallmentPaymentHandler allows the payment service to delegate installment
+// payment events to the installment service.
+type InstallmentPaymentHandler interface {
+	ConfirmInstallmentPaymentSucceeded(ctx context.Context, planID, installmentID, paymentIntentID string) error
+}
+
 // PaymentService implements payment business logic.
 type PaymentService struct {
-	repo    domain.PaymentRepository
-	stripe  *StripeService
-	subHook SubscriptionWebhookHandler
+	repo            domain.PaymentRepository
+	stripe          *StripeService
+	subHook         SubscriptionWebhookHandler
+	installmentHook InstallmentPaymentHandler
 }
 
 // NewPaymentService creates a new payment service.
@@ -32,6 +39,11 @@ func NewPaymentService(repo domain.PaymentRepository, stripe *StripeService) *Pa
 // delegating subscription-related Stripe events.
 func (s *PaymentService) SetSubscriptionWebhookHandler(h SubscriptionWebhookHandler) {
 	s.subHook = h
+}
+
+// SetInstallmentPaymentHandler sets the handler for installment payment events.
+func (s *PaymentService) SetInstallmentPaymentHandler(h InstallmentPaymentHandler) {
+	s.installmentHook = h
 }
 
 // CalculateFees computes the fee breakdown for a given amount.

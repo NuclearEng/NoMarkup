@@ -236,6 +236,9 @@ func main() {
 	analyticsClient := analyticsv1.NewAnalyticsServiceClient(jobConn)
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient)
 
+	// Installment plan service lives on the same gRPC server as the payment service.
+	installmentClient := paymentv1.NewInstallmentPlanServiceClient(paymentConn)
+
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
 	// Webhook handler receives raw payloads and forwards them to backend services
 	// which perform Stripe signature verification via stripe.webhooks.constructEvent().
@@ -264,6 +267,7 @@ func main() {
 	pricingHandler := handler.NewPricingHandler(dbPool)
 	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
 	challengeHandler := handler.NewChallengeHandler(dbPool)
+	installmentHandler := handler.NewInstallmentHandler(installmentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
@@ -285,6 +289,7 @@ func main() {
 		oauthHandler,
 		auctionReplayHandler,
 		challengeHandler,
+		installmentHandler,
 	)
 
 	srv := &http.Server{

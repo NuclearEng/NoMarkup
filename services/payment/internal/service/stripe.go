@@ -313,6 +313,41 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 	return r.ID, nil
 }
 
+// --- BNPL Stripe methods ---
+
+// CreateOffSessionPaymentIntent creates a PaymentIntent with confirm=true and off_session=true.
+// This is used for charging saved payment methods for scheduled installments.
+func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amountCents int64, currency string, customerStripeID string, paymentMethodID string, metadata map[string]string) (string, string, error) {
+	if s.devMode {
+		slog.Info("dev mode: stub CreateOffSessionPaymentIntent", "amountCents", amountCents, "customerStripeID", customerStripeID)
+		key := "pi_dev_offsession_" + customerStripeID
+		if metadata != nil {
+			if ik, ok := metadata["idempotency_key"]; ok {
+				key = "pi_dev_offsession_" + ik
+			}
+		}
+		return key, "pi_dev_secret_offsession_" + customerStripeID, nil
+	}
+
+	params := &stripe.PaymentIntentParams{
+		Amount:        stripe.Int64(amountCents),
+		Currency:      stripe.String(currency),
+		Customer:      stripe.String(customerStripeID),
+		PaymentMethod: stripe.String(paymentMethodID),
+		OffSession:    stripe.Bool(true),
+		Confirm:       stripe.Bool(true),
+	}
+	for k, v := range metadata {
+		params.AddMetadata(k, v)
+	}
+
+	pi, err := paymentintent.New(params)
+	if err != nil {
+		return "", "", fmt.Errorf("create off-session payment intent: %w", err)
+	}
+	return pi.ID, pi.ClientSecret, nil
+}
+
 // --- Subscription Stripe methods ---
 
 // CreateStripeSubscription creates a Stripe subscription for a customer.
