@@ -348,6 +348,31 @@ func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amoun
 	return pi.ID, pi.ClientSecret, nil
 }
 
+// --- Insurance Stripe methods ---
+
+// CreateInsurancePaymentIntent creates a PaymentIntent for an insurance premium.
+// Unlike regular payments, insurance premiums are pure platform revenue — no destination charge.
+func (s *StripeService) CreateInsurancePaymentIntent(ctx context.Context, amountCents int64, currency string, idempotencyKey string, policyID string) (string, string, error) {
+	if s.devMode {
+		slog.Info("dev mode: stub CreateInsurancePaymentIntent", "amountCents", amountCents, "policyID", policyID)
+		return "pi_ins_dev_" + idempotencyKey, "pi_ins_dev_secret_" + idempotencyKey, nil
+	}
+
+	params := &stripe.PaymentIntentParams{
+		Amount:   stripe.Int64(amountCents),
+		Currency: stripe.String(currency),
+	}
+	params.AddMetadata("type", "insurance_premium")
+	params.AddMetadata("policy_id", policyID)
+	params.IdempotencyKey = stripe.String(idempotencyKey)
+
+	pi, err := paymentintent.New(params)
+	if err != nil {
+		return "", "", fmt.Errorf("create insurance payment intent: %w", err)
+	}
+	return pi.ID, pi.ClientSecret, nil
+}
+
 // --- Subscription Stripe methods ---
 
 // CreateStripeSubscription creates a Stripe subscription for a customer.

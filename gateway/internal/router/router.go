@@ -55,6 +55,7 @@ func New(
 	auctionReplayHandler *handler.AuctionReplayHandler,
 	challengeHandler *handler.ChallengeHandler,
 	installmentHandler *handler.InstallmentHandler,
+	insuranceHandler *handler.InsuranceHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -162,6 +163,9 @@ func New(
 	// Public Fair Price Index routes (no auth required, SEO-friendly)
 	r.Get("/api/v1/pricing", pricingHandler.GetPricingOverview)
 	r.Get("/api/v1/pricing/{category}", pricingHandler.GetPricingByCategory)
+
+	// Public insurance products (no auth required)
+	r.Get("/api/v1/insurance/products", insuranceHandler.ListProducts)
 
 	// Public auction replay (no auth required — completed auctions are public)
 	r.Get("/api/v1/auctions/{jobId}/replay", auctionReplayHandler.GetAuctionReplay)
@@ -310,6 +314,16 @@ func New(
 			})
 		})
 
+		// Insurance routes
+		r.Route("/insurance", func(r chi.Router) {
+			r.Post("/quote", insuranceHandler.GetQuote)
+			r.Post("/purchase", insuranceHandler.PurchaseInsurance)
+			r.Get("/policies", insuranceHandler.ListPolicies)
+			r.Get("/policies/{id}", insuranceHandler.GetPolicy)
+			r.Post("/claims", insuranceHandler.FileClaim)
+			r.Get("/claims/{id}", insuranceHandler.GetClaim)
+		})
+
 		// Chat routes
 		r.Route("/channels", func(r chi.Router) {
 			r.Get("/", chatHandler.ListChannels)
@@ -413,6 +427,12 @@ func New(
 			r.Route("/challenges", func(r chi.Router) {
 				r.Get("/", challengeHandler.AdminListChallenges)
 				r.Post("/", challengeHandler.AdminCreateChallenge)
+			})
+
+			// Insurance
+			r.Route("/insurance/claims", func(r chi.Router) {
+				r.Get("/", insuranceHandler.AdminListClaims)
+				r.Post("/{id}/review", insuranceHandler.AdminReviewClaim)
 			})
 
 			// Feature flags
