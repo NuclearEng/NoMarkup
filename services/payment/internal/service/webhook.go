@@ -72,10 +72,27 @@ func (s *PaymentService) handlePaymentIntentSucceeded(ctx context.Context, event
 		return fmt.Errorf("parse payment_intent.succeeded: %w", err)
 	}
 
+	// Check if this payment is for a BNPL installment plan.
+	if pi.Metadata != nil {
+		planID := pi.Metadata["installment_plan_id"]
+		installmentID := pi.Metadata["scheduled_installment_id"]
+		if planID != "" && installmentID != "" && s.installmentHook != nil {
+			slog.Info("payment_intent.succeeded for BNPL installment",
+				"pi_id", pi.ID,
+				"plan_id", planID,
+				"installment_id", installmentID,
+			)
+			if err := s.installmentHook.ConfirmInstallmentPaymentSucceeded(ctx, planID, installmentID, pi.ID); err != nil {
+				return fmt.Errorf("handle installment payment succeeded: %w", err)
+			}
+			return nil
+		}
+	}
+
 	payment, err := s.repo.FindByStripePaymentIntentID(ctx, pi.ID)
 	if err != nil {
 		slog.Warn("payment not found for payment_intent.succeeded", "pi_id", pi.ID, "error", err)
-		return nil // Don't fail the webhook for unknown payments.
+		return nil // Don't fail for unknown payments.
 	}
 
 	if payment.Status == "processing" || payment.Status == "pending" {

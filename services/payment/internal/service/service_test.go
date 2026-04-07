@@ -127,6 +127,35 @@ func (m *mockPaymentRepo) GetRevenueReport(_ context.Context, _, _ *time.Time, _
 	return nil, nil
 }
 
+// Installment plan methods (satisfy interface — not tested in this file).
+func (m *mockPaymentRepo) CreateInstallmentPlan(_ context.Context, _ *domain.InstallmentPlan) error {
+	return nil
+}
+func (m *mockPaymentRepo) GetInstallmentPlan(_ context.Context, _ string) (*domain.InstallmentPlan, error) {
+	return nil, domain.ErrInstallmentPlanNotFound
+}
+func (m *mockPaymentRepo) ListInstallmentPlans(_ context.Context, _ string, _ string, _, _ int) ([]*domain.InstallmentPlan, int, error) {
+	return nil, 0, nil
+}
+func (m *mockPaymentRepo) CreateScheduledInstallments(_ context.Context, _ []domain.ScheduledInstallment) error {
+	return nil
+}
+func (m *mockPaymentRepo) GetDueInstallments(_ context.Context, _ time.Time) ([]domain.ScheduledInstallment, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) UpdateScheduledInstallmentStatus(_ context.Context, _ string, _ string, _ *string) error {
+	return nil
+}
+func (m *mockPaymentRepo) UpdateInstallmentPlanStatus(_ context.Context, _ string, _ string) error {
+	return nil
+}
+func (m *mockPaymentRepo) UpdateInstallmentPlanProviderPaid(_ context.Context, _ string, _ string) error {
+	return nil
+}
+func (m *mockPaymentRepo) GetScheduledInstallmentsForPlan(_ context.Context, _ string) ([]domain.ScheduledInstallment, error) {
+	return nil, nil
+}
+
 // --- Mock Stripe Service ---
 
 type mockStripeService struct {

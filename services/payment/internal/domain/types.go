@@ -157,10 +157,59 @@ type RevenueReport struct {
 	EffectiveTakeRate     float64
 }
 
-// Sentinel errors for expenses and advances.
+// InstallmentPlan represents a BNPL installment plan.
+type InstallmentPlan struct {
+	ID                       string
+	ContractID               string
+	CustomerID               string
+	ProviderID               string
+	TotalAmountCents         int64
+	BNPLFeeCents             int64
+	TotalWithFeeCents        int64
+	InstallmentCount         int
+	PerInstallmentCents      int64
+	FeeRate                  float64
+	Status                   string // active, completed, defaulted, cancelled
+	ProviderPaidAt           *time.Time
+	StripeProviderTransferID string
+	Installments             []ScheduledInstallment
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+}
+
+// ScheduledInstallment represents a single scheduled payment in a BNPL plan.
+type ScheduledInstallment struct {
+	ID                string
+	PlanID            string
+	InstallmentNumber int
+	AmountCents       int64
+	DueDate           time.Time
+	PaymentID         *string
+	Status            string // scheduled, processing, paid, failed, retrying
+	Attempts          int
+	LastAttemptAt     *time.Time
+	PaidAt            *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// CreateInstallmentPlanInput holds the data needed to create a BNPL plan.
+type CreateInstallmentPlanInput struct {
+	ContractID       string
+	CustomerID       string
+	ProviderID       string
+	TotalAmountCents int64
+	InstallmentCount int // 3 or 6
+	PaymentMethodID  string
+	IdempotencyKey   string
+}
+
+// Sentinel errors for expenses, advances, and installment plans.
 var (
-	ErrExpenseNotFound = errors.New("expense not found")
-	ErrAdvanceNotFound = errors.New("advance not found")
+	ErrExpenseNotFound         = errors.New("expense not found")
+	ErrAdvanceNotFound         = errors.New("advance not found")
+	ErrInstallmentPlanNotFound = errors.New("installment plan not found")
+	ErrInvalidInstallmentCount = errors.New("installment count must be 3 or 6")
 )
 
 // PaymentRepository defines persistence operations for payments.
@@ -194,4 +243,15 @@ type PaymentRepository interface {
 	ListAdvances(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*Advance, int, error)
 	GetAdvance(ctx context.Context, advanceID string) (*Advance, error)
 	UpdateAdvanceReview(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*Advance, error)
+
+	// Installment plan operations
+	CreateInstallmentPlan(ctx context.Context, plan *InstallmentPlan) error
+	GetInstallmentPlan(ctx context.Context, planID string) (*InstallmentPlan, error)
+	ListInstallmentPlans(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*InstallmentPlan, int, error)
+	CreateScheduledInstallments(ctx context.Context, installments []ScheduledInstallment) error
+	GetDueInstallments(ctx context.Context, dueDate time.Time) ([]ScheduledInstallment, error)
+	UpdateScheduledInstallmentStatus(ctx context.Context, id string, status string, paymentID *string) error
+	UpdateInstallmentPlanStatus(ctx context.Context, planID string, status string) error
+	UpdateInstallmentPlanProviderPaid(ctx context.Context, planID string, transferID string) error
+	GetScheduledInstallmentsForPlan(ctx context.Context, planID string) ([]ScheduledInstallment, error)
 }

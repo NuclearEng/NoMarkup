@@ -58,6 +58,11 @@ service PaymentService {
   rpc ListAdvances(ListAdvancesRequest) returns (ListAdvancesResponse);
   rpc GetAdvance(GetAdvanceRequest) returns (GetAdvanceResponse);
   rpc ReviewAdvance(ReviewAdvanceRequest) returns (ReviewAdvanceResponse);
+
+  // BNPL Installment Plans
+  rpc CreateInstallmentPlan(CreateInstallmentPlanRequest) returns (CreateInstallmentPlanResponse);
+  rpc GetInstallmentPlan(GetInstallmentPlanRequest) returns (GetInstallmentPlanResponse);
+  rpc ListInstallmentPlans(ListInstallmentPlansRequest) returns (ListInstallmentPlansResponse);
 }
 
 // ============================================================
@@ -491,4 +496,71 @@ message ReviewAdvanceRequest {
 
 message ReviewAdvanceResponse {
   Advance advance = 1;
+}
+
+// ============================================================
+// BNPL Installment Plan RPCs
+// ============================================================
+
+message ScheduledInstallment {
+  string id = 1;
+  int32 installment_number = 2;
+  int64 amount_cents = 3;
+  string due_date = 4;  // YYYY-MM-DD
+  string status = 5;    // scheduled, processing, paid, failed, retrying
+  string payment_id = 6;
+  google.protobuf.Timestamp paid_at = 7;
+}
+
+message InstallmentPlan {
+  string id = 1;
+  string contract_id = 2;
+  string customer_id = 3;
+  string provider_id = 4;
+  int64 total_amount_cents = 5;
+  int64 bnpl_fee_cents = 6;
+  int64 total_with_fee_cents = 7;
+  int32 installment_count = 8;
+  int64 per_installment_cents = 9;
+  double fee_rate = 10;
+  string status = 11;  // active, completed, defaulted, cancelled
+  google.protobuf.Timestamp provider_paid_at = 12;
+  string stripe_provider_transfer_id = 13;
+  repeated ScheduledInstallment installments = 14;
+  google.protobuf.Timestamp created_at = 15;
+  google.protobuf.Timestamp updated_at = 16;
+}
+
+message CreateInstallmentPlanRequest {
+  string contract_id = 1;
+  string customer_id = 2;
+  string provider_id = 3;
+  int64 total_amount_cents = 4;
+  int32 installment_count = 5;  // 3 or 6
+  string payment_method_id = 6;
+  string idempotency_key = 7;
+}
+
+message CreateInstallmentPlanResponse {
+  InstallmentPlan plan = 1;
+  string first_installment_client_secret = 2;
+}
+
+message GetInstallmentPlanRequest {
+  string plan_id = 1;
+}
+
+message GetInstallmentPlanResponse {
+  InstallmentPlan plan = 1;
+}
+
+message ListInstallmentPlansRequest {
+  string user_id = 1;
+  optional string status_filter = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message ListInstallmentPlansResponse {
+  repeated InstallmentPlan plans = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
 }
