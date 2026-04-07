@@ -1437,7 +1437,15 @@ export interface WorkingCapitalAdvance {
   rejection_reason?: string;
   disbursed_at?: string;
   repaid_at?: string;
+  stripe_transfer_id?: string;
   created_at: string;
+}
+
+export interface CreditLimit {
+  max_advance_cents: number;
+  total_outstanding_cents: number;
+  available_cents: number;
+  risk_score: number;
 }
 
 export interface AdvancesResponse {
@@ -1489,6 +1497,71 @@ export interface InstallmentInfo {
   status: string;
   due_date?: string;
   paid_at?: string;
+}
+
+// ────────────────────────────────────────
+// BNPL / Installment Plan types
+// ────────────────────────────────────────
+
+export const INSTALLMENT_PLAN_STATUS = {
+  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  DEFAULTED: 'defaulted',
+  CANCELLED: 'cancelled',
+} as const;
+export type InstallmentPlanStatus =
+  (typeof INSTALLMENT_PLAN_STATUS)[keyof typeof INSTALLMENT_PLAN_STATUS];
+
+export const SCHEDULED_INSTALLMENT_STATUS = {
+  SCHEDULED: 'scheduled',
+  PROCESSING: 'processing',
+  PAID: 'paid',
+  FAILED: 'failed',
+  RETRYING: 'retrying',
+} as const;
+export type ScheduledInstallmentStatus =
+  (typeof SCHEDULED_INSTALLMENT_STATUS)[keyof typeof SCHEDULED_INSTALLMENT_STATUS];
+
+export interface InstallmentPlan {
+  id: string;
+  contract_id: string;
+  customer_id: string;
+  provider_id: string;
+  total_amount_cents: number;
+  bnpl_fee_cents: number;
+  total_with_fee_cents: number;
+  installment_count: number;
+  per_installment_cents: number;
+  fee_rate: number;
+  status: InstallmentPlanStatus;
+  provider_paid_at: string | null;
+  installments: ScheduledInstallment[];
+  created_at: string;
+}
+
+export interface ScheduledInstallment {
+  id: string;
+  installment_number: number;
+  amount_cents: number;
+  due_date: string;
+  status: ScheduledInstallmentStatus;
+  payment_id: string | null;
+  paid_at: string | null;
+}
+
+export interface CreateInstallmentPlanInput {
+  contract_id: string;
+  customer_id: string;
+  provider_id: string;
+  total_amount_cents: number;
+  installment_count: 3 | 6;
+  payment_method_id: string;
+  idempotency_key: string;
+}
+
+export interface InstallmentPlansResponse {
+  plans: InstallmentPlan[];
+  pagination: PaginationResponse;
 }
 
 // ────────────────────────────────────────
@@ -1669,4 +1742,115 @@ export interface CreateChallengeInput {
   is_seasonal: boolean;
   season_name?: string;
   max_participants?: number;
+}
+
+// ────────────────────────────────────────
+// Insurance types
+// ────────────────────────────────────────
+
+export const INSURANCE_POLICY_STATUS = {
+  ACTIVE: 'active',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+  CLAIMED: 'claimed',
+} as const;
+export type InsurancePolicyStatus =
+  (typeof INSURANCE_POLICY_STATUS)[keyof typeof INSURANCE_POLICY_STATUS];
+
+export const INSURANCE_CLAIM_STATUS = {
+  FILED: 'filed',
+  UNDER_REVIEW: 'under_review',
+  APPROVED: 'approved',
+  DENIED: 'denied',
+  PAID: 'paid',
+} as const;
+export type InsuranceClaimStatus =
+  (typeof INSURANCE_CLAIM_STATUS)[keyof typeof INSURANCE_CLAIM_STATUS];
+
+export interface InsuranceProduct {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  coverage_type: string;
+  base_rate_bps: number;
+  min_premium_cents: number;
+  max_coverage_cents: number | null;
+  coverage_duration_days: number;
+  deductible_cents: number;
+  terms_markdown: string;
+}
+
+export interface InsuranceQuote {
+  product_id: string;
+  product_name: string;
+  premium_cents: number;
+  coverage_amount_cents: number;
+  deductible_cents: number;
+  coverage_duration_days: number;
+}
+
+export interface InsurancePolicy {
+  id: string;
+  policy_number: string;
+  product: InsuranceProduct;
+  contract_id: string;
+  coverage_amount_cents: number;
+  premium_cents: number;
+  deductible_cents: number;
+  effective_date: string;
+  expiration_date: string;
+  status: string;
+  created_at: string;
+}
+
+export interface InsuranceClaim {
+  id: string;
+  claim_number: string;
+  policy_id: string;
+  claim_type: string;
+  description: string;
+  evidence_urls: string[];
+  claimed_amount_cents: number;
+  approved_amount_cents: number | null;
+  payout_cents: number | null;
+  status: string;
+  denial_reason: string | null;
+  created_at: string;
+}
+
+export interface FileInsuranceClaimInput {
+  policy_id: string;
+  claim_type: string;
+  description: string;
+  evidence_urls: string[];
+  claimed_amount_cents: number;
+}
+
+export interface InsurancePoliciesResponse {
+  policies: InsurancePolicy[];
+  pagination: PaginationResponse;
+}
+
+export interface InsuranceClaimsResponse {
+  claims: InsuranceClaim[];
+  pagination: PaginationResponse;
+}
+
+// ────────────────────────────────────────
+// Tax Form types
+// ────────────────────────────────────────
+
+export interface TaxForm {
+  id: string;
+  provider_id: string;
+  tax_year: number;
+  form_type: string;
+  status: string;
+  generated_at: string;
+  download_url: string | null;
+}
+
+export interface TaxFormsResponse {
+  forms: TaxForm[];
 }

@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
-import { useMyAdvances, useRequestAdvance } from '@/hooks/useWorkingCapital';
+import { useCreditLimit, useMyAdvances, useRequestAdvance } from '@/hooks/useWorkingCapital';
 import { cn, formatCents } from '@/lib/utils';
 import type { AdvanceStatus, WorkingCapitalAdvance } from '@/types';
 import { ADVANCE_STATUS } from '@/types';
@@ -39,8 +39,8 @@ import { ADVANCE_STATUS } from '@/types';
 // Constants
 // ────────────────────────────────────────
 
-/** Fee rate applied to working capital advances (5%) */
-const FEE_RATE = 0.05;
+/** Fee rate applied to working capital advances (3%) */
+const FEE_RATE = 0.03;
 
 /** Maximum credit utilization — providers can borrow up to 50% of active contract value */
 const MAX_CREDIT_UTILIZATION = 0.5;
@@ -343,6 +343,7 @@ function AdvancesEmptyState() {
 export default function ProviderAdvancesPage() {
   const { data: advancesData, isLoading, isError, refetch } = useMyAdvances();
   const { data: contractsData } = useContracts({ status: 'active' });
+  const { data: creditLimitData } = useCreditLimit();
   const requestAdvance = useRequestAdvance();
 
   const [selectedContract, setSelectedContract] = useState('');
@@ -351,16 +352,17 @@ export default function ProviderAdvancesPage() {
   const advances = advancesData?.advances ?? [];
 
   const totalAdvanced = advances.reduce((sum, a) => sum + a.advance_amount_cents, 0);
-  const outstanding = advances
+  const outstanding = creditLimitData?.total_outstanding_cents ?? advances
     .filter((a) => a.status === ADVANCE_STATUS.DISBURSED || a.status === ADVANCE_STATUS.REPAYING)
     .reduce((sum, a) => sum + (a.advance_amount_cents + a.fee_cents - a.repaid_cents), 0);
 
   const awardedContracts = contractsData?.contracts ?? [];
   const totalContractValue = awardedContracts.reduce((sum, c) => sum + c.amount_cents, 0);
-  const availableCredit = Math.max(
+  const availableCredit = creditLimitData?.available_cents ?? Math.max(
     0,
     Math.round(totalContractValue * MAX_CREDIT_UTILIZATION) - outstanding,
   );
+  const maxCredit = creditLimitData?.max_advance_cents ?? Math.round(totalContractValue * MAX_CREDIT_UTILIZATION);
 
   /** Parse the dollar input to cents for fee preview */
   const requestAmountCents = useMemo(() => {
@@ -476,6 +478,37 @@ export default function ProviderAdvancesPage() {
           icon={CreditCard}
           loading={false}
         />
+      </div>
+
+      {/* Credit Limit Progress */}
+      <div className="glass glass-highlight rounded-xl p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-medium text-white/70">Credit Utilization</p>
+          <p className="text-sm text-white/50 tabular-nums">
+            {formatCents(outstanding)} / {formatCents(maxCredit)}
+          </p>
+        </div>
+        <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
+          <div
+            className={cn(
+              'h-full rounded-full transition-all duration-500',
+              maxCredit > 0 && outstanding / maxCredit < 0.5
+                ? 'bg-emerald-500/60'
+                : maxCredit > 0 && outstanding / maxCredit < 0.8
+                  ? 'bg-amber-500/60'
+                  : 'bg-red-500/60',
+            )}
+            style={{ width: maxCredit > 0 ? `${String(Math.min(100, Math.round((outstanding / maxCredit) * 100)))}%` : '0%' }}
+            role="progressbar"
+            aria-valuenow={outstanding}
+            aria-valuemin={0}
+            aria-valuemax={maxCredit}
+            aria-label="Credit utilization"
+          />
+        </div>
+        <p className="mt-2 text-xs text-white/40">
+          {formatCents(availableCredit)} available
+        </p>
       </div>
 
       {/* Credit explanation */}
@@ -624,6 +657,37 @@ export default function ProviderAdvancesPage() {
                           : ''}
                       </p>
                     ) : null}
+                    {/* Repayment progress bar */}
+                    {(advance.status === ADVANCE_STATUS.REPAYING ||
+                      advance.status === ADVANCE_STATUS.DISBURSED ||
+                      advance.status === ADVANCE_STATUS.REPAID) ? (() => {
+                      const totalOwed = advance.advance_amount_cents + advance.fee_cents;
+                      const repaymentPercent = totalOwed > 0 ? Math.min(100, Math.round((advance.repaid_cents / totalOwed) * 100)) : 0;
+                      return (
+                        <div className="mt-1.5 space-y-1">
+                          <div className="flex items-center justify-between text-xs text-white/40">
+                            <span>Repayment</span>
+                            <span className="tabular-nums">{String(repaymentPercent)}%</span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all duration-500',
+                                repaymentPercent >= 100
+                                  ? 'bg-emerald-500/60'
+                                  : 'bg-[var(--brand-gold)]/60',
+                              )}
+                              style={{ width: `${String(repaymentPercent)}%` }}
+                              role="progressbar"
+                              aria-valuenow={advance.repaid_cents}
+                              aria-valuemin={0}
+                              aria-valuemax={totalOwed}
+                              aria-label="Repayment progress"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })() : null}
                     {advance.rejection_reason ? (
                       <div className="mt-1 flex items-start gap-1.5">
                         <AlertCircle

@@ -111,6 +111,40 @@ export const FRAUD_ALERT_STATUS_CLASSES: Record<string, string> = {
   dismissed: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
 };
 
+/** Insurance policy status */
+export const INSURANCE_POLICY_STATUS_CLASSES: Record<string, string> = {
+  active: 'bg-green-500/10 text-green-300 border-green-500/30',
+  expired: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  cancelled: 'bg-red-500/10 text-red-300 border-red-500/30',
+  claimed: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+};
+
+/** Insurance claim status */
+export const INSURANCE_CLAIM_STATUS_CLASSES: Record<string, string> = {
+  filed: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  under_review: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+  approved: 'bg-green-500/10 text-green-300 border-green-500/30',
+  denied: 'bg-red-500/10 text-red-300 border-red-500/30',
+  paid: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+};
+
+/** Installment plan status */
+export const INSTALLMENT_PLAN_STATUS_CLASSES: Record<string, string> = {
+  active: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  completed: 'bg-green-500/10 text-green-300 border-green-500/30',
+  defaulted: 'bg-red-500/10 text-red-300 border-red-500/30',
+  cancelled: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+};
+
+/** Scheduled installment status */
+export const SCHEDULED_INSTALLMENT_STATUS_CLASSES: Record<string, string> = {
+  scheduled: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  processing: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  paid: 'bg-green-500/10 text-green-300 border-green-500/30',
+  failed: 'bg-red-500/10 text-red-300 border-red-500/30',
+  retrying: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+};
+
 /** Expense category */
 export const EXPENSE_CATEGORY_CLASSES: Record<string, string> = {
   materials: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
