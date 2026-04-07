@@ -46,7 +46,8 @@ deploy/        Docker, Kubernetes, Terraform
 - **Best-in-Class Tooltips** — Radix UI tooltips across the full UI: trust tier explanations, win probability context, price-vs-market breakdowns, market confidence confidence indicators, and all icon-only toolbar actions (Tooltip+Popover coexistence pattern for destructive actions)
 - **Accessibility** — WCAG 2.2 AA: focus rings on all interactive elements, `aria-live` regions, `prefers-reduced-motion` support on all 30+ animations, 44px minimum touch targets throughout; tooltips accessible to keyboard users via `tabIndex={0}` on informational badges
 - **Active Nav Indicators** — gold left-border sidebar active state, gold underline on mobile bottom nav
-- **Provider Onboarding** — multi-step form with gold progress bar, dark drop zones, milestone templates
+- **Best-in-Class Onboarding** — role picker at registration (hire vs. provide), email verification banner with resend, provider setup wizard (7 steps with ✓ completion indicators, prefilled from existing data, Stripe Connect as final step), customer "Get Started" checklist, admin quick-actions panel
+- **Provider Onboarding** — 7-step wizard: Business Info → Categories → Service Area → Terms → Portfolio → Verification → Stripe Connect; prefills existing profile data, tracks completion per-step
 - **Working Capital Advances** — credit utilization bars, fee preview, repayment progress tracking
 - **Business Suite** — expense tracking, invoice generation, 1099-NEC tax center, all glass-themed
 
