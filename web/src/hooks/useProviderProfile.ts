@@ -93,6 +93,33 @@ export function useUpdatePortfolio() {
   });
 }
 
+export interface UploadDocumentInput {
+  document_type: string;
+  file_url: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
+export interface UploadDocumentResult {
+  document_id: string;
+  status: string;
+}
+
+export function useUploadVerificationDocument() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: UploadDocumentInput) =>
+      api
+        .post<UploadDocumentResult>('/api/v1/providers/me/documents', input)
+        .then((res) => res),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });
+    },
+  });
+}
+
 export function useSetAvailability() {
   const queryClient = useQueryClient();
 

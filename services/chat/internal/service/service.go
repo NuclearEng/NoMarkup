@@ -134,7 +134,13 @@ func (s *Service) SendMessage(ctx context.Context, channelID, senderID, messageT
 
 	// Publish to Redis for real-time delivery (best effort).
 	if s.pubsub != nil {
-		_ = s.pubsub.Publish(ctx, channelID, *result)
+		if err := s.pubsub.Publish(ctx, channelID, *result); err != nil {
+			slog.Error("failed to publish message to pubsub",
+				"channel_id", channelID,
+				"message_id", result.ID,
+				"error", err,
+			)
+		}
 	}
 
 	return result, nil
@@ -238,7 +244,14 @@ func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID str
 	}
 
 	if s.pubsub != nil {
-		_ = s.pubsub.Publish(ctx, channelID, *result)
+		if err := s.pubsub.Publish(ctx, channelID, *result); err != nil {
+			slog.Error("failed to publish proposed terms to pubsub",
+				"channel_id", channelID,
+				"message_id", result.ID,
+				"sender_id", senderID,
+				"error", err,
+			)
+		}
 	}
 
 	slog.Info("proposed terms sent",
@@ -286,7 +299,14 @@ func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID stri
 	}
 
 	if s.pubsub != nil {
-		_ = s.pubsub.Publish(ctx, channelID, *result)
+		if err := s.pubsub.Publish(ctx, channelID, *result); err != nil {
+			slog.Error("failed to publish terms response to pubsub",
+				"channel_id", channelID,
+				"message_id", result.ID,
+				"action", action,
+				"error", err,
+			)
+		}
 	}
 
 	return result, nil

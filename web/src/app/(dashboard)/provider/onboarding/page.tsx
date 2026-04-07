@@ -43,7 +43,9 @@ import {
   useUpdatePortfolio,
   useUpdateProviderProfile,
   useSetGlobalTerms,
+  useUploadVerificationDocument,
 } from '@/hooks/useProviderProfile';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import {
   businessInfoSchema,
   globalTermsSchema,
@@ -366,10 +368,14 @@ function CategoriesStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => 
 // -- Step 3: Service Area --
 function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   const [radius, setRadius] = useState(25);
+  const [serviceBaseAddress, setServiceBaseAddress] = useState('');
   const updateProvider = useUpdateProviderProfile();
 
   async function handleSave() {
-    await updateProvider.mutateAsync({ service_radius_km: radius });
+    await updateProvider.mutateAsync({
+      service_radius_km: radius,
+      ...(serviceBaseAddress.trim() !== '' && { service_address: serviceBaseAddress.trim() }),
+    });
     onNext();
   }
 
@@ -436,6 +442,8 @@ function ServiceAreaStep({ onNext, onPrev }: { onNext: () => void; onPrev: () =>
           id="service-address"
           placeholder="Enter your base address for service area"
           className="mt-1 min-h-[44px]"
+          value={serviceBaseAddress}
+          onChange={(e) => { setServiceBaseAddress(e.target.value); }}
         />
         <p className="mt-1 text-xs text-zinc-300">
           Your service area will be centered on this address.
@@ -790,6 +798,16 @@ function formatDocumentSize(bytes: number): string {
 function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   const [documents, setDocuments] = useState<Record<string, DocumentFile>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const uploadImage = useImageUpload({
+    context: 'document',
+    maxSizeBytes: MAX_DOCUMENT_SIZE_BYTES,
+    acceptedTypes: ACCEPTED_DOCUMENT_TYPES,
+  });
+
+  const uploadDocument = useUploadVerificationDocument();
 
   function handleFileSelect(docKey: string, file: File | undefined) {
     if (!file) return;
@@ -838,7 +856,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
     });
   }
 
-  function handleFinish() {
+  async function handleFinish() {
     // Validate required documents
     const missingRequired = DOCUMENT_TYPES.filter(
       (dt) => dt.required && !documents[dt.key],
@@ -853,9 +871,41 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       return;
     }
 
-    // In the future, documents would be uploaded to the server here.
-    // For now, proceed to complete onboarding.
-    onNext();
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      // Upload each selected document: first to the image pipeline, then register with verification endpoint
+      const entries = Object.entries(documents);
+      for (const [docKey, docFile] of entries) {
+        // Step 1: Upload to the image pipeline to get a confirmed URL
+        const uploadResult = await uploadImage.upload(docFile.file);
+        if (!uploadResult) {
+          setErrors((prev) => ({
+            ...prev,
+            [docKey]: `Failed to upload ${docFile.name}. Please try again.`,
+          }));
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Step 2: Register the uploaded document with the verification endpoint
+        await uploadDocument.mutateAsync({
+          document_type: docKey,
+          file_url: uploadResult.confirmedUrl,
+          file_name: docFile.name,
+          mime_type: docFile.file.type,
+          size_bytes: docFile.file.size,
+        });
+      }
+
+      onNext();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to upload documents. Please try again.';
+      setSubmitError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const hasRequiredDocuments = DOCUMENT_TYPES.filter((dt) => dt.required).every(
@@ -883,19 +933,26 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
         ))}
       </div>
 
+      {submitError ? (
+        <p className="text-sm text-destructive" role="alert">
+          {submitError}
+        </p>
+      ) : null}
+
       <div className="flex gap-3">
-        <Button type="button" variant="outline" onClick={onPrev} className="min-h-[44px]">
+        <Button type="button" variant="outline" onClick={onPrev} disabled={isSubmitting} className="min-h-[44px]">
           Previous
         </Button>
         <Button
           type="button"
-          onClick={handleFinish}
+          onClick={() => void handleFinish()}
+          disabled={isSubmitting}
           className="min-h-[44px]"
         >
-          Finish
+          {isSubmitting ? 'Uploading...' : 'Finish'}
         </Button>
         {hasRequiredDocuments ? null : (
-          <Button type="button" variant="ghost" onClick={onNext} className="min-h-[44px]">
+          <Button type="button" variant="ghost" onClick={onNext} disabled={isSubmitting} className="min-h-[44px]">
             Skip
           </Button>
         )}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
@@ -74,12 +75,7 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 	}
 
 	if job.Status == "active" && s.search != nil {
-		if indexErr := s.search.IndexJob(ctx, job); indexErr != nil {
-			slog.Error("SEARCH INDEX FAILED — job will not appear in search results",
-				"job_id", job.ID,
-				"error", indexErr,
-			)
-		}
+		s.indexJobWithRetry(job, "create")
 	}
 
 	// Trigger async provider matching for published jobs.
@@ -141,12 +137,7 @@ func (s *JobService) PublishJob(ctx context.Context, jobID string) (*domain.Job,
 		return nil, fmt.Errorf("publish job: %w", err)
 	}
 	if s.search != nil {
-		if indexErr := s.search.IndexJob(ctx, job); indexErr != nil {
-			slog.Error("SEARCH INDEX FAILED — published job will not appear in search results",
-				"job_id", job.ID,
-				"error", indexErr,
-			)
-		}
+		s.indexJobWithRetry(job, "publish")
 	}
 
 	// Trigger async provider matching for the newly published job.
@@ -313,12 +304,7 @@ func (s *JobService) RepostJob(ctx context.Context, jobID, customerID string, up
 	}
 
 	if s.search != nil {
-		if indexErr := s.search.IndexJob(ctx, newJob); indexErr != nil {
-			slog.Error("SEARCH INDEX FAILED — reposted job will not appear in search results",
-				"job_id", newJob.ID,
-				"error", indexErr,
-			)
-		}
+		s.indexJobWithRetry(newJob, "repost")
 	}
 
 	// Trigger async provider matching for the reposted job.
@@ -425,6 +411,53 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 
 	slog.Info("job removed by admin", "job_id", jobID, "admin_id", adminID, "reason", reason)
 	return nil
+}
+
+// indexJobWithRetry attempts to index a job in Meilisearch with up to 3 retries
+// using exponential backoff (1s, 2s, 4s). Runs in a goroutine so it does not
+// block the response to the caller. If all attempts fail, the final error is logged.
+func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
+	jobID := job.ID
+
+	go func() {
+		const maxAttempts = 3
+
+		ctx := context.Background()
+
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			err := s.search.IndexJob(ctx, job)
+			if err == nil {
+				if attempt > 1 {
+					slog.Info("search index succeeded after retry",
+						"job_id", jobID,
+						"operation", operation,
+						"attempt", attempt,
+					)
+				}
+				return
+			}
+
+			if attempt == maxAttempts {
+				slog.Error("SEARCH INDEX FAILED — job will not appear in search results (all retries exhausted)",
+					"job_id", jobID,
+					"operation", operation,
+					"attempts", maxAttempts,
+					"error", err,
+				)
+				return
+			}
+
+			backoff := time.Duration(1<<(attempt-1)) * time.Second // 1s, 2s
+			slog.Warn("search index failed, retrying",
+				"job_id", jobID,
+				"operation", operation,
+				"attempt", attempt,
+				"next_retry_in", backoff,
+				"error", err,
+			)
+			time.Sleep(backoff)
+		}
+	}()
 }
 
 // triggerProviderMatching starts an asynchronous goroutine that finds matching
