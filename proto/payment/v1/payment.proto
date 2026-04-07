@@ -58,6 +58,17 @@ service PaymentService {
   rpc ListAdvances(ListAdvancesRequest) returns (ListAdvancesResponse);
   rpc GetAdvance(GetAdvanceRequest) returns (GetAdvanceResponse);
   rpc ReviewAdvance(ReviewAdvanceRequest) returns (ReviewAdvanceResponse);
+
+  // Insurance
+  rpc ListInsuranceProducts(ListInsuranceProductsRequest) returns (ListInsuranceProductsResponse);
+  rpc GetInsuranceQuote(GetInsuranceQuoteRequest) returns (GetInsuranceQuoteResponse);
+  rpc PurchaseInsurance(PurchaseInsuranceRequest) returns (PurchaseInsuranceResponse);
+  rpc GetInsurancePolicy(GetInsurancePolicyRequest) returns (GetInsurancePolicyResponse);
+  rpc ListInsurancePolicies(ListInsurancePoliciesRequest) returns (ListInsurancePoliciesResponse);
+  rpc FileInsuranceClaim(FileInsuranceClaimRequest) returns (FileInsuranceClaimResponse);
+  rpc GetInsuranceClaim(GetInsuranceClaimRequest) returns (GetInsuranceClaimResponse);
+  rpc ReviewInsuranceClaim(ReviewInsuranceClaimRequest) returns (ReviewInsuranceClaimResponse);
+  rpc AdminListInsuranceClaims(AdminListInsuranceClaimsRequest) returns (AdminListInsuranceClaimsResponse);
 }
 
 // ============================================================
@@ -491,4 +502,173 @@ message ReviewAdvanceRequest {
 
 message ReviewAdvanceResponse {
   Advance advance = 1;
+}
+
+// ============================================================
+// Insurance RPCs
+// ============================================================
+
+message InsuranceProduct {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  string description = 4;
+  string coverage_type = 5;
+  int32 base_rate_bps = 6;
+  int64 min_premium_cents = 7;
+  int64 max_coverage_cents = 8;
+  int32 coverage_duration_days = 9;
+  int64 deductible_cents = 10;
+  string terms_markdown = 11;
+  bool active = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message InsurancePolicy {
+  string id = 1;
+  string policy_number = 2;
+  string product_id = 3;
+  string contract_id = 4;
+  string customer_id = 5;
+  string provider_id = 6;
+  int64 coverage_amount_cents = 7;
+  int64 premium_cents = 8;
+  int64 deductible_cents = 9;
+  string stripe_payment_intent_id = 10;
+  string effective_date = 11;  // YYYY-MM-DD
+  string expiration_date = 12;  // YYYY-MM-DD
+  string status = 13;
+  google.protobuf.Timestamp paid_at = 14;
+  google.protobuf.Timestamp cancelled_at = 15;
+  string cancellation_reason = 16;
+  google.protobuf.Timestamp created_at = 17;
+  google.protobuf.Timestamp updated_at = 18;
+}
+
+message InsuranceClaim {
+  string id = 1;
+  string claim_number = 2;
+  string policy_id = 3;
+  string claimant_id = 4;
+  string claim_type = 5;
+  string description = 6;
+  repeated string evidence_urls = 7;
+  int64 claimed_amount_cents = 8;
+  int64 assessed_amount_cents = 9;
+  string assessor_notes = 10;
+  int64 approved_amount_cents = 11;
+  int64 payout_cents = 12;
+  string stripe_transfer_id = 13;
+  string status = 14;
+  string denial_reason = 15;
+  string reviewed_by = 16;
+  google.protobuf.Timestamp reviewed_at = 17;
+  google.protobuf.Timestamp paid_at = 18;
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+message InsuranceQuote {
+  string product_id = 1;
+  string product_name = 2;
+  string coverage_type = 3;
+  int64 premium_cents = 4;
+  int64 coverage_amount_cents = 5;
+  int64 deductible_cents = 6;
+  int32 coverage_duration_days = 7;
+  string effective_date = 8;  // YYYY-MM-DD
+  string expiration_date = 9;  // YYYY-MM-DD
+}
+
+message ListInsuranceProductsRequest {}
+
+message ListInsuranceProductsResponse {
+  repeated InsuranceProduct products = 1;
+}
+
+message GetInsuranceQuoteRequest {
+  string product_id = 1;
+  string contract_id = 2;
+  int64 contract_amount_cents = 3;
+  string category_slug = 4;
+}
+
+message GetInsuranceQuoteResponse {
+  InsuranceQuote quote = 1;
+}
+
+message PurchaseInsuranceRequest {
+  string product_id = 1;
+  string contract_id = 2;
+  string customer_id = 3;
+  string provider_id = 4;
+  int64 contract_amount_cents = 5;
+}
+
+message PurchaseInsuranceResponse {
+  InsurancePolicy policy = 1;
+  string client_secret = 2;
+}
+
+message GetInsurancePolicyRequest {
+  string policy_id = 1;
+}
+
+message GetInsurancePolicyResponse {
+  InsurancePolicy policy = 1;
+}
+
+message ListInsurancePoliciesRequest {
+  string user_id = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message ListInsurancePoliciesResponse {
+  repeated InsurancePolicy policies = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message FileInsuranceClaimRequest {
+  string policy_id = 1;
+  string claimant_id = 2;
+  string claim_type = 3;
+  string description = 4;
+  repeated string evidence_urls = 5;
+  int64 claimed_amount_cents = 6;
+}
+
+message FileInsuranceClaimResponse {
+  InsuranceClaim claim = 1;
+}
+
+message GetInsuranceClaimRequest {
+  string claim_id = 1;
+}
+
+message GetInsuranceClaimResponse {
+  InsuranceClaim claim = 1;
+}
+
+message ReviewInsuranceClaimRequest {
+  string claim_id = 1;
+  string reviewer_id = 2;
+  bool approved = 3;
+  int64 approved_amount_cents = 4;
+  string assessor_notes = 5;
+  string denial_reason = 6;
+}
+
+message ReviewInsuranceClaimResponse {
+  InsuranceClaim claim = 1;
+}
+
+message AdminListInsuranceClaimsRequest {
+  optional string status_filter = 1;
+  nomarkup.common.v1.PaginationRequest pagination = 2;
+}
+
+message AdminListInsuranceClaimsResponse {
+  repeated InsuranceClaim claims = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
 }

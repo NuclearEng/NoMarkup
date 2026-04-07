@@ -116,8 +116,11 @@ func main() {
 	subscriptionSvc := service.NewSubscriptionService(repo, stripeSvc)
 	subscriptionGRPCServer := paymentgrpc.NewSubscriptionServer(subscriptionSvc)
 
-	// Wire subscription webhook delegation so payment webhooks route subscription
-	// events (customer.subscription.*, invoice.*) to the subscription service.
+	// Wire up insurance service (shares same repo and stripe service).
+	insuranceSvc := service.NewInsuranceService(repo, stripeSvc)
+	insuranceGRPCServer := paymentgrpc.NewInsuranceServer(insuranceSvc)
+
+	// Wire subscription event delegation to the subscription service.
 	paymentSvc.SetSubscriptionWebhookHandler(subscriptionSvc)
 
 	// Create and register gRPC server.
@@ -132,6 +135,7 @@ func main() {
 	)
 	paymentgrpc.Register(s, grpcServer)
 	paymentgrpc.RegisterSubscription(s, subscriptionGRPCServer)
+	paymentgrpc.RegisterInsurance(s, insuranceGRPCServer)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

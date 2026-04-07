@@ -1,0 +1,396 @@
+package grpc
+
+import (
+	"context"
+	"errors"
+
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/nomarkup/nomarkup/services/payment/internal/service"
+	grpclib "google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// InsuranceServer implements the InsuranceService gRPC server.
+type InsuranceServer struct {
+	svc *service.InsuranceService
+}
+
+// NewInsuranceServer creates a new gRPC server for the insurance service.
+func NewInsuranceServer(svc *service.InsuranceService) *InsuranceServer {
+	return &InsuranceServer{svc: svc}
+}
+
+// RegisterInsurance registers the insurance service with a gRPC server.
+func RegisterInsurance(s *grpclib.Server, srv *InsuranceServer) {
+	paymentv1.RegisterInsuranceServiceServer(s, srv)
+}
+
+// --- RPC Implementations ---
+
+func (s *InsuranceServer) ListInsuranceProducts(ctx context.Context, _ *paymentv1.ListInsuranceProductsRequest) (*paymentv1.ListInsuranceProductsResponse, error) {
+	products, err := s.svc.ListProducts(ctx)
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	protoProducts := make([]*paymentv1.InsuranceProduct, 0, len(products))
+	for _, p := range products {
+		protoProducts = append(protoProducts, domainProductToProto(p))
+	}
+
+	return &paymentv1.ListInsuranceProductsResponse{Products: protoProducts}, nil
+}
+
+func (s *InsuranceServer) GetInsuranceQuote(ctx context.Context, req *paymentv1.GetInsuranceQuoteRequest) (*paymentv1.GetInsuranceQuoteResponse, error) {
+	if req.GetProductId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "product_id is required")
+	}
+	if req.GetContractAmountCents() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "contract_amount_cents must be positive")
+	}
+
+	quote, err := s.svc.GetInsuranceQuote(ctx, req.GetProductId(), req.GetContractAmountCents(), req.GetCategorySlug())
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	return &paymentv1.GetInsuranceQuoteResponse{
+		Quote: domainQuoteToProto(quote),
+	}, nil
+}
+
+func (s *InsuranceServer) PurchaseInsurance(ctx context.Context, req *paymentv1.PurchaseInsuranceRequest) (*paymentv1.PurchaseInsuranceResponse, error) {
+	if req.GetProductId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "product_id is required")
+	}
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract_id is required")
+	}
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	if req.GetContractAmountCents() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "contract_amount_cents must be positive")
+	}
+
+	input := domain.PurchaseInsuranceInput{
+		ContractID:          req.GetContractId(),
+		ProductID:           req.GetProductId(),
+		CustomerID:          req.GetCustomerId(),
+		ProviderID:          req.GetProviderId(),
+		ContractAmountCents: req.GetContractAmountCents(),
+	}
+
+	policy, clientSecret, err := s.svc.PurchaseInsurance(ctx, input)
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	return &paymentv1.PurchaseInsuranceResponse{
+		Policy:       domainPolicyToProto(policy),
+		ClientSecret: clientSecret,
+	}, nil
+}
+
+func (s *InsuranceServer) GetInsurancePolicy(ctx context.Context, req *paymentv1.GetInsurancePolicyRequest) (*paymentv1.GetInsurancePolicyResponse, error) {
+	if req.GetPolicyId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "policy_id is required")
+	}
+
+	policy, err := s.svc.GetPolicy(ctx, req.GetPolicyId())
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	return &paymentv1.GetInsurancePolicyResponse{
+		Policy: domainPolicyToProto(policy),
+	}, nil
+}
+
+func (s *InsuranceServer) ListInsurancePolicies(ctx context.Context, req *paymentv1.ListInsurancePoliciesRequest) (*paymentv1.ListInsurancePoliciesResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	page := int32(1)
+	pageSize := int32(20)
+	if pg := req.GetPagination(); pg != nil {
+		if pg.GetPage() > 0 {
+			page = pg.GetPage()
+		}
+		if pg.GetPageSize() > 0 {
+			pageSize = pg.GetPageSize()
+		}
+	}
+
+	policies, totalCount, err := s.svc.ListPolicies(ctx, req.GetUserId(), int(page), int(pageSize))
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	protoPolicies := make([]*paymentv1.InsurancePolicy, 0, len(policies))
+	for _, p := range policies {
+		protoPolicies = append(protoPolicies, domainPolicyToProto(p))
+	}
+
+	totalPages := int32(0)
+	if totalCount > 0 {
+		totalPages = (int32(totalCount) + pageSize - 1) / pageSize
+	}
+
+	return &paymentv1.ListInsurancePoliciesResponse{
+		Policies: protoPolicies,
+		Pagination: &paymentv1.InsurancePaginationResponse{
+			TotalCount: int32(totalCount),
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+			HasNext:    page < totalPages,
+		},
+	}, nil
+}
+
+func (s *InsuranceServer) FileInsuranceClaim(ctx context.Context, req *paymentv1.FileInsuranceClaimRequest) (*paymentv1.FileInsuranceClaimResponse, error) {
+	if req.GetPolicyId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "policy_id is required")
+	}
+	if req.GetClaimantId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "claimant_id is required")
+	}
+	if req.GetClaimType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "claim_type is required")
+	}
+	if req.GetClaimedAmountCents() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "claimed_amount_cents must be positive")
+	}
+
+	input := domain.FileInsuranceClaimInput{
+		PolicyID:           req.GetPolicyId(),
+		ClaimantID:         req.GetClaimantId(),
+		ClaimType:          req.GetClaimType(),
+		Description:        req.GetDescription(),
+		EvidenceURLs:       req.GetEvidenceUrls(),
+		ClaimedAmountCents: req.GetClaimedAmountCents(),
+	}
+
+	claim, err := s.svc.FileInsuranceClaim(ctx, input)
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	return &paymentv1.FileInsuranceClaimResponse{
+		Claim: domainClaimToProto(claim),
+	}, nil
+}
+
+func (s *InsuranceServer) GetInsuranceClaim(ctx context.Context, req *paymentv1.GetInsuranceClaimRequest) (*paymentv1.GetInsuranceClaimResponse, error) {
+	if req.GetClaimId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "claim_id is required")
+	}
+
+	claim, err := s.svc.GetClaim(ctx, req.GetClaimId())
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	return &paymentv1.GetInsuranceClaimResponse{
+		Claim: domainClaimToProto(claim),
+	}, nil
+}
+
+func (s *InsuranceServer) ReviewInsuranceClaim(ctx context.Context, req *paymentv1.ReviewInsuranceClaimRequest) (*paymentv1.ReviewInsuranceClaimResponse, error) {
+	if req.GetClaimId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "claim_id is required")
+	}
+	if req.GetReviewerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "reviewer_id is required")
+	}
+
+	input := domain.ReviewInsuranceClaimInput{
+		ClaimID:             req.GetClaimId(),
+		ReviewerID:          req.GetReviewerId(),
+		Approved:            req.GetApproved(),
+		ApprovedAmountCents: req.GetApprovedAmountCents(),
+		AssessorNotes:       req.GetAssessorNotes(),
+		DenialReason:        req.GetDenialReason(),
+	}
+
+	claim, err := s.svc.ReviewInsuranceClaim(ctx, input)
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	return &paymentv1.ReviewInsuranceClaimResponse{
+		Claim: domainClaimToProto(claim),
+	}, nil
+}
+
+func (s *InsuranceServer) AdminListInsuranceClaims(ctx context.Context, req *paymentv1.AdminListInsuranceClaimsRequest) (*paymentv1.AdminListInsuranceClaimsResponse, error) {
+	statusFilter := req.GetStatusFilter()
+
+	page := int32(1)
+	pageSize := int32(20)
+	if pg := req.GetPagination(); pg != nil {
+		if pg.GetPage() > 0 {
+			page = pg.GetPage()
+		}
+		if pg.GetPageSize() > 0 {
+			pageSize = pg.GetPageSize()
+		}
+	}
+
+	claims, totalCount, err := s.svc.AdminListClaims(ctx, statusFilter, int(page), int(pageSize))
+	if err != nil {
+		return nil, mapInsuranceError(err)
+	}
+
+	protoClaims := make([]*paymentv1.InsuranceClaim, 0, len(claims))
+	for _, c := range claims {
+		protoClaims = append(protoClaims, domainClaimToProto(c))
+	}
+
+	totalPages := int32(0)
+	if totalCount > 0 {
+		totalPages = (int32(totalCount) + pageSize - 1) / pageSize
+	}
+
+	return &paymentv1.AdminListInsuranceClaimsResponse{
+		Claims: protoClaims,
+		Pagination: &paymentv1.InsurancePaginationResponse{
+			TotalCount: int32(totalCount),
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+			HasNext:    page < totalPages,
+		},
+	}, nil
+}
+
+// --- Conversion helpers ---
+
+func domainProductToProto(p *domain.InsuranceProduct) *paymentv1.InsuranceProduct {
+	pb := &paymentv1.InsuranceProduct{
+		Id:                   p.ID,
+		Name:                 p.Name,
+		Slug:                 p.Slug,
+		Description:          p.Description,
+		CoverageType:         p.CoverageType,
+		BaseRateBps:          int32(p.BaseRateBPS),
+		MinPremiumCents:      p.MinPremiumCents,
+		CoverageDurationDays: int32(p.CoverageDurationDays),
+		DeductibleCents:      p.DeductibleCents,
+		TermsMarkdown:        p.TermsMarkdown,
+		Active:               p.Active,
+		CreatedAt:            timestamppb.New(p.CreatedAt),
+		UpdatedAt:            timestamppb.New(p.UpdatedAt),
+	}
+	if p.MaxCoverageCents != nil {
+		pb.MaxCoverageCents = *p.MaxCoverageCents
+	}
+	return pb
+}
+
+func domainPolicyToProto(p *domain.InsurancePolicy) *paymentv1.InsurancePolicy {
+	pb := &paymentv1.InsurancePolicy{
+		Id:                    p.ID,
+		PolicyNumber:          p.PolicyNumber,
+		ProductId:             p.ProductID,
+		ContractId:            p.ContractID,
+		CustomerId:            p.CustomerID,
+		ProviderId:            p.ProviderID,
+		CoverageAmountCents:   p.CoverageAmountCents,
+		PremiumCents:          p.PremiumCents,
+		DeductibleCents:       p.DeductibleCents,
+		StripePaymentIntentId: p.StripePaymentIntentID,
+		EffectiveDate:         p.EffectiveDate.Format("2006-01-02"),
+		ExpirationDate:        p.ExpirationDate.Format("2006-01-02"),
+		Status:                p.Status,
+		CancellationReason:    p.CancellationReason,
+		CreatedAt:             timestamppb.New(p.CreatedAt),
+		UpdatedAt:             timestamppb.New(p.UpdatedAt),
+	}
+	if p.PaidAt != nil {
+		pb.PaidAt = timestamppb.New(*p.PaidAt)
+	}
+	if p.CancelledAt != nil {
+		pb.CancelledAt = timestamppb.New(*p.CancelledAt)
+	}
+	return pb
+}
+
+func domainClaimToProto(c *domain.InsuranceClaim) *paymentv1.InsuranceClaim {
+	pb := &paymentv1.InsuranceClaim{
+		Id:                 c.ID,
+		ClaimNumber:        c.ClaimNumber,
+		PolicyId:           c.PolicyID,
+		ClaimantId:         c.ClaimantID,
+		ClaimType:          c.ClaimType,
+		Description:        c.Description,
+		EvidenceUrls:       c.EvidenceURLs,
+		ClaimedAmountCents: c.ClaimedAmountCents,
+		AssessorNotes:      c.AssessorNotes,
+		StripeTransferId:   c.StripeTransferID,
+		Status:             c.Status,
+		DenialReason:       c.DenialReason,
+		CreatedAt:          timestamppb.New(c.CreatedAt),
+		UpdatedAt:          timestamppb.New(c.UpdatedAt),
+	}
+	if c.AssessedAmountCents != nil {
+		pb.AssessedAmountCents = *c.AssessedAmountCents
+	}
+	if c.ApprovedAmountCents != nil {
+		pb.ApprovedAmountCents = *c.ApprovedAmountCents
+	}
+	if c.PayoutCents != nil {
+		pb.PayoutCents = *c.PayoutCents
+	}
+	if c.ReviewedBy != nil {
+		pb.ReviewedBy = *c.ReviewedBy
+	}
+	if c.ReviewedAt != nil {
+		pb.ReviewedAt = timestamppb.New(*c.ReviewedAt)
+	}
+	if c.PaidAt != nil {
+		pb.PaidAt = timestamppb.New(*c.PaidAt)
+	}
+	return pb
+}
+
+func domainQuoteToProto(q *domain.InsuranceQuote) *paymentv1.InsuranceQuote {
+	return &paymentv1.InsuranceQuote{
+		ProductId:            q.ProductID,
+		ProductName:          q.ProductName,
+		CoverageType:         q.CoverageType,
+		PremiumCents:         q.PremiumCents,
+		CoverageAmountCents:  q.CoverageAmountCents,
+		DeductibleCents:      q.DeductibleCents,
+		CoverageDurationDays: int32(q.CoverageDurationDays),
+		EffectiveDate:        q.EffectiveDate.Format("2006-01-02"),
+		ExpirationDate:       q.ExpirationDate.Format("2006-01-02"),
+	}
+}
+
+// mapInsuranceError maps insurance domain errors to gRPC status errors.
+func mapInsuranceError(err error) error {
+	switch {
+	case errors.Is(err, domain.ErrInsuranceProductNotFound):
+		return status.Error(codes.NotFound, "insurance product not found")
+	case errors.Is(err, domain.ErrInsurancePolicyNotFound):
+		return status.Error(codes.NotFound, "insurance policy not found")
+	case errors.Is(err, domain.ErrInsuranceClaimNotFound):
+		return status.Error(codes.NotFound, "insurance claim not found")
+	case errors.Is(err, domain.ErrPolicyNotActive):
+		return status.Error(codes.FailedPrecondition, "insurance policy is not active")
+	case errors.Is(err, domain.ErrPolicyExpired):
+		return status.Error(codes.FailedPrecondition, "insurance policy has expired")
+	case errors.Is(err, domain.ErrClaimExceedsCoverage):
+		return status.Error(codes.InvalidArgument, "claim amount exceeds coverage")
+	case errors.Is(err, domain.ErrClaimNotReviewable):
+		return status.Error(codes.FailedPrecondition, "claim is not in reviewable state")
+	default:
+		return status.Error(codes.Internal, "internal error")
+	}
+}

@@ -237,6 +237,8 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient)
 
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
+	insuranceClient := paymentv1.NewInsuranceServiceClient(paymentConn)
+	insuranceHandler := handler.NewInsuranceHandler(insuranceClient)
 	// Webhook handler receives raw payloads and forwards them to backend services
 	// which perform Stripe signature verification via stripe.webhooks.constructEvent().
 	webhookHandler := handler.NewWebhookHandler(paymentClient, subscriptionClient)
@@ -285,6 +287,7 @@ func main() {
 		oauthHandler,
 		auctionReplayHandler,
 		challengeHandler,
+		insuranceHandler,
 	)
 
 	srv := &http.Server{
