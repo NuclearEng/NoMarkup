@@ -185,19 +185,25 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
 
       {/* ── Add Widget ── */}
       <Popover open={addWidgetOpen} onOpenChange={setAddWidgetOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 border-zinc-700/60 px-2.5 text-xs text-zinc-300 hover:text-zinc-100"
-            style={{
-              background: 'linear-gradient(135deg, rgba(39,39,42,0.8), rgba(39,39,42,0.5))',
-            }}
-          >
-            <Plus className="h-3.5 w-3.5 text-amber-400/80" />
-            <span className="hidden sm:inline">Add Widget</span>
-          </Button>
-        </PopoverTrigger>
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 border-zinc-700/60 px-2.5 text-xs text-zinc-300 hover:text-zinc-100"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(39,39,42,0.8), rgba(39,39,42,0.5))',
+                }}
+                aria-label="Add widget to layout"
+              >
+                <Plus className="h-3.5 w-3.5 text-amber-400/80" />
+                <span className="hidden sm:inline">Add Widget</span>
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent className="sm:hidden">Add widget</TooltipContent>
+        </Tooltip>
         <PopoverContent align="start" className="w-72 border-white/[0.08] bg-zinc-900 p-0 text-zinc-200 shadow-xl">
           <div className="max-h-80 overflow-y-auto">
             {(Object.entries(WIDGET_CATEGORIES) as Array<[string, WidgetDefinition[]]>).map(

@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { GoldAccentCard } from '@/components/ui/gold-accent-card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { WinBadge } from '@/components/ui/win-badge';
 import { useAwardBid } from '@/hooks/useBids';
 import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
@@ -158,46 +159,55 @@ function TrustScoreGauge({ score, tier }: { score: number; tier: TrustTier }) {
   const glowColor = TRUST_GLOW_MAP[tier];
 
   return (
-    <div
-      className="relative flex-shrink-0"
-      aria-label={`Trust score: ${String(scorePercent)} out of 100`}
-      role="img"
-    >
-      <svg width="48" height="48" viewBox="0 0 48 48" className="-rotate-90" aria-hidden="true">
-        <defs>
-          <filter id={`trust-glow-${tier}`}>
-            <feGaussianBlur stdDeviation="2" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        {/* Background track */}
-        <circle cx="24" cy="24" r={radius} fill="none" className="stroke-muted" strokeWidth="3" />
-        {/* Filled arc with glow */}
-        <circle
-          cx="24"
-          cy="24"
-          r={radius}
-          fill="none"
-          className={strokeColor}
-          strokeWidth="3.5"
-          strokeLinecap="round"
-          strokeDasharray={`${String(filled)} ${String(circumference - filled)}`}
-          style={{ filter: `drop-shadow(0 0 3px ${glowColor})` }}
-        />
-      </svg>
-      <span
-        className={cn(
-          'absolute inset-0 flex items-center justify-center text-xs font-bold',
-          textColor,
-        )}
-        aria-hidden="true"
-      >
-        {String(scorePercent)}
-      </span>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className="relative flex-shrink-0 cursor-default"
+          aria-label={`Trust score: ${String(scorePercent)} out of 100`}
+          role="img"
+          tabIndex={0}
+        >
+          <svg width="48" height="48" viewBox="0 0 48 48" className="-rotate-90" aria-hidden="true">
+            <defs>
+              <filter id={`trust-glow-${tier}`}>
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            {/* Background track */}
+            <circle cx="24" cy="24" r={radius} fill="none" className="stroke-muted" strokeWidth="3" />
+            {/* Filled arc with glow */}
+            <circle
+              cx="24"
+              cy="24"
+              r={radius}
+              fill="none"
+              className={strokeColor}
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeDasharray={`${String(filled)} ${String(circumference - filled)}`}
+              style={{ filter: `drop-shadow(0 0 3px ${glowColor})` }}
+            />
+          </svg>
+          <span
+            className={cn(
+              'absolute inset-0 flex items-center justify-center text-xs font-bold',
+              textColor,
+            )}
+            aria-hidden="true"
+          >
+            {String(scorePercent)}
+          </span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p className="font-semibold">Trust Score: {String(scorePercent)}/100</p>
+        <p className="mt-0.5 text-zinc-400">Composite of completion rate, quality ratings, on-time delivery, and dispute history.</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -247,25 +257,33 @@ function WinProbabilityBar({ rank, totalBids }: { rank: number; totalBids: numbe
   );
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <span className={cn('text-xs font-bold', color)}>{label}</span>
-        <span className={cn('text-[10px] font-semibold tabular-nums', color)}>
-          {String(percent)}%
-        </span>
-      </div>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className={cn('h-full rounded-full transition-all duration-500', barGradient)}
-          style={{ width: `${String(percent)}%` }}
-          role="progressbar"
-          aria-valuenow={percent}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`Win probability: ${label}`}
-        />
-      </div>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="cursor-default space-y-1" tabIndex={0} role="img" aria-label={`Win probability: ${label}, ${String(percent)}%`}>
+          <div className="flex items-center justify-between">
+            <span className={cn('text-xs font-bold', color)}>{label}</span>
+            <span className={cn('text-[10px] font-semibold tabular-nums', color)}>
+              {String(percent)}%
+            </span>
+          </div>
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+            <div
+              className={cn('h-full rounded-full transition-all duration-500', barGradient)}
+              style={{ width: `${String(percent)}%` }}
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-hidden="true"
+            />
+          </div>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p className="font-semibold">Win Probability</p>
+        <p className="mt-0.5 text-zinc-400">Estimated likelihood based on price rank vs. competition. Rank-1 bids historically win ~85% of auctions.</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -416,17 +434,39 @@ export const BidCard = memo(function BidCard({
 
             {/* Price vs starting */}
             {priceDiffVsStarting !== null && priceDiffVsStarting > 0 ? (
-              <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <TrendingDown className="h-3 w-3" aria-hidden="true" />
-                {String(priceDiffVsStarting)}% below asking
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                    tabIndex={0}
+                  >
+                    <TrendingDown className="h-3 w-3" aria-hidden="true" />
+                    {String(priceDiffVsStarting)}% below asking
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {String(priceDiffVsStarting)}% lower than the customer&apos;s starting price
+                  {startingPriceCents ? ` of ${formatCents(startingPriceCents)}` : ''}
+                </TooltipContent>
+              </Tooltip>
             ) : null}
 
             {/* Price vs market median */}
             {priceDiffVsMedian !== null && priceDiffVsMedian > 0 ? (
-              <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-                {String(priceDiffVsMedian)}% below market
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400"
+                    tabIndex={0}
+                  >
+                    {String(priceDiffVsMedian)}% below market
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {String(priceDiffVsMedian)}% lower than the market median
+                  {marketMedianCents ? ` of ${formatCents(marketMedianCents)}` : ''} for this service type
+                </TooltipContent>
+              </Tooltip>
             ) : null}
           </div>
         </div>

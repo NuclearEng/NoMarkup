@@ -3,6 +3,7 @@
 import { BarChart3, TrendingDown, TrendingUp } from 'lucide-react';
 
 import { formatCents } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { MarketRange } from '@/types';
 
 interface MarketRangeDisplayProps {
@@ -140,14 +141,33 @@ export function MarketRangeDisplay({
             Market Intelligence
           </h4>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className={`h-1.5 w-1.5 rounded-full ${confidence.dotColor}`} aria-hidden="true" />
-          <span className={`text-[11px] font-medium ${confidence.color}`}>{confidence.label}</span>
-          <span className="text-[11px] text-zinc-400 dark:text-zinc-600">
-            {' \u00B7 '}
-            {String(sample_size)} job{sample_size !== 1 ? 's' : ''}
-          </span>
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className="flex cursor-default items-center gap-1.5"
+              tabIndex={0}
+              aria-label={`${confidence.label} — based on ${String(sample_size)} similar completed jobs`}
+            >
+              <div className={`h-1.5 w-1.5 rounded-full ${confidence.dotColor}`} aria-hidden="true" />
+              <span className={`text-[11px] font-medium ${confidence.color}`}>{confidence.label}</span>
+              <span className="text-[11px] text-zinc-400 dark:text-zinc-600">
+                {' \u00B7 '}
+                {String(sample_size)} job{sample_size !== 1 ? 's' : ''}
+              </span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="font-semibold">{confidence.label}</p>
+            <p className="mt-0.5 text-zinc-400">
+              Based on {String(sample_size)} similar completed job{sample_size !== 1 ? 's' : ''} in this area.
+              {sample_size >= 20
+                ? ' Strong statistical confidence.'
+                : sample_size >= 5
+                  ? ' Moderate confidence — estimate may shift with more data.'
+                  : ' Limited data — treat as a rough estimate.'}
+            </p>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Range visualization */}

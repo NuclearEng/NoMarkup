@@ -6,6 +6,7 @@ import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import { GripVertical, X } from 'lucide-react';
 
 import { useTerminalLayoutStore } from '@/stores/terminal-layout-store';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getWidgetById } from './widget-registry';
 import { WidgetRenderer } from './widget-renderer';
 import type { SimulationData, WidgetProps } from './types';
@@ -222,13 +223,18 @@ export function TerminalGrid({
                     <span className="flex-1 truncate text-[10px] font-medium text-zinc-400">
                       {def?.label ?? wp.widgetId}
                     </span>
-                    <button
-                      onClick={() => removeWidget(wp.widgetId)}
-                      className="rounded p-0.5 text-zinc-500 transition-colors hover:text-red-400"
-                      title="Remove widget"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                    <Tooltip delayDuration={0}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => removeWidget(wp.widgetId)}
+                          className="rounded p-0.5 text-zinc-500 transition-colors hover:text-red-400"
+                          aria-label={`Remove ${def?.label ?? wp.widgetId} widget`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Remove widget</TooltipContent>
+                    </Tooltip>
                   </div>
                 )}
                 {/* Widget content */}

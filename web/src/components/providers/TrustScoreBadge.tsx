@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { TrustTier } from '@/types';
 import { TRUST_TIER } from '@/types';
 
@@ -53,6 +54,14 @@ const TIER_ICONS: Record<TrustTier, string> = {
   [TRUST_TIER.TOP_RATED]: '\u2605',    // filled star
 };
 
+const TIER_DESCRIPTIONS: Record<TrustTier, string> = {
+  [TRUST_TIER.UNDER_REVIEW]: 'Account under review. Scores are locked until identity and license verification completes.',
+  [TRUST_TIER.NEW]: 'New provider. Account verified — actively building a track record on the platform.',
+  [TRUST_TIER.RISING]: 'Consistently delivering quality work. Ranks in the top 40% of new providers by completion and ratings.',
+  [TRUST_TIER.TRUSTED]: 'Top 20% of providers platform-wide. Verified track record of quality completions and strong customer ratings.',
+  [TRUST_TIER.TOP_RATED]: 'Top 5% platform-wide. Exceptional and consistent performance across all trust dimensions.',
+};
+
 interface TrustScoreBadgeProps {
   tier: TrustTier;
   score?: number; // 0.0-1.0, optional
@@ -63,70 +72,98 @@ export function TrustScoreBadge({ tier, score, size = 'md' }: TrustScoreBadgePro
   const colors = TIER_COLORS[tier];
   const label = TIER_LABELS[tier];
   const icon = TIER_ICONS[tier];
+  const description = TIER_DESCRIPTIONS[tier];
 
   const scorePercent = score !== undefined ? Math.round(score * 100) : undefined;
 
+  const tooltipContent = (
+    <>
+      <p>{description}</p>
+      {scorePercent !== undefined && (
+        <p className="mt-1 text-zinc-400">{scorePercent}% composite score</p>
+      )}
+    </>
+  );
+
   if (size === 'sm') {
     return (
-      <span
-        className={cn(
-          'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium',
-          colors.bg,
-          colors.text,
-          colors.border,
-        )}
-        aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
-      >
-        <span aria-hidden="true">{icon}</span>
-        {label}
-      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={cn(
+              'inline-flex cursor-default items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium',
+              colors.bg,
+              colors.text,
+              colors.border,
+            )}
+            aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
+            tabIndex={0}
+          >
+            <span aria-hidden="true">{icon}</span>
+            {label}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{tooltipContent}</TooltipContent>
+      </Tooltip>
     );
   }
 
   if (size === 'lg') {
     return (
-      <div
-        className={cn(
-          'inline-flex items-center gap-2.5 rounded-lg border px-4 py-2.5 font-semibold',
-          colors.bg,
-          colors.text,
-          colors.border,
-        )}
-        aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
-      >
-        <span className="text-xl" aria-hidden="true">
-          {icon}
-        </span>
-        <span className="flex flex-col">
-          <span className="text-base leading-tight">{label}</span>
-          {scorePercent !== undefined ? (
-            <span className="text-sm font-normal opacity-80">
-              {String(scorePercent)}% trust score
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className={cn(
+              'inline-flex cursor-default items-center gap-2.5 rounded-lg border px-4 py-2.5 font-semibold',
+              colors.bg,
+              colors.text,
+              colors.border,
+            )}
+            aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
+            tabIndex={0}
+          >
+            <span className="text-xl" aria-hidden="true">
+              {icon}
             </span>
-          ) : null}
-        </span>
-      </div>
+            <span className="flex flex-col">
+              <span className="text-base leading-tight">{label}</span>
+              {scorePercent !== undefined ? (
+                <span className="text-sm font-normal opacity-80">
+                  {String(scorePercent)}% trust score
+                </span>
+              ) : null}
+            </span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>{tooltipContent}</TooltipContent>
+      </Tooltip>
     );
   }
 
   // md (default)
   return (
-    <span
-      className={cn(
-        'inline-flex min-h-[44px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold',
-        colors.bg,
-        colors.text,
-        colors.border,
-      )}
-      aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
-    >
-      <span aria-hidden="true">{icon}</span>
-      <span>{label}</span>
-      {scorePercent !== undefined ? (
-        <span className="ml-0.5 font-normal opacity-75">
-          {String(scorePercent)}%
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={cn(
+            'inline-flex min-h-[44px] cursor-default items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold',
+            colors.bg,
+            colors.text,
+            colors.border,
+          )}
+          aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
+          tabIndex={0}
+        >
+          <span aria-hidden="true">{icon}</span>
+          <span>{label}</span>
+          {scorePercent !== undefined ? (
+            <span className="ml-0.5 font-normal opacity-75">
+              {String(scorePercent)}%
+            </span>
+          ) : null}
         </span>
-      ) : null}
-    </span>
+      </TooltipTrigger>
+      <TooltipContent>{tooltipContent}</TooltipContent>
+    </Tooltip>
   );
 }

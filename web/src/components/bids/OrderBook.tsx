@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { Shield, Star, TrendingDown, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface OrderBookBid {
   id: string;
@@ -231,21 +232,30 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               </div>
 
               {/* Trust badge — hidden on mobile to save space */}
-              <div
-                className={cn(
-                  'relative z-10 hidden items-center justify-end gap-1 sm:flex',
-                  tierConfig.colorClass,
-                )}
-                title={`${tierConfig.label} (${String(bid.trust_score)})`}
-              >
-                <TierIcon className="h-3 w-3" aria-hidden="true" />
-                <span
-                  className="text-[10px] font-medium tabular-nums"
-                  style={{ textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
-                >
-                  {String(bid.trust_score)}
-                </span>
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className={cn(
+                      'relative z-10 hidden cursor-default items-center justify-end gap-1 sm:flex',
+                      tierConfig.colorClass,
+                    )}
+                    aria-label={`Trust tier: ${tierConfig.label}, score: ${String(bid.trust_score)}`}
+                    tabIndex={0}
+                  >
+                    <TierIcon className="h-3 w-3" aria-hidden="true" />
+                    <span
+                      className="text-[10px] font-medium tabular-nums"
+                      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
+                    >
+                      {String(bid.trust_score)}
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="font-semibold">{tierConfig.label}</p>
+                  <p className="mt-0.5 text-zinc-400">Trust score: {String(bid.trust_score)}/100</p>
+                </TooltipContent>
+              </Tooltip>
 
               {/* Price */}
               <span
