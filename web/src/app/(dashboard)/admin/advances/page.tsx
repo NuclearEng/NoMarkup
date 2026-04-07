@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useAdminAdvances, useReviewAdvance } from '@/hooks/useWorkingCapital';
+import { useAdminAdvances, useDisburseAdvance, useReviewAdvance } from '@/hooks/useWorkingCapital';
 import { ADVANCE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { AdvanceStatus, WorkingCapitalAdvance } from '@/types';
@@ -46,41 +46,62 @@ function formatDate(dateStr: string): string {
 
 function AdvanceActions({ advance }: { advance: WorkingCapitalAdvance }) {
   const reviewAdvance = useReviewAdvance();
+  const disburseAdvance = useDisburseAdvance();
 
-  if (advance.status !== ADVANCE_STATUS.REQUESTED) return null;
+  if (advance.status === ADVANCE_STATUS.REQUESTED) {
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          className="min-h-[44px]"
+          disabled={reviewAdvance.isPending}
+          onClick={() => {
+            reviewAdvance.mutate({ advanceId: advance.id, action: 'approve' });
+          }}
+        >
+          {reviewAdvance.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+          ) : null}
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          className="min-h-[44px]"
+          disabled={reviewAdvance.isPending}
+          onClick={() => {
+            reviewAdvance.mutate({
+              advanceId: advance.id,
+              action: 'reject',
+              reason: 'Does not meet eligibility criteria',
+            });
+          }}
+        >
+          Reject
+        </Button>
+      </div>
+    );
+  }
 
-  return (
-    <div className="flex items-center gap-2">
+  if (advance.status === ADVANCE_STATUS.APPROVED) {
+    return (
       <Button
         size="sm"
         className="min-h-[44px]"
-        disabled={reviewAdvance.isPending}
+        disabled={disburseAdvance.isPending}
         onClick={() => {
-          reviewAdvance.mutate({ advanceId: advance.id, approved: true });
+          disburseAdvance.mutate(advance.id);
         }}
       >
-        {reviewAdvance.isPending ? (
+        {disburseAdvance.isPending ? (
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
         ) : null}
-        Approve
+        Disburse
       </Button>
-      <Button
-        size="sm"
-        variant="destructive"
-        className="min-h-[44px]"
-        disabled={reviewAdvance.isPending}
-        onClick={() => {
-          reviewAdvance.mutate({
-            advanceId: advance.id,
-            approved: false,
-            rejection_reason: 'Does not meet eligibility criteria',
-          });
-        }}
-      >
-        Reject
-      </Button>
-    </div>
-  );
+    );
+  }
+
+  return null;
 }
 
 export default function AdminAdvancesPage() {
@@ -138,6 +159,15 @@ export default function AdminAdvancesPage() {
         >
           {STATUS_LABELS[advance.status]}
         </Badge>
+      ),
+    },
+    {
+      key: 'transfer',
+      header: 'Transfer ID',
+      render: (advance) => (
+        <span className="text-xs text-zinc-400 font-mono">
+          {advance.stripe_transfer_id ? advance.stripe_transfer_id.slice(0, 16) : '\u2014'}
+        </span>
       ),
     },
     {

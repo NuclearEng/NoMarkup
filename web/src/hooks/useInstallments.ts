@@ -1,8 +1,17 @@
 import { useMemo } from 'react';
 
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+
+import { api } from '@/lib/api';
 import { useContract } from '@/hooks/useContracts';
 import { usePayments } from '@/hooks/usePayments';
-import type { InstallmentInfo } from '@/types';
+import type {
+  CreateInstallmentPlanInput,
+  InstallmentInfo,
+  InstallmentPlan,
+  InstallmentPlansResponse,
+} from '@/types';
 
 export function useInstallmentSchedule(contractId: string) {
   const { data: contractData, isLoading: contractLoading } = useContract(contractId);
@@ -47,4 +56,39 @@ export function useInstallmentSchedule(contractId: string) {
     installments,
     isLoading: contractLoading || paymentsLoading,
   };
+}
+
+export function useCreateInstallmentPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: CreateInstallmentPlanInput) =>
+      api
+        .post<{ plan: InstallmentPlan }>('/api/v1/payments/installment-plans', input)
+        .then((res) => res.plan),
+    onSuccess: () => {
+      toast.success('Payment plan created');
+      void queryClient.invalidateQueries({ queryKey: ['installment-plans'] });
+      void queryClient.invalidateQueries({ queryKey: ['payments'] });
+    },
+    onError: () => {
+      toast.error('Failed to create payment plan');
+    },
+  });
+}
+
+export function useInstallmentPlan(id: string) {
+  return useQuery({
+    queryKey: ['installment-plan', id],
+    queryFn: () =>
+      api.get<{ plan: InstallmentPlan }>(`/api/v1/payments/installment-plans/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useMyInstallmentPlans() {
+  return useQuery({
+    queryKey: ['installment-plans'],
+    queryFn: () => api.get<InstallmentPlansResponse>('/api/v1/payments/installment-plans'),
+  });
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ChevronDown, ChevronUp, Printer } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Download, Loader2, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
+import { useGenerateInvoice } from '@/hooks/useTaxForms';
 import { formatCents } from '@/lib/utils';
 import type { Contract } from '@/types';
 
@@ -27,9 +28,19 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
   providerAddress?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const generateInvoice = useGenerateInvoice();
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   function handlePrint() {
     window.print();
+  }
+
+  function handleGenerateInvoice() {
+    generateInvoice.mutate(contract.id, {
+      onSuccess: (url) => {
+        setDownloadUrl(url);
+      },
+    });
   }
 
   return (
@@ -65,7 +76,32 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
 
       {expanded ? (
         <div className="border-t bg-muted/20 p-4">
-          <div className="mb-4 flex justify-end no-print">
+          <div className="mb-4 flex justify-end gap-2 no-print">
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-h-[44px] gap-2"
+              disabled={generateInvoice.isPending}
+              onClick={handleGenerateInvoice}
+            >
+              {generateInvoice.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Download className="h-4 w-4" aria-hidden="true" />
+              )}
+              Generate Invoice
+            </Button>
+            {downloadUrl ? (
+              <a
+                href={downloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted/50"
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Download PDF
+              </a>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
@@ -76,6 +112,11 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
               Print Invoice
             </Button>
           </div>
+          {generateInvoice.isError ? (
+            <p className="mb-3 text-sm text-destructive">
+              Failed to generate invoice. Please try again.
+            </p>
+          ) : null}
           <InvoiceTemplate
             contract={contract}
             providerName={providerName}

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Download, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Loader2, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -17,6 +17,8 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useProviderEarnings } from '@/hooks/useAnalytics';
+import { useGenerateTaxForm, useTaxForms } from '@/hooks/useTaxForms';
+import { API_BASE_URL } from '@/lib/constants';
 import { formatCents } from '@/lib/utils';
 
 const SE_TAX_RATE = 0.153; // 15.3% self-employment tax
@@ -36,6 +38,8 @@ export default function TaxCenterPage() {
   const endDate = `${taxYear}-12-31`;
 
   const { data: earnings, isLoading } = useProviderEarnings(startDate, endDate, 'quarter');
+  const { data: taxFormsData, isLoading: taxFormsLoading } = useTaxForms();
+  const generateTaxForm = useGenerateTaxForm();
 
   const ytdEarnings = earnings?.net_earnings_cents ?? 0;
   const totalJobs = earnings?.total_jobs ?? 0;
@@ -242,6 +246,85 @@ export default function TaxCenterPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          {/* Generate 1099-NEC */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">1099-NEC Tax Forms</CardTitle>
+              <Button
+                variant="outline"
+                className="min-h-[44px] gap-2"
+                disabled={generateTaxForm.isPending}
+                onClick={() => {
+                  generateTaxForm.mutate(parseInt(taxYear, 10));
+                }}
+              >
+                {generateTaxForm.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <FileText className="h-4 w-4" aria-hidden="true" />
+                )}
+                Generate 1099-NEC
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {generateTaxForm.isError ? (
+                <p className="mb-3 text-sm text-destructive">
+                  Failed to generate tax form. Please try again.
+                </p>
+              ) : null}
+
+              {taxFormsLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ) : (taxFormsData?.forms ?? []).length === 0 ? (
+                <p className="py-6 text-center text-sm text-zinc-300">
+                  No tax forms generated yet. Click the button above to generate a 1099-NEC for the selected year.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {(taxFormsData?.forms ?? []).map((form) => (
+                    <div
+                      key={form.id}
+                      className="flex items-center justify-between rounded-lg border p-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">
+                          {form.form_type} - {String(form.tax_year)}
+                        </p>
+                        <p className="text-xs text-zinc-300">
+                          Generated:{' '}
+                          {new Date(form.generated_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={form.status === 'ready' ? 'default' : 'secondary'}>
+                          {form.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </Badge>
+                        {form.download_url ? (
+                          <a
+                            href={`${API_BASE_URL}/api/v1/providers/me/tax-forms/${String(form.tax_year)}/download`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex min-h-[44px] items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted/50"
+                          >
+                            <Download className="h-4 w-4" aria-hidden="true" />
+                            Download
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { api, ApiError } from '@/lib/api';
-import type { AdvancesResponse, WorkingCapitalAdvance } from '@/types';
+import type { AdvancesResponse, CreditLimit, WorkingCapitalAdvance } from '@/types';
 
 export function useMyAdvances() {
   return useQuery({
@@ -19,6 +19,13 @@ export function useMyAdvances() {
   });
 }
 
+export function useCreditLimit() {
+  return useQuery({
+    queryKey: ['credit-limit'],
+    queryFn: () => api.get<CreditLimit>('/api/v1/providers/me/credit-limit'),
+  });
+}
+
 export function useRequestAdvance() {
   const queryClient = useQueryClient();
 
@@ -30,6 +37,7 @@ export function useRequestAdvance() {
     onSuccess: () => {
       toast.success('Advance request submitted');
       void queryClient.invalidateQueries({ queryKey: ['my-advances'] });
+      void queryClient.invalidateQueries({ queryKey: ['credit-limit'] });
     },
     onError: () => {
       toast.error('Failed to request advance');
@@ -57,14 +65,14 @@ export function useReviewAdvance() {
   return useMutation({
     mutationFn: (variables: {
       advanceId: string;
-      approved: boolean;
-      rejection_reason?: string;
+      action: 'approve' | 'reject';
+      reason?: string;
     }) =>
       api.post<{ advance: WorkingCapitalAdvance }>(
         `/api/v1/admin/advances/${variables.advanceId}/review`,
         {
-          approved: variables.approved,
-          rejection_reason: variables.rejection_reason,
+          action: variables.action,
+          reason: variables.reason,
         },
       ),
     onSuccess: () => {
@@ -73,6 +81,26 @@ export function useReviewAdvance() {
     },
     onError: () => {
       toast.error('Failed to review advance');
+    },
+  });
+}
+
+export function useDisburseAdvance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (advanceId: string) =>
+      api
+        .post<{ advance: WorkingCapitalAdvance }>(
+          `/api/v1/admin/advances/${advanceId}/disburse`,
+        )
+        .then((res) => res.advance),
+    onSuccess: () => {
+      toast.success('Advance disbursed successfully');
+      void queryClient.invalidateQueries({ queryKey: ['admin-advances'] });
+    },
+    onError: () => {
+      toast.error('Failed to disburse advance');
     },
   });
 }
