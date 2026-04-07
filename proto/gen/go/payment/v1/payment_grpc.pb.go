@@ -89,6 +89,15 @@ type PaymentServiceClient interface {
 	ListAdvances(ctx context.Context, in *ListAdvancesRequest, opts ...grpc.CallOption) (*ListAdvancesResponse, error)
 	GetAdvance(ctx context.Context, in *GetAdvanceRequest, opts ...grpc.CallOption) (*GetAdvanceResponse, error)
 	ReviewAdvance(ctx context.Context, in *ReviewAdvanceRequest, opts ...grpc.CallOption) (*ReviewAdvanceResponse, error)
+	// Tax Forms
+	GenerateTaxForm(ctx context.Context, in *GenerateTaxFormRequest, opts ...grpc.CallOption) (*GenerateTaxFormResponse, error)
+	GetTaxForm(ctx context.Context, in *GetTaxFormRequest, opts ...grpc.CallOption) (*GetTaxFormResponse, error)
+	ListTaxForms(ctx context.Context, in *ListTaxFormsRequest, opts ...grpc.CallOption) (*ListTaxFormsResponse, error)
+	// Invoices
+	GenerateInvoice(ctx context.Context, in *GenerateInvoiceRequest, opts ...grpc.CallOption) (*GenerateInvoiceResponse, error)
+	// Tax form / invoice HTML
+	GetTaxFormHTML(ctx context.Context, in *GetTaxFormHTMLRequest, opts ...grpc.CallOption) (*GetTaxFormHTMLResponse, error)
+	GetInvoiceHTML(ctx context.Context, in *GetInvoiceHTMLRequest, opts ...grpc.CallOption) (*GetInvoiceHTMLResponse, error)
 }
 
 type paymentServiceClient struct {
@@ -369,6 +378,66 @@ func (c *paymentServiceClient) ReviewAdvance(ctx context.Context, in *ReviewAdva
 	return out, nil
 }
 
+func (c *paymentServiceClient) GenerateTaxForm(ctx context.Context, in *GenerateTaxFormRequest, opts ...grpc.CallOption) (*GenerateTaxFormResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GenerateTaxFormResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GenerateTaxForm_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) GetTaxForm(ctx context.Context, in *GetTaxFormRequest, opts ...grpc.CallOption) (*GetTaxFormResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTaxFormResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GetTaxForm_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ListTaxForms(ctx context.Context, in *ListTaxFormsRequest, opts ...grpc.CallOption) (*ListTaxFormsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTaxFormsResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ListTaxForms_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) GenerateInvoice(ctx context.Context, in *GenerateInvoiceRequest, opts ...grpc.CallOption) (*GenerateInvoiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GenerateInvoiceResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GenerateInvoice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) GetTaxFormHTML(ctx context.Context, in *GetTaxFormHTMLRequest, opts ...grpc.CallOption) (*GetTaxFormHTMLResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTaxFormHTMLResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GetTaxFormHTML_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) GetInvoiceHTML(ctx context.Context, in *GetInvoiceHTMLRequest, opts ...grpc.CallOption) (*GetInvoiceHTMLResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInvoiceHTMLResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GetInvoiceHTML_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PaymentServiceServer is the server API for PaymentService service.
 // All implementations must embed UnimplementedPaymentServiceServer
 // for forward compatibility.
@@ -410,6 +479,15 @@ type PaymentServiceServer interface {
 	ListAdvances(context.Context, *ListAdvancesRequest) (*ListAdvancesResponse, error)
 	GetAdvance(context.Context, *GetAdvanceRequest) (*GetAdvanceResponse, error)
 	ReviewAdvance(context.Context, *ReviewAdvanceRequest) (*ReviewAdvanceResponse, error)
+	// Tax Forms
+	GenerateTaxForm(context.Context, *GenerateTaxFormRequest) (*GenerateTaxFormResponse, error)
+	GetTaxForm(context.Context, *GetTaxFormRequest) (*GetTaxFormResponse, error)
+	ListTaxForms(context.Context, *ListTaxFormsRequest) (*ListTaxFormsResponse, error)
+	// Invoices
+	GenerateInvoice(context.Context, *GenerateInvoiceRequest) (*GenerateInvoiceResponse, error)
+	// Tax form / invoice HTML
+	GetTaxFormHTML(context.Context, *GetTaxFormHTMLRequest) (*GetTaxFormHTMLResponse, error)
+	GetInvoiceHTML(context.Context, *GetInvoiceHTMLRequest) (*GetInvoiceHTMLResponse, error)
 	mustEmbedUnimplementedPaymentServiceServer()
 }
 
@@ -500,6 +578,24 @@ func (UnimplementedPaymentServiceServer) GetAdvance(context.Context, *GetAdvance
 }
 func (UnimplementedPaymentServiceServer) ReviewAdvance(context.Context, *ReviewAdvanceRequest) (*ReviewAdvanceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReviewAdvance not implemented")
+}
+func (UnimplementedPaymentServiceServer) GenerateTaxForm(context.Context, *GenerateTaxFormRequest) (*GenerateTaxFormResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GenerateTaxForm not implemented")
+}
+func (UnimplementedPaymentServiceServer) GetTaxForm(context.Context, *GetTaxFormRequest) (*GetTaxFormResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTaxForm not implemented")
+}
+func (UnimplementedPaymentServiceServer) ListTaxForms(context.Context, *ListTaxFormsRequest) (*ListTaxFormsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTaxForms not implemented")
+}
+func (UnimplementedPaymentServiceServer) GenerateInvoice(context.Context, *GenerateInvoiceRequest) (*GenerateInvoiceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GenerateInvoice not implemented")
+}
+func (UnimplementedPaymentServiceServer) GetTaxFormHTML(context.Context, *GetTaxFormHTMLRequest) (*GetTaxFormHTMLResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTaxFormHTML not implemented")
+}
+func (UnimplementedPaymentServiceServer) GetInvoiceHTML(context.Context, *GetInvoiceHTMLRequest) (*GetInvoiceHTMLResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInvoiceHTML not implemented")
 }
 func (UnimplementedPaymentServiceServer) mustEmbedUnimplementedPaymentServiceServer() {}
 func (UnimplementedPaymentServiceServer) testEmbeddedByValue()                        {}
@@ -1008,6 +1104,114 @@ func _PaymentService_ReviewAdvance_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PaymentService_GenerateTaxForm_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateTaxFormRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GenerateTaxForm(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GenerateTaxForm_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GenerateTaxForm(ctx, req.(*GenerateTaxFormRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_GetTaxForm_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTaxFormRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GetTaxForm(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GetTaxForm_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GetTaxForm(ctx, req.(*GetTaxFormRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ListTaxForms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTaxFormsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ListTaxForms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ListTaxForms_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ListTaxForms(ctx, req.(*ListTaxFormsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_GenerateInvoice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateInvoiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GenerateInvoice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GenerateInvoice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GenerateInvoice(ctx, req.(*GenerateInvoiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_GetTaxFormHTML_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTaxFormHTMLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GetTaxFormHTML(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GetTaxFormHTML_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GetTaxFormHTML(ctx, req.(*GetTaxFormHTMLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_GetInvoiceHTML_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInvoiceHTMLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GetInvoiceHTML(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GetInvoiceHTML_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GetInvoiceHTML(ctx, req.(*GetInvoiceHTMLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PaymentService_ServiceDesc is the grpc.ServiceDesc for PaymentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1122,6 +1326,30 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReviewAdvance",
 			Handler:    _PaymentService_ReviewAdvance_Handler,
+		},
+		{
+			MethodName: "GenerateTaxForm",
+			Handler:    _PaymentService_GenerateTaxForm_Handler,
+		},
+		{
+			MethodName: "GetTaxForm",
+			Handler:    _PaymentService_GetTaxForm_Handler,
+		},
+		{
+			MethodName: "ListTaxForms",
+			Handler:    _PaymentService_ListTaxForms_Handler,
+		},
+		{
+			MethodName: "GenerateInvoice",
+			Handler:    _PaymentService_GenerateInvoice_Handler,
+		},
+		{
+			MethodName: "GetTaxFormHTML",
+			Handler:    _PaymentService_GetTaxFormHTML_Handler,
+		},
+		{
+			MethodName: "GetInvoiceHTML",
+			Handler:    _PaymentService_GetInvoiceHTML_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

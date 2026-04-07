@@ -244,6 +244,8 @@ func main() {
 	verificationHandler := handler.NewVerificationHandler(userClient)
 	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient)
 	expenseHandler := handler.NewExpenseHandler(paymentClient)
+	taxInvoiceClient := paymentv1.NewTaxInvoiceServiceClient(paymentConn)
+	taxHandler := handler.NewTaxHandler(taxInvoiceClient)
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
 	auctionWSHandler := handler.NewAuctionWSHandler(authMW, cfg.ChatWSAddr)
 	spectatorWSHandler := handler.NewSpectatorWSHandler(cacheClient)
@@ -277,7 +279,7 @@ func main() {
 		adminUsersHandler, adminVerificationHandler, adminJobsHandler,
 		adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler,
 		adminPlatformHandler, propertyHandler, verificationHandler,
-		workingCapitalHandler, expenseHandler,
+		workingCapitalHandler, expenseHandler, taxHandler,
 		auctionWSHandler,
 		spectatorWSHandler,
 		featureFlagHandler,

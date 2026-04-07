@@ -58,6 +58,18 @@ service PaymentService {
   rpc ListAdvances(ListAdvancesRequest) returns (ListAdvancesResponse);
   rpc GetAdvance(GetAdvanceRequest) returns (GetAdvanceResponse);
   rpc ReviewAdvance(ReviewAdvanceRequest) returns (ReviewAdvanceResponse);
+
+  // Tax Forms
+  rpc GenerateTaxForm(GenerateTaxFormRequest) returns (GenerateTaxFormResponse);
+  rpc GetTaxForm(GetTaxFormRequest) returns (GetTaxFormResponse);
+  rpc ListTaxForms(ListTaxFormsRequest) returns (ListTaxFormsResponse);
+
+  // Invoices
+  rpc GenerateInvoice(GenerateInvoiceRequest) returns (GenerateInvoiceResponse);
+
+  // Tax form / invoice HTML retrieval
+  rpc GetTaxFormHTML(GetTaxFormHTMLRequest) returns (GetTaxFormHTMLResponse);
+  rpc GetInvoiceHTML(GetInvoiceHTMLRequest) returns (GetInvoiceHTMLResponse);
 }
 
 // ============================================================
@@ -491,4 +503,84 @@ message ReviewAdvanceRequest {
 
 message ReviewAdvanceResponse {
   Advance advance = 1;
+}
+
+// ============================================================
+// Tax Form RPCs
+// ============================================================
+
+message TaxForm {
+  string id = 1;
+  string provider_id = 2;
+  int32 tax_year = 3;
+  string form_type = 4;
+  string provider_legal_name = 5;
+  string provider_tax_id_last4 = 6;
+  string provider_address = 7;
+  int64 total_compensation_cents = 8;
+  int64 federal_tax_withheld_cents = 9;
+  int64 state_tax_withheld_cents = 10;
+  string platform_ein = 11;
+  string platform_name = 12;
+  string pdf_url = 13;
+  string status = 14;
+  google.protobuf.Timestamp delivered_at = 15;
+  google.protobuf.Timestamp filed_at = 16;
+  google.protobuf.Timestamp created_at = 17;
+  google.protobuf.Timestamp updated_at = 18;
+}
+
+message GenerateTaxFormRequest {
+  string provider_id = 1;
+  int32 tax_year = 2;
+}
+
+message GenerateTaxFormResponse {
+  TaxForm tax_form = 1;
+}
+
+message GetTaxFormRequest {
+  string provider_id = 1;
+  int32 tax_year = 2;
+}
+
+message GetTaxFormResponse {
+  TaxForm tax_form = 1;
+}
+
+message ListTaxFormsRequest {
+  string provider_id = 1;
+}
+
+message ListTaxFormsResponse {
+  repeated TaxForm forms = 1;
+}
+
+// ============================================================
+// Invoice RPCs
+// ============================================================
+
+message GenerateInvoiceRequest {
+  string contract_id = 1;
+}
+
+message GenerateInvoiceResponse {
+  string invoice_url = 1;
+}
+
+message GetTaxFormHTMLRequest {
+  string provider_id = 1;
+  int32 tax_year = 2;
+}
+
+message GetTaxFormHTMLResponse {
+  string html = 1;
+}
+
+message GetInvoiceHTMLRequest {
+  string contract_id = 1;
+}
+
+message GetInvoiceHTMLResponse {
+  string html = 1;
 }
