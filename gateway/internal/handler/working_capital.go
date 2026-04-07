@@ -268,6 +268,76 @@ func (h *WorkingCapitalHandler) AdminReviewAdvance(w http.ResponseWriter, r *htt
 	})
 }
 
+// AdminDisburseAdvance handles POST /api/v1/admin/advances/{id}/disburse.
+func (h *WorkingCapitalHandler) AdminDisburseAdvance(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	advanceID := chi.URLParam(r, "id")
+	if advanceID == "" {
+		writeError(w, http.StatusBadRequest, "advance id required")
+		return
+	}
+
+	resp, err := h.paymentClient.DisburseAdvance(r.Context(), &paymentv1.DisburseAdvanceRequest{
+		AdvanceId: advanceID,
+		AdminId:   claims.UserID,
+	})
+	if err != nil {
+		slog.Error("disburse advance gRPC call failed", "error", err, "advance_id", advanceID, "admin_id", claims.UserID)
+		writeGRPCError(w, err)
+		return
+	}
+
+	result := protoAdvanceToJSON(resp.GetAdvance())
+	result["stripe_transfer_id"] = resp.GetStripeTransferId()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"advance": result,
+	})
+}
+
+// GetCreditLimit handles GET /api/v1/providers/me/credit-limit.
+func (h *WorkingCapitalHandler) GetCreditLimit(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	resp, err := h.paymentClient.GetCreditLimit(r.Context(), &paymentv1.GetCreditLimitRequest{
+		ProviderId: claims.UserID,
+	})
+	if err != nil {
+		slog.Error("get credit limit gRPC call failed", "error", err, "provider_id", claims.UserID)
+		writeGRPCError(w, err)
+		return
+	}
+
+	result := map[string]interface{}{
+		"provider_id":            resp.GetProviderId(),
+		"max_advance_cents":      resp.GetMaxAdvanceCents(),
+		"total_outstanding_cents": resp.GetTotalOutstandingCents(),
+		"available_advance_cents": resp.GetAvailableAdvanceCents(),
+		"risk_score":             resp.GetRiskScore(),
+		"jobs_completed":         resp.GetJobsCompleted(),
+		"total_earnings_cents":   resp.GetTotalEarningsCents(),
+		"avg_job_value_cents":    resp.GetAvgJobValueCents(),
+		"on_time_rate":           resp.GetOnTimeRate(),
+		"last_computed_at":       nil,
+	}
+	if resp.GetLastComputedAt() != nil {
+		result["last_computed_at"] = formatTimestamp(resp.GetLastComputedAt())
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"credit_limit": result,
+	})
+}
+
 // --- Proto to JSON helper ---
 
 func protoAdvanceToJSON(a *paymentv1.Advance) map[string]interface{} {
@@ -288,6 +358,7 @@ func protoAdvanceToJSON(a *paymentv1.Advance) map[string]interface{} {
 		"rejection_reason":     nil,
 		"disbursed_at":         nil,
 		"repaid_at":            nil,
+		"stripe_transfer_id":   nil,
 		"created_at":           formatTimestamp(a.GetCreatedAt()),
 		"updated_at":           formatTimestamp(a.GetUpdatedAt()),
 	}
@@ -306,6 +377,9 @@ func protoAdvanceToJSON(a *paymentv1.Advance) map[string]interface{} {
 	}
 	if a.GetRepaidAt() != nil {
 		result["repaid_at"] = formatTimestamp(a.GetRepaidAt())
+	}
+	if a.GetStripeTransferId() != "" {
+		result["stripe_transfer_id"] = a.GetStripeTransferId()
 	}
 
 	return result

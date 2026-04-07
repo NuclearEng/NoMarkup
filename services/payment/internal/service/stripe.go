@@ -270,6 +270,28 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	return t.ID, nil
 }
 
+// CreatePlatformTransfer transfers funds from the platform's Stripe balance to a
+// provider's Connect account. Unlike CreateTransfer, no SourceTransaction is set
+// because the funds come from the platform balance (e.g. for advance disbursements).
+func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents int64, currency string, destinationAccountID string) (string, error) {
+	if s.devMode {
+		slog.Info("dev mode: stub CreatePlatformTransfer", "amountCents", amountCents, "destination", destinationAccountID)
+		return "tr_platform_dev_" + destinationAccountID, nil
+	}
+
+	params := &stripe.TransferParams{
+		Amount:      stripe.Int64(amountCents),
+		Currency:    stripe.String(currency),
+		Destination: stripe.String(destinationAccountID),
+	}
+
+	t, err := transfer.New(params)
+	if err != nil {
+		return "", fmt.Errorf("create platform transfer: %w", err)
+	}
+	return t.ID, nil
+}
+
 // CreateRefund issues a refund for a PaymentIntent.
 func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string, amountCents int64) (string, error) {
 	if s.devMode {

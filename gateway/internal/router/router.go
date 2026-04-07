@@ -214,6 +214,9 @@ func New(
 				r.Get("/{id}", workingCapitalHandler.GetAdvance)
 			})
 
+			// Credit limit
+			r.Get("/me/credit-limit", workingCapitalHandler.GetCreditLimit)
+
 			// Expenses
 			r.Route("/me/expenses", func(r chi.Router) {
 				r.Post("/", expenseHandler.CreateExpense)
@@ -382,10 +385,11 @@ func New(
 			r.Get("/revenue", adminPaymentsHandler.GetRevenueReport)
 			r.Put("/fees", adminPaymentsHandler.UpdateFeeConfig)
 
-			// Working Capital advances (admin review)
+			// Working Capital advances (admin review + disburse)
 			r.Route("/advances", func(r chi.Router) {
 				r.Get("/", workingCapitalHandler.AdminListAdvances)
 				r.Post("/{id}/review", workingCapitalHandler.AdminReviewAdvance)
+				r.Post("/{id}/disburse", workingCapitalHandler.AdminDisburseAdvance)
 			})
 
 			// Platform

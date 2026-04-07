@@ -113,6 +113,60 @@ func (s *Server) ReviewAdvance(ctx context.Context, req *paymentv1.ReviewAdvance
 	}, nil
 }
 
+func (s *Server) DisburseAdvance(ctx context.Context, req *paymentv1.DisburseAdvanceRequest) (*paymentv1.DisburseAdvanceResponse, error) {
+	if req.GetAdvanceId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "advance_id is required")
+	}
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	advance, transferID, err := s.svc.DisburseAdvance(ctx, req.GetAdvanceId(), req.GetAdminId())
+	if err != nil {
+		return nil, mapAdvanceError(err)
+	}
+
+	return &paymentv1.DisburseAdvanceResponse{
+		Advance:          domainAdvanceToProto(advance),
+		StripeTransferId: transferID,
+	}, nil
+}
+
+func (s *Server) GetCreditLimit(ctx context.Context, req *paymentv1.GetCreditLimitRequest) (*paymentv1.GetCreditLimitResponse, error) {
+	if req.GetProviderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "provider_id is required")
+	}
+
+	limit, err := s.svc.ComputeCreditLimit(ctx, req.GetProviderId())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to compute credit limit")
+	}
+
+	available := limit.MaxAdvanceCents - limit.TotalOutstandingCents
+	if available < 0 {
+		available = 0
+	}
+
+	resp := &paymentv1.GetCreditLimitResponse{
+		ProviderId:            limit.ProviderID,
+		MaxAdvanceCents:       limit.MaxAdvanceCents,
+		TotalOutstandingCents: limit.TotalOutstandingCents,
+		AvailableAdvanceCents: available,
+		RiskScore:             limit.RiskScore,
+		JobsCompleted:         int32(limit.JobsCompleted),
+		TotalEarningsCents:    limit.TotalEarningsCents,
+		AvgJobValueCents:      limit.AvgJobValueCents,
+	}
+	if limit.OnTimeRate != nil {
+		resp.OnTimeRate = *limit.OnTimeRate
+	}
+	if !limit.LastComputedAt.IsZero() {
+		resp.LastComputedAt = timestamppb.New(limit.LastComputedAt)
+	}
+
+	return resp, nil
+}
+
 // --- Conversion helpers ---
 
 func domainAdvanceToProto(a *domain.Advance) *paymentv1.Advance {
@@ -128,6 +182,7 @@ func domainAdvanceToProto(a *domain.Advance) *paymentv1.Advance {
 		FeeCents:           a.FeeCents,
 		RepaidCents:        a.RepaidCents,
 		Status:             a.Status,
+		StripeTransferId:   a.StripeTransferID,
 		CreatedAt:          timestamppb.New(a.CreatedAt),
 		UpdatedAt:          timestamppb.New(a.UpdatedAt),
 	}

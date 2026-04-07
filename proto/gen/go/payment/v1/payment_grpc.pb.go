@@ -46,6 +46,8 @@ const (
 	PaymentService_ListAdvances_FullMethodName            = "/nomarkup.payment.v1.PaymentService/ListAdvances"
 	PaymentService_GetAdvance_FullMethodName              = "/nomarkup.payment.v1.PaymentService/GetAdvance"
 	PaymentService_ReviewAdvance_FullMethodName           = "/nomarkup.payment.v1.PaymentService/ReviewAdvance"
+	PaymentService_DisburseAdvance_FullMethodName         = "/nomarkup.payment.v1.PaymentService/DisburseAdvance"
+	PaymentService_GetCreditLimit_FullMethodName          = "/nomarkup.payment.v1.PaymentService/GetCreditLimit"
 )
 
 // PaymentServiceClient is the client API for PaymentService service.
@@ -89,6 +91,8 @@ type PaymentServiceClient interface {
 	ListAdvances(ctx context.Context, in *ListAdvancesRequest, opts ...grpc.CallOption) (*ListAdvancesResponse, error)
 	GetAdvance(ctx context.Context, in *GetAdvanceRequest, opts ...grpc.CallOption) (*GetAdvanceResponse, error)
 	ReviewAdvance(ctx context.Context, in *ReviewAdvanceRequest, opts ...grpc.CallOption) (*ReviewAdvanceResponse, error)
+	DisburseAdvance(ctx context.Context, in *DisburseAdvanceRequest, opts ...grpc.CallOption) (*DisburseAdvanceResponse, error)
+	GetCreditLimit(ctx context.Context, in *GetCreditLimitRequest, opts ...grpc.CallOption) (*GetCreditLimitResponse, error)
 }
 
 type paymentServiceClient struct {
@@ -369,6 +373,26 @@ func (c *paymentServiceClient) ReviewAdvance(ctx context.Context, in *ReviewAdva
 	return out, nil
 }
 
+func (c *paymentServiceClient) DisburseAdvance(ctx context.Context, in *DisburseAdvanceRequest, opts ...grpc.CallOption) (*DisburseAdvanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DisburseAdvanceResponse)
+	err := c.cc.Invoke(ctx, PaymentService_DisburseAdvance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) GetCreditLimit(ctx context.Context, in *GetCreditLimitRequest, opts ...grpc.CallOption) (*GetCreditLimitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCreditLimitResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GetCreditLimit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PaymentServiceServer is the server API for PaymentService service.
 // All implementations must embed UnimplementedPaymentServiceServer
 // for forward compatibility.
@@ -410,6 +434,8 @@ type PaymentServiceServer interface {
 	ListAdvances(context.Context, *ListAdvancesRequest) (*ListAdvancesResponse, error)
 	GetAdvance(context.Context, *GetAdvanceRequest) (*GetAdvanceResponse, error)
 	ReviewAdvance(context.Context, *ReviewAdvanceRequest) (*ReviewAdvanceResponse, error)
+	DisburseAdvance(context.Context, *DisburseAdvanceRequest) (*DisburseAdvanceResponse, error)
+	GetCreditLimit(context.Context, *GetCreditLimitRequest) (*GetCreditLimitResponse, error)
 	mustEmbedUnimplementedPaymentServiceServer()
 }
 
@@ -500,6 +526,12 @@ func (UnimplementedPaymentServiceServer) GetAdvance(context.Context, *GetAdvance
 }
 func (UnimplementedPaymentServiceServer) ReviewAdvance(context.Context, *ReviewAdvanceRequest) (*ReviewAdvanceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReviewAdvance not implemented")
+}
+func (UnimplementedPaymentServiceServer) DisburseAdvance(context.Context, *DisburseAdvanceRequest) (*DisburseAdvanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DisburseAdvance not implemented")
+}
+func (UnimplementedPaymentServiceServer) GetCreditLimit(context.Context, *GetCreditLimitRequest) (*GetCreditLimitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCreditLimit not implemented")
 }
 func (UnimplementedPaymentServiceServer) mustEmbedUnimplementedPaymentServiceServer() {}
 func (UnimplementedPaymentServiceServer) testEmbeddedByValue()                        {}
@@ -1008,6 +1040,42 @@ func _PaymentService_ReviewAdvance_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PaymentService_DisburseAdvance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisburseAdvanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).DisburseAdvance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_DisburseAdvance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).DisburseAdvance(ctx, req.(*DisburseAdvanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_GetCreditLimit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCreditLimitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GetCreditLimit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GetCreditLimit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GetCreditLimit(ctx, req.(*GetCreditLimitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PaymentService_ServiceDesc is the grpc.ServiceDesc for PaymentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1122,6 +1190,14 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReviewAdvance",
 			Handler:    _PaymentService_ReviewAdvance_Handler,
+		},
+		{
+			MethodName: "DisburseAdvance",
+			Handler:    _PaymentService_DisburseAdvance_Handler,
+		},
+		{
+			MethodName: "GetCreditLimit",
+			Handler:    _PaymentService_GetCreditLimit_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

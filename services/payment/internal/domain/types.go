@@ -136,8 +136,34 @@ type Advance struct {
 	RejectionReason    *string
 	DisbursedAt        *time.Time
 	RepaidAt           *time.Time
+	StripeTransferID   string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+// CreditLimit represents a provider's working capital credit limit.
+type CreditLimit struct {
+	ID                    string
+	ProviderID            string
+	MaxAdvanceCents       int64
+	TotalOutstandingCents int64
+	RiskScore             float64
+	LastComputedAt        time.Time
+	JobsCompleted         int
+	TotalEarningsCents    int64
+	AvgJobValueCents      int64
+	OnTimeRate            *float64
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+// AdvanceRepayment represents a single repayment deduction against an advance.
+type AdvanceRepayment struct {
+	ID          string
+	AdvanceID   string
+	PaymentID   string
+	AmountCents int64
+	CreatedAt   time.Time
 }
 
 // RevenueDataPoint holds revenue data for a single time period.
@@ -194,4 +220,9 @@ type PaymentRepository interface {
 	ListAdvances(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*Advance, int, error)
 	GetAdvance(ctx context.Context, advanceID string) (*Advance, error)
 	UpdateAdvanceReview(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*Advance, error)
+	UpdateAdvanceDisbursement(ctx context.Context, advanceID string, stripeTransferID string) (*Advance, error)
+	UpdateAdvanceRepayment(ctx context.Context, advanceID string, paymentID string, amountCents int64) (*Advance, error)
+	GetActiveAdvancesForProvider(ctx context.Context, providerID string) ([]*Advance, error)
+	GetCreditLimit(ctx context.Context, providerID string) (*CreditLimit, error)
+	UpsertCreditLimit(ctx context.Context, limit *CreditLimit) error
 }

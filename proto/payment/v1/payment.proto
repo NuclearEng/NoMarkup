@@ -58,6 +58,8 @@ service PaymentService {
   rpc ListAdvances(ListAdvancesRequest) returns (ListAdvancesResponse);
   rpc GetAdvance(GetAdvanceRequest) returns (GetAdvanceResponse);
   rpc ReviewAdvance(ReviewAdvanceRequest) returns (ReviewAdvanceResponse);
+  rpc DisburseAdvance(DisburseAdvanceRequest) returns (DisburseAdvanceResponse);
+  rpc GetCreditLimit(GetCreditLimitRequest) returns (GetCreditLimitResponse);
 }
 
 // ============================================================
@@ -451,6 +453,7 @@ message Advance {
   google.protobuf.Timestamp repaid_at = 12;
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp updated_at = 14;
+  string stripe_transfer_id = 15;
 }
 
 message RequestAdvanceRequest {
@@ -491,4 +494,31 @@ message ReviewAdvanceRequest {
 
 message ReviewAdvanceResponse {
   Advance advance = 1;
+}
+
+message DisburseAdvanceRequest {
+  string advance_id = 1;
+  string admin_id = 2;
+}
+
+message DisburseAdvanceResponse {
+  Advance advance = 1;
+  string stripe_transfer_id = 2;
+}
+
+message GetCreditLimitRequest {
+  string provider_id = 1;
+}
+
+message GetCreditLimitResponse {
+  string provider_id = 1;
+  int64 max_advance_cents = 2;
+  int64 total_outstanding_cents = 3;
+  int64 available_advance_cents = 4;
+  double risk_score = 5;
+  int32 jobs_completed = 6;
+  int64 total_earnings_cents = 7;
+  int64 avg_job_value_cents = 8;
+  double on_time_rate = 9;
+  google.protobuf.Timestamp last_computed_at = 10;
 }

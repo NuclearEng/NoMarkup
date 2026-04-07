@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 
 	"github.com/google/uuid"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
@@ -100,4 +101,151 @@ func (s *PaymentService) ReviewAdvance(ctx context.Context, advanceID, reviewerI
 	)
 
 	return advance, nil
+}
+
+// maxCreditCents is the hard cap on any single provider's credit limit ($25,000).
+const maxCreditCents = 2500000
+
+// DisburseAdvance transfers approved advance funds to the provider's Stripe account.
+func (s *PaymentService) DisburseAdvance(ctx context.Context, advanceID string, adminID string) (*domain.Advance, string, error) {
+	if advanceID == "" {
+		return nil, "", fmt.Errorf("disburse advance: advance_id is required")
+	}
+	if adminID == "" {
+		return nil, "", fmt.Errorf("disburse advance: admin_id is required")
+	}
+
+	// Verify the advance exists and is approved.
+	advance, err := s.repo.GetAdvance(ctx, advanceID)
+	if err != nil {
+		return nil, "", fmt.Errorf("disburse advance: %w", err)
+	}
+	if advance.Status != "approved" {
+		return nil, "", fmt.Errorf("disburse advance: advance is not in approved status (current: %s)", advance.Status)
+	}
+
+	// Get provider's Stripe account ID.
+	stripeAccountID, err := s.repo.GetStripeAccountID(ctx, advance.ProviderID)
+	if err != nil {
+		return nil, "", fmt.Errorf("disburse advance get stripe account: %w", err)
+	}
+
+	// Transfer from platform balance to provider.
+	transferID, err := s.stripe.CreatePlatformTransfer(ctx, advance.AdvanceAmountCents, "usd", stripeAccountID)
+	if err != nil {
+		return nil, "", fmt.Errorf("disburse advance transfer: %w", err)
+	}
+
+	// Update advance record with disbursement info.
+	updated, err := s.repo.UpdateAdvanceDisbursement(ctx, advanceID, transferID)
+	if err != nil {
+		return nil, "", fmt.Errorf("disburse advance update: %w", err)
+	}
+
+	slog.Info("advance disbursed",
+		"advance_id", advanceID,
+		"admin_id", adminID,
+		"provider_id", advance.ProviderID,
+		"amount_cents", advance.AdvanceAmountCents,
+		"stripe_transfer_id", transferID,
+	)
+
+	return updated, transferID, nil
+}
+
+// ComputeCreditLimit calculates and persists a provider's working capital credit limit.
+func (s *PaymentService) ComputeCreditLimit(ctx context.Context, providerID string) (*domain.CreditLimit, error) {
+	if providerID == "" {
+		return nil, fmt.Errorf("compute credit limit: provider_id is required")
+	}
+
+	// Query provider's payment history for completed jobs.
+	payments, _, err := s.repo.ListPayments(ctx, providerID, "released", 1, 1000)
+	if err != nil {
+		return nil, fmt.Errorf("compute credit limit list payments: %w", err)
+	}
+
+	jobsCompleted := len(payments)
+	var totalEarningsCents int64
+	for _, p := range payments {
+		totalEarningsCents += p.ProviderPayoutCents
+	}
+
+	var avgJobValueCents int64
+	if jobsCompleted > 0 {
+		avgJobValueCents = totalEarningsCents / int64(jobsCompleted)
+	}
+
+	// Estimate average monthly earnings over last 6 months.
+	// Use total earnings / 6 as a rough estimate.
+	avgMonthlyEarnings := totalEarningsCents / 6
+	if avgMonthlyEarnings < 0 {
+		avgMonthlyEarnings = 0
+	}
+
+	// Max advance = min(50% of avg monthly earnings, $25k cap).
+	maxAdvance := avgMonthlyEarnings / 2
+	if maxAdvance > maxCreditCents {
+		maxAdvance = maxCreditCents
+	}
+
+	// Get total outstanding advances.
+	activeAdvances, err := s.repo.GetActiveAdvancesForProvider(ctx, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("compute credit limit get active advances: %w", err)
+	}
+
+	var totalOutstanding int64
+	for _, adv := range activeAdvances {
+		remaining := (adv.AdvanceAmountCents + adv.FeeCents) - adv.RepaidCents
+		if remaining > 0 {
+			totalOutstanding += remaining
+		}
+	}
+
+	// Subtract outstanding from max advance for available amount.
+	availableAdvance := maxAdvance - totalOutstanding
+	if availableAdvance < 0 {
+		availableAdvance = 0
+	}
+
+	// Simple risk score: higher completion count = lower risk.
+	riskScore := math.Max(0, 100.0-float64(jobsCompleted)*5.0)
+	if riskScore < 0 {
+		riskScore = 0
+	}
+
+	limit := &domain.CreditLimit{
+		ProviderID:            providerID,
+		MaxAdvanceCents:       maxAdvance,
+		TotalOutstandingCents: totalOutstanding,
+		RiskScore:             riskScore,
+		JobsCompleted:         jobsCompleted,
+		TotalEarningsCents:    totalEarningsCents,
+		AvgJobValueCents:      avgJobValueCents,
+	}
+
+	if err := s.repo.UpsertCreditLimit(ctx, limit); err != nil {
+		return nil, fmt.Errorf("compute credit limit upsert: %w", err)
+	}
+
+	// Re-fetch to get computed timestamps and ID.
+	persisted, err := s.repo.GetCreditLimit(ctx, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("compute credit limit refetch: %w", err)
+	}
+
+	// Merge the available advance into the response (it's derived, not stored).
+	persisted.MaxAdvanceCents = maxAdvance
+	persisted.TotalOutstandingCents = totalOutstanding
+
+	slog.Info("credit limit computed",
+		"provider_id", providerID,
+		"max_advance_cents", maxAdvance,
+		"total_outstanding_cents", totalOutstanding,
+		"available_advance_cents", availableAdvance,
+		"jobs_completed", jobsCompleted,
+	)
+
+	return persisted, nil
 }

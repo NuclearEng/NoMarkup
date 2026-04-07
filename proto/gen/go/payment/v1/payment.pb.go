@@ -3260,6 +3260,7 @@ type Advance struct {
 	RepaidAt           *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=repaid_at,json=repaidAt,proto3" json:"repaid_at,omitempty"`
 	CreatedAt          *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt          *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	StripeTransferId   string                 `protobuf:"bytes,15,opt,name=stripe_transfer_id,json=stripeTransferId,proto3" json:"stripe_transfer_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -3390,6 +3391,13 @@ func (x *Advance) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Advance) GetStripeTransferId() string {
+	if x != nil {
+		return x.StripeTransferId
+	}
+	return ""
 }
 
 type RequestAdvanceRequest struct {
@@ -3804,6 +3812,186 @@ func (*ReviewAdvanceResponse) Descriptor() ([]byte, []int) {
 func (x *ReviewAdvanceResponse) GetAdvance() *Advance {
 	if x != nil {
 		return x.Advance
+	}
+	return nil
+}
+
+// DisburseAdvanceRequest
+
+type DisburseAdvanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AdvanceId     string                 `protobuf:"bytes,1,opt,name=advance_id,json=advanceId,proto3" json:"advance_id,omitempty"`
+	AdminId       string                 `protobuf:"bytes,2,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DisburseAdvanceRequest) Reset()         { *x = DisburseAdvanceRequest{} }
+func (x *DisburseAdvanceRequest) String() string { return protoimpl.X.MessageStringOf(x) }
+func (*DisburseAdvanceRequest) ProtoMessage()    {}
+func (x *DisburseAdvanceRequest) ProtoReflect() protoreflect.Message {
+	return protoimpl.X.MessageOf(x)
+}
+
+func (x *DisburseAdvanceRequest) GetAdvanceId() string {
+	if x != nil {
+		return x.AdvanceId
+	}
+	return ""
+}
+
+func (x *DisburseAdvanceRequest) GetAdminId() string {
+	if x != nil {
+		return x.AdminId
+	}
+	return ""
+}
+
+// DisburseAdvanceResponse
+
+type DisburseAdvanceResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Advance          *Advance               `protobuf:"bytes,1,opt,name=advance,proto3" json:"advance,omitempty"`
+	StripeTransferId string                 `protobuf:"bytes,2,opt,name=stripe_transfer_id,json=stripeTransferId,proto3" json:"stripe_transfer_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DisburseAdvanceResponse) Reset()         { *x = DisburseAdvanceResponse{} }
+func (x *DisburseAdvanceResponse) String() string { return protoimpl.X.MessageStringOf(x) }
+func (*DisburseAdvanceResponse) ProtoMessage()    {}
+func (x *DisburseAdvanceResponse) ProtoReflect() protoreflect.Message {
+	return protoimpl.X.MessageOf(x)
+}
+
+func (x *DisburseAdvanceResponse) GetAdvance() *Advance {
+	if x != nil {
+		return x.Advance
+	}
+	return nil
+}
+
+func (x *DisburseAdvanceResponse) GetStripeTransferId() string {
+	if x != nil {
+		return x.StripeTransferId
+	}
+	return ""
+}
+
+// GetCreditLimitRequest
+
+type GetCreditLimitRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCreditLimitRequest) Reset()         { *x = GetCreditLimitRequest{} }
+func (x *GetCreditLimitRequest) String() string { return protoimpl.X.MessageStringOf(x) }
+func (*GetCreditLimitRequest) ProtoMessage()    {}
+func (x *GetCreditLimitRequest) ProtoReflect() protoreflect.Message {
+	return protoimpl.X.MessageOf(x)
+}
+
+func (x *GetCreditLimitRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+// GetCreditLimitResponse
+
+type GetCreditLimitResponse struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId           string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	MaxAdvanceCents      int64                  `protobuf:"varint,2,opt,name=max_advance_cents,json=maxAdvanceCents,proto3" json:"max_advance_cents,omitempty"`
+	TotalOutstandingCents int64                 `protobuf:"varint,3,opt,name=total_outstanding_cents,json=totalOutstandingCents,proto3" json:"total_outstanding_cents,omitempty"`
+	AvailableAdvanceCents int64                 `protobuf:"varint,4,opt,name=available_advance_cents,json=availableAdvanceCents,proto3" json:"available_advance_cents,omitempty"`
+	RiskScore            float64                `protobuf:"fixed64,5,opt,name=risk_score,json=riskScore,proto3" json:"risk_score,omitempty"`
+	JobsCompleted        int32                  `protobuf:"varint,6,opt,name=jobs_completed,json=jobsCompleted,proto3" json:"jobs_completed,omitempty"`
+	TotalEarningsCents   int64                  `protobuf:"varint,7,opt,name=total_earnings_cents,json=totalEarningsCents,proto3" json:"total_earnings_cents,omitempty"`
+	AvgJobValueCents     int64                  `protobuf:"varint,8,opt,name=avg_job_value_cents,json=avgJobValueCents,proto3" json:"avg_job_value_cents,omitempty"`
+	OnTimeRate           float64                `protobuf:"fixed64,9,opt,name=on_time_rate,json=onTimeRate,proto3" json:"on_time_rate,omitempty"`
+	LastComputedAt       *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=last_computed_at,json=lastComputedAt,proto3" json:"last_computed_at,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *GetCreditLimitResponse) Reset()         { *x = GetCreditLimitResponse{} }
+func (x *GetCreditLimitResponse) String() string { return protoimpl.X.MessageStringOf(x) }
+func (*GetCreditLimitResponse) ProtoMessage()    {}
+func (x *GetCreditLimitResponse) ProtoReflect() protoreflect.Message {
+	return protoimpl.X.MessageOf(x)
+}
+
+func (x *GetCreditLimitResponse) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *GetCreditLimitResponse) GetMaxAdvanceCents() int64 {
+	if x != nil {
+		return x.MaxAdvanceCents
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetTotalOutstandingCents() int64 {
+	if x != nil {
+		return x.TotalOutstandingCents
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetAvailableAdvanceCents() int64 {
+	if x != nil {
+		return x.AvailableAdvanceCents
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetRiskScore() float64 {
+	if x != nil {
+		return x.RiskScore
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetJobsCompleted() int32 {
+	if x != nil {
+		return x.JobsCompleted
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetTotalEarningsCents() int64 {
+	if x != nil {
+		return x.TotalEarningsCents
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetAvgJobValueCents() int64 {
+	if x != nil {
+		return x.AvgJobValueCents
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetOnTimeRate() float64 {
+	if x != nil {
+		return x.OnTimeRate
+	}
+	return 0
+}
+
+func (x *GetCreditLimitResponse) GetLastComputedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastComputedAt
 	}
 	return nil
 }

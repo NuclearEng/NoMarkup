@@ -185,7 +185,11 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, paymentID string, p
 	return s.repo.GetPayment(ctx, paymentID)
 }
 
+// advanceRepaymentRate is the percentage of provider payout deducted for advance repayment.
+const advanceRepaymentRate = 0.20
+
 // ReleaseEscrow creates a Stripe transfer to the provider and updates status.
+// If the provider has active advances, a portion of the payout is withheld for repayment.
 func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, reason string) (*domain.Payment, error) {
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil {
@@ -202,10 +206,80 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 		return nil, fmt.Errorf("release escrow: %w", err)
 	}
 
-	// Create transfer to provider.
-	transferID, err := s.stripe.CreateTransfer(ctx, payment.ProviderPayoutCents, "usd", providerAccountID, payment.StripePaymentIntentID)
+	// Check for active advances to calculate repayment deductions.
+	activeAdvances, err := s.repo.GetActiveAdvancesForProvider(ctx, payment.ProviderID)
+	if err != nil {
+		slog.Error("release escrow: failed to get active advances, proceeding without repayment",
+			"payment_id", paymentID,
+			"provider_id", payment.ProviderID,
+			"error", err,
+		)
+		activeAdvances = nil
+	}
+
+	// Calculate total repayment: 20% of provider payout, capped at total remaining balance.
+	var totalRepayment int64
+	if len(activeAdvances) > 0 {
+		repaymentPool := int64(float64(payment.ProviderPayoutCents) * advanceRepaymentRate)
+
+		// Deduct from oldest advances first.
+		for _, advance := range activeAdvances {
+			if repaymentPool <= 0 {
+				break
+			}
+
+			remaining := (advance.AdvanceAmountCents + advance.FeeCents) - advance.RepaidCents
+			if remaining <= 0 {
+				continue
+			}
+
+			deduction := repaymentPool
+			if deduction > remaining {
+				deduction = remaining
+			}
+
+			if _, err := s.repo.UpdateAdvanceRepayment(ctx, advance.ID, paymentID, deduction); err != nil {
+				slog.Error("release escrow: failed to record advance repayment",
+					"payment_id", paymentID,
+					"advance_id", advance.ID,
+					"deduction_cents", deduction,
+					"error", err,
+				)
+				// Continue processing — don't fail the escrow release for a repayment error.
+				continue
+			}
+
+			slog.Info("advance repayment deducted",
+				"payment_id", paymentID,
+				"advance_id", advance.ID,
+				"deduction_cents", deduction,
+				"advance_remaining_after", remaining-deduction,
+			)
+
+			totalRepayment += deduction
+			repaymentPool -= deduction
+		}
+	}
+
+	// Transfer reduced amount to provider.
+	transferAmount := payment.ProviderPayoutCents - totalRepayment
+	if transferAmount < 0 {
+		transferAmount = 0
+	}
+
+	transferID, err := s.stripe.CreateTransfer(ctx, transferAmount, "usd", providerAccountID, payment.StripePaymentIntentID)
 	if err != nil {
 		return nil, fmt.Errorf("release escrow transfer: %w", err)
+	}
+
+	if totalRepayment > 0 {
+		slog.Info("escrow released with advance repayment",
+			"payment_id", paymentID,
+			"provider_id", payment.ProviderID,
+			"original_payout_cents", payment.ProviderPayoutCents,
+			"repayment_cents", totalRepayment,
+			"transfer_cents", transferAmount,
+		)
 	}
 
 	// Update stripe fields with transfer ID.
