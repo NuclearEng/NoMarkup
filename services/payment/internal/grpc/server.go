@@ -27,7 +27,7 @@ func NewServer(svc *service.PaymentService) *Server {
 	return &Server{svc: svc}
 }
 
-// Register registers the payment service with a gRPC server.
+// Register registers the payment service with a gRPC server, including tax/invoice RPCs.
 func Register(s *grpclib.Server, srv *Server) {
 	paymentv1.RegisterPaymentServiceServer(s, srv)
 }

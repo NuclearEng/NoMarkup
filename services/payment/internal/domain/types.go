@@ -230,13 +230,62 @@ type CreateInstallmentPlanInput struct {
 	IdempotencyKey   string
 }
 
-// Sentinel errors for expenses, advances, and installment plans.
+// Sentinel errors.
 var (
 	ErrExpenseNotFound         = errors.New("expense not found")
 	ErrAdvanceNotFound         = errors.New("advance not found")
 	ErrInstallmentPlanNotFound = errors.New("installment plan not found")
 	ErrInvalidInstallmentCount = errors.New("installment count must be 3 or 6")
+	ErrTaxFormNotFound         = errors.New("tax form not found")
+	ErrContractNotFound        = errors.New("contract not found")
 )
+
+// TaxForm represents a 1099-NEC or 1099-K tax form record.
+type TaxForm struct {
+	ID                      string
+	ProviderID              string
+	TaxYear                 int
+	FormType                string
+	ProviderLegalName       string
+	ProviderTaxIDLast4      *string
+	ProviderAddress         string
+	TotalCompensationCents  int64
+	FederalTaxWithheldCents int64
+	StateTaxWithheldCents   int64
+	PlatformEIN             string
+	PlatformName            string
+	PDFURL                  *string
+	Status                  string // draft, generated, delivered, corrected, filed
+	DeliveredAt             *time.Time
+	FiledAt                 *time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+}
+
+// ContractDetail holds the contract + related info needed for invoice generation.
+type ContractDetail struct {
+	ID              string
+	ContractNumber  string
+	JobTitle        string
+	CustomerName    string
+	ProviderName    string
+	AmountCents     int64
+	PaymentTiming   string
+	Status          string
+	AcceptedAt      *time.Time
+	CompletedAt     *time.Time
+	CreatedAt       time.Time
+}
+
+// MilestoneDetail holds milestone info for invoice line items.
+type MilestoneDetail struct {
+	ID          string
+	Description string
+	AmountCents int64
+	SortOrder   int
+	Status      string
+	ApprovedAt  *time.Time
+}
 
 // PaymentRepository defines persistence operations for payments.
 type PaymentRepository interface {
@@ -285,4 +334,17 @@ type PaymentRepository interface {
 	UpdateInstallmentPlanStatus(ctx context.Context, planID string, status string) error
 	UpdateInstallmentPlanProviderPaid(ctx context.Context, planID string, transferID string) error
 	GetScheduledInstallmentsForPlan(ctx context.Context, planID string) ([]ScheduledInstallment, error)
+
+	// Tax form operations
+	CreateTaxForm(ctx context.Context, tf *TaxForm) error
+	GetTaxForm(ctx context.Context, providerID string, taxYear int) (*TaxForm, error)
+	ListTaxForms(ctx context.Context, providerID string) ([]*TaxForm, error)
+	GetProviderEarningsForYear(ctx context.Context, providerID string, taxYear int) (int64, error)
+	UpdateTaxFormStatus(ctx context.Context, id string, status string, pdfURL *string) error
+
+	// Invoice operations
+	GetContractDetail(ctx context.Context, contractID string) (*ContractDetail, error)
+	GetMilestonesForContract(ctx context.Context, contractID string) ([]*MilestoneDetail, error)
+	GetPaymentsForContract(ctx context.Context, contractID string) ([]*Payment, error)
+	GetProviderProfile(ctx context.Context, providerID string) (businessName, serviceAddress string, err error)
 }

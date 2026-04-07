@@ -47,6 +47,7 @@ func New(
 	verificationHandler *handler.VerificationHandler,
 	workingCapitalHandler *handler.WorkingCapitalHandler,
 	expenseHandler *handler.ExpenseHandler,
+	taxHandler *handler.TaxHandler,
 	auctionWSHandler *handler.AuctionWSHandler,
 	spectatorWSHandler *handler.SpectatorWSHandler,
 	featureFlagHandler *handler.FeatureFlagHandler,
@@ -228,6 +229,14 @@ func New(
 				r.Get("/", expenseHandler.ListExpenses)
 				r.Delete("/{id}", expenseHandler.DeleteExpense)
 			})
+
+			// Tax Forms (1099-NEC)
+			r.Route("/me/tax-forms", func(r chi.Router) {
+				r.Get("/", taxHandler.ListTaxForms)
+				r.Get("/{year}", taxHandler.GetTaxForm)
+				r.Post("/{year}/generate", taxHandler.GenerateTaxForm)
+				r.Get("/{year}/download", taxHandler.DownloadTaxForm)
+			})
 		})
 
 		// Property routes
@@ -277,6 +286,10 @@ func New(
 
 			// PDF export
 			r.Get("/{id}/pdf", contractHandler.ExportPDF)
+
+			// Invoice generation
+			r.Post("/{id}/invoice", taxHandler.GenerateInvoice)
+			r.Get("/{id}/invoice/download", taxHandler.DownloadInvoice)
 		})
 
 		// Review routes
