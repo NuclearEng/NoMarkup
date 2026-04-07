@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import { cn, formatCents } from '@/lib/utils';
 
@@ -30,7 +30,7 @@ function buildCharStates(formatted: string, keyPrefix: number): CharState[] {
   }));
 }
 
-export function AnimatedPrice({
+export const AnimatedPrice = memo(function AnimatedPrice({
   cents,
   formatCurrency = formatCents,
   className,
@@ -165,4 +165,4 @@ export function AnimatedPrice({
       })}
     </span>
   );
-}
+});

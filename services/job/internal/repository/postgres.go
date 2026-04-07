@@ -76,7 +76,7 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 		addr = *serviceAddress
 	}
 
-	// Use property location for both exact and approximate.
+	// Use property location, falling back to direct location input.
 	lng := 0.0
 	lat := 0.0
 	if propLng != nil {
@@ -84,6 +84,22 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	}
 	if propLat != nil {
 		lat = *propLat
+	}
+
+	// Override with direct location fields if provided (no property linked).
+	if input.LocationAddress != "" && addr == "" {
+		addr = input.LocationAddress
+	}
+	if input.LocationLat != nil && lat == 0.0 {
+		lat = *input.LocationLat
+	}
+	if input.LocationLng != nil && lng == 0.0 {
+		lng = *input.LocationLng
+	}
+
+	auctionType := input.AuctionType
+	if auctionType == "" {
+		auctionType = "sealed"
 	}
 
 	var auctionEndsAt *time.Time
@@ -109,7 +125,7 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			is_recurring, recurrence_frequency,
 			starting_bid_cents, offer_accepted_cents,
 			auction_duration_hours, auction_ends_at, min_provider_rating,
-			status
+			status, auction_type
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, $3, $4,
 			$5, NULLIF($6, '')::uuid, NULLIF($7, '')::uuid,
@@ -120,7 +136,7 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			$18, $19,
 			$20, $21,
 			$22, $23, $24,
-			$25
+			$25, $26
 		)
 		RETURNING id, created_at, updated_at`,
 		input.CustomerID, input.PropertyID, input.Title, input.Description,
@@ -131,7 +147,7 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 		input.IsRecurring, recurrenceFreq,
 		input.StartingBidCents, input.OfferAcceptedCents,
 		durationHours, auctionEndsAt, input.MinProviderRating,
-		status,
+		status, auctionType,
 	).Scan(&jobID, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create job insert: %w", err)
@@ -558,6 +574,72 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 	}
 
 	return jobs, pagination, nil
+}
+
+func (r *PostgresRepository) GetJobsOnMap(ctx context.Context, input domain.GetJobsOnMapInput) ([]domain.JobMapPin, error) {
+	where := []string{"j.status = 'active'", "j.deleted_at IS NULL", "j.approximate_location IS NOT NULL"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if input.Latitude != 0 && input.Longitude != 0 && input.RadiusKm > 0 {
+		radiusMeters := input.RadiusKm * 1000
+		where = append(where, fmt.Sprintf(
+			"ST_DWithin(j.approximate_location::geography, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography, $%d)",
+			argIdx, argIdx+1, argIdx+2))
+		args = append(args, input.Longitude, input.Latitude, radiusMeters)
+		argIdx += 3
+	}
+
+	if len(input.CategoryIDs) > 0 {
+		placeholders := make([]string, len(input.CategoryIDs))
+		for i, catID := range input.CategoryIDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, catID)
+			argIdx++
+		}
+		ph := strings.Join(placeholders, ",")
+		where = append(where, fmt.Sprintf(
+			"(j.category_id IN (%s) OR j.subcategory_id IN (%s) OR j.service_type_id IN (%s))",
+			ph, ph, ph))
+	}
+
+	if input.MaxPriceCents != nil {
+		where = append(where, fmt.Sprintf("j.starting_bid_cents <= $%d", argIdx))
+		args = append(args, *input.MaxPriceCents)
+		argIdx++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	query := fmt.Sprintf(`
+		SELECT j.id, ST_Y(j.approximate_location::geometry) AS lat, ST_X(j.approximate_location::geometry) AS lng,
+		       j.title, COALESCE(c.name, ''), j.starting_bid_cents, j.bid_count, j.auction_ends_at
+		FROM jobs j
+		LEFT JOIN service_categories c ON c.id = j.category_id
+		WHERE %s
+		ORDER BY j.created_at DESC
+		LIMIT 500`, whereClause)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get jobs on map query: %w", err)
+	}
+	defer rows.Close()
+
+	var pins []domain.JobMapPin
+	for rows.Next() {
+		var pin domain.JobMapPin
+		if err := rows.Scan(
+			&pin.JobID, &pin.Latitude, &pin.Longitude,
+			&pin.Title, &pin.CategoryName, &pin.StartingBidCents,
+			&pin.BidCount, &pin.AuctionEndsAt,
+		); err != nil {
+			return nil, fmt.Errorf("get jobs on map scan: %w", err)
+		}
+		pins = append(pins, pin)
+	}
+
+	return pins, nil
 }
 
 func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {

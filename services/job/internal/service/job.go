@@ -192,6 +192,15 @@ func (s *JobService) CancelJob(ctx context.Context, jobID string, customerID str
 	return job, nil
 }
 
+// GetJobsOnMap returns lightweight map pins for active jobs within a geographic area.
+func (s *JobService) GetJobsOnMap(ctx context.Context, input domain.GetJobsOnMapInput) ([]domain.JobMapPin, error) {
+	pins, err := s.repo.GetJobsOnMap(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("get jobs on map: %w", err)
+	}
+	return pins, nil
+}
+
 // SearchJobs performs a filtered search of active jobs.
 func (s *JobService) SearchJobs(ctx context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error) {
 	jobs, pagination, err := s.repo.SearchJobs(ctx, input)

@@ -55,12 +55,17 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  let response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    credentials: 'include',
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError(503, 'Unable to reach the server. Please try again shortly.');
+  }
 
   // On 401, attempt token refresh and retry once
   if (response.status === 401 && !skipAuth) {

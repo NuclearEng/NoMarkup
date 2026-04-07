@@ -12,20 +12,23 @@ import type { AuctionBidEvent } from '@/types';
 export function useAuctionStream(jobId: string | undefined) {
   const queryClient = useQueryClient();
   const { accessToken } = useAuthStore();
-  const {
-    setActiveJob,
-    clearActiveJob,
-    addBidEvent,
-    updateAuctionState,
-    events,
-    connectionStatus,
-    currentLowest,
-    bidCount,
-    auctionEndsAt,
-    snipeExtensionCount,
-    orderBook,
-    priceHistory,
-  } = useAuctionStore();
+  // Use shallow selectors to avoid re-rendering on unrelated store changes
+  const { setActiveJob, clearActiveJob, addBidEvent, updateAuctionState } = useAuctionStore(
+    useShallow((s) => ({
+      setActiveJob: s.setActiveJob,
+      clearActiveJob: s.clearActiveJob,
+      addBidEvent: s.addBidEvent,
+      updateAuctionState: s.updateAuctionState,
+    })),
+  );
+  const events = useAuctionStore((s) => s.events);
+  const connectionStatus = useAuctionStore((s) => s.connectionStatus);
+  const currentLowest = useAuctionStore((s) => s.currentLowest);
+  const bidCount = useAuctionStore((s) => s.bidCount);
+  const auctionEndsAt = useAuctionStore((s) => s.auctionEndsAt);
+  const snipeExtensionCount = useAuctionStore((s) => s.snipeExtensionCount);
+  const orderBook = useAuctionStore((s) => s.orderBook);
+  const priceHistory = useAuctionStore((s) => s.priceHistory);
 
   // Derive velocity/momentum/buckets from bidTimestamps with stable references
   const bidTimestamps = useAuctionStore((s) => s.bidTimestamps);
@@ -66,6 +69,29 @@ export function useAuctionStream(jobId: string | undefined) {
     }),
   );
 
+  // Throttle query invalidation to avoid hammering TanStack Query on rapid bid events
+  const lastInvalidateRef = useRef(0);
+  const pendingInvalidateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const invalidateQueries = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['bidCount', jobId] });
+    void queryClient.invalidateQueries({ queryKey: ['bidsForJob', jobId] });
+    void queryClient.invalidateQueries({ queryKey: ['job', jobId] });
+    lastInvalidateRef.current = Date.now();
+  }, [jobId, queryClient]);
+
+  const throttledInvalidate = useCallback(() => {
+    const elapsed = Date.now() - lastInvalidateRef.current;
+    if (elapsed >= 2000) {
+      invalidateQueries();
+    } else if (!pendingInvalidateRef.current) {
+      pendingInvalidateRef.current = setTimeout(() => {
+        pendingInvalidateRef.current = null;
+        invalidateQueries();
+      }, 2000 - elapsed);
+    }
+  }, [invalidateQueries]);
+
   const handleMessage = useCallback(
     (message: {
       type: string;
@@ -79,18 +105,14 @@ export function useAuctionStream(jobId: string | undefined) {
           created_at: message.data.timestamp,
         };
         addBidEvent(event);
-
-        // Invalidate related queries
-        void queryClient.invalidateQueries({ queryKey: ['bidCount', jobId] });
-        void queryClient.invalidateQueries({ queryKey: ['bidsForJob', jobId] });
-        void queryClient.invalidateQueries({ queryKey: ['job', jobId] });
+        throttledInvalidate();
       }
 
       if (message.type === 'auction_state' && message.data) {
         updateAuctionState(message.data as unknown as Parameters<typeof updateAuctionState>[0]);
       }
     },
-    [jobId, addBidEvent, updateAuctionState, queryClient],
+    [addBidEvent, updateAuctionState, throttledInvalidate],
   );
 
   useEffect(() => {

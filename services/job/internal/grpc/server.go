@@ -47,6 +47,16 @@ func (s *Server) CreateJob(ctx context.Context, req *jobv1.CreateJobRequest) (*j
 		PhotoURLs:            req.GetPhotoUrls(),
 		TagCategoryIDs:       req.GetTagCategoryIds(),
 		Publish:              req.GetPublish(),
+		AuctionType:          req.GetAuctionType(),
+		LocationAddress:      req.GetLocationAddress(),
+	}
+	if req.LocationLat != nil {
+		v := req.GetLocationLat()
+		input.LocationLat = &v
+	}
+	if req.LocationLng != nil {
+		v := req.GetLocationLng()
+		input.LocationLng = &v
 	}
 
 	if req.GetScheduledDate() != nil {
@@ -245,6 +255,51 @@ func (s *Server) SearchJobs(ctx context.Context, req *jobv1.SearchJobsRequest) (
 		Jobs:       protoJobs,
 		Pagination: domainPaginationToProto(pagination),
 	}, nil
+}
+
+func (s *Server) GetJobsOnMap(ctx context.Context, req *jobv1.GetJobsOnMapRequest) (*jobv1.GetJobsOnMapResponse, error) {
+	input := domain.GetJobsOnMapInput{
+		CategoryIDs: req.GetCategoryIds(),
+		RadiusKm:    req.GetRadiusKm(),
+	}
+
+	if loc := req.GetCenter(); loc != nil {
+		input.Latitude = loc.GetLatitude()
+		input.Longitude = loc.GetLongitude()
+	}
+
+	if req.MaxPriceCents != nil {
+		v := req.GetMaxPriceCents()
+		input.MaxPriceCents = &v
+	}
+
+	pins, err := s.svc.GetJobsOnMap(ctx, input)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoPins := make([]*jobv1.JobMapPin, 0, len(pins))
+	for _, p := range pins {
+		pin := &jobv1.JobMapPin{
+			JobId:        p.JobID,
+			Title:        p.Title,
+			CategoryName: p.CategoryName,
+			BidCount:     int32(p.BidCount),
+			Location: &commonv1.Location{
+				Latitude:  p.Latitude,
+				Longitude: p.Longitude,
+			},
+		}
+		if p.StartingBidCents != nil {
+			pin.StartingBidCents = p.StartingBidCents
+		}
+		if p.AuctionEndsAt != nil {
+			pin.AuctionEndsAt = timestamppb.New(*p.AuctionEndsAt)
+		}
+		protoPins = append(protoPins, pin)
+	}
+
+	return &jobv1.GetJobsOnMapResponse{Pins: protoPins}, nil
 }
 
 func (s *Server) ListCustomerJobs(ctx context.Context, req *jobv1.ListCustomerJobsRequest) (*jobv1.ListCustomerJobsResponse, error) {

@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { WidgetProps } from './types';
 import { PriceHeroWidget } from './widgets/price-hero-widget';
 import { SavingsWidget } from './widgets/savings-widget';
@@ -34,7 +35,7 @@ interface WidgetRendererProps {
   widgetProps: WidgetProps;
 }
 
-export function WidgetRenderer({ widgetId, widgetProps }: WidgetRendererProps) {
+export const WidgetRenderer = memo(function WidgetRenderer({ widgetId, widgetProps }: WidgetRendererProps) {
   const Component = WIDGET_COMPONENTS[widgetId];
   if (!Component) {
     return (
@@ -44,4 +45,4 @@ export function WidgetRenderer({ widgetId, widgetProps }: WidgetRendererProps) {
     );
   }
   return <Component {...widgetProps} />;
-}
+});

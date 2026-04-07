@@ -13,7 +13,7 @@ import {
   TrendingDown,
   Zap,
 } from 'lucide-react';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 
 import { TrustScoreBadge } from '@/components/providers/TrustScoreBadge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -269,7 +269,7 @@ function WinProbabilityBar({ rank, totalBids }: { rank: number; totalBids: numbe
   );
 }
 
-export function BidCard({
+export const BidCard = memo(function BidCard({
   bidWithProvider,
   jobId,
   canAward,
@@ -607,7 +607,7 @@ export function BidCard({
       </CardContent>
     </Wrapper>
   );
-}
+});
 
 /** Rank badge displayed in the top-right corner with cinematic icons */
 function RankBadge({ rank, totalBids }: { rank: number; totalBids: number }) {

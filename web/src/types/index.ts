@@ -326,6 +326,7 @@ export interface CreateJobInput {
   auction_duration_hours: number;
   auction_type?: AuctionType;
   photo_urls?: string[];
+  publish?: boolean;
 }
 
 export interface UpdateJobInput {

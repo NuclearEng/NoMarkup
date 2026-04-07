@@ -392,6 +392,24 @@ export default function JobDetailPage() {
           <Separator />
 
           {/* Details grid */}
+          {/* Map preview when location exists */}
+          {job.location_lat && job.location_lng && process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ? (
+            <div className="relative mb-4 overflow-hidden rounded-lg border border-white/[0.06]">
+              <img
+                src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/pin-l+d4a017(${String(job.location_lng)},${String(job.location_lat)})/${String(job.location_lng)},${String(job.location_lat)},13,0/800x200@2x?access_token=${process.env['NEXT_PUBLIC_MAPBOX_TOKEN']}`}
+                alt={`Map showing approximate job location${job.location_address ? ` near ${job.location_address}` : ''}`}
+                className="h-[160px] w-full object-cover"
+                loading="lazy"
+              />
+              {job.location_address ? (
+                <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-zinc-900/80 px-2.5 py-1 text-xs text-zinc-200 backdrop-blur-sm">
+                  <MapPin className="h-3 w-3 text-[var(--brand-gold)]" aria-hidden="true" />
+                  {job.location_address}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Location */}
             <div className="flex items-start gap-3">

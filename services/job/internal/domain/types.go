@@ -141,6 +141,10 @@ type CreateJobInput struct {
 	PhotoURLs            []string
 	TagCategoryIDs       []string
 	Publish              bool
+	AuctionType          string
+	LocationAddress      string
+	LocationLat          *float64
+	LocationLng          *float64
 }
 
 // UpdateJobInput holds optional fields for updating a draft job.
@@ -183,6 +187,27 @@ type Pagination struct {
 	HasNext    bool
 }
 
+// JobMapPin represents a lightweight job pin for map display.
+type JobMapPin struct {
+	JobID            string
+	Latitude         float64
+	Longitude        float64
+	Title            string
+	CategoryName     string
+	StartingBidCents *int64
+	BidCount         int
+	AuctionEndsAt    *time.Time
+}
+
+// GetJobsOnMapInput defines parameters for retrieving map pins.
+type GetJobsOnMapInput struct {
+	Latitude      float64
+	Longitude     float64
+	RadiusKm      float64
+	CategoryIDs   []string
+	MaxPriceCents *int64
+}
+
 // MatchedProvider represents a provider matched to a job by the pre-matching engine.
 type MatchedProvider struct {
 	ProviderID    string
@@ -212,6 +237,7 @@ type JobRepository interface {
 	CloseAuction(ctx context.Context, jobID string, customerID string) (*Job, error)
 	CancelJob(ctx context.Context, jobID string, customerID string) (*Job, error)
 	SearchJobs(ctx context.Context, input SearchJobsInput) ([]*Job, *Pagination, error)
+	GetJobsOnMap(ctx context.Context, input GetJobsOnMapInput) ([]JobMapPin, error)
 	ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*Job, *Pagination, error)
 	ListDrafts(ctx context.Context, customerID string) ([]*Job, error)
 	ListServiceCategories(ctx context.Context, level *int, parentID *string) ([]ServiceCategory, error)

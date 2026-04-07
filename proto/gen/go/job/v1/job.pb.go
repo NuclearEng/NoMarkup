@@ -677,6 +677,10 @@ type CreateJobRequest struct {
 	PhotoUrls            []string               `protobuf:"bytes,17,rep,name=photo_urls,json=photoUrls,proto3" json:"photo_urls,omitempty"`
 	TagCategoryIds       []string               `protobuf:"bytes,18,rep,name=tag_category_ids,json=tagCategoryIds,proto3" json:"tag_category_ids,omitempty"`
 	Publish              bool                   `protobuf:"varint,19,opt,name=publish,proto3" json:"publish,omitempty"` // true = skip draft, go straight to active
+	AuctionType          string                 `protobuf:"bytes,20,opt,name=auction_type,json=auctionType,proto3" json:"auction_type,omitempty"`
+	LocationAddress      string                 `protobuf:"bytes,21,opt,name=location_address,json=locationAddress,proto3" json:"location_address,omitempty"`
+	LocationLat          *float64               `protobuf:"fixed64,22,opt,name=location_lat,json=locationLat,proto3,oneof" json:"location_lat,omitempty"`
+	LocationLng          *float64               `protobuf:"fixed64,23,opt,name=location_lng,json=locationLng,proto3,oneof" json:"location_lng,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -842,6 +846,34 @@ func (x *CreateJobRequest) GetPublish() bool {
 		return x.Publish
 	}
 	return false
+}
+
+func (x *CreateJobRequest) GetAuctionType() string {
+	if x != nil {
+		return x.AuctionType
+	}
+	return ""
+}
+
+func (x *CreateJobRequest) GetLocationAddress() string {
+	if x != nil {
+		return x.LocationAddress
+	}
+	return ""
+}
+
+func (x *CreateJobRequest) GetLocationLat() float64 {
+	if x != nil && x.LocationLat != nil {
+		return *x.LocationLat
+	}
+	return 0
+}
+
+func (x *CreateJobRequest) GetLocationLng() float64 {
+	if x != nil && x.LocationLng != nil {
+		return *x.LocationLng
+	}
+	return 0
 }
 
 type CreateJobResponse struct {

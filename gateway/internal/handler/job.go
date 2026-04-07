@@ -44,6 +44,10 @@ type createJobRequest struct {
 	PhotoURLs            []string `json:"photo_urls"`
 	TagCategoryIDs       []string `json:"tag_category_ids"`
 	Publish              bool     `json:"publish"`
+	AuctionType          string   `json:"auction_type"`
+	LocationAddress      string   `json:"location_address"`
+	LocationLat          *float64 `json:"location_lat"`
+	LocationLng          *float64 `json:"location_lng"`
 }
 
 type updateJobRequest struct {
@@ -92,6 +96,10 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		PhotoUrls:            req.PhotoURLs,
 		TagCategoryIds:       req.TagCategoryIDs,
 		Publish:              req.Publish,
+		AuctionType:          req.AuctionType,
+		LocationAddress:      req.LocationAddress,
+		LocationLat:          req.LocationLat,
+		LocationLng:          req.LocationLng,
 	}
 
 	if req.StartingBidCents != nil {

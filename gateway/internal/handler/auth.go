@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
+	"strings"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
@@ -69,6 +71,22 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
+	// Validate email: non-empty and basic format check.
+	req.Email = strings.TrimSpace(req.Email)
+	if req.Email == "" || !strings.Contains(req.Email, "@") || !strings.Contains(req.Email, ".") {
+		writeError(w, http.StatusBadRequest, "email must be a valid email address")
+		return
+	}
+
+	// Validate password: non-empty and minimum 8 characters.
+	if len(req.Password) < 8 {
+		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
+	// Sanitize display_name: strip HTML tags to prevent XSS.
+	req.DisplayName = stripHTMLTags(req.DisplayName)
 
 	resp, err := h.userClient.Register(r.Context(), &userv1.RegisterRequest{
 		Email:       req.Email,
@@ -503,8 +521,7 @@ func parseRoles(roles []string) []commonv1.UserRole {
 			result = append(result, commonv1.UserRole_USER_ROLE_CUSTOMER)
 		case "provider":
 			result = append(result, commonv1.UserRole_USER_ROLE_PROVIDER)
-		case "admin":
-			result = append(result, commonv1.UserRole_USER_ROLE_ADMIN)
+		// "admin" intentionally excluded — self-registration cannot grant admin role.
 		}
 	}
 	return result
@@ -537,4 +554,12 @@ func formatTimestamp(ts *timestamppb.Timestamp) string {
 		return ""
 	}
 	return ts.AsTime().Format("2006-01-02T15:04:05Z")
+}
+
+// htmlTagPattern matches HTML/XML tags for sanitization.
+var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
+
+// stripHTMLTags removes all HTML tags from a string.
+func stripHTMLTags(s string) string {
+	return strings.TrimSpace(htmlTagPattern.ReplaceAllString(s, ""))
 }

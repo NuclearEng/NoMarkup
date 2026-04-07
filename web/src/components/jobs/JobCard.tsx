@@ -3,7 +3,7 @@
 import { Calendar, MapPin, Tag, Users } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -99,7 +99,7 @@ function getAuctionElapsedPercent(
   return Math.min(100, Math.max(0, Math.round((elapsed / totalDuration) * 100)));
 }
 
-export function JobCard({ job }: JobCardProps) {
+export const JobCard = memo(function JobCard({ job }: JobCardProps) {
   const urgency = useMemo(() => getAuctionUrgency(job.auction_ends_at), [job.auction_ends_at]);
 
   const elapsedPercent = useMemo(
@@ -233,4 +233,4 @@ export function JobCard({ job }: JobCardProps) {
       </Card>
     </Link>
   );
-}
+});

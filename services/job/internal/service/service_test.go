@@ -115,6 +115,9 @@ func (m *mockJobRepo) AwardJob(_ context.Context, jobID, _, providerID, bidID st
 func (m *mockJobRepo) MarkReviewed(_ context.Context, jobID string) (*domain.Job, error) {
 	return &domain.Job{ID: jobID, Status: "reviewed"}, nil
 }
+func (m *mockJobRepo) GetJobsOnMap(_ context.Context, _ domain.GetJobsOnMapInput) ([]domain.JobMapPin, error) {
+	return nil, nil
+}
 
 // --- helpers ---
 

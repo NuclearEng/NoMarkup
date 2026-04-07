@@ -1,10 +1,10 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight, ImagePlus, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus, MapPin, X } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
-import { useCallback, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
@@ -34,7 +34,7 @@ import {
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
-import { useCreateJob, usePublishJob } from '@/hooks/useJobs';
+import { useCreateJob } from '@/hooks/useJobs';
 import { formatCents } from '@/lib/utils';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
 import { AUCTION_TYPE, type CreateJobInput, type MarketRange } from '@/types';
@@ -76,7 +76,6 @@ export function JobPostingForm() {
   const [photos, setPhotos] = useState<File[]>([]);
   const router = useRouter();
   const createJob = useCreateJob();
-  const publishJob = usePublishJob();
 
   const form = useForm<JobPostingFormValues>({
     resolver: zodResolver(jobPostingSchema),
@@ -155,9 +154,8 @@ export function JobPostingForm() {
     try {
       const values = form.getValues();
       const input = buildCreateInput(values);
-      const job = await createJob.mutateAsync(input);
-      if (!job?.id) throw new Error('Job creation returned no data');
-      await publishJob.mutateAsync(job.id);
+      input.publish = true;
+      await createJob.mutateAsync(input);
       router.push('/jobs/mine' as Route);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to publish job';
@@ -186,7 +184,7 @@ export function JobPostingForm() {
     }
   }
 
-  const isPending = createJob.isPending || publishJob.isPending;
+  const isPending = createJob.isPending;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -384,6 +382,54 @@ function StepDetails({ form }: { form: FormType }) {
 
 // -- Step 3: Location --
 function StepLocation({ form }: { form: FormType }) {
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+
+  const lat = form.watch('locationLat');
+  const lng = form.watch('locationLng');
+  const hasCoords = lat !== undefined && lng !== undefined && lat !== 0 && lng !== 0;
+
+  const geocodeAddress = useCallback(
+    (address: string) => {
+      if (!address || address.length < 5 || !mapboxToken) return;
+
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(async () => {
+        setGeocoding(true);
+        setGeocodeError(null);
+        try {
+          const encoded = encodeURIComponent(address);
+          const res = await fetch(
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${mapboxToken}&country=US&limit=1&types=address`,
+          );
+          if (!res.ok) throw new Error('Geocoding failed');
+          const data = (await res.json()) as {
+            features: Array<{
+              center: [number, number];
+              place_name: string;
+            }>;
+          };
+          const feature = data.features[0];
+          if (feature) {
+            const [lngResult, latResult] = feature.center;
+            form.setValue('locationLat', latResult);
+            form.setValue('locationLng', lngResult);
+            setGeocodeError(null);
+          } else {
+            setGeocodeError('Address not found. Try a more specific address.');
+          }
+        } catch {
+          setGeocodeError('Could not look up address. Check your connection.');
+        } finally {
+          setGeocoding(false);
+        }
+      }, 600);
+    },
+    [mapboxToken, form],
+  );
+
   return (
     <div className="space-y-6">
       <FormField
@@ -397,19 +443,44 @@ function StepLocation({ form }: { form: FormType }) {
                 {...field}
                 placeholder="123 Main St, City, State, ZIP"
                 className="min-h-[44px]"
+                onChange={(e) => {
+                  field.onChange(e);
+                  geocodeAddress(e.target.value);
+                }}
               />
             </FormControl>
             <FormDescription>
-              Where should the service provider come? Leave blank for remote work.
+              {geocoding
+                ? 'Looking up address...'
+                : 'Where should the service provider come? Leave blank for remote work.'}
             </FormDescription>
+            {geocodeError ? <p className="text-destructive text-sm">{geocodeError}</p> : null}
             <FormMessage />
           </FormItem>
         )}
       />
 
-      <div className="text-muted-foreground rounded-md border p-8 text-center text-sm">
-        Map preview will appear here based on the address entered
-      </div>
+      {hasCoords ? (
+        <div className="relative overflow-hidden rounded-md border">
+          <img
+            src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/pin-l+d4a017(${String(lng)},${String(lat)})/${String(lng)},${String(lat)},14,0/600x300@2x?access_token=${mapboxToken}`}
+            alt="Map preview of service location"
+            className="h-[200px] w-full object-cover"
+            loading="lazy"
+          />
+          <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-zinc-900/80 px-2.5 py-1 text-xs text-zinc-200 backdrop-blur-sm">
+            <MapPin className="h-3 w-3 text-[var(--brand-gold)]" aria-hidden="true" />
+            {String(lat.toFixed(4))}, {String(lng.toFixed(4))}
+          </div>
+        </div>
+      ) : (
+        <div className="text-muted-foreground flex flex-col items-center gap-2 rounded-md border p-8 text-center text-sm">
+          <MapPin className="h-6 w-6 opacity-40" aria-hidden="true" />
+          {mapboxToken
+            ? 'Enter an address above to see a map preview'
+            : 'Map preview unavailable — Mapbox token not configured'}
+        </div>
+      )}
     </div>
   );
 }

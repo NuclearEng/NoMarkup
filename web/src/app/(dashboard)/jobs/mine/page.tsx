@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus } from 'lucide-react';
+import { Plus, Rocket, Trash2 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button';
 import { ContentLoader } from '@/components/ui/content-loader';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useCustomerJobs } from '@/hooks/useJobs';
+import { useCustomerJobs, usePublishJob, useDeleteDraft } from '@/hooks/useJobs';
+import { JOB_STATUS } from '@/types';
 
 const TABS = [
   { value: 'all', label: 'All', status: undefined },
@@ -33,6 +34,9 @@ export default function MyJobsPage() {
     page,
     page_size: 12,
   });
+
+  const publishJob = usePublishJob();
+  const deleteDraft = useDeleteDraft();
 
   const totalPages = data?.pagination.totalPages ?? 1;
 
@@ -106,7 +110,32 @@ export default function MyJobsPage() {
               <>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {data.jobs.map((job) => (
-                    <JobCard key={job.id} job={job} />
+                    <div key={job.id} className="flex flex-col">
+                      <JobCard job={job} />
+                      {job.status === JOB_STATUS.DRAFT ? (
+                        <div className="mt-2 flex gap-2">
+                          <Button
+                            size="sm"
+                            className="min-h-[44px] flex-1"
+                            disabled={publishJob.isPending}
+                            onClick={() => { publishJob.mutate(job.id); }}
+                          >
+                            <Rocket className="mr-1 h-4 w-4" aria-hidden="true" />
+                            {publishJob.isPending ? 'Publishing...' : 'Go Live'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-[44px]"
+                            disabled={deleteDraft.isPending}
+                            onClick={() => { deleteDraft.mutate(job.id); }}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            <span className="sr-only">Delete draft</span>
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
 

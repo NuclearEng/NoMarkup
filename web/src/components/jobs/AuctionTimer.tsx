@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -171,7 +171,7 @@ function TimerRing({
   );
 }
 
-export function AuctionTimer({
+export const AuctionTimer = memo(function AuctionTimer({
   auctionEndsAt,
   compact = false,
   className,
@@ -191,13 +191,34 @@ export function AuctionTimer({
     setTimeRemaining(remaining);
     if (remaining.totalMs <= 0) return;
 
-    const interval = setInterval(() => {
+    // Adaptive tick rate: 1s when < 1 hour, 30s when < 24h, 60s otherwise.
+    // This reduces timer re-renders from N*60/min to much less for distant timers.
+    function getTickInterval(ms: number): number {
+      if (ms < 60 * 60 * 1000) return 1000;       // < 1 hour: every second
+      if (ms < 24 * 60 * 60 * 1000) return 30_000; // < 24 hours: every 30s
+      return 60_000;                                 // > 24 hours: every 60s
+    }
+
+    let tickMs = getTickInterval(remaining.totalMs);
+    let interval = setInterval(() => {
       const updated = calculateTimeRemaining(auctionEndsAt);
       setTimeRemaining(updated);
       if (updated.totalMs <= 0) {
         clearInterval(interval);
+        return;
       }
-    }, 1000);
+      // Upgrade to faster ticks when crossing threshold
+      const newTick = getTickInterval(updated.totalMs);
+      if (newTick !== tickMs) {
+        clearInterval(interval);
+        tickMs = newTick;
+        interval = setInterval(() => {
+          const u = calculateTimeRemaining(auctionEndsAt);
+          setTimeRemaining(u);
+          if (u.totalMs <= 0) clearInterval(interval);
+        }, tickMs);
+      }
+    }, tickMs);
 
     return () => { clearInterval(interval); };
   }, [auctionEndsAt]);
@@ -360,4 +381,4 @@ export function AuctionTimer({
       </div>
     </div>
   );
-}
+});
