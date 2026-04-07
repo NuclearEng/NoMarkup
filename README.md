@@ -30,28 +30,55 @@ deploy/        Docker, Kubernetes, Terraform
 
 ## Key Features
 
+### Marketplace Core
 - **Live Auction Arena** — real-time WebSocket-driven bidding with order book, depth chart, and bid velocity indicators
 - **Digit-Rolling Prices** — Robinhood-style animated price tickers with green/red flash on changes
 - **5-Level Urgency Timer** — SVG progress ring with progressive pulse/glow/shake as auctions close
 - **Savings Hero** — prominent "You're saving $X (Y%)" display with rolling digit animation
 - **Fair Price Index** — animated market-data page showing real median prices by category and ZIP, with percentile range bars and price heat map
 - **Competitive Bid Context** — rank badges (gold/silver/bronze), win probability bars, market position
-- **Trust Scoring** — multi-dimensional provider trust with tier badges (Top Rated, Trusted, Rising, New) and contextual tooltips explaining each tier's criteria and composite score
+- **Instant Match** — "Find me someone fast" path alongside open auctions; provider offer queue with 15-minute countdown, accept/decline flow
+- **Viewer Count** — live "👁 N providers viewing" badge per auction, Redis sorted-set backed, 30s polling
+- **Savings Badge** — "Saves you $X vs. market avg" green pill on every auction with bid history context
+
+### AI-Powered Job Posting
+- **Vision Analysis** — tap "Analyze a Photo" to capture or upload a photo; `claude-haiku-4-5-20251001` extracts category, title, description, and budget range and auto-fills the form
+- **Voice Input** — browser-native Web Speech API mic button on the title field; speak your problem, form fills itself
+- **Progressive Enhancement** — form works without either feature; both are additive layers
+
+### Provider Workspace
+- **Daily Workspace** (`/provider/workspace`) — today's jobs + 7-day calendar, job cards with inline check-in/out and completion photos
+- **GPS Check-In/Out** — geolocation-verified job start/end with duration calculation ("Worked 3h 20m")
+- **Completion Photos** — before/after upload slots; "Mark Complete" requires at least one after-photo
+- **Dispute Resolution** — 5-step evidence collection form (contract, reason, description, photos, review); "File a Dispute" on every contract detail page
+
+### Provider Financial OS
+- **Working Capital Advances** — credit utilization bars, fee preview, repayment progress tracking; auto-deduction from payouts
+- **BNPL (Buy Now Pay Later)** — 3 or 6 installment plans for customers; provider paid immediately, platform collects installments
+- **Instant Payout** — 1% fee, funds arrive within minutes; real-time fee preview before confirming
+- **Tax Projection Card** — YTD earnings → estimated annual tax at 25% → quarterly payment breakdown
+- **Credit Score Card** — letter grade (A–D) from risk score, utilization meter, link to advance history
+- **Business Suite** — expense tracking, invoice generation, 1099-NEC tax center
+
+### Local Intelligence
+- **Seasonal Demand Banners** — rule-based alerts by category + month (HVAC in summer, landscaping in spring, etc.), dismissible
+- **Permit Intelligence** — info banner on job detail pages for categories that typically require permits (electrical, plumbing, HVAC, roofing, etc.)
+- **Fair Price Widget** — market low–high range bar on job cards, color-coded green/amber/red vs. current bids
+
+### Per-Job Insurance
+- **4 Insurance Products** — property damage (150 bps), workmanship warranty (200 bps), completion guarantee (100 bps), liability (250 bps)
+- **Risk-Adjusted Pricing** — category multipliers (1.5x roofing/electrical, 0.8x cleaning) computed at quote time
+- **Claims Lifecycle** — file, review, approve with payout or deny; admin claims queue
+
+### Platform & Design
+- **Trust Scoring** — multi-dimensional provider trust with tier badges (Top Rated, Trusted, Rising, New)
 - **Multi-Tier Celebrations** — canvas confetti from Nice (10%) to Legendary (40%+) savings
-- **Brand Gold System** — glass morphism throughout: `glass`, `glass-highlight`, `glass-elevated`, `glass-tinted-gold`, `glass-cta-gold` variants across all 69 routes
-- **Market Ticker Strip** — infinite-scroll live marketplace activity on landing page
-- **Animated Auction Demo** — self-playing reverse auction demonstration with staggered bids
-- **Shimmer Skeletons** — premium loading states with 7 content-aware presets
-- **Full Dark Mode** — cinematic `#070b14` dark theme across all 60+ pages with consistent gold accent system
-- **Best-in-Class Tooltips** — Radix UI tooltips across the full UI: trust tier explanations, win probability context, price-vs-market breakdowns, market confidence confidence indicators, and all icon-only toolbar actions (Tooltip+Popover coexistence pattern for destructive actions)
-- **Accessibility** — WCAG 2.2 AA: focus rings on all interactive elements, `aria-live` regions, `prefers-reduced-motion` support on all 30+ animations, 44px minimum touch targets throughout; tooltips accessible to keyboard users via `tabIndex={0}` on informational badges
-- **Best-in-Class Mobile** — fixed bottom tab bar (MD3 pattern, 4 primary + More drawer), `viewport-fit=cover` with `env(safe-area-inset-*)` for notched iPhones, `100dvh` for dynamic viewport height, responsive grids that collapse to single-column, scrollable tab lists, breadcrumbs hidden on small screens, and `prefers-reduced-motion` opt-out on all animations
-- **Active Nav Indicators** — gold left-border sidebar active state; active scale + gold tint on mobile bottom tab bar
-- **Best-in-Class Onboarding** — role picker at registration (hire vs. provide), email verification banner with resend, provider setup wizard (7 steps with ✓ completion indicators, prefilled from existing data, Stripe Connect as final step), customer "Get Started" checklist, admin quick-actions panel
-- **Provider Onboarding** — 7-step wizard: Business Info → Categories → Service Area → Terms → Portfolio → Verification → Stripe Connect; prefills existing profile data, tracks completion per-step
-- **Working Capital Advances** — credit utilization bars, fee preview, repayment progress tracking
-- **Business Suite** — expense tracking, invoice generation, 1099-NEC tax center, all glass-themed
-- **Best-in-Class Observability** — structured JSON slog with status-based severity (INFO/WARN/ERROR per HTTP status), `user_id` on every authenticated request, gRPC logging interceptors on all 5 Go services (method + duration_ms + error), `tracing::info!` on all 4 Rust engines (bidding, fraud, trust, imaging), payment processing audit trail, auth failure audit (suspended/banned/invalid credentials/unverified email), and OpenTelemetry distributed tracing end-to-end
+- **Brand Gold System** — glass morphism throughout: `glass`, `glass-highlight`, `glass-elevated`, `glass-tinted-gold`, `glass-cta-gold`
+- **Full Dark Mode** — cinematic `#070b14` dark theme across all 60+ pages
+- **Best-in-Class Mobile** — fixed bottom tab bar (MD3 pattern), `viewport-fit=cover` for notched iPhones, `100dvh` dynamic viewport, 44px touch targets
+- **Accessibility** — WCAG 2.2 AA: focus rings, `aria-live` regions, `prefers-reduced-motion` on all animations
+- **Best-in-Class Onboarding** — role picker, email verification, 7-step provider wizard, Stripe Connect integration
+- **Observability** — structured JSON slog, gRPC interceptors on all Go services, `tracing::info!` on all Rust engines, OpenTelemetry distributed tracing end-to-end
 
 ## Tech Stack
 
