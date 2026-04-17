@@ -449,11 +449,11 @@ func main() {
 	// ── 11. Subscription Tiers ────────────────────────────────────
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO subscription_tiers (id, name, role, price_cents, max_active_jobs, max_bids_per_month, features_json, active)
+		INSERT INTO subscription_tiers (id, slug, name, role, price_cents, max_active_jobs, max_bids_per_month, features_json, active)
 		VALUES
-			($1, 'free',          'customer', 0,    1,    NULL, '{"analytics": false, "priority_placement": false}', true),
-			($2, 'pro_customer',  'customer', 1999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_jobs": true}', true),
-			($3, 'pro_provider',  'provider', 2999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_bids": true, "badge": true}', true)
+			($1, 'free',         'free',          'customer', 0,    1,    NULL, '{"analytics": false, "priority_placement": false}', true),
+			($2, 'pro_customer', 'pro_customer',  'customer', 1999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_jobs": true}', true),
+			($3, 'pro_provider', 'pro_provider',  'provider', 2999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_bids": true, "badge": true}', true)
 		ON CONFLICT (id) DO NOTHING`,
 		freeTierID, proCustomerTierID, proProviderTierID,
 	)
