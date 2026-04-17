@@ -405,7 +405,7 @@ describe('useUsage', () => {
     expect(result.current.data?.max_active_bids).toBe(20);
     expect(result.current.data?.current_fee_percentage).toBe(8);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/subscriptions/me/usage',
+      '/api/v1/subscriptions/usage',
     );
   });
 
@@ -456,7 +456,7 @@ describe('useInvoices', () => {
     expect(result.current.data?.invoices).toHaveLength(1);
     expect(result.current.data?.invoices[0]?.amount_cents).toBe(2999);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/subscriptions/me/invoices',
+      '/api/v1/subscriptions/invoices',
     );
   });
 

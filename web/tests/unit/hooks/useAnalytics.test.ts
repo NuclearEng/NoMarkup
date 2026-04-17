@@ -25,6 +25,22 @@ vi.mock('@/lib/api', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: string;
+    constructor(status: number, body: string) {
+      super(`API error ${String(status)}: ${body}`);
+      this.name = 'ApiError';
+      this.status = status;
+      this.body = body;
+    }
+  },
+}));
+
+// Seed the auth store so `enabled: !!userId` is true and the query fires.
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (selector: (s: { user: { id: string } | null }) => unknown) =>
+    selector({ user: { id: 'user-1' } }),
 }));
 
 const { api } = await import('@/lib/api');
@@ -164,7 +180,7 @@ describe('useProviderAnalytics', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data?.jobs_completed).toBe(15);
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/provider');
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/providers/user-1');
   });
 
   it('passes date range params', async () => {
@@ -221,7 +237,9 @@ describe('useProviderEarnings', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/provider/earnings');
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/analytics/providers/user-1/earnings',
+    );
   });
 
   it('passes group_by param', async () => {
@@ -273,7 +291,7 @@ describe('useCustomerSpending', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/customer/spending');
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/customers/me/spending');
   });
 
   it('passes date and group_by params', async () => {

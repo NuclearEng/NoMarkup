@@ -178,10 +178,21 @@ describe('loginSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects weak password in login', () => {
+  it('accepts any non-empty password in login', () => {
+    // Login verifies credentials against the stored hash server-side.
+    // The client-side schema only requires a non-empty password, not a
+    // strong one — strength rules apply to registration (passwordSchema).
     const result = loginSchema.safeParse({
       email: 'user@example.com',
       password: 'weak',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty password in login', () => {
+    const result = loginSchema.safeParse({
+      email: 'user@example.com',
+      password: '',
     });
     expect(result.success).toBe(false);
   });

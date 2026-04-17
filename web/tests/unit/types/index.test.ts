@@ -511,8 +511,12 @@ describe('NOTIFICATION_TYPE', () => {
     expect(NOTIFICATION_TYPE.TIER_DOWNGRADE).toBe('tier_downgrade');
   });
 
-  it('has exactly 25 notification types', () => {
-    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(25);
+  it('has exactly 26 notification types', () => {
+    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(26);
+  });
+
+  it('includes JOB_MATCHED (pre-matching)', () => {
+    expect(NOTIFICATION_TYPE.JOB_MATCHED).toBe('job_matched');
   });
 
   it('produces the correct type', () => {

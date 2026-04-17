@@ -102,7 +102,7 @@ describe('useSearchJobs', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -167,7 +167,7 @@ describe('useJob', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -176,7 +176,9 @@ describe('useJob', () => {
   });
 
   it('fetches a single job by id', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ job: mockJobDetail });
+    // /api/v1/jobs/:id is public — useJob goes through api.getPublic,
+    // not api.get, to skip the auth token + 401 retry cycle.
+    vi.mocked(api.getPublic).mockResolvedValueOnce({ job: mockJobDetail });
 
     const { result } = renderHook(() => useJob('job-1'), {
       wrapper: createWrapper(queryClient),
@@ -194,11 +196,11 @@ describe('useJob', () => {
     });
 
     expect(result.current.fetchStatus).toBe('idle');
-    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+    expect(vi.mocked(api.getPublic)).not.toHaveBeenCalled();
   });
 
   it('handles fetch error', async () => {
-    vi.mocked(api.get).mockRejectedValueOnce(new Error('Not found'));
+    vi.mocked(api.getPublic).mockRejectedValueOnce(new Error('Not found'));
 
     const { result } = renderHook(() => useJob('bad-id'), {
       wrapper: createWrapper(queryClient),
@@ -212,7 +214,7 @@ describe('useCreateJob', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -270,7 +272,7 @@ describe('useUpdateJob', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -301,7 +303,7 @@ describe('usePublishJob', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -329,7 +331,7 @@ describe('useDeleteDraft', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -360,7 +362,7 @@ describe('useCloseAuction', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -388,7 +390,7 @@ describe('useCancelJob', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -416,7 +418,7 @@ describe('useCustomerJobs', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 
@@ -457,7 +459,7 @@ describe('useCustomerDrafts', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     queryClient = createTestQueryClient();
   });
 

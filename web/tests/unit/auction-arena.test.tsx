@@ -30,6 +30,7 @@ vi.mock('@/hooks/useAuctionStream', () => ({
 
 vi.mock('@/hooks/useBids', () => ({
   useLiveAuctionState: vi.fn(() => ({ data: null, isLoading: false })),
+  useBidsForJob: vi.fn(() => ({ data: null, isLoading: false })),
 }));
 
 vi.mock('@/lib/constants', () => ({
@@ -212,7 +213,10 @@ describe('AuctionArena', () => {
       }),
       { wrapper: createWrapper(queryClient) },
     );
-    expect(screen.getByText('$250')).toBeDefined();
+    // AnimatedPrice renders each character in its own span for the tumble
+    // animation, so the flat text "$250" never appears as a single text
+    // node. The component exposes the formatted amount via aria-label.
+    expect(screen.getByLabelText('Current lowest bid: $250')).toBeDefined();
   });
 
   it('displays bid count', () => {
@@ -378,7 +382,9 @@ describe('AuctionArena', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    expect(screen.getByText('$150')).toBeDefined();
+    // AnimatedPrice fragments the $150 into per-character spans; the
+    // aria-label is the stable reading.
+    expect(screen.getByLabelText('Current lowest bid: $150')).toBeDefined();
     expect(screen.getByText('2')).toBeDefined();
     expect(screen.getByText('1/3 extensions')).toBeDefined();
   });
