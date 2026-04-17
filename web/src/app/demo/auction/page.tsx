@@ -304,6 +304,8 @@ export default function AuctionDemoPage() {
             )}
             <button
               onClick={sim.reset}
+              aria-label="Reset demo auction"
+              title="Reset demo auction"
               className="flex h-8 min-h-0 min-w-0 items-center gap-1 rounded-md border border-white/[0.06] bg-transparent px-3 text-xs text-white/60 transition-colors hover:bg-white/5 hover:text-white/70"
             >
               <RotateCcw className="h-3 w-3" />
