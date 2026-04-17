@@ -238,6 +238,7 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
 </div>
 </body>
 </html>`,
+		invoiceNum,
 		htmlEscape(contract.JobTitle),
 		invoiceNum, contractDate, generatedDate,
 		htmlEscape(contract.CustomerName),

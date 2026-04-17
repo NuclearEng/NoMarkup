@@ -156,6 +156,54 @@ func (m *mockPaymentRepo) GetScheduledInstallmentsForPlan(_ context.Context, _ s
 	return nil, nil
 }
 
+// Advance + credit-limit stubs (satisfy interface — not tested in this file).
+func (m *mockPaymentRepo) UpdateAdvanceDisbursement(_ context.Context, _, _ string) (*domain.Advance, error) {
+	return nil, domain.ErrAdvanceNotFound
+}
+func (m *mockPaymentRepo) UpdateAdvanceRepayment(_ context.Context, _, _ string, _ int64) (*domain.Advance, error) {
+	return nil, domain.ErrAdvanceNotFound
+}
+func (m *mockPaymentRepo) GetActiveAdvancesForProvider(_ context.Context, _ string) ([]*domain.Advance, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) GetCreditLimit(_ context.Context, _ string) (*domain.CreditLimit, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) UpsertCreditLimit(_ context.Context, _ *domain.CreditLimit) error {
+	return nil
+}
+
+// Tax-form stubs (satisfy interface — not tested in this file).
+func (m *mockPaymentRepo) CreateTaxForm(_ context.Context, _ *domain.TaxForm) error {
+	return nil
+}
+func (m *mockPaymentRepo) GetTaxForm(_ context.Context, _ string, _ int) (*domain.TaxForm, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) ListTaxForms(_ context.Context, _ string) ([]*domain.TaxForm, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) GetProviderEarningsForYear(_ context.Context, _ string, _ int) (int64, error) {
+	return 0, nil
+}
+func (m *mockPaymentRepo) UpdateTaxFormStatus(_ context.Context, _, _ string, _ *string) error {
+	return nil
+}
+
+// Invoice-related stubs (satisfy interface — not tested in this file).
+func (m *mockPaymentRepo) GetContractDetail(_ context.Context, _ string) (*domain.ContractDetail, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) GetMilestonesForContract(_ context.Context, _ string) ([]*domain.MilestoneDetail, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) GetPaymentsForContract(_ context.Context, _ string) ([]*domain.Payment, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) GetProviderProfile(_ context.Context, _ string) (string, string, error) {
+	return "", "", nil
+}
+
 // --- Mock Stripe Service ---
 
 type mockStripeService struct {
