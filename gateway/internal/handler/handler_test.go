@@ -365,7 +365,7 @@ func TestJobHandler_Create(t *testing.T) {
 			t.Parallel()
 
 			client := &mockJobClient{createJobFn: tt.mockFn}
-			h := NewJobHandler(client)
+			h := NewJobHandler(client, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -399,7 +399,7 @@ func TestJobHandler_Search(t *testing.T) {
 			}, nil
 		},
 	}
-	h := NewJobHandler(client)
+	h := NewJobHandler(client, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=plumbing", nil)
 	rec := httptest.NewRecorder()
@@ -421,7 +421,7 @@ func TestJobHandler_Search_grpc_error(t *testing.T) {
 			return nil, status.Error(codes.Internal, "search unavailable")
 		},
 	}
-	h := NewJobHandler(client)
+	h := NewJobHandler(client, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=test", nil)
 	rec := httptest.NewRecorder()
@@ -751,7 +751,9 @@ func TestParseRoles(t *testing.T) {
 		want  int
 	}{
 		{name: "customer", input: []string{"customer"}, want: 1},
-		{name: "multiple", input: []string{"customer", "provider", "admin"}, want: 3},
+		// "admin" is intentionally dropped — self-registration cannot grant admin.
+		{name: "multiple_drops_admin", input: []string{"customer", "provider", "admin"}, want: 2},
+		{name: "admin_alone_is_zero", input: []string{"admin"}, want: 0},
 		{name: "unknown_ignored", input: []string{"unknown"}, want: 0},
 		{name: "empty", input: []string{}, want: 0},
 	}
