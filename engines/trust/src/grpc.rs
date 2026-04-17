@@ -57,7 +57,7 @@ impl TrustService for TrustServiceImpl {
             Ok((row, tier_changed, previous_tier)) => {
                 info!(
                     user_id = %user_id,
-                    score = row.composite_score,
+                    score = row.overall_score,
                     tier = %row.tier,
                     tier_changed = tier_changed,
                     trigger = %req.trigger_reason,

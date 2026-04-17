@@ -161,8 +161,7 @@ CREATE INDEX IF NOT EXISTS idx_market_ranges_type_zip_computed
 -- analytics.go: GetGeographicMetrics filters by completed_at + region.
 -- analytics.go: GetCategoryMetrics joins on category_id + completed_at.
 CREATE INDEX IF NOT EXISTS idx_analytics_txn_category_completed
-    ON analytics_transactions (category_id, completed_at DESC)
-    WHERE category_id IS NOT NULL;
+    ON analytics_transactions (service_type_id, completed_at DESC);
 
 -- analytics.go: GetCustomerSpending and GetProviderEarnings join
 -- payments -> contracts -> jobs. The contracts.job_id join is already

@@ -151,7 +151,7 @@ stop_one() {
 ensure_pg_on_path() {
     if ! has_cmd pg_ctl; then
         local prefix
-        prefix="$(brew --prefix postgresql@16 2>/dev/null || true)"
+        prefix="$(brew --prefix postgresql@17 2>/dev/null || true)"
         if [[ -n "$prefix" && -d "$prefix/bin" ]]; then
             export PATH="$prefix/bin:$PATH"
         else
@@ -176,7 +176,7 @@ cmd_setup() {
     log "Checking system dependencies..."
 
     local formulae=(
-        "postgresql@16"
+        "postgresql@17"
         "postgis"
         "redis"
         "meilisearch"

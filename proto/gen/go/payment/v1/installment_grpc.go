@@ -143,7 +143,7 @@ func _InstallmentPlanService_ListInstallmentPlans_Handler(srv interface{}, ctx c
 
 // InstallmentPlanService_ServiceDesc is the service descriptor for the installment plan service.
 var InstallmentPlanService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "nomarkup.payment.v1.PaymentService",
+	ServiceName: "nomarkup.payment.v1.InstallmentPlanService",
 	HandlerType: (*InstallmentPlanServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
