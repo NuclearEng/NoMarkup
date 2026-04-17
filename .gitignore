@@ -72,4 +72,5 @@ npm-debug.log*
 # Sentry
 .sentryclirc
 .claude/worktrees/
+.claude/settings.local.json
 .gstack/
