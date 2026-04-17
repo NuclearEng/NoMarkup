@@ -16,7 +16,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const refreshTokenCookieName = "refresh_token"
+const (
+	refreshTokenCookieName = "refresh_token"
+	// sessionFlagCookieName is a non-httpOnly sentinel the web client reads to
+	// decide whether to attempt a token refresh on mount. Its presence does not
+	// authorize anything — the server always validates the real refresh cookie.
+	sessionFlagCookieName = "has_session"
+)
 
 // AuthHandler handles HTTP auth endpoints by proxying to the User gRPC service.
 type AuthHandler struct {
@@ -159,6 +165,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if refreshToken == "" {
+		// Clear any stale has_session sentinel so the client stops retrying.
+		h.clearSessionFlagCookie(w)
 		writeError(w, http.StatusBadRequest, "refresh token required")
 		return
 	}
@@ -167,6 +175,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: refreshToken,
 	})
 	if err != nil {
+		h.clearSessionFlagCookie(w)
 		writeGRPCError(w, err)
 		return
 	}
@@ -215,6 +224,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
+	h.clearSessionFlagCookie(w)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -502,6 +512,7 @@ func (h *AuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string) {
+	maxAge := 7 * 24 * 60 * 60
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
 		Value:    token,
@@ -509,7 +520,32 @@ func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string)
 		HttpOnly: true,
 		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 60 * 60,
+		MaxAge:   maxAge,
+	})
+	h.setSessionFlagCookie(w, maxAge)
+}
+
+func (h *AuthHandler) setSessionFlagCookie(w http.ResponseWriter, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionFlagCookieName,
+		Value:    "1",
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	})
+}
+
+func (h *AuthHandler) clearSessionFlagCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionFlagCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 }
 

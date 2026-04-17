@@ -29,6 +29,13 @@ export function AuthRestorer() {
 
     // Check for OAuth callback cookies first.
     const oauthToken = getCookie('oauth_access_token');
+    if (!oauthToken && getCookie('has_session') !== '1') {
+      // No server-set session sentinel — don't hit /auth/refresh and avoid a
+      // guaranteed 400 in the console on every public page load.
+      useAuthStore.setState({ isHydrating: false });
+      return;
+    }
+
     if (oauthToken) {
       // Clear the short-lived cookies immediately.
       deleteCookie('oauth_access_token');

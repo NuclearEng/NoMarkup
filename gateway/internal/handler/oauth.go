@@ -352,6 +352,7 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 
 // completeOAuthLogin sets the refresh token cookie and redirects to the frontend.
 func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request, result *userv1.FindOrCreateByOAuthResponse) {
+	refreshMaxAge := 7 * 24 * 60 * 60
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
 		Value:    result.GetRefreshToken(),
@@ -359,7 +360,16 @@ func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request
 		HttpOnly: true,
 		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 60 * 60,
+		MaxAge:   refreshMaxAge,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionFlagCookieName,
+		Value:    "1",
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   refreshMaxAge,
 	})
 
 	// Redirect to the frontend with the access token as a fragment (not query param)
