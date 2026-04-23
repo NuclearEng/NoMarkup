@@ -1,15 +1,21 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
+	keyfunc "github.com/MicahParks/keyfunc/v3"
+	"github.com/golang-jwt/jwt/v5"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -291,14 +297,20 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Decode the JWT claims (Apple ID token is a JWT).
-	// We parse claims without full verification here because the token was received
-	// directly from Apple over TLS via the token exchange. In production, you should
-	// verify the JWT signature against Apple's public keys.
-	claims, err := decodeAppleIDToken(idTokenStr)
+	// Verify the Apple ID token's signature against Apple's JWKS, and validate
+	// the iss/aud/exp claims. We intentionally do NOT trust the claims via a
+	// plain base64 decode — an attacker who obtains or forges an authorization
+	// code could otherwise supply arbitrary sub/email values.
+	// The current authorize request does not include a `nonce` parameter, so we
+	// pass "" and skip the nonce binding check; the state cookie provides CSRF
+	// protection for the callback itself.
+	claims, err := verifyAppleIDToken(r.Context(), idTokenStr, "")
 	if err != nil {
-		slog.Error("apple oauth: failed to decode id_token", "error", err)
-		http.Redirect(w, r, h.frontendURL+"/login?error=decode_failed", http.StatusTemporaryRedirect)
+		slog.Error("apple oauth: id_token signature verification failed",
+			"error", err,
+			"code", "oauth_invalid_signature",
+		)
+		http.Redirect(w, r, h.frontendURL+"/login?error=oauth_invalid_signature", http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -336,7 +348,7 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 	// Call user service to find or create user.
 	result, err := h.userClient.FindOrCreateByOAuth(r.Context(), &userv1.FindOrCreateByOAuthRequest{
 		Provider:   "apple",
-		ProviderId: claims.Sub,
+		ProviderId: claims.Subject,
 		Email:      claims.Email,
 		Name:       name,
 		AvatarUrl:  "", // Apple does not provide avatar URLs.
@@ -408,51 +420,84 @@ func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, h.frontendURL+redirectPath, http.StatusTemporaryRedirect)
 }
 
-// appleIDTokenClaims holds the subset of Apple ID token JWT claims we need.
+// --- Apple ID token verification ---
+
+const (
+	appleJWKSURL       = "https://appleid.apple.com/auth/keys"
+	appleIDTokenIssuer = "https://appleid.apple.com"
+)
+
+// appleIDTokenClaims holds the subset of Apple ID token JWT claims we need
+// plus the standard claims used for validation (iss, aud, exp, nonce).
 type appleIDTokenClaims struct {
-	Sub   string `json:"sub"`
+	jwt.RegisteredClaims
 	Email string `json:"email"`
+	Nonce string `json:"nonce"`
 }
 
-// decodeAppleIDToken decodes the payload of an Apple ID token JWT without
-// signature verification (the token was received directly from Apple over TLS).
-func decodeAppleIDToken(tokenStr string) (*appleIDTokenClaims, error) {
-	// JWT is header.payload.signature — we want the payload.
-	parts := splitJWT(tokenStr)
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid jwt format")
-	}
+var (
+	appleJWKSOnce     sync.Once
+	appleJWKSInstance keyfunc.Keyfunc
+	appleJWKSErr      error
+)
 
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("decode jwt payload: %w", err)
-	}
-
-	var claims appleIDTokenClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, fmt.Errorf("unmarshal jwt claims: %w", err)
-	}
-
-	if claims.Sub == "" {
-		return nil, fmt.Errorf("missing sub claim")
-	}
-	if claims.Email == "" {
-		return nil, fmt.Errorf("missing email claim")
-	}
-
-	return &claims, nil
-}
-
-// splitJWT splits a JWT token string into its three parts.
-func splitJWT(token string) []string {
-	parts := make([]string, 0, 3)
-	start := 0
-	for i := 0; i < len(token); i++ {
-		if token[i] == '.' {
-			parts = append(parts, token[start:i])
-			start = i + 1
+// appleJWKS returns a cached keyfunc that fetches and periodically refreshes
+// Apple's JWKS. The keyfunc library caches keys in-memory and refreshes in the
+// background; we initialize it lazily on first use.
+func appleJWKS(ctx context.Context) (keyfunc.Keyfunc, error) {
+	appleJWKSOnce.Do(func() {
+		k, err := keyfunc.NewDefaultCtx(ctx, []string{appleJWKSURL})
+		if err != nil {
+			appleJWKSErr = fmt.Errorf("load apple jwks: %w", err)
+			return
 		}
-	}
-	parts = append(parts, token[start:])
-	return parts
+		appleJWKSInstance = k
+	})
+	return appleJWKSInstance, appleJWKSErr
 }
+
+// verifyAppleIDToken validates the signature, issuer, audience, and expiry of
+// an Apple ID token. It fetches Apple's JWKS (cached + auto-refreshed) and
+// validates `kid` + RS256 signature. On any validation failure it returns an
+// error — callers MUST NOT trust any claim from an Apple ID token that has
+// not been through this function.
+//
+// If expectedNonce is non-empty, the nonce claim on the token must match
+// (binds the token to the original authorization request). Pass "" to skip.
+func verifyAppleIDToken(ctx context.Context, rawToken, expectedNonce string) (*appleIDTokenClaims, error) {
+	clientID := strings.TrimSpace(os.Getenv("APPLE_CLIENT_ID"))
+	if clientID == "" {
+		return nil, errors.New("APPLE_CLIENT_ID not configured")
+	}
+
+	jwks, err := appleJWKS(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	claims := &appleIDTokenClaims{}
+	token, err := jwt.ParseWithClaims(
+		rawToken,
+		claims,
+		jwks.Keyfunc,
+		jwt.WithIssuer(appleIDTokenIssuer),
+		jwt.WithAudience(clientID),
+		jwt.WithValidMethods([]string{"RS256"}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("verify apple id_token: %w", err)
+	}
+	if !token.Valid {
+		return nil, errors.New("apple id_token invalid")
+	}
+	if claims.Subject == "" {
+		return nil, errors.New("apple id_token missing sub claim")
+	}
+	if expectedNonce != "" && claims.Nonce != expectedNonce {
+		return nil, errors.New("apple id_token nonce mismatch")
+	}
+	// Email can be missing on subsequent sign-ins (Apple only sends it the
+	// first time). The caller falls back gracefully when empty.
+	return claims, nil
+}
+

@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"log/slog"
-	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -565,24 +564,10 @@ func parseRoles(roles []string) []commonv1.UserRole {
 
 // writeJSON, writeError, writeGRPCError are defined in response.go
 
+// extractIP returns the best-effort client IP, honoring trusted-proxy headers
+// only when the direct peer is a trusted proxy per middleware.ClientIP.
 func extractIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		for i := 0; i < len(forwarded); i++ {
-			if forwarded[i] == ',' {
-				return forwarded[:i]
-			}
-		}
-		return forwarded
-	}
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
-	}
-	// Use net.SplitHostPort to correctly handle IPv6 addresses like [::1]:port.
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return middleware.ClientIP(r)
 }
 
 func formatTimestamp(ts *timestamppb.Timestamp) string {

@@ -279,7 +279,7 @@ func main() {
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
-		cfg.AllowedOrigins, cfg.IsProduction(), rateLimiter, authMW,
+		cfg.AllowedOrigins, cfg.IsProduction(), cacheClient, rateLimiter, authMW,
 		authHandler, userHandler, providerHandler, categoriesHandler,
 		jobHandler, bidHandler, contractHandler, paymentHandler,
 		webhookHandler, chatHandler, reviewHandler, trustHandler,

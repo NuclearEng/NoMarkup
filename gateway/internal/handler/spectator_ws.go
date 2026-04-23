@@ -10,10 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +20,7 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 const (
@@ -106,9 +105,11 @@ func (h *SpectatorWSHandler) SpectateAuction(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Accept the WebSocket connection.
+	// Accept the WebSocket connection. OriginPatterns enforces the Same-Origin
+	// policy — even for anonymous spectator flows, we fail closed to prevent
+	// arbitrary third-party sites from embedding our feed.
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // CORS handled by gateway middleware.
+		OriginPatterns: wsOriginPatterns(),
 	})
 	if err != nil {
 		slog.Error("spectator ws accept failed", "error", err, "remote_addr", r.RemoteAddr)
@@ -414,21 +415,8 @@ func lastIndexByte(s string, c byte) int {
 	return -1
 }
 
-// extractClientIP extracts the client IP from the request, checking proxy headers first.
+// extractClientIP returns the client IP, honoring proxy headers only when the
+// direct peer is a trusted proxy (see middleware.ClientIP).
 func extractClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if ip := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0]); ip != "" {
-			return ip
-		}
-	}
-
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return middleware.ClientIP(r)
 }

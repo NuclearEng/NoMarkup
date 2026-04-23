@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/handler"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -17,6 +18,7 @@ import (
 func New(
 	allowedOrigins []string,
 	production bool,
+	cacheClient *cache.Client,
 	rateLimiter *middleware.RateLimiter,
 	authMW *middleware.AuthMiddleware,
 	authHandler *handler.AuthHandler,
@@ -322,8 +324,9 @@ func New(
 			r.Post("/{id}/revision", contractHandler.RequestRevision)
 		})
 
-		// Payment routes
+		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {
+			r.Use(middleware.RequireIdempotencyKey(cacheClient))
 			r.Post("/", paymentHandler.CreatePayment)
 			r.Get("/", paymentHandler.ListPayments)
 			r.Post("/setup-intent", paymentHandler.CreateSetupIntent)
@@ -482,8 +485,9 @@ func New(
 			r.Delete("/devices/{token}", notificationHandler.UnregisterDevice)
 		})
 
-		// Subscription routes (authenticated)
+		// Subscription routes (authenticated) — mutations require Idempotency-Key.
 		r.Route("/subscriptions", func(r chi.Router) {
+			r.Use(middleware.RequireIdempotencyKey(cacheClient))
 			r.Get("/me", subscriptionHandler.GetSubscription)
 			r.Post("/", subscriptionHandler.CreateSubscription)
 			r.Post("/cancel", subscriptionHandler.CancelSubscription)

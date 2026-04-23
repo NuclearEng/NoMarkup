@@ -25,8 +25,15 @@ func generateTestKeyPair(t *testing.T) *rsa.PrivateKey {
 
 func signTestJWT(t *testing.T, key *rsa.PrivateKey, subject, email string, roles []string, expiresAt time.Time) string {
 	t.Helper()
+	return signTestJWTWithClaims(t, key, subject, email, roles, expiresAt, defaultJWTIssuer, defaultJWTAudience)
+}
+
+func signTestJWTWithClaims(t *testing.T, key *rsa.PrivateKey, subject, email string, roles []string, expiresAt time.Time, issuer, audience string) string {
+	t.Helper()
 	claims := tokenClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    issuer,
+			Audience:  jwt.ClaimStrings{audience},
 			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -105,6 +112,18 @@ func TestAuthMiddleware(t *testing.T) {
 			}(),
 			wantStatus:     http.StatusUnauthorized,
 			wantBodySubstr: "invalid or expired token",
+		},
+		{
+			name:           "wrong_issuer_returns_401_invalid_claims",
+			authHeader:     "Bearer " + signTestJWTWithClaims(t, key, "user-123", "test@example.com", []string{"customer"}, time.Now().Add(15*time.Minute), "https://evil.example.com", defaultJWTAudience),
+			wantStatus:     http.StatusUnauthorized,
+			wantBodySubstr: "auth_invalid_claims",
+		},
+		{
+			name:           "wrong_audience_returns_401_invalid_claims",
+			authHeader:     "Bearer " + signTestJWTWithClaims(t, key, "user-123", "test@example.com", []string{"customer"}, time.Now().Add(15*time.Minute), defaultJWTIssuer, "other-audience"),
+			wantStatus:     http.StatusUnauthorized,
+			wantBodySubstr: "auth_invalid_claims",
 		},
 	}
 

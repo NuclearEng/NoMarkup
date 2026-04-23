@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -264,7 +263,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		}
 
 		limit := rl.limitForTier(tier)
-		ip := extractIP(r)
+		ip := ClientIP(r)
 		tierName := tierString(tier)
 
 		// Per-IP check.
@@ -319,21 +318,8 @@ func tierString(tier RateLimitTier) string {
 	}
 }
 
-// extractIP extracts the client IP address from the request.
+// extractIP is retained for backward compatibility; it defers to the shared
+// trust-aware ClientIP helper.
 func extractIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if ip := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0]); ip != "" {
-			return ip
-		}
-	}
-
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return ClientIP(r)
 }

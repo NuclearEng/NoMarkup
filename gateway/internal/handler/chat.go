@@ -297,11 +297,11 @@ func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Accept the WebSocket upgrade from the client.
+	// Accept the WebSocket upgrade from the client. OriginPatterns enforces
+	// the Same-Origin policy for WebSocket handshakes, preventing CSWSH
+	// (cross-site WebSocket hijacking) via cookie auth on a non-allowlisted origin.
 	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// Allow configured origins. The CORS middleware handles preflight,
-		// but websocket.Accept also checks the Origin header.
-		InsecureSkipVerify: true,
+		OriginPatterns: wsOriginPatterns(),
 	})
 	if err != nil {
 		slog.Error("failed to accept client websocket", "error", err)

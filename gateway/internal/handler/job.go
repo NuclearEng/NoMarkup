@@ -148,7 +148,7 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Update handles PATCH /api/v1/jobs/{id}.
 func (h *JobHandler) Update(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -168,6 +168,7 @@ func (h *JobHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	grpcReq := &jobv1.UpdateJobRequest{
 		JobId:       jobID,
+		CustomerId:  claims.UserID,
 		Title:       req.Title,
 		Description: req.Description,
 		CategoryId:  req.CategoryID,
@@ -206,7 +207,7 @@ func (h *JobHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 // Delete handles DELETE /api/v1/jobs/{id}.
 func (h *JobHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -219,7 +220,8 @@ func (h *JobHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.jobClient.DeleteDraft(r.Context(), &jobv1.DeleteDraftRequest{
-		JobId: jobID,
+		JobId:      jobID,
+		CustomerId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -231,7 +233,7 @@ func (h *JobHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // Publish handles POST /api/v1/jobs/{id}/publish.
 func (h *JobHandler) Publish(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -244,7 +246,8 @@ func (h *JobHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.jobClient.PublishJob(r.Context(), &jobv1.PublishJobRequest{
-		JobId: jobID,
+		JobId:      jobID,
+		CustomerId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)

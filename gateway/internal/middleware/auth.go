@@ -3,9 +3,11 @@ package middleware
 import (
 	"context"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -16,7 +18,28 @@ type contextKey string
 const (
 	// ClaimsContextKey is the context key for storing JWT claims.
 	ClaimsContextKey contextKey = "claims"
+
+	// defaultJWTIssuer is the expected `iss` claim when JWT_ISSUER is unset.
+	defaultJWTIssuer = "https://auth.nomarkup.com"
+	// defaultJWTAudience is the expected `aud` claim when JWT_AUDIENCE is unset.
+	defaultJWTAudience = "nomarkup-api"
 )
+
+// expectedJWTIssuer returns the JWT_ISSUER env value or the default.
+func expectedJWTIssuer() string {
+	if v := strings.TrimSpace(os.Getenv("JWT_ISSUER")); v != "" {
+		return v
+	}
+	return defaultJWTIssuer
+}
+
+// expectedJWTAudience returns the JWT_AUDIENCE env value or the default.
+func expectedJWTAudience() string {
+	if v := strings.TrimSpace(os.Getenv("JWT_AUDIENCE")); v != "" {
+		return v
+	}
+	return defaultJWTAudience
+}
 
 // Claims represents the JWT claims extracted from an access token.
 type Claims struct {
@@ -34,6 +57,11 @@ type AuthMiddleware struct {
 func NewAuthMiddleware(publicKey *rsa.PublicKey) *AuthMiddleware {
 	return &AuthMiddleware{publicKey: publicKey}
 }
+
+// errInvalidClaims is returned when the token's iss or aud does not match
+// the gateway's expected values. We surface a distinct error code so clients
+// can distinguish claim-mismatch from expired/invalid-signature.
+var errInvalidClaims = errors.New("invalid claims")
 
 // Handler returns the HTTP middleware handler.
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
@@ -61,6 +89,15 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 
 		claims, err := m.validateToken(tokenStr)
 		if err != nil {
+			if errors.Is(err, errInvalidClaims) {
+				slog.WarnContext(r.Context(), "auth rejected: invalid iss/aud claim",
+					"path", r.URL.Path,
+					"remote_addr", r.RemoteAddr,
+					"error", err,
+				)
+				http.Error(w, `{"error":"invalid token","code":"auth_invalid_claims"}`, http.StatusUnauthorized)
+				return
+			}
 			slog.WarnContext(r.Context(), "auth rejected: invalid or expired token",
 				"path", r.URL.Path,
 				"remote_addr", r.RemoteAddr,
@@ -87,13 +124,27 @@ func (m *AuthMiddleware) ValidateToken(tokenStr string) (*Claims, error) {
 }
 
 func (m *AuthMiddleware) validateToken(tokenStr string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &tokenClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return m.publicKey, nil
-	})
+	wantIss := expectedJWTIssuer()
+	wantAud := expectedJWTAudience()
+
+	token, err := jwt.ParseWithClaims(
+		tokenStr,
+		&tokenClaims{},
+		func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return m.publicKey, nil
+		},
+		jwt.WithIssuer(wantIss),
+		jwt.WithAudience(wantAud),
+	)
 	if err != nil {
+		// jwt/v5 returns typed sentinel errors for iss/aud mismatch. Wrap them
+		// so the handler can return a distinct auth_invalid_claims response.
+		if errors.Is(err, jwt.ErrTokenInvalidIssuer) || errors.Is(err, jwt.ErrTokenInvalidAudience) {
+			return nil, fmt.Errorf("%w: %w", errInvalidClaims, err)
+		}
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
 

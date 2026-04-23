@@ -73,9 +73,10 @@ func (h *AuctionWSHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		"job_id", jobID,
 	)
 
-	// Accept client WebSocket
+	// Accept client WebSocket. OriginPatterns enforces the Same-Origin policy
+	// on the handshake, preventing CSWSH (cross-site WebSocket hijacking).
 	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		OriginPatterns: wsOriginPatterns(),
 	})
 	if err != nil {
 		slog.Error("auction ws accept failed", "error", err)
