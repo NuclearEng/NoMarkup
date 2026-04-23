@@ -141,21 +141,23 @@ func main() {
 	grpcServer := paymentgrpc.NewServer(paymentSvc)
 
 	// Wire up subscription service (shares same repo and stripe service).
+	// Subscription has its own proto service, so it keeps a separate gRPC server.
 	subscriptionSvc := service.NewSubscriptionService(repo, stripeSvc)
 	subscriptionGRPCServer := paymentgrpc.NewSubscriptionServer(subscriptionSvc)
-
-	// Wire up insurance service (shares same repo and stripe service).
-	insuranceSvc := service.NewInsuranceService(repo, stripeSvc)
-	insuranceGRPCServer := paymentgrpc.NewInsuranceServer(insuranceSvc)
 
 	// Wire subscription event delegation so payment events route subscription
 	// events (customer.subscription.*, invoice.*) to the subscription service.
 	paymentSvc.SetSubscriptionWebhookHandler(subscriptionSvc)
 
-	// Wire up installment (BNPL) service.
+	// Installment (BNPL) and insurance live under the same PaymentService proto
+	// surface, so their domain services are attached to the main gRPC server
+	// rather than registered as separate services.
 	installmentSvc := service.NewInstallmentService(repo, stripeSvc)
-	installmentGRPCServer := paymentgrpc.NewInstallmentServer(installmentSvc)
+	grpcServer.SetInstallmentService(installmentSvc)
 	paymentSvc.SetInstallmentPaymentHandler(installmentSvc)
+
+	insuranceSvc := service.NewInsuranceService(repo, stripeSvc)
+	grpcServer.SetInsuranceService(insuranceSvc)
 
 	// Create and register gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
@@ -171,8 +173,6 @@ func main() {
 	)
 	paymentgrpc.Register(s, grpcServer)
 	paymentgrpc.RegisterSubscription(s, subscriptionGRPCServer)
-	paymentgrpc.RegisterInstallmentServer(s, installmentGRPCServer)
-	paymentgrpc.RegisterInsurance(s, insuranceGRPCServer)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

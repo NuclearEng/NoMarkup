@@ -11,12 +11,15 @@ import (
 )
 
 // InstallmentHandler handles HTTP endpoints for BNPL installment plans.
+//
+// The installment RPCs live on the unified PaymentService (the proto was
+// consolidated — there is no separate InstallmentPlanService client).
 type InstallmentHandler struct {
-	installmentClient paymentv1.InstallmentPlanServiceClient
+	installmentClient paymentv1.PaymentServiceClient
 }
 
 // NewInstallmentHandler creates a new InstallmentHandler.
-func NewInstallmentHandler(installmentClient paymentv1.InstallmentPlanServiceClient) *InstallmentHandler {
+func NewInstallmentHandler(installmentClient paymentv1.PaymentServiceClient) *InstallmentHandler {
 	return &InstallmentHandler{installmentClient: installmentClient}
 }
 

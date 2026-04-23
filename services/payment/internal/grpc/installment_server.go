@@ -6,30 +6,19 @@ import (
 
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
-	"github.com/nomarkup/nomarkup/services/payment/internal/service"
-	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// InstallmentServer implements the InstallmentPlanServiceServer gRPC interface.
-type InstallmentServer struct {
-	paymentv1.UnimplementedInstallmentPlanServiceServer
-	svc *service.InstallmentService
-}
+// Installment (BNPL) RPCs. Methods live on *Server so the proto's single
+// PaymentService surface stays intact; the installment domain service is
+// injected via Server.SetInstallmentService.
 
-// NewInstallmentServer creates a new gRPC server for the installment service.
-func NewInstallmentServer(svc *service.InstallmentService) *InstallmentServer {
-	return &InstallmentServer{svc: svc}
-}
-
-// RegisterInstallmentServer registers the installment service with a gRPC server.
-func RegisterInstallmentServer(s *grpclib.Server, srv *InstallmentServer) {
-	paymentv1.RegisterInstallmentPlanServiceServer(s, srv)
-}
-
-func (s *InstallmentServer) CreateInstallmentPlan(ctx context.Context, req *paymentv1.CreateInstallmentPlanRequest) (*paymentv1.CreateInstallmentPlanResponse, error) {
+func (s *Server) CreateInstallmentPlan(ctx context.Context, req *paymentv1.CreateInstallmentPlanRequest) (*paymentv1.CreateInstallmentPlanResponse, error) {
+	if s.installmentSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "installment service not configured")
+	}
 	if req.GetContractId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "contract_id is required")
 	}
@@ -56,7 +45,7 @@ func (s *InstallmentServer) CreateInstallmentPlan(ctx context.Context, req *paym
 		IdempotencyKey:   req.GetIdempotencyKey(),
 	}
 
-	plan, clientSecret, err := s.svc.CreateInstallmentPlan(ctx, input)
+	plan, clientSecret, err := s.installmentSvc.CreateInstallmentPlan(ctx, input)
 	if err != nil {
 		return nil, mapInstallmentError(err)
 	}
@@ -67,12 +56,15 @@ func (s *InstallmentServer) CreateInstallmentPlan(ctx context.Context, req *paym
 	}, nil
 }
 
-func (s *InstallmentServer) GetInstallmentPlan(ctx context.Context, req *paymentv1.GetInstallmentPlanRequest) (*paymentv1.GetInstallmentPlanResponse, error) {
+func (s *Server) GetInstallmentPlan(ctx context.Context, req *paymentv1.GetInstallmentPlanRequest) (*paymentv1.GetInstallmentPlanResponse, error) {
+	if s.installmentSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "installment service not configured")
+	}
 	if req.GetPlanId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "plan_id is required")
 	}
 
-	plan, err := s.svc.GetInstallmentPlan(ctx, req.GetPlanId())
+	plan, err := s.installmentSvc.GetInstallmentPlan(ctx, req.GetPlanId())
 	if err != nil {
 		return nil, mapInstallmentError(err)
 	}
@@ -82,7 +74,10 @@ func (s *InstallmentServer) GetInstallmentPlan(ctx context.Context, req *payment
 	}, nil
 }
 
-func (s *InstallmentServer) ListInstallmentPlans(ctx context.Context, req *paymentv1.ListInstallmentPlansRequest) (*paymentv1.ListInstallmentPlansResponse, error) {
+func (s *Server) ListInstallmentPlans(ctx context.Context, req *paymentv1.ListInstallmentPlansRequest) (*paymentv1.ListInstallmentPlansResponse, error) {
+	if s.installmentSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "installment service not configured")
+	}
 	if req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")
 	}
@@ -92,7 +87,7 @@ func (s *InstallmentServer) ListInstallmentPlans(ctx context.Context, req *payme
 		statusFilter = *req.StatusFilter
 	}
 
-	plans, _, err := s.svc.ListInstallmentPlans(ctx, req.GetUserId(), statusFilter, 1, 100)
+	plans, _, err := s.installmentSvc.ListInstallmentPlans(ctx, req.GetUserId(), statusFilter, 1, 100)
 	if err != nil {
 		return nil, mapInstallmentError(err)
 	}

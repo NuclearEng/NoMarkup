@@ -236,12 +236,11 @@ func main() {
 	analyticsClient := analyticsv1.NewAnalyticsServiceClient(jobConn)
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient)
 
-	// Installment plan service lives on the same gRPC server as the payment service.
-	installmentClient := paymentv1.NewInstallmentPlanServiceClient(paymentConn)
-
+	// Installment, insurance, and tax/invoice RPCs are all part of the unified
+	// PaymentService (proto consolidated — no separate sub-clients), so they
+	// share the single paymentClient.
 	paymentHandler := handler.NewPaymentHandler(paymentClient)
-	insuranceClient := paymentv1.NewInsuranceServiceClient(paymentConn)
-	insuranceHandler := handler.NewInsuranceHandler(insuranceClient)
+	insuranceHandler := handler.NewInsuranceHandler(paymentClient)
 	// Webhook handler receives raw payloads and forwards them to backend services
 	// which perform Stripe signature verification via stripe.webhooks.constructEvent().
 	webhookHandler := handler.NewWebhookHandler(paymentClient, subscriptionClient)
@@ -249,8 +248,7 @@ func main() {
 	verificationHandler := handler.NewVerificationHandler(userClient)
 	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient)
 	expenseHandler := handler.NewExpenseHandler(paymentClient)
-	taxInvoiceClient := paymentv1.NewTaxInvoiceServiceClient(paymentConn)
-	taxHandler := handler.NewTaxHandler(taxInvoiceClient)
+	taxHandler := handler.NewTaxHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
 	auctionWSHandler := handler.NewAuctionWSHandler(authMW, cfg.ChatWSAddr)
 	spectatorWSHandler := handler.NewSpectatorWSHandler(cacheClient)
@@ -271,7 +269,7 @@ func main() {
 	pricingHandler := handler.NewPricingHandler(dbPool)
 	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
 	challengeHandler := handler.NewChallengeHandler(dbPool)
-	installmentHandler := handler.NewInstallmentHandler(installmentClient)
+	installmentHandler := handler.NewInstallmentHandler(paymentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, cacheClient)

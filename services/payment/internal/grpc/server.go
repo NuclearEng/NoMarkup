@@ -17,14 +17,40 @@ import (
 )
 
 // Server implements the PaymentService gRPC server.
+//
+// The proto defines a single PaymentService with all payment/installment/
+// insurance/tax/invoice RPCs bundled together. At the service layer we keep
+// separate domain services (PaymentService, InstallmentService, InsuranceService,
+// etc.) for separation of concerns; this struct is the thin gRPC aggregate that
+// delegates each RPC to the appropriate domain service. Individual RPC methods
+// live in per-concern files (installment_server.go, insurance_server.go, etc.)
+// but all share this Server receiver so we register a single gRPC service.
 type Server struct {
 	paymentv1.UnimplementedPaymentServiceServer
-	svc *service.PaymentService
+	svc            *service.PaymentService
+	installmentSvc *service.InstallmentService
+	insuranceSvc   *service.InsuranceService
 }
 
 // NewServer creates a new gRPC server for the payment service.
+//
+// installmentSvc and insuranceSvc may be nil in tests that only exercise the
+// core payment flows — the corresponding RPCs will return Unimplemented-style
+// errors if invoked without a backing service.
 func NewServer(svc *service.PaymentService) *Server {
 	return &Server{svc: svc}
+}
+
+// SetInstallmentService wires the installment (BNPL) domain service into the
+// aggregate gRPC server.
+func (s *Server) SetInstallmentService(svc *service.InstallmentService) {
+	s.installmentSvc = svc
+}
+
+// SetInsuranceService wires the insurance domain service into the aggregate
+// gRPC server.
+func (s *Server) SetInsuranceService(svc *service.InsuranceService) {
+	s.insuranceSvc = svc
 }
 
 // Register registers the payment service with a gRPC server, including tax/invoice RPCs.

@@ -4,34 +4,23 @@ import (
 	"context"
 	"errors"
 
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
-	"github.com/nomarkup/nomarkup/services/payment/internal/service"
-	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// InsuranceServer implements the InsuranceService gRPC server.
-type InsuranceServer struct {
-	svc *service.InsuranceService
-}
+// Insurance RPCs. Methods live on *Server so the proto's single
+// PaymentService surface stays intact; the insurance domain service is
+// injected via Server.SetInsuranceService.
 
-// NewInsuranceServer creates a new gRPC server for the insurance service.
-func NewInsuranceServer(svc *service.InsuranceService) *InsuranceServer {
-	return &InsuranceServer{svc: svc}
-}
-
-// RegisterInsurance registers the insurance service with a gRPC server.
-func RegisterInsurance(s *grpclib.Server, srv *InsuranceServer) {
-	paymentv1.RegisterInsuranceServiceServer(s, srv)
-}
-
-// --- RPC Implementations ---
-
-func (s *InsuranceServer) ListInsuranceProducts(ctx context.Context, _ *paymentv1.ListInsuranceProductsRequest) (*paymentv1.ListInsuranceProductsResponse, error) {
-	products, err := s.svc.ListProducts(ctx)
+func (s *Server) ListInsuranceProducts(ctx context.Context, _ *paymentv1.ListInsuranceProductsRequest) (*paymentv1.ListInsuranceProductsResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
+	products, err := s.insuranceSvc.ListProducts(ctx)
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -44,7 +33,10 @@ func (s *InsuranceServer) ListInsuranceProducts(ctx context.Context, _ *paymentv
 	return &paymentv1.ListInsuranceProductsResponse{Products: protoProducts}, nil
 }
 
-func (s *InsuranceServer) GetInsuranceQuote(ctx context.Context, req *paymentv1.GetInsuranceQuoteRequest) (*paymentv1.GetInsuranceQuoteResponse, error) {
+func (s *Server) GetInsuranceQuote(ctx context.Context, req *paymentv1.GetInsuranceQuoteRequest) (*paymentv1.GetInsuranceQuoteResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	if req.GetProductId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "product_id is required")
 	}
@@ -52,7 +44,7 @@ func (s *InsuranceServer) GetInsuranceQuote(ctx context.Context, req *paymentv1.
 		return nil, status.Error(codes.InvalidArgument, "contract_amount_cents must be positive")
 	}
 
-	quote, err := s.svc.GetInsuranceQuote(ctx, req.GetProductId(), req.GetContractAmountCents(), req.GetCategorySlug())
+	quote, err := s.insuranceSvc.GetInsuranceQuote(ctx, req.GetProductId(), req.GetContractAmountCents(), req.GetCategorySlug())
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -62,7 +54,10 @@ func (s *InsuranceServer) GetInsuranceQuote(ctx context.Context, req *paymentv1.
 	}, nil
 }
 
-func (s *InsuranceServer) PurchaseInsurance(ctx context.Context, req *paymentv1.PurchaseInsuranceRequest) (*paymentv1.PurchaseInsuranceResponse, error) {
+func (s *Server) PurchaseInsurance(ctx context.Context, req *paymentv1.PurchaseInsuranceRequest) (*paymentv1.PurchaseInsuranceResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	if req.GetProductId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "product_id is required")
 	}
@@ -84,7 +79,7 @@ func (s *InsuranceServer) PurchaseInsurance(ctx context.Context, req *paymentv1.
 		ContractAmountCents: req.GetContractAmountCents(),
 	}
 
-	policy, clientSecret, err := s.svc.PurchaseInsurance(ctx, input)
+	policy, clientSecret, err := s.insuranceSvc.PurchaseInsurance(ctx, input)
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -95,12 +90,15 @@ func (s *InsuranceServer) PurchaseInsurance(ctx context.Context, req *paymentv1.
 	}, nil
 }
 
-func (s *InsuranceServer) GetInsurancePolicy(ctx context.Context, req *paymentv1.GetInsurancePolicyRequest) (*paymentv1.GetInsurancePolicyResponse, error) {
+func (s *Server) GetInsurancePolicy(ctx context.Context, req *paymentv1.GetInsurancePolicyRequest) (*paymentv1.GetInsurancePolicyResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	if req.GetPolicyId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "policy_id is required")
 	}
 
-	policy, err := s.svc.GetPolicy(ctx, req.GetPolicyId())
+	policy, err := s.insuranceSvc.GetPolicy(ctx, req.GetPolicyId())
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -110,7 +108,10 @@ func (s *InsuranceServer) GetInsurancePolicy(ctx context.Context, req *paymentv1
 	}, nil
 }
 
-func (s *InsuranceServer) ListInsurancePolicies(ctx context.Context, req *paymentv1.ListInsurancePoliciesRequest) (*paymentv1.ListInsurancePoliciesResponse, error) {
+func (s *Server) ListInsurancePolicies(ctx context.Context, req *paymentv1.ListInsurancePoliciesRequest) (*paymentv1.ListInsurancePoliciesResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	if req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")
 	}
@@ -126,7 +127,7 @@ func (s *InsuranceServer) ListInsurancePolicies(ctx context.Context, req *paymen
 		}
 	}
 
-	policies, totalCount, err := s.svc.ListPolicies(ctx, req.GetUserId(), int(page), int(pageSize))
+	policies, totalCount, err := s.insuranceSvc.ListPolicies(ctx, req.GetUserId(), int(page), int(pageSize))
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -143,7 +144,7 @@ func (s *InsuranceServer) ListInsurancePolicies(ctx context.Context, req *paymen
 
 	return &paymentv1.ListInsurancePoliciesResponse{
 		Policies: protoPolicies,
-		Pagination: &paymentv1.InsurancePaginationResponse{
+		Pagination: &commonv1.PaginationResponse{
 			TotalCount: int32(totalCount),
 			Page:       page,
 			PageSize:   pageSize,
@@ -153,7 +154,10 @@ func (s *InsuranceServer) ListInsurancePolicies(ctx context.Context, req *paymen
 	}, nil
 }
 
-func (s *InsuranceServer) FileInsuranceClaim(ctx context.Context, req *paymentv1.FileInsuranceClaimRequest) (*paymentv1.FileInsuranceClaimResponse, error) {
+func (s *Server) FileInsuranceClaim(ctx context.Context, req *paymentv1.FileInsuranceClaimRequest) (*paymentv1.FileInsuranceClaimResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	if req.GetPolicyId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "policy_id is required")
 	}
@@ -176,7 +180,7 @@ func (s *InsuranceServer) FileInsuranceClaim(ctx context.Context, req *paymentv1
 		ClaimedAmountCents: req.GetClaimedAmountCents(),
 	}
 
-	claim, err := s.svc.FileInsuranceClaim(ctx, input)
+	claim, err := s.insuranceSvc.FileInsuranceClaim(ctx, input)
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -186,12 +190,15 @@ func (s *InsuranceServer) FileInsuranceClaim(ctx context.Context, req *paymentv1
 	}, nil
 }
 
-func (s *InsuranceServer) GetInsuranceClaim(ctx context.Context, req *paymentv1.GetInsuranceClaimRequest) (*paymentv1.GetInsuranceClaimResponse, error) {
+func (s *Server) GetInsuranceClaim(ctx context.Context, req *paymentv1.GetInsuranceClaimRequest) (*paymentv1.GetInsuranceClaimResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	if req.GetClaimId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "claim_id is required")
 	}
 
-	claim, err := s.svc.GetClaim(ctx, req.GetClaimId())
+	claim, err := s.insuranceSvc.GetClaim(ctx, req.GetClaimId())
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -201,7 +208,10 @@ func (s *InsuranceServer) GetInsuranceClaim(ctx context.Context, req *paymentv1.
 	}, nil
 }
 
-func (s *InsuranceServer) ReviewInsuranceClaim(ctx context.Context, req *paymentv1.ReviewInsuranceClaimRequest) (*paymentv1.ReviewInsuranceClaimResponse, error) {
+func (s *Server) ReviewInsuranceClaim(ctx context.Context, req *paymentv1.ReviewInsuranceClaimRequest) (*paymentv1.ReviewInsuranceClaimResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	if req.GetClaimId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "claim_id is required")
 	}
@@ -218,7 +228,7 @@ func (s *InsuranceServer) ReviewInsuranceClaim(ctx context.Context, req *payment
 		DenialReason:        req.GetDenialReason(),
 	}
 
-	claim, err := s.svc.ReviewInsuranceClaim(ctx, input)
+	claim, err := s.insuranceSvc.ReviewInsuranceClaim(ctx, input)
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -228,7 +238,10 @@ func (s *InsuranceServer) ReviewInsuranceClaim(ctx context.Context, req *payment
 	}, nil
 }
 
-func (s *InsuranceServer) AdminListInsuranceClaims(ctx context.Context, req *paymentv1.AdminListInsuranceClaimsRequest) (*paymentv1.AdminListInsuranceClaimsResponse, error) {
+func (s *Server) AdminListInsuranceClaims(ctx context.Context, req *paymentv1.AdminListInsuranceClaimsRequest) (*paymentv1.AdminListInsuranceClaimsResponse, error) {
+	if s.insuranceSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "insurance service not configured")
+	}
 	statusFilter := req.GetStatusFilter()
 
 	page := int32(1)
@@ -242,7 +255,7 @@ func (s *InsuranceServer) AdminListInsuranceClaims(ctx context.Context, req *pay
 		}
 	}
 
-	claims, totalCount, err := s.svc.AdminListClaims(ctx, statusFilter, int(page), int(pageSize))
+	claims, totalCount, err := s.insuranceSvc.AdminListClaims(ctx, statusFilter, int(page), int(pageSize))
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -259,7 +272,7 @@ func (s *InsuranceServer) AdminListInsuranceClaims(ctx context.Context, req *pay
 
 	return &paymentv1.AdminListInsuranceClaimsResponse{
 		Claims: protoClaims,
-		Pagination: &paymentv1.InsurancePaginationResponse{
+		Pagination: &commonv1.PaginationResponse{
 			TotalCount: int32(totalCount),
 			Page:       page,
 			PageSize:   pageSize,

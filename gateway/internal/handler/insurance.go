@@ -5,17 +5,21 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // InsuranceHandler handles HTTP endpoints for insurance.
+//
+// The insurance RPCs live on the unified PaymentService (the proto was
+// consolidated — there is no separate InsuranceService client).
 type InsuranceHandler struct {
-	client paymentv1.InsuranceServiceClient
+	client paymentv1.PaymentServiceClient
 }
 
 // NewInsuranceHandler creates a new InsuranceHandler.
-func NewInsuranceHandler(client paymentv1.InsuranceServiceClient) *InsuranceHandler {
+func NewInsuranceHandler(client paymentv1.PaymentServiceClient) *InsuranceHandler {
 	return &InsuranceHandler{client: client}
 }
 
@@ -157,7 +161,7 @@ func (h *InsuranceHandler) ListPolicies(w http.ResponseWriter, r *http.Request) 
 
 	resp, err := h.client.ListInsurancePolicies(r.Context(), &paymentv1.ListInsurancePoliciesRequest{
 		UserId: claims.UserID,
-		Pagination: &paymentv1.InsurancePaginationRequest{
+		Pagination: &commonv1.PaginationRequest{
 			Page:     page,
 			PageSize: pageSize,
 		},
@@ -293,7 +297,7 @@ func (h *InsuranceHandler) AdminListClaims(w http.ResponseWriter, r *http.Reques
 	}
 
 	grpcReq := &paymentv1.AdminListInsuranceClaimsRequest{
-		Pagination: &paymentv1.InsurancePaginationRequest{
+		Pagination: &commonv1.PaginationRequest{
 			Page:     page,
 			PageSize: pageSize,
 		},

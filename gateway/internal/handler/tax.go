@@ -11,12 +11,15 @@ import (
 )
 
 // TaxHandler handles HTTP endpoints for tax forms and invoices.
+//
+// The tax/invoice RPCs live on the unified PaymentService (the proto was
+// consolidated — there is no separate TaxInvoiceService client).
 type TaxHandler struct {
-	taxClient paymentv1.TaxInvoiceServiceClient
+	taxClient paymentv1.PaymentServiceClient
 }
 
 // NewTaxHandler creates a new TaxHandler.
-func NewTaxHandler(taxClient paymentv1.TaxInvoiceServiceClient) *TaxHandler {
+func NewTaxHandler(taxClient paymentv1.PaymentServiceClient) *TaxHandler {
 	return &TaxHandler{taxClient: taxClient}
 }
 
