@@ -5,38 +5,115 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
 
+// WebhookEventValidator verifies a raw Stripe webhook payload and returns the
+// parsed stripe.Event. Abstracting this behind an interface keeps signature
+// verification mandatory in production while allowing tests to inject a
+// deterministic fake without touching env vars.
+//
+// The production implementation is StripeWebhookValidator, which wraps
+// github.com/stripe/stripe-go/v82/webhook.ConstructEvent. Tests should inject
+// a fake validator rather than disabling signature verification.
+type WebhookEventValidator interface {
+	ConstructEvent(payload []byte, signature string) (stripe.Event, error)
+}
+
+// StripeWebhookValidator is the production validator that verifies signatures
+// against STRIPE_WEBHOOK_SECRET using the Stripe SDK.
+type StripeWebhookValidator struct {
+	secret string
+}
+
+// NewStripeWebhookValidator constructs a validator with the given webhook
+// secret. The secret must be non-empty; callers are expected to fail closed at
+// service startup if the secret is missing (see cmd/server/main.go).
+func NewStripeWebhookValidator(secret string) *StripeWebhookValidator {
+	return &StripeWebhookValidator{secret: secret}
+}
+
+// ConstructEvent verifies the Stripe signature header against the raw payload
+// and returns the decoded event. A non-nil error means the signature was
+// missing, malformed, or didn't match — the caller MUST reject the webhook.
+// There is deliberately no env-based bypass here.
+func (v *StripeWebhookValidator) ConstructEvent(payload []byte, signature string) (stripe.Event, error) {
+	return webhook.ConstructEvent(payload, signature, v.secret)
+}
+
+// SetWebhookValidator injects a WebhookEventValidator into the PaymentService.
+// This is the ONLY supported way to configure signature verification. There is
+// no env-based bypass, and HandleWebhook will return an error if no validator
+// has been set.
+func (s *PaymentService) SetWebhookValidator(v WebhookEventValidator) {
+	s.webhookValidator = v
+}
+
 // HandleWebhook verifies and processes a Stripe webhook event.
+//
+// Security: signature verification is MANDATORY. If no validator has been
+// configured, the service refuses to process the event. Production callers
+// must call SetWebhookValidator with a StripeWebhookValidator (set up at
+// startup with STRIPE_WEBHOOK_SECRET). Tests may inject a fake validator.
+//
+// Idempotency: Stripe retries webhook deliveries for up to 3 days on any
+// non-2xx response, and occasionally redelivers successful events. To prevent
+// double-apply of side effects (e.g. re-releasing escrow on duplicate
+// payment_intent.succeeded), we record every event.id in the stripe_events
+// table BEFORE processing. If the event was already recorded, we return nil
+// without reprocessing and the gateway returns 200 to Stripe.
 func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, signature string) error {
-	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+	if s.webhookValidator == nil {
+		// Fail closed: without a validator we cannot verify signatures, so we
+		// must refuse all events. The service startup path is responsible for
+		// wiring this in; reaching here indicates a misconfiguration.
+		slog.Error("webhook validator not configured, refusing event")
+		return fmt.Errorf("webhook validator not configured")
+	}
 
-	var event stripe.Event
-	var err error
+	event, err := s.webhookValidator.ConstructEvent(payload, signature)
+	if err != nil {
+		return fmt.Errorf("webhook signature verification failed: %w", err)
+	}
 
-	if webhookSecret != "" {
-		event, err = webhook.ConstructEvent(payload, signature, webhookSecret)
-		if err != nil {
-			return fmt.Errorf("webhook signature verification failed: %w", err)
-		}
-	} else if os.Getenv("ENVIRONMENT") == "production" {
-		slog.Error("STRIPE_WEBHOOK_SECRET is required in production, refusing unsigned webhook")
-		return fmt.Errorf("webhook signature verification failed: STRIPE_WEBHOOK_SECRET not configured in production")
-	} else {
-		// Dev mode: parse event without signature verification.
-		slog.Warn("STRIPE_WEBHOOK_SECRET not set, skipping signature verification (non-production)")
-		if err := json.Unmarshal(payload, &event); err != nil {
-			return fmt.Errorf("webhook parse failed: %w", err)
-		}
+	// Dedup: record the event.id before processing. If it already exists,
+	// a prior delivery was already handled — return nil so Stripe gets 200 OK
+	// and doesn't retry.
+	alreadyProcessed, err := s.repo.RecordStripeEventStart(ctx, event.ID, string(event.Type))
+	if err != nil {
+		return fmt.Errorf("record stripe event: %w", err)
+	}
+	if alreadyProcessed {
+		slog.Info("stripe event already processed, skipping", "event_id", event.ID, "type", event.Type)
+		return nil
 	}
 
 	slog.Info("processing webhook event", "type", event.Type, "id", event.ID)
 
+	if err := s.dispatchWebhookEvent(ctx, event); err != nil {
+		// Don't mark processed_at on failure — Stripe will retry. The dedup
+		// row still exists (missing processed_at marks it as in-flight/failed,
+		// which a background job could revisit for alerting).
+		return err
+	}
+
+	if err := s.repo.MarkStripeEventProcessed(ctx, event.ID); err != nil {
+		// Event succeeded functionally but we failed to stamp processed_at.
+		// Log and continue — returning an error would cause Stripe to retry a
+		// successful operation. The dedup row still blocks duplicate work.
+		slog.Error("failed to mark stripe event processed", "event_id", event.ID, "error", err)
+	}
+
+	return nil
+}
+
+// dispatchWebhookEvent routes a verified Stripe event to the appropriate
+// handler. Separated from HandleWebhook so the signature/dedup machinery stays
+// readable.
+func (s *PaymentService) dispatchWebhookEvent(ctx context.Context, event stripe.Event) error {
 	switch event.Type {
 	// Payment events
 	case "payment_intent.succeeded":

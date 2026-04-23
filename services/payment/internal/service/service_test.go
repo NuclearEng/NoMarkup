@@ -34,6 +34,9 @@ type mockPaymentRepo struct {
 	listAdvancesFn        func(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*domain.Advance, int, error)
 	getAdvanceFn          func(ctx context.Context, advanceID string) (*domain.Advance, error)
 	updateAdvanceReviewFn func(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*domain.Advance, error)
+	// Stripe event dedup methods.
+	recordStripeEventStartFn   func(ctx context.Context, eventID, eventType string) (bool, error)
+	markStripeEventProcessedFn func(ctx context.Context, eventID string) error
 }
 
 func (m *mockPaymentRepo) CreatePayment(ctx context.Context, payment *domain.Payment) error {
@@ -202,6 +205,22 @@ func (m *mockPaymentRepo) GetPaymentsForContract(_ context.Context, _ string) ([
 }
 func (m *mockPaymentRepo) GetProviderProfile(_ context.Context, _ string) (string, string, error) {
 	return "", "", nil
+}
+
+// Stripe event dedup stubs. Tests that exercise HandleWebhook should override
+// recordStripeEventStartFn and markStripeEventProcessedFn directly on the
+// mock struct.
+func (m *mockPaymentRepo) RecordStripeEventStart(ctx context.Context, eventID, eventType string) (bool, error) {
+	if m.recordStripeEventStartFn != nil {
+		return m.recordStripeEventStartFn(ctx, eventID, eventType)
+	}
+	return false, nil
+}
+func (m *mockPaymentRepo) MarkStripeEventProcessed(ctx context.Context, eventID string) error {
+	if m.markStripeEventProcessedFn != nil {
+		return m.markStripeEventProcessedFn(ctx, eventID)
+	}
+	return nil
 }
 
 // --- Mock Stripe Service ---

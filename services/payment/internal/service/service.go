@@ -24,10 +24,11 @@ type InstallmentPaymentHandler interface {
 
 // PaymentService implements payment business logic.
 type PaymentService struct {
-	repo            domain.PaymentRepository
-	stripe          *StripeService
-	subHook         SubscriptionWebhookHandler
-	installmentHook InstallmentPaymentHandler
+	repo             domain.PaymentRepository
+	stripe           *StripeService
+	subHook          SubscriptionWebhookHandler
+	installmentHook  InstallmentPaymentHandler
+	webhookValidator WebhookEventValidator
 }
 
 // NewPaymentService creates a new payment service.

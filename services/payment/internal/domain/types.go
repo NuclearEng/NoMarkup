@@ -347,4 +347,11 @@ type PaymentRepository interface {
 	GetMilestonesForContract(ctx context.Context, contractID string) ([]*MilestoneDetail, error)
 	GetPaymentsForContract(ctx context.Context, contractID string) ([]*Payment, error)
 	GetProviderProfile(ctx context.Context, providerID string) (businessName, serviceAddress string, err error)
+
+	// Stripe webhook event dedup. RecordStripeEventStart inserts a new row for
+	// the given event.id; it returns alreadyProcessed=true if the row already
+	// existed (meaning a prior delivery of the same event was already handled).
+	// MarkStripeEventProcessed stamps processed_at to indicate successful handling.
+	RecordStripeEventStart(ctx context.Context, eventID, eventType string) (alreadyProcessed bool, err error)
+	MarkStripeEventProcessed(ctx context.Context, eventID string) error
 }

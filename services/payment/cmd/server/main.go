@@ -38,11 +38,27 @@ func main() {
 		port = "50054"
 	}
 
+	// ENVIRONMENT is the canonical deployment-environment env var across the
+	// whole payment service. Must be one of: development, staging, production.
+	// Required (fail closed); defaults are not allowed so that a missing value
+	// can't silently grant dev-only bypasses in production.
+	env := os.Getenv("ENVIRONMENT")
+	if env == "" {
+		slog.Error("ENVIRONMENT is required (development|staging|production)")
+		os.Exit(1)
+	}
+	switch env {
+	case "development", "staging", "production":
+	default:
+		slog.Error("ENVIRONMENT must be one of development|staging|production", "got", env)
+		os.Exit(1)
+	}
+
 	// Initialize Sentry error tracking.
 	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
 		if err := sentry.Init(sentry.ClientOptions{
 			Dsn:              sentryDSN,
-			Environment:      os.Getenv("APP_ENV"),
+			Environment:      env,
 			Release:          os.Getenv("APP_VERSION"),
 			TracesSampleRate: 0.1,
 			EnableTracing:    true,
@@ -99,10 +115,21 @@ func main() {
 		slog.Warn("STRIPE_SECRET_KEY not set, Stripe operations will return stubs")
 	}
 
-	// Refuse to start without a Stripe key in non-development environments.
-	appEnv := os.Getenv("APP_ENV")
-	if stripeKey == "" && appEnv != "development" && appEnv != "" {
-		slog.Error("STRIPE_SECRET_KEY is required in non-development environments")
+	// Refuse to start without a Stripe key outside development.
+	if stripeKey == "" && env != "development" {
+		slog.Error("STRIPE_SECRET_KEY is required in non-development environments", "environment", env)
+		os.Exit(1)
+	}
+
+	// Stripe webhook signature verification is MANDATORY in every environment.
+	// A missing webhook secret would allow forged events (e.g. a spoofed
+	// payment_intent.succeeded) to release escrow, so we fail closed at
+	// startup rather than silently disabling verification per-request.
+	// Tests inject a fake WebhookEventValidator directly; they do not go
+	// through this code path.
+	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+	if webhookSecret == "" {
+		slog.Error("STRIPE_WEBHOOK_SECRET is required — refusing to start without webhook signature verification")
 		os.Exit(1)
 	}
 
@@ -110,6 +137,7 @@ func main() {
 	repo := repository.NewPostgresRepository(pool)
 	stripeSvc := service.NewStripeService()
 	paymentSvc := service.NewPaymentService(repo, stripeSvc)
+	paymentSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))
 	grpcServer := paymentgrpc.NewServer(paymentSvc)
 
 	// Wire up subscription service (shares same repo and stripe service).

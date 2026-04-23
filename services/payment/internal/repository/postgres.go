@@ -595,3 +595,31 @@ func (r *PostgresRepository) GetRevenueReport(ctx context.Context, startTime, en
 
 	return report, nil
 }
+
+// RecordStripeEventStart inserts a row into stripe_events for the given event ID.
+// If the event was already recorded (ON CONFLICT), returns alreadyProcessed=true
+// so the webhook handler can skip reprocessing and return 200 OK to Stripe.
+func (r *PostgresRepository) RecordStripeEventStart(ctx context.Context, eventID, eventType string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		INSERT INTO stripe_events (id, type)
+		VALUES ($1, $2)
+		ON CONFLICT (id) DO NOTHING`, eventID, eventType)
+	if err != nil {
+		return false, fmt.Errorf("record stripe event start: %w", err)
+	}
+	// RowsAffected == 0 means ON CONFLICT fired -- row already existed.
+	return tag.RowsAffected() == 0, nil
+}
+
+// MarkStripeEventProcessed stamps processed_at on the stripe_events row for
+// the given event ID. Called after the event has been successfully handled.
+func (r *PostgresRepository) MarkStripeEventProcessed(ctx context.Context, eventID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE stripe_events
+		SET processed_at = now()
+		WHERE id = $1`, eventID)
+	if err != nil {
+		return fmt.Errorf("mark stripe event processed: %w", err)
+	}
+	return nil
+}
