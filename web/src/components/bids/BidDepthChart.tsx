@@ -42,7 +42,7 @@ export function BidDepthChart({
   } | null>(null);
 
   const height = 180;
-  const padding = { top: 16, right: 16, bottom: 28, left: 16 };
+  const padding = useMemo(() => ({ top: 16, right: 16, bottom: 28, left: 16 }), []);
 
   // Responsive width
   useEffect(() => {

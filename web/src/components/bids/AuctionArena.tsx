@@ -80,7 +80,10 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
   const displayEndsAt = auctionEndsAt || auctionState?.auction_ends_at || job.auction_ends_at;
   const displaySnipeCount =
     snipeExtensionCount || auctionState?.snipe_extension_count || job.snipe_extension_count || 0;
-  const displayEvents = events.length > 0 ? events : auctionState?.recent_events || [];
+  const displayEvents = useMemo(
+    () => (events.length > 0 ? events : auctionState?.recent_events || []),
+    [events, auctionState?.recent_events],
+  );
 
   const startingPrice = job.starting_bid_cents || 0;
   const medianPrice = job.market_range?.median_cents || 0;

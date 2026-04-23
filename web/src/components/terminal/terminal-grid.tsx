@@ -51,7 +51,7 @@ export function TerminalGrid({
   });
 
   const activeLayout = layouts.find((l) => l.id === activeLayoutId);
-  const widgets = activeLayout?.widgets ?? [];
+  const widgets = useMemo(() => activeLayout?.widgets ?? [], [activeLayout?.widgets]);
 
   // Serialize widgets to a stable key so we only recompute layouts when data actually changes
   const widgetsKey = useMemo(

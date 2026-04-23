@@ -272,9 +272,10 @@ export function useReplayTerminal(jobId: string): ReplayTerminalState {
 
   // ── Cleanup timers on unmount ───────────────────────────────────────────
   useEffect(() => {
+    const flashTimers = flashTimersRef.current;
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      flashTimersRef.current.forEach(clearTimeout);
+      flashTimers.forEach(clearTimeout);
     };
   }, []);
 

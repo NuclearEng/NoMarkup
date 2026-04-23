@@ -3,7 +3,7 @@
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 import type mapboxgl from 'mapbox-gl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePricingOverview } from '@/hooks/usePricing';
@@ -61,9 +61,13 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
   const { data, isLoading } = usePricingOverview();
 
   // Filter to a single category if provided
-  const categories = categorySlug
-    ? (data?.categories ?? []).filter((c) => c.category_slug === categorySlug)
-    : (data?.categories ?? []);
+  const categories = useMemo(
+    () =>
+      categorySlug
+        ? (data?.categories ?? []).filter((c) => c.category_slug === categorySlug)
+        : (data?.categories ?? []),
+    [categorySlug, data?.categories],
+  );
 
   // Initialize the map
   useEffect(() => {
