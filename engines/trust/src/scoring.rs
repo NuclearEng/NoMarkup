@@ -253,10 +253,13 @@ pub fn compute_volume_score(input: &VolumeInput) -> f64 {
     };
 
     // Completion rate: direct mapping (already 0-1).
+    // A non-finite rate (e.g., 0.0/0.0 when the user has no contracts) means
+    // we have no signal at all — treat it as 0.0 so users with zero history
+    // do NOT receive a perfect completion score and have their trust inflated.
     let completion_component = if input.completion_rate.is_finite() {
         input.completion_rate.clamp(0.0, 1.0)
     } else {
-        1.0 // No data means no failures
+        0.0 // No data: do not award a perfect score
     };
 
     // Response time: inverse linear. 0h = 1.0, 24h+ = 0.0.
@@ -684,6 +687,25 @@ mod tests {
     }
 
     #[test]
+    fn feedback_zero_ratings_gives_neutral_not_perfect() {
+        // total_reviews = 0 must return the neutral prior, not inflate the score.
+        let input = FeedbackInput {
+            average_rating: 0.0,
+            weighted_average_rating: None,
+            total_reviews: 0,
+            five_star_count: 0,
+            one_star_count: 0,
+            rating_trend: 0.0,
+            disputes_lost: 0,
+        };
+        let score = compute_feedback_score(&input);
+        assert!(
+            (score - 0.5).abs() < f64::EPSILON,
+            "zero ratings must return neutral 0.5, got {score}"
+        );
+    }
+
+    #[test]
     fn feedback_positive_trend_helps() {
         let base = FeedbackInput {
             average_rating: 3.5,
@@ -756,6 +778,48 @@ mod tests {
         assert!(
             jump_0_to_10 > jump_40_to_50,
             "logarithmic scaling: 0->10 jump ({jump_0_to_10}) should be > 40->50 jump ({jump_40_to_50})"
+        );
+    }
+
+    #[test]
+    fn volume_nan_completion_rate_does_not_award_perfect_score() {
+        // Reproducer for the ISSUE where a user with zero contracts
+        // (total=0 causing 0.0/0.0 = NaN) received a PERFECT completion_component
+        // of 1.0, inflating their overall trust score.
+        let input = VolumeInput {
+            total_completed: 0,
+            recent_completed: 0,
+            repeat_customers: 0,
+            completion_rate: f64::NAN,
+            avg_response_time_hours: 0.0,
+        };
+        let score = compute_volume_score(&input);
+        // With the fix, completion_component should be 0.0 (no data, no signal).
+        // Response time unknown contributes 0.10 * 0.5 = 0.05. No other dims
+        // contribute. So the total must stay well below any "perfect" level.
+        assert!(
+            score < 0.1,
+            "zero-contracts user must not get an inflated score, got {score}"
+        );
+    }
+
+    #[test]
+    fn volume_zero_completions_gets_zero_completion_component() {
+        // An explicit 0.0 completion rate is different from NaN — it means
+        // the user has contracts but none were completed. That should also
+        // NOT award any completion credit.
+        let input = VolumeInput {
+            total_completed: 0,
+            recent_completed: 0,
+            repeat_customers: 0,
+            completion_rate: 0.0,
+            avg_response_time_hours: 0.0,
+        };
+        let score = compute_volume_score(&input);
+        // Only the response time neutral prior (0.05) contributes.
+        assert!(
+            score < 0.1,
+            "zero completion rate must not give a high score, got {score}"
         );
     }
 
@@ -1018,6 +1082,37 @@ mod tests {
     }
 
     #[test]
+    fn scenario_zero_contracts_user_not_perfect_volume() {
+        // Reproduces the original bug: when aggregation computed 0/0 for
+        // completion_rate (e.g., a brand-new user), the volume score used
+        // to include a "perfect" 1.0 completion_component worth 15% of the
+        // volume dimension. Verify the fix: volume stays low, and a user
+        // with no feedback, no volume, clean risk, clean fraud does NOT
+        // reach Elite tier.
+        let feedback = compute_feedback_score(&FeedbackInput::default());
+        let volume = compute_volume_score(&VolumeInput {
+            total_completed: 0,
+            recent_completed: 0,
+            repeat_customers: 0,
+            completion_rate: f64::NAN,
+            avg_response_time_hours: 0.0,
+        });
+        let risk = compute_risk_score(&RiskInput::default());
+        let fraud = compute_fraud_score(&FraudInput::default());
+
+        assert!(
+            volume < 0.15,
+            "volume for a zero-history user must stay small, got {volume}"
+        );
+        let overall = composite_score(feedback, volume, risk, fraud);
+        assert_ne!(
+            ScoreTier::from_score(overall),
+            ScoreTier::Elite,
+            "zero-history user must not reach Elite, got overall={overall}"
+        );
+    }
+
+    #[test]
     fn scenario_excellent_provider() {
         let feedback = compute_feedback_score(&FeedbackInput {
             average_rating: 4.9,
@@ -1182,6 +1277,31 @@ mod tests {
                 let score = compute_volume_score(&input);
                 prop_assert!(score >= 0.0, "volume score {score} < 0");
                 prop_assert!(score <= 1.0, "volume score {score} > 1");
+            }
+
+            #[test]
+            fn volume_score_handles_nonfinite_inputs(
+                completion in proptest::num::f64::ANY,
+                response_hrs in proptest::num::f64::ANY,
+            ) {
+                // Ensure non-finite values (NaN, +INF, -INF) in floats do NOT produce
+                // inflated scores or non-finite outputs. A user with zero history
+                // and NaN completion_rate must never be awarded a perfect score.
+                let input = VolumeInput {
+                    total_completed: 0,
+                    recent_completed: 0,
+                    repeat_customers: 0,
+                    completion_rate: completion,
+                    avg_response_time_hours: response_hrs,
+                };
+                let score = compute_volume_score(&input);
+                prop_assert!(score.is_finite(), "volume score is not finite: {score}");
+                prop_assert!(score >= 0.0, "volume score {score} < 0");
+                prop_assert!(score <= 1.0, "volume score {score} > 1");
+                // With zero total_completed/recent/repeat, the score cannot
+                // approach 1.0 — the max possible contributions are
+                // completion (0.15) + response (0.10) = 0.25.
+                prop_assert!(score <= 0.25 + 1e-9, "zero-history score inflated: {score}");
             }
 
             #[test]

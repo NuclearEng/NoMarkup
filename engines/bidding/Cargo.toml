@@ -3,6 +3,10 @@ name = "nomarkup-bidding-engine"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "bidding"
+path = "src/lib.rs"
+
 [dependencies]
 tokio.workspace = true
 tonic.workspace = true

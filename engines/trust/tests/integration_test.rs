@@ -4,8 +4,7 @@
 //! composite scores and verifying tier determination logic without a database.
 
 use trust::models::{
-    all_tier_requirements, DimensionScores, FeedbackDetails, FraudDetails, RiskDetails,
-    TrustTier, VolumeDetails,
+    all_tier_requirements, DimensionScores, FeedbackDetails, TrustTier, VolumeDetails,
 };
 use trust::scoring::{
     composite_score, compute_feedback_score, compute_fraud_score, compute_risk_score,
@@ -22,7 +21,7 @@ fn end_to_end_new_user_gets_low_score() {
     // A brand new user with no activity should get a low overall score.
     let feedback = compute_feedback_score(&FeedbackInput {
         average_rating: 0.0,
-        weighted_average_rating: 0.0,
+        weighted_average_rating: None,
         total_reviews: 0,
         five_star_count: 0,
         one_star_count: 0,
@@ -34,7 +33,9 @@ fn end_to_end_new_user_gets_low_score() {
         total_completed: 0,
         recent_completed: 0,
         repeat_customers: 0,
-        completion_rate: 1.0,
+        // No contracts means no completion data; NaN simulates the 0/0
+        // case that the aggregation layer produces for a brand-new user.
+        completion_rate: f64::NAN,
         avg_response_time_hours: 0.0,
     });
 
@@ -67,7 +68,7 @@ fn end_to_end_excellent_provider_gets_high_score() {
     // jobs, no disputes, and no fraud signals.
     let feedback = compute_feedback_score(&FeedbackInput {
         average_rating: 4.9,
-        weighted_average_rating: 4.9,
+        weighted_average_rating: Some(4.9),
         total_reviews: 50,
         five_star_count: 48,
         one_star_count: 0,
@@ -111,7 +112,7 @@ fn end_to_end_risky_user_gets_low_score() {
     // Simulate a user with many disputes, cancellations, and fraud signals.
     let feedback = compute_feedback_score(&FeedbackInput {
         average_rating: 2.5,
-        weighted_average_rating: 2.5,
+        weighted_average_rating: Some(2.5),
         total_reviews: 10,
         five_star_count: 1,
         one_star_count: 4,
@@ -315,10 +316,10 @@ fn decay_weight_very_old_review_above_minimum() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn recency_weighted_average_no_reviews_returns_zero() {
+fn recency_weighted_average_no_reviews_returns_none() {
     let config = DecayConfig::default();
     let avg = recency_weighted_average(&[], &config);
-    assert!((avg).abs() < f64::EPSILON);
+    assert!(avg.is_none(), "empty review set should return None");
 }
 
 #[test]
@@ -328,7 +329,7 @@ fn recency_weighted_average_single_review() {
         rating: 4.5,
         age_days: 0.0,
     }];
-    let avg = recency_weighted_average(&reviews, &config);
+    let avg = recency_weighted_average(&reviews, &config).expect("some average");
     assert!((avg - 4.5).abs() < 0.01);
 }
 
@@ -348,7 +349,7 @@ fn recency_weighted_average_recent_reviews_weighted_more() {
         },
     ];
 
-    let avg = recency_weighted_average(&reviews, &config);
+    let avg = recency_weighted_average(&reviews, &config).expect("some average");
 
     // Should be closer to 5.0 than to 3.0 (unweighted average)
     // because the 5-star review is much more recent.

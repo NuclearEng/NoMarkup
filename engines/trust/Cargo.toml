@@ -3,6 +3,10 @@ name = "nomarkup-trust-engine"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "trust"
+path = "src/lib.rs"
+
 [dependencies]
 tokio.workspace = true
 tonic.workspace = true

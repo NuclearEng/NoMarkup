@@ -3,6 +3,10 @@ name = "nomarkup-fraud-engine"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "fraud"
+path = "src/lib.rs"
+
 [dependencies]
 tokio.workspace = true
 tonic.workspace = true
