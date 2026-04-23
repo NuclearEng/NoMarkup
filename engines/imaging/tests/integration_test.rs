@@ -3,7 +3,7 @@
 //! These tests exercise the pure image processing functions (resize, encode,
 //! decode, blur hash) without requiring S3 or network access.
 
-use image::{DynamicImage, RgbaImage};
+use image::{DynamicImage, GenericImageView, RgbaImage};
 use imaging::models::{
     ImageFormat, ImageVariant, ImagingError, ProcessingOptions, ResizeMode, UploadContext,
     ALLOWED_MIME_TYPES, DEFAULT_QUALITY, MAX_FILE_SIZE_BYTES,
