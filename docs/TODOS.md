@@ -1,9 +1,79 @@
 # NoMarkup — TODO Tracker
 
-> Last updated: 2026-03-28 (post-CEO review — EXPANSION mode)
+> Last updated: 2026-04-23 (post-security-audit follow-ups on branch `fix/security-audit-2026-04-23`)
 > Priority: P0 = do next, P1 = launch-blocking, P2 = post-launch, P3 = nice-to-have
 > Status: Done, In Progress, Not Started
 > Phase: 1 = Foundation (Week 1-2), 2 = Expansion (Week 3-5), 3 = Hardening (Week 6-7), 4 = Launch Prep (Week 8)
+
+---
+
+## P0 — Security Audit Follow-Ups (from 2026-04-23 branch — DO BEFORE DEPLOY)
+
+### Not Started — S1. Rotate every credential that used `Password123!`
+The file `qa/scripts/qa-creds.env` containing `QA_PASSWORD=Password123!` was untracked on branch `fix/security-audit-2026-04-23`, but the password is permanent in git history and accessible to anyone with repo read access via `git log -p`.
+- **Action:** identify every staging/QA/dev account that matches (seed users, `qa@*`, `customer@nomarkup.com`, `provider@nomarkup.com`, `admin@nomarkup.com` from the dev seeder — any account with `Password123!` currently works). Reset each to a new strong password stored in a secrets manager.
+- **Also update:** `database/cmd/seed/main.go` seed passwords; `docs/TODOS.md` P0 #1 test-credentials line; any runbook that references the shared password.
+- **Do NOT attempt `git filter-repo` on a repo that has been cloned** — tracked separately in S7.
+- **Effort:** 1 hour (rotation) + a few hours of update sweep
+- **Priority:** P0 (blast radius: anyone with prior repo access)
+
+### Not Started — S2. Set new required env vars in every deploy target
+The audit fixes made several env vars mandatory (services refuse to start without them). Deploy WILL fail if these aren't set in Vault / K8s secrets / CI before merging the audit branch.
+- `ENVIRONMENT` — one of development|staging|production (payment service fail-closes)
+- `STRIPE_WEBHOOK_SECRET` — now mandatory everywhere (no env-based bypass)
+- `JWT_ISSUER`, `JWT_AUDIENCE` — defaults exist but should be set explicitly per environment
+- `WS_ALLOWED_ORIGINS` — comma-separated host allowlist (CSWSH defense). Prod hosts baked into defaults.
+- `TRUSTED_PROXIES` — comma-separated CIDRs of reverse proxies (XFF trust boundary). Default: loopback + RFC1918.
+- `APPLE_CLIENT_ID` — required if Apple OAuth is enabled (JWKS audience claim)
+- **Action:** update `deploy/k8s/overlays/{staging,production}/` configmaps/secrets; add the same to any Helm values; update CI test env
+- **Effort:** 30 min
+- **Priority:** P0 (blocks deploy)
+
+### Not Started — S3. Apply migration 025_stripe_events before deploying payment service
+New Stripe event-id dedup table. The payment service will call `RecordStripeEventStart` on every webhook — if the table doesn't exist, every webhook returns 500 and Stripe starts its retry-storm.
+- **Action:** `make migrate-up` on staging and production databases BEFORE the new payment pod rolls out
+- **Order:** migration → payment pod → verify with a Stripe test event from the dashboard
+- **Effort:** 5 min
+- **Priority:** P0 (blocks deploy)
+
+### Not Started — S4. Complete Google OAuth signature verification
+Apple OAuth now verifies ID tokens via Apple JWKS (landed in audit branch). Google OAuth was not in scope — check whether it has the same "trust payload without verifying signature" bug.
+- **Action:** read `gateway/internal/handler/oauth.go` GoogleOAuthCallback; if it decodes the id_token without verifying via Google JWKS (`https://www.googleapis.com/oauth2/v3/certs`), apply the same `keyfunc`-based pattern used for Apple
+- **Related:** `GOOGLE_CLIENT_ID` must match the `aud` claim
+- **Effort:** 2-3 hours
+- **Priority:** P0 (same class of bug as the Apple one that just shipped)
+
+### Not Started — S5. Replace the jobs IDOR point-fix with generic ownership middleware
+The audit patched the 3 jobs IDOR sites (UpdateJob / DeleteDraft / PublishJob) + GetJob draft-leak by threading `customer_id` end-to-end. The generic middleware `RequireOwnership` exists and is unit-tested but is not yet applied repo-wide.
+- **Audit finding:** same class of bug likely exists on contracts, disputes, reviews, payments (any GET/PUT/DELETE `/{resource}/{id}`)
+- **Action:** apply `RequireOwnership` middleware to every `/{resource}/{id}` mutating route; add per-resource owner-column mapping
+- **Routes to review:** GetContract, UpdateContract, CancelContract, GetDispute, UpdateDispute, GetReview, UpdateReview, GetPayment, RefundPayment, GetSubscription
+- **Effort:** 2 days
+- **Priority:** P0 (same vulnerability class the jobs fix closed)
+
+### Not Started — S6. Finish the remaining clippy pedantic errors in engines
+`CLAUDE.md` mandates `#![deny(clippy::pedantic)]` but the Rust crates currently fail clippy with 50+ errors (only the NaN correctness bug and integration-test imports were fixed in the audit branch). Remaining:
+- `engines/trust/src/scoring.rs`: 9 `cast_precision_loss` (i64 → f64 in score math). Add `#[allow]` with a documented tolerance comment OR refactor to use `u32` counters where precision matters.
+- `engines/fraud/src/`: 31 clippy errors (missing backticks in doc comments, `Result`-returning fns missing `# Errors`, identical match-arm bodies)
+- `engines/bidding/src/`: 10 clippy errors (similar mix)
+- **Action:** run `cd engines && cargo clippy --workspace --all-targets -- -D clippy::pedantic -D clippy::nursery` and address each class; commit per crate
+- **Effort:** 4-6 hours
+- **Priority:** P0 (blocks CI once clippy gate is wired)
+
+### Not Started — S7. Plan git history rewrite for `Password123!` leak
+Dangerous operation, requires coordination. All clones must re-clone after.
+- **Option A:** `git filter-repo --path qa/scripts/qa-creds.env --invert-paths` + force-push to main. Requires telling every developer to delete their clone and re-clone.
+- **Option B:** Accept that the password is in history (mitigated by S1 rotation) and document that the history contains leaked-and-rotated credentials. Cheaper but imperfect.
+- **Recommendation:** Option B unless there's a regulatory requirement. The value leaked is a dev/QA password, not customer data.
+- **Action:** bring this decision to the team before the branch merges
+- **Effort:** half day if Option A; 0 if Option B
+- **Priority:** P0 (decision needed before merging audit branch)
+
+### Not Started — S8. Fix the `proto/payment/v1/payment.proto` drift prevention
+The audit branch closed two missing braces in `payment.proto` that had silently broken `make proto-gen-go` for weeks. Hand-written stand-in Go files had been covering for the broken proto — meaning nobody noticed the breakage until this audit.
+- **Action:** add a `make verify-proto` target that runs `make proto-gen-go` + `go vet ./...` and require it in CI. A broken .proto should fail the build, not silently persist behind stand-ins.
+- **Effort:** 1 hour
+- **Priority:** P0 (prevents the same class of silent drift)
 
 ---
 
@@ -24,7 +94,7 @@ cd web && npm run dev          # Frontend on :3000
 - **Effort:** 1 day
 - **Depends on:** Nothing
 
-### Not Started �� 2. Fix all 14 critical error paths from audit (Phase 1)
+### In Progress — 2. Fix all 14 critical error paths from audit (Phase 1)
 Discovered in 2026-03-28 CEO review. All fail silently with zero test coverage.
 - **JSON decode helper:** Create `decodeJSON[T](w, r, *T) bool` in `gateway/internal/handler/response.go`. Fix 6 handlers: `job.go:283`, `payment.go:37,258,433`, `subscription.go:145`, `contract.go:335`
 - **Chat access control:** Fail closed when bid checker errors (`services/chat/internal/service/service.go:52-58`). Return `ErrServiceUnavailable`, don't allow access.
@@ -33,11 +103,12 @@ Discovered in 2026-03-28 CEO review. All fail silently with zero test coverage.
 - **Email template HTML escaping:** Switch from `text/template` to `html/template` in `services/notification/internal/service/email.go:127`.
 - **SMS dev mode warning:** Change `slog.Info` to `slog.Warn` in `services/notification/internal/service/sms.go:39`. Add `X-Dev-Mode: true` response header.
 - **Fraud engine unwrap fix:** Replace `unwrap()` with pattern match in `engines/fraud/src/engine.rs:1499`.
-- **Stripe production guard:** In `services/payment/cmd/server/main.go`, if `STRIPE_SECRET_KEY` is empty and `APP_ENV != "development"`, `log.Fatal` and exit.
+- **Stripe production guard:** ✅ DONE on branch `fix/security-audit-2026-04-23` — `STRIPE_WEBHOOK_SECRET` is now mandatory at payment-service startup regardless of environment; `ENVIRONMENT` is the canonical env var (APP_ENV removed from payment service), validated to be one of `development|staging|production` at boot.
 - **Effort:** 1-2 days
 - **Depends on:** Nothing (can run in parallel with #1)
+- **Progress (2026-04-23):** 1 of 14 fixed (Stripe guard). Remaining 13 items above still pending.
 
-### Not Started — 3. Build ownership middleware for IDOR prevention (Phase 1)
+### In Progress — 3. Build ownership middleware for IDOR prevention (Phase 1)
 - Gateway middleware that resolves resource->owner from DB and compares with JWT user_id
 - Applied per-route via Chi middleware chain
 - **Handlers affected:** `GetJob`, `GetContract`, `UpdateContract`, `CancelContract`, `GetDispute`, `UpdateDispute`
@@ -45,6 +116,7 @@ Discovered in 2026-03-28 CEO review. All fail silently with zero test coverage.
 - **Effort:** 2-3 days
 - **Priority:** P0 (OWASP Top 10 IDOR vulnerability)
 - **Depends on:** Nothing
+- **Progress (2026-04-23):** `RequireOwnership` middleware exists + unit-tested; jobs IDOR specifically patched end-to-end (proto + gateway + service + repo + GetJob draft-leak). Remaining: apply the middleware to Contract / Dispute / Review / Payment / Subscription routes — tracked as S5 above.
 
 ### Not Started — 4. Add PgBouncer to infrastructure stack (Phase 1)
 - Add PgBouncer as Docker Compose service between all Go/Rust services and PostgreSQL
@@ -162,21 +234,17 @@ Discovered in 2026-03-28 CEO review. All fail silently with zero test coverage.
 - **Effort:** 5-7 days
 - **Depends on:** Payment service, contract service, admin panel
 
-### Not Started — 18. Gateway payment idempotency keys (Phase 3)
-- Require `Idempotency-Key` header on all payment POST/PUT routes
-- Pass key to Stripe API
-- Store in Redis with 24h TTL for server-side dedup
-- **Why:** CLAUDE.md mandates this. Prevents double-charge on retry/double-click.
-- **Effort:** 2 hours
-- **Depends on:** Redis running
+### Done — 18. Gateway payment idempotency keys (Phase 3)
+- Shipped on branch `fix/security-audit-2026-04-23` (commit `c89baff`). `RequireIdempotencyKey` middleware is now mounted on `/payments` and `/subscriptions` route groups with 24h Redis TTL.
 
-### Not Started — 19. Wire OAuth providers — Google + Apple (Phase 3)
+### In Progress — 19. Wire OAuth providers — Google + Apple (Phase 3)
 - **Account setup:**
   - Google: Cloud Console -> OAuth 2.0 -> client ID/secret
   - Apple: Developer -> "Sign in with Apple" -> Services ID
 - **Code changes:** Gateway OAuth handler, user service `FindOrCreateByOAuth`, frontend OAuth buttons
 - **Effort:** 3-5 days
 - **Depends on:** Google Cloud + Apple Developer accounts
+- **Progress (2026-04-23):** Apple ID token now verifies against Apple JWKS with iss/aud/exp checks (commit `c89baff`). Google still needs the same JWKS verification — tracked as S4 above.
 
 ### Not Started — 20. Add MFA setup page (Phase 3)
 - TOTP library: `github.com/pquerna/otp`
@@ -218,6 +286,17 @@ Discovered in 2026-03-28 CEO review. All fail silently with zero test coverage.
 ### Not Started — 25. Dependency Vulnerability Scanning
 - Enable Dependabot or Renovate for automated security updates
 - **Effort:** S
+
+### Not Started — 27. Go test coverage in repository/grpc/domain packages (Phase 3)
+- CLAUDE.md targets 80% line coverage for Go; currently near-zero in `repository/`, `grpc/`, and `domain/` packages across all 6 services (gateway, user, job, payment, chat, notification). Service layer is partially covered.
+- **Action:** use testcontainers-go for real Postgres in repository tests (no mocking the DB per CLAUDE.md); bufconn for in-process gRPC tests; table-driven per CLAUDE.md convention.
+- **Priority:** raise to P1 before launch (repositories handle auth-scoped queries — untested = brittle).
+- **Effort:** 1-2 weeks (systematic, per package)
+
+### Not Started — 28. Rust imaging engine clippy cleanup (Phase 3)
+- Same class as S6 but specific to `engines/imaging/` which also has pedantic warnings (dead_code on `to_image_format`, fields `strip_exif` / `auto_orient` never read).
+- **Action:** either wire the dead code into the pipeline or remove it. `grpc` module still excluded from the imaging lib target — decide whether to surface it.
+- **Effort:** 2 hours
 
 ### Not Started — 26. Database Query Optimization
 - EXPLAIN ANALYZE on slow queries, add composite indexes for provider search
@@ -261,17 +340,21 @@ These are small (<1 hour) polish items that make users think "oh nice, they thou
 
 ## Completion Summary
 
-| Priority | Total | Done | Remaining |
-|----------|-------|------|-----------|
-| P0 (foundation) | 9 | 0 | 9 |
-| P1 (launch-blocking) | 11 | 3 | 8 |
-| P2 (post-launch) | 6 | 0 | 6 |
-| Vision (delight) | 5 | 0 | 5 |
+| Priority | Total | Done | In Progress | Remaining |
+|----------|-------|------|-------------|-----------|
+| P0 — Security audit follow-ups (S1-S8) | 8 | 0 | 0 | 8 |
+| P0 — Foundation | 9 | 0 | 3 | 6 |
+| P1 — Launch-blocking | 11 | 4 | 1 | 6 |
+| P2 — Post-launch | 8 | 0 | 0 | 8 |
+| Vision — Delight | 5 | 0 | 0 | 5 |
+
+**Shipped on `fix/security-audit-2026-04-23` (2026-04-23):** jobs IDOR fixed end-to-end, Stripe webhook signature mandatory, payment idempotency wired, Apple OAuth JWKS verified, CSWSH allowlist, XFF trust boundary, JWT iss/aud enforcement, Dockerfiles run non-root, Next.js edge middleware, analyze-job-image hardened, Rust trust-scoring NaN fix, 268 ESLint errors cleaned, imaging integration tests restored, payment proto regenerated, qa-creds.env untracked. Branch awaits PR review.
 
 **Estimated timeline:** 8 weeks (EXPANSION mode)
+- Phase 0 (this week): S1-S8 security audit follow-ups — MUST CLEAR BEFORE MERGE/DEPLOY
 - Phase 1 (Week 1-2): P0 items #1-9
 - Phase 2 (Week 3-5): P1 items #13-17
-- Phase 3 (Week 6-7): P1 items #18-20, hardening
+- Phase 3 (Week 6-7): P1 items #18-20 + #27-28 hardening
 - Phase 4 (Week 8): Launch prep, feature flag rollout, go/no-go
 
-**Next action:** Run parallel tracks — infra bring-up (#1 + #4) alongside critical error fixes (#2). Then ownership middleware (#3) and feature flags (#5).
+**Next action:** Clear S1-S8 before merging the audit branch. Specifically S1 (rotate Password123!) + S2 (set required env vars) + S3 (apply migration 025) are deploy blockers.
