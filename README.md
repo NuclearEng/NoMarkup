@@ -101,6 +101,28 @@ npm run test:e2e       # Playwright E2E tests
 npm run build          # Production build
 ```
 
+## Security & Configuration
+
+Backend services fail closed on missing or invalid configuration. Copy `.env.example` to `.env.local` and set at minimum:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `ENVIRONMENT` | ✅ always | One of `development` / `staging` / `production`. Services refuse to start if unset or invalid. |
+| `STRIPE_WEBHOOK_SECRET` | ✅ payment service | Mandatory everywhere. Stripe webhook signature is verified on every request; there is no env-based bypass. |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | recommended | Checked on every access token. Default: `https://auth.nomarkup.com` / `nomarkup-api`. |
+| `WS_ALLOWED_ORIGINS` | recommended | Comma-separated hostnames for WebSocket origin allowlist (CSWSH defense). Defaults to production hosts. |
+| `TRUSTED_PROXIES` | recommended | Comma-separated CIDRs of reverse proxies whose `X-Forwarded-For` / `X-Real-IP` headers the gateway will honor. Defaults to loopback + RFC1918. |
+| `APPLE_CLIENT_ID` | if Apple login | Audience claim checked on Apple ID tokens verified via Apple JWKS. |
+
+Other security posture:
+- RS256 JWT with explicit signing-method pinning + `iss` / `aud` enforcement
+- argon2id password hashing (m=65536, t=3, p=4)
+- All authenticated mutation endpoints scope writes by owner
+- Idempotency keys required on `/payments` and `/subscriptions` writes
+- Stripe event dedup table prevents replay on retry
+- All service containers run as non-root
+- Next.js edge middleware gates `(dashboard)` routes and protected `/api/*` paths
+
 ## License
 
 Proprietary. All rights reserved.
