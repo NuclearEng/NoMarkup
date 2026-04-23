@@ -37,8 +37,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ── Runtime ──────────────────────────────────────────────────
 FROM alpine:3.20
-RUN apk --no-cache add ca-certificates
-COPY --from=builder /gateway /gateway
+RUN apk --no-cache add ca-certificates && \
+    addgroup -S app && adduser -S app -G app -u 10001
+COPY --from=builder --chown=app:app /gateway /gateway
 RUN echo "  [3/3] ✔ gateway image ready · $(du -h /gateway | awk '{print $1}')"
+USER app
 EXPOSE 8080
 ENTRYPOINT ["/gateway"]

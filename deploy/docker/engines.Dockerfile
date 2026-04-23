@@ -56,24 +56,29 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:bookworm-slim AS runtime-base
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    adduser --system --group --uid 10001 app
 
 FROM runtime-base AS bidding
-COPY --from=builder /usr/local/bin/nomarkup-bidding-engine /usr/local/bin/server
+COPY --from=builder --chown=app:app /usr/local/bin/nomarkup-bidding-engine /usr/local/bin/server
+USER app
 EXPOSE 50053
 ENTRYPOINT ["server"]
 
 FROM runtime-base AS fraud
-COPY --from=builder /usr/local/bin/nomarkup-fraud-engine /usr/local/bin/server
+COPY --from=builder --chown=app:app /usr/local/bin/nomarkup-fraud-engine /usr/local/bin/server
+USER app
 EXPOSE 50056
 ENTRYPOINT ["server"]
 
 FROM runtime-base AS trust
-COPY --from=builder /usr/local/bin/nomarkup-trust-engine /usr/local/bin/server
+COPY --from=builder --chown=app:app /usr/local/bin/nomarkup-trust-engine /usr/local/bin/server
+USER app
 EXPOSE 50057
 ENTRYPOINT ["server"]
 
 FROM runtime-base AS imaging
-COPY --from=builder /usr/local/bin/nomarkup-imaging-engine /usr/local/bin/server
+COPY --from=builder --chown=app:app /usr/local/bin/nomarkup-imaging-engine /usr/local/bin/server
+USER app
 EXPOSE 50058
 ENTRYPOINT ["server"]

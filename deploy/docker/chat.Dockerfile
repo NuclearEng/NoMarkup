@@ -37,9 +37,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ── Runtime ──────────────────────────────────────────────────
 FROM alpine:3.20
-RUN apk --no-cache add ca-certificates
-COPY --from=builder /server /server
+RUN apk --no-cache add ca-certificates && \
+    addgroup -S app && adduser -S app -G app -u 10001
+COPY --from=builder --chown=app:app /server /server
 RUN echo "  [3/3] ✔ chat-service image ready · $(du -h /server | awk '{print $1}')"
+USER app
 # gRPC port + WebSocket port
 EXPOSE 50055 50065
 ENTRYPOINT ["/server"]
