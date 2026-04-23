@@ -24,7 +24,7 @@ export function InstantPayoutButton({ availableBalanceCents = 0 }: InstantPayout
   const netCents = amountCents - feeCents;
   const isValid = amountCents > 0 && amountCents <= availableBalanceCents;
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isValid) return;
     instantPayout.mutate(amountCents);

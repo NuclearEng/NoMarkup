@@ -49,7 +49,7 @@ export function BidPlacementPanel({
           variant="outline"
           size="icon"
           className="h-11 w-11 shrink-0 rounded-xl"
-          onClick={() => adjustBid(-500)}
+          onClick={() => { adjustBid(-500); }}
           disabled={bidCents <= 500}
           aria-label="Decrease bid by $5"
         >
@@ -62,7 +62,7 @@ export function BidPlacementPanel({
           <input
             type="number"
             value={(bidCents / 100).toFixed(2)}
-            onChange={(e) => setBidCents(Math.round(Number(e.target.value) * 100))}
+            onChange={(e) => { setBidCents(Math.round(Number(e.target.value) * 100)); }}
             className="bg-background focus:ring-primary/20 h-11 w-full rounded-xl border pr-3 pl-8 text-center text-lg font-bold tabular-nums focus:ring-2 focus:outline-none"
             aria-label="Bid amount in dollars"
           />
@@ -71,7 +71,7 @@ export function BidPlacementPanel({
           variant="outline"
           size="icon"
           className="h-11 w-11 shrink-0 rounded-xl"
-          onClick={() => adjustBid(500)}
+          onClick={() => { adjustBid(500); }}
           aria-label="Increase bid by $5"
         >
           <Plus className="h-4 w-4" />
@@ -83,7 +83,7 @@ export function BidPlacementPanel({
         {quickAmounts.map((qa) => (
           <button
             key={qa.label}
-            onClick={() => setBidCents(qa.value)}
+            onClick={() => { setBidCents(qa.value); }}
             className={cn(
               'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
               bidCents === qa.value

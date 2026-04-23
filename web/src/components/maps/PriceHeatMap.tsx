@@ -121,9 +121,9 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
     const geojson = buildGeoJSON(categories);
 
     // Update existing source or create source + layer
-    const existingSource = map.getSource('pricing') as mapboxgl.GeoJSONSource | undefined;
+    const existingSource = map.getSource('pricing');
     if (existingSource) {
-      existingSource.setData(geojson);
+      (existingSource as mapboxgl.GeoJSONSource).setData(geojson);
       return;
     }
 

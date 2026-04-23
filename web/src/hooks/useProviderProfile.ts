@@ -14,13 +14,13 @@ export function useProviderProfile() {
     queryKey: ['providerProfile'],
     queryFn: async (): Promise<ProviderProfile | null> => {
       try {
-        const res = await api.get<{ profile: ProviderProfile }>('/api/v1/providers/me');
-        return res.profile ?? null;
+        const res = await api.get<{ profile: ProviderProfile | null }>('/api/v1/providers/me');
+        return res.profile;
       } catch (error: unknown) {
         // Provider profile may not exist yet (e.g. user just enabled the role).
         // Return null instead of crashing so the dashboard can show onboarding.
         const status =
-          error instanceof ApiError ? error.status : (error as { status?: number })?.status;
+          error instanceof ApiError ? error.status : (error as { status?: number }).status;
         if (status === 404) {
           return null;
         }

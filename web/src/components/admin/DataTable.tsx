@@ -25,7 +25,7 @@ interface DataTableProps<T> {
 }
 
 function SkeletonRows({ columns, count }: { columns: Column<unknown>[]; count: number }) {
-  const widths = ['w-24', 'w-32', 'w-20', 'w-16', 'w-28', 'w-36'];
+  const widths = ['w-24', 'w-32', 'w-20', 'w-16', 'w-28', 'w-36'] as const;
 
   return (
     <>
@@ -33,7 +33,7 @@ function SkeletonRows({ columns, count }: { columns: Column<unknown>[]; count: n
         <tr key={i} className="border-b border-white/[0.04]">
           {columns.map((col, colIndex) => (
             <td key={col.key} className="px-4 py-3">
-              <Skeleton variant="text" className={`h-4 ${widths[colIndex % widths.length]}`} />
+              <Skeleton variant="text" className={`h-4 ${widths[colIndex % widths.length] ?? 'w-24'}`} />
             </td>
           ))}
         </tr>

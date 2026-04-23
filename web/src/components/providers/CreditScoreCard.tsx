@@ -4,7 +4,6 @@ import Link from 'next/link';
 
 import { useCreditLimit } from '@/hooks/useWorkingCapital';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCents } from '@/lib/utils';
 

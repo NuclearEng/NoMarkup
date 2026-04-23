@@ -145,6 +145,7 @@ export function MarketRangeDisplay({
           <TooltipTrigger asChild>
             <div
               className="flex cursor-default items-center gap-1.5"
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
               tabIndex={0}
               aria-label={`${confidence.label} — based on ${String(sample_size)} similar completed jobs`}
             >

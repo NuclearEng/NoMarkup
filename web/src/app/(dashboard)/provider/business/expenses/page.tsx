@@ -112,7 +112,7 @@ export default function ExpensesPage() {
     return acc;
   }, {});
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!category || !amountDollars || !description || !expenseDate) return;
 

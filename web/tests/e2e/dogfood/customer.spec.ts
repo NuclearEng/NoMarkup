@@ -54,7 +54,7 @@ test.describe.serial('Customer: Job Creation Wizard', () => {
   });
 
   test.afterAll(async () => {
-    await sharedPage?.close();
+    await sharedPage.close();
   });
 
   test('navigates to /jobs/new and sees the wizard', async () => {

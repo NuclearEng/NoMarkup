@@ -336,7 +336,7 @@ export default function AuctionReplayPage() {
                   type="button"
                   role="radio"
                   aria-checked={replay.speed === s}
-                  onClick={() => replay.handleSpeedChange(s)}
+                  onClick={() => { replay.handleSpeedChange(s); }}
                   className={`flex h-7 min-w-[28px] items-center justify-center rounded px-1.5 text-[10px] font-medium transition-colors ${
                     replay.speed === s
                       ? 'bg-white/15 text-white'
@@ -376,7 +376,7 @@ export default function AuctionReplayPage() {
                 type="button"
                 role="radio"
                 aria-checked={replay.speed === s}
-                onClick={() => replay.handleSpeedChange(s)}
+                onClick={() => { replay.handleSpeedChange(s); }}
                 className={`flex h-6 min-w-[24px] items-center justify-center rounded px-1 text-[10px] font-medium transition-colors ${
                   replay.speed === s
                     ? 'bg-white/15 text-white'
@@ -414,7 +414,7 @@ export default function AuctionReplayPage() {
           totalSavingsCents={replay.totalSavingsCents}
           startingBidCents={replay.startingBidCents}
           onReplay={replay.handleRestart}
-          onDismiss={() => setOverlayDismissed(true)}
+          onDismiss={() => { setOverlayDismissed(true); }}
         />
       )}
     </div>

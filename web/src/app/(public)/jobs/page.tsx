@@ -67,7 +67,7 @@ export default function JobsSearchPage() {
   const { data, isLoading, isError, refetch } = useSearchJobs(filters);
 
   const currentPage = filters.page ?? 1;
-  const totalPages = data?.pagination?.totalPages ?? 1;
+  const totalPages = data?.pagination.totalPages ?? 1;
 
   const hasActiveFilters =
     filters.query !== undefined ||
@@ -217,8 +217,8 @@ export default function JobsSearchPage() {
             <>
               {/* Results count */}
               <p className="mb-4 text-sm text-zinc-400">
-                {String(data.pagination?.totalCount ?? 0)} job
-                {(data.pagination?.totalCount ?? 0) !== 1 ? 's' : ''} found
+                {String(data.pagination.totalCount)} job
+                {data.pagination.totalCount !== 1 ? 's' : ''} found
               </p>
 
               {/* Seasonal demand banner — derived from first result's category slug */}
@@ -256,7 +256,7 @@ export default function JobsSearchPage() {
                   </span>
                   <Button
                     variant="outline"
-                    disabled={!data.pagination?.hasNext}
+                    disabled={!data.pagination.hasNext}
                     onClick={() => {
                       setFilters({ ...filters, page: currentPage + 1 });
                     }}

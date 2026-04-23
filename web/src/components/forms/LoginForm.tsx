@@ -69,7 +69,7 @@ export function LoginForm() {
     }
   }
 
-  async function onMFASubmit(e: React.FormEvent) {
+  async function onMFASubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     setFormError(null);
     setMfaSubmitting(true);
@@ -121,7 +121,7 @@ export function LoginForm() {
                 placeholder="000000"
                 maxLength={8}
                 value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value)}
+                onChange={(e) => { setTotpCode(e.target.value); }}
                 className="rounded-lg border-white/10 bg-white/5 text-center text-lg tracking-widest text-white placeholder:text-white/40 focus:border-[var(--brand-gold)]/50 focus:bg-white/[0.08]"
               />
               <p className="text-xs text-white/60">You can also enter a backup code</p>

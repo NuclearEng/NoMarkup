@@ -564,8 +564,8 @@ function GlobalTermsStep({
   useEffect(() => {
     if (existingProfile) {
       form.reset({
-        paymentTiming: existingProfile.defaultPaymentTiming ?? 'completion',
-        milestones: existingProfile.defaultMilestones ?? [],
+        paymentTiming: existingProfile.defaultPaymentTiming,
+        milestones: existingProfile.defaultMilestones,
         cancellationPolicy: existingProfile.cancellationPolicy ?? '',
         warrantyTerms: existingProfile.warrantyTerms ?? '',
       });
@@ -749,8 +749,7 @@ function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
   function handleRemove(url: string) {
     setUploadedUrls((prev) => prev.filter((u) => u !== url));
     setCaptions((prev) => {
-      const next = { ...prev };
-      delete next[url];
+      const { [url]: _removed, ...next } = prev;
       return next;
     });
   }
@@ -920,8 +919,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
     // Clear any previous error
     setErrors((prev) => {
-      const next = { ...prev };
-      delete next[docKey];
+      const { [docKey]: _removed, ...next } = prev;
       return next;
     });
 
@@ -933,13 +931,11 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
   function handleRemove(docKey: string) {
     setDocuments((prev) => {
-      const next = { ...prev };
-      delete next[docKey];
+      const { [docKey]: _removed, ...next } = prev;
       return next;
     });
     setErrors((prev) => {
-      const next = { ...prev };
-      delete next[docKey];
+      const { [docKey]: _removed, ...next } = prev;
       return next;
     });
   }

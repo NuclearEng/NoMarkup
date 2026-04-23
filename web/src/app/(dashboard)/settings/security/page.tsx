@@ -112,7 +112,7 @@ function MFASection() {
     if (!setupData) return;
     void navigator.clipboard.writeText(setupData.backup_codes.join('\n'));
     setCopiedCodes(true);
-    setTimeout(() => setCopiedCodes(false), 2000);
+    setTimeout(() => { setCopiedCodes(false); }, 2000);
   }
 
   return (
@@ -154,7 +154,7 @@ function MFASection() {
 
             {/* QR code via otpauth URI rendered as an image */}
             <div className="flex justify-center rounded-lg border bg-white p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element -- QR code from external API */}
+              {/* QR code from external API — using img intentionally, not next/image */}
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.qr_code_url)}`}
                 alt="Scan this QR code with your authenticator app"
@@ -227,7 +227,7 @@ function MFASection() {
                 placeholder="000000"
                 maxLength={6}
                 value={verifyCode}
-                onChange={(e) => setVerifyCode(e.target.value)}
+                onChange={(e) => { setVerifyCode(e.target.value); }}
                 className="max-w-[200px] text-center text-lg tracking-widest"
               />
             </div>
@@ -281,7 +281,7 @@ function MFASection() {
                   placeholder="000000"
                   maxLength={6}
                   value={disableCode}
-                  onChange={(e) => setDisableCode(e.target.value)}
+                  onChange={(e) => { setDisableCode(e.target.value); }}
                   className="max-w-[200px] text-center text-lg tracking-widest"
                   aria-label="Enter your authenticator code"
                 />

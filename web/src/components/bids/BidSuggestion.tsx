@@ -11,7 +11,7 @@ interface BidSuggestionProps {
 export function BidSuggestion({ categorySlug, zipCode }: BidSuggestionProps) {
   const { data, isLoading } = usePricingByCategory(categorySlug, zipCode);
 
-  if (isLoading || !data?.prices?.length) return null;
+  if (isLoading || !data?.prices.length) return null;
 
   const pricing = data.prices[0];
   if (!pricing) return null;

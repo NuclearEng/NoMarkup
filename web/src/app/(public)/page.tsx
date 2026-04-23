@@ -447,7 +447,7 @@ export default function LandingPage() {
                   className="relative z-[3] text-2xl font-black tracking-tight sm:text-5xl"
                   style={{ color: stat.color }}
                 >
-                  {'display' in stat && stat.display ? (
+                  {'display' in stat ? (
                     stat.display
                   ) : (
                     <AnimatedCounter end={stat.value} prefix={stat.prefix} suffix={stat.suffix} />

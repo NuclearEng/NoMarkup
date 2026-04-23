@@ -80,7 +80,7 @@ export function InsuranceClaimForm({
   const claimedAmountCents = Math.round(parseFloat(claimedAmountDollars || '0') * 100);
   const exceedsCoverage = claimedAmountCents > coverageAmountCents;
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -127,7 +127,12 @@ export function InsuranceClaimForm({
         <CardTitle className="text-base">File a Claim</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form
+          onSubmit={(e) => {
+            void handleSubmit(onSubmit)(e);
+          }}
+          className="space-y-4"
+        >
           {/* Claim Type */}
           <div className="space-y-2">
             <Label htmlFor="claim-type">Claim Type</Label>
@@ -197,7 +202,7 @@ export function InsuranceClaimForm({
                 accept="image/*"
                 multiple
                 className="sr-only"
-                onChange={(e) => { void handleFileUpload(e); }}
+                onChange={(e) => { handleFileUpload(e); }}
               />
               {evidenceUrls.length > 0 ? (
                 <span className="text-xs text-zinc-400">

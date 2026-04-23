@@ -8,7 +8,6 @@ import { SavingsCelebration } from '@/components/bids/SavingsCelebration';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { TerminalGrid } from '@/components/terminal/terminal-grid';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { AuctionBidEvent, MarketRange } from '@/types';
 
@@ -92,8 +91,6 @@ function useAuctionSimulation() {
       const timer = setTimeout(() => {
         const now = new Date().toISOString();
         const bidId = `demo-bid-${String(idx)}`;
-        const provider = MOCK_PROVIDERS[script.providerIdx];
-        if (!provider) return;
 
         setBids((prev) => [
           ...prev.map((b) => ({ ...b, is_new: false })),
@@ -148,7 +145,7 @@ function useAuctionSimulation() {
     start();
     return () => {
       timersRef.current.forEach(clearTimeout);
-    }; /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    };  
   }, []);
 
   const orderBookBids = useMemo(
@@ -335,7 +332,7 @@ export default function AuctionDemoPage() {
         <SavingsCelebration
           savingsPercent={savingsPct}
           isVisible={sim.showCelebration}
-          onDismiss={() => sim.setShowCelebration(false)}
+          onDismiss={() => { sim.setShowCelebration(false); }}
         />
       )}
     </div>

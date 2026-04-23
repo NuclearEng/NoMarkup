@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Calendar, FileText, Loader2, Shield } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Shield } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useInsurancePolicy } from '@/hooks/useInsurance';
 import { cn, formatCents } from '@/lib/utils';
 import type { InsuranceClaimStatus, InsurancePolicyStatus } from '@/types';
-import { INSURANCE_CLAIM_STATUS, INSURANCE_POLICY_STATUS } from '@/types';
+import { INSURANCE_POLICY_STATUS } from '@/types';
 
 const POLICY_STATUS_CLASSES: Record<InsurancePolicyStatus, string> = {
   active: 'bg-green-500/10 text-green-300 border-green-500/30',
@@ -34,7 +34,7 @@ const POLICY_STATUS_LABELS: Record<InsurancePolicyStatus, string> = {
   claimed: 'Claimed',
 };
 
-const CLAIM_STATUS_CLASSES: Record<InsuranceClaimStatus, string> = {
+const _CLAIM_STATUS_CLASSES: Record<InsuranceClaimStatus, string> = {
   filed: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   under_review: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
   approved: 'bg-green-500/10 text-green-300 border-green-500/30',
@@ -42,7 +42,7 @@ const CLAIM_STATUS_CLASSES: Record<InsuranceClaimStatus, string> = {
   paid: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
 };
 
-const CLAIM_STATUS_LABELS: Record<InsuranceClaimStatus, string> = {
+const _CLAIM_STATUS_LABELS: Record<InsuranceClaimStatus, string> = {
   filed: 'Filed',
   under_review: 'Under Review',
   approved: 'Approved',

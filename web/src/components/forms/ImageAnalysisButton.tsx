@@ -90,7 +90,7 @@ export function ImageAnalysisButton({ onResult, className }: ImageAnalysisButton
       });
 
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }));
+        const errorBody: unknown = await response.json().catch(() => ({ error: 'Unknown error' }));
         const message =
           typeof errorBody === 'object' &&
           errorBody !== null &&

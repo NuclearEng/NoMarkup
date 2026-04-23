@@ -10,20 +10,14 @@ import {
   useBanUser,
   useAdminDisputes,
   useAdminDispute,
-  useResolveDispute,
-  useAdminFlaggedReviews,
   usePlatformMetrics,
-  useGrowthMetrics,
-  useCategoryMetrics,
   useRevenueReport,
 } from '@/hooks/useAdmin';
 import type {
   AdminUsersResponse,
   AdminUser,
   AdminDisputesResponse,
-  Dispute,
   PlatformMetrics,
-  GrowthMetrics,
   RevenueReport,
 } from '@/types';
 
@@ -97,7 +91,7 @@ describe('useAdminUsers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.users).toHaveLength(1);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/users');
@@ -111,7 +105,7 @@ describe('useAdminUsers', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('query=test'));
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('status=active'));
@@ -124,7 +118,7 @@ describe('useAdminUsers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -147,7 +141,7 @@ describe('useAdminUser', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.user.id).toBe('user-1');
   });
@@ -184,7 +178,7 @@ describe('useSuspendUser', () => {
 
     result.current.mutate({ userId: 'user-1', reason: 'Policy violation' });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/users/user-1/suspend', {
       reason: 'Policy violation',
@@ -214,7 +208,7 @@ describe('useBanUser', () => {
 
     result.current.mutate({ userId: 'user-1', reason: 'Fraud' });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/users/user-1/ban', {
       reason: 'Fraud',
@@ -251,7 +245,7 @@ describe('useAdminDisputes', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/disputes');
   });
@@ -273,7 +267,7 @@ describe('useAdminDisputes', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('status=open'));
   });
@@ -339,7 +333,7 @@ describe('usePlatformMetrics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/platform/metrics');
   });
@@ -371,7 +365,7 @@ describe('useRevenueReport', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       expect.stringContaining('start_date=2026-01-01'),

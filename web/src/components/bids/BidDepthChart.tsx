@@ -199,10 +199,7 @@ export function BidDepthChart({
       if (!closest) return;
 
       for (const d of cumulativeData) {
-        if (
-          closest === undefined ||
-          Math.abs(d.amount_cents - mousePrice) < Math.abs(closest.amount_cents - mousePrice)
-        ) {
+        if (Math.abs(d.amount_cents - mousePrice) < Math.abs(closest.amount_cents - mousePrice)) {
           closest = d;
         }
       }

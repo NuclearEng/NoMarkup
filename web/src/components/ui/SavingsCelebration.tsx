@@ -46,6 +46,7 @@ export function SavingsCelebration({ savingsCents, jobTitle, onClose }: SavingsC
   if (!visible && particles.length === 0) return null;
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- overlay dismissal via click/keyboard
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={onClose}

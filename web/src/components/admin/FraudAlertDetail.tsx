@@ -19,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useReviewFraudAlert } from '@/hooks/useFraud';
 import { FRAUD_ALERT_STATUS_CLASSES, FRAUD_RISK_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
-import type { AlertStatus, FraudAlert, FraudSignal, RiskLevel } from '@/types';
+import type { AlertStatus, FraudAlert, FraudSignal } from '@/types';
 import { ALERT_STATUS } from '@/types';
 
 function confidenceColor(confidence: number): string {

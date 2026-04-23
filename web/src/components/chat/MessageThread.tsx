@@ -260,9 +260,9 @@ export function MessageThread({ channelId }: { channelId: string }) {
     // If the last message is our own and there are prior non-own messages, it's read
     if (!lastOwnId && messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.sender_id === user?.id) {
+      if (lastMsg && lastMsg.sender_id === user.id) {
         // Check if there are other participant messages before
-        const hasOtherMessages = messages.some((m) => m.sender_id !== user?.id);
+        const hasOtherMessages = messages.some((m) => m.sender_id !== user.id);
         if (hasOtherMessages) {
           lastOwnId = lastMsg.id;
         }

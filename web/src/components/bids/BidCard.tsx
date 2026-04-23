@@ -165,6 +165,7 @@ function TrustScoreGauge({ score, tier }: { score: number; tier: TrustTier }) {
           className="relative flex-shrink-0 cursor-default"
           aria-label={`Trust score: ${String(scorePercent)} out of 100`}
           role="img"
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
           tabIndex={0}
         >
           <svg width="48" height="48" viewBox="0 0 48 48" className="-rotate-90" aria-hidden="true">
@@ -259,6 +260,7 @@ function WinProbabilityBar({ rank, totalBids }: { rank: number; totalBids: numbe
   return (
     <Tooltip>
       <TooltipTrigger asChild>
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility */}
         <div className="cursor-default space-y-1" tabIndex={0} role="img" aria-label={`Win probability: ${label}, ${String(percent)}%`}>
           <div className="flex items-center justify-between">
             <span className={cn('text-xs font-bold', color)}>{label}</span>
@@ -332,7 +334,6 @@ export const BidCard = memo(function BidCard({
 
   // Time advantage
   const bidAge = formatRelativeTime(new Date(bid.created_at));
-  const isFirstBid = hasRank && displayTotalBids > 0 && bid.created_at !== undefined;
 
   function handleAward() {
     setShowAwardConfirm(true);
@@ -438,6 +439,7 @@ export const BidCard = memo(function BidCard({
                 <TooltipTrigger asChild>
                   <span
                     className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
                     tabIndex={0}
                   >
                     <TrendingDown className="h-3 w-3" aria-hidden="true" />
@@ -457,6 +459,7 @@ export const BidCard = memo(function BidCard({
                 <TooltipTrigger asChild>
                   <span
                     className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400"
+                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
                     tabIndex={0}
                   >
                     {String(priceDiffVsMedian)}% below market

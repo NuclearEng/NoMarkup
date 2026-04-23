@@ -138,7 +138,7 @@ export default function AdminUsersPage() {
               e.stopPropagation();
               setActionTarget({ user, action: 'suspend' });
             }}
-            aria-label={`Suspend ${user.first_name} ${user.last_name}`}
+            aria-label={`Suspend ${user.first_name ?? ''} ${user.last_name ?? ''}`}
           >
             Suspend
           </Button>
@@ -151,7 +151,7 @@ export default function AdminUsersPage() {
               e.stopPropagation();
               setActionTarget({ user, action: 'ban' });
             }}
-            aria-label={`Ban ${user.first_name} ${user.last_name}`}
+            aria-label={`Ban ${user.first_name ?? ''} ${user.last_name ?? ''}`}
           >
             Ban
           </Button>

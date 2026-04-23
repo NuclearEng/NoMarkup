@@ -371,7 +371,6 @@ export function GuaranteeClaimReview({
                   setRejectReason(e.target.value);
                 }}
                 rows={4}
-                autoFocus
               />
             </div>
             {reviewMutation.isError ? (

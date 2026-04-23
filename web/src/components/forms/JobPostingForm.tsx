@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronLeft, ChevronRight, ImagePlus, MapPin, Mic, MicOff, X, Zap } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { ImageAnalysisButton } from '@/components/forms/ImageAnalysisButton';
@@ -161,7 +161,7 @@ export function JobPostingForm() {
       input.publish = true;
       const createdJob = await createJob.mutateAsync(input);
 
-      if (useInstantMatch && createdJob?.id) {
+      if (useInstantMatch && createdJob.id) {
         // Call instant match directly using the new job ID (avoids stale closure).
         try {
           await api.post<{ status: string; expires_at: string }>(`/api/v1/jobs/${createdJob.id}/instant-match`);
@@ -492,7 +492,8 @@ function StepLocation({ form }: { form: FormType }) {
       if (!address || address.length < 5 || !mapboxToken) return;
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(async () => {
+      debounceRef.current = setTimeout(() => {
+        void (async () => {
         setGeocoding(true);
         setGeocodeError(null);
         try {
@@ -521,6 +522,7 @@ function StepLocation({ form }: { form: FormType }) {
         } finally {
           setGeocoding(false);
         }
+        })();
       }, 600);
     },
     [mapboxToken, form],
@@ -566,7 +568,7 @@ function StepLocation({ form }: { form: FormType }) {
           />
           <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-zinc-900/80 px-2.5 py-1 text-xs text-zinc-200 backdrop-blur-sm">
             <MapPin className="h-3 w-3 text-[var(--brand-gold)]" aria-hidden="true" />
-            {String(lat.toFixed(4))}, {String(lng.toFixed(4))}
+            {lat.toFixed(4)}, {lng.toFixed(4)}
           </div>
         </div>
       ) : (
@@ -804,7 +806,7 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
               key={`${file.name}-${String(file.lastModified)}-${String(index)}`}
               className="group bg-muted relative aspect-square overflow-hidden rounded-md border"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {/* Local blob preview — using img intentionally, not next/image */}
               <img
                 src={URL.createObjectURL(file)}
                 alt={file.name}
@@ -1081,7 +1083,7 @@ function StepReview({
               name="matchMode"
               value="auction"
               checked={!useInstantMatch}
-              onChange={() => onInstantMatchChange(false)}
+              onChange={() => { onInstantMatchChange(false); }}
               className="mt-0.5 h-4 w-4"
               aria-label="Run an auction"
             />
@@ -1102,7 +1104,7 @@ function StepReview({
               name="matchMode"
               value="instant"
               checked={useInstantMatch}
-              onChange={() => onInstantMatchChange(true)}
+              onChange={() => { onInstantMatchChange(true); }}
               className="mt-0.5 h-4 w-4"
               aria-label="Find me someone fast"
             />

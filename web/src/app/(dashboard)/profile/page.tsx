@@ -32,7 +32,7 @@ export default function ProfilePage() {
   const enableRole = useEnableRole();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const isProviderRole = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
+  const _isProviderRole = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const { data: providerProfile } = useProviderProfile();
 
   if (isLoading) {

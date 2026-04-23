@@ -11,8 +11,8 @@ export function useCountdown(endTime: string | Date | null | undefined): Countdo
 
   useEffect(() => {
     if (!endTime) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => { setNow(Date.now()); }, 1000);
+    return () => { clearInterval(interval); };
   }, [endTime]);
 
   if (!endTime) {
@@ -34,11 +34,11 @@ export function useCountdown(endTime: string | Date | null | undefined): Countdo
 
   let timeLeft: string;
   if (days > 0) {
-    timeLeft = `${days}d ${hours}h`;
+    timeLeft = `${String(days)}d ${String(hours)}h`;
   } else if (hours > 0) {
-    timeLeft = `${hours}h ${minutes}m`;
+    timeLeft = `${String(hours)}h ${String(minutes)}m`;
   } else {
-    timeLeft = `${minutes}:${String(seconds).padStart(2, '0')}`;
+    timeLeft = `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
   }
 
   return { timeLeft, isExpired: false, totalSeconds };

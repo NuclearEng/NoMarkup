@@ -29,6 +29,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['.next/', 'node_modules/', 'coverage/', '*.config.*'],
+    ignores: ['.next/', 'node_modules/', 'coverage/', '*.config.*', 'next-env.d.ts'],
   },
 );

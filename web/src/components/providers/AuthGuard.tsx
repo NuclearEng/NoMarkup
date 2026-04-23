@@ -42,7 +42,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     }
 
     // Sentinel present: try to restore session from the refresh token cookie.
-    refreshToken().then((success) => {
+    void refreshToken().then((success) => {
       if (!success) {
         router.replace('/login');
       }

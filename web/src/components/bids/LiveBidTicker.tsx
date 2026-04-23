@@ -37,8 +37,8 @@ export function LiveBidTicker({
   useEffect(() => {
     if (previousBid && currentBid !== previousBid) {
       setFlash(true);
-      const timer = setTimeout(() => setFlash(false), 600);
-      return () => clearTimeout(timer);
+      const timer = setTimeout(() => { setFlash(false); }, 600);
+      return () => { clearTimeout(timer); };
     }
   }, [currentBid, previousBid]);
 

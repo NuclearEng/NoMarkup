@@ -255,6 +255,7 @@ export function SavingsCelebration({
   if (!isVisible) return null;
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- overlay dismissal via click/keyboard
     <div
       className={cn(
         'fixed inset-0 z-50 flex items-center justify-center',

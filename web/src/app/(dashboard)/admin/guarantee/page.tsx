@@ -96,7 +96,7 @@ export default function AdminGuaranteePage() {
       header: 'Status',
       render: (claim) => (
         <Badge variant="outline" className={cn('text-xs', GUARANTEE_STATUS_CLASSES[claim.status])}>
-          {STATUS_LABELS[claim.status] ?? claim.status}
+          {STATUS_LABELS[claim.status]}
         </Badge>
       ),
     },
@@ -170,7 +170,7 @@ export default function AdminGuaranteePage() {
             <SelectItem value={ALL_FILTER}>All Statuses</SelectItem>
             {Object.entries(DISPUTE_STATUS).map(([key, value]) => (
               <SelectItem key={key} value={value}>
-                {STATUS_LABELS[value] ?? value}
+                {STATUS_LABELS[value]}
               </SelectItem>
             ))}
           </SelectContent>

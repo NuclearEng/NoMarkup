@@ -92,7 +92,7 @@ export function CheckInOut({ contractId, className }: CheckInOutProps) {
             variant="outline"
             size="sm"
             className="min-h-[44px] shrink-0 border-zinc-600 hover:border-red-500/50 hover:text-red-400"
-            onClick={() => checkOut.mutate()}
+            onClick={() => { checkOut.mutate(); }}
             disabled={isWorking}
             aria-label="Check out from this job"
           >
@@ -118,7 +118,7 @@ export function CheckInOut({ contractId, className }: CheckInOutProps) {
     <div className={className}>
       <Button
         className="min-h-[44px] w-full"
-        onClick={() => checkIn.mutate()}
+        onClick={() => { checkIn.mutate(); }}
         disabled={isWorking}
         aria-label="Check in to this job using your current location"
       >

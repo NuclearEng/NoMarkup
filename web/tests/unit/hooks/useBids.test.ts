@@ -86,7 +86,7 @@ describe('usePlaceBid', () => {
       input: { amount_cents: 5000 },
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('bid-1');
     expect(result.current.data?.amount_cents).toBe(5000);
@@ -122,7 +122,7 @@ describe('usePlaceBid', () => {
       input: { amount_cents: 5000 },
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -151,7 +151,7 @@ describe('useUpdateBid', () => {
       input: { new_amount_cents: 4500 },
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.amount_cents).toBe(4500);
     expect(vi.mocked(api.patch)).toHaveBeenCalledWith(
@@ -185,7 +185,7 @@ describe('useWithdrawBid', () => {
 
     result.current.mutate('bid-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('withdrawn');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['jobs'] });
@@ -215,7 +215,7 @@ describe('useAcceptOffer', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.is_offer_accepted).toBe(true);
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
@@ -250,7 +250,7 @@ describe('useAwardBid', () => {
 
     result.current.mutate({ jobId: 'job-1', bidId: 'bid-1' });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('awarded');
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
@@ -291,7 +291,7 @@ describe('useBidsForJob', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.bids).toHaveLength(1);
     expect(result.current.data?.bids[0]?.provider_display_name).toBe(
@@ -318,7 +318,7 @@ describe('useBidsForJob', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -351,7 +351,7 @@ describe('useMyBids', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.bids).toHaveLength(1);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
@@ -376,7 +376,7 @@ describe('useMyBids', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/bids/mine');
   });
@@ -401,7 +401,7 @@ describe('useBidCount', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data).toBe(5);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
@@ -425,6 +425,6 @@ describe('useBidCount', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });

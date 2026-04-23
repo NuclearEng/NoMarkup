@@ -254,12 +254,12 @@ export default function ProvidersPage() {
                     ) : null}
 
                     <div className="flex flex-wrap gap-1">
-                      {(provider.service_categories ?? []).slice(0, 3).map((cat) => (
+                      {provider.service_categories.slice(0, 3).map((cat) => (
                         <Badge key={cat.id} variant="secondary" className="border-white/10 bg-white/[0.06] text-xs text-zinc-300">
                           {cat.name}
                         </Badge>
                       ))}
-                      {(provider.service_categories ?? []).length > 3 ? (
+                      {provider.service_categories.length > 3 ? (
                         <Badge variant="secondary" className="border-white/10 bg-white/[0.06] text-xs text-zinc-400">
                           +{String(provider.service_categories.length - 3)} more
                         </Badge>

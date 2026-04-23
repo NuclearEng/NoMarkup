@@ -101,7 +101,7 @@ function getAuctionElapsedPercent(
 }
 
 export const JobCard = memo(function JobCard({ job }: JobCardProps) {
-  const urgency = useMemo(() => getAuctionUrgency(job.auction_ends_at), [job.auction_ends_at]);
+  const _urgency = useMemo(() => getAuctionUrgency(job.auction_ends_at), [job.auction_ends_at]);
 
   const elapsedPercent = useMemo(
     () => getAuctionElapsedPercent(job.created_at, job.auction_ends_at, job.auction_duration_hours),

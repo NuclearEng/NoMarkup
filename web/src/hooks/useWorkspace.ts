@@ -62,10 +62,6 @@ export function useCheckIn(contractId: string) {
   return useMutation({
     mutationFn: (): Promise<CheckInResponse> => {
       return new Promise<CheckInResponse>((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error('Geolocation is not supported by your browser'));
-          return;
-        }
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             api
@@ -74,7 +70,9 @@ export function useCheckIn(contractId: string) {
                 lng: pos.coords.longitude,
               })
               .then(resolve)
-              .catch((err: unknown) => reject(err));
+              .catch((err: unknown) => {
+                reject(err instanceof Error ? err : new Error(String(err)));
+              });
           },
           (err) => {
             reject(
@@ -110,10 +108,6 @@ export function useCheckOut(contractId: string) {
   return useMutation({
     mutationFn: (): Promise<CheckOutResponse> => {
       return new Promise<CheckOutResponse>((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error('Geolocation is not supported by your browser'));
-          return;
-        }
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             api
@@ -122,7 +116,9 @@ export function useCheckOut(contractId: string) {
                 lng: pos.coords.longitude,
               })
               .then(resolve)
-              .catch((err: unknown) => reject(err));
+              .catch((err: unknown) => {
+                reject(err instanceof Error ? err : new Error(String(err)));
+              });
           },
           (err) => {
             reject(

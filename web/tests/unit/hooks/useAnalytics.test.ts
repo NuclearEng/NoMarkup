@@ -111,7 +111,7 @@ describe('useMarketRange', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.low_cents).toBe(5000);
     expect(result.current.data?.median_cents).toBe(12500);
@@ -127,7 +127,7 @@ describe('useMarketRange', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       expect.stringContaining('subcategory_id=subcat-1'),
@@ -153,7 +153,7 @@ describe('useMarketRange', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
     expect(result.current.error).toBeDefined();
   });
 });
@@ -177,7 +177,7 @@ describe('useProviderAnalytics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.jobs_completed).toBe(15);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/providers/user-1');
@@ -190,7 +190,7 @@ describe('useProviderAnalytics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       expect.stringContaining('start_date=2026-01-01'),
@@ -205,7 +205,7 @@ describe('useProviderAnalytics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -235,7 +235,7 @@ describe('useProviderEarnings', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/analytics/providers/user-1/earnings',
@@ -256,7 +256,7 @@ describe('useProviderEarnings', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=month'));
   });
@@ -289,7 +289,7 @@ describe('useCustomerSpending', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/customers/me/spending');
   });
@@ -309,7 +309,7 @@ describe('useCustomerSpending', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=week'));
   });
@@ -321,6 +321,6 @@ describe('useCustomerSpending', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });

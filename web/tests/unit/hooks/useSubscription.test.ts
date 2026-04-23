@@ -121,7 +121,7 @@ describe('useTiers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.tiers).toHaveLength(1);
     expect(result.current.data?.tiers[0]?.name).toBe('Pro');
@@ -147,7 +147,7 @@ describe('useTiers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -172,7 +172,7 @@ describe('useSubscription', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.subscription.id).toBe('sub-1');
     expect(result.current.data?.subscription.status).toBe('active');
@@ -188,7 +188,7 @@ describe('useSubscription', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -221,7 +221,7 @@ describe('useCreateSubscription', () => {
       payment_method_id: 'pm_test123',
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('sub-1');
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
@@ -255,7 +255,7 @@ describe('useCreateSubscription', () => {
       payment_method_id: 'pm_bad',
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -288,7 +288,7 @@ describe('useCancelSubscription', () => {
       cancel_immediately: false,
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.subscription.status).toBe('cancelled');
     expect(vi.mocked(api.delete)).toHaveBeenCalledWith(
@@ -314,7 +314,7 @@ describe('useCancelSubscription', () => {
       cancel_immediately: true,
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -347,7 +347,7 @@ describe('useChangeTier', () => {
       billing_interval: 'annual',
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.tier_id).toBe('tier-2');
     expect(vi.mocked(api.patch)).toHaveBeenCalledWith(
@@ -376,7 +376,7 @@ describe('useChangeTier', () => {
       billing_interval: 'monthly',
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -399,7 +399,7 @@ describe('useUsage', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.active_bids).toBe(5);
     expect(result.current.data?.max_active_bids).toBe(20);
@@ -426,7 +426,7 @@ describe('useUsage', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -451,7 +451,7 @@ describe('useInvoices', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.invoices).toHaveLength(1);
     expect(result.current.data?.invoices[0]?.amount_cents).toBe(2999);
@@ -467,7 +467,7 @@ describe('useInvoices', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.invoices).toHaveLength(0);
   });
@@ -479,6 +479,6 @@ describe('useInvoices', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });

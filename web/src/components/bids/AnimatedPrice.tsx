@@ -77,7 +77,7 @@ export const AnimatedPrice = memo(function AnimatedPrice({
           key: `${String(kp)}-${String(i)}`,
           isDigit,
           animating: changed,
-          exitChar: changed && prevChar !== undefined ? prevChar : null,
+          exitChar: changed ? prevChar : null,
         };
       });
 

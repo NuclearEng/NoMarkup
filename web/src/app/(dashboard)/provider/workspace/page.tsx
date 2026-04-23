@@ -47,7 +47,7 @@ function isToday(dateStr: string | undefined | null): boolean {
   return toDateKey(dateStr) === today;
 }
 
-function isUpcoming(dateStr: string | undefined | null): boolean {
+function _isUpcoming(dateStr: string | undefined | null): boolean {
   if (!dateStr) return false;
   const now = new Date();
   const target = new Date(dateStr);

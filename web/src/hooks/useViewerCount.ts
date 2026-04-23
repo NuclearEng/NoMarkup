@@ -23,7 +23,7 @@ export function useViewerCount(jobId: string): { count: number } {
 
   // Ping the viewer endpoint — fire and forget, errors are silently swallowed.
   const sendPing = () => {
-    void api.post<void>(`/api/v1/jobs/${jobId}/ping-viewer`).catch(() => undefined);
+    void api.post<unknown>(`/api/v1/jobs/${jobId}/ping-viewer`).catch(() => undefined);
   };
 
   // Send ping on mount and on every interval tick.

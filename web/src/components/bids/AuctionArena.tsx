@@ -389,7 +389,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
           <button
             role="tab"
             aria-selected={activeTab === VISUALIZATION_TAB.PRICE_HISTORY}
-            onClick={() => setActiveTab(VISUALIZATION_TAB.PRICE_HISTORY)}
+            onClick={() => { setActiveTab(VISUALIZATION_TAB.PRICE_HISTORY); }}
             className={cn(
               'relative min-h-[44px] px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/40',
               activeTab === VISUALIZATION_TAB.PRICE_HISTORY
@@ -409,7 +409,7 @@ export function AuctionArena({ job, isProvider, isJobOwner }: AuctionArenaProps)
           <button
             role="tab"
             aria-selected={activeTab === VISUALIZATION_TAB.DEPTH_CHART}
-            onClick={() => setActiveTab(VISUALIZATION_TAB.DEPTH_CHART)}
+            onClick={() => { setActiveTab(VISUALIZATION_TAB.DEPTH_CHART); }}
             className={cn(
               'relative min-h-[44px] px-3 pb-2.5 pt-1 text-xs font-semibold tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/40',
               activeTab === VISUALIZATION_TAB.DEPTH_CHART

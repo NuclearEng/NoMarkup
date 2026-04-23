@@ -118,7 +118,7 @@ describe('useSearchJobs', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.jobs).toHaveLength(1);
     expect(result.current.data?.jobs[0]?.id).toBe('job-1');
@@ -134,7 +134,7 @@ describe('useSearchJobs', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/jobs');
   });
@@ -146,7 +146,7 @@ describe('useSearchJobs', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
 
     expect(result.current.error).toBeDefined();
   });
@@ -184,7 +184,7 @@ describe('useJob', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('job-1');
     expect(result.current.data?.customer_display_name).toBe('Test Customer');
@@ -206,7 +206,7 @@ describe('useJob', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -240,7 +240,7 @@ describe('useCreateJob', () => {
       auction_duration_hours: 48,
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('job-1');
     expect(invalidateSpy).toHaveBeenCalledWith({
@@ -264,7 +264,7 @@ describe('useCreateJob', () => {
       auction_duration_hours: 48,
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -293,7 +293,7 @@ describe('useUpdateJob', () => {
       input: { title: 'Updated title for the job' },
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.title).toBe('Updated title for the job');
   });
@@ -321,7 +321,7 @@ describe('usePublishJob', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('active');
   });
@@ -350,7 +350,7 @@ describe('useDeleteDraft', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['jobs'],
@@ -380,7 +380,7 @@ describe('useCloseAuction', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('closed');
   });
@@ -408,7 +408,7 @@ describe('useCancelJob', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('cancelled');
   });
@@ -434,7 +434,7 @@ describe('useCustomerJobs', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.jobs).toHaveLength(1);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
@@ -449,7 +449,7 @@ describe('useCustomerJobs', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/jobs/mine');
   });
@@ -474,7 +474,7 @@ describe('useCustomerDrafts', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/jobs/mine?status=draft&page=1',
@@ -488,7 +488,7 @@ describe('useCustomerDrafts', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/jobs/mine?status=draft',

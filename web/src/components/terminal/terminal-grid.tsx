@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import { GripVertical, X } from 'lucide-react';
@@ -226,7 +226,7 @@ export function TerminalGrid({
                     <Tooltip delayDuration={0}>
                       <TooltipTrigger asChild>
                         <button
-                          onClick={() => removeWidget(wp.widgetId)}
+                          onClick={() => { removeWidget(wp.widgetId); }}
                           className="rounded p-0.5 text-zinc-500 transition-colors hover:text-red-400"
                           aria-label={`Remove ${def?.label ?? wp.widgetId} widget`}
                         >
@@ -238,7 +238,7 @@ export function TerminalGrid({
                   </div>
                 )}
                 {/* Widget content */}
-                <div className={`${isEditing ? 'h-[calc(100%-28px)]' : 'h-full'}`}>
+                <div className={isEditing ? 'h-[calc(100%-28px)]' : 'h-full'}>
                   <WidgetRenderer widgetId={wp.widgetId} widgetProps={widgetProps} />
                 </div>
               </div>

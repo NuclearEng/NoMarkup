@@ -158,7 +158,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               : 0.12;
 
           const tierKey = bid.trust_tier as keyof typeof TRUST_TIER_CONFIG;
-          const tierConfig = TRUST_TIER_CONFIG[tierKey] ?? TRUST_TIER_CONFIG.new;
+          const tierConfig = TRUST_TIER_CONFIG[tierKey];
           const TierIcon = tierConfig.icon;
 
           return (
@@ -240,6 +240,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                       tierConfig.colorClass,
                     )}
                     aria-label={`Trust tier: ${tierConfig.label}, score: ${String(bid.trust_score)}`}
+                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
                     tabIndex={0}
                   >
                     <TierIcon className="h-3 w-3" aria-hidden="true" />

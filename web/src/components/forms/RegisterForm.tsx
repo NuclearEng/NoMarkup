@@ -222,7 +222,7 @@ export function RegisterForm() {
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                         <div
                           className={`password-strength-bar h-full rounded-full ${strength.color}`}
-                          style={{ width: `${(strength.score / 5) * 100}%` }}
+                          style={{ width: `${String((strength.score / 5) * 100)}%` }}
                         />
                       </div>
                       <p className="text-xs text-white/60">{strength.label}</p>

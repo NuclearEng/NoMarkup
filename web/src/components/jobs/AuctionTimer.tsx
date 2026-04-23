@@ -77,7 +77,7 @@ const URGENCY_RING_TRACK: Record<UrgencyLevel, string> = {
   [URGENCY_LEVEL.FINAL]: 'stroke-red-500/15',
 };
 
-const URGENCY_GLOW_COLORS: Record<UrgencyLevel, string> = {
+const _URGENCY_GLOW_COLORS: Record<UrgencyLevel, string> = {
   [URGENCY_LEVEL.CALM]: '',
   [URGENCY_LEVEL.ACTIVE]: 'shadow-blue-500/20',
   [URGENCY_LEVEL.URGENT]: 'shadow-amber-500/20',
@@ -368,13 +368,10 @@ export const AuctionTimer = memo(function AuctionTimer({
           {isCriticalOrAbove ? 'Ending Soon' : 'Time Left'}
         </p>
 
-        {/* Glow background for critical/final */}
+        {/* Glow background for final 15 seconds */}
         {isFinal15 ? (
           <div
-            className={cn(
-              'pointer-events-none absolute -inset-2 -z-10 rounded-full opacity-20 blur-xl',
-              urgency === URGENCY_LEVEL.FINAL ? 'bg-red-500' : 'bg-orange-500',
-            )}
+            className="pointer-events-none absolute -inset-2 -z-10 rounded-full bg-red-500 opacity-20 blur-xl"
             aria-hidden="true"
           />
         ) : null}
