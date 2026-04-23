@@ -180,15 +180,21 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	return r.GetJob(ctx, jobID)
 }
 
-func (r *PostgresRepository) UpdateJob(ctx context.Context, jobID string, input domain.UpdateJobInput) (*domain.Job, error) {
-	// Verify job exists and is draft.
-	var currentStatus string
-	err := r.pool.QueryRow(ctx, `SELECT status FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).Scan(&currentStatus)
+func (r *PostgresRepository) UpdateJob(ctx context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error) {
+	// Verify job exists, is draft, and is owned by the authenticated caller.
+	var currentStatus, ownerID string
+	err := r.pool.QueryRow(ctx,
+		`SELECT status, customer_id FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).
+		Scan(&currentStatus, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("update job: %w", domain.ErrJobNotFound)
 		}
 		return nil, fmt.Errorf("update job get status: %w", err)
+	}
+	if ownerID != customerID {
+		// Return NotFound rather than NotOwner to avoid confirming existence.
+		return nil, fmt.Errorf("update job: %w", domain.ErrJobNotFound)
 	}
 	if currentStatus != "draft" {
 		return nil, fmt.Errorf("update job: %w", domain.ErrNotDraft)
@@ -318,18 +324,28 @@ func (r *PostgresRepository) GetJobDetail(ctx context.Context, jobID string, req
 	return r.GetJob(ctx, jobID)
 }
 
-func (r *PostgresRepository) DeleteDraft(ctx context.Context, jobID string) error {
+func (r *PostgresRepository) DeleteDraft(ctx context.Context, jobID string, customerID string) error {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE jobs SET deleted_at = now() WHERE id = $1 AND status = 'draft' AND deleted_at IS NULL`,
-		jobID)
+		`UPDATE jobs SET deleted_at = now()
+		 WHERE id = $1 AND customer_id = $2 AND status = 'draft' AND deleted_at IS NULL`,
+		jobID, customerID)
 	if err != nil {
 		return fmt.Errorf("delete draft: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		// Check if exists.
-		var exists bool
-		_ = r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1 AND deleted_at IS NULL)`, jobID).Scan(&exists)
-		if !exists {
+		// Distinguish not-found / not-owner / not-draft. We return NotFound when the
+		// authenticated caller is not the owner to avoid confirming the job's existence.
+		var ownerID, status string
+		err := r.pool.QueryRow(ctx,
+			`SELECT customer_id, status FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).
+			Scan(&ownerID, &status)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("delete draft: %w", domain.ErrJobNotFound)
+			}
+			return fmt.Errorf("delete draft check: %w", err)
+		}
+		if ownerID != customerID {
 			return fmt.Errorf("delete draft: %w", domain.ErrJobNotFound)
 		}
 		return fmt.Errorf("delete draft: %w", domain.ErrNotDraft)
@@ -337,26 +353,31 @@ func (r *PostgresRepository) DeleteDraft(ctx context.Context, jobID string) erro
 	return nil
 }
 
-func (r *PostgresRepository) PublishJob(ctx context.Context, jobID string) (*domain.Job, error) {
-	auctionEndsAt := time.Now()
+func (r *PostgresRepository) PublishJob(ctx context.Context, jobID string, customerID string) (*domain.Job, error) {
+	// Load current duration and verify ownership + existence in one query.
 	var durationHours int
+	var ownerID string
 	err := r.pool.QueryRow(ctx,
-		`SELECT auction_duration_hours FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).Scan(&durationHours)
+		`SELECT auction_duration_hours, customer_id FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).
+		Scan(&durationHours, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("publish job: %w", domain.ErrJobNotFound)
 		}
 		return nil, fmt.Errorf("publish job get duration: %w", err)
 	}
+	if ownerID != customerID {
+		return nil, fmt.Errorf("publish job: %w", domain.ErrJobNotFound)
+	}
 	if durationHours <= 0 {
 		durationHours = 72
 	}
-	auctionEndsAt = auctionEndsAt.Add(time.Duration(durationHours) * time.Hour)
+	auctionEndsAt := time.Now().Add(time.Duration(durationHours) * time.Hour)
 
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE jobs SET status = 'active', auction_ends_at = $1, updated_at = now()
-		 WHERE id = $2 AND status = 'draft' AND deleted_at IS NULL`,
-		auctionEndsAt, jobID)
+		 WHERE id = $2 AND customer_id = $3 AND status = 'draft' AND deleted_at IS NULL`,
+		auctionEndsAt, jobID, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("publish job: %w", err)
 	}

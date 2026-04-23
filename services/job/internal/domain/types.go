@@ -229,11 +229,11 @@ type MatchingRepository interface {
 // JobRepository defines persistence operations for jobs.
 type JobRepository interface {
 	CreateJob(ctx context.Context, input CreateJobInput) (*Job, error)
-	UpdateJob(ctx context.Context, jobID string, input UpdateJobInput) (*Job, error)
+	UpdateJob(ctx context.Context, jobID string, customerID string, input UpdateJobInput) (*Job, error)
 	GetJob(ctx context.Context, jobID string) (*Job, error)
 	GetJobDetail(ctx context.Context, jobID string, requestingUserID string) (*Job, error)
-	DeleteDraft(ctx context.Context, jobID string) error
-	PublishJob(ctx context.Context, jobID string) (*Job, error)
+	DeleteDraft(ctx context.Context, jobID string, customerID string) error
+	PublishJob(ctx context.Context, jobID string, customerID string) (*Job, error)
 	CloseAuction(ctx context.Context, jobID string, customerID string) (*Job, error)
 	CancelJob(ctx context.Context, jobID string, customerID string) (*Job, error)
 	SearchJobs(ctx context.Context, input SearchJobsInput) ([]*Job, *Pagination, error)

@@ -130,7 +130,7 @@ func (s *Server) UpdateJob(ctx context.Context, req *jobv1.UpdateJobRequest) (*j
 		input.PhotoURLs = req.GetPhotoUrls()
 	}
 
-	job, err := s.svc.UpdateJob(ctx, req.GetJobId(), input)
+	job, err := s.svc.UpdateJob(ctx, req.GetJobId(), req.GetCustomerId(), input)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -142,6 +142,12 @@ func (s *Server) GetJob(ctx context.Context, req *jobv1.GetJobRequest) (*jobv1.G
 	job, err := s.svc.GetJobDetail(ctx, req.GetJobId(), req.GetRequestingUserId())
 	if err != nil {
 		return nil, mapDomainError(err)
+	}
+
+	// Draft jobs are visible only to their owner. For non-owner viewers (and
+	// unauthenticated callers) return NotFound to avoid confirming existence.
+	if job.Status == "draft" && req.GetRequestingUserId() != job.CustomerID {
+		return nil, status.Error(codes.NotFound, "job not found")
 	}
 
 	detail := &jobv1.JobDetail{
@@ -172,14 +178,14 @@ func (s *Server) GetJob(ctx context.Context, req *jobv1.GetJobRequest) (*jobv1.G
 }
 
 func (s *Server) DeleteDraft(ctx context.Context, req *jobv1.DeleteDraftRequest) (*jobv1.DeleteDraftResponse, error) {
-	if err := s.svc.DeleteDraft(ctx, req.GetJobId()); err != nil {
+	if err := s.svc.DeleteDraft(ctx, req.GetJobId(), req.GetCustomerId()); err != nil {
 		return nil, mapDomainError(err)
 	}
 	return &jobv1.DeleteDraftResponse{}, nil
 }
 
 func (s *Server) PublishJob(ctx context.Context, req *jobv1.PublishJobRequest) (*jobv1.PublishJobResponse, error) {
-	job, err := s.svc.PublishJob(ctx, req.GetJobId())
+	job, err := s.svc.PublishJob(ctx, req.GetJobId(), req.GetCustomerId())
 	if err != nil {
 		return nil, mapDomainError(err)
 	}

@@ -15,11 +15,11 @@ import (
 
 type mockJobRepo struct {
 	createJobFn         func(ctx context.Context, input domain.CreateJobInput) (*domain.Job, error)
-	updateJobFn         func(ctx context.Context, jobID string, input domain.UpdateJobInput) (*domain.Job, error)
+	updateJobFn         func(ctx context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error)
 	getJobFn            func(ctx context.Context, jobID string) (*domain.Job, error)
 	getJobDetailFn      func(ctx context.Context, jobID string, requestingUserID string) (*domain.Job, error)
-	deleteDraftFn       func(ctx context.Context, jobID string) error
-	publishJobFn        func(ctx context.Context, jobID string) (*domain.Job, error)
+	deleteDraftFn       func(ctx context.Context, jobID string, customerID string) error
+	publishJobFn        func(ctx context.Context, jobID string, customerID string) (*domain.Job, error)
 	closeAuctionFn      func(ctx context.Context, jobID string, customerID string) (*domain.Job, error)
 	cancelJobFn         func(ctx context.Context, jobID string, customerID string) (*domain.Job, error)
 	searchJobsFn        func(ctx context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error)
@@ -37,8 +37,8 @@ type mockJobRepo struct {
 func (m *mockJobRepo) CreateJob(ctx context.Context, input domain.CreateJobInput) (*domain.Job, error) {
 	return m.createJobFn(ctx, input)
 }
-func (m *mockJobRepo) UpdateJob(ctx context.Context, jobID string, input domain.UpdateJobInput) (*domain.Job, error) {
-	return m.updateJobFn(ctx, jobID, input)
+func (m *mockJobRepo) UpdateJob(ctx context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error) {
+	return m.updateJobFn(ctx, jobID, customerID, input)
 }
 func (m *mockJobRepo) GetJob(ctx context.Context, jobID string) (*domain.Job, error) {
 	return m.getJobFn(ctx, jobID)
@@ -46,11 +46,11 @@ func (m *mockJobRepo) GetJob(ctx context.Context, jobID string) (*domain.Job, er
 func (m *mockJobRepo) GetJobDetail(ctx context.Context, jobID string, requestingUserID string) (*domain.Job, error) {
 	return m.getJobDetailFn(ctx, jobID, requestingUserID)
 }
-func (m *mockJobRepo) DeleteDraft(ctx context.Context, jobID string) error {
-	return m.deleteDraftFn(ctx, jobID)
+func (m *mockJobRepo) DeleteDraft(ctx context.Context, jobID string, customerID string) error {
+	return m.deleteDraftFn(ctx, jobID, customerID)
 }
-func (m *mockJobRepo) PublishJob(ctx context.Context, jobID string) (*domain.Job, error) {
-	return m.publishJobFn(ctx, jobID)
+func (m *mockJobRepo) PublishJob(ctx context.Context, jobID string, customerID string) (*domain.Job, error) {
+	return m.publishJobFn(ctx, jobID, customerID)
 }
 func (m *mockJobRepo) CloseAuction(ctx context.Context, jobID string, customerID string) (*domain.Job, error) {
 	return m.closeAuctionFn(ctx, jobID, customerID)
@@ -284,13 +284,15 @@ func TestJobService_PublishJob(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		repoFn  func(ctx context.Context, jobID string) (*domain.Job, error)
-		wantErr bool
+		name       string
+		customerID string
+		repoFn     func(ctx context.Context, jobID string, customerID string) (*domain.Job, error)
+		wantErr    bool
 	}{
 		{
-			name: "draft_to_active_succeeds",
-			repoFn: func(_ context.Context, jobID string) (*domain.Job, error) {
+			name:       "draft_to_active_succeeds",
+			customerID: "cust-1",
+			repoFn: func(_ context.Context, jobID string, _ string) (*domain.Job, error) {
 				return &domain.Job{
 					ID:     jobID,
 					Status: "active",
@@ -298,9 +300,29 @@ func TestJobService_PublishJob(t *testing.T) {
 			},
 		},
 		{
-			name: "not_draft_returns_error",
-			repoFn: func(_ context.Context, _ string) (*domain.Job, error) {
+			name:       "not_draft_returns_error",
+			customerID: "cust-1",
+			repoFn: func(_ context.Context, _ string, _ string) (*domain.Job, error) {
 				return nil, domain.ErrNotDraft
+			},
+			wantErr: true,
+		},
+		{
+			name:       "non_owner_is_treated_as_not_found",
+			customerID: "cust-attacker",
+			repoFn: func(_ context.Context, _ string, _ string) (*domain.Job, error) {
+				// Repo returns ErrJobNotFound when the caller does not own the job,
+				// to avoid confirming existence.
+				return nil, domain.ErrJobNotFound
+			},
+			wantErr: true,
+		},
+		{
+			name:       "missing_customer_id_rejected",
+			customerID: "",
+			repoFn: func(_ context.Context, _ string, _ string) (*domain.Job, error) {
+				t.Fatal("repo should not be called when customerID is empty")
+				return nil, nil
 			},
 			wantErr: true,
 		},
@@ -313,7 +335,7 @@ func TestJobService_PublishJob(t *testing.T) {
 			repo := &mockJobRepo{publishJobFn: tt.repoFn}
 			svc := newTestJobService(repo)
 
-			job, err := svc.PublishJob(context.Background(), "job-1")
+			job, err := svc.PublishJob(context.Background(), "job-1", tt.customerID)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -432,25 +454,46 @@ func TestJobService_DeleteDraft(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		repoFn  func(ctx context.Context, jobID string) error
-		wantErr bool
+		name       string
+		customerID string
+		repoFn     func(ctx context.Context, jobID string, customerID string) error
+		wantErr    bool
 	}{
 		{
-			name:   "successful_delete",
-			repoFn: func(_ context.Context, _ string) error { return nil },
+			name:       "successful_delete",
+			customerID: "cust-1",
+			repoFn:     func(_ context.Context, _ string, _ string) error { return nil },
 		},
 		{
-			name: "not_draft_returns_error",
-			repoFn: func(_ context.Context, _ string) error {
+			name:       "not_draft_returns_error",
+			customerID: "cust-1",
+			repoFn: func(_ context.Context, _ string, _ string) error {
 				return domain.ErrNotDraft
 			},
 			wantErr: true,
 		},
 		{
-			name: "not_found_returns_error",
-			repoFn: func(_ context.Context, _ string) error {
+			name:       "not_found_returns_error",
+			customerID: "cust-1",
+			repoFn: func(_ context.Context, _ string, _ string) error {
 				return domain.ErrJobNotFound
+			},
+			wantErr: true,
+		},
+		{
+			name:       "non_owner_is_treated_as_not_found",
+			customerID: "cust-attacker",
+			repoFn: func(_ context.Context, _ string, _ string) error {
+				return domain.ErrJobNotFound
+			},
+			wantErr: true,
+		},
+		{
+			name:       "missing_customer_id_rejected",
+			customerID: "",
+			repoFn: func(_ context.Context, _ string, _ string) error {
+				t.Fatal("repo should not be called when customerID is empty")
+				return nil
 			},
 			wantErr: true,
 		},
@@ -463,7 +506,7 @@ func TestJobService_DeleteDraft(t *testing.T) {
 			repo := &mockJobRepo{deleteDraftFn: tt.repoFn}
 			svc := newTestJobService(repo)
 
-			err := svc.DeleteDraft(context.Background(), "job-1")
+			err := svc.DeleteDraft(context.Background(), "job-1", tt.customerID)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -489,7 +532,7 @@ func TestJobService_Lifecycle_draft_to_active_to_closed(t *testing.T) {
 				Status:     "draft",
 			}, nil
 		},
-		publishJobFn: func(_ context.Context, jobID string) (*domain.Job, error) {
+		publishJobFn: func(_ context.Context, jobID string, _ string) (*domain.Job, error) {
 			return &domain.Job{ID: jobID, Status: "active"}, nil
 		},
 		closeAuctionFn: func(_ context.Context, jobID string, _ string) (*domain.Job, error) {
@@ -505,7 +548,7 @@ func TestJobService_Lifecycle_draft_to_active_to_closed(t *testing.T) {
 	assert.Equal(t, "draft", job.Status)
 
 	// Step 2: Publish (draft -> active).
-	job, err = svc.PublishJob(ctx, job.ID)
+	job, err = svc.PublishJob(ctx, job.ID, "cust-1")
 	require.NoError(t, err)
 	assert.Equal(t, "active", job.Status)
 
@@ -522,16 +565,18 @@ func TestJobService_UpdateJob(t *testing.T) {
 
 	newTitle := "Updated Title"
 	repo := &mockJobRepo{
-		updateJobFn: func(_ context.Context, jobID string, input domain.UpdateJobInput) (*domain.Job, error) {
+		updateJobFn: func(_ context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error) {
+			assert.Equal(t, "cust-1", customerID)
 			return &domain.Job{
-				ID:    jobID,
-				Title: *input.Title,
+				ID:         jobID,
+				CustomerID: customerID,
+				Title:      *input.Title,
 			}, nil
 		},
 	}
 	svc := newTestJobService(repo)
 
-	job, err := svc.UpdateJob(context.Background(), "job-1", domain.UpdateJobInput{
+	job, err := svc.UpdateJob(context.Background(), "job-1", "cust-1", domain.UpdateJobInput{
 		Title: &newTitle,
 	})
 
@@ -544,18 +589,66 @@ func TestJobService_UpdateJob_repo_error(t *testing.T) {
 
 	newTitle := "Updated"
 	repo := &mockJobRepo{
-		updateJobFn: func(_ context.Context, _ string, _ domain.UpdateJobInput) (*domain.Job, error) {
+		updateJobFn: func(_ context.Context, _ string, _ string, _ domain.UpdateJobInput) (*domain.Job, error) {
 			return nil, domain.ErrNotDraft
 		},
 	}
 	svc := newTestJobService(repo)
 
-	_, err := svc.UpdateJob(context.Background(), "job-1", domain.UpdateJobInput{
+	_, err := svc.UpdateJob(context.Background(), "job-1", "cust-1", domain.UpdateJobInput{
 		Title: &newTitle,
 	})
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrNotDraft))
+}
+
+// TestJobService_UpdateJob_idor_rejected verifies that when the repository rejects
+// a non-owner update (by returning ErrJobNotFound), the service propagates the
+// error and does not mutate the job.
+func TestJobService_UpdateJob_idor_rejected(t *testing.T) {
+	t.Parallel()
+
+	newTitle := "Attacker's title"
+	repoCalled := false
+	repo := &mockJobRepo{
+		updateJobFn: func(_ context.Context, _ string, customerID string, _ domain.UpdateJobInput) (*domain.Job, error) {
+			repoCalled = true
+			assert.Equal(t, "cust-attacker", customerID, "repo must receive the authenticated caller's ID, not the owner's")
+			// Repo returns ErrJobNotFound when the WHERE clause's customer_id
+			// predicate filters the row out.
+			return nil, domain.ErrJobNotFound
+		},
+	}
+	svc := newTestJobService(repo)
+
+	_, err := svc.UpdateJob(context.Background(), "job-owned-by-cust-1", "cust-attacker", domain.UpdateJobInput{
+		Title: &newTitle,
+	})
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrJobNotFound))
+	assert.True(t, repoCalled, "repo must be called so the ownership-enforced WHERE runs")
+}
+
+func TestJobService_UpdateJob_missing_customer_id(t *testing.T) {
+	t.Parallel()
+
+	newTitle := "Updated"
+	repo := &mockJobRepo{
+		updateJobFn: func(_ context.Context, _ string, _ string, _ domain.UpdateJobInput) (*domain.Job, error) {
+			t.Fatal("repo should not be called when customerID is empty")
+			return nil, nil
+		},
+	}
+	svc := newTestJobService(repo)
+
+	_, err := svc.UpdateJob(context.Background(), "job-1", "", domain.UpdateJobInput{
+		Title: &newTitle,
+	})
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrNotOwner))
 }
 
 // --- SearchJobs tests ---

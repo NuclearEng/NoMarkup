@@ -188,6 +188,8 @@ message UpdateJobRequest {
   optional int64 offer_accepted_cents = 9;
   optional int32 auction_duration_hours = 10;
   repeated string photo_urls = 11;
+  // Authenticated caller's user ID — the job service verifies ownership.
+  string customer_id = 12;
 }
 
 message UpdateJobResponse {
@@ -205,12 +207,16 @@ message GetJobResponse {
 
 message DeleteDraftRequest {
   string job_id = 1;
+  // Authenticated caller's user ID — the job service verifies ownership.
+  string customer_id = 2;
 }
 
 message DeleteDraftResponse {}
 
 message PublishJobRequest {
   string job_id = 1;
+  // Authenticated caller's user ID — the job service verifies ownership.
+  string customer_id = 2;
 }
 
 message PublishJobResponse {

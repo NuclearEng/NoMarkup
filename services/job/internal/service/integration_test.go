@@ -66,8 +66,11 @@ func TestIntegration_JobLifecycle_Draft_Publish_Award_Complete(t *testing.T) {
 					}
 					return currentJob, nil
 				},
-				publishJobFn: func(_ context.Context, jobID string) (*domain.Job, error) {
+				publishJobFn: func(_ context.Context, jobID string, customerID string) (*domain.Job, error) {
 					if currentJob == nil || currentJob.ID != jobID {
+						return nil, domain.ErrJobNotFound
+					}
+					if currentJob.CustomerID != customerID {
 						return nil, domain.ErrJobNotFound
 					}
 					if currentJob.Status != "draft" {
@@ -112,7 +115,7 @@ func TestIntegration_JobLifecycle_Draft_Publish_Award_Complete(t *testing.T) {
 			assert.Equal(t, job.ID, fetched.ID)
 
 			// Step 3: Publish (draft -> active).
-			published, err := svc.PublishJob(ctx, job.ID)
+			published, err := svc.PublishJob(ctx, job.ID, tt.input.CustomerID)
 			if tt.wantPublishErr {
 				require.Error(t, err)
 				return
@@ -182,7 +185,7 @@ func TestIntegration_JobLifecycle_DoublePublish_Fails(t *testing.T) {
 				Status: "draft",
 			}, nil
 		},
-		publishJobFn: func(_ context.Context, _ string) (*domain.Job, error) {
+		publishJobFn: func(_ context.Context, _ string, _ string) (*domain.Job, error) {
 			publishCount++
 			if publishCount > 1 {
 				return nil, domain.ErrNotDraft
@@ -201,11 +204,11 @@ func TestIntegration_JobLifecycle_DoublePublish_Fails(t *testing.T) {
 	require.NoError(t, err)
 
 	// First publish succeeds.
-	_, err = svc.PublishJob(ctx, job.ID)
+	_, err = svc.PublishJob(ctx, job.ID, "cust-1")
 	require.NoError(t, err)
 
 	// Second publish fails.
-	_, err = svc.PublishJob(ctx, job.ID)
+	_, err = svc.PublishJob(ctx, job.ID, "cust-1")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrNotDraft))
 }

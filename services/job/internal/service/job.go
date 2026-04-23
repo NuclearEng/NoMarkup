@@ -87,9 +87,13 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 	return job, nil
 }
 
-// UpdateJob validates and updates a draft job.
-func (s *JobService) UpdateJob(ctx context.Context, jobID string, input domain.UpdateJobInput) (*domain.Job, error) {
-	job, err := s.repo.UpdateJob(ctx, jobID, input)
+// UpdateJob validates and updates a draft job. customerID is the authenticated
+// caller; the repository enforces that the caller owns the job.
+func (s *JobService) UpdateJob(ctx context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error) {
+	if customerID == "" {
+		return nil, fmt.Errorf("update job: %w", domain.ErrNotOwner)
+	}
+	job, err := s.repo.UpdateJob(ctx, jobID, customerID, input)
 	if err != nil {
 		return nil, fmt.Errorf("update job: %w", err)
 	}
@@ -114,9 +118,13 @@ func (s *JobService) GetJobDetail(ctx context.Context, jobID string, requestingU
 	return job, nil
 }
 
-// DeleteDraft soft-deletes a draft job.
-func (s *JobService) DeleteDraft(ctx context.Context, jobID string) error {
-	if err := s.repo.DeleteDraft(ctx, jobID); err != nil {
+// DeleteDraft soft-deletes a draft job. customerID is the authenticated caller;
+// the repository enforces that the caller owns the job.
+func (s *JobService) DeleteDraft(ctx context.Context, jobID string, customerID string) error {
+	if customerID == "" {
+		return fmt.Errorf("delete draft: %w", domain.ErrNotOwner)
+	}
+	if err := s.repo.DeleteDraft(ctx, jobID, customerID); err != nil {
 		return fmt.Errorf("delete draft: %w", err)
 	}
 	if s.search != nil {
@@ -130,9 +138,13 @@ func (s *JobService) DeleteDraft(ctx context.Context, jobID string) error {
 	return nil
 }
 
-// PublishJob transitions a draft job to active.
-func (s *JobService) PublishJob(ctx context.Context, jobID string) (*domain.Job, error) {
-	job, err := s.repo.PublishJob(ctx, jobID)
+// PublishJob transitions a draft job to active. customerID is the authenticated
+// caller; the repository enforces that the caller owns the job.
+func (s *JobService) PublishJob(ctx context.Context, jobID string, customerID string) (*domain.Job, error) {
+	if customerID == "" {
+		return nil, fmt.Errorf("publish job: %w", domain.ErrNotOwner)
+	}
+	job, err := s.repo.PublishJob(ctx, jobID, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("publish job: %w", err)
 	}
