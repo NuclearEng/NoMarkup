@@ -10,6 +10,22 @@ export class ApiError extends Error {
     super(`API error ${String(status)}: ${body}`);
     this.name = 'ApiError';
   }
+
+  // userMessage returns a human-readable error suitable for a toast. Gateway
+  // errors are JSON of the form {"error": "..."} — extract the inner string
+  // so users see the real reason ("contract is not active") instead of a raw
+  // JSON blob or the generic "failed" placeholder.
+  userMessage(fallback: string): string {
+    try {
+      const parsed = JSON.parse(this.body) as { error?: string; message?: string };
+      if (parsed.error) return parsed.error;
+      if (parsed.message) return parsed.message;
+    } catch {
+      // not JSON
+    }
+    if (this.body && this.body.length < 200) return this.body;
+    return fallback;
+  }
 }
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -113,3 +129,38 @@ export const api = {
   /** GET without auth header or 401 retry (for public endpoints like job search) */
   getPublic: <T>(path: string) => request<T>('GET', path, undefined, true),
 };
+
+// downloadAuthenticated fetches a protected file endpoint with the current
+// bearer token and triggers a browser download. Required because a plain
+// <a href> can't attach the Authorization header — the gateway middleware
+// returns 401, leaving the user with a blank page / "nothing happened."
+export async function downloadAuthenticated(path: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const token = getAccessToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await response.text());
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

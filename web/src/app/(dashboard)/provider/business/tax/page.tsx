@@ -20,8 +20,9 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useProviderEarnings } from '@/hooks/useAnalytics';
 import { useGenerateTaxForm, useTaxForms } from '@/hooks/useTaxForms';
-import { API_BASE_URL } from '@/lib/constants';
+import { downloadAuthenticated } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const SE_TAX_RATE = 0.153; // 15.3% self-employment tax
 const ESTIMATED_INCOME_TAX_RATE = 0.22; // 22% estimated federal income tax bracket
@@ -310,17 +311,23 @@ export default function TaxCenterPage() {
                         <Badge variant={form.status === 'ready' ? 'default' : 'secondary'}>
                           {form.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                         </Badge>
-                        {form.download_url ? (
-                          <a
-                            href={`${API_BASE_URL}/api/v1/providers/me/tax-forms/${String(form.tax_year)}/download`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/[0.06]"
-                          >
-                            <Download className="h-4 w-4" aria-hidden="true" />
-                            Download
-                          </a>
-                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void downloadAuthenticated(
+                              `/api/v1/providers/me/tax-forms/${String(form.tax_year)}/download`,
+                              `1099-NEC-${String(form.tax_year)}.html`,
+                            ).catch((err) => {
+                              toast.error(
+                                err instanceof Error ? err.message : 'Failed to download tax form',
+                              );
+                            });
+                          }}
+                          className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/[0.06]"
+                        >
+                          <Download className="h-4 w-4" aria-hidden="true" />
+                          Download
+                        </button>
                       </div>
                     </div>
                   ))}

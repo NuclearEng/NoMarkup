@@ -30,18 +30,16 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const generateInvoice = useGenerateInvoice();
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   function handlePrint() {
     window.print();
   }
 
   function handleGenerateInvoice() {
-    generateInvoice.mutate(contract.id, {
-      onSuccess: (url) => {
-        setDownloadUrl(url);
-      },
-    });
+    // useGenerateInvoice fetches the invoice with auth headers and triggers
+    // a blob download as part of the mutation, so there's no follow-up URL
+    // to surface here.
+    generateInvoice.mutate(contract.id);
   }
 
   return (
@@ -92,17 +90,6 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
               )}
               Generate Invoice
             </Button>
-            {downloadUrl ? (
-              <a
-                href={downloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/[0.06]"
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-                Download PDF
-              </a>
-            ) : null}
             <Button
               variant="outline"
               size="sm"
