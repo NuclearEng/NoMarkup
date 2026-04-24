@@ -132,12 +132,15 @@ export function useVerificationQueue(page?: number, pageSize?: number) {
 export function useReviewDocument() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Gateway returns { status: string } — the document body isn't echoed back.
+    // The page only needs to invalidate the queue on success, so we don't need
+    // the full document here.
     mutationFn: (variables: {
       documentId: string;
       approved: boolean;
       rejection_reason?: string;
     }) =>
-      api.post<{ document: VerificationDocument }>(
+      api.post<{ status: string }>(
         `/api/v1/admin/verification/${variables.documentId}/review`,
         {
           approved: variables.approved,
@@ -225,6 +228,9 @@ export function useAdminDispute(disputeId: string) {
 export function useResolveDispute() {
   const queryClient = useQueryClient();
   return useMutation({
+    // The admin form has a checkbox (`guarantee_claim: boolean`) but the
+    // gateway/contract service expects a `guarantee_outcome` string. Map the
+    // boolean to "approved" / empty so the backend records the outcome.
     mutationFn: (variables: {
       disputeId: string;
       resolution_type: string;
@@ -236,7 +242,7 @@ export function useResolveDispute() {
         resolution_type: variables.resolution_type,
         resolution_notes: variables.resolution_notes,
         refund_amount_cents: variables.refund_amount_cents,
-        guarantee_claim: variables.guarantee_claim,
+        guarantee_outcome: variables.guarantee_claim ? 'approved' : '',
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({

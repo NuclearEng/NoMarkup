@@ -55,10 +55,12 @@ export function useSearchProviders(params: SearchProvidersParams) {
 export function usePublicProviderProfile(id: string) {
   return useQuery({
     queryKey: ['provider', id],
-    queryFn: () =>
-      api
-        .getPublic<{ profile: PublicProvider }>(`/api/v1/providers/${id}`)
-        .then((res) => res.profile),
+    // Gateway returns the provider at the top level (with response_time_label
+    // merged in), not wrapped in { profile }.
+    queryFn: async () => {
+      const raw = await api.getPublic<Record<string, unknown>>(`/api/v1/providers/${id}`);
+      return raw as unknown as PublicProvider;
+    },
     enabled: !!id,
   });
 }

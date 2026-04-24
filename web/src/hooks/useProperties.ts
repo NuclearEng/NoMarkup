@@ -39,10 +39,11 @@ export function useCreateProperty() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: CreatePropertyInput) =>
-      api
-        .post<{ property: Property }>('/api/v1/properties', input)
-        .then((res) => res.property),
+    // Gateway returns the property at the top level, not wrapped in { property }.
+    mutationFn: async (input: CreatePropertyInput) => {
+      const raw = await api.post<Record<string, unknown>>('/api/v1/properties', input);
+      return raw as unknown as Property;
+    },
     onSuccess: () => {
       toast.success('Property added');
       void queryClient.invalidateQueries({ queryKey: ['properties'] });
@@ -57,13 +58,16 @@ export function useUpdateProperty() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: { id: string; input: Partial<CreatePropertyInput> }) =>
-      api
-        .patch<{ property: Property }>(
-          `/api/v1/properties/${variables.id}`,
-          variables.input,
-        )
-        .then((res) => res.property),
+    // Gateway exposes PUT /api/v1/properties/{id} (not PATCH); previous PATCH
+    // returned 405 and the update silently never happened. Also unwraps the
+    // flat-shaped response.
+    mutationFn: async (variables: { id: string; input: Partial<CreatePropertyInput> }) => {
+      const raw = await api.put<Record<string, unknown>>(
+        `/api/v1/properties/${variables.id}`,
+        variables.input,
+      );
+      return raw as unknown as Property;
+    },
     onSuccess: () => {
       toast.success('Property updated');
       void queryClient.invalidateQueries({ queryKey: ['properties'] });

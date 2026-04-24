@@ -14,8 +14,9 @@ export function useProviderProfile() {
     queryKey: ['providerProfile'],
     queryFn: async (): Promise<ProviderProfile | null> => {
       try {
-        const res = await api.get<{ profile: ProviderProfile | null }>('/api/v1/providers/me');
-        return res.profile;
+        // Gateway returns the profile at the top level (not wrapped in { profile }).
+        const raw = await api.get<Record<string, unknown>>('/api/v1/providers/me');
+        return raw as unknown as ProviderProfile;
       } catch (error: unknown) {
         // Provider profile may not exist yet (e.g. user just enabled the role).
         // Return null instead of crashing so the dashboard can show onboarding.
@@ -39,10 +40,10 @@ export function useUpdateProviderProfile() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: UpdateProviderInput) =>
-      api
-        .patch<{ profile: ProviderProfile }>('/api/v1/providers/me', input)
-        .then((res) => res.profile),
+    mutationFn: async (input: UpdateProviderInput) => {
+      const raw = await api.patch<Record<string, unknown>>('/api/v1/providers/me', input);
+      return raw as unknown as ProviderProfile;
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });
     },
@@ -53,10 +54,10 @@ export function useSetGlobalTerms() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: GlobalTermsInput) =>
-      api
-        .put<{ profile: ProviderProfile }>('/api/v1/providers/me/terms', input)
-        .then((res) => res.profile),
+    mutationFn: async (input: GlobalTermsInput) => {
+      const raw = await api.put<Record<string, unknown>>('/api/v1/providers/me/terms', input);
+      return raw as unknown as ProviderProfile;
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });
     },

@@ -21,13 +21,14 @@ export function useCreateReview() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: { contractId: string; input: CreateReviewInput }) =>
-      api
-        .post<{ review: Review }>(
-          `/api/v1/contracts/${variables.contractId}/reviews`,
-          variables.input,
-        )
-        .then((res) => res.review),
+    // Gateway returns the review at the top level, not wrapped in { review }.
+    mutationFn: async (variables: { contractId: string; input: CreateReviewInput }) => {
+      const raw = await api.post<Record<string, unknown>>(
+        `/api/v1/contracts/${variables.contractId}/reviews`,
+        variables.input,
+      );
+      return raw as unknown as Review;
+    },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ['reviewEligibility', variables.contractId] });
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
@@ -39,7 +40,10 @@ export function useCreateReview() {
 export function useReview(id: string) {
   return useQuery({
     queryKey: ['review', id],
-    queryFn: () => api.get<{ review: Review }>(`/api/v1/reviews/${id}`).then((res) => res.review),
+    queryFn: async () => {
+      const raw = await api.get<Record<string, unknown>>(`/api/v1/reviews/${id}`);
+      return raw as unknown as Review;
+    },
     enabled: !!id,
   });
 }
@@ -69,12 +73,12 @@ export function useRespondToReview() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Gateway returns the response object (not the review) flat. Callers only
+    // use this to invalidate, so an unknown body is fine.
     mutationFn: (variables: { reviewId: string; comment: string }) =>
-      api
-        .post<{ review: Review }>(`/api/v1/reviews/${variables.reviewId}/respond`, {
-          comment: variables.comment,
-        })
-        .then((res) => res.review),
+      api.post<Record<string, unknown>>(`/api/v1/reviews/${variables.reviewId}/respond`, {
+        comment: variables.comment,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['reviews'] });
     },
@@ -85,12 +89,11 @@ export function useFlagReview() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Gateway returns { flag_id }, not the review. Callers only invalidate.
     mutationFn: (variables: { reviewId: string; reason: string }) =>
-      api
-        .post<{ review: Review }>(`/api/v1/reviews/${variables.reviewId}/flag`, {
-          reason: variables.reason,
-        })
-        .then((res) => res.review),
+      api.post<{ flag_id: string }>(`/api/v1/reviews/${variables.reviewId}/flag`, {
+        reason: variables.reason,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['reviews'] });
     },

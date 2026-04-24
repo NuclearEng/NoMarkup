@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import type {
   CreateJobInput,
   Job,
@@ -10,6 +10,29 @@ import type {
   SearchJobsParams,
   UpdateJobInput,
 } from '@/types';
+
+// Job mutation handlers in the gateway return the job at the top level
+// (not wrapped in { job }). Centralized unwrap so hooks keep their { job }
+// contract-shaped return type.
+async function postJob(path: string, input?: unknown): Promise<Job> {
+  const raw = await api.post<Record<string, unknown>>(path, input);
+  return raw as unknown as Job;
+}
+
+async function patchJob(path: string, input: unknown): Promise<Job> {
+  const raw = await api.patch<Record<string, unknown>>(path, input);
+  return raw as unknown as Job;
+}
+
+function explainFailure(fallback: string): (err: unknown) => void {
+  return (err: unknown) => {
+    if (err instanceof ApiError) {
+      toast.error(err.userMessage(fallback));
+      return;
+    }
+    toast.error(fallback);
+  };
+}
 
 function buildSearchParams(params: SearchJobsParams): string {
   const searchParams = new URLSearchParams();
@@ -61,15 +84,12 @@ export function useCreateJob() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: CreateJobInput) =>
-      api.post<{ job: Job }>('/api/v1/jobs', input).then((res) => res.job),
+    mutationFn: (input: CreateJobInput) => postJob('/api/v1/jobs', input),
     onSuccess: () => {
       toast.success('Job created');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
-    onError: () => {
-      toast.error('Failed to create job');
-    },
+    onError: explainFailure('Failed to create job'),
   });
 }
 
@@ -78,14 +98,12 @@ export function useUpdateJob() {
 
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateJobInput }) =>
-      api.patch<{ job: Job }>(`/api/v1/jobs/${id}`, input).then((res) => res.job),
+      patchJob(`/api/v1/jobs/${id}`, input),
     onSuccess: () => {
       toast.success('Job updated');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
-    onError: () => {
-      toast.error('Failed to update job');
-    },
+    onError: explainFailure('Failed to update job'),
   });
 }
 
@@ -93,15 +111,12 @@ export function usePublishJob() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ job: Job }>(`/api/v1/jobs/${id}/publish`).then((res) => res.job),
+    mutationFn: (id: string) => postJob(`/api/v1/jobs/${id}/publish`),
     onSuccess: () => {
       toast.success('Job published — providers can now bid');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
-    onError: () => {
-      toast.error('Failed to publish job');
-    },
+    onError: explainFailure('Failed to publish job'),
   });
 }
 
@@ -124,15 +139,12 @@ export function useCloseAuction() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ job: Job }>(`/api/v1/jobs/${id}/close`).then((res) => res.job),
+    mutationFn: (id: string) => postJob(`/api/v1/jobs/${id}/close`),
     onSuccess: () => {
       toast.success('Auction closed');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
-    onError: () => {
-      toast.error('Failed to close auction');
-    },
+    onError: explainFailure('Failed to close auction'),
   });
 }
 
@@ -140,15 +152,12 @@ export function useCancelJob() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ job: Job }>(`/api/v1/jobs/${id}/cancel`).then((res) => res.job),
+    mutationFn: (id: string) => postJob(`/api/v1/jobs/${id}/cancel`),
     onSuccess: () => {
       toast.success('Job cancelled');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
-    onError: () => {
-      toast.error('Failed to cancel job');
-    },
+    onError: explainFailure('Failed to cancel job'),
   });
 }
 

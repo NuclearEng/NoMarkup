@@ -48,7 +48,7 @@ export function useCancelSubscription() {
 
   return useMutation({
     mutationFn: (input: CancelSubscriptionInput) =>
-      api.delete<{ subscription: Subscription }>('/api/v1/subscriptions/me', input),
+      api.post<{ subscription: Subscription }>('/api/v1/subscriptions/cancel', input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['subscription'] });
     },
@@ -61,7 +61,7 @@ export function useChangeTier() {
   return useMutation({
     mutationFn: (input: ChangeTierInput) =>
       api
-        .patch<{ subscription: Subscription }>('/api/v1/subscriptions/me/tier', input)
+        .post<{ subscription: Subscription }>('/api/v1/subscriptions/change-tier', input)
         .then((res) => res.subscription),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['subscription'] });

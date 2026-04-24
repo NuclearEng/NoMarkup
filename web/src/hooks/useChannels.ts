@@ -36,7 +36,11 @@ export function useChannels(params?: ChannelsParams) {
 export function useChannel(id: string) {
   return useQuery({
     queryKey: ['channel', id],
-    queryFn: () => api.get<{ channel: Channel }>(`/api/v1/channels/${id}`),
+    // Gateway returns the channel at the top level — wrap to preserve consumer shape.
+    queryFn: async () => {
+      const raw = await api.get<Channel>(`/api/v1/channels/${id}`);
+      return { channel: raw };
+    },
     enabled: !!id,
   });
 }
@@ -59,10 +63,14 @@ export function useSendMessage() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: { channelId: string; input: SendMessageInput }) =>
-      api
-        .post<{ message: ChatMessage }>(`/api/v1/channels/${variables.channelId}/messages`, variables.input)
-        .then((res) => res.message),
+    // Gateway returns the message at the top level (not wrapped in { message }).
+    mutationFn: async (variables: { channelId: string; input: SendMessageInput }) => {
+      const raw = await api.post<Record<string, unknown>>(
+        `/api/v1/channels/${variables.channelId}/messages`,
+        variables.input,
+      );
+      return raw as unknown as ChatMessage;
+    },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ['messages', variables.channelId] });
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
@@ -76,8 +84,9 @@ export function useMarkRead() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Gateway returns { status: "ok" } — type the actual shape to avoid undefined.success.
     mutationFn: (channelId: string) =>
-      api.post<{ success: boolean }>(`/api/v1/channels/${channelId}/read`),
+      api.post<{ status: string }>(`/api/v1/channels/${channelId}/read`),
     onSuccess: (_data, channelId) => {
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
       void queryClient.invalidateQueries({ queryKey: ['channel', channelId] });

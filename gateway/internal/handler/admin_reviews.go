@@ -67,7 +67,7 @@ func (h *AdminReviewsHandler) ListFlaggedReviews(w http.ResponseWriter, r *http.
 	}
 
 	result := map[string]interface{}{
-		"flagged_reviews": flagged,
+		"flags": flagged,
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = paginationToJSON(pg)
@@ -164,18 +164,31 @@ func flaggedReviewToJSON(fr *reviewv1.FlaggedReview) map[string]interface{} {
 	if fr == nil {
 		return map[string]interface{}{}
 	}
-	result := map[string]interface{}{
-		"flag_id":    fr.GetFlagId(),
-		"flagged_by": fr.GetFlaggedBy(),
-		"reason":     flagReasonToString(fr.GetReason()),
-		"details":    fr.GetDetails(),
-		"status":     flagStatusToString(fr.GetStatus()),
-		"flagged_at": formatTimestamp(fr.GetFlaggedAt()),
+	// Flatten flag + review into the shape the admin UI consumes
+	// (web/src/types/index.ts FlaggedReview). The proto doesn't carry the
+	// reviewer's display name, so fall back to the reviewer id until the
+	// review service includes it in the gRPC response.
+	rev := fr.GetReview()
+	var reviewID, reviewContent, reviewerID string
+	var reviewRating int32
+	if rev != nil {
+		reviewID = rev.GetId()
+		reviewContent = rev.GetComment()
+		reviewerID = rev.GetReviewerId()
+		reviewRating = rev.GetOverallRating()
 	}
-	if fr.GetReview() != nil {
-		result["review"] = adminReviewSummaryToJSON(fr.GetReview())
+	return map[string]interface{}{
+		"id":             fr.GetFlagId(),
+		"review_id":      reviewID,
+		"flagged_by":     fr.GetFlaggedBy(),
+		"reason":         flagReasonToString(fr.GetReason()),
+		"details":        fr.GetDetails(),
+		"status":         flagStatusToString(fr.GetStatus()),
+		"created_at":     formatTimestamp(fr.GetFlaggedAt()),
+		"review_content": reviewContent,
+		"reviewer_name":  reviewerID,
+		"review_rating":  reviewRating,
 	}
-	return result
 }
 
 func adminReviewSummaryToJSON(r *reviewv1.Review) map[string]interface{} {

@@ -32,7 +32,10 @@ export function useRequestAdvance() {
   return useMutation({
     mutationFn: (variables: { contract_id: string; advance_amount_cents: number }) =>
       api
-        .post<{ advance: WorkingCapitalAdvance }>('/api/v1/providers/me/advances', variables)
+        .post<{ advance: WorkingCapitalAdvance }>('/api/v1/providers/me/advances', {
+          contract_id: variables.contract_id,
+          amount_cents: variables.advance_amount_cents,
+        })
         .then((res) => res.advance),
     onSuccess: () => {
       toast.success('Advance request submitted');

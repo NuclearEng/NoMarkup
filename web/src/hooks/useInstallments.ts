@@ -80,8 +80,11 @@ export function useCreateInstallmentPlan() {
 export function useInstallmentPlan(id: string) {
   return useQuery({
     queryKey: ['installment-plan', id],
-    queryFn: () =>
-      api.get<{ plan: InstallmentPlan }>(`/api/v1/payments/installment-plans/${id}`),
+    // Gateway returns the plan at the top level — wrap to preserve consumer shape.
+    queryFn: async () => {
+      const raw = await api.get<InstallmentPlan>(`/api/v1/payments/installment-plans/${id}`);
+      return { plan: raw };
+    },
     enabled: !!id,
   });
 }

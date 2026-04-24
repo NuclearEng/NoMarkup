@@ -1,13 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import type { Contract, ContractDetail, ContractsResponse, Dispute, Milestone } from '@/types';
 
 interface ContractsParams {
   status?: string;
   page?: number;
   page_size?: number;
+}
+
+// Gateway contract handlers return the contract object at the top level
+// (not wrapped in { contract }). This helper centralizes the unwrap so the
+// mutation hooks keep their { contract } contract-shaped return type.
+async function postContract(path: string): Promise<Contract> {
+  const raw = await api.post<Record<string, unknown>>(path);
+  return raw as unknown as Contract;
+}
+
+// Milestone mutations have the same flat-shape behavior.
+async function postMilestone(path: string, body?: unknown): Promise<Milestone> {
+  const raw = await api.post<Record<string, unknown>>(path, body);
+  return raw as unknown as Milestone;
+}
+
+function explainFailure(fallback: string): (err: unknown) => void {
+  return (err: unknown) => {
+    if (err instanceof ApiError) {
+      toast.error(err.userMessage(fallback));
+      return;
+    }
+    toast.error(fallback);
+  };
 }
 
 export function useContract(id: string) {
@@ -45,18 +69,13 @@ export function useAcceptContract() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/accept`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/accept`),
     onSuccess: (_data, id) => {
       toast.success('Contract accepted');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to accept contract');
-    },
+    onError: explainFailure('Failed to accept contract'),
   });
 }
 
@@ -64,16 +83,13 @@ export function useStartWork() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ contract: Contract }>(`/api/v1/contracts/${id}/start`).then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/start`),
     onSuccess: (_data, id) => {
       toast.success('Work started');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to start work');
-    },
+    onError: explainFailure('Failed to start work'),
   });
 }
 
@@ -81,18 +97,13 @@ export function useMarkComplete() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/complete`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/complete`),
     onSuccess: (_data, id) => {
       toast.success('Work marked as complete');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to mark work as complete');
-    },
+    onError: explainFailure('Failed to mark work as complete'),
   });
 }
 
@@ -100,18 +111,13 @@ export function useApproveCompletion() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/approve-completion`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/approve-completion`),
     onSuccess: (_data, id) => {
       toast.success('Completion approved — payment released');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to approve completion');
-    },
+    onError: explainFailure('Failed to approve completion'),
   });
 }
 
@@ -119,18 +125,13 @@ export function useCancelContract() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/cancel`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/cancel`),
     onSuccess: (_data, id) => {
       toast.success('Contract cancelled');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to cancel contract');
-    },
+    onError: explainFailure('Failed to cancel contract'),
   });
 }
 
@@ -139,17 +140,13 @@ export function useSubmitMilestone() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string }) =>
-      api
-        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/submit`)
-        .then((res) => res.milestone),
+      postMilestone(`/api/v1/milestones/${variables.milestoneId}/submit`),
     onSuccess: (_data, variables) => {
       toast.success('Milestone submitted for review');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to submit milestone');
-    },
+    onError: explainFailure('Failed to submit milestone'),
   });
 }
 
@@ -158,17 +155,13 @@ export function useApproveMilestone() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string }) =>
-      api
-        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/approve`)
-        .then((res) => res.milestone),
+      postMilestone(`/api/v1/milestones/${variables.milestoneId}/approve`),
     onSuccess: (_data, variables) => {
       toast.success('Milestone approved');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to approve milestone');
-    },
+    onError: explainFailure('Failed to approve milestone'),
   });
 }
 
@@ -177,19 +170,15 @@ export function useRequestRevision() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string; revisionNotes: string }) =>
-      api
-        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/revision`, {
-          revision_notes: variables.revisionNotes,
-        })
-        .then((res) => res.milestone),
+      postMilestone(`/api/v1/milestones/${variables.milestoneId}/revision`, {
+        revision_notes: variables.revisionNotes,
+      }),
     onSuccess: (_data, variables) => {
       toast.success('Revision requested');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to request revision');
-    },
+    onError: explainFailure('Failed to request revision'),
   });
 }
 
@@ -212,8 +201,6 @@ export function useOpenDispute() {
       toast.success('Claim submitted successfully');
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to submit claim');
-    },
+    onError: explainFailure('Failed to submit claim'),
   });
 }
