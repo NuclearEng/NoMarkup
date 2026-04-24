@@ -39,8 +39,14 @@ import { ADVANCE_STATUS } from '@/types';
 // Constants
 // ────────────────────────────────────────
 
-/** Fee rate applied to working capital advances (3%) */
-const FEE_RATE = 0.03;
+/**
+ * Annual percentage yield charged on working capital advances (3% APY).
+ * The actual fee is prorated by term length:
+ *   fee = amount × APY × (termDays / 365)
+ * Backend default term matches DEFAULT_TERM_DAYS below; keep them in sync.
+ */
+const FEE_APY = 0.03;
+const DEFAULT_TERM_DAYS = 30;
 
 /** Maximum credit utilization — providers can borrow up to 50% of active contract value */
 const MAX_CREDIT_UTILIZATION = 0.5;
@@ -77,8 +83,8 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function computeFeeCents(amountCents: number): number {
-  return Math.round(amountCents * FEE_RATE);
+function computeFeeCents(amountCents: number, termDays = DEFAULT_TERM_DAYS): number {
+  return Math.round((amountCents * FEE_APY * termDays) / 365);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -142,6 +148,7 @@ function StatCard({
 function FeePreview({ amountCents }: { amountCents: number }) {
   const feeCents = computeFeeCents(amountCents);
   const totalCents = amountCents + feeCents;
+  const apyPercent = (FEE_APY * 100).toFixed(0);
 
   if (amountCents <= 0) return null;
 
@@ -157,7 +164,9 @@ function FeePreview({ amountCents }: { amountCents: number }) {
           <span className="text-white/80 tabular-nums">{formatCents(amountCents)}</span>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-white/50">Fee ({String(FEE_RATE * 100)}%)</span>
+          <span className="text-white/50">
+            Fee ({apyPercent}% APY · ~{DEFAULT_TERM_DAYS}-day term)
+          </span>
           <span className="text-white/80 tabular-nums">{formatCents(feeCents)}</span>
         </div>
         <div
@@ -169,6 +178,9 @@ function FeePreview({ amountCents }: { amountCents: number }) {
             <span className="gold-text tabular-nums">{formatCents(totalCents)}</span>
           </div>
         </div>
+        <p className="mt-2 text-xs text-white/40">
+          Charged at {apyPercent}% APY, prorated by days outstanding.
+        </p>
       </div>
     </div>
   );

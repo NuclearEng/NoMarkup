@@ -10,8 +10,24 @@ import (
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
-// advanceFeeRate is the percentage charged on working capital advances (3%).
-const advanceFeeRate = 0.03
+// advanceFeeAPY is the annualized percentage rate charged on working capital
+// advances (3% APY). The actual fee is prorated over the expected term:
+//   fee = amount × APY × (termDays / 365)
+const advanceFeeAPY = 0.03
+
+// defaultAdvanceTermDays is the assumed time-to-repayment when the contract
+// itself doesn't expose a maturity date. 30 days matches typical short-term
+// advance products in the industry.
+const defaultAdvanceTermDays = 30
+
+// computeAdvanceFeeCents returns the prorated fee for an advance held for
+// termDays at advanceFeeAPY.
+func computeAdvanceFeeCents(amountCents int64, termDays int) int64 {
+	if termDays <= 0 {
+		termDays = defaultAdvanceTermDays
+	}
+	return int64(float64(amountCents) * advanceFeeAPY * float64(termDays) / 365.0)
+}
 
 // RequestAdvance creates a new working capital advance request.
 func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contractID string, amountCents int64) (*domain.Advance, error) {
@@ -25,7 +41,7 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 		return nil, fmt.Errorf("request advance: %w", domain.ErrInvalidAmount)
 	}
 
-	feeCents := int64(float64(amountCents) * advanceFeeRate)
+	feeCents := computeAdvanceFeeCents(amountCents, defaultAdvanceTermDays)
 
 	advance := &domain.Advance{
 		ID:                 uuid.New().String(),
