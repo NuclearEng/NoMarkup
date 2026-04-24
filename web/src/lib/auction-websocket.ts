@@ -30,6 +30,7 @@ class AuctionWebSocketManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private status: AuctionConnectionStatus = 'disconnected';
   private connectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private auctionEnded = false;
 
   connect(jobId: string, token: string, tokenGetter?: () => string | null): void {
     // Debounce for React StrictMode
@@ -47,6 +48,7 @@ class AuctionWebSocketManager {
 
     this.disconnect();
     this.jobId = jobId;
+    this.auctionEnded = false;
     if (tokenGetter) {
       this.tokenGetter = tokenGetter;
     }
@@ -68,6 +70,12 @@ class AuctionWebSocketManager {
         this.messageListeners.forEach((listener) => {
           listener(message);
         });
+        // Once the server signals the auction is over, stop reconnect attempts.
+        // Otherwise the badge would flicker between connecting/disconnected for
+        // an auction that no longer accepts subscribers.
+        if (message.type === 'auction_ended') {
+          this.auctionEnded = true;
+        }
       } catch {
         // Ignore malformed messages
       }
@@ -75,7 +83,9 @@ class AuctionWebSocketManager {
 
     this.ws.onclose = () => {
       this.updateStatus('disconnected');
-      this.attemptReconnect();
+      if (!this.auctionEnded) {
+        this.attemptReconnect();
+      }
     };
 
     this.ws.onerror = () => {

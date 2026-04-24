@@ -79,9 +79,15 @@ export default function JobDetailPage() {
       ? (bidsData.bids.find((b) => b.bid.provider_id === user.id)?.bid ?? null)
       : null;
 
-  // Determine if the job is a live auction that should render the terminal layout
+  // Determine if the job is a live auction that should render the terminal layout.
+  // Excludes expired auctions: once the timer is past, the WebSocket has nothing
+  // to stream — keeping the live layout would show a misleading red "Disconnected"
+  // badge for what is just a finished auction.
   const isLiveAuction =
-    ENABLE_LIVE_AUCTION && job?.auction_type === 'live' && job.status === JOB_STATUS.ACTIVE;
+    ENABLE_LIVE_AUCTION &&
+    job?.auction_type === 'live' &&
+    job.status === JOB_STATUS.ACTIVE &&
+    !auctionExpired;
 
   // Terminal hook for live auctions (only connects when isLiveAuction)
   const terminal = useAuctionTerminal(isLiveAuction ? jobId : undefined);
