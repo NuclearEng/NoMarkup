@@ -22,6 +22,10 @@ service PaymentService {
   rpc CreateSetupIntent(CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
   rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
   rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (DeletePaymentMethodResponse);
+  // AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
+  // inserts a card directly into the in-memory dev store. Gateway gates this
+  // behind a dev-mode check; production returns FailedPrecondition.
+  rpc AddDevPaymentMethod(AddDevPaymentMethodRequest) returns (AddDevPaymentMethodResponse);
 
   // Payments
   rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
@@ -221,6 +225,18 @@ message DeletePaymentMethodRequest {
 }
 
 message DeletePaymentMethodResponse {}
+
+message AddDevPaymentMethodRequest {
+  string customer_id = 1;
+  string brand = 2;
+  string last_four = 3;
+  int32 exp_month = 4;
+  int32 exp_year = 5;
+}
+
+message AddDevPaymentMethodResponse {
+  PaymentMethod method = 1;
+}
 
 // ============================================================
 // Payment RPCs

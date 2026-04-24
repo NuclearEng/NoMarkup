@@ -136,6 +136,22 @@ func (s *Server) DeletePaymentMethod(ctx context.Context, req *paymentv1.DeleteP
 	return &paymentv1.DeletePaymentMethodResponse{}, nil
 }
 
+func (s *Server) AddDevPaymentMethod(ctx context.Context, req *paymentv1.AddDevPaymentMethodRequest) (*paymentv1.AddDevPaymentMethodResponse, error) {
+	pm, err := s.svc.AddDevPaymentMethod(ctx, req.GetCustomerId(), req.GetBrand(), req.GetLastFour(), req.GetExpMonth(), req.GetExpYear())
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &paymentv1.AddDevPaymentMethodResponse{Method: &paymentv1.PaymentMethod{
+		Id:        pm.ID,
+		Type:      pm.Type,
+		LastFour:  pm.LastFour,
+		Brand:     pm.Brand,
+		ExpMonth:  pm.ExpMonth,
+		ExpYear:   pm.ExpYear,
+		IsDefault: pm.IsDefault,
+	}}, nil
+}
+
 // --- Payments ---
 
 func (s *Server) CreatePayment(ctx context.Context, req *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error) {

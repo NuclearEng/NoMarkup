@@ -331,6 +331,7 @@ func New(
 			r.Get("/", paymentHandler.ListPayments)
 			r.Post("/setup-intent", paymentHandler.CreateSetupIntent)
 			r.Get("/methods", paymentHandler.ListPaymentMethods)
+			r.Post("/dev/methods", paymentHandler.AddDevPaymentMethod)
 			r.Delete("/methods/{id}", paymentHandler.DeletePaymentMethod)
 			r.Post("/calculate-fees", paymentHandler.CalculateFees)
 			r.Post("/instant-payout", paymentHandler.InstantPayout)

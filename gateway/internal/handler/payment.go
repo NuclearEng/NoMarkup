@@ -158,6 +158,59 @@ func (h *PaymentHandler) ListPaymentMethods(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// AddDevPaymentMethod handles POST /api/v1/payments/dev/methods. Dev-only
+// fallback for when Stripe keys aren't configured. The payment service
+// rejects the RPC with FailedPrecondition outside dev mode.
+func (h *PaymentHandler) AddDevPaymentMethod(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var body struct {
+		Brand    string `json:"brand"`
+		LastFour string `json:"last_four"`
+		ExpMonth int32  `json:"exp_month"`
+		ExpYear  int32  `json:"exp_year"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Brand == "" || body.LastFour == "" || body.ExpMonth == 0 || body.ExpYear == 0 {
+		writeError(w, http.StatusBadRequest, "brand, last_four, exp_month, exp_year are required")
+		return
+	}
+	if len(body.LastFour) != 4 {
+		writeError(w, http.StatusBadRequest, "last_four must be exactly 4 digits")
+		return
+	}
+
+	resp, err := h.paymentClient.AddDevPaymentMethod(r.Context(), &paymentv1.AddDevPaymentMethodRequest{
+		CustomerId: claims.UserID,
+		Brand:      body.Brand,
+		LastFour:   body.LastFour,
+		ExpMonth:   body.ExpMonth,
+		ExpYear:    body.ExpYear,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	m := resp.GetMethod()
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":         m.GetId(),
+		"type":       m.GetType(),
+		"last_four":  m.GetLastFour(),
+		"brand":      m.GetBrand(),
+		"exp_month":  m.GetExpMonth(),
+		"exp_year":   m.GetExpYear(),
+		"is_default": m.GetIsDefault(),
+	})
+}
+
 // DeletePaymentMethod handles DELETE /api/v1/payments/methods/{id}.
 func (h *PaymentHandler) DeletePaymentMethod(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
@@ -24,16 +25,53 @@ import (
 // StripeService wraps Stripe SDK operations.
 type StripeService struct {
 	devMode bool
+	dev     *DevStore
 }
 
 // NewStripeService creates a new StripeService.
-// It checks if STRIPE_SECRET_KEY is set; if not, it operates in dev mode with stubs.
+// Dev mode activates when STRIPE_SECRET_KEY is absent, a placeholder value
+// ("sk_test_..." from the committed .env template), or anything too short to
+// be a real Stripe key. Real test/live keys start with sk_test_/sk_live_ and
+// are ~30+ chars, so the length heuristic is safe.
 func NewStripeService() *StripeService {
-	devMode := os.Getenv("STRIPE_SECRET_KEY") == ""
+	key := os.Getenv("STRIPE_SECRET_KEY")
+	devMode := isPlaceholderStripeKey(key)
 	if devMode {
-		slog.Warn("STRIPE_SECRET_KEY not set, running Stripe service in dev mode with stubs")
+		slog.Warn("Stripe service running in dev mode (STRIPE_SECRET_KEY missing or placeholder); payment/subscription flows use an in-memory store")
 	}
-	return &StripeService{devMode: devMode}
+	return &StripeService{devMode: devMode, dev: newDevStore()}
+}
+
+// IsDevMode lets the service layer branch on Stripe availability.
+func (s *StripeService) IsDevMode() bool { return s.devMode }
+
+// DevStore exposes the backing store for service-layer dev paths. Lazily
+// initializes if a caller (e.g. tests) constructed StripeService directly
+// without NewStripeService.
+func (s *StripeService) DevStore() *DevStore {
+	if s.dev == nil {
+		s.dev = newDevStore()
+	}
+	return s.dev
+}
+
+func isPlaceholderStripeKey(key string) bool {
+	if key == "" {
+		return true
+	}
+	// Real keys are sk_test_<24+ chars> or sk_live_<24+ chars>. The
+	// committed .env template uses "sk_test_..." which satisfies the prefix
+	// but not the length, so this rejects it.
+	if !strings.HasPrefix(key, "sk_test_") && !strings.HasPrefix(key, "sk_live_") {
+		return true
+	}
+	if len(key) < 24 {
+		return true
+	}
+	if strings.Contains(key, "...") {
+		return true
+	}
+	return false
 }
 
 // CreateStripeAccount creates a Stripe Connect Express account.
@@ -142,8 +180,8 @@ func (s *StripeService) GetDashboardLink(ctx context.Context, accountID string) 
 // CreateSetupIntent creates a SetupIntent for saving customer payment methods.
 func (s *StripeService) CreateSetupIntent(ctx context.Context, customerID string) (string, error) {
 	if s.devMode {
-		slog.Info("dev mode: stub CreateSetupIntent", "customerID", customerID)
-		return "seti_dev_secret_" + customerID, nil
+		slog.Info("dev mode: CreateSetupIntent issued dev client_secret", "customerID", customerID)
+		return s.DevStore().NewSetupIntent(customerID), nil
 	}
 
 	params := &stripe.SetupIntentParams{
@@ -164,8 +202,7 @@ func (s *StripeService) CreateSetupIntent(ctx context.Context, customerID string
 // ListPaymentMethods lists a customer's payment methods.
 func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID string) ([]domain.PaymentMethod, error) {
 	if s.devMode {
-		slog.Info("dev mode: stub ListPaymentMethods", "customerStripeID", customerStripeID)
-		return []domain.PaymentMethod{}, nil
+		return s.DevStore().ListPaymentMethods(customerStripeID), nil
 	}
 
 	params := &stripe.PaymentMethodListParams{
@@ -198,7 +235,7 @@ func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID
 // DeletePaymentMethod detaches a payment method.
 func (s *StripeService) DeletePaymentMethod(ctx context.Context, paymentMethodID string) error {
 	if s.devMode {
-		slog.Info("dev mode: stub DeletePaymentMethod", "paymentMethodID", paymentMethodID)
+		s.DevStore().DeletePaymentMethod(paymentMethodID)
 		return nil
 	}
 
@@ -275,8 +312,7 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 // because the funds come from the platform balance (e.g. for advance disbursements).
 func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents int64, currency string, destinationAccountID string) (string, error) {
 	if s.devMode {
-		slog.Info("dev mode: stub CreatePlatformTransfer", "amountCents", amountCents, "destination", destinationAccountID)
-		return "tr_platform_dev_" + destinationAccountID, nil
+		return s.DevStore().RecordAdvance(destinationAccountID, amountCents), nil
 	}
 
 	params := &stripe.TransferParams{
@@ -379,8 +415,8 @@ func (s *StripeService) CreateInsurancePaymentIntent(ctx context.Context, amount
 // Returns the Stripe subscription ID and client secret (for SCA confirmation if needed).
 func (s *StripeService) CreateStripeSubscription(ctx context.Context, customerID, stripePriceID, paymentMethodID string) (string, string, error) {
 	if s.devMode {
-		slog.Info("dev mode: stub CreateStripeSubscription", "customerID", customerID, "priceID", stripePriceID)
-		return "sub_dev_" + customerID, "", nil
+		sub := s.DevStore().UpsertSubscription(customerID, stripePriceID, paymentMethodID)
+		return sub.ID, "", nil
 	}
 
 	params := &stripe.SubscriptionParams{
@@ -411,7 +447,7 @@ func (s *StripeService) CreateStripeSubscription(ctx context.Context, customerID
 // CancelStripeSubscription cancels a Stripe subscription.
 func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubscriptionID string, cancelImmediately bool) error {
 	if s.devMode {
-		slog.Info("dev mode: stub CancelStripeSubscription", "subscriptionID", stripeSubscriptionID, "immediately", cancelImmediately)
+		s.DevStore().CancelSubscription(stripeSubscriptionID)
 		return nil
 	}
 
@@ -437,7 +473,10 @@ func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubs
 // Returns the updated subscription ID and the proration amount in cents.
 func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubscriptionID, newStripePriceID string) (string, int64, error) {
 	if s.devMode {
-		slog.Info("dev mode: stub UpdateStripeSubscription", "subscriptionID", stripeSubscriptionID, "newPriceID", newStripePriceID)
+		// The subscription row may live in the DB from a prior session
+		// (DevStore resets on restart). Tolerate a miss — the DB update is
+		// the source of truth in dev mode.
+		s.DevStore().UpdateSubscriptionPrice(stripeSubscriptionID, newStripePriceID)
 		return stripeSubscriptionID, 0, nil
 	}
 

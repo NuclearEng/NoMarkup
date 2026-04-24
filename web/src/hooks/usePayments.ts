@@ -35,7 +35,11 @@ export function usePayments(params?: PaymentsParams) {
 export function usePayment(id: string) {
   return useQuery({
     queryKey: ['payment', id],
-    queryFn: () => api.get<{ payment: Payment }>(`/api/v1/payments/${id}`),
+    // Gateway returns a flat payment object (with breakdown merged in).
+    queryFn: async () => {
+      const raw = await api.get<Payment>(`/api/v1/payments/${id}`);
+      return { payment: raw };
+    },
     enabled: !!id,
   });
 }
@@ -44,8 +48,10 @@ export function useCreatePayment() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: CreatePaymentInput) =>
-      api.post<{ payment: Payment }>('/api/v1/payments', input).then((res) => res.payment),
+    mutationFn: async (input: CreatePaymentInput) => {
+      const raw = await api.post<Record<string, unknown>>('/api/v1/payments', input);
+      return raw as unknown as Payment;
+    },
     onSuccess: () => {
       toast.success('Payment created');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
@@ -60,12 +66,13 @@ export function useProcessPayment() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: { paymentId: string; payment_method_id: string }) =>
-      api
-        .post<{ payment: Payment }>(`/api/v1/payments/${variables.paymentId}/process`, {
-          payment_method_id: variables.payment_method_id,
-        })
-        .then((res) => res.payment),
+    mutationFn: async (variables: { paymentId: string; payment_method_id: string }) => {
+      const raw = await api.post<Record<string, unknown>>(
+        `/api/v1/payments/${variables.paymentId}/process`,
+        { payment_method_id: variables.payment_method_id },
+      );
+      return raw as unknown as Payment;
+    },
     onSuccess: (_data, variables) => {
       toast.success('Payment processed');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
@@ -80,7 +87,10 @@ export function useProcessPayment() {
 export function usePaymentMethods() {
   return useQuery({
     queryKey: ['payment-methods'],
-    queryFn: () => api.get<{ payment_methods: PaymentMethod[] }>('/api/v1/payments/methods'),
+    queryFn: async () => {
+      const res = await api.get<{ methods: PaymentMethod[] }>('/api/v1/payments/methods');
+      return { payment_methods: res.methods ?? [] };
+    },
   });
 }
 
@@ -109,6 +119,29 @@ export function useCreateSetupIntent() {
   });
 }
 
+export interface DevPaymentMethodInput {
+  brand: string;
+  last_four: string;
+  exp_month: number;
+  exp_year: number;
+}
+
+export function useAddDevPaymentMethod() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: DevPaymentMethodInput) =>
+      api.post<PaymentMethod>('/api/v1/payments/dev/methods', input),
+    onSuccess: () => {
+      toast.success('Payment method added (dev mode)');
+      void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+    },
+    onError: () => {
+      toast.error('Failed to add payment method');
+    },
+  });
+}
+
 export function useCalculateFees() {
   return useMutation({
     mutationFn: (input: FeeCalculationInput) =>
@@ -127,8 +160,14 @@ export function useCreateStripeAccount() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () =>
-      api.post<{ account_id: string }>('/api/v1/providers/me/stripe/account'),
+    // Gateway returns { stripe_account_id }. Normalize to { account_id } so
+    // legacy consumers reading res.account_id keep working.
+    mutationFn: async () => {
+      const res = await api.post<{ stripe_account_id: string }>(
+        '/api/v1/providers/me/stripe/account',
+      );
+      return { account_id: res.stripe_account_id };
+    },
     onSuccess: () => {
       toast.success('Stripe account created');
       void queryClient.invalidateQueries({ queryKey: ['stripe-account-status'] });
@@ -178,8 +217,14 @@ export function useStripeOnboardingLink(params: StripeOnboardingLinkParams) {
 
   return useQuery({
     queryKey: ['stripe-onboarding-link', params.return_url, params.refresh_url],
-    queryFn: () =>
-      api.get<{ url: string }>(`/api/v1/providers/me/stripe/onboarding?${query}`),
+    // Gateway returns { onboarding_url }. Normalize to { url } so the previous
+    // shape survives — callers redirect to res.url.
+    queryFn: async () => {
+      const res = await api.get<{ onboarding_url: string }>(
+        `/api/v1/providers/me/stripe/onboarding?${query}`,
+      );
+      return { url: res.onboarding_url };
+    },
     enabled: false, // Only fetch when explicitly triggered via refetch
   });
 }

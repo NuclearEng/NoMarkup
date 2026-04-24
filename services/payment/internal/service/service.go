@@ -446,6 +446,10 @@ func (s *PaymentService) CreateSetupIntent(ctx context.Context, customerID strin
 // ListPaymentMethods lists a customer's payment methods.
 // If the customer has no Stripe customer ID configured, returns an empty list.
 func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerID string) ([]domain.PaymentMethod, error) {
+	if s.stripe.IsDevMode() {
+		// DevStore is keyed by platform user id, not stripe customer id.
+		return s.stripe.ListPaymentMethods(ctx, customerID)
+	}
 	// Look up the user's Stripe customer ID. If none exists, return empty.
 	stripeCustomerID, err := s.repo.GetStripeCustomerID(ctx, customerID)
 	if err != nil || stripeCustomerID == "" {
@@ -455,6 +459,17 @@ func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerID stri
 		return []domain.PaymentMethod{}, nil
 	}
 	return s.stripe.ListPaymentMethods(ctx, stripeCustomerID)
+}
+
+// AddDevPaymentMethod appends a card to the in-memory dev store. Callable
+// only when the Stripe service is in dev mode — production should use the
+// Stripe Elements flow via CreateSetupIntent.
+func (s *PaymentService) AddDevPaymentMethod(ctx context.Context, customerID, brand, last4 string, expMonth, expYear int32) (*domain.PaymentMethod, error) {
+	if !s.stripe.IsDevMode() {
+		return nil, fmt.Errorf("add dev payment method: stripe not in dev mode")
+	}
+	pm := s.stripe.DevStore().AddPaymentMethod(customerID, brand, last4, expMonth, expYear)
+	return &pm, nil
 }
 
 // DeletePaymentMethod detaches a payment method.
