@@ -151,16 +151,20 @@ stop_one() {
 }
 
 ensure_pg_on_path() {
-    if ! has_cmd pg_ctl; then
-        local prefix
-        prefix="$(brew --prefix postgresql@17 2>/dev/null || true)"
-        if [[ -n "$prefix" && -d "$prefix/bin" ]]; then
-            export PATH="$prefix/bin:$PATH"
-        else
-            err "pg_ctl not found. Run: bin/dev setup"
-            return 1
-        fi
+    # Always prefer postgresql@17 — the data dir is initialized with it.
+    # A different pg_ctl on PATH (e.g. postgresql@16 via default Homebrew link)
+    # would try to start against incompatible data files.
+    local prefix
+    prefix="$(brew --prefix postgresql@17 2>/dev/null || true)"
+    if [[ -n "$prefix" && -d "$prefix/bin" ]]; then
+        export PATH="$prefix/bin:$PATH"
+        return 0
     fi
+    if has_cmd pg_ctl; then
+        return 0
+    fi
+    err "pg_ctl not found. Run: bin/dev setup"
+    return 1
 }
 
 # ── Setup ────────────────────────────────────────────────────────
@@ -641,6 +645,7 @@ start_services() {
         "MEILISEARCH_API_KEY=masterKey"
 
     start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \
+        "ENVIRONMENT=development" \
         "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
         "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
         "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
@@ -757,6 +762,7 @@ cmd_up() {
             ;;
         payment)
             start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \
+                "ENVIRONMENT=development" \
                 "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
                 "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
                 "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
