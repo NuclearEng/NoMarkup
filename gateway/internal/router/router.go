@@ -62,6 +62,7 @@ func New(
 	workspaceHandler *handler.WorkspaceHandler,
 	instantMatchHandler *handler.InstantMatchHandler,
 	disputeHandler *handler.DisputeHandler,
+	employeesHandler *handler.EmployeesHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -219,6 +220,12 @@ func New(
 			r.Post("/me/documents", verificationHandler.UploadDocument)
 			r.Get("/me/documents", verificationHandler.ListDocuments)
 			r.Get("/me/documents/{type}/status", verificationHandler.GetDocumentStatus)
+
+			// Provider employees (team management).
+			r.Get("/me/employees", employeesHandler.List)
+			r.Post("/me/employees", employeesHandler.Create)
+			r.Patch("/me/employees/{id}", employeesHandler.Update)
+			r.Delete("/me/employees/{id}", employeesHandler.Delete)
 
 			// Stripe Connect routes for providers
 			r.Post("/me/stripe/account", paymentHandler.CreateStripeAccount)

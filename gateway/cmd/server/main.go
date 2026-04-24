@@ -274,6 +274,7 @@ func main() {
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, cacheClient)
 	disputeHandler := handler.NewDisputeHandler(cacheClient)
+	employeesHandler := handler.NewEmployeesHandler(dbPool)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
@@ -299,6 +300,7 @@ func main() {
 		workspaceHandler,
 		instantMatchHandler,
 		disputeHandler,
+		employeesHandler,
 	)
 
 	srv := &http.Server{
