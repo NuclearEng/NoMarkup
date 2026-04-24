@@ -1,8 +1,8 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CheckCircle, DollarSign, Loader2, Zap } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle, DollarSign, Loader2, Minus, Plus, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { BidSuggestion } from '@/components/bids/BidSuggestion';
@@ -68,6 +68,34 @@ export function BidForm({
 
   const watchedAmount = form.watch('amountDollars');
   const amountCents = watchedAmount ? Math.round(watchedAmount * 100) : 0;
+
+  // Step control for +/- buttons. Persisted in localStorage so the provider's
+  // preferred increment ("I think in $25 chunks") survives page reloads.
+  const [stepDollars, setStepDollars] = useState<number>(10);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('nomarkup.bidStepDollars');
+    const parsed = stored ? parseFloat(stored) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setStepDollars(parsed);
+    }
+  }, []);
+
+  function persistStep(value: number) {
+    setStepDollars(value);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('nomarkup.bidStepDollars', String(value));
+    }
+  }
+
+  function adjustAmount(direction: 1 | -1) {
+    const current = form.getValues('amountDollars') ?? 0;
+    const next = current + direction * stepDollars;
+    // Clamp to the schema's minimum (0.01). The submit-time validator still
+    // enforces the auction rules (must be below starting bid / existing bid).
+    const clamped = Math.max(0.01, Math.round(next * 100) / 100);
+    form.setValue('amountDollars', clamped, { shouldValidate: false, shouldDirty: true });
+  }
 
   function validateBidAmount(amountDollars: number): string | null {
     const cents = Math.round(amountDollars * 100);
@@ -221,30 +249,75 @@ export function BidForm({
                 <FormItem>
                   <FormLabel>{isUpdate ? 'Lower Your Bid' : 'Your Bid Amount'}</FormLabel>
                   <FormControl>
-                    <div className="relative">
-                      <DollarSign
-                        className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
-                        aria-hidden="true"
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        placeholder="0.00"
-                        className="min-h-[44px] pl-9"
-                        {...field}
-                        value={field.value || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          field.onChange(val === '' ? undefined : parseFloat(val));
-                        }}
-                      />
+                    <div className="flex items-stretch gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="min-h-[44px] min-w-[44px] shrink-0"
+                        onClick={() => adjustAmount(-1)}
+                        aria-label={`Decrease bid by $${String(stepDollars)}`}
+                      >
+                        <Minus className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                      <div className="relative flex-1">
+                        <DollarSign
+                          className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
+                          aria-hidden="true"
+                        />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="0.00"
+                          className="min-h-[44px] pl-9"
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            field.onChange(val === '' ? undefined : parseFloat(val));
+                          }}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="min-h-[44px] min-w-[44px] shrink-0"
+                        onClick={() => adjustAmount(1)}
+                        aria-label={`Increase bid by $${String(stepDollars)}`}
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                      </Button>
                     </div>
                   </FormControl>
-                  <FormDescription>
-                    Enter your bid in dollars.
-                    {startingBidCents ? ` Must be less than ${formatCents(startingBidCents)}.` : ''}
-                  </FormDescription>
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <FormDescription className="m-0">
+                      Enter your bid in dollars.
+                      {startingBidCents
+                        ? ` Must be less than ${formatCents(startingBidCents)}.`
+                        : ''}
+                    </FormDescription>
+                    <label className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
+                      <span>Step</span>
+                      <span className="text-muted-foreground/70">$</span>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        min="0.01"
+                        step="1"
+                        className="h-8 w-20 text-xs"
+                        value={stepDollars}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (Number.isFinite(v) && v > 0) {
+                            persistStep(Math.round(v * 100) / 100);
+                          }
+                        }}
+                        aria-label="Bid increment in dollars"
+                      />
+                    </label>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
