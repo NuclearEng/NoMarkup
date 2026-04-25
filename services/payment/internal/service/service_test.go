@@ -48,6 +48,16 @@ type mockPaymentRepo struct {
 	getContractDetailFn        func(ctx context.Context, contractID string) (*domain.ContractDetail, error)
 	getMilestonesForContractFn func(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error)
 	getPaymentsForContractFn   func(ctx context.Context, contractID string) ([]*domain.Payment, error)
+	// Installment methods
+	createInstallmentPlanFn             func(ctx context.Context, plan *domain.InstallmentPlan) error
+	getInstallmentPlanFn                func(ctx context.Context, planID string) (*domain.InstallmentPlan, error)
+	listInstallmentPlansFn              func(ctx context.Context, userID, statusFilter string, page, pageSize int) ([]*domain.InstallmentPlan, int, error)
+	createScheduledInstallmentsFn       func(ctx context.Context, installments []domain.ScheduledInstallment) error
+	getDueInstallmentsFn                func(ctx context.Context, now time.Time) ([]domain.ScheduledInstallment, error)
+	updateScheduledInstallmentStatusFn  func(ctx context.Context, instID, status string, piID *string) error
+	updateInstallmentPlanStatusFn       func(ctx context.Context, planID, status string) error
+	updateInstallmentPlanProviderPaidFn func(ctx context.Context, planID, transferID string) error
+	getScheduledInstallmentsForPlanFn   func(ctx context.Context, planID string) ([]domain.ScheduledInstallment, error)
 	// Stripe event dedup methods.
 	recordStripeEventStartFn   func(ctx context.Context, eventID, eventType string) (bool, error)
 	markStripeEventProcessedFn func(ctx context.Context, eventID string) error
@@ -144,32 +154,59 @@ func (m *mockPaymentRepo) GetRevenueReport(_ context.Context, _, _ *time.Time, _
 	return nil, nil
 }
 
-// Installment plan methods (satisfy interface — not tested in this file).
-func (m *mockPaymentRepo) CreateInstallmentPlan(_ context.Context, _ *domain.InstallmentPlan) error {
+// Installment plan methods (satisfy interface — hookable via fn fields).
+func (m *mockPaymentRepo) CreateInstallmentPlan(ctx context.Context, plan *domain.InstallmentPlan) error {
+	if m.createInstallmentPlanFn != nil {
+		return m.createInstallmentPlanFn(ctx, plan)
+	}
 	return nil
 }
-func (m *mockPaymentRepo) GetInstallmentPlan(_ context.Context, _ string) (*domain.InstallmentPlan, error) {
+func (m *mockPaymentRepo) GetInstallmentPlan(ctx context.Context, planID string) (*domain.InstallmentPlan, error) {
+	if m.getInstallmentPlanFn != nil {
+		return m.getInstallmentPlanFn(ctx, planID)
+	}
 	return nil, domain.ErrInstallmentPlanNotFound
 }
-func (m *mockPaymentRepo) ListInstallmentPlans(_ context.Context, _ string, _ string, _, _ int) ([]*domain.InstallmentPlan, int, error) {
+func (m *mockPaymentRepo) ListInstallmentPlans(ctx context.Context, userID, statusFilter string, page, pageSize int) ([]*domain.InstallmentPlan, int, error) {
+	if m.listInstallmentPlansFn != nil {
+		return m.listInstallmentPlansFn(ctx, userID, statusFilter, page, pageSize)
+	}
 	return nil, 0, nil
 }
-func (m *mockPaymentRepo) CreateScheduledInstallments(_ context.Context, _ []domain.ScheduledInstallment) error {
+func (m *mockPaymentRepo) CreateScheduledInstallments(ctx context.Context, installments []domain.ScheduledInstallment) error {
+	if m.createScheduledInstallmentsFn != nil {
+		return m.createScheduledInstallmentsFn(ctx, installments)
+	}
 	return nil
 }
-func (m *mockPaymentRepo) GetDueInstallments(_ context.Context, _ time.Time) ([]domain.ScheduledInstallment, error) {
+func (m *mockPaymentRepo) GetDueInstallments(ctx context.Context, now time.Time) ([]domain.ScheduledInstallment, error) {
+	if m.getDueInstallmentsFn != nil {
+		return m.getDueInstallmentsFn(ctx, now)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) UpdateScheduledInstallmentStatus(_ context.Context, _ string, _ string, _ *string) error {
+func (m *mockPaymentRepo) UpdateScheduledInstallmentStatus(ctx context.Context, instID, status string, piID *string) error {
+	if m.updateScheduledInstallmentStatusFn != nil {
+		return m.updateScheduledInstallmentStatusFn(ctx, instID, status, piID)
+	}
 	return nil
 }
-func (m *mockPaymentRepo) UpdateInstallmentPlanStatus(_ context.Context, _ string, _ string) error {
+func (m *mockPaymentRepo) UpdateInstallmentPlanStatus(ctx context.Context, planID, status string) error {
+	if m.updateInstallmentPlanStatusFn != nil {
+		return m.updateInstallmentPlanStatusFn(ctx, planID, status)
+	}
 	return nil
 }
-func (m *mockPaymentRepo) UpdateInstallmentPlanProviderPaid(_ context.Context, _ string, _ string) error {
+func (m *mockPaymentRepo) UpdateInstallmentPlanProviderPaid(ctx context.Context, planID, transferID string) error {
+	if m.updateInstallmentPlanProviderPaidFn != nil {
+		return m.updateInstallmentPlanProviderPaidFn(ctx, planID, transferID)
+	}
 	return nil
 }
-func (m *mockPaymentRepo) GetScheduledInstallmentsForPlan(_ context.Context, _ string) ([]domain.ScheduledInstallment, error) {
+func (m *mockPaymentRepo) GetScheduledInstallmentsForPlan(ctx context.Context, planID string) ([]domain.ScheduledInstallment, error) {
+	if m.getScheduledInstallmentsForPlanFn != nil {
+		return m.getScheduledInstallmentsForPlanFn(ctx, planID)
+	}
 	return nil, nil
 }
 
