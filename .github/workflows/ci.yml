@@ -49,7 +49,7 @@ jobs:
       # ratchet up as tests are added, never down. Raise in step with the
       # actual number after each test-coverage PR — see TODOS-27. Do NOT
       # lower these without explicit justification.
-      - run: cd web && npm run test -- --coverage --coverage.thresholds.lines=7 --coverage.thresholds.functions=30 --coverage.thresholds.branches=50 --coverage.thresholds.statements=7
+      - run: cd web && npm run test -- --coverage --coverage.thresholds.lines=8 --coverage.thresholds.functions=40 --coverage.thresholds.branches=60 --coverage.thresholds.statements=8
 
   e2e-test:
     name: Playwright E2E Tests
