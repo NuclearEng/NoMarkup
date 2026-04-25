@@ -33,7 +33,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::engine::BiddingEngine;
-use crate::models::{AuctionBidEvent as AuctionBidEventModel, Bid, BidError, LiveAuctionState as LiveAuctionStateModel};
+use crate::models::{Bid, BidError};
 
 /// gRPC service implementation wrapping the bidding engine.
 pub struct BidServiceImpl {
@@ -42,7 +42,7 @@ pub struct BidServiceImpl {
 
 impl BidServiceImpl {
     #[must_use]
-    pub fn new(engine: Arc<BiddingEngine>) -> Self {
+    pub const fn new(engine: Arc<BiddingEngine>) -> Self {
         Self { engine }
     }
 }
@@ -399,7 +399,7 @@ impl BidService for BidServiceImpl {
                 tracing::error!("database error in get_live_auction_state: {}", e);
                 Status::internal("internal error")
             }
-            e => Status::internal(format!("unexpected error: {}", e)),
+            e => Status::internal(format!("unexpected error: {e}")),
         })?;
 
         let recent_events = state.recent_events.iter().map(|e| {
@@ -436,7 +436,7 @@ impl BidService for BidServiceImpl {
                 tracing::error!("database error in get_auction_events: {}", e);
                 Status::internal("internal error")
             }
-            e => Status::internal(format!("unexpected error: {}", e)),
+            e => Status::internal(format!("unexpected error: {e}")),
         })?;
 
         let proto_events = events.iter().map(|e| {
@@ -505,7 +505,7 @@ fn status_str_to_proto(s: &str) -> i32 {
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
+const fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: dt.timestamp(),
         nanos: dt.timestamp_subsec_nanos() as i32,

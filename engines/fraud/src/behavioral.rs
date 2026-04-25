@@ -600,8 +600,7 @@ pub fn score_ip_geolocation(
             .iter()
             .filter(|s| {
                 ip_v4_24_prefix(&s.ip_address)
-                    .as_ref()
-                    .map_or(false, |p| p == prefix)
+                    .as_ref() == Some(prefix)
             })
             .map(|s| s.user_id)
             .collect();
@@ -648,16 +647,16 @@ pub fn score_ip_geolocation(
     }
 
     // --- 3. Geo-mismatch ---
-    if let Some(expected) = expected_country {
-        if !expected.is_empty() {
+    if let Some(expected) = expected_country
+        && !expected.is_empty() {
             let target_sessions: Vec<&IpSessionRecord> = all_sessions
                 .iter()
                 .filter(|s| s.user_id == target_user_id)
                 .collect();
 
             for sess in &target_sessions {
-                if let Some(ref country) = sess.geo_country {
-                    if !country.is_empty() && country != expected {
+                if let Some(ref country) = sess.geo_country
+                    && !country.is_empty() && country != expected {
                         geo_mismatch = true;
                         score += 0.20;
                         reasons.push(format!(
@@ -665,10 +664,8 @@ pub fn score_ip_geolocation(
                         ));
                         break; // Only flag once.
                     }
-                }
             }
         }
-    }
 
     // --- 4. Geo-location velocity (impossible travel) ---
     let travel_score = detect_impossible_travel(target_user_id, all_sessions);
@@ -749,8 +746,7 @@ fn haversine_km(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     let lat1_rad = lat1.to_radians();
     let lat2_rad = lat2.to_radians();
 
-    let a = (d_lat / 2.0).sin().powi(2)
-        + lat1_rad.cos() * lat2_rad.cos() * (d_lng / 2.0).sin().powi(2);
+    let a = (d_lat / 2.0).sin().mul_add((d_lat / 2.0).sin(), lat1_rad.cos() * lat2_rad.cos() * (d_lng / 2.0).sin().powi(2));
 
     let c = 2.0 * a.sqrt().asin();
 

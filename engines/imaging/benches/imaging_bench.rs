@@ -58,7 +58,7 @@ fn bench_jpeg_encode(c: &mut Criterion) {
     });
 }
 
-/// Benchmark BlurHash computation on a small image (simulating the 32x32
+/// Benchmark `BlurHash` computation on a small image (simulating the 32x32
 /// downscale that `compute_blur_hash` performs internally).
 fn bench_blurhash_computation(c: &mut Criterion) {
     let img = make_test_image(32, 32).to_rgba8();
@@ -113,7 +113,7 @@ fn bench_blurhash_computation(c: &mut Criterion) {
     });
 }
 
-/// Benchmark the full pipeline: decode -> resize -> encode -> BlurHash.
+/// Benchmark the full pipeline: decode -> resize -> encode -> `BlurHash`.
 fn bench_full_pipeline(c: &mut Criterion) {
     // Create a 1080p JPEG in memory to simulate a realistic input.
     let img = make_test_image(1920, 1080);

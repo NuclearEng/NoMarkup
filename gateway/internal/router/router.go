@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
@@ -15,9 +16,15 @@ import (
 
 // New creates and configures the HTTP router with all middleware and routes.
 // When production is true, HSTS headers are applied and wildcard CORS origins are rejected.
+//
+// dbPool is used by per-route ownership middleware (RequireOwnership /
+// RequirePartyAccess / RequireJoinedPartyAccess) to verify that the
+// authenticated user owns or is a party to the resource identified by the
+// URL path parameter. Required.
 func New(
 	allowedOrigins []string,
 	production bool,
+	dbPool *pgxpool.Pool,
 	cacheClient *cache.Client,
 	rateLimiter *middleware.RateLimiter,
 	authMW *middleware.AuthMiddleware,
@@ -278,50 +285,69 @@ func New(
 		// Contract routes
 		r.Route("/contracts", func(r chi.Router) {
 			r.Get("/", contractHandler.ListContracts)
-			r.Get("/{id}", contractHandler.GetContract)
-			r.Post("/{id}/accept", contractHandler.AcceptContract)
-			r.Post("/{id}/start", contractHandler.StartWork)
-			r.Post("/{id}/complete", contractHandler.MarkComplete)
-			r.Post("/{id}/approve-completion", contractHandler.ApproveCompletion)
-			r.Post("/{id}/cancel", contractHandler.CancelContract)
-			r.Post("/{id}/reviews", reviewHandler.CreateReview)
-			r.Get("/{id}/reviews/eligibility", reviewHandler.GetReviewEligibility)
 
-			// Change orders
-			r.Post("/{id}/change-orders", contractHandler.CreateChangeOrder)
-			r.Get("/{id}/change-orders", contractHandler.ListChangeOrders)
-			r.Put("/{id}/change-orders/{orderId}", contractHandler.RespondToChangeOrder)
+			// All /{id}/* routes are gated by RequirePartyAccess: only the
+			// contract's customer or provider (or admin) may access. Closes
+			// the IDOR class the audit identified beyond jobs.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequirePartyAccess(dbPool, middleware.PartyAccessConfig{
+					Table: "contracts", Column1: "customer_id", Column2: "provider_id",
+					IDColumn: "id", URLParam: "id",
+				}))
 
-			// Disputes
-			r.Post("/{id}/disputes", contractHandler.OpenDispute)
+				r.Get("/{id}", contractHandler.GetContract)
+				r.Post("/{id}/accept", contractHandler.AcceptContract)
+				r.Post("/{id}/start", contractHandler.StartWork)
+				r.Post("/{id}/complete", contractHandler.MarkComplete)
+				r.Post("/{id}/approve-completion", contractHandler.ApproveCompletion)
+				r.Post("/{id}/cancel", contractHandler.CancelContract)
+				r.Post("/{id}/reviews", reviewHandler.CreateReview)
+				r.Get("/{id}/reviews/eligibility", reviewHandler.GetReviewEligibility)
 
-			// Guarantee claims
-			r.Post("/{id}/guarantee-claim", contractHandler.SubmitGuaranteeClaim)
-			r.Get("/{id}/guarantee-claim", contractHandler.GetGuaranteeClaim)
+				// Change orders
+				r.Post("/{id}/change-orders", contractHandler.CreateChangeOrder)
+				r.Get("/{id}/change-orders", contractHandler.ListChangeOrders)
+				r.Put("/{id}/change-orders/{orderId}", contractHandler.RespondToChangeOrder)
 
-			// No-show / abandonment
-			r.Post("/{id}/report-noshow", contractHandler.ReportNoShow)
-			r.Post("/{id}/report-abandonment", contractHandler.ReportAbandonment)
+				// Disputes
+				r.Post("/{id}/disputes", contractHandler.OpenDispute)
 
-			// PDF export
-			r.Get("/{id}/pdf", contractHandler.ExportPDF)
+				// Guarantee claims
+				r.Post("/{id}/guarantee-claim", contractHandler.SubmitGuaranteeClaim)
+				r.Get("/{id}/guarantee-claim", contractHandler.GetGuaranteeClaim)
 
-			// Invoice generation
-			r.Post("/{id}/invoice", taxHandler.GenerateInvoice)
-			r.Get("/{id}/invoice/download", taxHandler.DownloadInvoice)
+				// No-show / abandonment
+				r.Post("/{id}/report-noshow", contractHandler.ReportNoShow)
+				r.Post("/{id}/report-abandonment", contractHandler.ReportAbandonment)
 
-			// Provider workspace (check-in/out, completion photos)
-			r.Post("/{id}/checkin", workspaceHandler.CheckIn)
-			r.Post("/{id}/checkout", workspaceHandler.CheckOut)
-			r.Get("/{id}/work-session", workspaceHandler.GetWorkSession)
-			r.Post("/{id}/completion-photos", workspaceHandler.UploadCompletionPhoto)
+				// PDF export
+				r.Get("/{id}/pdf", contractHandler.ExportPDF)
+
+				// Invoice generation
+				r.Post("/{id}/invoice", taxHandler.GenerateInvoice)
+				r.Get("/{id}/invoice/download", taxHandler.DownloadInvoice)
+
+				// Provider workspace (check-in/out, completion photos)
+				r.Post("/{id}/checkin", workspaceHandler.CheckIn)
+				r.Post("/{id}/checkout", workspaceHandler.CheckOut)
+				r.Get("/{id}/work-session", workspaceHandler.GetWorkSession)
+				r.Post("/{id}/completion-photos", workspaceHandler.UploadCompletionPhoto)
+			})
 		})
 
-		// Review routes
+		// Review routes — both reviewer and reviewee can read; only reviewer
+		// can update/respond. Both parties bypass via RequirePartyAccess on
+		// (reviewer_id, reviewee_id); handler enforces the writer-only check.
 		r.Route("/reviews", func(r chi.Router) {
-			r.Get("/{id}", reviewHandler.GetReview)
-			r.Post("/{id}/respond", reviewHandler.RespondToReview)
-			r.Post("/{id}/flag", reviewHandler.FlagReview)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequirePartyAccess(dbPool, middleware.PartyAccessConfig{
+					Table: "reviews", Column1: "reviewer_id", Column2: "reviewee_id",
+					IDColumn: "id", URLParam: "id",
+				}))
+				r.Get("/{id}", reviewHandler.GetReview)
+				r.Post("/{id}/respond", reviewHandler.RespondToReview)
+				r.Post("/{id}/flag", reviewHandler.FlagReview)
+			})
 		})
 
 		// Milestone routes
@@ -342,10 +368,18 @@ func New(
 			r.Delete("/methods/{id}", paymentHandler.DeletePaymentMethod)
 			r.Post("/calculate-fees", paymentHandler.CalculateFees)
 			r.Post("/instant-payout", paymentHandler.InstantPayout)
-			r.Get("/{id}", paymentHandler.GetPayment)
-			r.Post("/{id}/process", paymentHandler.ProcessPayment)
-			r.Post("/{id}/refund", paymentHandler.RefundPayment)
-			r.Post("/{id}/release", paymentHandler.ReleasePayment)
+
+			// /{id}/* mutations: only the payment's customer or provider may access.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequirePartyAccess(dbPool, middleware.PartyAccessConfig{
+					Table: "payments", Column1: "customer_id", Column2: "provider_id",
+					IDColumn: "id", URLParam: "id",
+				}))
+				r.Get("/{id}", paymentHandler.GetPayment)
+				r.Post("/{id}/process", paymentHandler.ProcessPayment)
+				r.Post("/{id}/refund", paymentHandler.RefundPayment)
+				r.Post("/{id}/release", paymentHandler.ReleasePayment)
+			})
 
 			// BNPL installment plan routes
 			r.Route("/installment-plans", func(r chi.Router) {
@@ -512,10 +546,22 @@ func New(
 			r.Post("/{jobId}/decline", instantMatchHandler.DeclineOffer)
 		})
 
-		// Dispute filing routes
+		// Dispute filing routes — disputes don't have direct party columns;
+		// access is gated by joining to the parent contract and checking
+		// (customer_id, provider_id).
 		r.Route("/disputes", func(r chi.Router) {
 			r.Post("/", disputeHandler.FileDispute)
-			r.Get("/{id}", disputeHandler.GetDispute)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireJoinedPartyAccess(dbPool, middleware.JoinedPartyAccessConfig{
+					Table: "disputes", IDColumn: "id",
+					JoinColumn: "contract_id",
+					JoinTable:  "contracts", JoinIDCol: "id",
+					PartyCol1: "customer_id", PartyCol2: "provider_id",
+					URLParam: "id",
+				}))
+				r.Get("/{id}", disputeHandler.GetDispute)
+			})
 		})
 
 		// Challenge routes (authenticated)

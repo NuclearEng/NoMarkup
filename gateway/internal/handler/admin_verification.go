@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -76,8 +75,7 @@ func (h *AdminVerificationHandler) ReviewDocument(w http.ResponseWriter, r *http
 		Approved        bool   `json:"approved"`
 		RejectionReason string `json:"rejection_reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 

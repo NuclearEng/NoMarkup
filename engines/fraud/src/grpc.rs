@@ -38,7 +38,7 @@ pub struct FraudServiceImpl {
 
 impl FraudServiceImpl {
     #[must_use]
-    pub fn new(engine: Arc<FraudDetector>) -> Self {
+    pub const fn new(engine: Arc<FraudDetector>) -> Self {
         Self { engine }
     }
 }
@@ -639,7 +639,7 @@ fn risk_profile_to_proto(profile: &UserRiskProfileData) -> fraud_proto::UserRisk
     clippy::cast_sign_loss,
     clippy::cast_possible_wrap
 )]
-fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
+const fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: dt.timestamp(),
         nanos: dt.timestamp_subsec_nanos() as i32,

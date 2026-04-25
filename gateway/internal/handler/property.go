@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -78,8 +77,7 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createPropertyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -131,8 +129,7 @@ func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updatePropertyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

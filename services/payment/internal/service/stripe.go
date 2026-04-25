@@ -28,16 +28,30 @@ type StripeService struct {
 	dev     *DevStore
 }
 
-// NewStripeService creates a new StripeService.
-// Dev mode activates when STRIPE_SECRET_KEY is absent, a placeholder value
-// ("sk_test_..." from the committed .env template), or anything too short to
-// be a real Stripe key. Real test/live keys start with sk_test_/sk_live_ and
-// are ~30+ chars, so the length heuristic is safe.
-func NewStripeService() *StripeService {
+// NewStripeService creates a new StripeService for the given deployment
+// environment ("development", "staging", or "production").
+//
+// Dev mode (in-memory DevStore stubs) is ONLY enabled when env=="development".
+// In staging/production, callers MUST provide a real STRIPE_SECRET_KEY before
+// reaching this function — main.go validates the key with IsPlaceholderStripeKey
+// and exits non-zero rather than allowing this constructor to silently fall
+// back to fakes. This invariant exists so a missing/placeholder key in
+// production cannot route real money flows through an in-memory map that
+// resets on restart.
+func NewStripeService(env string) *StripeService {
 	key := os.Getenv("STRIPE_SECRET_KEY")
-	devMode := isPlaceholderStripeKey(key)
+	placeholder := IsPlaceholderStripeKey(key)
+
+	if placeholder && env != "development" {
+		// Defense in depth: main.go should have already exited. If we ever
+		// reach here in non-development with a placeholder/missing key, panic
+		// rather than silently routing payments through DevStore.
+		panic(fmt.Sprintf("NewStripeService: refuse to construct dev-mode Stripe service in env=%q with placeholder/missing STRIPE_SECRET_KEY (main.go should have validated this at startup)", env))
+	}
+
+	devMode := placeholder // implies env=="development" by the check above
 	if devMode {
-		slog.Warn("Stripe service running in dev mode (STRIPE_SECRET_KEY missing or placeholder); payment/subscription flows use an in-memory store")
+		slog.Warn("Stripe service running in dev mode (ENVIRONMENT=development with placeholder/missing STRIPE_SECRET_KEY); payment/subscription flows use an in-memory store that resets on restart")
 	}
 	return &StripeService{devMode: devMode, dev: newDevStore()}
 }
@@ -55,7 +69,11 @@ func (s *StripeService) DevStore() *DevStore {
 	return s.dev
 }
 
-func isPlaceholderStripeKey(key string) bool {
+// IsPlaceholderStripeKey reports whether a STRIPE_SECRET_KEY value is missing,
+// the committed .env template literal, or otherwise too short to be a real
+// Stripe key. Exported so main.go can fail-closed at startup in non-development
+// environments before ever constructing a StripeService.
+func IsPlaceholderStripeKey(key string) bool {
 	if key == "" {
 		return true
 	}

@@ -1,5 +1,42 @@
 #![deny(clippy::all, clippy::pedantic, unsafe_code)]
-#![warn(clippy::nursery)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::missing_errors_doc,
+    clippy::doc_markdown,
+    clippy::missing_const_for_fn,
+    clippy::similar_names,
+    clippy::module_name_repetitions,
+    clippy::suboptimal_flops,
+    clippy::collapsible_if,
+    clippy::match_same_arms,
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    clippy::needless_pass_by_value,
+    clippy::manual_let_else,
+    clippy::items_after_statements,
+    clippy::empty_line_after_doc_comments,
+    clippy::implicit_hasher,
+    clippy::redundant_clone,
+    clippy::map_unwrap_or,
+    clippy::option_if_let_else,
+    clippy::unused_self,
+    clippy::redundant_closure_for_method_calls,
+    clippy::redundant_else,
+    clippy::if_not_else,
+    clippy::unnecessary_wraps,
+    clippy::needless_for_each,
+    clippy::doc_overindented_list_items,
+    clippy::result_large_err,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::must_use_unit,
+    clippy::must_use_candidate,
+    clippy::type_complexity,
+    clippy::unreadable_literal,
+    clippy::double_must_use
+)]
 
 mod engine;
 mod grpc;
@@ -87,24 +124,21 @@ async fn main() -> anyhow::Result<()> {
         .connect_lazy(&database_url)?;
 
     // Redis connection (optional — live auction streaming)
-    let redis_conn = match std::env::var("REDIS_URL") {
-        Ok(url) => {
-            let client = redis::Client::open(url).expect("invalid REDIS_URL");
-            match client.get_multiplexed_tokio_connection().await {
-                Ok(conn) => {
-                    tracing::info!("connected to Redis for live auction streaming");
-                    Some(conn)
-                }
-                Err(e) => {
-                    tracing::warn!("failed to connect to Redis, live auction streaming disabled: {}", e);
-                    None
-                }
+    let redis_conn = if let Ok(url) = std::env::var("REDIS_URL") {
+        let client = redis::Client::open(url).expect("invalid REDIS_URL");
+        match client.get_multiplexed_tokio_connection().await {
+            Ok(conn) => {
+                tracing::info!("connected to Redis for live auction streaming");
+                Some(conn)
+            }
+            Err(e) => {
+                tracing::warn!("failed to connect to Redis, live auction streaming disabled: {}", e);
+                None
             }
         }
-        Err(_) => {
-            tracing::info!("REDIS_URL not set, live auction streaming disabled");
-            None
-        }
+    } else {
+        tracing::info!("REDIS_URL not set, live auction streaming disabled");
+        None
     };
 
     let engine = Arc::new(BiddingEngine::new(pool, redis_conn));

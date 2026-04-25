@@ -89,7 +89,7 @@ cd gateway && go run ./cmd/server   # Start API gateway on :8080
 # Start each Rust engine (bidding, fraud, trust, imaging)
 cd web && npm run dev          # Frontend on :3000
 ```
-- **Test credentials:** `customer@nomarkup.com` / `Password123!`, `provider@nomarkup.com` / `Password123!`, `admin@nomarkup.com` / `Password123!`
+- **Test credentials:** seeder reads `SEED_PASSWORD` env var (or generates a random one and prints it). Set in `.env.local` as `SEED_PASSWORD=$(openssl rand -base64 18)` and re-seed with `make seed`. The four seeded emails are `admin@nomarkup.com`, `customer@nomarkup.com`, `provider@nomarkup.com`, `provider2@nomarkup.com` — all share the same `$SEED_PASSWORD`.
 - **Verify:** Login -> dashboard loads -> jobs listing shows seed data -> place a bid
 - **Effort:** 1 day
 - **Depends on:** Nothing

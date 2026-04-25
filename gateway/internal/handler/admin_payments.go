@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -149,8 +148,7 @@ func (h *AdminPaymentsHandler) UpdateFeeConfig(w http.ResponseWriter, r *http.Re
 		MinFeeCents         int64    `json:"min_fee_cents"`
 		MaxFeeCents         *int64   `json:"max_fee_cents"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -224,8 +222,7 @@ func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *h
 		MinFeeCents         int64   `json:"min_fee_cents"`
 		MaxFeeCents         *int64  `json:"max_fee_cents"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 

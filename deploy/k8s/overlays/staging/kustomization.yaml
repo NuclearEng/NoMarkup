@@ -98,3 +98,16 @@ configMapGenerator:
       - LOG_LEVEL=debug
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - MEILISEARCH_URL=http://meilisearch:7700
+      # Audit S2 — mandatory env vars (services fail-closed without these).
+      # JWT issuer/audience pin the JWT validator to this environment so a
+      # token minted for production cannot be accepted in staging.
+      - JWT_ISSUER=https://auth.staging.nomarkup.com
+      - JWT_AUDIENCE=nomarkup-staging
+      # CSWSH defense — only these origins may upgrade to a WebSocket.
+      - WS_ALLOWED_ORIGINS=https://staging.nomarkup.com,https://app.staging.nomarkup.com
+      # XFF trust boundary — only requests from these CIDRs may set the
+      # X-Forwarded-For header that the rate limiter / audit log trusts.
+      - TRUSTED_PROXIES=10.0.0.0/8
+      # OAuth aud claims (S4 + Apple OAuth signature verification).
+      - APPLE_CLIENT_ID=com.nomarkup.app.staging
+      - GOOGLE_CLIENT_ID=REPLACE_ME_STAGING_GOOGLE_CLIENT_ID.apps.googleusercontent.com

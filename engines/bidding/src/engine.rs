@@ -15,7 +15,7 @@ pub struct BiddingEngine {
 
 impl BiddingEngine {
     #[must_use]
-    pub fn new(pool: PgPool, redis: Option<redis::aio::MultiplexedConnection>) -> Self {
+    pub const fn new(pool: PgPool, redis: Option<redis::aio::MultiplexedConnection>) -> Self {
         Self { pool, redis }
     }
 
@@ -52,21 +52,19 @@ impl BiddingEngine {
             return Err(BidError::AuctionNotActive);
         }
 
-        if let Some(ends_at) = job.auction_ends_at {
-            if ends_at <= Utc::now() {
+        if let Some(ends_at) = job.auction_ends_at
+            && ends_at <= Utc::now() {
                 return Err(BidError::AuctionClosed);
             }
-        }
 
         // Validate bid does not exceed the starting bid (maximum price cap).
-        if let Some(starting_bid) = job.starting_bid_cents {
-            if amount_cents > starting_bid {
+        if let Some(starting_bid) = job.starting_bid_cents
+            && amount_cents > starting_bid {
                 return Err(BidError::AboveStartingBid {
                     amount: amount_cents,
                     starting_bid,
                 });
             }
-        }
 
         // Check if bid amount meets the offer-accepted threshold for auto-accept.
         let is_offer_accepted = job
@@ -135,22 +133,21 @@ impl BiddingEngine {
         tx.commit().await?;
 
         // Publish to Redis for live streaming (fire-and-forget)
-        if job.auction_type == "live" {
-            if let Some(ref mut redis_conn) = self.redis.clone() {
+        if job.auction_type == "live"
+            && let Some(ref mut redis_conn) = self.redis.clone() {
                 let event = serde_json::json!({
                     "type": "bid_placed",
                     "job_id": job_id.to_string(),
                     "amount_cents": amount_cents,
                     "timestamp": chrono::Utc::now().to_rfc3339(),
                 });
-                let topic = format!("auction:{}", job_id);
+                let topic = format!("auction:{job_id}");
                 let _ = redis::cmd("PUBLISH")
                     .arg(&topic)
                     .arg(event.to_string())
                     .query_async::<()>(redis_conn)
                     .await;
             }
-        }
 
         tracing::info!(
             bid_id = %bid.id,
@@ -384,11 +381,10 @@ impl BiddingEngine {
             return Err(BidError::AuctionNotActive);
         }
 
-        if let Some(ends_at) = job.auction_ends_at {
-            if ends_at <= Utc::now() {
+        if let Some(ends_at) = job.auction_ends_at
+            && ends_at <= Utc::now() {
                 return Err(BidError::AuctionClosed);
             }
-        }
 
         // Insert bid at the offer price with is_offer_accepted = true.
         let bid = sqlx::query_as::<_, Bid>(

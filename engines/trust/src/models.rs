@@ -29,7 +29,7 @@ impl TrustTier {
 
     /// Convert to the database text representation.
     #[must_use]
-    pub fn as_db_str(&self) -> &'static str {
+    pub const fn as_db_str(&self) -> &'static str {
         match self {
             Self::UnderReview => "under_review",
             Self::New => "new",
@@ -95,7 +95,7 @@ impl DimensionScores {
     /// Feedback: 35%, Volume: 20%, Risk: 25%, Fraud: 20%.
     #[must_use]
     pub fn overall(&self) -> f64 {
-        self.feedback * 0.35 + self.volume * 0.20 + self.risk * 0.25 + self.fraud * 0.20
+        self.fraud.mul_add(0.20, self.risk.mul_add(0.25, self.feedback.mul_add(0.35, self.volume * 0.20)))
     }
 }
 
@@ -341,7 +341,7 @@ mod tests {
             risk: 0.9,
             fraud: 0.7,
         };
-        let expected = 0.8 * 0.35 + 0.5 * 0.20 + 0.9 * 0.25 + 0.7 * 0.20;
+        let expected = 0.7f64.mul_add(0.20, 0.9f64.mul_add(0.25, 0.8f64.mul_add(0.35, 0.5 * 0.20)));
         assert!((scores.overall() - expected).abs() < f64::EPSILON);
     }
 

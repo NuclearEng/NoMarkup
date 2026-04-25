@@ -4,7 +4,7 @@
 //! without requiring a database connection.
 
 use fraud::models::{
-    CheckResult, CountRow, FraudDecision, FraudError, FraudSignalRow, RiskLevel, SignalType,
+    CheckResult, FraudDecision, FraudError, FraudSignalRow, RiskLevel, SignalType,
 };
 use chrono::Utc;
 use uuid::Uuid;
@@ -65,7 +65,7 @@ fn signal_type_db_roundtrip() {
 
         // The round-trip might not be exact (db types are broader), but
         // it should always produce a valid SignalType.
-        assert_eq!(parsed.to_proto_i32() > 0, true, "Invalid proto for {signal_type:?}");
+        assert!(parsed.to_proto_i32() > 0, "Invalid proto for {signal_type:?}");
     }
 }
 

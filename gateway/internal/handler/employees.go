@@ -2,7 +2,6 @@ package handler
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -199,8 +198,7 @@ func (h *EmployeesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body addEmployeeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.FirstName == "" || body.LastName == "" || body.Role == "" {
@@ -271,8 +269,7 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body updateEmployeeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 

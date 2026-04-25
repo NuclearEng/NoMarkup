@@ -39,7 +39,7 @@ pub struct TrustServiceImpl {
 
 impl TrustServiceImpl {
     #[must_use]
-    pub fn new(engine: Arc<TrustScorer>) -> Self {
+    pub const fn new(engine: Arc<TrustScorer>) -> Self {
         Self { engine }
     }
 }
@@ -440,26 +440,22 @@ fn history_row_to_proto(
 fn count_data_points(row: &TrustScoreRow) -> i32 {
     let mut count = 0i32;
 
-    if let Some(ref details) = row.feedback_details {
-        if let Ok(fd) = serde_json::from_value::<FeedbackDetails>(details.clone()) {
+    if let Some(ref details) = row.feedback_details
+        && let Ok(fd) = serde_json::from_value::<FeedbackDetails>(details.clone()) {
             count += fd.total_reviews;
         }
-    }
-    if let Some(ref details) = row.volume_details {
-        if let Ok(vd) = serde_json::from_value::<VolumeDetails>(details.clone()) {
+    if let Some(ref details) = row.volume_details
+        && let Ok(vd) = serde_json::from_value::<VolumeDetails>(details.clone()) {
             count += vd.total_jobs_completed;
         }
-    }
-    if let Some(ref details) = row.risk_details {
-        if let Ok(rd) = serde_json::from_value::<RiskDetails>(details.clone()) {
+    if let Some(ref details) = row.risk_details
+        && let Ok(rd) = serde_json::from_value::<RiskDetails>(details.clone()) {
             count += rd.cancellations + rd.disputes_filed + rd.late_deliveries + rd.no_shows;
         }
-    }
-    if let Some(ref details) = row.fraud_details {
-        if let Ok(fd) = serde_json::from_value::<FraudDetails>(details.clone()) {
+    if let Some(ref details) = row.fraud_details
+        && let Ok(fd) = serde_json::from_value::<FraudDetails>(details.clone()) {
             count += fd.fraud_signals_detected;
         }
-    }
 
     count
 }
@@ -482,7 +478,7 @@ fn tier_to_proto_i32(tier: &TrustTier) -> i32 {
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
+const fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: dt.timestamp(),
         nanos: dt.timestamp_subsec_nanos() as i32,

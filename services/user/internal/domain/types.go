@@ -384,6 +384,13 @@ type UserRepository interface {
 	// Admin operations
 	SuspendUser(ctx context.Context, userID, reason, adminID string) error
 	BanUser(ctx context.Context, userID, reason, adminID string) error
+	// SuspendUserAndRevokeTokens performs both operations in a single
+	// transaction. Either both succeed or neither — there is no state where
+	// the user is suspended but their refresh tokens are still valid.
+	SuspendUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error
+	// BanUserAndRevokeTokens performs both operations in a single
+	// transaction. Either both succeed or neither.
+	BanUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
 	AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]User, int, error)
 

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -41,8 +40,7 @@ func (h *InstallmentHandler) CreateInstallmentPlan(w http.ResponseWriter, r *htt
 	}
 
 	var req createInstallmentPlanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

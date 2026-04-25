@@ -128,12 +128,7 @@ func (s *JobService) DeleteDraft(ctx context.Context, jobID string, customerID s
 		return fmt.Errorf("delete draft: %w", err)
 	}
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — deleted draft may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "deleted draft may remain in search results")
 	}
 	return nil
 }
@@ -166,12 +161,7 @@ func (s *JobService) CloseAuction(ctx context.Context, jobID string, customerID 
 		return nil, fmt.Errorf("close auction: %w", err)
 	}
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — closed job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "closed job may remain in search results")
 	}
 	slog.Info("auction closed", "job_id", job.ID, "status", job.Status)
 	return job, nil
@@ -184,12 +174,7 @@ func (s *JobService) CancelJob(ctx context.Context, jobID string, customerID str
 		return nil, fmt.Errorf("cancel job: %w", err)
 	}
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — cancelled job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "cancelled job may remain in search results")
 	}
 	slog.Info("job cancelled", "job_id", job.ID)
 	return job, nil
@@ -338,12 +323,7 @@ func (s *JobService) AwardJob(ctx context.Context, jobID, customerID, providerID
 	}
 
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — awarded job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "awarded job may remain in search results")
 	}
 
 	slog.Info("job awarded",
@@ -382,12 +362,7 @@ func (s *JobService) AdminSuspendJob(ctx context.Context, jobID, reason, adminID
 	}
 
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — suspended job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "suspended job may remain in search results")
 	}
 
 	if err := s.repo.InsertAuditLog(ctx, adminID, "suspend_job", "job", jobID, map[string]any{
@@ -407,12 +382,7 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 	}
 
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — removed job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "removed job may remain in search results")
 	}
 
 	if err := s.repo.InsertAuditLog(ctx, adminID, "remove_job", "job", jobID, map[string]any{
@@ -461,6 +431,55 @@ func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 
 			backoff := time.Duration(1<<(attempt-1)) * time.Second // 1s, 2s
 			slog.Warn("search index failed, retrying",
+				"job_id", jobID,
+				"operation", operation,
+				"attempt", attempt,
+				"next_retry_in", backoff,
+				"error", err,
+			)
+			time.Sleep(backoff)
+		}
+	}()
+}
+
+// removeJobFromSearchWithRetry attempts to delete a job from the Meilisearch
+// index with up to 3 retries (exponential backoff 1s, 2s, 4s). Runs in a
+// goroutine. If all attempts fail, a stale entry may remain in search results;
+// the final error is logged at ERROR level for the alerting pipeline.
+//
+// TODO(durable-retry): persistent Redis-backed retry queue per security audit
+// recommendation — would survive service restarts. Tracked in docs/TODOS.md.
+func (s *JobService) removeJobFromSearchWithRetry(jobID, operation string) {
+	go func() {
+		const maxAttempts = 3
+
+		ctx := context.Background()
+
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			err := s.search.RemoveJob(ctx, jobID)
+			if err == nil {
+				if attempt > 1 {
+					slog.Info("search remove succeeded after retry",
+						"job_id", jobID,
+						"operation", operation,
+						"attempt", attempt,
+					)
+				}
+				return
+			}
+
+			if attempt == maxAttempts {
+				slog.Error("SEARCH REMOVAL FAILED — job may remain in search results (all retries exhausted)",
+					"job_id", jobID,
+					"operation", operation,
+					"attempts", maxAttempts,
+					"error", err,
+				)
+				return
+			}
+
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			slog.Warn("search remove failed, retrying",
 				"job_id", jobID,
 				"operation", operation,
 				"attempt", attempt,

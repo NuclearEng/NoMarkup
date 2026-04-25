@@ -37,7 +37,7 @@ pub struct ImagingServiceImpl {
 
 impl ImagingServiceImpl {
     #[must_use]
-    pub fn new(pipeline: Arc<ImagePipeline>) -> Self {
+    pub const fn new(pipeline: Arc<ImagePipeline>) -> Self {
         Self { pipeline }
     }
 }
@@ -445,7 +445,7 @@ fn proto_options_to_domain(
 }
 
 /// Convert proto resize mode int to domain enum.
-fn proto_resize_mode(v: i32) -> ResizeMode {
+const fn proto_resize_mode(v: i32) -> ResizeMode {
     match v {
         1 => ResizeMode::Fit,
         2 => ResizeMode::Fill,
@@ -480,7 +480,7 @@ fn variant_to_proto(v: &ImageVariant) -> imaging_proto::ImageVariant {
 }
 
 /// Convert a domain `ImageFormat` to proto enum i32.
-fn domain_format_to_proto(f: ImageFormat) -> i32 {
+const fn domain_format_to_proto(f: ImageFormat) -> i32 {
     match f {
         ImageFormat::Jpeg => 1,
         ImageFormat::Png => 2,

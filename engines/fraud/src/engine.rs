@@ -11,7 +11,7 @@ use crate::models::{
     SignalTypeRow, TimestampRow, UserRiskProfileData, UserSessionRow,
 };
 
-/// SQL fragment selecting fraud_signals columns with NUMERIC casts for f64.
+/// SQL fragment selecting `fraud_signals` columns with NUMERIC casts for f64.
 const SIGNAL_SELECT: &str = "\
     SELECT id, user_id, signal_type, signal_subtype, severity, \
       confidence::float8 AS confidence, description, evidence_json, \
@@ -19,7 +19,7 @@ const SIGNAL_SELECT: &str = "\
       auto_actioned, auto_action, created_at, updated_at \
     FROM fraud_signals";
 
-/// SQL fragment selecting user_sessions columns with NUMERIC casts for f64.
+/// SQL fragment selecting `user_sessions` columns with NUMERIC casts for f64.
 const SESSION_SELECT: &str = "\
     SELECT id, user_id, ip_address::text AS ip_address, user_agent, \
       device_fingerprint, \
@@ -34,7 +34,7 @@ pub struct FraudDetector {
 
 impl FraudDetector {
     #[must_use]
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
@@ -166,7 +166,7 @@ impl FraudDetector {
     /// 2. Device fingerprint -- fingerprint associated with known fraud
     /// 3. Email domain -- disposable email detection (simple heuristic)
     /// 4. Velocity -- registrations from same IP/device in last 24h
-    /// 5. Multi-account -- same fingerprint across different user_ids
+    /// 5. Multi-account -- same fingerprint across different `user_ids`
     ///
     /// # Errors
     ///
@@ -636,8 +636,8 @@ impl FraudDetector {
         }
 
         // Anomaly 2: Different country than recent sessions.
-        if let Some(country) = geo_country {
-            if !country.is_empty() {
+        if let Some(country) = geo_country
+            && !country.is_empty() {
                 let recent_country: Option<GeoCountryRow> = sqlx::query_as(
                     "SELECT geo_country FROM user_sessions \
                      WHERE user_id = $1 \
@@ -650,16 +650,14 @@ impl FraudDetector {
                 .fetch_optional(&self.pool)
                 .await?;
 
-                if let Some(prev) = recent_country {
-                    if prev.geo_country != country {
+                if let Some(prev) = recent_country
+                    && prev.geo_country != country {
                         anomalies.push(format!(
                             "Geo mismatch: session from {} but recent sessions from {}",
                             country, prev.geo_country
                         ));
                     }
-                }
             }
-        }
 
         // Anomaly 3: Multiple concurrent IPs.
         let concurrent_ips: CountRow = sqlx::query_as(
@@ -799,7 +797,7 @@ impl FraudDetector {
             .bind(user_id)
             .fetch_one(&self.pool)
             .await
-            .map_or(false, |r| r.count > 0);
+            .is_ok_and(|r| r.count > 0);
 
         let recent_signal_types: Vec<SignalType> = recent_types
             .iter()
@@ -858,9 +856,7 @@ impl FraudDetector {
         .await?;
 
         // Weighted score: high=0.4 per signal, medium=0.2, low=0.05. Capped at 1.0.
-        let score = (high.count as f64 * 0.4
-            + medium.count as f64 * 0.2
-            + low.count as f64 * 0.05)
+        let score = (low.count as f64).mul_add(0.05, (high.count as f64).mul_add(0.4, medium.count as f64 * 0.2))
             .clamp(0.0, 1.0);
 
         Ok(score)
@@ -892,7 +888,7 @@ impl FraudDetector {
     /// Score a device fingerprint using heuristic analysis from the behavioral
     /// module.  Returns a risk score in 0.0..=1.0.
     ///
-    /// The `fingerprint_json` is parsed from the device_fingerprint field
+    /// The `fingerprint_json` is parsed from the `device_fingerprint` field
     /// (which may be a JSON blob or an opaque hash).  If parsing fails, a
     /// default mid-range score is returned to avoid blocking legitimate users.
     #[must_use]
@@ -1172,39 +1168,39 @@ fn parse_fingerprint_attributes(
             .to_string();
         let plugin_count = val
             .get("pluginCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let font_count = val
             .get("fontCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let screen_w = val
             .get("screenWidth")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let screen_h = val
             .get("screenHeight")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let tz_offset = val
             .get("timezoneOffset")
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(0) as i32;
         let dnt = val
             .get("doNotTrack")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
         let cores = val
             .get("hardwareConcurrency")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let mem = val
             .get("deviceMemory")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let attr_count = val
             .get("attributeCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
 
         behavioral::FingerprintAttributes {
@@ -1281,7 +1277,7 @@ struct GeoCountryRow {
     geo_country: String,
 }
 
-/// RETURNING clause columns for fraud_signals INSERT.
+/// RETURNING clause columns for `fraud_signals` INSERT.
 const RETURNING_COLS: &str = "\
     id, user_id, signal_type, signal_subtype, severity, \
     confidence::float8 AS confidence, description, evidence_json, \
@@ -1496,12 +1492,9 @@ mod tests {
     #[test]
     fn signal_type_proto_roundtrip() {
         for i in 1..=9 {
-            let st = match SignalType::from_proto_i32(i) {
-                Some(s) => s,
-                None => {
-                    tracing::warn!(value = i, "skipping unknown signal type proto value");
-                    continue;
-                }
+            let st = if let Some(s) = SignalType::from_proto_i32(i) { s } else {
+                tracing::warn!(value = i, "skipping unknown signal type proto value");
+                continue;
             };
             assert_eq!(st.to_proto_i32(), i);
         }
@@ -1619,7 +1612,7 @@ mod tests {
             fn risk_level_valid_range(score in 0.0..=1.0_f64) {
                 let level = RiskLevel::from_score(score);
                 let proto = level.to_proto_i32();
-                prop_assert!(proto >= 1 && proto <= 4);
+                prop_assert!((1..=4).contains(&proto));
             }
 
             #[test]
@@ -1627,7 +1620,7 @@ mod tests {
                 let level = RiskLevel::from_score(score);
                 let decision = FraudDecision::from_risk_level(level);
                 let proto = decision.to_proto_i32();
-                prop_assert!(proto >= 1 && proto <= 4);
+                prop_assert!((1..=4).contains(&proto));
             }
 
             #[test]

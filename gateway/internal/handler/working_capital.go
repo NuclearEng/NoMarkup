@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -36,8 +35,7 @@ func (h *WorkingCapitalHandler) RequestAdvance(w http.ResponseWriter, r *http.Re
 	}
 
 	var req requestAdvanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -241,8 +239,7 @@ func (h *WorkingCapitalHandler) AdminReviewAdvance(w http.ResponseWriter, r *htt
 	}
 
 	var req adminReviewAdvanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

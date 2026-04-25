@@ -191,6 +191,95 @@ func RequirePartyAccess(db OwnershipQuerier, cfg PartyAccessConfig) func(http.Ha
 	}
 }
 
+// JoinedPartyAccessConfig defines how to look up the two parties of a resource
+// that are stored on a joined parent table (e.g., a dispute joins its parent
+// contract for customer_id/provider_id). Both parties of the parent row are
+// allowed to access the child resource.
+type JoinedPartyAccessConfig struct {
+	Table       string // e.g., "disputes"
+	IDColumn    string // e.g., "id"
+	JoinColumn  string // e.g., "contract_id"
+	JoinTable   string // e.g., "contracts"
+	JoinIDCol   string // e.g., "id" (PK of JoinTable)
+	PartyCol1   string // e.g., "customer_id" (on JoinTable)
+	PartyCol2   string // e.g., "provider_id" (on JoinTable)
+	URLParam    string // e.g., "id"
+}
+
+// RequireJoinedPartyAccess returns middleware that verifies the authenticated
+// user is one of the two parties on a joined parent row (e.g., the contract a
+// dispute belongs to). Admins bypass.
+//
+// Usage:
+//
+//	r.With(middleware.RequireJoinedPartyAccess(db, middleware.JoinedPartyAccessConfig{
+//	    Table: "disputes", IDColumn: "id",
+//	    JoinColumn: "contract_id",
+//	    JoinTable: "contracts", JoinIDCol: "id",
+//	    PartyCol1: "customer_id", PartyCol2: "provider_id",
+//	    URLParam: "id",
+//	})).Get("/{id}", disputeHandler.GetDispute)
+func RequireJoinedPartyAccess(db OwnershipQuerier, cfg JoinedPartyAccessConfig) func(http.Handler) http.Handler {
+	// All identifiers come from hardcoded route configuration, not user input.
+	query := fmt.Sprintf(
+		"SELECT j.%s, j.%s FROM %s c JOIN %s j ON c.%s = j.%s WHERE c.%s = $1",
+		cfg.PartyCol1, cfg.PartyCol2,
+		cfg.Table, cfg.JoinTable,
+		cfg.JoinColumn, cfg.JoinIDCol,
+		cfg.IDColumn,
+	)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := GetClaims(r.Context())
+			if !ok || claims.UserID == "" {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+
+			if hasAdminRole(claims) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			resourceID := chi.URLParam(r, cfg.URLParam)
+			if resourceID == "" {
+				http.Error(w, `{"error":"resource ID required"}`, http.StatusBadRequest)
+				return
+			}
+
+			var party1, party2 string
+			err := db.QueryRow(r.Context(), query, resourceID).Scan(&party1, &party2)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+					return
+				}
+				slog.Error("joined party access check: database error",
+					"table", cfg.Table,
+					"join_table", cfg.JoinTable,
+					"resource_id", resourceID,
+					"error", err,
+				)
+				http.Error(w, `{"error":"service unavailable"}`, http.StatusServiceUnavailable)
+				return
+			}
+
+			if claims.UserID != party1 && claims.UserID != party2 {
+				slog.Warn("joined party access check: access denied",
+					"table", cfg.Table,
+					"resource_id", resourceID,
+					"requester_id", claims.UserID,
+				)
+				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // hasAdminRole checks whether the given claims include the "admin" role.
 func hasAdminRole(claims *Claims) bool {
 	for _, role := range claims.Roles {

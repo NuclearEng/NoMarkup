@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -51,8 +50,7 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req placeBidRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -101,8 +99,7 @@ func (h *BidHandler) UpdateBid(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateBidRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

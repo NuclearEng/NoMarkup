@@ -586,7 +586,7 @@ Three-level hierarchy: **Category > Subcategory > Service Type**
 - **FR-7.5** Fraud signal output: each signal generates a confidence score (0–1). Signals above a configurable threshold enter the admin fraud review queue.
 - **FR-7.6** Automated actions at high confidence: temporary account suspension pending admin review, bid removal, review quarantine.
 - **FR-7.7** Admin fraud dashboard: view all flagged signals, drill into user activity, approve/dismiss flags, take action (warn, suspend, ban).
-- **FR-7.8** MVP approach: rule-based detection with basic ML models (anomaly detection on review/bid patterns). Collect all data from day one. Models improve as data volume grows.
+- **FR-7.8** MVP approach: **rule-based heuristic detection ships first** (velocity, geo-mismatch, fingerprint entropy, multi-account clustering, IP/UA/locale anomalies). ML inference (ONNX models for review/bid anomaly detection) is **deferred to v2** — pre-launch fraud defense relies entirely on the heuristic layer plus admin review of flagged signals. Data collection (FR-7.1) ships from day one to enable model training when data volume justifies it. Engineering note: PLAN §6.1 line 179 documents the v1-heuristics commitment; CLAUDE.md §1 was updated 2026-04-24 to remove "ML inference" from the v1 fraud-engine description.
 
 ### 8.8 In-App Chat
 

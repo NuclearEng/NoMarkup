@@ -22,8 +22,30 @@ const (
 	argonKeyLength   = 32
 )
 
-// Seed password for all dev accounts.
-const seedPassword = "Password123!"
+// Seed password for all dev accounts. Read from SEED_PASSWORD env var so
+// that committed code never carries a real credential — the audit on
+// 2026-04-23 found a `Password123!` literal had leaked into git history
+// (TODOS S1) and we are not repeating that. If unset locally, the seeder
+// generates a random password and prints it once.
+//
+// Operators must set SEED_PASSWORD when seeding shared environments
+// (staging, QA, anywhere accessed by more than one human). The printed
+// password should be stored in the team password manager.
+func resolveSeedPassword() string {
+	if p := os.Getenv("SEED_PASSWORD"); p != "" {
+		return p
+	}
+	// Generate a 24-byte random password (URL-safe base64 → ~32 chars).
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		log.Fatalf("generate random seed password: %v", err)
+	}
+	pw := base64.RawURLEncoding.EncodeToString(buf)
+	log.Println("WARNING: SEED_PASSWORD not set — using a one-shot random password.")
+	log.Printf("WARNING: dev-account password is %q — store it now or re-seed.", pw)
+	log.Println("WARNING: do NOT use this seeder against staging/QA without setting SEED_PASSWORD.")
+	return pw
+}
 
 // Fixed UUIDs for deterministic seed data (idempotent re-runs).
 const (
@@ -79,6 +101,7 @@ func main() {
 	}
 	defer conn.Close(ctx)
 
+	seedPassword := resolveSeedPassword()
 	passwordHash, err := hashPassword(seedPassword)
 	if err != nil {
 		log.Fatalf("hash password: %v", err)
@@ -517,7 +540,7 @@ func main() {
 	log.Println("Seed complete!")
 	log.Println("")
 	log.Println("╔══════════════════════════════════════════════════════════════╗")
-	log.Println("║  Dev Accounts (all passwords: Password123!)                 ║")
+	log.Println("║  Dev Accounts (password: $SEED_PASSWORD or printed above)    ║")
 	log.Println("╠══════════════════════════════════════════════════════════════╣")
 	log.Println("║  Admin:     admin@nomarkup.com      roles: [admin]          ║")
 	log.Println("║  Customer:  customer@nomarkup.com   roles: [customer]       ║")

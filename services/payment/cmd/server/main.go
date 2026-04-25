@@ -106,19 +106,23 @@ func main() {
 	}
 	slog.Info("connected to database")
 
-	// Initialize Stripe key.
+	// Initialize Stripe key. A placeholder value (e.g. "sk_test_..." from the
+	// committed .env template) would silently route real money flows through
+	// the in-memory DevStore on startup, so reject placeholders in
+	// non-development environments. Empty AND placeholder are both treated as
+	// "missing" — see service.IsPlaceholderStripeKey for the exact rules.
 	stripeKey := os.Getenv("STRIPE_SECRET_KEY")
-	if stripeKey != "" {
+	stripeKeyPlaceholder := service.IsPlaceholderStripeKey(stripeKey)
+	if stripeKeyPlaceholder && env != "development" {
+		slog.Error("STRIPE_SECRET_KEY is missing or a placeholder; refusing to start in non-development environment", "environment", env)
+		os.Exit(1)
+	}
+	if !stripeKeyPlaceholder {
 		stripe.Key = stripeKey
 		slog.Info("stripe key configured")
 	} else {
-		slog.Warn("STRIPE_SECRET_KEY not set, Stripe operations will return stubs")
-	}
-
-	// Refuse to start without a Stripe key outside development.
-	if stripeKey == "" && env != "development" {
-		slog.Error("STRIPE_SECRET_KEY is required in non-development environments", "environment", env)
-		os.Exit(1)
+		// env=="development" by the check above.
+		slog.Warn("STRIPE_SECRET_KEY missing or placeholder; payment/subscription flows will use the in-memory DevStore (development only)")
 	}
 
 	// Stripe webhook signature verification is MANDATORY in every environment.
@@ -135,7 +139,7 @@ func main() {
 
 	// Wire up services.
 	repo := repository.NewPostgresRepository(pool)
-	stripeSvc := service.NewStripeService()
+	stripeSvc := service.NewStripeService(env)
 	paymentSvc := service.NewPaymentService(repo, stripeSvc)
 	paymentSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))
 	grpcServer := paymentgrpc.NewServer(paymentSvc)

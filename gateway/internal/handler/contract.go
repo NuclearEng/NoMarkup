@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -242,8 +241,7 @@ func (h *ContractHandler) RequestRevision(w http.ResponseWriter, r *http.Request
 	}
 
 	var req requestRevisionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -370,8 +368,7 @@ func (h *ContractHandler) CreateChangeOrder(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req createChangeOrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -442,8 +439,7 @@ func (h *ContractHandler) RespondToChangeOrder(w http.ResponseWriter, r *http.Re
 	}
 
 	var req respondChangeOrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -484,8 +480,7 @@ func (h *ContractHandler) OpenDispute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req openDisputeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

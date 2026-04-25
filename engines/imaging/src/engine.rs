@@ -1,8 +1,8 @@
 /// Image processing pipeline backed by the `image` crate and AWS S3-compatible
-/// (MinIO) object storage.
+/// (`MinIO`) object storage.
 ///
 /// Handles resize, format conversion, EXIF stripping (by re-encoding),
-/// BlurHash generation, and context-specific processing pipelines for job
+/// `BlurHash` generation, and context-specific processing pipelines for job
 /// photos, portfolio images, avatars, and documents.
 use std::io::Cursor;
 
@@ -27,12 +27,12 @@ pub struct ImagePipeline {
 impl ImagePipeline {
     /// Create a new pipeline.
     ///
-    /// * `s3_client` – configured `aws-sdk-s3` client (pointed at MinIO)
+    /// * `s3_client` – configured `aws-sdk-s3` client (pointed at `MinIO`)
     /// * `bucket` – the bucket name, e.g. `"nomarkup"`
     /// * `public_url_base` – base URL for constructing public object URLs,
     ///   e.g. `"http://localhost:9000/nomarkup"`
     #[must_use]
-    pub fn new(s3_client: aws_sdk_s3::Client, bucket: String, public_url_base: String) -> Self {
+    pub const fn new(s3_client: aws_sdk_s3::Client, bucket: String, public_url_base: String) -> Self {
         Self {
             s3_client,
             bucket,
@@ -45,7 +45,7 @@ impl ImagePipeline {
     // -----------------------------------------------------------------------
 
     /// Process a single image: download, resize/reformat, optionally compute
-    /// BlurHash, upload the result, and return the variant metadata.
+    /// `BlurHash`, upload the result, and return the variant metadata.
     pub async fn process_image(
         &self,
         source_key: &str,
@@ -128,7 +128,7 @@ impl ImagePipeline {
     }
 
     /// Process a batch of job photos. For each photo, create large (1200),
-    /// medium (600), thumbnail (200) variants plus a BlurHash.
+    /// medium (600), thumbnail (200) variants plus a `BlurHash`.
     pub async fn process_job_photos(
         &self,
         job_id: &str,
@@ -172,7 +172,7 @@ impl ImagePipeline {
     }
 
     /// Process a portfolio image: full (1600), display (800), thumbnail (300)
-    /// variants plus BlurHash.
+    /// variants plus `BlurHash`.
     pub async fn process_portfolio_image(
         &self,
         user_id: &str,
@@ -339,8 +339,7 @@ impl ImagePipeline {
 
         // Determine extension from MIME type.
         let ext = ImageFormat::from_mime(mime_type)
-            .map(|f| f.extension())
-            .unwrap_or("bin");
+            .map_or("bin", super::models::ImageFormat::extension);
 
         // Sanitize filename: take only the stem of the original filename.
         let stem = std::path::Path::new(filename)
@@ -519,14 +518,12 @@ impl ImagePipeline {
             .rsplit('/')
             .next()
             .and_then(|f| f.rsplit_once('.'))
-            .map(|(s, _)| s)
-            .unwrap_or("img");
+            .map_or("img", |(s, _)| s);
 
         // Derive directory from source key.
         let dir = source_key
             .rsplit_once('/')
-            .map(|(d, _)| d)
-            .unwrap_or("misc");
+            .map_or("misc", |(d, _)| d);
 
         format!("{dir}/{variant}/{stem}_{}.{}", Uuid::now_v7(), fmt.extension())
     }
@@ -632,10 +629,10 @@ fn crop_center_square(img: &DynamicImage) -> DynamicImage {
     img.crop_imm(x, y, side, side)
 }
 
-/// Compute a simple BlurHash string from a downscaled image.
+/// Compute a simple `BlurHash` string from a downscaled image.
 ///
 /// This is a lightweight implementation that produces a valid 4x3 component
-/// BlurHash. The image is first downscaled to 32x32, then the DC and AC
+/// `BlurHash`. The image is first downscaled to 32x32, then the DC and AC
 /// components are computed via DCT and base83-encoded.
 fn compute_blur_hash(img: &DynamicImage) -> String {
     let small = img.resize_exact(32, 32, FilterType::Lanczos3).to_rgba8();
@@ -718,7 +715,7 @@ fn encode_blurhash(cx: usize, cy: usize, factors: &[[f64; 3]]) -> String {
     }
 
     let quantised_max = if max_ac > 0.0 {
-        ((max_ac * 166.0 - 0.5).floor() as u32).clamp(0, 82)
+        (max_ac.mul_add(166.0, -0.5).floor() as u32).clamp(0, 82)
     } else {
         0
     };
@@ -727,7 +724,7 @@ fn encode_blurhash(cx: usize, cy: usize, factors: &[[f64; 3]]) -> String {
     let real_max = if quantised_max == 0 {
         1.0
     } else {
-        (quantised_max as f64 + 1.0) / 167.0
+        (f64::from(quantised_max) + 1.0) / 167.0
     };
 
     // DC component.
@@ -749,7 +746,7 @@ fn linear_to_srgb(value: f64) -> u32 {
     let s = if v <= 0.003_130_8 {
         v * 12.92
     } else {
-        1.055 * v.powf(1.0 / 2.4) - 0.055
+        1.055f64.mul_add(v.powf(1.0 / 2.4), -0.055)
     };
     (s * 255.0 + 0.5) as u32
 }

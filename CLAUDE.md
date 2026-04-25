@@ -52,7 +52,7 @@
 | Bidding Engine | **Rust** | Real-time bid processing, auction timing, sealed-bid logic | Sub-millisecond latency, zero-cost abstractions, memory safety under concurrent load |
 | Payment Service | Go | Stripe Connect integration, escrow, disbursement, refunds | Stripe SDK availability, webhook handling |
 | Chat Service | Go | WebSocket connections, message persistence, presence | goroutine-per-connection scales to millions |
-| Fraud Detection | **Rust** | Browser fingerprinting analysis, behavioral scoring, ring detection | CPU-intensive ML inference, pattern matching at scale |
+| Fraud Detection | **Rust** | Browser fingerprinting analysis, behavioral scoring, ring detection | Heuristic v1 (velocity, geo-mismatch, fingerprint entropy, multi-account); ML inference deferred — see PLAN §6.1 |
 | Trust Scoring | **Rust** | Composite score computation, real-time recalculation | High-throughput numerical computation |
 | Search & Ranking | **Rust** (Meilisearch) | Full-text search, geo-filtered results, relevance ranking | Meilisearch is Rust-native, sub-50ms queries |
 | Image Pipeline | **Rust** + **C** (libvips) | Resize, optimize, watermark, format conversion | libvips via FFI, 8x faster than ImageMagick |
@@ -96,7 +96,7 @@
 - **Database**: sqlx (compile-time checked queries)
 - **Image Processing**: image crate + libvips FFI
 - **Geo**: geo crate + PostGIS queries
-- **ML Inference**: ort (ONNX Runtime bindings) for fraud models
+- **ML Inference**: ort (ONNX Runtime bindings) — RESERVED for v2 fraud models. Not in current builds. Fraud v1 ships with deterministic heuristics; the ONNX integration is on the roadmap (PLAN §6.1). Do not assume ML inference is in production paths.
 - **Testing**: cargo test + proptest (property-based)
 - **Benchmarking**: criterion
 
@@ -223,15 +223,13 @@ NoMarkup/
 │   │   ├── tests/
 │   │   ├── benches/                 # Criterion benchmarks
 │   │   └── Cargo.toml
-│   ├── fraud/
+│   ├── fraud/                       # Heuristic v1 — see PLAN §6.1; ONNX deferred
 │   │   ├── src/
 │   │   │   ├── main.rs
-│   │   │   ├── detector.rs          # Fraud detection pipeline
-│   │   │   ├── fingerprint.rs       # Browser fingerprint analysis
-│   │   │   ├── behavioral.rs        # Behavioral pattern analysis
-│   │   │   ├── inference.rs         # ONNX model inference
+│   │   │   ├── engine.rs            # Heuristic fraud-detection pipeline
+│   │   │   ├── behavioral.rs        # Behavioral patterns (velocity, geo, fingerprint entropy)
+│   │   │   ├── models.rs            # Domain types
 │   │   │   └── grpc.rs
-│   │   ├── models/                  # Trained ONNX models
 │   │   ├── tests/
 │   │   ├── benches/
 │   │   └── Cargo.toml

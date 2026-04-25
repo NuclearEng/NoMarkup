@@ -748,6 +748,48 @@ func (r *PostgresRepository) BanUser(ctx context.Context, userID, reason, adminI
 	return nil
 }
 
+// suspendOrBanWithRevoke updates a user's status to newStatus and revokes all
+// active refresh tokens in a single transaction. Used by SuspendUserAndRevokeTokens
+// and BanUserAndRevokeTokens to guarantee a moderation action and its session
+// invalidation succeed or fail together.
+func (r *PostgresRepository) suspendOrBanWithRevoke(ctx context.Context, userID, reason, newStatus, opName string) error {
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%s: begin tx: %w", opName, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE users
+		SET status = $2, suspension_reason = $3, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`, userID, newStatus, reason)
+	if err != nil {
+		return fmt.Errorf("%s: update status: %w", opName, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", opName, domain.ErrUserNotFound)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE refresh_tokens SET revoked_at = now()
+		WHERE user_id = $1 AND revoked_at IS NULL`, userID); err != nil {
+		return fmt.Errorf("%s: revoke tokens: %w", opName, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%s: commit: %w", opName, err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) SuspendUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error {
+	return r.suspendOrBanWithRevoke(ctx, userID, reason, "suspended", "suspend user")
+}
+
+func (r *PostgresRepository) BanUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error {
+	return r.suspendOrBanWithRevoke(ctx, userID, reason, "banned", "ban user")
+}
+
 func (r *PostgresRepository) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error {
 	detailsJSON, err := json.Marshal(details)
 	if err != nil {

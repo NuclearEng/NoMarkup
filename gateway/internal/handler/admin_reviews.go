@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -94,8 +93,7 @@ func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request
 		Uphold          bool   `json:"uphold"`
 		ResolutionNotes string `json:"resolution_notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -132,8 +130,7 @@ func (h *AdminReviewsHandler) RemoveReview(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Reason == "" {

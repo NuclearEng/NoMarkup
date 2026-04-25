@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
@@ -34,8 +33,7 @@ func (h *ImageHandler) GetUploadURL(w http.ResponseWriter, r *http.Request) {
 		FileSizeBytes int32  `json:"file_size_bytes"`
 		Context       string `json:"context"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -92,8 +90,7 @@ func (h *ImageHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		ObjectKey string `json:"object_key"`
 		Context   string `json:"context"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -137,8 +134,7 @@ func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		Context   string                  `json:"context"`
 		Options   *processImageOptionsDTO `json:"options"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -197,8 +193,7 @@ func (h *ImageHandler) ProcessJobPhotos(w http.ResponseWriter, r *http.Request) 
 		JobID      string   `json:"job_id"`
 		SourceURLs []string `json:"source_urls"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.JobID == "" {
@@ -250,8 +245,7 @@ func (h *ImageHandler) ProcessAvatar(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SourceURL string `json:"source_url"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SourceURL == "" {
@@ -295,8 +289,7 @@ func (h *ImageHandler) ProcessPortfolio(w http.ResponseWriter, r *http.Request) 
 		SourceURL string `json:"source_url"`
 		Caption   string `json:"caption"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SourceURL == "" {
@@ -341,8 +334,7 @@ func (h *ImageHandler) ProcessDocument(w http.ResponseWriter, r *http.Request) {
 		SourceURL    string `json:"source_url"`
 		DocumentType string `json:"document_type"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SourceURL == "" {

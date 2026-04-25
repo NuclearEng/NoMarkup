@@ -37,12 +37,12 @@ pub struct ReviewDataPoint {
 
 /// Compute exponential decay weight for a review given its age.
 ///
-/// Formula: weight = max(min_weight, 2^(-age / half_life))
+/// Formula: weight = `max(min_weight`, 2^(-age / `half_life`))
 ///
 /// This gives:
 /// - age = 0: weight = 1.0
-/// - age = half_life: weight = 0.5
-/// - age = 2 * half_life: weight = 0.25
+/// - age = `half_life`: weight = 0.5
+/// - age = 2 * `half_life`: weight = 0.25
 /// - etc.
 ///
 /// Returns a value in `[min_weight, 1.0]`.
@@ -142,7 +142,7 @@ pub fn compute_feedback_score(input: &FeedbackInput) -> f64 {
     // Bayesian confidence: blend toward 0.5 (neutral) when reviews are few.
     // After ~10 reviews, confidence is ~0.91. After 20, ~0.95.
     let confidence = bayesian_confidence(input.total_reviews);
-    let base_score = 0.5 * (1.0 - confidence) + normalized * confidence;
+    let base_score = 0.5f64.mul_add(1.0 - confidence, normalized * confidence);
 
     // Rating trend bonus/penalty (capped at +/- 0.05).
     let trend_adjustment = (input.rating_trend * 0.025).clamp(-0.05, 0.05);
@@ -378,7 +378,7 @@ pub const WEIGHT_FRAUD: f64 = 0.20;
 #[must_use]
 pub fn composite_score(feedback: f64, volume: f64, risk: f64, fraud: f64) -> f64 {
     let raw =
-        feedback * WEIGHT_FEEDBACK + volume * WEIGHT_VOLUME + risk * WEIGHT_RISK + fraud * WEIGHT_FRAUD;
+        fraud.mul_add(WEIGHT_FRAUD, risk.mul_add(WEIGHT_RISK, feedback.mul_add(WEIGHT_FEEDBACK, volume * WEIGHT_VOLUME)));
     raw.clamp(0.0, 1.0)
 }
 
@@ -648,7 +648,7 @@ mod tests {
         };
         let with_disputes = FeedbackInput {
             disputes_lost: 3,
-            ..base.clone()
+            ..base
         };
         let score_base = compute_feedback_score(&base);
         let score_disputes = compute_feedback_score(&with_disputes);
@@ -718,7 +718,7 @@ mod tests {
         };
         let improving = FeedbackInput {
             rating_trend: 1.0,
-            ..base.clone()
+            ..base
         };
         assert!(
             compute_feedback_score(&improving) > compute_feedback_score(&base),
@@ -833,7 +833,7 @@ mod tests {
         };
         let slow = VolumeInput {
             avg_response_time_hours: 20.0,
-            ..fast.clone()
+            ..fast
         };
         assert!(
             compute_volume_score(&fast) > compute_volume_score(&slow),

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,7 +194,11 @@ func TestAuthHandler_Register(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rec.Code)
 			result := decodeJSONResponse(t, rec)
 			if tt.wantField != "" {
-				assert.Equal(t, tt.wantValue, result[tt.wantField])
+				// decodeJSON helper appends the underlying JSON parse error to
+				// "invalid request body" — assert with prefix instead of equal.
+				gotStr, _ := result[tt.wantField].(string)
+				assert.True(t, strings.HasPrefix(gotStr, tt.wantValue),
+					"expected %q to have prefix %q", gotStr, tt.wantValue)
 			}
 		})
 	}

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -123,8 +122,7 @@ func (h *AdminDisputesHandler) ResolveDispute(w http.ResponseWriter, r *http.Req
 		RefundAmountCents int64  `json:"refund_amount_cents"`
 		GuaranteeOutcome  string `json:"guarantee_outcome"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -225,8 +223,7 @@ func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *ht
 		ResolutionNotes string `json:"resolution_notes"`
 		PayoutCents     int64  `json:"payout_cents"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 

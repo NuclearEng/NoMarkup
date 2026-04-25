@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -208,8 +207,7 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 	}
 
 	var req updatePreferencesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -266,8 +264,7 @@ func (h *NotificationHandler) RegisterDevice(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req registerDeviceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -331,8 +328,7 @@ type unsubscribeRequest struct {
 // Unsubscribe handles POST /api/v1/notifications/unsubscribe.
 func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	var req unsubscribeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

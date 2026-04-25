@@ -159,7 +159,32 @@ func (h *OAuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get user info from Google.
+	// Verify the Google id_token's signature against Google's JWKS and validate
+	// iss/aud/exp claims. This is defense-in-depth: while the userinfo endpoint
+	// call below is also served over TLS to Google, a verified id_token gives us
+	// a cryptographic binding to our GOOGLE_CLIENT_ID (aud claim), preventing
+	// any class of bug where token-exchange responses could be tampered with or
+	// where the access_token is compromised independently.
+	idTokenStr, ok := token.Extra("id_token").(string)
+	if !ok || idTokenStr == "" {
+		slog.Error("google oauth: missing id_token in token response")
+		http.Redirect(w, r, h.frontendURL+"/login?error=missing_id_token", http.StatusTemporaryRedirect)
+		return
+	}
+
+	idClaims, err := verifyGoogleIDToken(r.Context(), idTokenStr)
+	if err != nil {
+		slog.Error("google oauth: id_token signature verification failed",
+			"error", err,
+			"code", "oauth_invalid_signature",
+		)
+		http.Redirect(w, r, h.frontendURL+"/login?error=oauth_invalid_signature", http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Get profile info (name, picture) from the userinfo endpoint. The id_token
+	// is the trusted source for sub/email; userinfo is only used for display
+	// data we don't gate auth decisions on.
 	client := config.Client(r.Context(), token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
@@ -170,11 +195,8 @@ func (h *OAuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 	defer resp.Body.Close()
 
 	var googleUser struct {
-		ID            string `json:"id"`
-		Email         string `json:"email"`
-		VerifiedEmail bool   `json:"verified_email"`
-		Name          string `json:"name"`
-		Picture       string `json:"picture"`
+		Name    string `json:"name"`
+		Picture string `json:"picture"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
 		slog.Error("failed to decode google user info", "error", err)
@@ -182,17 +204,21 @@ func (h *OAuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if !googleUser.VerifiedEmail {
-		slog.Warn("google user email not verified", "email", googleUser.Email)
+	// Email verification is enforced via the id_token's email_verified claim
+	// (cryptographically signed by Google), not via the unauthenticated
+	// userinfo response.
+	if !idClaims.EmailVerified {
+		slog.Warn("google user email not verified", "email", idClaims.Email)
 		http.Redirect(w, r, h.frontendURL+"/login?error=email_not_verified", http.StatusTemporaryRedirect)
 		return
 	}
 
-	// Call user service to find or create user.
+	// Call user service to find or create user. Provider ID and email come
+	// from the verified id_token; display name + avatar come from userinfo.
 	result, err := h.userClient.FindOrCreateByOAuth(r.Context(), &userv1.FindOrCreateByOAuthRequest{
 		Provider:   "google",
-		ProviderId: googleUser.ID,
-		Email:      googleUser.Email,
+		ProviderId: idClaims.Subject,
+		Email:      idClaims.Email,
 		Name:       googleUser.Name,
 		AvatarUrl:  googleUser.Picture,
 	})
@@ -498,6 +524,87 @@ func verifyAppleIDToken(ctx context.Context, rawToken, expectedNonce string) (*a
 	}
 	// Email can be missing on subsequent sign-ins (Apple only sends it the
 	// first time). The caller falls back gracefully when empty.
+	return claims, nil
+}
+
+// --- Google ID token verification ---
+
+const (
+	googleJWKSURL          = "https://www.googleapis.com/oauth2/v3/certs"
+	googleIDTokenIssuer    = "https://accounts.google.com"
+	googleIDTokenIssuerAlt = "accounts.google.com" // Google sometimes omits scheme
+)
+
+// googleIDTokenClaims holds the subset of Google ID token JWT claims we need
+// plus the standard claims used for validation (iss, aud, exp).
+type googleIDTokenClaims struct {
+	jwt.RegisteredClaims
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+}
+
+var (
+	googleJWKSOnce     sync.Once
+	googleJWKSInstance keyfunc.Keyfunc
+	googleJWKSErr      error
+)
+
+// googleJWKS returns a cached keyfunc that fetches and periodically refreshes
+// Google's JWKS.
+func googleJWKS(ctx context.Context) (keyfunc.Keyfunc, error) {
+	googleJWKSOnce.Do(func() {
+		k, err := keyfunc.NewDefaultCtx(ctx, []string{googleJWKSURL})
+		if err != nil {
+			googleJWKSErr = fmt.Errorf("load google jwks: %w", err)
+			return
+		}
+		googleJWKSInstance = k
+	})
+	return googleJWKSInstance, googleJWKSErr
+}
+
+// verifyGoogleIDToken validates the signature, issuer, audience, and expiry of
+// a Google ID token. Callers MUST NOT trust any claim from a Google ID token
+// that has not been through this function.
+//
+// Google accepts both "https://accounts.google.com" and "accounts.google.com"
+// as the issuer (the spec says the former; many of Google's own libraries
+// accept the latter for legacy reasons), so we check both.
+func verifyGoogleIDToken(ctx context.Context, rawToken string) (*googleIDTokenClaims, error) {
+	clientID := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID"))
+	if clientID == "" {
+		return nil, errors.New("GOOGLE_CLIENT_ID not configured")
+	}
+
+	jwks, err := googleJWKS(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	claims := &googleIDTokenClaims{}
+	token, err := jwt.ParseWithClaims(
+		rawToken,
+		claims,
+		jwks.Keyfunc,
+		jwt.WithAudience(clientID),
+		jwt.WithValidMethods([]string{"RS256"}),
+		// Issuer is checked manually below to support both Google's accepted forms.
+	)
+	if err != nil {
+		return nil, fmt.Errorf("verify google id_token: %w", err)
+	}
+	if !token.Valid {
+		return nil, errors.New("google id_token invalid")
+	}
+	if claims.Issuer != googleIDTokenIssuer && claims.Issuer != googleIDTokenIssuerAlt {
+		return nil, fmt.Errorf("google id_token unexpected issuer: %s", claims.Issuer)
+	}
+	if claims.Subject == "" {
+		return nil, errors.New("google id_token missing sub claim")
+	}
+	if claims.Email == "" {
+		return nil, errors.New("google id_token missing email claim")
+	}
 	return claims, nil
 }
 

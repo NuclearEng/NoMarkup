@@ -7,7 +7,7 @@
 /// - Fraud: 20% (fraud signals, account flags -- inverted)
 ///
 /// The mathematical scoring logic lives in `crate::scoring` (pure functions,
-/// no I/O). This module is responsible for fetching data from PostgreSQL and
+/// no I/O). This module is responsible for fetching data from `PostgreSQL` and
 /// feeding it into those functions.
 ///
 /// Target: < 5ms p99 latency for score computation.
@@ -22,7 +22,7 @@ use crate::scoring::{
     self, DecayConfig, FeedbackInput, FraudInput, ReviewDataPoint, RiskInput, VolumeInput,
 };
 
-/// SQL query to select all columns from trust_scores with NUMERIC casts to float8.
+/// SQL query to select all columns from `trust_scores` with NUMERIC casts to float8.
 const TRUST_SCORE_SELECT_ALL: &str = "\
     SELECT id, user_id, role, \
       overall_score::float8 as overall_score, tier, \
@@ -119,7 +119,7 @@ impl TrustScorer {
     // -----------------------------------------------------------------------
 
     /// Compute (or recompute) the trust score for a user.
-    /// This reads from reviews, contracts, disputes, and fraud_signals tables,
+    /// This reads from reviews, contracts, disputes, and `fraud_signals` tables,
     /// calculates all four dimension scores, determines the tier, and upserts
     /// the result into `trust_scores`. Also inserts a history row.
     ///
@@ -415,7 +415,7 @@ impl TrustScorer {
     /// # Errors
     ///
     /// Returns `TrustError::PermissionDenied` if the requesting user is not an admin.
-    /// Returns `TrustError::InvalidUserId` if the user_id is nil.
+    /// Returns `TrustError::InvalidUserId` if the `user_id` is nil.
     pub async fn admin_override_score(
         &self,
         user_id: Uuid,
@@ -771,7 +771,7 @@ impl TrustScorer {
     /// Compute the fraud dimension score (0.0-1.0).
     /// INVERTED: lower fraud = higher score.
     ///
-    /// Queries fraud_signals table, then delegates to the pure scoring function.
+    /// Queries `fraud_signals` table, then delegates to the pure scoring function.
     #[allow(clippy::cast_possible_truncation)]
     async fn compute_fraud(
         &self,
@@ -869,14 +869,14 @@ impl TrustScorer {
         .await
         .ok()
         .flatten()
-        .map_or(false, |r| r.is_verified);
+        .is_some_and(|r| r.is_verified);
 
         let requirements = all_tier_requirements();
 
         // Check tiers from highest to lowest.
         // Top Rated: 85+, 25+ jobs, 15+ reviews, 4.5+ rating, verification.
-        if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::TopRated) {
-            if overall >= req.min_overall_score
+        if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::TopRated)
+            && overall >= req.min_overall_score
                 && volume.total_jobs_completed >= req.min_completed_jobs
                 && feedback.total_reviews >= req.min_reviews
                 && feedback.average_rating >= req.min_rating
@@ -884,11 +884,10 @@ impl TrustScorer {
             {
                 return TrustTier::TopRated;
             }
-        }
 
         // Trusted: 70+, 10+ jobs, 5+ reviews, 4.0+ rating, verification.
-        if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::Trusted) {
-            if overall >= req.min_overall_score
+        if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::Trusted)
+            && overall >= req.min_overall_score
                 && volume.total_jobs_completed >= req.min_completed_jobs
                 && feedback.total_reviews >= req.min_reviews
                 && feedback.average_rating >= req.min_rating
@@ -896,18 +895,16 @@ impl TrustScorer {
             {
                 return TrustTier::Trusted;
             }
-        }
 
         // Rising: 50+, 3+ jobs, 2+ reviews.
-        if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::Rising) {
-            if overall >= req.min_overall_score
+        if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::Rising)
+            && overall >= req.min_overall_score
                 && volume.total_jobs_completed >= req.min_completed_jobs
                 && feedback.total_reviews >= req.min_reviews
                 && (!req.requires_verification || is_verified)
             {
                 return TrustTier::Rising;
             }
-        }
 
         TrustTier::New
     }

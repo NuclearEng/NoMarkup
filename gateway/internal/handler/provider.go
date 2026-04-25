@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -108,8 +107,7 @@ func (h *ProviderHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateProviderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -145,8 +143,7 @@ func (h *ProviderHandler) SetGlobalTerms(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req setTermsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -182,8 +179,7 @@ func (h *ProviderHandler) UpdateCategories(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req updateCategoriesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -218,8 +214,7 @@ func (h *ProviderHandler) UpdatePortfolio(w http.ResponseWriter, r *http.Request
 	}
 
 	var req updatePortfolioRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -262,8 +257,7 @@ func (h *ProviderHandler) SetAvailability(w http.ResponseWriter, r *http.Request
 	}
 
 	var req setAvailabilityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

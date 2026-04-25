@@ -1,5 +1,5 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
-       setup-tools test lint fmt build-gateway build-web build-engines clean
+       verify-proto setup-tools test lint fmt build-gateway build-web build-engines clean
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
 
@@ -91,6 +91,30 @@ proto-gen-rust:
 	@echo "Generating Rust protobuf code (via tonic-build)..."
 	cd engines && cargo build --all
 	@echo "Rust proto generation complete (code in engines/target/)."
+
+# Verify generated proto code is up-to-date with the .proto sources and that
+# all Go consumers still compile against it. CI runs this — a broken .proto
+# now fails the build instead of silently persisting behind hand-written
+# stand-in files (which is how an audit-period Stripe webhook regression
+# went undetected for weeks; see docs/TODOS.md S8).
+verify-proto:
+	@echo "Regenerating protobuf code..."
+	$(MAKE) proto-gen-go
+	@echo "Verifying no proto drift (working tree must be clean after regen)..."
+	@if [ -n "$$(git status --porcelain proto/gen)" ]; then \
+		echo "ERROR: proto/gen has drift — regenerate locally and commit:"; \
+		git status --porcelain proto/gen; \
+		git --no-pager diff -- proto/gen | head -200; \
+		exit 1; \
+	fi
+	@echo "Running go vet across all Go modules..."
+	cd gateway && go vet ./...
+	cd services/user && go vet ./...
+	cd services/job && go vet ./...
+	cd services/payment && go vet ./...
+	cd services/chat && go vet ./...
+	cd services/notification && go vet ./...
+	@echo "Proto verification passed."
 
 # ── Testing ───────────────────────────────────────────────────
 

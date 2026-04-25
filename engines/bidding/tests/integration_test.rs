@@ -251,9 +251,7 @@ fn bid_error_messages_are_descriptive() {
         let msg = err.to_string();
         assert!(
             msg.to_lowercase().contains(expected_substring),
-            "Error '{}' should contain '{}'",
-            msg,
-            expected_substring
+            "Error '{msg}' should contain '{expected_substring}'"
         );
     }
 }

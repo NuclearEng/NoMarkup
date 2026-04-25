@@ -11,7 +11,7 @@ pub enum ImageFormat {
 impl ImageFormat {
     /// File extension for the format.
     #[must_use]
-    pub fn extension(self) -> &'static str {
+    pub const fn extension(self) -> &'static str {
         match self {
             Self::Jpeg => "jpg",
             Self::Png => "png",
@@ -21,7 +21,7 @@ impl ImageFormat {
 
     /// MIME type for the format.
     #[must_use]
-    pub fn mime_type(self) -> &'static str {
+    pub const fn mime_type(self) -> &'static str {
         match self {
             Self::Jpeg => "image/jpeg",
             Self::Png => "image/png",
@@ -42,7 +42,7 @@ impl ImageFormat {
 
     /// Convert the `image` crate's output format enum.
     #[must_use]
-    pub fn to_image_format(self) -> image::ImageFormat {
+    pub const fn to_image_format(self) -> image::ImageFormat {
         match self {
             Self::Jpeg => image::ImageFormat::Jpeg,
             Self::Png => image::ImageFormat::Png,
@@ -138,7 +138,7 @@ impl UploadContext {
 
     /// S3 path prefix for this context.
     #[must_use]
-    pub fn path_prefix(self) -> &'static str {
+    pub const fn path_prefix(self) -> &'static str {
         match self {
             Self::Avatar => "avatars",
             Self::Portfolio => "portfolio",

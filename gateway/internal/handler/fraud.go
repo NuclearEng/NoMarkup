@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -111,8 +110,7 @@ func (h *FraudHandler) ReviewAlert(w http.ResponseWriter, r *http.Request) {
 		RestrictUser    bool   `json:"restrict_user"`
 		BanUser         bool   `json:"ban_user"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 

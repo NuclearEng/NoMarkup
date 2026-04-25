@@ -134,6 +134,28 @@ func (m *mockUserRepo) BanUser(ctx context.Context, userID, reason, adminID stri
 	}
 	return nil
 }
+func (m *mockUserRepo) SuspendUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error {
+	if m.suspendUserFn != nil {
+		if err := m.suspendUserFn(ctx, userID, reason, adminID); err != nil {
+			return err
+		}
+	}
+	if m.revokeAllUserTokensFn != nil {
+		return m.revokeAllUserTokensFn(ctx, userID)
+	}
+	return nil
+}
+func (m *mockUserRepo) BanUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error {
+	if m.banUserFn != nil {
+		if err := m.banUserFn(ctx, userID, reason, adminID); err != nil {
+			return err
+		}
+	}
+	if m.revokeAllUserTokensFn != nil {
+		return m.revokeAllUserTokensFn(ctx, userID)
+	}
+	return nil
+}
 func (m *mockUserRepo) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error {
 	if m.insertAuditLogFn != nil {
 		return m.insertAuditLogFn(ctx, adminID, action, targetType, targetID, details, ipAddress)
