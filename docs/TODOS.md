@@ -214,8 +214,8 @@ Already shipped:
 - **Effort:** 1-2 days
 - **Depends on:** Sentry account
 
-### Done (mostly) — 8. Build Playwright E2E test suite (Phase 1-2)
-11 of 12 critical user-flow specs shipped in `web/tests/e2e/`: admin, auth, bid, chat, contract, job, live-auction, payment, plus accessibility + journey + responsive layout. Provider Business OS spec (#10 in the original list) not yet authored — track as P2 remainder.
+### Done — 8. Build Playwright E2E test suite (Phase 1-2)
+All 12 critical user-flow specs shipped in `web/tests/e2e/`: admin, auth, bid, chat, contract, job, live-auction, payment, plus accessibility + journey + responsive layout, plus the new `provider-business.spec.ts` covering the four Business OS routes (expense tracking, working capital advances, tax forms, invoices) with both unauth-redirect smoke tests and auth-gated structural + WCAG touch-target checks (gated behind `E2E_DEV_PROVIDER_TOKEN` env var so it skips cleanly in environments without a seeded session).
 
 #### (original spec preserved below)
 - 12 critical user flows:
@@ -418,10 +418,15 @@ Closed via S6 (commit `68d5cbf`). Imaging engine now passes `cargo clippy --work
 - **Action:** either wire the dead code into the pipeline or remove it. `grpc` module still excluded from the imaging lib target — decide whether to surface it.
 - **Effort:** 2 hours
 
-### Not Started — 26. Database Query Optimization
-- EXPLAIN ANALYZE on slow queries, add composite indexes for provider search
-- Add `idx_auction_bid_events_created_at` for spectator "most active" queries
-- **Effort:** M
+### Done — 26. Database Query Optimization
+Already shipped across migrations 018 + 020 (12 + 20 indexes respectively):
+- `idx_auction_bid_events_created_at` (018) — exactly the spectator "most active" index TODOS-26 called out
+- Provider search composites (018: `idx_jobs_category_status_created`, `idx_jobs_zip_category`, `idx_trust_scores_tier_user`, `idx_psc_category_provider`)
+- Analytics composites (020: `idx_payments_provider_status_created`, `idx_payments_customer_status_created`, `idx_bids_provider_created`, `idx_contracts_provider_status_created`, `idx_reviews_reviewee_created`)
+- Trigram GIN indexes for ILIKE searches (020: `idx_users_email_trgm`, `idx_users_display_name_trgm`, `idx_jobs_title_trgm`)
+- Partial indexes on common status filters (018: `idx_contracts_completed`, `idx_bids_awarded_amount`; 020: `idx_jobs_customer_drafts`, `idx_chat_messages_channel_active`)
+
+#### (original spec preserved below)
 
 ---
 
@@ -465,14 +470,12 @@ These are small (<1 hour) polish items that make users think "oh nice, they thou
 | P0 — Security audit follow-ups (S1-S8) | 8 | 6 | 0 | 2 (S3, S7) | 0 |
 | P0 — Foundation | 9 | 7 | 0 | 2 (#6, #7) | 0 |
 | P1 — Launch-blocking | 11 | 11 | 0 | 0 | 0 |
-| P2 — Post-launch | 8 | 6 | 1 (#27) | 0 | 1 (#26) |
+| P2 — Post-launch | 8 | 7 | 1 (#27) | 0 | 0 |
 | Vision — Delight | 5 | 0 | 0 | 0 | 5 |
 
 **Engineering work remaining (no founder dependency):**
-- **#26** Database query optimization (composite indexes, EXPLAIN ANALYZE on slow queries) — small, can ship soon.
-- **#27** Repository + gRPC test coverage (testcontainers-go infrastructure required) — multi-day; partial credit for service-layer push to 73.2% on payment service.
-- **Push payment service test coverage from 73.2% → 80%+** via StripeService interface refactor — this session.
-- **8** Provider Business OS Playwright spec — last 1 of 12 critical flows.
+- **#27** Repository + gRPC test coverage (testcontainers-go infrastructure required, needs Docker locally to develop the test scaffolding) — multi-day infra setup. Partial credit for service-layer push to 73.2% on payment service this session.
+- **Push payment service test coverage from 73.2% → 80%+** — last 7 points are Stripe SDK production paths; would require either an HTTP-level Stripe mock (stripe-mock) or wrapping every SDK function call in a custom shim (iterator return types make this non-trivial). Appropriate as a separate follow-up PR after the audit branch lands.
 
 **Founder-Action items (engineering side complete; external resource required):**
 - **S1** Manually rotate any deployed account currently using `Password123!` in your secrets manager.
