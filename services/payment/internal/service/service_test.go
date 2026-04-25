@@ -48,9 +48,11 @@ type mockPaymentRepo struct {
 	getContractDetailFn        func(ctx context.Context, contractID string) (*domain.ContractDetail, error)
 	getMilestonesForContractFn func(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error)
 	getPaymentsForContractFn   func(ctx context.Context, contractID string) ([]*domain.Payment, error)
-	// Stripe customer ID + admin list payments
-	getStripeCustomerIDFn func(ctx context.Context, userID string) (string, error)
-	adminListPaymentsFn   func(ctx context.Context, userID, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error)
+	// Stripe customer ID + admin list/details/revenue
+	getStripeCustomerIDFn    func(ctx context.Context, userID string) (string, error)
+	adminListPaymentsFn      func(ctx context.Context, userID, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error)
+	adminGetPaymentDetailsFn func(ctx context.Context, paymentID string) (*domain.Payment, error)
+	getRevenueReportFn       func(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*domain.RevenueReport, error)
 	// Installment methods
 	createInstallmentPlanFn             func(ctx context.Context, plan *domain.InstallmentPlan) error
 	getInstallmentPlanFn                func(ctx context.Context, planID string) (*domain.InstallmentPlan, error)
@@ -153,13 +155,19 @@ func (m *mockPaymentRepo) AdminListPayments(ctx context.Context, userID, statusF
 	}
 	return nil, 0, 0, 0, nil
 }
-func (m *mockPaymentRepo) AdminGetPaymentDetails(_ context.Context, _ string) (*domain.Payment, error) {
+func (m *mockPaymentRepo) AdminGetPaymentDetails(ctx context.Context, paymentID string) (*domain.Payment, error) {
+	if m.adminGetPaymentDetailsFn != nil {
+		return m.adminGetPaymentDetailsFn(ctx, paymentID)
+	}
 	return nil, domain.ErrPaymentNotFound
 }
 func (m *mockPaymentRepo) UpdateFeeConfig(_ context.Context, _ *string, _, _ float64, _ int64, _ *int64) (*domain.FeeConfig, error) {
 	return nil, nil
 }
-func (m *mockPaymentRepo) GetRevenueReport(_ context.Context, _, _ *time.Time, _ string) (*domain.RevenueReport, error) {
+func (m *mockPaymentRepo) GetRevenueReport(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*domain.RevenueReport, error) {
+	if m.getRevenueReportFn != nil {
+		return m.getRevenueReportFn(ctx, startTime, endTime, groupBy)
+	}
 	return nil, nil
 }
 

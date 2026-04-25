@@ -358,6 +358,62 @@ func TestPaymentService_AdminUpdateFeeConfig(t *testing.T) {
 	}
 }
 
+// --- AdminGetPaymentDetails + GetRevenueReport ---
+
+func TestPaymentService_AdminGetPaymentDetails(t *testing.T) {
+	t.Parallel()
+
+	t.Run("happy_path", func(t *testing.T) {
+		t.Parallel()
+		expected := &domain.Payment{ID: "pmt-1", Status: "released"}
+		repo := &mockPaymentRepo{
+			adminGetPaymentDetailsFn: func(_ context.Context, paymentID string) (*domain.Payment, error) {
+				assert.Equal(t, "pmt-1", paymentID)
+				return expected, nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		got, err := svc.AdminGetPaymentDetails(context.Background(), "pmt-1")
+		require.NoError(t, err)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("propagates_not_found", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockPaymentRepo{
+			adminGetPaymentDetailsFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return nil, domain.ErrPaymentNotFound
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		_, err := svc.AdminGetPaymentDetails(context.Background(), "pmt-x")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrPaymentNotFound)
+	})
+}
+
+func TestPaymentService_GetRevenueReport(t *testing.T) {
+	t.Parallel()
+	expected := &domain.RevenueReport{
+		TotalGMVCents:     20000000,
+		TotalRevenueCents: 1000000,
+	}
+	start := time.Now().AddDate(0, -1, 0)
+	end := time.Now()
+	repo := &mockPaymentRepo{
+		getRevenueReportFn: func(_ context.Context, s, e *time.Time, groupBy string) (*domain.RevenueReport, error) {
+			require.NotNil(t, s)
+			require.NotNil(t, e)
+			assert.Equal(t, "month", groupBy)
+			return expected, nil
+		},
+	}
+	svc := newTestPaymentService(repo, nil)
+	got, err := svc.GetRevenueReport(context.Background(), &start, &end, "month")
+	require.NoError(t, err)
+	assert.Equal(t, expected, got)
+}
+
 // --- Insurance: GetPolicy / ListPolicies / GetClaim / AdminListClaims (delegations) ---
 
 func TestInsuranceService_GetPolicyAndList(t *testing.T) {

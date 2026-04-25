@@ -392,6 +392,51 @@ func TestPaymentService_DisburseAdvance(t *testing.T) {
 	})
 }
 
+// --- ListAdvances + GetAdvance proxies ---
+
+func TestPaymentService_ListAdvances(t *testing.T) {
+	t.Parallel()
+	expected := []*domain.Advance{{ID: "adv-1"}, {ID: "adv-2"}}
+	repo := &mockPaymentRepo{
+		listAdvancesFn: func(_ context.Context, providerID, statusFilter string, page, pageSize int) ([]*domain.Advance, int, error) {
+			assert.Equal(t, "prov-1", providerID)
+			assert.Equal(t, "approved", statusFilter)
+			return expected, 25, nil
+		},
+	}
+	svc := newTestPaymentService(repo, nil)
+	got, total, err := svc.ListAdvances(context.Background(), "prov-1", "approved", 1, 50)
+	require.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, 25, total)
+}
+
+func TestPaymentService_GetAdvance(t *testing.T) {
+	t.Parallel()
+
+	t.Run("happy_path", func(t *testing.T) {
+		t.Parallel()
+		expected := &domain.Advance{ID: "adv-1"}
+		repo := &mockPaymentRepo{
+			getAdvanceFn: func(_ context.Context, _ string) (*domain.Advance, error) {
+				return expected, nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		got, err := svc.GetAdvance(context.Background(), "adv-1")
+		require.NoError(t, err)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("missing_id", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestPaymentService(&mockPaymentRepo{}, nil)
+		_, err := svc.GetAdvance(context.Background(), "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "advance_id is required")
+	})
+}
+
 // --- ComputeCreditLimit ---
 
 func TestPaymentService_ComputeCreditLimit(t *testing.T) {
