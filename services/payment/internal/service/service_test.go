@@ -48,6 +48,9 @@ type mockPaymentRepo struct {
 	getContractDetailFn        func(ctx context.Context, contractID string) (*domain.ContractDetail, error)
 	getMilestonesForContractFn func(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error)
 	getPaymentsForContractFn   func(ctx context.Context, contractID string) ([]*domain.Payment, error)
+	// Stripe customer ID + admin list payments
+	getStripeCustomerIDFn func(ctx context.Context, userID string) (string, error)
+	adminListPaymentsFn   func(ctx context.Context, userID, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error)
 	// Installment methods
 	createInstallmentPlanFn             func(ctx context.Context, plan *domain.InstallmentPlan) error
 	getInstallmentPlanFn                func(ctx context.Context, planID string) (*domain.InstallmentPlan, error)
@@ -138,10 +141,16 @@ func (m *mockPaymentRepo) UpdateAdvanceReview(ctx context.Context, advanceID str
 	}
 	return nil, domain.ErrAdvanceNotFound
 }
-func (m *mockPaymentRepo) GetStripeCustomerID(_ context.Context, _ string) (string, error) {
+func (m *mockPaymentRepo) GetStripeCustomerID(ctx context.Context, userID string) (string, error) {
+	if m.getStripeCustomerIDFn != nil {
+		return m.getStripeCustomerIDFn(ctx, userID)
+	}
 	return "", nil
 }
-func (m *mockPaymentRepo) AdminListPayments(_ context.Context, _ string, _ string, _, _ *time.Time, _, _ int) ([]*domain.Payment, int, int64, int64, error) {
+func (m *mockPaymentRepo) AdminListPayments(ctx context.Context, userID, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error) {
+	if m.adminListPaymentsFn != nil {
+		return m.adminListPaymentsFn(ctx, userID, statusFilter, startTime, endTime, page, pageSize)
+	}
 	return nil, 0, 0, 0, nil
 }
 func (m *mockPaymentRepo) AdminGetPaymentDetails(_ context.Context, _ string) (*domain.Payment, error) {
