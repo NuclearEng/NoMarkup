@@ -22,9 +22,16 @@ import type {
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
+    getPublic: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
+  },
+  ApiError: class ApiError extends Error {
+    code = 'ERR';
+    userMessage(fallback: string) {
+      return this.message || fallback;
+    }
   },
 }));
 
@@ -273,7 +280,9 @@ describe('useCancelSubscription', () => {
 
   it('cancels a subscription and invalidates queries', async () => {
     const cancelledSub = { ...mockSubscription, status: 'cancelled' as const };
-    vi.mocked(api.delete).mockResolvedValueOnce({
+    // Cancel is a POST to /subscriptions/cancel (not DELETE /subscriptions/me)
+    // — matches the gateway router (`r.Post("/cancel", ...)`).
+    vi.mocked(api.post).mockResolvedValueOnce({
       subscription: cancelledSub,
     });
 
@@ -291,8 +300,8 @@ describe('useCancelSubscription', () => {
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.subscription.status).toBe('cancelled');
-    expect(vi.mocked(api.delete)).toHaveBeenCalledWith(
-      '/api/v1/subscriptions/me',
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/subscriptions/cancel',
       { reason: 'No longer needed', cancel_immediately: false },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({
@@ -301,7 +310,7 @@ describe('useCancelSubscription', () => {
   });
 
   it('handles cancellation error', async () => {
-    vi.mocked(api.delete).mockRejectedValueOnce(
+    vi.mocked(api.post).mockRejectedValueOnce(
       new Error('Cannot cancel during trial'),
     );
 
@@ -332,7 +341,9 @@ describe('useChangeTier', () => {
 
   it('changes the subscription tier', async () => {
     const upgradedSub = { ...mockSubscription, tier_id: 'tier-2' };
-    vi.mocked(api.patch).mockResolvedValueOnce({
+    // ChangeTier is a POST to /subscriptions/change-tier (not PATCH) —
+    // matches the gateway router (`r.Post("/change-tier", ...)`).
+    vi.mocked(api.post).mockResolvedValueOnce({
       subscription: upgradedSub,
     });
 
@@ -350,8 +361,8 @@ describe('useChangeTier', () => {
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.tier_id).toBe('tier-2');
-    expect(vi.mocked(api.patch)).toHaveBeenCalledWith(
-      '/api/v1/subscriptions/me/tier',
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/subscriptions/change-tier',
       { new_tier_id: 'tier-2', billing_interval: 'annual' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({

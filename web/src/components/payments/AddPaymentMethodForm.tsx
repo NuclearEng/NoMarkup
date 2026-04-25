@@ -144,7 +144,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
         <select
           id="dev-brand"
           value={brand}
-          onChange={(e) => setBrand(e.target.value)}
+          onChange={(e) => { setBrand(e.target.value); }}
           className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 text-sm focus:ring-2 focus:outline-none"
         >
           {CARD_BRANDS.map((b) => (
@@ -162,7 +162,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
           inputMode="numeric"
           maxLength={4}
           value={lastFour}
-          onChange={(e) => setLastFour(e.target.value.replace(/\D/g, ''))}
+          onChange={(e) => { setLastFour(e.target.value.replace(/\D/g, '')); }}
           placeholder="4242"
         />
       </div>
@@ -175,7 +175,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
             inputMode="numeric"
             maxLength={2}
             value={expMonth}
-            onChange={(e) => setExpMonth(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => { setExpMonth(e.target.value.replace(/\D/g, '')); }}
             placeholder="12"
           />
         </div>
@@ -186,7 +186,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
             inputMode="numeric"
             maxLength={4}
             value={expYear}
-            onChange={(e) => setExpYear(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => { setExpYear(e.target.value.replace(/\D/g, '')); }}
             placeholder="2030"
           />
         </div>

@@ -89,7 +89,7 @@ export function usePaymentMethods() {
     queryKey: ['payment-methods'],
     queryFn: async () => {
       const res = await api.get<{ methods: PaymentMethod[] }>('/api/v1/payments/methods');
-      return { payment_methods: res.methods ?? [] };
+      return { payment_methods: res.methods };
     },
   });
 }

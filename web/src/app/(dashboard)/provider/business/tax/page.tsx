@@ -317,7 +317,7 @@ export default function TaxCenterPage() {
                             void downloadAuthenticated(
                               `/api/v1/providers/me/tax-forms/${String(form.tax_year)}/download`,
                               `1099-NEC-${String(form.tax_year)}.html`,
-                            ).catch((err) => {
+                            ).catch((err: unknown) => {
                               toast.error(
                                 err instanceof Error ? err.message : 'Failed to download tax form',
                               );

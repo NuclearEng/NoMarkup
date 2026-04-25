@@ -18,9 +18,19 @@ import type { Bid, BidsForJobResponse, MyBidsResponse } from '@/types';
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
+    getPublic: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
+  },
+  // Real ApiError export so `err instanceof ApiError` checks in production
+  // hooks (e.g. explainBidFailure / explainFailure) don't blow up with
+  // "No 'ApiError' export is defined" when an error path is exercised.
+  ApiError: class ApiError extends Error {
+    code = 'ERR';
+    userMessage(fallback: string) {
+      return this.message || fallback;
+    }
   },
 }));
 
@@ -73,7 +83,7 @@ describe('usePlaceBid', () => {
   });
 
   it('places a bid and invalidates related queries', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ bid: mockBid });
+    vi.mocked(api.post).mockResolvedValueOnce(mockBid);
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -140,7 +150,7 @@ describe('useUpdateBid', () => {
 
   it('updates a bid amount', async () => {
     const updatedBid = { ...mockBid, amount_cents: 4500 };
-    vi.mocked(api.patch).mockResolvedValueOnce({ bid: updatedBid });
+    vi.mocked(api.patch).mockResolvedValueOnce(updatedBid);
 
     const { result } = renderHook(() => useUpdateBid(), {
       wrapper: createWrapper(queryClient),
@@ -175,7 +185,7 @@ describe('useWithdrawBid', () => {
 
   it('withdraws a bid', async () => {
     const withdrawnBid = { ...mockBid, status: 'withdrawn' as const };
-    vi.mocked(api.delete).mockResolvedValueOnce({ bid: withdrawnBid });
+    vi.mocked(api.delete).mockResolvedValueOnce(withdrawnBid);
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -207,7 +217,7 @@ describe('useAcceptOffer', () => {
 
   it('accepts an offer for a job', async () => {
     const offerBid = { ...mockBid, is_offer_accepted: true };
-    vi.mocked(api.post).mockResolvedValueOnce({ bid: offerBid });
+    vi.mocked(api.post).mockResolvedValueOnce(offerBid);
 
     const { result } = renderHook(() => useAcceptOffer(), {
       wrapper: createWrapper(queryClient),
@@ -220,6 +230,7 @@ describe('useAcceptOffer', () => {
     expect(result.current.data?.is_offer_accepted).toBe(true);
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/jobs/job-1/bids/accept-offer',
+      undefined,
     );
   });
 });
@@ -242,7 +253,7 @@ describe('useAwardBid', () => {
       status: 'awarded' as const,
       awarded_at: '2026-03-03T12:00:00Z',
     };
-    vi.mocked(api.post).mockResolvedValueOnce({ bid: awardedBid });
+    vi.mocked(api.post).mockResolvedValueOnce(awardedBid);
 
     const { result } = renderHook(() => useAwardBid(), {
       wrapper: createWrapper(queryClient),
@@ -255,6 +266,7 @@ describe('useAwardBid', () => {
     expect(result.current.data?.status).toBe('awarded');
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/jobs/job-1/bids/bid-1/award',
+      undefined,
     );
   });
 });

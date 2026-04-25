@@ -57,11 +57,12 @@ test.describe('Provider Business OS — page structure smoke (auth-aware)', () =
     const devToken = process.env['E2E_DEV_PROVIDER_TOKEN'];
     if (!devToken) {
       test.skip(true, 'E2E_DEV_PROVIDER_TOKEN not set; skipping authenticated Business OS smoke');
+      return;
     }
     await context.addCookies([
       {
         name: 'access_token',
-        value: devToken!,
+        value: devToken,
         domain: 'localhost',
         path: '/',
       },
@@ -144,15 +145,16 @@ test.describe('Provider Business OS — page structure smoke (auth-aware)', () =
 });
 
 test.describe('Provider Business OS — accessibility', () => {
-  test.beforeEach(async ({ page, context }) => {
+  test.beforeEach(async ({ context }) => {
     const devToken = process.env['E2E_DEV_PROVIDER_TOKEN'];
     if (!devToken) {
       test.skip(true, 'E2E_DEV_PROVIDER_TOKEN not set; skipping a11y smoke');
+      return;
     }
     await context.addCookies([
       {
         name: 'access_token',
-        value: devToken!,
+        value: devToken,
         domain: 'localhost',
         path: '/',
       },
@@ -174,7 +176,7 @@ test.describe('Provider Business OS — accessibility', () => {
         const text = await btn.innerText();
         expect(
           (name && name.length > 0) || (text && text.trim().length > 0),
-          `Button ${i} has no accessible name`,
+          `Button ${String(i)} has no accessible name`,
         ).toBe(true);
       }
     }
@@ -195,7 +197,7 @@ test.describe('Provider Business OS — accessibility', () => {
       if (box) {
         // Allow a small tolerance — design tokens declare 44px but flex
         // children can shrink by 1-2px in practice.
-        expect(box.height, `Button ${i} too short for touch`).toBeGreaterThanOrEqual(40);
+        expect(box.height, `Button ${String(i)} too short for touch`).toBeGreaterThanOrEqual(40);
       }
     }
   });

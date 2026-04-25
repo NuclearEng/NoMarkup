@@ -26,6 +26,12 @@ vi.mock('@/lib/api', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+  ApiError: class ApiError extends Error {
+    code = 'ERR';
+    userMessage(fallback: string) {
+      return this.message || fallback;
+    }
+  },
 }));
 
 const { api } = await import('@/lib/api');
@@ -178,6 +184,9 @@ describe('useJob', () => {
   it('fetches a single job by id', async () => {
     // /api/v1/jobs/:id is public — useJob goes through api.getPublic,
     // not api.get, to skip the auth token + 401 retry cycle.
+    // GET /api/v1/jobs/{id} (single-job detail endpoint) is the ONLY job
+    // endpoint that wraps the body in `{ job: ... }` — see gateway/job.go:472.
+    // Mutations (POST/PATCH/DELETE) return the bare job JSON.
     vi.mocked(api.getPublic).mockResolvedValueOnce({ job: mockJobDetail });
 
     const { result } = renderHook(() => useJob('job-1'), {
@@ -223,7 +232,7 @@ describe('useCreateJob', () => {
   });
 
   it('creates a job and invalidates queries', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ job: mockJob });
+    vi.mocked(api.post).mockResolvedValueOnce(mockJob);
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -282,7 +291,7 @@ describe('useUpdateJob', () => {
 
   it('updates a job', async () => {
     const updatedJob = { ...mockJob, title: 'Updated title for the job' };
-    vi.mocked(api.patch).mockResolvedValueOnce({ job: updatedJob });
+    vi.mocked(api.patch).mockResolvedValueOnce(updatedJob);
 
     const { result } = renderHook(() => useUpdateJob(), {
       wrapper: createWrapper(queryClient),
@@ -313,7 +322,7 @@ describe('usePublishJob', () => {
 
   it('publishes a draft job', async () => {
     const publishedJob = { ...mockJob, status: 'active' as const };
-    vi.mocked(api.post).mockResolvedValueOnce({ job: publishedJob });
+    vi.mocked(api.post).mockResolvedValueOnce(publishedJob);
 
     const { result } = renderHook(() => usePublishJob(), {
       wrapper: createWrapper(queryClient),
@@ -372,7 +381,7 @@ describe('useCloseAuction', () => {
 
   it('closes an auction', async () => {
     const closedJob = { ...mockJob, status: 'closed' as const };
-    vi.mocked(api.post).mockResolvedValueOnce({ job: closedJob });
+    vi.mocked(api.post).mockResolvedValueOnce(closedJob);
 
     const { result } = renderHook(() => useCloseAuction(), {
       wrapper: createWrapper(queryClient),
@@ -400,7 +409,7 @@ describe('useCancelJob', () => {
 
   it('cancels a job', async () => {
     const cancelledJob = { ...mockJob, status: 'cancelled' as const };
-    vi.mocked(api.post).mockResolvedValueOnce({ job: cancelledJob });
+    vi.mocked(api.post).mockResolvedValueOnce(cancelledJob);
 
     const { result } = renderHook(() => useCancelJob(), {
       wrapper: createWrapper(queryClient),

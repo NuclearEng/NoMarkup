@@ -89,7 +89,7 @@ export function BidForm({
   }
 
   function adjustAmount(direction: 1 | -1) {
-    const current = form.getValues('amountDollars') ?? 0;
+    const current = form.getValues('amountDollars');
     const next = current + direction * stepDollars;
     // Clamp to the schema's minimum (0.01). The submit-time validator still
     // enforces the auction rules (must be below starting bid / existing bid).
@@ -255,7 +255,7 @@ export function BidForm({
                         variant="outline"
                         size="icon"
                         className="min-h-[44px] min-w-[44px] shrink-0"
-                        onClick={() => adjustAmount(-1)}
+                        onClick={() => { adjustAmount(-1); }}
                         aria-label={`Decrease bid by $${String(stepDollars)}`}
                       >
                         <Minus className="h-4 w-4" aria-hidden="true" />
@@ -284,7 +284,7 @@ export function BidForm({
                         variant="outline"
                         size="icon"
                         className="min-h-[44px] min-w-[44px] shrink-0"
-                        onClick={() => adjustAmount(1)}
+                        onClick={() => { adjustAmount(1); }}
                         aria-label={`Increase bid by $${String(stepDollars)}`}
                       >
                         <Plus className="h-4 w-4" aria-hidden="true" />
@@ -298,10 +298,11 @@ export function BidForm({
                         ? ` Must be less than ${formatCents(startingBidCents)}.`
                         : ''}
                     </FormDescription>
-                    <label className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
+                    <label htmlFor="bid-step-input" className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
                       <span>Step</span>
                       <span className="text-muted-foreground/70">$</span>
                       <Input
+                        id="bid-step-input"
                         type="number"
                         inputMode="decimal"
                         min="0.01"
