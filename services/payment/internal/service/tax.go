@@ -109,6 +109,18 @@ func (s *PaymentService) GenerateTaxFormHTML(ctx context.Context, providerID str
 
 	generatedDate := tf.CreatedAt.Format("January 2, 2006")
 
+	// All user/provider-controlled fields below MUST flow through htmlEscape
+	// before interpolation. The previous implementation interpolated raw
+	// strings via fmt.Sprintf, which let a provider with a display name like
+	// `<script>alert(1)</script>` inject script into a rendered/PDF tax form
+	// (downloaded by the provider themselves and potentially viewed by IRS
+	// reviewers / accountants). htmlEscape lives in invoice.go.
+	safeProviderName := htmlEscape(tf.ProviderLegalName)
+	safeProviderAddress := htmlEscape(tf.ProviderAddress)
+	safePlatformName := htmlEscape(tf.PlatformName)
+	safePlatformEIN := htmlEscape(tf.PlatformEIN)
+	safeTaxIDDisplay := htmlEscape(taxIDDisplay)
+
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -194,11 +206,11 @@ func (s *PaymentService) GenerateTaxFormHTML(ctx context.Context, providerID str
 </body>
 </html>`,
 		tf.TaxYear, tf.TaxYear,
-		tf.PlatformName, tf.PlatformEIN,
-		tf.ProviderLegalName, taxIDDisplay, tf.ProviderAddress,
+		safePlatformName, safePlatformEIN,
+		safeProviderName, safeTaxIDDisplay, safeProviderAddress,
 		dollars, fedWithheld, stateWithheld,
-		tf.PlatformName, tf.TaxYear,
-		generatedDate, tf.PlatformName, tf.ID,
+		safePlatformName, tf.TaxYear,
+		generatedDate, safePlatformName, htmlEscape(tf.ID),
 	)
 
 	return html, nil

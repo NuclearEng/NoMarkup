@@ -30,10 +30,24 @@ type mockPaymentRepo struct {
 	listExpensesFn  func(ctx context.Context, providerID string, startDate, endDate *time.Time, page, pageSize int) ([]*domain.Expense, int64, int, error)
 	deleteExpenseFn func(ctx context.Context, expenseID, providerID string) error
 	// Advance methods
-	createAdvanceFn       func(ctx context.Context, advance *domain.Advance) error
-	listAdvancesFn        func(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*domain.Advance, int, error)
-	getAdvanceFn          func(ctx context.Context, advanceID string) (*domain.Advance, error)
-	updateAdvanceReviewFn func(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*domain.Advance, error)
+	createAdvanceFn             func(ctx context.Context, advance *domain.Advance) error
+	listAdvancesFn              func(ctx context.Context, providerID string, statusFilter string, page, pageSize int) ([]*domain.Advance, int, error)
+	getAdvanceFn                func(ctx context.Context, advanceID string) (*domain.Advance, error)
+	updateAdvanceReviewFn       func(ctx context.Context, advanceID string, status string, reviewerID string, rejectionReason *string) (*domain.Advance, error)
+	updateAdvanceDisbursementFn func(ctx context.Context, advanceID, stripeTransferID string) (*domain.Advance, error)
+	getActiveAdvancesFn         func(ctx context.Context, providerID string) ([]*domain.Advance, error)
+	getCreditLimitFn            func(ctx context.Context, providerID string) (*domain.CreditLimit, error)
+	upsertCreditLimitFn         func(ctx context.Context, limit *domain.CreditLimit) error
+	// Tax-form methods
+	createTaxFormFn       func(ctx context.Context, tf *domain.TaxForm) error
+	getTaxFormFn          func(ctx context.Context, providerID string, taxYear int) (*domain.TaxForm, error)
+	listTaxFormsFn        func(ctx context.Context, providerID string) ([]*domain.TaxForm, error)
+	getProviderEarningsFn func(ctx context.Context, providerID string, taxYear int) (int64, error)
+	getProviderProfileFn  func(ctx context.Context, providerID string) (string, string, error)
+	// Invoice methods
+	getContractDetailFn        func(ctx context.Context, contractID string) (*domain.ContractDetail, error)
+	getMilestonesForContractFn func(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error)
+	getPaymentsForContractFn   func(ctx context.Context, contractID string) ([]*domain.Payment, error)
 	// Stripe event dedup methods.
 	recordStripeEventStartFn   func(ctx context.Context, eventID, eventType string) (bool, error)
 	markStripeEventProcessedFn func(ctx context.Context, eventID string) error
@@ -159,51 +173,87 @@ func (m *mockPaymentRepo) GetScheduledInstallmentsForPlan(_ context.Context, _ s
 	return nil, nil
 }
 
-// Advance + credit-limit stubs (satisfy interface — not tested in this file).
-func (m *mockPaymentRepo) UpdateAdvanceDisbursement(_ context.Context, _, _ string) (*domain.Advance, error) {
+// Advance + credit-limit stubs (satisfy interface — hookable via fn fields).
+func (m *mockPaymentRepo) UpdateAdvanceDisbursement(ctx context.Context, advanceID, stripeTransferID string) (*domain.Advance, error) {
+	if m.updateAdvanceDisbursementFn != nil {
+		return m.updateAdvanceDisbursementFn(ctx, advanceID, stripeTransferID)
+	}
 	return nil, domain.ErrAdvanceNotFound
 }
 func (m *mockPaymentRepo) UpdateAdvanceRepayment(_ context.Context, _, _ string, _ int64) (*domain.Advance, error) {
 	return nil, domain.ErrAdvanceNotFound
 }
-func (m *mockPaymentRepo) GetActiveAdvancesForProvider(_ context.Context, _ string) ([]*domain.Advance, error) {
+func (m *mockPaymentRepo) GetActiveAdvancesForProvider(ctx context.Context, providerID string) ([]*domain.Advance, error) {
+	if m.getActiveAdvancesFn != nil {
+		return m.getActiveAdvancesFn(ctx, providerID)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) GetCreditLimit(_ context.Context, _ string) (*domain.CreditLimit, error) {
+func (m *mockPaymentRepo) GetCreditLimit(ctx context.Context, providerID string) (*domain.CreditLimit, error) {
+	if m.getCreditLimitFn != nil {
+		return m.getCreditLimitFn(ctx, providerID)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) UpsertCreditLimit(_ context.Context, _ *domain.CreditLimit) error {
+func (m *mockPaymentRepo) UpsertCreditLimit(ctx context.Context, limit *domain.CreditLimit) error {
+	if m.upsertCreditLimitFn != nil {
+		return m.upsertCreditLimitFn(ctx, limit)
+	}
 	return nil
 }
 
-// Tax-form stubs (satisfy interface — not tested in this file).
-func (m *mockPaymentRepo) CreateTaxForm(_ context.Context, _ *domain.TaxForm) error {
+// Tax-form stubs (satisfy interface — hookable via fn fields).
+func (m *mockPaymentRepo) CreateTaxForm(ctx context.Context, tf *domain.TaxForm) error {
+	if m.createTaxFormFn != nil {
+		return m.createTaxFormFn(ctx, tf)
+	}
 	return nil
 }
-func (m *mockPaymentRepo) GetTaxForm(_ context.Context, _ string, _ int) (*domain.TaxForm, error) {
+func (m *mockPaymentRepo) GetTaxForm(ctx context.Context, providerID string, taxYear int) (*domain.TaxForm, error) {
+	if m.getTaxFormFn != nil {
+		return m.getTaxFormFn(ctx, providerID, taxYear)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) ListTaxForms(_ context.Context, _ string) ([]*domain.TaxForm, error) {
+func (m *mockPaymentRepo) ListTaxForms(ctx context.Context, providerID string) ([]*domain.TaxForm, error) {
+	if m.listTaxFormsFn != nil {
+		return m.listTaxFormsFn(ctx, providerID)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) GetProviderEarningsForYear(_ context.Context, _ string, _ int) (int64, error) {
+func (m *mockPaymentRepo) GetProviderEarningsForYear(ctx context.Context, providerID string, taxYear int) (int64, error) {
+	if m.getProviderEarningsFn != nil {
+		return m.getProviderEarningsFn(ctx, providerID, taxYear)
+	}
 	return 0, nil
 }
 func (m *mockPaymentRepo) UpdateTaxFormStatus(_ context.Context, _, _ string, _ *string) error {
 	return nil
 }
 
-// Invoice-related stubs (satisfy interface — not tested in this file).
-func (m *mockPaymentRepo) GetContractDetail(_ context.Context, _ string) (*domain.ContractDetail, error) {
+// Invoice-related stubs (satisfy interface — hookable via fn fields).
+func (m *mockPaymentRepo) GetContractDetail(ctx context.Context, contractID string) (*domain.ContractDetail, error) {
+	if m.getContractDetailFn != nil {
+		return m.getContractDetailFn(ctx, contractID)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) GetMilestonesForContract(_ context.Context, _ string) ([]*domain.MilestoneDetail, error) {
+func (m *mockPaymentRepo) GetMilestonesForContract(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error) {
+	if m.getMilestonesForContractFn != nil {
+		return m.getMilestonesForContractFn(ctx, contractID)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) GetPaymentsForContract(_ context.Context, _ string) ([]*domain.Payment, error) {
+func (m *mockPaymentRepo) GetPaymentsForContract(ctx context.Context, contractID string) ([]*domain.Payment, error) {
+	if m.getPaymentsForContractFn != nil {
+		return m.getPaymentsForContractFn(ctx, contractID)
+	}
 	return nil, nil
 }
-func (m *mockPaymentRepo) GetProviderProfile(_ context.Context, _ string) (string, string, error) {
+func (m *mockPaymentRepo) GetProviderProfile(ctx context.Context, providerID string) (string, string, error) {
+	if m.getProviderProfileFn != nil {
+		return m.getProviderProfileFn(ctx, providerID)
+	}
 	return "", "", nil
 }
 
