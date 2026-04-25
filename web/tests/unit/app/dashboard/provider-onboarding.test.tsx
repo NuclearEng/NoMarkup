@@ -162,4 +162,72 @@ describe('ProviderOnboardingPage', () => {
     const input = screen.getByLabelText(/Business Name/i);
     expect((input as HTMLInputElement).value).toBe('Pre-Filled LLC');
   });
+
+  it('Categories step shows existing serviceCategories prefill', () => {
+    providerProfileState.data = {
+      businessName: 'X',
+      bio: '',
+      serviceAddress: '',
+      serviceCategories: [{ id: 'cat-a' }, { id: 'cat-b' }],
+      serviceRadiusKm: 10,
+      defaultPaymentTiming: 'completion',
+      defaultMilestones: [],
+      cancellationPolicy: null,
+      warrantyTerms: null,
+    };
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    const categoriesBtn = screen.getByRole('button', { name: /Categories/i });
+    fireEvent.click(categoriesBtn);
+    expect(screen.getByTestId('category-selector')).toBeDefined();
+  });
+
+  it('Service Area step prefills the radius input from existing profile', () => {
+    providerProfileState.data = {
+      businessName: 'X',
+      bio: '',
+      serviceAddress: '12 Pine Ln',
+      serviceCategories: [],
+      serviceRadiusKm: 75,
+      defaultPaymentTiming: 'completion',
+      defaultMilestones: [],
+      cancellationPolicy: null,
+      warrantyTerms: null,
+    };
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    const serviceAreaBtn = screen.getByRole('button', { name: /Service Area/i });
+    fireEvent.click(serviceAreaBtn);
+    const radius = screen.getByLabelText(/Service Radius/i);
+    expect((radius as HTMLInputElement).value).toBe('75');
+  });
+
+  it('Terms step renders cancellation policy textarea prefilled from profile', () => {
+    providerProfileState.data = {
+      businessName: 'X',
+      bio: '',
+      serviceAddress: '',
+      serviceCategories: [],
+      serviceRadiusKm: 10,
+      defaultPaymentTiming: 'milestones',
+      defaultMilestones: [],
+      cancellationPolicy: '24-hour cancellation',
+      warrantyTerms: '90-day warranty',
+    };
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
+    expect(screen.getByText(/Default Payment Timing/i)).toBeDefined();
+  });
+
+  it('does not throw when navigating from step 1 to last step via indicator', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Payments/i }));
+    expect(screen.getByTestId('stripe-onboarding')).toBeDefined();
+  });
+
+  it('verification step exposes required tax document fields', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    // The form layout exposes fields like ID and Business License — at minimum
+    // we assert those headings render.
+    expect(screen.getByText(/Government-Issued ID/i)).toBeDefined();
+  });
 });

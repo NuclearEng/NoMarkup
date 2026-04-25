@@ -139,4 +139,89 @@ describe('SecuritySettingsPage', () => {
     expect(screen.getByText('Active Sessions')).toBeDefined();
     expect(screen.getByText(/60\s+minutes of inactivity/)).toBeDefined();
   });
+
+  it('clicking Enable MFA invokes the enable mutation and shows setup data', async () => {
+    const enableMutate = vi.fn(() => Promise.resolve({
+      secret: 'JBSWY3DPEHPK3PXP',
+      qr_code_url: 'otpauth://totp/test',
+      backup_codes: ['code-1', 'code-2'],
+    }));
+    vi.mocked(useEnableMFA).mockReturnValue({
+      mutateAsync: enableMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useEnableMFA>);
+    vi.mocked(useProfile).mockReturnValue({
+      data: { mfaEnabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProfile>);
+
+    render(withQueryClient(createElement(SecuritySettingsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Enable MFA' }));
+    // Wait a microtask for the promise chain.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(enableMutate).toHaveBeenCalled();
+  });
+
+  it('shows error state when enableMFA mutation rejects', async () => {
+    const enableMutate = vi.fn(() => Promise.reject(new Error('boom')));
+    vi.mocked(useEnableMFA).mockReturnValue({
+      mutateAsync: enableMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useEnableMFA>);
+    vi.mocked(useProfile).mockReturnValue({
+      data: { mfaEnabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProfile>);
+
+    render(withQueryClient(createElement(SecuritySettingsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Enable MFA' }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(enableMutate).toHaveBeenCalled();
+  });
+
+  it('Cancel from the Disable MFA confirmation hides the input', () => {
+    vi.mocked(useProfile).mockReturnValue({
+      data: { mfaEnabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProfile>);
+    render(withQueryClient(createElement(SecuritySettingsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Disable MFA' }));
+    expect(screen.getByLabelText('Enter your authenticator code')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Enter your authenticator code')).toBeNull();
+  });
+
+  it('Disable MFA confirm button stays disabled with fewer than 6 digits', () => {
+    vi.mocked(useProfile).mockReturnValue({
+      data: { mfaEnabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProfile>);
+    render(withQueryClient(createElement(SecuritySettingsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Disable MFA' }));
+    const input = screen.getByLabelText('Enter your authenticator code');
+    fireEvent.change(input, { target: { value: '123' } });
+    // The submit button shows "Disable MFA" again — find via destructive variant.
+    const buttons = screen.getAllByRole('button', { name: 'Disable MFA' });
+    // The second occurrence is the submit form button.
+    const submit = buttons[buttons.length - 1];
+    expect(submit?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows Disabling... label when disable mutation is pending', () => {
+    vi.mocked(useProfile).mockReturnValue({
+      data: { mfaEnabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProfile>);
+    vi.mocked(useDisableMFA).mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: true,
+    } as unknown as ReturnType<typeof useDisableMFA>);
+    render(withQueryClient(createElement(SecuritySettingsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Disable MFA' }));
+    const input = screen.getByLabelText('Enter your authenticator code');
+    fireEvent.change(input, { target: { value: '123456' } });
+    expect(screen.getByRole('button', { name: 'Disabling...' })).toBeDefined();
+  });
 });

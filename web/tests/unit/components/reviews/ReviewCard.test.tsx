@@ -123,4 +123,136 @@ describe('ReviewCard', () => {
     render(createElement(ReviewCard, { review: makeReview() }));
     expect(screen.getByRole('button', { name: /report/i })).toBeDefined();
   });
+
+  it('submits a response when text is valid and Submit is clicked', async () => {
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    const textarea = screen.getByPlaceholderText(/Write your response/i);
+    await user.type(textarea, 'Thanks for the kind feedback!');
+    await user.click(screen.getByRole('button', { name: /submit response/i }));
+    expect(mockRespond).toHaveBeenCalledTimes(1);
+    const args = mockRespond.mock.calls[0]?.[0] as { reviewId: string; comment: string };
+    expect(args.reviewId).toBe('r-1');
+    expect(args.comment).toBe('Thanks for the kind feedback!');
+  });
+
+  it('shows validation error when response is too short', async () => {
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    const textarea = screen.getByPlaceholderText(/Write your response/i);
+    await user.type(textarea, 'short');
+    await user.click(screen.getByRole('button', { name: /submit response/i }));
+    expect(mockRespond).not.toHaveBeenCalled();
+    expect(screen.getByText(/at least 10 characters/i)).toBeDefined();
+  });
+
+  it('clears the validation error when the user types again', async () => {
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    const textarea = screen.getByPlaceholderText(/Write your response/i);
+    await user.type(textarea, 'short');
+    await user.click(screen.getByRole('button', { name: /submit response/i }));
+    expect(screen.getByText(/at least 10 characters/i)).toBeDefined();
+    await user.type(textarea, ' more text');
+    expect(screen.queryByText(/at least 10 characters/i)).toBeNull();
+  });
+
+  it('hides the response form when Cancel is clicked', async () => {
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    expect(screen.getByPlaceholderText(/Write your response/i)).toBeDefined();
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByPlaceholderText(/Write your response/i)).toBeNull();
+  });
+
+  it('opens the flag form when Report is clicked', async () => {
+    setUser({ id: 'someone-else' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /report/i }));
+    expect(screen.getByText(/Select reason for flagging/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /flag/i })).toBeDefined();
+  });
+
+  it('closes the flag form when Cancel is clicked', async () => {
+    setUser({ id: 'someone-else' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /report/i }));
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByText(/Select reason for flagging/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /report/i })).toBeDefined();
+  });
+
+  it('disables the Flag button when no reason is selected', async () => {
+    setUser({ id: 'someone-else' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /report/i }));
+    const flagButton = screen.getByRole('button', { name: /flag/i });
+    expect(flagButton.hasAttribute('disabled')).toBe(true);
+    // Clicking the disabled flag button must not trigger the mutation
+    await user.click(flagButton);
+    expect(mockFlag).not.toHaveBeenCalled();
+  });
+
+  it('renders photo url links when present', () => {
+    setUser(null);
+    render(
+      createElement(ReviewCard, {
+        review: makeReview({ photo_urls: ['https://cdn.example.com/photos/abc.jpg'] }),
+      }),
+    );
+    const link = screen.getByRole('link', { name: 'abc.jpg' });
+    expect(link.getAttribute('href')).toBe('https://cdn.example.com/photos/abc.jpg');
+    expect(link.getAttribute('target')).toBe('_blank');
+  });
+
+  it('hides Respond button when reviewee already responded', () => {
+    setUser({ id: 'reviewee-87654321' });
+    render(
+      createElement(ReviewCard, {
+        review: makeReview({
+          response: {
+            id: 'rr-1',
+            review_id: 'r-1',
+            responder_id: 'reviewee-87654321',
+            comment: 'Already responded.',
+            created_at: new Date().toISOString(),
+          },
+        }),
+      }),
+    );
+    expect(screen.queryByRole('button', { name: /respond/i })).toBeNull();
+  });
+
+  it('hides Report button for the reviewer themselves', () => {
+    setUser({ id: 'reviewer-12345678' });
+    render(createElement(ReviewCard, { review: makeReview() }));
+    expect(screen.queryByRole('button', { name: /report/i })).toBeNull();
+  });
+
+  it('hides Report button when review is already flagged', () => {
+    setUser({ id: 'someone-else' });
+    render(createElement(ReviewCard, { review: makeReview({ is_flagged: true }) }));
+    expect(screen.queryByRole('button', { name: /report/i })).toBeNull();
+  });
+
+  it('renders provider-to-customer direction label', () => {
+    setUser(null);
+    render(
+      createElement(ReviewCard, {
+        review: makeReview({ direction: 'provider_to_customer' }),
+      }),
+    );
+    expect(screen.getByText('Provider to Customer')).toBeDefined();
+  });
 });

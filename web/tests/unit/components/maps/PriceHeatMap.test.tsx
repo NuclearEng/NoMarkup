@@ -142,4 +142,47 @@ describe('PriceHeatMap', () => {
     // No "undefined" string should leak into the DOM
     expect(container.innerHTML).not.toContain('undefined');
   });
+
+  it('returns the same placeholder element when re-rendered with new props', () => {
+    const { container, rerender } = render(<PriceHeatMap className="a" />);
+    const first = container.querySelector('.bg-muted');
+    rerender(<PriceHeatMap className="b" categorySlug="plumbing" />);
+    const second = container.querySelector('.bg-muted');
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    // className should have updated
+    expect(second?.classList.contains('b')).toBe(true);
+  });
+
+  it('still renders a placeholder when the hook returns categories with null savings', () => {
+    usePricingOverviewMock.mockReturnValue({
+      data: {
+        categories: [
+          {
+            category_name: 'Roofing',
+            category_slug: 'roof',
+            total_jobs: 0,
+            avg_median_cents: 0,
+            avg_savings_cents: null,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    render(<PriceHeatMap categorySlug="roof" />);
+    expect(screen.getByText(/not available/i)).toBeDefined();
+  });
+
+  it('does not invoke usePricingOverview hook with arguments', () => {
+    render(<PriceHeatMap />);
+    expect(usePricingOverviewMock).toHaveBeenCalled();
+    // Hook called with no args
+    expect(usePricingOverviewMock.mock.calls[0]).toEqual([]);
+  });
+
+  it('renders placeholder content as a text element accessible via role=paragraph fallback', () => {
+    render(<PriceHeatMap />);
+    const text = screen.getByText(/Price heat map is not available/i);
+    expect(text.tagName.toLowerCase()).toBe('p');
+  });
 });

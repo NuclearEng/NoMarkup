@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -103,5 +104,105 @@ describe('Header', () => {
     render(<Header />);
     fireEvent.click(screen.getByLabelText('Toggle navigation menu'));
     expect(screen.getByText('Provider Dashboard')).toBeDefined();
+  });
+
+  it('logs out and navigates to login when desktop Sign out clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByRole('button', { name: /sign out/i }));
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalledTimes(1);
+    });
+    expect(push).toHaveBeenCalledWith('/login');
+  });
+
+  it('logs out and navigates to login when mobile Sign out clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    const signOutButtons = screen.getAllByRole('button', { name: /sign out/i });
+    await user.click(signOutButtons[signOutButtons.length - 1] as HTMLElement);
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalled();
+    });
+    expect(push).toHaveBeenCalledWith('/login');
+  });
+
+  it('closes the mobile menu when a quick-nav link is clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    const hamburger = screen.getByLabelText('Toggle navigation menu');
+    await user.click(hamburger);
+    expect(hamburger.getAttribute('aria-expanded')).toBe('true');
+    const dashboardLink = screen.getAllByText('Dashboard')[0];
+    if (dashboardLink) {
+      await user.click(dashboardLink);
+    }
+    await waitFor(() => {
+      expect(hamburger.getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+
+  it('toggles the hamburger icon between open and close states', async () => {
+    mockAuth({ isAuthenticated: false });
+    const user = userEvent.setup();
+    render(<Header />);
+    const hamburger = screen.getByLabelText('Toggle navigation menu');
+    await user.click(hamburger);
+    expect(hamburger.getAttribute('aria-expanded')).toBe('true');
+    await user.click(hamburger);
+    expect(hamburger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('renders nothing while hydrating (no nav CTAs)', () => {
+    mockAuth({ isAuthenticated: false, isHydrating: true });
+    render(<Header />);
+    expect(screen.queryByText('Sign in')).toBeNull();
+    expect(screen.queryByText('Get started')).toBeNull();
+  });
+
+  it('falls back to email when displayName is absent', () => {
+    mockAuth({
+      isAuthenticated: true,
+      user: { ...baseUser, displayName: null as unknown as string },
+    });
+    render(<Header />);
+    expect(screen.getAllByText('me@example.com').length).toBeGreaterThan(0);
+  });
+
+  it('renders the dashboard link wrapping the brand when authenticated', () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    render(<Header />);
+    const brandLink = screen.getByLabelText('Go to Dashboard');
+    expect(brandLink.getAttribute('href')).toBe('/dashboard');
+  });
+
+  it('shows mobile sign-in/get-started CTAs when unauthenticated and menu is open', async () => {
+    mockAuth({ isAuthenticated: false });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    // Two of each — desktop + mobile
+    expect(screen.getAllByText('Sign in').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Get started').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('closes the mobile menu when unauthenticated Sign in link is clicked', async () => {
+    mockAuth({ isAuthenticated: false });
+    const user = userEvent.setup();
+    render(<Header />);
+    const hamburger = screen.getByLabelText('Toggle navigation menu');
+    await user.click(hamburger);
+    const signInLinks = screen.getAllByText('Sign in');
+    const mobileSignIn = signInLinks[signInLinks.length - 1];
+    if (mobileSignIn) {
+      await user.click(mobileSignIn);
+    }
+    await waitFor(() => {
+      expect(hamburger.getAttribute('aria-expanded')).toBe('false');
+    });
   });
 });

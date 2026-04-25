@@ -1,9 +1,17 @@
-// Smoke test for the contracts list page.
-import { render } from '@testing-library/react';
+// Tests for the Contracts list page — exercises tab content (loading, error,
+// empty, data) and pagination handlers.
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
+
+const contractsState: {
+  data: { contracts: { id: string }[]; pagination?: { totalPages: number; hasNext: boolean } } | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+} = { data: undefined, isLoading: false, isError: false, refetch: vi.fn() };
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -20,15 +28,84 @@ vi.mock('next/link', () => ({
     createElement('a', { href }, children),
 }));
 
+vi.mock('@/components/contracts/ContractCard', () => ({
+  ContractCard: ({ contract }: { contract: { id: string } }) =>
+    createElement('article', { 'data-testid': `contract-${contract.id}` }, contract.id),
+}));
+
 vi.mock('@/hooks/useContracts', () => ({
-  useContracts: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
+  useContracts: () => contractsState,
 }));
 
 import ContractsPage from '@/app/(dashboard)/contracts/page';
+
+beforeEach(() => {
+  contractsState.data = undefined;
+  contractsState.isLoading = false;
+  contractsState.isError = false;
+  contractsState.refetch = vi.fn();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('ContractsPage', () => {
   it('renders without throwing', () => {
     const { container } = render(withQueryClient(createElement(ContractsPage)));
     expect(container).toBeTruthy();
+  });
+
+  it('renders the loading state without throwing', () => {
+    contractsState.isLoading = true;
+    const { container } = render(withQueryClient(createElement(ContractsPage)));
+    expect(container).toBeTruthy();
+  });
+
+  it('renders the error state with Retry button', () => {
+    contractsState.isError = true;
+    render(withQueryClient(createElement(ContractsPage)));
+    expect(screen.getAllByRole('button', { name: 'Retry' }).length).toBeGreaterThan(0);
+  });
+
+  it('clicking Retry on the error state invokes refetch', () => {
+    const refetch = vi.fn();
+    contractsState.isError = true;
+    contractsState.refetch = refetch;
+    render(withQueryClient(createElement(ContractsPage)));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0] as HTMLButtonElement);
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it('renders the empty state with All-tab message', () => {
+    contractsState.data = { contracts: [] };
+    render(withQueryClient(createElement(ContractsPage)));
+    expect(screen.getAllByText(/You have no contracts yet/i).length).toBeGreaterThan(0);
+  });
+
+  it('renders contract cards when data is present', () => {
+    contractsState.data = { contracts: [{ id: 'c1' }, { id: 'c2' }] };
+    render(withQueryClient(createElement(ContractsPage)));
+    expect(screen.getAllByTestId('contract-c1').length).toBeGreaterThan(0);
+  });
+
+  it('renders 5 tabs: All, Pending, Active, Completed, Cancelled', () => {
+    contractsState.data = { contracts: [] };
+    render(withQueryClient(createElement(ContractsPage)));
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.length).toBe(5);
+  });
+
+  it('renders Previous/Next pagination when totalPages > 1', () => {
+    contractsState.data = {
+      contracts: [{ id: 'cx' }],
+      pagination: { totalPages: 4, hasNext: true },
+    };
+    render(withQueryClient(createElement(ContractsPage)));
+    const prev = screen.getAllByRole('button', { name: 'Previous' })[0] as HTMLButtonElement;
+    const next = screen.getAllByRole('button', { name: 'Next' })[0] as HTMLButtonElement;
+    expect(prev.disabled).toBe(true);
+    fireEvent.click(next);
+    expect(screen.getAllByText(/Page/i).length).toBeGreaterThan(0);
   });
 });

@@ -1,5 +1,13 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+const { toast } = await import('sonner');
 
 // In-memory localStorage shim — jsdom default lacks bound methods.
 const memoryStore = new Map<string, string>();
@@ -36,6 +44,8 @@ describe('BidPushPrompt', () => {
   beforeEach(() => {
     memoryStorage.clear();
     MockNotification.permission = 'default';
+    MockNotification.requestPermission.mockClear();
+    vi.mocked(toast.success).mockClear();
   });
 
   afterEach(() => {
@@ -75,5 +85,80 @@ describe('BidPushPrompt', () => {
       <BidPushPrompt jobId="job-9" isJobOwner bidCount={0} status="active" />,
     );
     expect(container.firstChild).toBeNull();
+  });
+
+  it('does not render when notification permission is already granted', () => {
+    MockNotification.permission = 'granted';
+    const { container } = render(
+      <BidPushPrompt jobId="job-2" isJobOwner bidCount={0} status="active" />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('does not render when notification permission has been denied', () => {
+    MockNotification.permission = 'denied';
+    const { container } = render(
+      <BidPushPrompt jobId="job-3" isJobOwner bidCount={0} status="active" />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('clicking Enable Notifications stores the prompt flag and requests permission', async () => {
+    render(<BidPushPrompt jobId="job-4" isJobOwner bidCount={0} status="active" />);
+    const btn = screen.getByRole('button', { name: /Enable Notifications/i });
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(MockNotification.requestPermission).toHaveBeenCalledTimes(1);
+    });
+    expect(memoryStorage.getItem('nm_push_prompted_job-4')).toBe('true');
+  });
+
+  it('shows a success toast when permission is granted', async () => {
+    MockNotification.requestPermission.mockResolvedValueOnce(
+      'granted' as NotificationPermission,
+    );
+    render(<BidPushPrompt jobId="job-5" isJobOwner bidCount={0} status="active" />);
+    fireEvent.click(screen.getByRole('button', { name: /Enable Notifications/i }));
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalled();
+    });
+  });
+
+  it('does not toast on denied permission', async () => {
+    MockNotification.requestPermission.mockResolvedValueOnce(
+      'denied' as NotificationPermission,
+    );
+    render(<BidPushPrompt jobId="job-6" isJobOwner bidCount={0} status="active" />);
+    fireEvent.click(screen.getByRole('button', { name: /Enable Notifications/i }));
+    await waitFor(() => {
+      expect(MockNotification.requestPermission).toHaveBeenCalled();
+    });
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('hides the prompt immediately when Enable is clicked', async () => {
+    const { container } = render(
+      <BidPushPrompt jobId="job-7" isJobOwner bidCount={0} status="active" />,
+    );
+    expect(container.firstChild).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Enable Notifications/i }));
+    await waitFor(() => {
+      expect(container.firstChild).toBeNull();
+    });
+  });
+
+  it('forwards className prop on the prompt card', () => {
+    const { container } = render(
+      <BidPushPrompt
+        jobId="job-8"
+        isJobOwner
+        bidCount={0}
+        status="active"
+        className="custom-prompt"
+      />,
+    );
+    expect(container.querySelector('.custom-prompt')).not.toBeNull();
   });
 });

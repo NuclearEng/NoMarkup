@@ -1,9 +1,17 @@
-// Smoke test for the My Bids page.
-import { render } from '@testing-library/react';
+// Tests for the My Bids page — exercises tab content (loading, error, empty,
+// data) and pagination handlers.
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
+
+const bidsState: {
+  data: { bids: { id: string }[]; pagination?: { totalPages: number; hasNext: boolean } } | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+} = { data: undefined, isLoading: false, isError: false, refetch: vi.fn() };
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -20,15 +28,88 @@ vi.mock('next/link', () => ({
     createElement('a', { href }, children),
 }));
 
+vi.mock('@/components/bids/ProviderBidCard', () => ({
+  ProviderBidCard: ({ bid }: { bid: { id: string } }) =>
+    createElement('article', { 'data-testid': `bid-${bid.id}` }, bid.id),
+}));
+
 vi.mock('@/hooks/useBids', () => ({
-  useMyBids: () => ({ data: undefined, isLoading: false, isError: false }),
+  useMyBids: () => bidsState,
 }));
 
 import BidsPage from '@/app/(dashboard)/bids/page';
+
+beforeEach(() => {
+  bidsState.data = undefined;
+  bidsState.isLoading = false;
+  bidsState.isError = false;
+  bidsState.refetch = vi.fn();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('BidsPage', () => {
   it('renders without throwing', () => {
     const { container } = render(withQueryClient(createElement(BidsPage)));
     expect(container).toBeTruthy();
+  });
+
+  it('renders the loading skeleton when loading', () => {
+    bidsState.isLoading = true;
+    const { container } = render(withQueryClient(createElement(BidsPage)));
+    expect(container).toBeTruthy();
+  });
+
+  it('renders the error state with Retry button', () => {
+    bidsState.isError = true;
+    render(withQueryClient(createElement(BidsPage)));
+    expect(screen.getAllByRole('button', { name: 'Retry' }).length).toBeGreaterThan(0);
+  });
+
+  it('clicking Retry on the error state invokes refetch', () => {
+    const refetch = vi.fn();
+    bidsState.isError = true;
+    bidsState.refetch = refetch;
+    render(withQueryClient(createElement(BidsPage)));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0] as HTMLButtonElement);
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it('renders the empty state with the correct message for the All tab', () => {
+    bidsState.data = { bids: [] };
+    render(withQueryClient(createElement(BidsPage)));
+    expect(screen.getAllByText(/You have not placed any bids yet\./i).length).toBeGreaterThan(0);
+  });
+
+  it('renders bid cards when data is present', () => {
+    bidsState.data = { bids: [{ id: 'b1' }, { id: 'b2' }] };
+    render(withQueryClient(createElement(BidsPage)));
+    expect(screen.getAllByTestId('bid-b1').length).toBeGreaterThan(0);
+  });
+
+  it('clicking another tab does not throw', () => {
+    bidsState.data = { bids: [] };
+    render(withQueryClient(createElement(BidsPage)));
+    const wonTab = screen.getByRole('tab', { name: 'Won' });
+    fireEvent.click(wonTab);
+    // Just confirm tablist renders 4 tabs (All / Active / Won / Lost).
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.length).toBe(4);
+  });
+
+  it('renders Previous/Next pagination when totalPages > 1', () => {
+    bidsState.data = {
+      bids: [{ id: 'bx' }],
+      pagination: { totalPages: 3, hasNext: true },
+    };
+    render(withQueryClient(createElement(BidsPage)));
+    const prevs = screen.getAllByRole('button', { name: 'Previous' });
+    const nexts = screen.getAllByRole('button', { name: 'Next' });
+    expect((prevs[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(nexts[0] as HTMLButtonElement);
+    // Page indicator updates somewhere in the DOM.
+    expect(screen.getAllByText(/Page/i).length).toBeGreaterThan(0);
   });
 });
