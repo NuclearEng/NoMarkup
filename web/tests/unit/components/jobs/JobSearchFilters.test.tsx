@@ -1,10 +1,18 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/hooks/useCategories', () => ({
   useCategoryTree: vi.fn(() => ({
     data: [
-      { id: 'cat-1', name: 'Plumbing', level: 0, children: [] },
+      {
+        id: 'cat-1',
+        name: 'Plumbing',
+        level: 0,
+        children: [
+          { id: 'cat-1a', name: 'Drains', level: 1, children: [] },
+        ],
+      },
       { id: 'cat-2', name: 'Electrical', level: 0, children: [] },
     ],
   })),
@@ -12,6 +20,30 @@ vi.mock('@/hooks/useCategories', () => ({
 
 import { JobSearchFilters } from '@/components/jobs/JobSearchFilters';
 import type { SearchJobsParams } from '@/types';
+
+beforeAll(() => {
+  if (!('ResizeObserver' in globalThis)) {
+    class ResizeObserverStub {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    (globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+      ResizeObserverStub;
+  }
+  // jsdom does not implement these — always stub.
+  Element.prototype.hasPointerCapture = (): boolean => false;
+  Element.prototype.releasePointerCapture = (): void => {
+    // no-op
+  };
+  Element.prototype.scrollIntoView = (): void => {
+    // no-op
+  };
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('JobSearchFilters', () => {
   const baseFilters: SearchJobsParams = { page: 1, page_size: 20 };
@@ -53,5 +85,194 @@ describe('JobSearchFilters', () => {
   it('renders the recurring filter checkbox', () => {
     render(<JobSearchFilters filters={baseFilters} onChange={vi.fn()} />);
     expect(screen.getByLabelText('Recurring jobs only')).toBeDefined();
+  });
+
+  // ---- DEEPENING ----
+
+  it('renders the location and radius inputs', () => {
+    render(<JobSearchFilters filters={baseFilters} onChange={vi.fn()} />);
+    expect(screen.getByLabelText('Location filter')).toBeDefined();
+    expect(screen.getByLabelText(/Radius/)).toBeDefined();
+  });
+
+  it('seeds the search input from the filters.query prop', () => {
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, query: 'leaky faucet' }}
+        onChange={vi.fn()}
+      />,
+    );
+    const search = screen.getByLabelText('Search');
+    expect((search as HTMLInputElement).value).toBe('leaky faucet');
+  });
+
+  it('debounces text-search updates and emits the new query after the timer', () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    render(<JobSearchFilters filters={baseFilters} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'plumbing' } });
+    // Should NOT have fired immediately
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'plumbing', page: 1 }),
+    );
+  });
+
+  it('clears the query in onChange when search is emptied', () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, query: 'old' }}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: '' } });
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ query: undefined, page: 1 }),
+    );
+  });
+
+  it('emits min_price_cents in cents when min price is typed', () => {
+    const onChange = vi.fn();
+    render(<JobSearchFilters filters={baseFilters} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText('Minimum price in dollars'), {
+      target: { value: '100' },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ min_price_cents: 10000, page: 1 }),
+    );
+  });
+
+  it('emits max_price_cents in cents when max price is typed', () => {
+    const onChange = vi.fn();
+    render(<JobSearchFilters filters={baseFilters} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText('Maximum price in dollars'), {
+      target: { value: '500' },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ max_price_cents: 50000, page: 1 }),
+    );
+  });
+
+  it('emits min_price_cents=undefined when min price is cleared', () => {
+    const onChange = vi.fn();
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, min_price_cents: 5000 }}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Minimum price in dollars'), {
+      target: { value: '' },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ min_price_cents: undefined, page: 1 }),
+    );
+  });
+
+  it('seeds price inputs from filters props in dollars', () => {
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, min_price_cents: 2500, max_price_cents: 10000 }}
+        onChange={vi.fn()}
+      />,
+    );
+    const min = screen.getByLabelText('Minimum price in dollars');
+    const max = screen.getByLabelText('Maximum price in dollars');
+    expect((min as HTMLInputElement).value).toBe('25');
+    expect((max as HTMLInputElement).value).toBe('100');
+  });
+
+  it('emits radius_km when radius is typed', () => {
+    const onChange = vi.fn();
+    render(<JobSearchFilters filters={baseFilters} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText(/Radius/), {
+      target: { value: '50' },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ radius_km: 50, page: 1 }),
+    );
+  });
+
+  it('emits is_recurring=true when the recurring checkbox is checked', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<JobSearchFilters filters={baseFilters} onChange={onChange} />);
+
+    const checkbox = screen.getByLabelText('Recurring jobs only');
+    await user.click(checkbox);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ is_recurring: true, page: 1 }),
+    );
+  });
+
+  it('emits is_recurring=undefined when the recurring checkbox is unchecked', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, is_recurring: true }}
+        onChange={onChange}
+      />,
+    );
+
+    const checkbox = screen.getByLabelText('Recurring jobs only');
+    await user.click(checkbox);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ is_recurring: undefined, page: 1 }),
+    );
+  });
+
+  it('preserves page_size when Reset Filters is clicked', () => {
+    const onChange = vi.fn();
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, page_size: 50, query: 'old', is_recurring: true }}
+        onChange={onChange}
+      />,
+    );
+    screen.getByText('Reset Filters').click();
+    expect(onChange).toHaveBeenCalledWith({ page: 1, page_size: 50 });
+  });
+
+  it('clears the local search input visually when Reset Filters is clicked', () => {
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, query: 'pipe' }}
+        onChange={vi.fn()}
+      />,
+    );
+    const search = screen.getByLabelText('Search');
+    expect((search as HTMLInputElement).value).toBe('pipe');
+    act(() => {
+      fireEvent.click(screen.getByText('Reset Filters'));
+    });
+    expect((search as HTMLInputElement).value).toBe('');
+  });
+
+  it('renders flattened category options including child entries', async () => {
+    const user = userEvent.setup();
+    render(<JobSearchFilters filters={baseFilters} onChange={vi.fn()} />);
+
+    // Open the category select
+    await user.click(screen.getByLabelText('Category'));
+    expect(await screen.findByRole('option', { name: /Plumbing/ })).toBeDefined();
+    // Child should also be available (with indentation)
+    expect(screen.getByRole('option', { name: /Drains/ })).toBeDefined();
+    expect(screen.getByRole('option', { name: /Electrical/ })).toBeDefined();
+    expect(screen.getByRole('option', { name: /All Categories/ })).toBeDefined();
   });
 });

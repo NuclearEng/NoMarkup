@@ -1,9 +1,28 @@
-// Smoke test for the subscription settings page.
-import { render } from '@testing-library/react';
+// Tests for the subscription settings page — exercises loading/error/empty/active
+// states, usage bars, plan tier list, billing-interval toggle, view-mode toggle,
+// invoice list, and cancel flow.
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
+
+const subState: { data: unknown; isLoading: boolean; isError: boolean } = {
+  data: undefined,
+  isLoading: false,
+  isError: false,
+};
+const tiersState: { data: unknown; isLoading: boolean } = {
+  data: undefined,
+  isLoading: false,
+};
+const usageState: { data: unknown } = { data: undefined };
+const invoicesState: { data: unknown } = { data: undefined };
+
+const changeTierMutate = vi.fn(() => Promise.resolve({}));
+const cancelMutate = vi.fn(() => Promise.resolve({}));
+const changeTierState = { isPending: false, isError: false, isSuccess: false };
+const cancelState = { isPending: false, isError: false };
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -21,7 +40,16 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('@/components/payments/SubscriptionTierCard', () => ({
-  SubscriptionTierCard: () => createElement('div', { 'data-testid': 'tier-card' }),
+  SubscriptionTierCard: ({ tier, onSelect }: { tier: { id: string; name: string }; onSelect: (id: string) => void }) =>
+    createElement(
+      'button',
+      {
+        'data-testid': `tier-card-${tier.id}`,
+        type: 'button',
+        onClick: () => { onSelect(tier.id); },
+      },
+      tier.name,
+    ),
 }));
 
 vi.mock('@/components/payments/SubscriptionTierComparison', () => ({
@@ -29,19 +57,197 @@ vi.mock('@/components/payments/SubscriptionTierComparison', () => ({
 }));
 
 vi.mock('@/hooks/useSubscription', () => ({
-  useCancelSubscription: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useChangeTier: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useInvoices: () => ({ data: undefined, isLoading: false }),
-  useSubscription: () => ({ data: undefined, isLoading: false }),
-  useTiers: () => ({ data: undefined, isLoading: false }),
-  useUsage: () => ({ data: undefined, isLoading: false }),
+  useCancelSubscription: () => ({
+    mutateAsync: cancelMutate,
+    isPending: cancelState.isPending,
+    isError: cancelState.isError,
+  }),
+  useChangeTier: () => ({
+    mutateAsync: changeTierMutate,
+    isPending: changeTierState.isPending,
+    isError: changeTierState.isError,
+    isSuccess: changeTierState.isSuccess,
+  }),
+  useInvoices: () => invoicesState,
+  useSubscription: () => subState,
+  useTiers: () => tiersState,
+  useUsage: () => usageState,
 }));
 
-import SubscriptionPage from '@/app/(dashboard)/settings/subscription/page';
+const { default: SubscriptionPage } = await import(
+  '@/app/(dashboard)/settings/subscription/page'
+);
+
+const baseSubscription = {
+  id: 'sub_1',
+  status: 'active',
+  tier_id: 'tier_pro',
+  tier: { name: 'Pro', sort_order: 2 },
+  current_price_cents: 4900,
+  billing_interval: 'monthly',
+  current_period_start: '2025-04-01T00:00:00Z',
+  current_period_end: '2025-05-01T00:00:00Z',
+  trial_end: null,
+  cancelled_at: null,
+};
+
+beforeEach(() => {
+  subState.data = undefined;
+  subState.isLoading = false;
+  subState.isError = false;
+  tiersState.data = undefined;
+  tiersState.isLoading = false;
+  usageState.data = undefined;
+  invoicesState.data = undefined;
+  changeTierState.isPending = false;
+  changeTierState.isError = false;
+  changeTierState.isSuccess = false;
+  cancelState.isPending = false;
+  cancelState.isError = false;
+  changeTierMutate.mockClear();
+  cancelMutate.mockClear();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('SubscriptionPage', () => {
-  it('renders without throwing', () => {
-    const { container } = render(withQueryClient(createElement(SubscriptionPage)));
-    expect(container).toBeTruthy();
+  it('renders loading skeletons while loading', () => {
+    subState.isLoading = true;
+    tiersState.isLoading = true;
+    render(withQueryClient(createElement(SubscriptionPage)));
+    // Loading branch renders header but no "Current Plan" / status content yet.
+    expect(screen.getByRole('heading', { name: 'Subscription' })).toBeDefined();
+    expect(screen.queryByText('Current Plan')).toBeNull();
+    expect(screen.queryByText(/no active subscription/i)).toBeNull();
+  });
+
+  it('renders error banner when subscription fetch fails', () => {
+    subState.isError = true;
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText(/failed to load subscription/i)).toBeDefined();
+  });
+
+  it('renders empty state when no subscription is active', () => {
+    subState.data = { subscription: null };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText(/no active subscription/i)).toBeDefined();
+  });
+
+  it('renders active subscription details', () => {
+    subState.data = { subscription: baseSubscription };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Pro')).toBeDefined();
+    expect(screen.getByText('Active')).toBeDefined();
+  });
+
+  it('shows past-due status badge', () => {
+    subState.data = { subscription: { ...baseSubscription, status: 'past_due' } };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Past Due')).toBeDefined();
+  });
+
+  it('renders usage bars when usage data present', () => {
+    subState.data = { subscription: baseSubscription };
+    usageState.data = {
+      active_bids: 4,
+      max_active_bids: 10,
+      service_categories: 2,
+      max_service_categories: 5,
+      portfolio_images: 9,
+      max_portfolio_images: 10,
+      current_fee_percentage: 7,
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Active Bids')).toBeDefined();
+    expect(screen.getByText('Service Categories')).toBeDefined();
+    expect(screen.getByText('Portfolio Images')).toBeDefined();
+    expect(screen.getByText('7%')).toBeDefined();
+  });
+
+  it('renders tier cards by default and switches to comparison view', () => {
+    subState.data = { subscription: baseSubscription };
+    tiersState.data = {
+      tiers: [
+        { id: 'tier_pro', name: 'Pro', sort_order: 2 },
+        { id: 'tier_basic', name: 'Basic', sort_order: 1 },
+      ],
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByTestId('tier-card-tier_pro')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /view as table/i }));
+    expect(screen.getByTestId('tier-comparison')).toBeDefined();
+  });
+
+  it('triggers change-tier mutation when a tier card is selected', () => {
+    subState.data = { subscription: baseSubscription };
+    tiersState.data = {
+      tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }],
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByTestId('tier-card-tier_basic'));
+    expect(changeTierMutate).toHaveBeenCalledWith({
+      new_tier_id: 'tier_basic',
+      billing_interval: 'monthly',
+    });
+  });
+
+  it('shows error banner when changeTier mutation errors', () => {
+    subState.data = { subscription: baseSubscription };
+    tiersState.data = { tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }] };
+    changeTierState.isError = true;
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText(/failed to change plan/i)).toBeDefined();
+  });
+
+  it('renders invoice list rows', () => {
+    subState.data = { subscription: baseSubscription };
+    invoicesState.data = {
+      invoices: [
+        {
+          id: 'inv_1',
+          period_start: '2025-03-01T00:00:00Z',
+          period_end: '2025-04-01T00:00:00Z',
+          amount_cents: 4900,
+          status: 'paid',
+          pdf_url: 'https://example.com/inv.pdf',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Invoice History')).toBeDefined();
+    expect(screen.getByText('paid')).toBeDefined();
+  });
+
+  it('opens cancel confirmation when "Cancel Subscription" clicked', () => {
+    subState.data = { subscription: baseSubscription };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^cancel subscription$/i }));
+    expect(screen.getByLabelText(/reason for cancelling/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /confirm cancellation/i })).toBeDefined();
+  });
+
+  it('calls cancel mutation with reason when confirmed', () => {
+    subState.data = { subscription: baseSubscription };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^cancel subscription$/i }));
+    fireEvent.change(screen.getByLabelText(/reason for cancelling/i), {
+      target: { value: 'too expensive' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirm cancellation/i }));
+    expect(cancelMutate).toHaveBeenCalledWith({
+      reason: 'too expensive',
+      cancel_immediately: false,
+    });
+  });
+
+  it('hides cancel-subscription card when subscription is already cancelled', () => {
+    subState.data = {
+      subscription: { ...baseSubscription, cancelled_at: '2025-04-15T00:00:00Z' },
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.queryByRole('button', { name: /^cancel subscription$/i })).toBeNull();
+    expect(screen.getByText(/cancels on/i)).toBeDefined();
   });
 });

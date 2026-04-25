@@ -1,9 +1,21 @@
-// Smoke test for the properties management page.
-import { render } from '@testing-library/react';
+// Tests for the properties management page — exercises loading/error/empty
+// states, the add-property form toggle, and the two-step delete confirmation.
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
+
+const propertiesState: {
+  data: unknown;
+  isLoading: boolean;
+  isError: boolean;
+} = { data: undefined, isLoading: false, isError: false };
+
+const refetch = vi.fn();
+const createMutate = vi.fn(() => Promise.resolve({}));
+const deleteMutate = vi.fn(() => Promise.resolve({}));
+const createState = { isPending: false };
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -21,16 +33,131 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('@/hooks/useProperties', () => ({
-  useCreateProperty: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteProperty: () => ({ mutate: vi.fn(), isPending: false }),
-  useProperties: () => ({ data: undefined, isLoading: false, isError: false }),
+  useCreateProperty: () => ({
+    mutateAsync: createMutate,
+    isPending: createState.isPending,
+  }),
+  useDeleteProperty: () => ({ mutateAsync: deleteMutate, isPending: false }),
+  useProperties: () => ({
+    data: propertiesState.data,
+    isLoading: propertiesState.isLoading,
+    isError: propertiesState.isError,
+    refetch,
+  }),
 }));
 
-import PropertiesPage from '@/app/(dashboard)/properties/page';
+const { default: PropertiesPage } = await import('@/app/(dashboard)/properties/page');
+
+const lakeHouse = {
+  id: 'p1',
+  nickname: 'Lake House',
+  address: '123 Lakefront Rd',
+  city: 'Bellevue',
+  state: 'WA',
+  zip_code: '98004',
+  notes: 'Gate code 1234',
+  active_jobs: 2,
+  total_spend_cents: 250000,
+};
+const studio = {
+  id: 'p2',
+  nickname: 'Studio',
+  address: '456 City Ave',
+  city: 'Seattle',
+  state: 'WA',
+  zip_code: '98101',
+  notes: '',
+  active_jobs: 1,
+  total_spend_cents: 50000,
+};
+
+beforeEach(() => {
+  propertiesState.data = undefined;
+  propertiesState.isLoading = false;
+  propertiesState.isError = false;
+  createState.isPending = false;
+  refetch.mockClear();
+  createMutate.mockClear();
+  deleteMutate.mockClear();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('PropertiesPage', () => {
-  it('renders without throwing', () => {
-    const { container } = render(withQueryClient(createElement(PropertiesPage)));
-    expect(container).toBeTruthy();
+  it('renders loading state while properties are loading', () => {
+    propertiesState.isLoading = true;
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.queryByText('Lake House')).toBeNull();
+    expect(screen.queryByText(/no properties yet/i)).toBeNull();
+  });
+
+  it('renders error state and triggers refetch on Retry', () => {
+    propertiesState.isError = true;
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.getByText(/failed to load properties/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders empty state when no properties', () => {
+    propertiesState.data = [];
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.getByText(/no properties yet/i)).toBeDefined();
+  });
+
+  it('renders property cards when data present', () => {
+    propertiesState.data = [lakeHouse, studio];
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.getByText('Lake House')).toBeDefined();
+    expect(screen.getByText('Studio')).toBeDefined();
+    expect(screen.getByText(/123 Lakefront Rd/)).toBeDefined();
+  });
+
+  it('uses correct singular/plural copy for active jobs counts', () => {
+    propertiesState.data = [studio, { ...lakeHouse, active_jobs: 0 }];
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.getByText(/^1 active job$/)).toBeDefined();
+    expect(screen.getByText(/^0 active jobs$/)).toBeDefined();
+  });
+
+  it('renders notes only when present', () => {
+    propertiesState.data = [lakeHouse, studio];
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.getByText('Gate code 1234')).toBeDefined();
+  });
+
+  it('toggles the add-property form when "Add Property" header button clicked', () => {
+    propertiesState.data = [lakeHouse];
+    render(withQueryClient(createElement(PropertiesPage)));
+    fireEvent.click(screen.getAllByRole('button', { name: /add property/i })[0] as HTMLElement);
+    expect(screen.getByText('Add New Property')).toBeDefined();
+    expect(screen.getByLabelText(/nickname/i)).toBeDefined();
+  });
+
+  it('hides the add-property form when Cancel clicked', () => {
+    propertiesState.data = [lakeHouse];
+    render(withQueryClient(createElement(PropertiesPage)));
+    fireEvent.click(screen.getAllByRole('button', { name: /add property/i })[0] as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByText('Add New Property')).toBeNull();
+  });
+
+  it('requires confirmation before deleting a property', () => {
+    propertiesState.data = [lakeHouse];
+    render(withQueryClient(createElement(PropertiesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^delete lake house$/i }));
+    expect(deleteMutate).not.toHaveBeenCalled();
+    // After first click the button switches to confirm mode.
+    expect(screen.getByRole('button', { name: /confirm delete lake house/i })).toBeDefined();
+  });
+
+  it('calls delete mutation when confirm-delete clicked', () => {
+    propertiesState.data = [lakeHouse];
+    render(withQueryClient(createElement(PropertiesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^delete lake house$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm delete lake house/i }));
+    expect(deleteMutate).toHaveBeenCalledWith('p1');
   });
 });
