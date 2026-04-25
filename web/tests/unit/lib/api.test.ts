@@ -66,7 +66,9 @@ describe('api request methods', () => {
     const result = await api.get<{ ok: boolean }>('/api/v1/x');
     expect(result.ok).toBe(true);
 
-    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const call = vi.mocked(fetch).mock.calls[0];
+    if (!call) throw new Error('fetch was not called');
+    const [, init] = call;
     const headers = init?.headers as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer token-1');
     expect(init?.credentials).toBe('include');
@@ -78,7 +80,9 @@ describe('api request methods', () => {
 
     await api.post('/api/v1/y', { foo: 'bar' });
 
-    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const call = vi.mocked(fetch).mock.calls[0];
+    if (!call) throw new Error('fetch was not called');
+    const [, init] = call;
     expect(init?.body).toBe(JSON.stringify({ foo: 'bar' }));
     expect((init?.headers as Record<string, string>)['Content-Type']).toBe('application/json');
   });
@@ -122,8 +126,10 @@ describe('api request methods', () => {
     await api.patch('/api/v1/a', { v: 1 });
     await api.delete('/api/v1/a');
 
-    expect(vi.mocked(fetch).mock.calls[0]![1]?.method).toBe('PATCH');
-    expect(vi.mocked(fetch).mock.calls[1]![1]?.method).toBe('DELETE');
+    const [c0, c1] = vi.mocked(fetch).mock.calls;
+    if (!c0 || !c1) throw new Error('fetch missing expected calls');
+    expect(c0[1]?.method).toBe('PATCH');
+    expect(c1[1]?.method).toBe('DELETE');
   });
 
   it('postUnauthed does NOT attach Authorization header', async () => {
@@ -132,7 +138,9 @@ describe('api request methods', () => {
 
     await api.postUnauthed('/api/v1/auth/login', { email: 'a@b.c' });
 
-    const headers = vi.mocked(fetch).mock.calls[0]![1]?.headers as Record<string, string>;
+    const callPU = vi.mocked(fetch).mock.calls[0];
+    if (!callPU) throw new Error('fetch was not called');
+    const headers = callPU[1]?.headers as Record<string, string>;
     expect(headers['Authorization']).toBeUndefined();
   });
 
@@ -187,12 +195,12 @@ describe('401 refresh-token rotation', () => {
       .mockResolvedValueOnce(new Response('expired', { status: 401 }))
       .mockResolvedValueOnce(new Response('refresh denied', { status: 401 }));
 
-    // Stub window.location to avoid actual navigation in jsdom.
+    // Stub window.location to avoid actual navigation in jsdom. Construct
+    // the replacement explicitly (don't spread the real Location instance —
+    // it loses class identity and trips no-misused-spread).
     const origLoc = window.location;
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { ...origLoc, href: '' },
-    });
+    const stubLoc = { href: '', origin: origLoc.origin, pathname: origLoc.pathname };
+    Object.defineProperty(window, 'location', { configurable: true, value: stubLoc });
 
     await expect(api.get('/api/v1/protected')).rejects.toBeInstanceOf(ApiError);
     expect(clearTokens).toHaveBeenCalled();
@@ -204,7 +212,12 @@ describe('401 refresh-token rotation', () => {
     vi.mocked(getAccessToken).mockReturnValue('expired-token');
     let refreshCallCount = 0;
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       if (url.includes('/auth/refresh')) {
         refreshCallCount += 1;
         // Slight delay so concurrent callers race.
@@ -232,7 +245,12 @@ describe('401 refresh-token rotation', () => {
     vi.mocked(fetch).mockReset();
     let firstReqHit = false;
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       if (url.includes('/auth/refresh')) {
         refreshCallCount += 1;
         await new Promise((r) => setTimeout(r, 10));
@@ -282,7 +300,9 @@ describe('downloadAuthenticated', () => {
     await downloadAuthenticated('/api/v1/files/x', 'tax-form.html');
 
     // Verify Authorization header attached.
-    const headers = vi.mocked(fetch).mock.calls[0]![1]?.headers as Record<string, string>;
+    const dlCall = vi.mocked(fetch).mock.calls[0];
+    if (!dlCall) throw new Error('fetch was not called for download');
+    const headers = dlCall[1]?.headers as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer tok');
   });
 

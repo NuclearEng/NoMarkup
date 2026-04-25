@@ -59,7 +59,7 @@ describe('useSearchProviders', () => {
       { wrapper: wrap(client) },
     );
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
-    const calledWith = vi.mocked(api.getPublic).mock.calls[0]![0];
+    const calledWith = vi.mocked(api.getPublic).mock.calls[0]?.[0] ?? '';
     expect(calledWith).toContain('query=plumbing');
     expect(calledWith).toContain('category_id=cat-1');
     expect(calledWith).toContain('min_rating=4');
@@ -81,7 +81,7 @@ describe('useSearchProviders', () => {
       { wrapper: wrap(client) },
     );
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
-    expect(vi.mocked(api.getPublic).mock.calls[0]![0]).toContain('verified=false');
+    expect(vi.mocked(api.getPublic).mock.calls[0]?.[0] ?? '').toContain('verified=false');
   });
 });
 
