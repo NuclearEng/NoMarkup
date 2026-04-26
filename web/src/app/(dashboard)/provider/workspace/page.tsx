@@ -47,16 +47,6 @@ function isToday(dateStr: string | undefined | null): boolean {
   return toDateKey(dateStr) === today;
 }
 
-function _isUpcoming(dateStr: string | undefined | null): boolean {
-  if (!dateStr) return false;
-  const now = new Date();
-  const target = new Date(dateStr);
-  const todayStart = new Date(now.toISOString().slice(0, 10));
-  const sevenDaysOut = new Date(todayStart);
-  sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
-  return target > todayStart && target <= sevenDaysOut;
-}
-
 function groupByDate(contracts: Contract[]): Array<{ dateKey: string; label: string; items: Contract[] }> {
   const map = new Map<string, Contract[]>();
   for (const c of contracts) {
@@ -106,15 +96,8 @@ function JobCard({ contract, showWorkSession = false }: JobCardProps) {
               Contract #{contract.contract_number}
             </p>
           </div>
-          <Badge
-            variant="outline"
-            className={
-              contract.status === CONTRACT_STATUS.ACTIVE
-                ? 'border-sky-500/40 text-sky-300'
-                : 'border-amber-500/40 text-amber-300'
-            }
-          >
-            {contract.status === CONTRACT_STATUS.ACTIVE ? 'In Progress' : 'Awarded'}
+          <Badge variant="outline" className="border-sky-500/40 text-sky-300">
+            In Progress
           </Badge>
         </div>
 
