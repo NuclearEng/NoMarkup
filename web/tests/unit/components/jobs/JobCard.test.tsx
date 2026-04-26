@@ -89,4 +89,84 @@ describe('JobCard', () => {
     render(<JobCard job={mockJob} />);
     expect(screen.getByText('Flexible Schedule')).toBeDefined();
   });
+
+  it('renders a formatted date when schedule_type is specific_date', () => {
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          schedule_type: SCHEDULE_TYPE.SPECIFIC_DATE,
+          scheduled_date: '2026-08-15T00:00:00Z',
+        }}
+      />,
+    );
+    // toLocaleDateString → "Aug 15, 2026" (en-US)
+    expect(screen.getByText(/Aug 1[45], 2026/)).toBeDefined();
+  });
+
+  it('renders the Recurring badge when is_recurring is true', () => {
+    render(<JobCard job={{ ...mockJob, is_recurring: true }} />);
+    expect(screen.getByText('Recurring')).toBeDefined();
+  });
+
+  it('falls back to Uncategorized when category_name is empty', () => {
+    render(<JobCard job={{ ...mockJob, category_name: '' }} />);
+    expect(screen.getByText('Uncategorized')).toBeDefined();
+  });
+
+  it('hides location row when location_address is missing', () => {
+    render(<JobCard job={{ ...mockJob, location_address: '' }} />);
+    expect(screen.queryByText('123 Main St, Springfield')).toBeNull();
+  });
+
+  it('renders "No auction" when auction_ends_at is null', () => {
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          auction_ends_at: null,
+          status: JOB_STATUS.COMPLETED,
+        }}
+      />,
+    );
+    expect(screen.getByText('No auction')).toBeDefined();
+    // No progress bar without auction
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('renders an auction progress bar when an auction is in flight', () => {
+    // Auction started ~24h ago, ends in 24h, duration 48h → ~50% elapsed
+    const endsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          auction_ends_at: endsAt,
+          auction_duration_hours: 48,
+        }}
+      />,
+    );
+    expect(screen.getByRole('progressbar')).toBeDefined();
+  });
+
+  it('renders draft, awarded, in-progress, completed, suspended, cancelled status badges', () => {
+    const statuses = [
+      JOB_STATUS.DRAFT,
+      JOB_STATUS.AWARDED,
+      JOB_STATUS.IN_PROGRESS,
+      JOB_STATUS.COMPLETED,
+      JOB_STATUS.SUSPENDED,
+      JOB_STATUS.CANCELLED,
+    ];
+    for (const status of statuses) {
+      const { unmount, getByText } = render(<JobCard job={{ ...mockJob, status }} />);
+      expect(getByText(status.replace(/_/g, ' '))).toBeDefined();
+      unmount();
+    }
+  });
+
+  it('renders "1 bid" (singular) when there is exactly one bid', () => {
+    render(<JobCard job={{ ...mockJob, bid_count: 1 }} />);
+    expect(screen.getByText('bid')).toBeDefined();
+  });
 });

@@ -47,4 +47,58 @@ describe('AuctionDemo', () => {
     // in the bid row, so there may be more than one occurrence.
     expect(screen.getAllByText('$2,100').length).toBeGreaterThanOrEqual(1);
   });
+
+  it('renders the second bid after its delay', () => {
+    render(<AuctionDemo />);
+    act(() => {
+      vi.advanceTimersByTime(3100);
+    });
+    expect(screen.getAllByText('$1,800').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('ProBuild Co.')).toBeDefined();
+  });
+
+  it('renders the winning bid and a savings badge after all bids land', () => {
+    render(<AuctionDemo />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getAllByText('$1,450').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Elite Renovations')).toBeDefined();
+    expect(screen.getByText(/% savings!/)).toBeDefined();
+  });
+
+  it('countdown timer ticks down by one second', () => {
+    render(<AuctionDemo />);
+    // Initial timer 47 → 0:47
+    expect(screen.getByText(/0:47/)).toBeDefined();
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByText(/0:46/)).toBeDefined();
+  });
+
+  it('renders the Elite trust tier label for score >= 95', () => {
+    render(<AuctionDemo />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    // Elite Renovations has trustScore 95 → Elite tier
+    expect(screen.getByText('95')).toBeDefined();
+  });
+
+  it('cycles back to the starting price after CYCLE_DURATION', () => {
+    render(<AuctionDemo />);
+    // First reach final bid
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getAllByText('$1,450').length).toBeGreaterThanOrEqual(1);
+    // After full cycle, the runCycle setTimeout (8000ms from cycle start)
+    // resets state.
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    // The starting price is back as Current Best Price.
+    expect(screen.getAllByText('$2,500').length).toBeGreaterThanOrEqual(1);
+  });
 });

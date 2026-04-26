@@ -74,4 +74,69 @@ describe('MatchedJobCard', () => {
     render(<MatchedJobCard job={mockJob} matchScorePct={80} distanceKm={3} />);
     expect(screen.getByText(/Up to/)).toBeDefined();
   });
+
+  it('renders distance in rounded km when over 10km', () => {
+    render(<MatchedJobCard job={mockJob} matchScorePct={80} distanceKm={12.7} />);
+    expect(screen.getByText('13km away')).toBeDefined();
+  });
+
+  it('shows the accepted offer amount when offer_accepted_cents is present', () => {
+    render(
+      <MatchedJobCard
+        job={{ ...mockJob, offer_accepted_cents: 15000, starting_bid_cents: null }}
+        matchScorePct={80}
+        distanceKm={2}
+      />,
+    );
+    expect(screen.getByText('$150.00')).toBeDefined();
+  });
+
+  it('hides budget row when both starting and offer cents are null', () => {
+    render(
+      <MatchedJobCard
+        job={{ ...mockJob, starting_bid_cents: null, offer_accepted_cents: null }}
+        matchScorePct={80}
+        distanceKm={2}
+      />,
+    );
+    expect(screen.queryByText('Budget:')).toBeNull();
+  });
+
+  it('renders the Recurring badge with the frequency', () => {
+    render(
+      <MatchedJobCard
+        job={{ ...mockJob, is_recurring: true, recurrence_frequency: 'weekly' }}
+        matchScorePct={80}
+        distanceKm={2}
+      />,
+    );
+    expect(screen.getByText(/Recurring \(weekly\)/)).toBeDefined();
+  });
+
+  it('renders Strong Match label for scores 75-89', () => {
+    render(<MatchedJobCard job={mockJob} matchScorePct={80} distanceKm={2} />);
+    expect(screen.getByText('Strong Match')).toBeDefined();
+  });
+
+  it('renders Good Match label for scores 60-74', () => {
+    render(<MatchedJobCard job={mockJob} matchScorePct={65} distanceKm={2} />);
+    expect(screen.getByText('Good Match')).toBeDefined();
+  });
+
+  it('renders generic Match label for scores below 60', () => {
+    render(<MatchedJobCard job={mockJob} matchScorePct={45} distanceKm={2} />);
+    expect(screen.getByText('Match')).toBeDefined();
+  });
+
+  it('omits the auction timer block when auction_ends_at is null', () => {
+    const { container } = render(
+      <MatchedJobCard
+        job={{ ...mockJob, auction_ends_at: null }}
+        matchScorePct={80}
+        distanceKm={2}
+      />,
+    );
+    // No border-t pt-3 timer wrapper means no AuctionTimer label
+    expect(container.textContent).not.toContain('Time left');
+  });
 });

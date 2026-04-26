@@ -98,4 +98,91 @@ describe('ContractCard', () => {
     );
     expect(screen.getByText('Pending Acceptance')).toBeDefined();
   });
+
+  it('renders status labels for cancelled, voided, disputed, suspended, abandoned, completed', () => {
+    const statuses: Array<{ status: string; label: string }> = [
+      { status: 'cancelled', label: 'Cancelled' },
+      { status: 'voided', label: 'Voided' },
+      { status: 'disputed', label: 'Disputed' },
+      { status: 'suspended', label: 'Suspended' },
+      { status: 'abandoned', label: 'Abandoned' },
+      { status: 'completed', label: 'Completed' },
+    ];
+    for (const { status, label } of statuses) {
+      const { unmount, getByText } = render(
+        createElement(ContractCard, { contract: makeContract({ status }) }),
+      );
+      expect(getByText(label)).toBeDefined();
+      unmount();
+    }
+  });
+
+  it('falls back to formatted status for unknown status values', () => {
+    render(
+      createElement(ContractCard, {
+        contract: makeContract({ status: 'weird_made_up_status' }),
+      }),
+    );
+    expect(screen.getByText('weird made up status')).toBeDefined();
+  });
+
+  it('renders all payment timing labels', () => {
+    const timings: Array<{ timing: string; label: string }> = [
+      { timing: 'upfront', label: 'Upfront' },
+      { timing: 'completion', label: 'On Completion' },
+      { timing: 'payment_plan', label: 'Payment Plan' },
+      { timing: 'recurring', label: 'Recurring' },
+    ];
+    for (const { timing, label } of timings) {
+      const { unmount, getByText } = render(
+        createElement(ContractCard, {
+          contract: makeContract({ payment_timing: timing }),
+        }),
+      );
+      expect(getByText(label)).toBeDefined();
+      unmount();
+    }
+  });
+
+  it('falls back to formatted timing for unknown payment_timing', () => {
+    render(
+      createElement(ContractCard, {
+        contract: makeContract({ payment_timing: 'custom_thing' }),
+      }),
+    );
+    expect(screen.getByText('custom thing')).toBeDefined();
+  });
+
+  it('renders 100% completion progress with the emerald gradient bar', () => {
+    const contract = makeContract({
+      milestones: [makeMilestone({ id: 'm-1', status: 'approved' })],
+    });
+    render(createElement(ContractCard, { contract }));
+    expect(screen.getByText('100%')).toBeDefined();
+    const bar = screen.getByRole('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('100');
+  });
+
+  it('renders mid-range completion (>= 60%) with blue-emerald gradient', () => {
+    const contract = makeContract({
+      milestones: [
+        makeMilestone({ id: 'm-1', status: 'approved' }),
+        makeMilestone({ id: 'm-2', status: 'approved' }),
+        makeMilestone({ id: 'm-3', status: 'pending' }),
+      ],
+    });
+    render(createElement(ContractCard, { contract }));
+    // 2/3 = 67%
+    expect(screen.getByText('67%')).toBeDefined();
+  });
+
+  it('omits the milestone progress bar when there are no milestones', () => {
+    render(
+      createElement(ContractCard, {
+        contract: makeContract({ milestones: [] }),
+      }),
+    );
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByText(/Milestones/)).toBeNull();
+  });
 });

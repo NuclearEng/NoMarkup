@@ -68,4 +68,55 @@ describe('MetricsCard', () => {
     );
     expect(container.querySelector('svg')).not.toBeNull();
   });
+
+  it('animates numeric value while preserving currency prefix and suffix', () => {
+    const { container } = render(
+      createElement(MetricsCard, {
+        label: 'Revenue',
+        value: '$1,234.50/mo',
+        numericValue: 1234,
+      }),
+    );
+    // useCountUp mock returns target verbatim; output spans render "$" + "1,234" + "/mo"
+    const text = container.textContent ?? '';
+    expect(text).toContain('$');
+    expect(text).toContain('1,234');
+    expect(text).toContain('/mo');
+  });
+
+  it('falls back to raw value when no numeric portion can be matched', () => {
+    render(
+      createElement(MetricsCard, {
+        label: 'Status',
+        value: 'N/A',
+        numericValue: 0,
+      }),
+    );
+    expect(screen.getByText('N/A')).toBeDefined();
+  });
+
+  it('does not render the trend chip when loading regardless of trend value', () => {
+    render(
+      createElement(MetricsCard, {
+        label: 'Loading',
+        value: '99',
+        loading: true,
+        trend: 5.5,
+      }),
+    );
+    // Loading hides the trend percentage
+    expect(screen.queryByText(/\+5\.5%/)).toBeNull();
+  });
+
+  it('renders zero trend as a positive (zero is non-negative)', () => {
+    render(
+      createElement(MetricsCard, {
+        label: 'Flat',
+        value: '0',
+        trend: 0,
+      }),
+    );
+    // 0 → +0.0%
+    expect(screen.getByText(/\+0\.0%/)).toBeDefined();
+  });
 });

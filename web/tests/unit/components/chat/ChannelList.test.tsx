@@ -115,4 +115,86 @@ describe('ChannelList', () => {
     const button = screen.getByRole('button', { name: /Open conversation with prov-bob/ });
     expect(button.getAttribute('aria-current')).toBe('true');
   });
+
+  it('clicking a channel calls setActiveChannel with its id', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [sampleChannel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    await user.click(screen.getByRole('button', { name: /Open conversation with prov-bob/ }));
+    expect(setActiveChannel).toHaveBeenCalledWith('chan-1');
+  });
+
+  it('filters channels by search query and shows the no-match empty state', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [sampleChannel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    await user.type(screen.getByLabelText('Search conversations'), 'no-such-text-anywhere');
+    expect(screen.getByText('No matching conversations')).toBeDefined();
+    expect(screen.getByText(/Try a different search term/)).toBeDefined();
+  });
+
+  it('keeps a channel matching by message content when searching', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [sampleChannel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    await user.type(screen.getByLabelText('Search conversations'), 'Hi there');
+    expect(screen.getByText('Hi there!')).toBeDefined();
+  });
+
+  it('renders Contract and Support channel-type labels', () => {
+    const channels: Channel[] = [
+      { ...sampleChannel, id: 'chan-2', channel_type: CHANNEL_TYPE.CONTRACT },
+      { ...sampleChannel, id: 'chan-3', channel_type: CHANNEL_TYPE.SUPPORT },
+    ];
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels, pagination: { page: 1, page_size: 50, total: 2 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    expect(screen.getByText('Contract')).toBeDefined();
+    expect(screen.getByText('Support')).toBeDefined();
+  });
+
+  it('falls back to "No messages yet" when channel has no last_message', () => {
+    const channel: Channel = { ...sampleChannel, last_message: undefined, unread_count: 0 };
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [channel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    expect(screen.getByText('No messages yet')).toBeDefined();
+  });
+
+  it('truncates a long last-message preview', () => {
+    const longMessage = 'A'.repeat(100);
+    const channel: Channel = {
+      ...sampleChannel,
+      last_message: { ...(sampleChannel.last_message ?? { id: 'x', channel_id: 'chan-1', sender_id: 'cust-alice', message_type: 'text', flagged_contact_info: false, is_deleted: false, created_at: '2026-04-01T11:00:00Z' }), content: longMessage },
+    };
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [channel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    // Truncated to 50 chars + ellipsis
+    expect(screen.getByText(/A{50}\.\.\./)).toBeDefined();
+  });
 });

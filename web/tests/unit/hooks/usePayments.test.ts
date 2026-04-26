@@ -16,6 +16,7 @@ import {
   useStripeAccountStatus,
   useCreateStripeAccount,
   useInstantPayout,
+  useStripeOnboardingLink,
 } from '@/hooks/usePayments';
 import type {
   Payment,
@@ -49,6 +50,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 const { api } = await import('@/lib/api');
+const { toast } = await import('sonner');
 
 function createTestQueryClient(): QueryClient {
   return new QueryClient({
@@ -402,5 +404,174 @@ describe('useInstantPayout', () => {
       { amount_cents: 25000 },
     );
     expect(result.current.data?.payout_id).toBe('po_1');
+  });
+
+  it('invalidates the payments + analytics + earnings caches on success', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      payout_id: 'po_2',
+      amount_cents: 1000,
+      estimated_arrival: '2026-04-26T00:00:00Z',
+    });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useInstantPayout(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate(1000);
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['payments'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['provider-analytics'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['provider-earnings'] });
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      'Payout initiated — funds arriving within minutes',
+    );
+  });
+
+  it('shows an error toast when the payout call fails', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useInstantPayout(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate(500);
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      'Instant payout failed — please try again',
+    );
+  });
+});
+
+describe('error toasts on mutation failures', () => {
+  let queryClient: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+  afterEach(() => { queryClient.clear(); });
+
+  it('useCreatePayment fires the failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useCreatePayment(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({
+      contract_id: 'c-1',
+      milestone_id: '',
+      amount_cents: 1000,
+      idempotency_key: 'k',
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create payment');
+  });
+
+  it('useProcessPayment fires the failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useProcessPayment(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({ paymentId: 'pmt-1', payment_method_id: 'pm-1' });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      'Payment failed — please try again',
+    );
+  });
+
+  it('useDeletePaymentMethod fires the failure toast on error', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useDeletePaymentMethod(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate('pm-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      'Failed to remove payment method',
+    );
+  });
+
+  it('useCreateSetupIntent fires the failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useCreateSetupIntent(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate();
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      'Failed to initialize payment setup',
+    );
+  });
+
+  it('useAddDevPaymentMethod fires the failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useAddDevPaymentMethod(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({ brand: 'visa', last_four: '4242', exp_month: 12, exp_year: 2030 });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add payment method');
+  });
+
+  it('useCreateStripeAccount fires the failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useCreateStripeAccount(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate();
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create Stripe account');
+  });
+});
+
+describe('useStripeOnboardingLink', () => {
+  let queryClient: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+  afterEach(() => { queryClient.clear(); });
+
+  it('does not auto-fetch — only runs after refetch is invoked', async () => {
+    const { result } = renderHook(
+      () => useStripeOnboardingLink({
+        return_url: 'https://app.test/return',
+        refresh_url: 'https://app.test/refresh',
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+
+  it('normalizes onboarding_url to { url } when refetched', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      onboarding_url: 'https://stripe.test/onb/abc',
+    });
+
+    const { result } = renderHook(
+      () => useStripeOnboardingLink({
+        return_url: 'https://app.test/return',
+        refresh_url: 'https://app.test/refresh',
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const fetched = await result.current.refetch();
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/providers/me/stripe/onboarding?return_url=https%3A%2F%2Fapp.test%2Freturn&refresh_url=https%3A%2F%2Fapp.test%2Frefresh',
+    );
+    expect(fetched.data?.url).toBe('https://stripe.test/onb/abc');
   });
 });

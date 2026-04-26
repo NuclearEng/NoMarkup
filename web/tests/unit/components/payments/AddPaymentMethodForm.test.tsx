@@ -179,6 +179,161 @@ describe('AddPaymentMethodForm', () => {
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid expiration month in the dev card form', async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    useDevAddMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    } as unknown as ReturnType<typeof useAddDevPaymentMethod>);
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_abc' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Last 4 digits/)).toBeDefined();
+    });
+
+    await user.type(screen.getByLabelText(/Last 4 digits/), '4242');
+    await user.type(screen.getByLabelText(/Exp month/), '13');
+    await user.type(screen.getByLabelText(/Exp year/), '2030');
+    await user.click(screen.getByRole('button', { name: /Save Dev Card/ }));
+
+    expect(screen.getByText(/Expiration month must be 1/)).toBeDefined();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid expiration year in the dev card form', async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    useDevAddMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    } as unknown as ReturnType<typeof useAddDevPaymentMethod>);
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_abc' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Last 4 digits/)).toBeDefined();
+    });
+
+    await user.type(screen.getByLabelText(/Last 4 digits/), '4242');
+    await user.type(screen.getByLabelText(/Exp month/), '6');
+    await user.type(screen.getByLabelText(/Exp year/), '1999');
+    await user.click(screen.getByRole('button', { name: /Save Dev Card/ }));
+
+    expect(screen.getByText(/Expiration year must be 2025/)).toBeDefined();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a network error when the dev mutation rejects', async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockRejectedValue(new Error('network down'));
+    useDevAddMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    } as unknown as ReturnType<typeof useAddDevPaymentMethod>);
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_abc' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Last 4 digits/)).toBeDefined();
+    });
+
+    await user.type(screen.getByLabelText(/Last 4 digits/), '4242');
+    await user.type(screen.getByLabelText(/Exp month/), '6');
+    await user.type(screen.getByLabelText(/Exp year/), '2030');
+    await user.click(screen.getByRole('button', { name: /Save Dev Card/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText('network down')).toBeDefined();
+    });
+  });
+
+  it('strips non-digit characters from the last-four input', async () => {
+    const user = userEvent.setup();
+    useDevAddMock.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useAddDevPaymentMethod>);
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_abc' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Last 4 digits/)).toBeDefined();
+    });
+
+    const last4 = screen.getByLabelText(/Last 4 digits/) as HTMLInputElement;
+    await user.type(last4, 'a4b2c');
+    expect(last4.value).toBe('42');
+  });
+
+  it('disables Cancel and shows pending Save text while a dev card request is in-flight', async () => {
+    const user = userEvent.setup();
+    useDevAddMock.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: true,
+    } as unknown as ReturnType<typeof useAddDevPaymentMethod>);
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_xyz' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Last 4 digits/)).toBeDefined();
+    });
+    expect(screen.getByText('Saving...')).toBeDefined();
+    const cancel = screen.getByRole('button', { name: /^Cancel$/ });
+    expect((cancel as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('submits the dev card form with valid input', async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();

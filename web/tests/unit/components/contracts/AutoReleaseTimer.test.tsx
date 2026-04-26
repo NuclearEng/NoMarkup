@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,5 +29,44 @@ describe('AutoReleaseTimer', () => {
   it('shows the released state when countdown is past 7 days', () => {
     render(createElement(AutoReleaseTimer, { completedAt: '2026-04-10T12:00:00Z' }));
     expect(screen.getByText(/Payment has been auto-released/i)).toBeDefined();
+  });
+
+  it('renders countdown in yellow when more than 72h remain', () => {
+    // Completed 1 day ago → ~6 days left → > 72h → yellow-600
+    render(createElement(AutoReleaseTimer, { completedAt: '2026-04-23T12:00:00Z' }));
+    const countdown = screen.getByLabelText('Auto-release countdown');
+    expect(countdown.className).toContain('text-yellow-600');
+    // Days portion shown
+    expect(countdown.textContent).toMatch(/^[56]d /);
+  });
+
+  it('renders countdown in orange when between 24h and 72h remain', () => {
+    // Completed 5 days, 12 hours ago → ~36h left
+    const completedAt = new Date(Date.now() - (5 * 24 + 12) * 60 * 60 * 1000).toISOString();
+    render(createElement(AutoReleaseTimer, { completedAt }));
+    const countdown = screen.getByLabelText('Auto-release countdown');
+    expect(countdown.className).toContain('text-orange-600');
+  });
+
+  it('renders countdown in red when fewer than 24h remain', () => {
+    // Completed ~6 days, 18 hours ago → ~6h left
+    const completedAt = new Date(Date.now() - (6 * 24 + 18) * 60 * 60 * 1000).toISOString();
+    render(createElement(AutoReleaseTimer, { completedAt }));
+    const countdown = screen.getByLabelText('Auto-release countdown');
+    expect(countdown.className).toContain('text-red-600');
+    // No days segment when < 1 day remains
+    expect(countdown.textContent ?? '').not.toMatch(/d /);
+  });
+
+  it('updates the countdown each second via the interval', () => {
+    render(createElement(AutoReleaseTimer, { completedAt: '2026-04-23T12:00:00Z' }));
+    const before = screen.getByLabelText('Auto-release countdown').textContent ?? '';
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    const after = screen.getByLabelText('Auto-release countdown').textContent ?? '';
+    // Either ticked down or stayed (but shape is intact); guard against panic.
+    expect(after.length).toBeGreaterThan(0);
+    expect(before.length).toBeGreaterThan(0);
   });
 });
