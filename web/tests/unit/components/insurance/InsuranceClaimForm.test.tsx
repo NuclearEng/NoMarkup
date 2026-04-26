@@ -387,4 +387,42 @@ describe('InsuranceClaimForm', () => {
     await user.click(screen.getByRole('button', { name: /Submit Claim/ }));
     expect(await screen.findByText(/Select a claim type/)).toBeDefined();
   });
+
+  it('does not call mutate when amount exceeds coverage even if validation passes', async () => {
+    // Hits the onSubmit `if (amountCents > coverageAmountCents) return;` defensive
+    // guard. The submit button is disabled in this state, so we trigger the form
+    // submit directly via requestSubmit() to exercise the onSubmit handler.
+    const user = userEvent.setup();
+    const longDescription = 'f'.repeat(120);
+    const mutate = vi.fn();
+    useFile.mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useFileInsuranceClaim>);
+
+    const { container } = render(
+      createElement(InsuranceClaimForm, {
+        policyId: 'pol-1',
+        coverageAmountCents: 100_00,
+      }),
+    );
+    // Choose a claim type so the schema validates.
+    await user.click(screen.getByRole('combobox'));
+    const option = await screen.findByRole('option', { name: 'Other' });
+    await user.click(option);
+
+    await user.type(screen.getByLabelText(/Description/), longDescription);
+    await user.type(screen.getByLabelText(/Claimed Amount/), '500');
+
+    // Submit via form.requestSubmit (button is disabled by exceedsCoverage).
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    if (form) {
+      fireEvent.submit(form);
+    }
+    await waitFor(() => {
+      expect(mutate).not.toHaveBeenCalled();
+    });
+  });
 });

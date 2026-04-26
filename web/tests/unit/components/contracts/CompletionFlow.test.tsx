@@ -399,4 +399,23 @@ describe('CompletionFlow', () => {
     );
     expect(container.firstChild).toBeNull();
   });
+
+  it('disables the submit-revision button when the contract has no milestones', async () => {
+    // When the customer is viewing a completed contract with zero milestones,
+    // lastMilestone is undefined → the submit button is disabled and the
+    // handleRequestRevision early-return for !lastMilestone is unreachable
+    // through the UI path (defensive guard).
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z', milestones: [] }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    const submit = screen.getByRole<HTMLButtonElement>('button', {
+      name: /submit revision request/i,
+    });
+    expect(submit.disabled).toBe(true);
+  });
 });

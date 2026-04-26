@@ -241,4 +241,91 @@ describe('MessageThread', () => {
     render(<MessageThread channelId="chan-1" />);
     expect(screen.getAllByLabelText(/Message read|Message sent/).length).toBeGreaterThan(0);
   });
+
+  // ---- WAVE 21 BRANCH-DEEPENING ----
+
+  it('renders the "Sent" (unread) read-receipt for an own message with no following other-party messages', () => {
+    // Single own message with no prior or following other messages → lastReadOwnMessageId
+    // stays null, so ReadReceipt renders the "Sent"/Check (unread) variant.
+    setMessages({
+      messages: [
+        makeMsg({ id: 'only-mine', sender_id: 'user-me', content: 'first message' }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.getByLabelText('Message sent')).toBeDefined();
+    expect(screen.getByTitle('Sent')).toBeDefined();
+  });
+
+  it('renders own-message styling for a deleted own message', () => {
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 'mine-deleted',
+          sender_id: 'user-me',
+          is_deleted: true,
+          content: 'gone',
+        }),
+      ],
+      has_more: false,
+    });
+    const { container } = render(<MessageThread channelId="chan-1" />);
+    expect(screen.getByText('This message was deleted')).toBeDefined();
+    // Own deleted message bubble uses bg-primary styling.
+    expect(container.querySelector('.bg-primary')).not.toBeNull();
+  });
+
+  it('renders the loading spinner inside the Load older messages button while loading more', () => {
+    // Once beforeCursor is set (after a Load Older click), the full-page loader
+    // is skipped — the button itself shows the in-button spinner when the mock
+    // reports isLoading=true. We mock the hook so it returns isLoading=true
+    // when called with a `before` cursor.
+    const useMessagesMock = vi.mocked(useMessages);
+    useMessagesMock.mockImplementation(((_id: string, opts?: { before?: string }) => ({
+      data: { messages: sampleMessages, has_more: true },
+      isLoading: !!opts?.before,
+      isError: false,
+    })) as unknown as typeof useMessages);
+    render(<MessageThread channelId="chan-1" />);
+    // Initial render — no before cursor, isLoading=false → button text visible.
+    fireEvent.click(screen.getByText('Load older messages'));
+    // After click, beforeCursor is set; the next render returns isLoading=true,
+    // which renders the in-button "Loading..." copy.
+    expect(screen.getByText(/Loading\.\.\./)).toBeDefined();
+  });
+
+  it('renders proposed-terms cards with no milestones section', () => {
+    const termsContent = [
+      '[Proposed Terms]',
+      'Payment Type: lump_sum',
+      'Amount: $750',
+      'Description: One-shot project, no milestones.',
+    ].join('\n');
+    setMessages({
+      messages: [makeMsg({ id: 'tm-no-milestones', content: termsContent })],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.getByText(/Proposed Terms/)).toBeDefined();
+    // Milestones label/section is omitted when none are listed.
+    expect(screen.queryByText('Milestones')).toBeNull();
+  });
+
+  it('renders proposed-terms cards with no description section', () => {
+    const termsContent = [
+      '[Proposed Terms]',
+      'Payment Type: hourly',
+      'Amount: $80/hr',
+      'Milestones:',
+      'Phase 1 - 4 hrs',
+    ].join('\n');
+    setMessages({
+      messages: [makeMsg({ id: 'tm-no-desc', content: termsContent })],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.getByText(/Proposed Terms/)).toBeDefined();
+    expect(screen.queryByText('Scope')).toBeNull();
+  });
 });

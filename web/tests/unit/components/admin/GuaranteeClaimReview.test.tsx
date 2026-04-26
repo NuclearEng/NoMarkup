@@ -285,4 +285,61 @@ describe('GuaranteeClaimReview', () => {
     );
     expect(screen.queryByRole('button', { name: /approve claim/i })).toBeNull();
   });
+
+  // ---- WAVE 21 BRANCH-DEEPENING ----
+
+  it('falls back to the raw status string when status has no STATUS_LABELS entry', () => {
+    render(
+      createElement(GuaranteeClaimReview, {
+        claim: makeClaim({ status: 'unknown_status' as Dispute['status'] }),
+      }),
+    );
+    // Badge shows the raw status value (no label match → fall through).
+    expect(screen.getByText('unknown_status')).toBeDefined();
+  });
+
+  it('falls back to the truncated initiator id when initiator_name is missing', () => {
+    render(
+      createElement(GuaranteeClaimReview, {
+        claim: makeClaim({
+          initiator_name: undefined,
+          initiated_by: 'abcdef123456789xyz',
+        }),
+      }),
+    );
+    // First 12 chars of initiated_by are shown when initiator_name absent.
+    expect(screen.getByText('abcdef123456')).toBeDefined();
+  });
+
+  it('falls back to the raw outcome string when guarantee_outcome is unknown', () => {
+    render(
+      createElement(GuaranteeClaimReview, {
+        claim: makeClaim({ guarantee_outcome: 'partial_refund' as Dispute['guarantee_outcome'] }),
+      }),
+    );
+    // Unknown outcome falls through to the raw value.
+    expect(screen.getByText('partial_refund')).toBeDefined();
+  });
+
+  it('confirms rejection with reason-only notes when resolution notes are blank', async () => {
+    const user = userEvent.setup();
+    const onResolved = vi.fn();
+    render(createElement(GuaranteeClaimReview, { claim: makeClaim(), onResolved }));
+    // Open reject dialog without typing into Resolution Notes.
+    await user.click(screen.getByRole('button', { name: /reject claim/i }));
+    await user.type(
+      screen.getByLabelText(/Rejection Reason/),
+      'Insufficient evidence supplied.',
+    );
+    await user.click(
+      screen.getByRole<HTMLButtonElement>('button', { name: /confirm rejection/i }),
+    );
+    // combinedNotes uses the rejection reason only (no leading resolution notes).
+    expect(mockReview).toHaveBeenCalledWith({
+      claimId: 'claim-1',
+      approved: false,
+      resolution_notes: 'Insufficient evidence supplied.',
+    });
+    expect(onResolved).toHaveBeenCalled();
+  });
 });

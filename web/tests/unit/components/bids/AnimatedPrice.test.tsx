@@ -104,5 +104,18 @@ describe('AnimatedPrice', () => {
       const wrapper = container.querySelector('span[aria-live="polite"]');
       expect(wrapper).not.toBeNull();
     });
+
+    it('flashes red and uses an empty prevFormatted when transitioning from zero to a positive price', () => {
+      // Mount with cents=0 (em-dash placeholder, prevCentsRef = 0).
+      const { container, rerender } = render(<AnimatedPrice cents={0} />);
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      // Rerender with a positive value → animateTransition runs with prevCents=0,
+      // hitting the `prevCents > 0 ? ... : ''` false branch.
+      rerender(<AnimatedPrice cents={5000} />);
+      // 0 → 5000 is a price increase, so the wrapper flashes red.
+      expect(container.querySelector('.animate-digit-flash-red')).not.toBeNull();
+    });
   });
 });

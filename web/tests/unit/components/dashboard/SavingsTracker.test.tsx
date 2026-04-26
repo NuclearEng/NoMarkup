@@ -63,4 +63,16 @@ describe('SavingsTracker', () => {
     render(createElement(SavingsTracker));
     expect(screen.getByText(/saved across 1 job\b/)).toBeDefined();
   });
+
+  it('hides the market-median callout when total savings are zero', () => {
+    useSavingsMock.mockReturnValue({
+      data: [{ savings_cents: 0 }, { savings_cents: 0 }],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSavings>);
+
+    render(createElement(SavingsTracker));
+    // Card still renders, but the trending-down callout is hidden when total is 0.
+    expect(screen.getByText('Your Savings')).toBeDefined();
+    expect(screen.queryByText(/vs\. market median/)).toBeNull();
+  });
 });
