@@ -1,6 +1,7 @@
 // Tests for the Contracts list page — exercises tab content (loading, error,
 // empty, data) and pagination handlers.
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -107,5 +108,37 @@ describe('ContractsPage', () => {
     expect(prev.disabled).toBe(true);
     fireEvent.click(next);
     expect(screen.getAllByText(/Page/i).length).toBeGreaterThan(0);
+  });
+
+  it('clicking Previous after Next decrements page', () => {
+    contractsState.data = {
+      contracts: [{ id: 'cx' }],
+      pagination: { totalPages: 5, hasNext: true },
+    };
+    render(withQueryClient(createElement(ContractsPage)));
+    const next = screen.getAllByRole('button', { name: 'Next' })[0] as HTMLButtonElement;
+    fireEvent.click(next); // page=2
+    fireEvent.click(next); // page=3
+    const prev = screen.getAllByRole('button', { name: 'Previous' })[0] as HTMLButtonElement;
+    expect(prev.disabled).toBe(false);
+    fireEvent.click(prev); // back to page=2
+    expect(screen.getAllByText(/Page 2 of 5/).length).toBeGreaterThan(0);
+  });
+
+  it('clicking each tab exercises the tabToStatusFilter switch cases', async () => {
+    const user = userEvent.setup();
+    contractsState.data = { contracts: [] };
+    render(withQueryClient(createElement(ContractsPage)));
+    await user.click(screen.getByRole('tab', { name: 'Pending' }));
+    expect(screen.getAllByText(/No contracts pending acceptance/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('tab', { name: 'Active' }));
+    expect(screen.getAllByText(/No active contracts/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('tab', { name: 'Completed' }));
+    expect(screen.getAllByText(/No completed contracts/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('tab', { name: 'Cancelled' }));
+    expect(screen.getAllByText(/No cancelled contracts/i).length).toBeGreaterThan(0);
   });
 });

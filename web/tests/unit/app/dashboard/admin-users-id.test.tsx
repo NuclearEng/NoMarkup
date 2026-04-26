@@ -165,6 +165,94 @@ describe('AdminUserDetailPage', () => {
     expect((textarea as HTMLTextAreaElement).value).toBe('Inappropriate behavior');
   });
 
+  it('closes the dialog when Cancel is clicked, clearing reason', () => {
+    userState.isLoading = false;
+    userState.data = { user: makeUser() };
+    render(withQueryClient(createElement(AdminUserDetailPage)));
+    fireEvent.click(screen.getByLabelText(/Suspend this user/i));
+    const textarea = screen.getByLabelText(/^Reason$/i) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'temp reason' } });
+    expect(textarea.value).toBe('temp reason');
+    fireEvent.click(screen.getByLabelText(/Cancel action/i));
+    // After Cancel, the dialog element drops the open attribute (closed).
+    const dialog = document.querySelector('dialog');
+    expect(dialog).not.toBeNull();
+    expect((dialog as HTMLDialogElement).hasAttribute('open')).toBe(false);
+    // And the reason textarea has been cleared on next open.
+    fireEvent.click(screen.getByLabelText(/Suspend this user/i));
+    const reopened = screen.getByLabelText(/^Reason$/i) as HTMLTextAreaElement;
+    expect(reopened.value).toBe('');
+  });
+
+  it('invokes suspend mutation when Confirm is clicked from suspend dialog', async () => {
+    userState.isLoading = false;
+    userState.data = { user: makeUser() };
+    render(withQueryClient(createElement(AdminUserDetailPage)));
+    fireEvent.click(screen.getByLabelText(/Suspend this user/i));
+    fireEvent.change(screen.getByLabelText(/^Reason$/i), {
+      target: { value: 'spam abuser' },
+    });
+    fireEvent.click(screen.getByLabelText(/Suspend User/i));
+    // Wait microtask so the async handler runs.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(suspendMutate).toHaveBeenCalledWith({ userId: 'user-1', reason: 'spam abuser' });
+    expect(banMutate).not.toHaveBeenCalled();
+  });
+
+  it('invokes ban mutation when Confirm is clicked from ban dialog', async () => {
+    userState.isLoading = false;
+    userState.data = { user: makeUser() };
+    render(withQueryClient(createElement(AdminUserDetailPage)));
+    fireEvent.click(screen.getByLabelText(/Ban this user/i));
+    fireEvent.click(screen.getByLabelText(/Ban User/i));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(banMutate).toHaveBeenCalledWith({ userId: 'user-1', reason: '' });
+  });
+
+  it('falls back to email when display_name is missing', () => {
+    userState.isLoading = false;
+    userState.data = { user: makeUser({ display_name: null }) };
+    render(withQueryClient(createElement(AdminUserDetailPage)));
+    // Email used in heading and breadcrumb.
+    expect(screen.getAllByText('jane@example.com').length).toBeGreaterThan(1);
+    fireEvent.click(screen.getByLabelText(/Suspend this user/i));
+    // Suspend dialog uses user.display_name || user.email — no display_name, so email.
+    expect(screen.getByText(/Suspend jane@example.com/)).toBeDefined();
+  });
+
+  it('renders Yes for phone_verified and No for email_verified when flags inverted', () => {
+    userState.isLoading = false;
+    userState.data = {
+      user: makeUser({ email_verified: false, phone_verified: true }),
+    };
+    render(withQueryClient(createElement(AdminUserDetailPage)));
+    expect(screen.getAllByText('Yes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('No').length).toBeGreaterThan(0);
+  });
+
+  it('renders N/A for provider profile when trust_score and trust_tier are missing', () => {
+    userState.isLoading = false;
+    userState.data = {
+      user: makeUser({
+        provider_profile: {
+          display_name: 'Solo Provider',
+          business_name: '',
+          bio: '',
+          trust_score: undefined,
+          trust_tier: undefined,
+          jobs_completed: 0,
+          average_rating: 0,
+          total_reviews: 0,
+        },
+      }),
+    };
+    render(withQueryClient(createElement(AdminUserDetailPage)));
+    // At least 4 N/A entries (business name, bio, trust_score, trust_tier).
+    expect(screen.getAllByText('N/A').length).toBeGreaterThan(2);
+  });
+
   it('renders provider profile section when user has provider_profile', () => {
     userState.isLoading = false;
     userState.data = {

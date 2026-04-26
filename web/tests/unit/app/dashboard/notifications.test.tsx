@@ -193,4 +193,42 @@ describe('NotificationsPage', () => {
     const prev = screen.getByRole<HTMLButtonElement>('button', { name: 'Previous' });
     expect(prev.disabled).toBe(true);
   });
+
+  it('returns to All filter after toggling Unread only and back', () => {
+    setHooks({ notifications: [] });
+    render(withQueryClient(createElement(NotificationsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Unread only' }));
+    expect(
+      screen.getByText("You're all caught up! No unread notifications."),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(screen.getByText("You don't have any notifications yet.")).toBeDefined();
+  });
+
+  it('does not toggle when clicking the already-active filter button', () => {
+    setHooks({ notifications: [] });
+    render(withQueryClient(createElement(NotificationsPage)));
+    // Already on All by default; click All again — should remain on All.
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(screen.getByText("You don't have any notifications yet.")).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Unread only' }));
+    // Click Unread only again while already active — branch where !unreadOnly is false.
+    fireEvent.click(screen.getByRole('button', { name: 'Unread only' }));
+    expect(
+      screen.getByText("You're all caught up! No unread notifications."),
+    ).toBeDefined();
+  });
+
+  it('advances to the next page when Next is clicked, then returns when Previous is clicked', () => {
+    setHooks({
+      notifications: [{ id: 'n1', title: 'Hello' }],
+      pagination: { totalPages: 3, hasNext: true },
+    });
+    render(withQueryClient(createElement(NotificationsPage)));
+    expect(screen.getByText('Page 1 of 3')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByText('Page 2 of 3')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(screen.getByText('Page 1 of 3')).toBeDefined();
+  });
 });

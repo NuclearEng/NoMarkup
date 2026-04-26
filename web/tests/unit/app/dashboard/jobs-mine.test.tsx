@@ -187,6 +187,31 @@ describe('MyJobsPage', () => {
     expect(next.disabled).toBe(true);
   });
 
+  it('advances and rewinds the page when Next/Previous are clicked', () => {
+    jobsState.data = {
+      jobs: [makeJob({ id: 'j1' })],
+      pagination: { page: 1, totalPages: 5, hasNext: true },
+    };
+    render(withQueryClient(createElement(MyJobsPage)));
+    expect(screen.getAllByText(/Page 1 of 5/).length).toBeGreaterThan(0);
+    const next = screen.getAllByRole('button', { name: /Next/i })[0] as HTMLButtonElement;
+    fireEvent.click(next);
+    expect(screen.getAllByText(/Page 2 of 5/).length).toBeGreaterThan(0);
+    const prev = screen.getAllByRole('button', { name: /Previous/i })[0] as HTMLButtonElement;
+    fireEvent.click(prev);
+    expect(screen.getAllByText(/Page 1 of 5/).length).toBeGreaterThan(0);
+  });
+
+  it('renders the loading state with content loaders', () => {
+    jobsState.isLoading = true;
+    jobsState.data = undefined;
+    const { container } = render(withQueryClient(createElement(MyJobsPage)));
+    // No job cards, but the heading and tabs are still present and the content
+    // loader blocks render under each TabsContent.
+    expect(screen.getAllByRole('tab', { name: /^All$/i }).length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('div').length).toBeGreaterThan(5);
+  });
+
   it('shows Publishing label when publish mutation is pending', () => {
     publishState.isPending = true;
     jobsState.data = {

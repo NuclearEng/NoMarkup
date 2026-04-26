@@ -1,6 +1,6 @@
 // Tests for the contract review submission page — exercises loading, error,
 // already-reviewed, window-closed, not-eligible, and eligible (form-rendered) branches.
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,8 +24,10 @@ const eligibilityState: {
 
 const authUser: { user: { id: string } | null } = { user: { id: 'cust-1' } };
 
+const { routerPushMock } = vi.hoisted(() => ({ routerPushMock: vi.fn() }));
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: routerPushMock, replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/contracts/abc/review',
   useSearchParams: () => new URLSearchParams(),
   redirect: vi.fn(),
@@ -40,8 +42,22 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('@/components/forms/ReviewForm', () => ({
-  ReviewForm: ({ direction }: { direction: string }) =>
-    createElement('div', { 'data-testid': 'review-form', 'data-direction': direction }, 'form'),
+  ReviewForm: ({ direction, onSuccess }: { direction: string; onSuccess?: () => void }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'review-form', 'data-direction': direction },
+      createElement(
+        'button',
+        {
+          type: 'button',
+          'data-testid': 'review-form-success-btn',
+          onClick: () => {
+            onSuccess?.();
+          },
+        },
+        'trigger success',
+      ),
+    ),
 }));
 
 vi.mock('@/hooks/useContracts', () => ({
@@ -87,6 +103,7 @@ beforeEach(() => {
   eligibilityState.data = undefined;
   eligibilityState.isLoading = true;
   authUser.user = { id: 'cust-1' };
+  routerPushMock.mockReset();
 });
 
 afterEach(() => {
@@ -184,6 +201,20 @@ describe('ContractReviewPage', () => {
     render(withQueryClient(createElement(ContractReviewPage)));
     const form = screen.getByTestId('review-form');
     expect(form.getAttribute('data-direction')).toBe('provider_to_customer');
+  });
+
+  it('navigates back to contract when ReviewForm fires onSuccess', () => {
+    contractState.isLoading = false;
+    eligibilityState.isLoading = false;
+    contractState.data = { contract: makeContract() };
+    eligibilityState.data = {
+      eligible: true,
+      already_reviewed: false,
+      review_window_closes_at: '2099-01-01T00:00:00Z',
+    };
+    render(withQueryClient(createElement(ContractReviewPage)));
+    fireEvent.click(screen.getByTestId('review-form-success-btn'));
+    expect(routerPushMock).toHaveBeenCalledWith('/contracts/contract-1');
   });
 
   it('shows the contract number in the heading when loaded', () => {

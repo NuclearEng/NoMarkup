@@ -2,6 +2,7 @@
 // states, usage bars, plan tier list, billing-interval toggle, view-mode toggle,
 // invoice list, and cancel flow.
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -249,5 +250,149 @@ describe('SubscriptionPage', () => {
     render(withQueryClient(createElement(SubscriptionPage)));
     expect(screen.queryByRole('button', { name: /^cancel subscription$/i })).toBeNull();
     expect(screen.getByText(/cancels on/i)).toBeDefined();
+  });
+
+  it('shows the trial-end line when subscription has a trial_end value', () => {
+    subState.data = {
+      subscription: {
+        ...baseSubscription,
+        status: 'trialing',
+        trial_end: '2025-05-15T00:00:00Z',
+      },
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText(/Trial ends:/i)).toBeDefined();
+    expect(screen.getByText('Trial')).toBeDefined();
+  });
+
+  it('shows the trialing badge label', () => {
+    subState.data = {
+      subscription: { ...baseSubscription, status: 'trialing' },
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Trial')).toBeDefined();
+  });
+
+  it('shows the cancelled badge label', () => {
+    subState.data = {
+      subscription: { ...baseSubscription, status: 'cancelled' },
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Cancelled')).toBeDefined();
+  });
+
+  it('shows the expired badge label', () => {
+    subState.data = {
+      subscription: { ...baseSubscription, status: 'expired' },
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Expired')).toBeDefined();
+  });
+
+  it('renders raw status as label and outline variant for unknown statuses', () => {
+    subState.data = {
+      subscription: { ...baseSubscription, status: 'unknown_state' },
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('unknown_state')).toBeDefined();
+  });
+
+  it('shows annual billing label when subscription billing_interval is annual', () => {
+    subState.data = {
+      subscription: { ...baseSubscription, billing_interval: 'annual' },
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText(/\/year/)).toBeDefined();
+  });
+
+  it('shows the success banner after a successful tier change', () => {
+    subState.data = { subscription: baseSubscription };
+    tiersState.data = { tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }] };
+    changeTierState.isSuccess = true;
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText(/Plan changed successfully/i)).toBeDefined();
+  });
+
+  it('shows the cancel error banner when the cancel mutation errors', () => {
+    subState.data = { subscription: baseSubscription };
+    cancelState.isError = true;
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^cancel subscription$/i }));
+    expect(screen.getByText(/Failed to cancel subscription/i)).toBeDefined();
+  });
+
+  it('shows pending state ("Cancelling...") on the confirm button while cancelSubscription is pending', () => {
+    subState.data = { subscription: baseSubscription };
+    cancelState.isPending = true;
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^cancel subscription$/i }));
+    expect(screen.getByRole('button', { name: /^cancelling\.\.\./i })).toBeDefined();
+  });
+
+  it('closes the cancel confirmation when "Keep Subscription" is clicked', () => {
+    subState.data = { subscription: baseSubscription };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^cancel subscription$/i }));
+    expect(screen.getByLabelText(/reason for cancelling/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /keep subscription/i }));
+    expect(screen.queryByLabelText(/reason for cancelling/i)).toBeNull();
+  });
+
+  it('renders an invoice without a download link when pdf_url is missing', () => {
+    subState.data = { subscription: baseSubscription };
+    invoicesState.data = {
+      invoices: [
+        {
+          id: 'inv_1',
+          period_start: '2025-03-01T00:00:00Z',
+          period_end: '2025-04-01T00:00:00Z',
+          amount_cents: 4900,
+          status: 'open',
+          pdf_url: null,
+        },
+      ],
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.getByText('Invoice History')).toBeDefined();
+    // No download link rendered since pdf_url is null
+    expect(screen.queryByRole('link', { name: /download invoice/i })).toBeNull();
+  });
+
+  it('does nothing when a tier is selected but there is no current subscription', () => {
+    subState.data = { subscription: null };
+    tiersState.data = {
+      tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }],
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByTestId('tier-card-tier_basic'));
+    // Without a subscription, handleSelectTier should bail out early
+    expect(changeTierMutate).not.toHaveBeenCalled();
+  });
+
+  it('switches the billing interval to annual when the Annual tab is clicked', async () => {
+    const user = userEvent.setup();
+    subState.data = { subscription: baseSubscription };
+    tiersState.data = {
+      tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }],
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    await user.click(screen.getByRole('tab', { name: /Annual/i }));
+    await user.click(screen.getByTestId('tier-card-tier_basic'));
+    expect(changeTierMutate).toHaveBeenCalledWith({
+      new_tier_id: 'tier_basic',
+      billing_interval: 'annual',
+    });
+  });
+
+  it('switches back to cards view after toggling to table', () => {
+    subState.data = { subscription: baseSubscription };
+    tiersState.data = {
+      tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }],
+    };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByRole('button', { name: /view as table/i }));
+    expect(screen.getByTestId('tier-comparison')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /view as cards/i }));
+    expect(screen.getByTestId('tier-card-tier_basic')).toBeDefined();
   });
 });

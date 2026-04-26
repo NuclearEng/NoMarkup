@@ -1,6 +1,7 @@
 // Tests for the Payments list page — exercises tab content (loading, error,
 // empty, data) and pagination handlers.
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -107,5 +108,73 @@ describe('PaymentsPage', () => {
     expect(prev.disabled).toBe(true);
     fireEvent.click(next);
     expect(screen.getAllByText(/Page/i).length).toBeGreaterThan(0);
+  });
+
+  it('clicking Previous after Next decrements the page back to 1', () => {
+    paymentsState.data = {
+      payments: [{ id: 'p1' }],
+      pagination: { totalPages: 5, hasNext: true },
+    };
+    render(withQueryClient(createElement(PaymentsPage)));
+    const next = screen.getAllByRole('button', { name: 'Next' })[0] as HTMLButtonElement;
+    fireEvent.click(next);
+    // After advancing to page 2, Previous becomes enabled.
+    const prev = screen.getAllByRole('button', { name: 'Previous' })[0] as HTMLButtonElement;
+    expect(prev.disabled).toBe(false);
+    fireEvent.click(prev);
+    // Page label should still render (now shows page 1)
+    expect(screen.getAllByText(/Page 1 of/).length).toBeGreaterThan(0);
+  });
+
+  it('clicking each tab exercises the tabToStatusFilter switch cases', async () => {
+    const user = userEvent.setup();
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(PaymentsPage)));
+    const tabNames = ['Pending', 'Escrow', 'Completed', 'Failed', 'Refunded', 'All'];
+    for (const name of tabNames) {
+      const tab = screen.getByRole('tab', { name });
+      await user.click(tab);
+      expect(tab.getAttribute('data-state')).toBe('active');
+    }
+  });
+
+  it('shows the Pending-tab empty message when its tab is active and data is empty', async () => {
+    const user = userEvent.setup();
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(PaymentsPage)));
+    await user.click(screen.getByRole('tab', { name: 'Pending' }));
+    expect(screen.getAllByText(/No pending payments/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows the Escrow-tab empty message when its tab is active and data is empty', async () => {
+    const user = userEvent.setup();
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(PaymentsPage)));
+    await user.click(screen.getByRole('tab', { name: 'Escrow' }));
+    expect(screen.getAllByText(/No payments currently in escrow/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows the Completed-tab empty message when its tab is active and data is empty', async () => {
+    const user = userEvent.setup();
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(PaymentsPage)));
+    await user.click(screen.getByRole('tab', { name: 'Completed' }));
+    expect(screen.getAllByText(/No completed payments/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows the Failed-tab empty message when its tab is active and data is empty', async () => {
+    const user = userEvent.setup();
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(PaymentsPage)));
+    await user.click(screen.getByRole('tab', { name: 'Failed' }));
+    expect(screen.getAllByText(/No failed payments/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows the Refunded-tab empty message when its tab is active and data is empty', async () => {
+    const user = userEvent.setup();
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(PaymentsPage)));
+    await user.click(screen.getByRole('tab', { name: 'Refunded' }));
+    expect(screen.getAllByText(/No refunded payments/i).length).toBeGreaterThan(0);
   });
 });

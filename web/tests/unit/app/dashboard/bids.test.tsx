@@ -1,6 +1,7 @@
 // Tests for the My Bids page — exercises tab content (loading, error, empty,
 // data) and pagination handlers.
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -111,5 +112,35 @@ describe('BidsPage', () => {
     fireEvent.click(nexts[0] as HTMLButtonElement);
     // Page indicator updates somewhere in the DOM.
     expect(screen.getAllByText(/Page/i).length).toBeGreaterThan(0);
+  });
+
+  it('clicking Previous after advancing decrements the page', () => {
+    bidsState.data = {
+      bids: [{ id: 'bx' }],
+      pagination: { totalPages: 5, hasNext: true },
+    };
+    render(withQueryClient(createElement(BidsPage)));
+    const next = screen.getAllByRole('button', { name: 'Next' })[0] as HTMLButtonElement;
+    fireEvent.click(next); // page=2
+    fireEvent.click(next); // page=3
+    const prev = screen.getAllByRole('button', { name: 'Previous' })[0] as HTMLButtonElement;
+    expect(prev.disabled).toBe(false);
+    fireEvent.click(prev); // page=2
+    // After Previous click, the indicator should still render.
+    expect(screen.getAllByText(/Page 2 of 5/).length).toBeGreaterThan(0);
+  });
+
+  it('clicking each tab mounts the corresponding content', async () => {
+    const user = userEvent.setup();
+    bidsState.data = { bids: [] };
+    render(withQueryClient(createElement(BidsPage)));
+    await user.click(screen.getByRole('tab', { name: 'Active' }));
+    expect(screen.getAllByText(/You have no active bids/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('tab', { name: 'Won' }));
+    expect(screen.getAllByText(/You have not won any bids yet/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('tab', { name: 'Lost' }));
+    expect(screen.getAllByText(/No lost bids/i).length).toBeGreaterThan(0);
   });
 });

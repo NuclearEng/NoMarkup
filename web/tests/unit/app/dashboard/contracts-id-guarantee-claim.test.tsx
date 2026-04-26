@@ -1,6 +1,6 @@
 // Tests for the contract guarantee-claim filing page — exercises loading, contract
 // error, no-existing-claim (form rendered), and existing-claim (status card) branches.
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,8 +17,10 @@ const claimState: {
   isLoading: boolean;
 } = { data: undefined, isLoading: false };
 
+const { routerPushMock } = vi.hoisted(() => ({ routerPushMock: vi.fn() }));
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: routerPushMock, replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/contracts/abc/guarantee-claim',
   useSearchParams: () => new URLSearchParams(),
   redirect: vi.fn(),
@@ -33,8 +35,22 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('@/components/contracts/GuaranteeClaimForm', () => ({
-  GuaranteeClaimForm: () =>
-    createElement('div', { 'data-testid': 'guarantee-claim-form' }, 'form'),
+  GuaranteeClaimForm: ({ onSuccess }: { onSuccess?: () => void }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'guarantee-claim-form' },
+      createElement(
+        'button',
+        {
+          type: 'button',
+          'data-testid': 'guarantee-form-success-btn',
+          onClick: () => {
+            onSuccess?.();
+          },
+        },
+        'trigger success',
+      ),
+    ),
 }));
 
 vi.mock('@/hooks/useContracts', () => ({
@@ -91,6 +107,7 @@ beforeEach(() => {
   contractState.isError = false;
   claimState.data = undefined;
   claimState.isLoading = false;
+  routerPushMock.mockReset();
 });
 
 afterEach(() => {
@@ -169,6 +186,25 @@ describe('ContractGuaranteeClaimPage', () => {
     claimState.data = { guarantee_claim: makeClaim({ status: 'resolved' }) };
     render(withQueryClient(createElement(ContractGuaranteeClaimPage)));
     expect(screen.getByText('Resolved')).toBeDefined();
+  });
+
+  it('navigates back to contract when GuaranteeClaimForm fires onSuccess', () => {
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract() };
+    claimState.data = { guarantee_claim: null };
+    render(withQueryClient(createElement(ContractGuaranteeClaimPage)));
+    fireEvent.click(screen.getByTestId('guarantee-form-success-btn'));
+    expect(routerPushMock).toHaveBeenCalledWith('/contracts/contract-1');
+  });
+
+  it('falls back to raw status when CLAIM_STATUS_LABELS does not contain it', () => {
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract() };
+    claimState.data = {
+      guarantee_claim: makeClaim({ status: 'unknown_status' }),
+    };
+    render(withQueryClient(createElement(ContractGuaranteeClaimPage)));
+    expect(screen.getByText('unknown_status')).toBeDefined();
   });
 
   it('renders contract number link in back navigation', () => {

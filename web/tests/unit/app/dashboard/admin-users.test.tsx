@@ -33,6 +33,50 @@ vi.mock('@/hooks/useAdmin', () => ({
   useSuspendUser: () => ({ mutateAsync: suspendMutateAsync, isPending: false }),
 }));
 
+// Replace Radix Select with a native <select> so onValueChange can be driven
+// directly via a `change` event in tests.
+vi.mock('@/components/ui/select', () => ({
+  Select: ({
+    value,
+    onValueChange,
+    children,
+  }: {
+    value: string;
+    onValueChange: (val: string) => void;
+    children: React.ReactNode;
+  }) =>
+    createElement(
+      'select',
+      {
+        'data-testid': `radix-select-${value}`,
+        value,
+        onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+          onValueChange(e.target.value);
+        },
+      },
+      children,
+    ),
+  SelectTrigger: ({
+    children,
+    'aria-label': ariaLabel,
+  }: {
+    children: React.ReactNode;
+    'aria-label'?: string;
+  }) =>
+    createElement('span', { 'data-trigger': true, 'data-aria-label': ariaLabel }, children),
+  SelectValue: ({ placeholder }: { placeholder?: string }) =>
+    createElement('span', { 'data-placeholder': placeholder }),
+  SelectContent: ({ children }: { children: React.ReactNode }) =>
+    createElement('optgroup', { label: 'opts' }, children),
+  SelectItem: ({
+    value,
+    children,
+  }: {
+    value: string;
+    children: React.ReactNode;
+  }) => createElement('option', { value }, children),
+}));
+
 import AdminUsersPage from '@/app/(dashboard)/admin/users/page';
 
 function makeUser(overrides: Partial<AdminUser> = {}): AdminUser {
@@ -266,20 +310,17 @@ describe('AdminUsersPage', () => {
       isLoading: false,
       isError: false,
     });
-    render(withQueryClient(createElement(AdminUsersPage)));
-
-    // Radix Select renders a hidden native <select> with the same name as
-    // the trigger's aria-label. fireEvent.change on it triggers onValueChange.
-    const trigger = screen.getByLabelText('Filter by status');
-    // Simulate Radix passing 'suspended' through onValueChange via the
-    // hidden form-associated select element rendered alongside the trigger.
-    const hidden = trigger.parentElement?.querySelector('select');
-    if (hidden) {
-      fireEvent.change(hidden, { target: { value: 'suspended' } });
+    const { container } = render(withQueryClient(createElement(AdminUsersPage)));
+    // First select is status (value="__all__"), second is role.
+    const selects = container.querySelectorAll('select');
+    const statusSel = selects[0];
+    expect(statusSel).toBeTruthy();
+    if (statusSel) {
+      fireEvent.change(statusSel, { target: { value: 'suspended' } });
     }
-    // Either the hidden select fires onValueChange or it doesn't exist; either
-    // way we exercise the trigger render path. Assert the hook was called.
-    expect(useAdminUsersMock).toHaveBeenCalled();
+    expect(useAdminUsersMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'suspended', page: 1 }),
+    );
   });
 
   it('pagination Next button calls onPageChange', async () => {
@@ -325,5 +366,136 @@ describe('AdminUsersPage', () => {
     const scope = within(container);
     expect(scope.getByText('customer')).toBeInTheDocument();
     expect(scope.getByText('provider')).toBeInTheDocument();
+  });
+
+  it('submitting the search form prevents default and resets page to 1', async () => {
+    useAdminUsersMock.mockReturnValue({
+      data: { users: [], pagination: makePagination({ totalPages: 1, hasNext: false }) },
+      isLoading: false,
+      isError: false,
+    });
+    const { container } = render(withQueryClient(createElement(AdminUsersPage)));
+    const form = container.querySelector('form');
+    expect(form).toBeTruthy();
+    if (form) {
+      fireEvent.submit(form);
+    }
+    // Hook re-invoked with page: 1
+    expect(useAdminUsersMock).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, page_size: 20 }),
+    );
+  });
+
+  it('changes status filter then resets to All — exercises both branches', () => {
+    useAdminUsersMock.mockReturnValue({
+      data: { users: [], pagination: makePagination({ totalPages: 1, hasNext: false }) },
+      isLoading: false,
+      isError: false,
+    });
+    const { container } = render(withQueryClient(createElement(AdminUsersPage)));
+    const selects = container.querySelectorAll('select');
+    const statusSel = selects[0];
+    if (statusSel) {
+      fireEvent.change(statusSel, { target: { value: 'active' } });
+      // Now switch back to ALL_FILTER — exercises the undefined branch.
+      fireEvent.change(statusSel, { target: { value: '__all__' } });
+    }
+    expect(useAdminUsersMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: undefined, page: 1 }),
+    );
+  });
+
+  it('uses email when display_name is empty', () => {
+    useAdminUsersMock.mockReturnValue({
+      data: {
+        users: [makeUser({ display_name: '', email: 'noname@example.com' })],
+        pagination: makePagination({ totalPages: 1, hasNext: false }),
+      },
+      isLoading: false,
+      isError: false,
+    });
+    render(withQueryClient(createElement(AdminUsersPage)));
+    // Two occurrences (one in the link, one in the email cell)
+    expect(screen.getAllByText('noname@example.com').length).toBeGreaterThan(0);
+  });
+
+  it('uses email in dialog title when display_name is empty', async () => {
+    const user = userEvent.setup();
+    useAdminUsersMock.mockReturnValue({
+      data: {
+        users: [makeUser({
+          id: 'u-no-name',
+          display_name: '',
+          email: 'noname@example.com',
+          first_name: null as unknown as string,
+          last_name: null as unknown as string,
+        })],
+        pagination: makePagination({ totalPages: 1, hasNext: false }),
+      },
+      isLoading: false,
+      isError: false,
+    });
+    const { container } = render(withQueryClient(createElement(AdminUsersPage)));
+    // The aria-label uses '' fallback when first_name/last_name are nullish.
+    const suspendBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Suspend  "]',
+    );
+    expect(suspendBtn).toBeTruthy();
+    if (suspendBtn) {
+      await user.click(suspendBtn);
+    }
+    // Dialog should show email since display_name is empty
+    expect(screen.getByText(/Suspend noname@example.com/)).toBeInTheDocument();
+  });
+
+  it('opens Ban dialog uses email fallback when display_name empty', async () => {
+    const user = userEvent.setup();
+    useAdminUsersMock.mockReturnValue({
+      data: {
+        users: [makeUser({
+          id: 'u-no-name-2',
+          display_name: '',
+          email: 'banme@example.com',
+          first_name: null as unknown as string,
+          last_name: null as unknown as string,
+        })],
+        pagination: makePagination({ totalPages: 1, hasNext: false }),
+      },
+      isLoading: false,
+      isError: false,
+    });
+    const { container } = render(withQueryClient(createElement(AdminUsersPage)));
+    const banBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Ban  "]',
+    );
+    expect(banBtn).toBeTruthy();
+    if (banBtn) {
+      await user.click(banBtn);
+    }
+    expect(screen.getByText(/Ban banme@example.com/)).toBeInTheDocument();
+  });
+
+  it('changes role filter then resets to All — exercises both branches', () => {
+    useAdminUsersMock.mockReturnValue({
+      data: { users: [], pagination: makePagination({ totalPages: 1, hasNext: false }) },
+      isLoading: false,
+      isError: false,
+    });
+    const { container } = render(withQueryClient(createElement(AdminUsersPage)));
+    const selects = container.querySelectorAll('select');
+    const roleSel = selects[1];
+    expect(roleSel).toBeTruthy();
+    if (roleSel) {
+      fireEvent.change(roleSel, { target: { value: 'provider' } });
+    }
+    expect(useAdminUsersMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ role: 'provider', page: 1 }),
+    );
+    if (roleSel) {
+      fireEvent.change(roleSel, { target: { value: '__all__' } });
+    }
+    expect(useAdminUsersMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ role: undefined, page: 1 }),
+    );
   });
 });

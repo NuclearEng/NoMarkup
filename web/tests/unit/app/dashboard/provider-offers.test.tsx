@@ -17,6 +17,10 @@ const declineMutate = vi.fn(() => Promise.resolve({}));
 const acceptState = { isPending: false };
 const declineState = { isPending: false };
 
+// Global override for the countdown mock so individual tests can force a
+// specific branch (urgent / expired) without relying on real clock parsing.
+const countdownOverride: { mode: 'real' | 'urgent' | 'expired' } = { mode: 'real' };
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/provider/offers',
@@ -34,6 +38,12 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/hooks/useCountdown', () => ({
   useCountdown: (expiresAt: string) => {
+    if (countdownOverride.mode === 'urgent') {
+      return { timeLeft: '0:30', isExpired: false, totalSeconds: 30 };
+    }
+    if (countdownOverride.mode === 'expired') {
+      return { timeLeft: 'Expired', isExpired: true, totalSeconds: 0 };
+    }
     const ms = new Date(expiresAt).getTime() - Date.now();
     const isExpired = ms <= 0;
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -72,6 +82,7 @@ beforeEach(() => {
   declineState.isPending = false;
   acceptMutate.mockClear();
   declineMutate.mockClear();
+  countdownOverride.mode = 'real';
 });
 
 afterEach(() => {
@@ -153,5 +164,83 @@ describe('ProviderOffersPage', () => {
     expect(
       screen.getByRole('button', { name: /accept offer/i }).hasAttribute('disabled'),
     ).toBe(true);
+  });
+
+  it('disables actions while decline mutation is pending', () => {
+    offersState.data = {
+      offers: [{ job_id: 'j1', job_title: 'Active Job', expires_at: future, amount_cents: 5000 }],
+    };
+    declineState.isPending = true;
+    render(withQueryClient(createElement(ProviderOffersPage)));
+    expect(
+      screen.getByRole('button', { name: /decline offer/i }).hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('hides the amount badge when amount_cents is zero', () => {
+    offersState.data = {
+      offers: [{ job_id: 'j1', job_title: 'Free Job', expires_at: future, amount_cents: 0 }],
+    };
+    render(withQueryClient(createElement(ProviderOffersPage)));
+    // The job title still renders but no $ badge
+    expect(screen.getByText('Free Job')).toBeDefined();
+    expect(screen.queryByText(/^\$0\.00$/)).toBeNull();
+  });
+
+  it('renders the urgent (orange) countdown style when totalSeconds < 180', () => {
+    countdownOverride.mode = 'urgent';
+    offersState.data = {
+      offers: [{ job_id: 'j1', job_title: 'Soon-Expiring Job', expires_at: future, amount_cents: 5000 }],
+    };
+    const { container } = render(withQueryClient(createElement(ProviderOffersPage)));
+    // OfferCountdown renders the time-left with the urgent class
+    expect(container.querySelector('.text-orange-400')).toBeTruthy();
+  });
+
+  it('renders the Expired badge and styling when useCountdown reports expired', () => {
+    countdownOverride.mode = 'expired';
+    offersState.data = {
+      offers: [{ job_id: 'j1', job_title: 'Just Expired Job', expires_at: future, amount_cents: 5000 }],
+    };
+    const { container } = render(withQueryClient(createElement(ProviderOffersPage)));
+    // The destructive Expired badge renders in place of accept/decline buttons
+    expect(screen.getAllByText(/expired/i).length).toBeGreaterThan(0);
+    // Accept button should not render in the expired branch
+    expect(screen.queryByRole('button', { name: /accept offer/i })).toBeNull();
+    // Destructive countdown class is present
+    expect(container.querySelector('.text-destructive')).toBeTruthy();
+  });
+
+  it('uses singular "offer" in aria-label when exactly one active offer', () => {
+    offersState.data = {
+      offers: [{ job_id: 'j1', job_title: 'Solo Job', expires_at: future, amount_cents: 5000 }],
+    };
+    const { container } = render(withQueryClient(createElement(ProviderOffersPage)));
+    const region = container.querySelector('[aria-label="1 pending offer"]');
+    expect(region).toBeTruthy();
+  });
+
+  it('uses plural "offers" in aria-label when multiple active offers', () => {
+    offersState.data = {
+      offers: [
+        { job_id: 'j1', job_title: 'Job A', expires_at: future, amount_cents: 5000 },
+        { job_id: 'j2', job_title: 'Job B', expires_at: future, amount_cents: 5000 },
+      ],
+    };
+    const { container } = render(withQueryClient(createElement(ProviderOffersPage)));
+    const region = container.querySelector('[aria-label="2 pending offers"]');
+    expect(region).toBeTruthy();
+  });
+
+  it('filters out offers with empty/missing expires_at', () => {
+    offersState.data = {
+      offers: [
+        { job_id: 'j1', job_title: 'Active Job', expires_at: future, amount_cents: 5000 },
+        { job_id: 'j2', job_title: 'No Expiry Job', expires_at: '', amount_cents: 5000 },
+      ],
+    };
+    render(withQueryClient(createElement(ProviderOffersPage)));
+    expect(screen.getByText('Active Job')).toBeDefined();
+    expect(screen.queryByText('No Expiry Job')).toBeNull();
   });
 });

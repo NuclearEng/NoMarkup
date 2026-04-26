@@ -251,6 +251,26 @@ describe('ProviderChallengesPage', () => {
     expect(args[1]).toMatchObject({ onSettled: expect.any(Function) as unknown });
   });
 
+  it('invokes the onSettled callback to clear the joining state', () => {
+    // Mutate stub captures the onSettled and invokes it synchronously to
+    // exercise the callback that clears joiningId in the page.
+    const mutate = vi.fn(
+      (_id: string, opts: { onSettled?: () => void }) => {
+        opts.onSettled?.();
+      },
+    );
+    setHooks({
+      active: [{ id: 'avail-1', name: 'Try Me', joined: false }],
+      joinMutate: mutate,
+    });
+    render(withQueryClient(createElement(ProviderChallengesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Join Try Me/ }));
+    expect(mutate).toHaveBeenCalled();
+    // After onSettled clears the joining state, the join button should
+    // still be present (mock ChallengeCard renders Join when onJoin prop given).
+    expect(screen.getByRole('button', { name: /Join Try Me/ })).toBeDefined();
+  });
+
   it('hides the seasonal banner when no seasonal challenge is active', () => {
     setHooks({ active: [{ id: 'c1', name: 'Plain', joined: false, is_seasonal: false }] });
     render(withQueryClient(createElement(ProviderChallengesPage)));

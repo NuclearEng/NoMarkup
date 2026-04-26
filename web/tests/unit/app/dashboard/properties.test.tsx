@@ -1,6 +1,7 @@
 // Tests for the properties management page — exercises loading/error/empty
 // states, the add-property form toggle, and the two-step delete confirmation.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -159,5 +160,44 @@ describe('PropertiesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^delete lake house$/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm delete lake house/i }));
     expect(deleteMutate).toHaveBeenCalledWith('p1');
+  });
+
+  it('clicking Add Property in the empty state opens the form', () => {
+    propertiesState.data = [];
+    render(withQueryClient(createElement(PropertiesPage)));
+    // The empty state has its own Add Property button; choose the one inside the empty card.
+    const emptyAddBtn = screen.getAllByRole('button', { name: /add property/i });
+    // The last Add Property button is the one in the empty state action.
+    fireEvent.click(emptyAddBtn[emptyAddBtn.length - 1] as HTMLButtonElement);
+    expect(screen.getByText('Add New Property')).toBeDefined();
+    expect(screen.getByLabelText(/nickname/i)).toBeDefined();
+  });
+
+  it('submitting valid property form invokes createProperty.mutateAsync and resets', async () => {
+    const user = userEvent.setup();
+    propertiesState.data = [];
+    const { container } = render(withQueryClient(createElement(PropertiesPage)));
+    // Open the form via header Add Property button.
+    fireEvent.click(screen.getAllByRole('button', { name: /add property/i })[0] as HTMLElement);
+
+    await user.type(screen.getByLabelText(/nickname/i), 'Cabin');
+    await user.type(screen.getByLabelText(/street address/i), '789 Pine Rd');
+    await user.type(screen.getByLabelText(/^city$/i), 'Leavenworth');
+    await user.type(screen.getByLabelText(/^state$/i), 'WA');
+    await user.type(screen.getByLabelText(/zip code/i), '98826');
+    // Submit via the form's submit button (type="submit").
+    const form = container.querySelector('form');
+    expect(form).toBeTruthy();
+    if (form) {
+      fireEvent.submit(form);
+    }
+
+    await waitFor(() => {
+      expect(createMutate).toHaveBeenCalled();
+    });
+    // After successful submit, form should close.
+    await waitFor(() => {
+      expect(screen.queryByText('Add New Property')).toBeNull();
+    });
   });
 });

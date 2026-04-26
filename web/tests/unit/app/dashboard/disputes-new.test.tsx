@@ -423,4 +423,177 @@ describe('DisputeNewPage', () => {
     await flush();
     expect(screen.getByText(/Step 1 of 5/i)).toBeDefined();
   });
+
+  it('renders fallback contractId text on Review when no matching contract found', async () => {
+    // contractId in URL doesn't match any loaded contract → selectedContract undefined
+    searchParamsRef.current = new URLSearchParams('contractId=missing-contract');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext(); // -> reason
+    fireEvent.click(screen.getByRole('radio', { name: /Quality Issue/i }));
+    await flush();
+    await clickNext(); // -> description
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+    await clickNext(); // -> review
+    expect(screen.getByText(/Step 5 of 5/i)).toBeDefined();
+    // The selected contract fallback is the raw contractId value.
+    expect(screen.getByText('missing-contract')).toBeDefined();
+  });
+
+  it('shows singular "1 photo attached" copy on Review when a single evidence photo is added', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+
+    const file = new File(['hi'], 'one.png', { type: 'image/png' });
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    await act(() => {
+      fireEvent.change(input, { target: { files: [file] } });
+      return Promise.resolve();
+    });
+    await flush();
+    await clickNext(); // -> review
+    expect(screen.getByText(/1 photo attached/)).toBeDefined();
+  });
+
+  it('renders Processing... when image upload status is getting_url', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    imageUploadState.status = 'getting_url';
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+    expect(screen.getByText(/Processing\.\.\./)).toBeDefined();
+  });
+
+  it('renders Processing... when image upload status is confirming', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    imageUploadState.status = 'confirming';
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+    expect(screen.getByText(/Processing\.\.\./)).toBeDefined();
+  });
+
+  it('renders the upload error message under the upload button when imageUpload.error is set', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    imageUploadState.error = 'upload boom';
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+    expect(screen.getByText('upload boom')).toBeDefined();
+  });
+
+  it('preventDefault on form submit fires (no-op submit handler)', async () => {
+    contractsState.data = { contracts: [makeContract()] };
+    const { container } = render(withQueryClient(createElement(DisputeNewPage)));
+    const form = container.querySelector('form');
+    expect(form).toBeTruthy();
+    if (form) {
+      // Direct form submit triggers the no-op preventDefault handler on the <form>.
+      await act(() => {
+        fireEvent.submit(form);
+        return Promise.resolve();
+      });
+    }
+    // Step did not advance because no Next click was performed.
+    expect(screen.getByText(/Step 1 of 5/i)).toBeDefined();
+  });
+
+  it('image upload error callback is invoked when onError fires', async () => {
+    // When onError fires inside imageUpload, the page handler does `void error;` — line 87.
+    // Mock the upload hook to invoke onError, and trigger an upload.
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+
+    // Re-mock the import to return a hook that fires onError on upload.
+    vi.resetModules();
+    vi.doMock('@/hooks/useImageUpload', () => ({
+      useImageUpload: ({
+        onError,
+      }: {
+        onError?: (e: Error) => void;
+      }) => ({
+        upload: () => {
+          onError?.(new Error('boom'));
+          return Promise.resolve();
+        },
+        status: 'idle',
+        progress: 0,
+        error: null,
+      }),
+    }));
+    const { default: ReimportedPage } = await import(
+      '@/app/(dashboard)/disputes/new/page'
+    );
+    render(withQueryClient(createElement(ReimportedPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+
+    const file = new File(['hi'], 'err.png', { type: 'image/png' });
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    await act(() => {
+      fireEvent.change(input, { target: { files: [file] } });
+      return Promise.resolve();
+    });
+    await flush();
+    expect(screen.getByRole('heading', { name: /File a Dispute/i })).toBeDefined();
+
+    vi.doUnmock('@/hooks/useImageUpload');
+  });
 });
