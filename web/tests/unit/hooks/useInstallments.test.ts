@@ -108,7 +108,7 @@ describe('useCreateInstallmentPlan', () => {
       customer_id: 'cust-2',
       provider_id: 'prov-2',
       total_amount_cents: 60000,
-      installment_count: 2,
+      installment_count: 3,
       payment_method_id: 'pm-2',
       idempotency_key: 'idem-2',
     };
@@ -150,7 +150,13 @@ describe('useMyInstallmentPlans', () => {
   it('fetches the plans list', async () => {
     const response: InstallmentPlansResponse = {
       plans: [mockPlan],
-      pagination: { total_count: 1 } as InstallmentPlansResponse['pagination'],
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        totalCount: 1,
+        totalPages: 1,
+        hasNext: false,
+      },
     };
     vi.mocked(api.get).mockResolvedValueOnce(response);
 

@@ -61,6 +61,7 @@ const mockContract: Contract = {
   id: 'c-1',
   contract_number: 'NM-2026-00001',
   job_id: 'job-1',
+  job_title: 'Test job',
   customer_id: 'cust-1',
   provider_id: 'prov-1',
   bid_id: 'bid-1',
@@ -70,16 +71,11 @@ const mockContract: Contract = {
   customer_accepted: false,
   provider_accepted: false,
   acceptance_deadline: '2026-04-30T00:00:00Z',
-  accepted_at: null,
-  started_at: null,
-  completed_at: null,
-  cancelled_at: null,
-  cancelled_by: null,
-  cancellation_reason: '',
-  terms_json: {},
-  schedule_json: {},
+  milestones: [],
+  accepted_at: undefined,
+  started_at: undefined,
+  completed_at: undefined,
   created_at: '2026-04-25T00:00:00Z',
-  updated_at: '2026-04-25T00:00:00Z',
 };
 
 describe('useContract', () => {
@@ -135,7 +131,7 @@ describe('useContracts (list)', () => {
   it('fetches with no params', async () => {
     const response: ContractsResponse = {
       contracts: [mockContract],
-      pagination: { page: 1, page_size: 20, total_count: 1, total_pages: 1 },
+      pagination: { page: 1, pageSize: 20, totalCount: 1, totalPages: 1, hasNext: false },
     };
     vi.mocked(api.get).mockResolvedValueOnce(response);
 

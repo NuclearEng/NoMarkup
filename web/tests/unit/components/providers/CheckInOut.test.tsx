@@ -6,8 +6,8 @@ import { CheckInOut } from '@/components/providers/CheckInOut';
 
 const checkInMutate = vi.fn();
 const checkOutMutate = vi.fn();
-const useCheckInMock = vi.fn(() => ({ mutate: checkInMutate, isPending: false }));
-const useCheckOutMock = vi.fn(() => ({ mutate: checkOutMutate, isPending: false }));
+const useCheckInMock = vi.fn((_id: string) => ({ mutate: checkInMutate, isPending: false }));
+const useCheckOutMock = vi.fn((_id: string) => ({ mutate: checkOutMutate, isPending: false }));
 
 vi.mock('@/hooks/useWorkspace', () => ({
   WORK_SESSION_STATUS: {

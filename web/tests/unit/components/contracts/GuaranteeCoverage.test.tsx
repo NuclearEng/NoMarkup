@@ -34,8 +34,8 @@ function makeContract(overrides: Partial<Contract> = {}): Contract {
 
 function setUser(user: { id: string } | null) {
   vi.mocked(useAuthStore).mockImplementation(
-    (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({ user, isAuthenticated: !!user, token: null }),
+    ((selector: (s: Record<string, unknown>) => unknown) =>
+      selector({ user, isAuthenticated: !!user, token: null })) as unknown as typeof useAuthStore,
   );
 }
 

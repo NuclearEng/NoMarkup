@@ -25,14 +25,14 @@ vi.mock('@/stores/auth-store', () => ({
 
 import { Header } from '@/components/layout/Header';
 import { useAuthStore } from '@/stores/auth-store';
-import { USER_ROLE, USER_STATUS } from '@/types';
+import { USER_ROLE, USER_STATUS, type UserRole } from '@/types';
 
 const baseUser = {
   id: 'user-1',
   email: 'me@example.com',
   displayName: 'Me',
   avatarUrl: null,
-  roles: [USER_ROLE.CUSTOMER],
+  roles: [USER_ROLE.CUSTOMER] as UserRole[],
   status: USER_STATUS.ACTIVE,
   emailVerified: true,
   phoneVerified: false,

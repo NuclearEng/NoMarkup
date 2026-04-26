@@ -218,7 +218,7 @@ describe('useUploadCompletionPhoto', () => {
     const { result } = renderHook(() => useUploadCompletionPhoto('c-1'), { wrapper: wrap(client) });
     result.current.mutate({ file, phase: 'after' });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(result.current.error?.message).toContain('payload too big');
+    expect((result.current.error as Error | null)?.message).toContain('payload too big');
   });
 
   it('falls back to a generic error when the body is empty', async () => {
@@ -234,7 +234,7 @@ describe('useUploadCompletionPhoto', () => {
     const { result } = renderHook(() => useUploadCompletionPhoto('c-1'), { wrapper: wrap(client) });
     result.current.mutate({ file, phase: 'after' });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(result.current.error?.message).toBe('Failed to upload photo');
+    expect((result.current.error as Error | null)?.message).toBe('Failed to upload photo');
   });
 
   it('omits the Authorization header when there is no access token', async () => {
@@ -286,7 +286,7 @@ describe('useCheckIn — geolocation errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(result.current.error?.message).toContain('Location access was denied');
+    expect((result.current.error as Error | null)?.message).toContain('Location access was denied');
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
       expect.stringContaining('Location access was denied'),
     );
@@ -299,7 +299,7 @@ describe('useCheckIn — geolocation errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(result.current.error?.message).toContain('Unable to determine your location');
+    expect((result.current.error as Error | null)?.message).toContain('Unable to determine your location');
   });
 
   it('surfaces api.post failures via the error toast', async () => {
@@ -310,7 +310,7 @@ describe('useCheckIn — geolocation errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(result.current.error?.message).toBe('500: bad gateway');
+    expect((result.current.error as Error | null)?.message).toBe('500: bad gateway');
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith('500: bad gateway');
   });
 });
@@ -355,7 +355,7 @@ describe('useCheckOut — duration formatting + errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(result.current.error?.message).toContain('Location access was denied');
+    expect((result.current.error as Error | null)?.message).toContain('Location access was denied');
   });
 
   it('rejects with a generic message when geolocation fails for non-permission reasons on checkout', async () => {
@@ -365,7 +365,7 @@ describe('useCheckOut — duration formatting + errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(result.current.error?.message).toContain('Unable to determine your location');
+    expect((result.current.error as Error | null)?.message).toContain('Unable to determine your location');
   });
 
   it('surfaces api.post failures as errors via onError toast on checkout', async () => {
@@ -376,7 +376,7 @@ describe('useCheckOut — duration formatting + errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(result.current.error?.message).toBe('502: bad gateway');
+    expect((result.current.error as Error | null)?.message).toBe('502: bad gateway');
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith('502: bad gateway');
   });
 
@@ -390,7 +390,7 @@ describe('useCheckOut — duration formatting + errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(result.current.error?.message).toBe('plain-string-error');
+    expect((result.current.error as Error | null)?.message).toBe('plain-string-error');
   });
 
   it('falls back to a generic message when the rejection is not an Error', async () => {

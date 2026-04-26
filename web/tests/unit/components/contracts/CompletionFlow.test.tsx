@@ -52,8 +52,8 @@ const { useAuthStore } = await import('@/stores/auth-store');
 
 function setUser(user: { id: string } | null) {
   vi.mocked(useAuthStore).mockImplementation(
-    (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({ user, isAuthenticated: !!user, token: null }),
+    ((selector: (s: Record<string, unknown>) => unknown) =>
+      selector({ user, isAuthenticated: !!user, token: null })) as unknown as typeof useAuthStore,
   );
 }
 
@@ -288,7 +288,7 @@ describe('CompletionFlow', () => {
     setUser({ id: 'cust-1' });
     const { container } = render(
       createElement(CompletionFlow, {
-        contract: makeContract({ milestones: [], completed_at: null }),
+        contract: makeContract({ milestones: [], completed_at: undefined }),
       }),
     );
     // Empty milestones → not allMilestonesApproved + no completed_at → falls to null.
@@ -394,7 +394,7 @@ describe('CompletionFlow', () => {
     setUser({ id: 'cust-1' });
     const { container } = render(
       createElement(CompletionFlow, {
-        contract: makeContract({ completed_at: null }),
+        contract: makeContract({ completed_at: undefined }),
       }),
     );
     expect(container.firstChild).toBeNull();

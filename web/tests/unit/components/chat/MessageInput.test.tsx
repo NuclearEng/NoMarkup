@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mutateAsync = vi.fn(() => Promise.resolve({}));
+const mutateAsync = vi.fn((..._args: unknown[]) => Promise.resolve({}));
 const isPendingState = { value: false };
 
 vi.mock('@/hooks/useChannels', () => ({

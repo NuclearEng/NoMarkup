@@ -118,7 +118,8 @@ const baseJob = {
 
 function setAuth(state: { user: unknown; isAuthenticated: boolean }) {
   vi.mocked(useAuthStore).mockImplementation(
-    (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state) as never,
+    ((selector?: (s: typeof state) => unknown) =>
+      selector ? selector(state) : state) as unknown as typeof useAuthStore,
   );
 }
 
@@ -129,7 +130,7 @@ function setHooks(opts: {
   refetch?: () => void;
   bids?: unknown[];
   bidCount?: number;
-  countdown?: { timeLeft: string; isExpired: boolean };
+  countdown?: { timeLeft: string; isExpired: boolean; totalSeconds: number };
   terminal?: { isConnected?: boolean; error?: unknown };
   placeBidMutate?: ReturnType<typeof vi.fn>;
 } = {}) {
@@ -148,7 +149,7 @@ function setHooks(opts: {
     isPending: false,
   } as unknown as ReturnType<typeof usePlaceBid>);
   vi.mocked(useCountdown).mockReturnValue(
-    opts.countdown ?? { timeLeft: '1h', isExpired: false },
+    opts.countdown ?? { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
   );
   vi.mocked(useAuctionTerminal).mockReturnValue({
     sim: {},
@@ -219,7 +220,7 @@ describe('(public)/jobs/[id]/page', () => {
   it('renders the live auction terminal layout when conditions are met', () => {
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
     render(createElement(JobDetailPage));
@@ -230,7 +231,7 @@ describe('(public)/jobs/[id]/page', () => {
   it('falls back to the standard layout when a live auction is expired', () => {
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2020-01-01T00:00:00Z' },
-      countdown: { timeLeft: '0', isExpired: true },
+      countdown: { timeLeft: '0', isExpired: true, totalSeconds: 0 },
     });
     render(createElement(JobDetailPage));
     // No terminal grid — standard layout shows the customer card.
@@ -267,7 +268,7 @@ describe('(public)/jobs/[id]/page', () => {
     });
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
     render(createElement(JobDetailPage));
@@ -282,7 +283,7 @@ describe('(public)/jobs/[id]/page', () => {
     });
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
     render(createElement(JobDetailPage));
@@ -296,7 +297,7 @@ describe('(public)/jobs/[id]/page', () => {
     });
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
     render(createElement(JobDetailPage));
@@ -306,7 +307,7 @@ describe('(public)/jobs/[id]/page', () => {
   it('renders Disconnected status when the live terminal reports an error', () => {
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: false, error: new Error('boom') },
     });
     render(createElement(JobDetailPage));
@@ -316,7 +317,7 @@ describe('(public)/jobs/[id]/page', () => {
   it('renders Connecting status before the live terminal connects', () => {
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: false, error: null },
     });
     render(createElement(JobDetailPage));
@@ -331,7 +332,7 @@ describe('(public)/jobs/[id]/page', () => {
         auction_ends_at: '2099-01-01T00:00:00Z',
         location_address: '500 Oak Ave',
       },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
     render(createElement(JobDetailPage));
@@ -342,7 +343,7 @@ describe('(public)/jobs/[id]/page', () => {
   it('renders the sign-in CTA in the live layout when unauthenticated', () => {
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
-      countdown: { timeLeft: '1h', isExpired: false },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
     render(createElement(JobDetailPage));

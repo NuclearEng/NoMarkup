@@ -268,10 +268,10 @@ describe('ChallengeManager', () => {
     const user = userEvent.setup();
     render(createElement(ChallengeManager));
     await user.click(screen.getByRole('button', { name: /new challenge/i }));
-    const title = screen.getByLabelText(/^title$/i);
+    const title = screen.getByLabelText(/^title$/i) as HTMLInputElement;
     await user.type(title, 'Summer Sprint');
     expect(title.value).toBe('Summer Sprint');
-    const desc = screen.getByLabelText(/^description$/i);
+    const desc = screen.getByLabelText(/^description$/i) as HTMLTextAreaElement;
     await user.type(desc, 'Win 5');
     expect(desc.value).toBe('Win 5');
   });

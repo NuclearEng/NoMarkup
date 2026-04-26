@@ -77,16 +77,9 @@ const mockPayment: Payment = {
   guarantee_fee_cents: 1000,
   provider_payout_cents: 46500,
   status: 'pending',
-  stripe_payment_intent_id: '',
-  stripe_charge_id: '',
-  stripe_transfer_id: '',
-  stripe_refund_id: '',
-  idempotency_key: 'idem-1',
   refund_amount_cents: 0,
   refund_reason: '',
-  refunded_at: null,
   created_at: '2026-04-25T00:00:00Z',
-  updated_at: '2026-04-25T00:00:00Z',
 };
 
 const mockMethod: PaymentMethod = {
@@ -96,6 +89,7 @@ const mockMethod: PaymentMethod = {
   last_four: '4242',
   exp_month: 12,
   exp_year: 2030,
+  is_default: false,
 };
 
 describe('usePayments (list)', () => {
@@ -111,7 +105,10 @@ describe('usePayments (list)', () => {
   });
 
   it('fetches payments with no params', async () => {
-    const response: PaymentsResponse = { payments: [mockPayment], total: 1 };
+    const response: PaymentsResponse = {
+      payments: [mockPayment],
+      pagination: { page: 1, pageSize: 20, totalCount: 1, totalPages: 1, hasNext: false },
+    };
     vi.mocked(api.get).mockResolvedValueOnce(response);
 
     const { result } = renderHook(() => usePayments(), {
@@ -184,7 +181,7 @@ describe('useCreatePayment', () => {
       contract_id: 'c-1',
       milestone_id: '',
       amount_cents: 50000,
-      idempotency_key: 'idem-1',
+      payment_method_id: 'pm-1',
     });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
@@ -319,10 +316,13 @@ describe('useCalculateFees', () => {
 
   it('returns the fee breakdown', async () => {
     const breakdown: PaymentBreakdown = {
-      amount_cents: 50000,
+      subtotal_cents: 50000,
       platform_fee_cents: 2500,
       guarantee_fee_cents: 1000,
+      total_cents: 53500,
       provider_payout_cents: 46500,
+      fee_percentage: 5,
+      guarantee_percentage: 2,
     };
     vi.mocked(api.post).mockResolvedValueOnce(breakdown);
 
@@ -461,7 +461,7 @@ describe('error toasts on mutation failures', () => {
       contract_id: 'c-1',
       milestone_id: '',
       amount_cents: 1000,
-      idempotency_key: 'k',
+      payment_method_id: 'pm-1',
     });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 

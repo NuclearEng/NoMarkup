@@ -40,7 +40,7 @@ function wrap(client: QueryClient) {
 const mockExpense: ProviderExpense = {
   id: 'exp-1',
   provider_id: 'prov-1',
-  category: 'fuel',
+  category: 'transportation',
   description: 'Diesel for truck',
   amount_cents: 7500,
   receipt_url: 'https://s3/receipt.png',
