@@ -315,4 +315,240 @@ describe('BidForm', () => {
     expect(screen.getByText('Instant Accept')).toBeDefined();
     expect(screen.getByRole('button', { name: /accept offer at \$200/i })).toBeDefined();
   });
+
+  // ---- DEEPENING TESTS ----
+
+  it('reveals the accept-offer confirmation when the Accept Offer button is clicked', async () => {
+    const user = userEvent.setup();
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={20000}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /accept offer at \$200/i }));
+    expect(screen.getByText(/Are you sure\? This will place a bid at \$200/i)).toBeDefined();
+  });
+
+  it('calls acceptOffer.mutate after the accept-offer confirmation is confirmed', async () => {
+    const user = userEvent.setup();
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={20000}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /accept offer at \$200/i }));
+    await user.click(screen.getByRole('button', { name: /confirm accept offer/i }));
+    expect(acceptMutateMock).toHaveBeenCalledTimes(1);
+    const [args] = acceptMutateMock.mock.calls[0] as [string];
+    expect(args).toBe('job-1');
+  });
+
+  it('cancels the accept-offer confirmation', async () => {
+    const user = userEvent.setup();
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={20000}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /accept offer at \$200/i }));
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(screen.getByRole('button', { name: /accept offer at \$200/i })).toBeDefined();
+  });
+
+  it('hides the Accept Offer panel when the provider already has a bid', () => {
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={{
+          id: 'bid-1',
+          job_id: 'job-1',
+          provider_id: 'prov-1',
+          amount_cents: 8000,
+          is_offer_accepted: false,
+          status: 'active',
+          original_amount_cents: 8000,
+          bid_history: [],
+          created_at: '2026-03-01T12:00:00Z',
+          updated_at: '2026-03-01T12:00:00Z',
+          awarded_at: null,
+          withdrawn_at: null,
+        }}
+        startingBidCents={10000}
+        offerAcceptedCents={20000}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    expect(screen.queryByText('Instant Accept')).toBeNull();
+  });
+
+  it('renders an error message when the accept-offer mutation flags isError', async () => {
+    vi.mocked(useAcceptOffer).mockReturnValue({
+      mutate: acceptMutateMock,
+      isPending: false,
+      isError: true,
+    } as unknown as ReturnType<typeof useAcceptOffer>);
+    const user = userEvent.setup();
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={20000}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /accept offer at \$200/i }));
+    expect(screen.getByText(/Failed to accept offer/i)).toBeDefined();
+  });
+
+  it('disables the Confirm Accept Offer button while the mutation is pending', async () => {
+    vi.mocked(useAcceptOffer).mockReturnValue({
+      mutate: acceptMutateMock,
+      isPending: true,
+      isError: false,
+    } as unknown as ReturnType<typeof useAcceptOffer>);
+    const user = userEvent.setup();
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={20000}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /accept offer at \$200/i }));
+    const confirmBtn = screen.getByRole('button', { name: /accepting offer/i });
+    expect(confirmBtn.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows a confirmation error message when the place-bid mutation flags isError', async () => {
+    vi.mocked(usePlaceBid).mockReturnValue({
+      mutate: mutateMock,
+      isPending: false,
+      isError: true,
+    } as unknown as ReturnType<typeof usePlaceBid>);
+    const user = userEvent.setup();
+    const { container } = render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={10000}
+        offerAcceptedCents={null}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    const input = screen.getByPlaceholderText('0.00');
+    await user.type(input, '50');
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    await waitFor(() => {
+      expect(screen.getByText(/confirm your bid/i)).toBeDefined();
+    });
+    expect(screen.getByText(/Failed to submit bid/i)).toBeDefined();
+  });
+
+  it('cancels the bid confirmation step and returns to the form', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={10000}
+        offerAcceptedCents={null}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    const input = screen.getByPlaceholderText('0.00');
+    await user.type(input, '50');
+    const form = container.querySelector('form');
+    fireEvent.submit(form as HTMLFormElement);
+    await waitFor(() => {
+      expect(screen.getByText(/confirm your bid/i)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(screen.queryByText(/confirm your bid/i)).toBeNull();
+    expect(screen.getByPlaceholderText('0.00')).toBeDefined();
+  });
+
+  it('calls updateBid with the lowered cents on confirmation when an existing bid exists', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <BidForm
+        jobId="job-1"
+        existingBid={{
+          id: 'bid-existing',
+          job_id: 'job-1',
+          provider_id: 'prov-1',
+          amount_cents: 8000,
+          is_offer_accepted: false,
+          status: 'active',
+          original_amount_cents: 8000,
+          bid_history: [],
+          created_at: '2026-03-01T12:00:00Z',
+          updated_at: '2026-03-01T12:00:00Z',
+          awarded_at: null,
+          withdrawn_at: null,
+        }}
+        startingBidCents={10000}
+        offerAcceptedCents={null}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    // Field defaults to existing bid value (80). Use fireEvent.change to set
+    // a lower value cleanly — userEvent.type on a controlled number input is
+    // known to drop digits.
+    const input = screen.getByDisplayValue('80');
+    fireEvent.change(input, { target: { value: '50' } });
+    const form = container.querySelector('form');
+    fireEvent.submit(form as HTMLFormElement);
+    await waitFor(() => {
+      expect(screen.getByText(/confirm lower bid/i)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /confirm lower bid/i }));
+    expect(updateMutateMock).toHaveBeenCalledTimes(1);
+    const [args] = updateMutateMock.mock.calls[0] as [
+      { bidId: string; input: { new_amount_cents: number } },
+    ];
+    expect(args.bidId).toBe('bid-existing');
+    expect(args.input.new_amount_cents).toBe(5000);
+  });
+
+  it('persists a custom step value to localStorage when the step input changes', () => {
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={null}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+    const stepInput = screen.getByLabelText('Bid increment in dollars');
+    fireEvent.change(stepInput, { target: { value: '25' } });
+    expect(globalThis.localStorage.getItem('nomarkup.bidStepDollars')).toBe('25');
+  });
 });

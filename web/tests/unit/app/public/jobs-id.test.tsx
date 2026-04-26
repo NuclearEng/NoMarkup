@@ -240,4 +240,223 @@ describe('(public)/jobs/[id]/page', () => {
     expect(screen.getByText(/Lowest:/)).toBeDefined();
     expect(screen.getByTestId('live-bid-ticker')).toBeDefined();
   });
+
+  it('renders BidForm in the live terminal layout for an authenticated provider who can bid', () => {
+    setAuth({
+      user: { id: 'prov-1', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false },
+      terminal: { isConnected: true },
+    });
+    render(createElement(JobDetailPage));
+    // BidForm renders inside the sticky bottom bar of the live layout.
+    expect(screen.getByTestId('bid-form')).toBeDefined();
+  });
+
+  it('shows the Provider badge in the live header when the user is a provider non-owner', () => {
+    setAuth({
+      user: { id: 'prov-2', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false },
+      terminal: { isConnected: true },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText('Provider')).toBeDefined();
+  });
+
+  it('shows the Owner badge in the live header for the job owner who is also a provider', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false },
+      terminal: { isConnected: true },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText('Owner')).toBeDefined();
+  });
+
+  it('renders Disconnected status when the live terminal reports an error', () => {
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false },
+      terminal: { isConnected: false, error: new Error('boom') },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText('Disconnected')).toBeDefined();
+  });
+
+  it('renders Connecting status before the live terminal connects', () => {
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false },
+      terminal: { isConnected: false, error: null },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText('Connecting')).toBeDefined();
+  });
+
+  it('renders the location address in the live header when present', () => {
+    setHooks({
+      job: {
+        ...baseJob,
+        auction_type: 'live',
+        auction_ends_at: '2099-01-01T00:00:00Z',
+        location_address: '500 Oak Ave',
+      },
+      countdown: { timeLeft: '1h', isExpired: false },
+      terminal: { isConnected: true },
+    });
+    render(createElement(JobDetailPage));
+    // Location may render multiple places in live header (desktop + mobile); both ok.
+    expect(screen.getAllByText('500 Oak Ave').length).toBeGreaterThan(0);
+  });
+
+  it('renders the sign-in CTA in the live layout when unauthenticated', () => {
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false },
+      terminal: { isConnected: true },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText(/Sign in to place a bid/)).toBeDefined();
+  });
+
+  it('renders the draft job badge when status is draft', () => {
+    setHooks({
+      job: { ...baseJob, status: 'draft' },
+    });
+    render(createElement(JobDetailPage));
+    // Status badge text replaces underscores with spaces; "draft" remains as is.
+    expect(screen.getByText('draft')).toBeDefined();
+  });
+
+  it('renders the recurring badge with frequency only when both is_recurring and frequency exist', () => {
+    setHooks({
+      job: { ...baseJob, is_recurring: true, recurrence_frequency: 'monthly' },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText(/Recurring: monthly/)).toBeDefined();
+  });
+
+  it('renders the scheduled_date row when the job has a scheduled date', () => {
+    setHooks({
+      job: { ...baseJob, scheduled_date: '2026-05-01T10:00:00Z' },
+    });
+    render(createElement(JobDetailPage));
+    // The scheduled date renders with locale-formatted weekday/month/day/year.
+    expect(screen.getByText(/2026/)).toBeDefined();
+  });
+
+  it('renders the BidActivityFeed when historical bids exist', () => {
+    setHooks({
+      job: baseJob,
+      bids: [
+        {
+          bid: {
+            id: 'b1',
+            amount_cents: 10000,
+            provider_id: 'p1',
+            created_at: '2026-04-10T00:00:00Z',
+          },
+          provider_display_name: 'Pro A',
+          provider_business_name: 'Pro A LLC',
+        },
+      ],
+    });
+    setAuth({ user: { id: 'cust-1', roles: ['customer'] }, isAuthenticated: true });
+    render(createElement(JobDetailPage));
+    expect(screen.getByTestId('bid-activity')).toBeDefined();
+  });
+
+  it('renders the BidPlacementPanel for a provider with no existing bid', () => {
+    setAuth({
+      user: { id: 'prov-new', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, lowest_bid_cents: 50000, starting_bid_cents: 100000 },
+      bids: [],
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByTestId('bid-placement')).toBeDefined();
+  });
+
+  it('renders MarketRangeDisplay when market_range has a sample size', () => {
+    setHooks({
+      job: {
+        ...baseJob,
+        market_range: { low_cents: 1000, median_cents: 2000, high_cents: 3000, sample_size: 10 },
+      },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByTestId('market-range')).toBeDefined();
+  });
+
+  it('renders the static map preview when location coords + Mapbox token are set', () => {
+    process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] = 'pk.test_token';
+    setHooks({
+      job: {
+        ...baseJob,
+        location_lat: 37.7749,
+        location_lng: -122.4194,
+        location_address: '500 Oak Ave',
+      },
+    });
+    const { container } = render(createElement(JobDetailPage));
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute('src')).toContain('api.mapbox.com');
+    delete process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+  });
+
+  it('renders the existing-bid BidForm path inside auction status card for provider with existing bid', () => {
+    setAuth({
+      user: { id: 'prov-1', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: baseJob,
+      bids: [
+        {
+          bid: {
+            id: 'mybid',
+            amount_cents: 9000,
+            provider_id: 'prov-1',
+            created_at: '2026-04-10T00:00:00Z',
+          },
+          provider_display_name: 'Me',
+          provider_business_name: 'Me LLC',
+        },
+      ],
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByTestId('bid-form')).toBeDefined();
+  });
+
+  it('renders pluralized customer_jobs_posted in the Posted By card', () => {
+    setHooks({
+      job: { ...baseJob, customer_jobs_posted: 5 },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText(/5 jobs.*posted/)).toBeDefined();
+  });
+
+  it('uses the auction_ends_at fallback (2h from now) when the job has no auction_ends_at', () => {
+    setHooks({
+      job: { ...baseJob, auction_ends_at: null },
+    });
+    const { container } = render(createElement(JobDetailPage));
+    // Without auction_ends_at, the AuctionTimer is still not rendered (null branch).
+    // The "Auction not started" copy should appear instead.
+    expect(container.textContent).toContain('Auction not started');
+  });
 });

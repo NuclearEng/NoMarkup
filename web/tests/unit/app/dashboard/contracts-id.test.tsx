@@ -280,4 +280,185 @@ describe('ContractDetailPage', () => {
     render(withQueryClient(createElement(ContractDetailPage)));
     expect(screen.getByTestId('installment-schedule')).toBeDefined();
   });
+
+  it('shows the start-work error message when the start-work mutation fails', () => {
+    authUser.user = { id: 'prov-1' };
+    startWorkState.isError = true;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText(/Failed to start work/i)).toBeDefined();
+  });
+
+  it('shows the approve-completion error message when that mutation fails', () => {
+    authUser.user = { id: 'cust-1' };
+    approveCompletionState.isError = true;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText(/Failed to approve completion/i)).toBeDefined();
+  });
+
+  it('renders the cancel error message after a failed cancel mutation', () => {
+    cancelContractState.isError = true;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Cancel Contract$/i }));
+    expect(screen.getByText(/Failed to cancel contract/i)).toBeDefined();
+  });
+
+  it('renders the Auction Replay card and Watch Replay link for completed contracts', () => {
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({
+        status: 'completed',
+        completed_at: '2026-04-15T00:00:00Z',
+        accepted_at: '2026-04-01T00:00:00Z',
+        started_at: '2026-04-02T00:00:00Z',
+      }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText('Auction Replay')).toBeDefined();
+    expect(screen.getByRole('link', { name: /Watch Replay/i })).toBeDefined();
+  });
+
+  it('renders the ShareSavingsCard for completed contracts where the customer saved money', () => {
+    authUser.user = { id: 'cust-1' };
+    savingsState.data = [{ job_id: 'jobid12345678', savings_cents: 25000 }];
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'completed', completed_at: '2026-04-15T00:00:00Z' }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByTestId('share-savings')).toBeDefined();
+  });
+
+  it('renders the ReviewSection loading state for completed contracts when eligibility is loading', () => {
+    authUser.user = { id: 'cust-1' };
+    reviewEligibilityState.isLoading = true;
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'completed', completed_at: '2026-04-15T00:00:00Z' }),
+      change_orders: [],
+    };
+    const { container } = render(withQueryClient(createElement(ContractDetailPage)));
+    // Loader2 spinner renders inside the Review card during the loading branch.
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('renders Leave a Review CTA when the contract is eligible and not yet reviewed', () => {
+    authUser.user = { id: 'cust-1' };
+    reviewEligibilityState.data = {
+      eligible: true,
+      already_reviewed: false,
+      review_window_closes_at: '2026-05-15T00:00:00Z',
+    };
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'completed', completed_at: '2026-04-15T00:00:00Z' }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByRole('link', { name: /Leave a Review/i })).toBeDefined();
+  });
+
+  it('renders the already-reviewed banner in the ReviewSection', () => {
+    authUser.user = { id: 'cust-1' };
+    reviewEligibilityState.data = {
+      eligible: true,
+      already_reviewed: true,
+      review_window_closes_at: '2026-05-15T00:00:00Z',
+    };
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'completed', completed_at: '2026-04-15T00:00:00Z' }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText(/already reviewed this contract/i)).toBeDefined();
+  });
+
+  it('renders the closed review-window message when not eligible and not reviewed', () => {
+    authUser.user = { id: 'cust-1' };
+    reviewEligibilityState.data = {
+      eligible: false,
+      already_reviewed: false,
+      review_window_closes_at: '2026-04-10T00:00:00Z',
+    };
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'completed', completed_at: '2026-04-15T00:00:00Z' }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText(/review window for this contract has closed/i)).toBeDefined();
+  });
+
+  it('renders the accepted_at and started_at rows when those timestamps are present', () => {
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({
+        status: 'active',
+        accepted_at: '2026-04-02T00:00:00Z',
+        started_at: '2026-04-03T00:00:00Z',
+      }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText('Accepted')).toBeDefined();
+    expect(screen.getByText('Started')).toBeDefined();
+  });
+
+  it('renders all change-order status badge variants (accepted, rejected, expired)', () => {
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'active' }),
+      change_orders: [
+        {
+          id: 'co-acc',
+          description: 'Accepted change',
+          status: 'accepted',
+          proposed_by: 'prov-1234',
+          amount_delta_cents: 1000,
+          created_at: '2026-04-04T00:00:00Z',
+        },
+        {
+          id: 'co-rej',
+          description: 'Rejected change',
+          status: 'rejected',
+          proposed_by: 'prov-1234',
+          amount_delta_cents: -500,
+          created_at: '2026-04-04T00:00:00Z',
+        },
+        {
+          id: 'co-exp',
+          description: 'Expired change',
+          status: 'expired',
+          proposed_by: 'prov-1234',
+          amount_delta_cents: 0,
+          created_at: '2026-04-04T00:00:00Z',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText('Accepted change')).toBeDefined();
+    expect(screen.getByText('Rejected change')).toBeDefined();
+    expect(screen.getByText('Expired change')).toBeDefined();
+  });
+
+  it('renders CompletionFlow when an active contract has all milestones approved', () => {
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({
+        status: 'active',
+        milestones: [{ status: 'approved' }, { status: 'approved' }],
+      }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByTestId('completion-flow')).toBeDefined();
+  });
 });

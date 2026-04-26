@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { type ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -106,5 +107,137 @@ describe('BidCard', () => {
     };
     withProvider(<BidCard bidWithProvider={withHistory} jobId="job-1" canAward={false} />);
     expect(screen.getByText(/bid history \(2 updates\)/i)).toBeDefined();
+  });
+
+  // ---- DEEPENING TESTS ----
+
+  it('renders the fallback rank badge for ranks beyond 3', () => {
+    withProvider(
+      <BidCard
+        bidWithProvider={baseBid}
+        jobId="job-1"
+        canAward={false}
+        rank={5}
+        totalBids={10}
+      />,
+    );
+    expect(screen.getByLabelText('Rank 5 of 10 bids')).toBeDefined();
+  });
+
+  it('renders the silver rank badge for rank 2', () => {
+    withProvider(
+      <BidCard
+        bidWithProvider={baseBid}
+        jobId="job-1"
+        canAward={false}
+        rank={2}
+        totalBids={5}
+      />,
+    );
+    expect(screen.getByLabelText('Rank 2 of 5 bids')).toBeDefined();
+    expect(screen.getByText(/2nd lowest/)).toBeDefined();
+  });
+
+  it('renders the bronze rank badge for rank 3', () => {
+    withProvider(
+      <BidCard
+        bidWithProvider={baseBid}
+        jobId="job-1"
+        canAward={false}
+        rank={3}
+        totalBids={5}
+      />,
+    );
+    expect(screen.getByLabelText('Rank 3 of 5 bids')).toBeDefined();
+  });
+
+  it('expands the bid history when the toggle is clicked', async () => {
+    const user = userEvent.setup();
+    const withHistory: BidWithProvider = {
+      ...baseBid,
+      bid: {
+        ...baseBid.bid,
+        bid_history: [{ amount_cents: 28000, updated_at: '2026-03-01T12:00:00Z' }],
+      },
+    };
+    withProvider(<BidCard bidWithProvider={withHistory} jobId="job-1" canAward={false} />);
+    const toggle = screen.getByRole('button', { name: /bid history \(1 update\)/i });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await user.click(toggle);
+    // Re-query after the click to capture the post-render attribute value.
+    const toggleAfter = screen.getByRole('button', { name: /bid history \(1 update\)/i });
+    expect(toggleAfter.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(/\(original\)/i)).toBeDefined();
+  });
+
+  it('reveals the award confirmation when Award Job is clicked', async () => {
+    const user = userEvent.setup();
+    withProvider(<BidCard bidWithProvider={baseBid} jobId="job-1" canAward={true} />);
+    await user.click(screen.getByRole('button', { name: /award job/i }));
+    expect(screen.getByRole('button', { name: /confirm award/i })).toBeDefined();
+    // Cancel returns to the Award Job button
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.getByRole('button', { name: /award job/i })).toBeDefined();
+  });
+
+  it('renders the Offer Accepted badge when the bid was accepted via instant offer', () => {
+    const accepted: BidWithProvider = {
+      ...baseBid,
+      bid: { ...baseBid.bid, is_offer_accepted: true },
+    };
+    withProvider(<BidCard bidWithProvider={accepted} jobId="job-1" canAward={false} />);
+    expect(screen.getByText(/offer accepted/i)).toBeDefined();
+  });
+
+  it('renders the awarded variant when the bid is awarded', () => {
+    const awarded: BidWithProvider = {
+      ...baseBid,
+      bid: { ...baseBid.bid, status: 'awarded' },
+    };
+    withProvider(<BidCard bidWithProvider={awarded} jobId="job-1" canAward={false} />);
+    // Award button is hidden; awarded bid renders the WinBadge
+    expect(screen.queryByRole('button', { name: /award job/i })).toBeNull();
+  });
+
+  it('renders the percent-below-asking badge when starting price is supplied and bid is lower', () => {
+    withProvider(
+      <BidCard
+        bidWithProvider={baseBid}
+        jobId="job-1"
+        canAward={false}
+        startingPriceCents={50000}
+      />,
+    );
+    // 50000 -> 25000 = 50% below
+    expect(screen.getByText(/50% below asking/i)).toBeDefined();
+  });
+
+  it('renders the percent-below-market badge when median is supplied and bid is lower', () => {
+    withProvider(
+      <BidCard
+        bidWithProvider={baseBid}
+        jobId="job-1"
+        canAward={false}
+        marketMedianCents={50000}
+      />,
+    );
+    expect(screen.getByText(/50% below market/i)).toBeDefined();
+  });
+
+  it('falls back to a plain provider count line when trust and review data are absent', () => {
+    const minimal: BidWithProvider = {
+      ...baseBid,
+      trust_score: null,
+      review_summary: null,
+      jobs_completed: 1,
+    };
+    withProvider(<BidCard bidWithProvider={minimal} jobId="job-1" canAward={false} />);
+    expect(screen.getByText('1 job completed')).toBeDefined();
+  });
+
+  it('uses the avatar fallback initials when no avatar URL is supplied', () => {
+    withProvider(<BidCard bidWithProvider={baseBid} jobId="job-1" canAward={false} />);
+    // "Acme Plumbing" -> "AP"
+    expect(screen.getByText('AP')).toBeDefined();
   });
 });

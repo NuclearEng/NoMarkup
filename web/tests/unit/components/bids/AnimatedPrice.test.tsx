@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
 
@@ -41,5 +41,68 @@ describe('AnimatedPrice', () => {
     const wrapper = container.querySelector('span[aria-live="polite"]');
     expect(wrapper).not.toBeNull();
     expect(wrapper?.getAttribute('aria-atomic')).toBe('true');
+  });
+
+  // ---- DEEPENING TESTS ----
+
+  describe('animations', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('flashes green and renders rolling digits when the price drops', () => {
+      const { container, rerender } = render(<AnimatedPrice cents={25000} />);
+      // Allow the first-render initialization effect to commit
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      // Drop to a lower price — should flash green and animate digits.
+      rerender(<AnimatedPrice cents={20000} />);
+      const flashWrapper = container.querySelector('.animate-digit-flash-green');
+      expect(flashWrapper).not.toBeNull();
+      // The exiting digit slides up and out — exitChar/animation is rendered.
+      const rollUp = container.querySelector('.animate-digit-roll-up');
+      expect(rollUp).not.toBeNull();
+      // After the animation duration the flash is cleared.
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(container.querySelector('.animate-digit-flash-green')).toBeNull();
+    });
+
+    it('flashes red when the price rises', () => {
+      const { container, rerender } = render(<AnimatedPrice cents={20000} />);
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      rerender(<AnimatedPrice cents={25000} />);
+      const flashWrapper = container.querySelector('.animate-digit-flash-red');
+      expect(flashWrapper).not.toBeNull();
+    });
+
+    it('renders the em-dash placeholder when the price drops to zero', () => {
+      const { rerender } = render(<AnimatedPrice cents={25000} />);
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      rerender(<AnimatedPrice cents={0} />);
+      expect(screen.getByText('—')).toBeDefined();
+    });
+
+    it('uses padding so the new value digit count does not crash the renderer', () => {
+      // Transition from 3-digit ($25) to 4-digit ($250) shifts character counts.
+      const { container, rerender } = render(<AnimatedPrice cents={2500} />);
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      rerender(<AnimatedPrice cents={25000} />);
+      // No crash; wrapper renders.
+      const wrapper = container.querySelector('span[aria-live="polite"]');
+      expect(wrapper).not.toBeNull();
+    });
   });
 });

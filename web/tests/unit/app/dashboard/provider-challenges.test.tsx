@@ -1,5 +1,6 @@
 // Smoke + branch tests for the provider challenges page.
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -156,5 +157,103 @@ describe('ProviderChallengesPage', () => {
     render(withQueryClient(createElement(ProviderChallengesPage)));
     const tab = screen.getByRole('tab', { name: /Available/ });
     expect(tab.getAttribute('data-state')).toBe('active');
+  });
+
+  it('shows the in-progress loading skeletons when myLoading is true', async () => {
+    const user = userEvent.setup();
+    setHooks({ myLoading: true, mine: [] });
+    const { container } = render(withQueryClient(createElement(ProviderChallengesPage)));
+    await user.click(screen.getByRole('tab', { name: /In Progress/ }));
+    expect(container.querySelectorAll('.bg-muted').length).toBeGreaterThan(0);
+  });
+
+  it('shows the empty in-progress state when there are no in-progress challenges', async () => {
+    const user = userEvent.setup();
+    setHooks({ active: [], mine: [] });
+    render(withQueryClient(createElement(ProviderChallengesPage)));
+    await user.click(screen.getByRole('tab', { name: /In Progress/ }));
+    expect(
+      screen.getByText(/You haven't joined any challenges yet/i),
+    ).toBeDefined();
+  });
+
+  it('renders in-progress challenges with my_progress mapped through', async () => {
+    const user = userEvent.setup();
+    setHooks({
+      mine: [
+        {
+          id: 'in-1',
+          name: 'Active Quest',
+          completed: false,
+          current_progress: 5,
+          percent_complete: 50,
+          reward_claimed: false,
+          completed_at: null,
+          joined_at: '2026-04-01T00:00:00Z',
+        },
+      ],
+    });
+    render(withQueryClient(createElement(ProviderChallengesPage)));
+    await user.click(screen.getByRole('tab', { name: /In Progress/ }));
+    expect(screen.getByTestId('challenge-in-1')).toBeDefined();
+  });
+
+  it('shows the empty completed state when no challenges are done', async () => {
+    const user = userEvent.setup();
+    setHooks({ active: [], mine: [] });
+    render(withQueryClient(createElement(ProviderChallengesPage)));
+    await user.click(screen.getByRole('tab', { name: /Completed/ }));
+    expect(
+      screen.getByText(/No completed challenges yet/i),
+    ).toBeDefined();
+  });
+
+  it('renders completed challenges through the my_progress mapper', async () => {
+    const user = userEvent.setup();
+    setHooks({
+      mine: [
+        {
+          id: 'done-1',
+          name: 'Finished Quest',
+          completed: true,
+          current_progress: 10,
+          percent_complete: 100,
+          reward_claimed: true,
+          completed_at: '2026-04-15T00:00:00Z',
+          joined_at: '2026-04-01T00:00:00Z',
+        },
+      ],
+    });
+    render(withQueryClient(createElement(ProviderChallengesPage)));
+    await user.click(screen.getByRole('tab', { name: /Completed/ }));
+    expect(screen.getByTestId('challenge-done-1')).toBeDefined();
+  });
+
+  it('shows the completed-tab loading skeletons when myLoading is true', async () => {
+    const user = userEvent.setup();
+    setHooks({ myLoading: true, mine: [] });
+    const { container } = render(withQueryClient(createElement(ProviderChallengesPage)));
+    await user.click(screen.getByRole('tab', { name: /Completed/ }));
+    expect(container.querySelectorAll('.bg-muted').length).toBeGreaterThan(0);
+  });
+
+  it('invokes the join mutation when the available challenge Join button is clicked', () => {
+    const mutate = vi.fn();
+    setHooks({
+      active: [{ id: 'avail-1', name: 'Try Me', joined: false }],
+      joinMutate: mutate,
+    });
+    render(withQueryClient(createElement(ProviderChallengesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Join Try Me/ }));
+    expect(mutate).toHaveBeenCalled();
+    const args = mutate.mock.calls[0] as unknown[];
+    expect(args[0]).toBe('avail-1');
+    expect(args[1]).toMatchObject({ onSettled: expect.any(Function) as unknown });
+  });
+
+  it('hides the seasonal banner when no seasonal challenge is active', () => {
+    setHooks({ active: [{ id: 'c1', name: 'Plain', joined: false, is_seasonal: false }] });
+    render(withQueryClient(createElement(ProviderChallengesPage)));
+    expect(screen.queryByText('Live')).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuctionArena } from '@/components/bids/AuctionArena';
-import type { JobDetail } from '@/types';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import type { BidWithProvider, JobDetail } from '@/types';
 
 // jsdom does not include ResizeObserver — provide a minimal stub
 beforeAll(() => {
@@ -43,7 +44,7 @@ vi.mock('@/components/bids/BidForm', () => ({
 }));
 
 const { useAuctionStream } = await import('@/hooks/useAuctionStream');
-const { useLiveAuctionState } = await import('@/hooks/useBids');
+const { useLiveAuctionState, useBidsForJob } = await import('@/hooks/useBids');
 
 const defaultStreamReturn = {
   events: [] as [],
@@ -71,7 +72,11 @@ function createTestQueryClient(): QueryClient {
 
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(TooltipProvider, null, children),
+    );
   };
 }
 
@@ -401,5 +406,182 @@ describe('AuctionArena', () => {
     expect(screen.getByText('Current Lowest Bid')).toBeDefined();
     expect(screen.getByText('Bids')).toBeDefined();
     expect(screen.getByText('0/3 extensions')).toBeDefined();
+  });
+
+  // ---- DEEPENING TESTS ----
+
+  it('switches to the Depth Chart tab when clicked', () => {
+    render(
+      createElement(AuctionArena, {
+        job: mockJobDetail,
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const depthTab = screen.getByRole('tab', { name: /depth chart/i });
+    expect(depthTab.getAttribute('aria-selected')).toBe('false');
+    fireEvent.click(depthTab);
+    const depthTabAfter = screen.getByRole('tab', { name: /depth chart/i });
+    expect(depthTabAfter.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('renders the order book and social proof when the bids query returns active bids', () => {
+    const sampleBids: BidWithProvider[] = [
+      {
+        bid: {
+          id: 'b-1',
+          job_id: 'job-1',
+          provider_id: 'p-1',
+          amount_cents: 25000,
+          is_offer_accepted: false,
+          status: 'active',
+          original_amount_cents: 25000,
+          bid_history: [],
+          created_at: '2026-03-01T12:00:00Z',
+          updated_at: '2026-03-01T12:00:00Z',
+          awarded_at: null,
+          withdrawn_at: null,
+        },
+        provider_display_name: 'Bob Builder',
+        provider_business_name: 'Bobs LLC',
+        provider_avatar_url: null,
+        trust_score: { overall_score: 0.8, tier: 'top_rated' },
+        review_summary: { average_rating: 4.5, review_count: 10, on_time_rate: 0.9 },
+        jobs_completed: 12,
+      },
+      {
+        bid: {
+          id: 'b-2',
+          job_id: 'job-1',
+          provider_id: 'p-2',
+          amount_cents: 30000,
+          is_offer_accepted: false,
+          status: 'withdrawn',
+          original_amount_cents: 30000,
+          bid_history: [],
+          created_at: '2026-03-01T12:00:00Z',
+          updated_at: '2026-03-01T12:00:00Z',
+          awarded_at: null,
+          withdrawn_at: null,
+        },
+        provider_display_name: 'Excluded Provider',
+        provider_business_name: null,
+        provider_avatar_url: null,
+        trust_score: null,
+        review_summary: null,
+        jobs_completed: 1,
+      },
+    ];
+    vi.mocked(useBidsForJob).mockReturnValue({
+      data: { bids: sampleBids, total: 2 },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useBidsForJob>);
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      isConnected: true,
+      currentLowest: 25000,
+      bidCount: 1,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: mockJobDetail,
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    // Active provider name appears via the OrderBook
+    expect(screen.getByText(/Bobs LLC/)).toBeDefined();
+    // Withdrawn provider should be filtered out
+    expect(screen.queryByText('Excluded Provider')).toBeNull();
+    // Social proof line for 1 provider
+    expect(screen.getByText(/1 provider\b/i)).toBeDefined();
+  });
+
+  it('shows the SavingsHero when current lowest is below the starting price', () => {
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      currentLowest: 6000,
+      bidCount: 1,
+      isConnected: true,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: { ...mockJobDetail, starting_bid_cents: 10000 },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    expect(screen.getByText(/You're saving/)).toBeDefined();
+  });
+
+  it('returns null when ENABLE_LIVE_AUCTION is false', async () => {
+    vi.resetModules();
+    vi.doMock('@/lib/constants', () => ({ ENABLE_LIVE_AUCTION: false }));
+    const { AuctionArena: GatedArena } = await import('@/components/bids/AuctionArena');
+    const { container } = render(
+      createElement(GatedArena, {
+        job: mockJobDetail,
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    expect(container.firstChild).toBeNull();
+    vi.doUnmock('@/lib/constants');
+  });
+
+  it('renders the savings celebration overlay when the auction has ended with savings', () => {
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      currentLowest: 6000,
+      bidCount: 1,
+      isConnected: true,
+      auctionEndsAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    render(
+      createElement(AuctionArena, {
+        job: {
+          ...mockJobDetail,
+          starting_bid_cents: 10000,
+          status: 'awarded',
+          market_range: {
+            low_cents: 5000,
+            median_cents: 9000,
+            high_cents: 12000,
+            sample_size: 5,
+          },
+        },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    // SavingsCelebration overlay surfaces a heading or savings dollar value
+    expect(screen.getAllByText(/saving/i).length).toBeGreaterThan(0);
+  });
+
+  it('renders the market range display when the job has a populated sample size', () => {
+    render(
+      createElement(AuctionArena, {
+        job: {
+          ...mockJobDetail,
+          market_range: {
+            low_cents: 5000,
+            median_cents: 12500,
+            high_cents: 25000,
+            sample_size: 10,
+          },
+        },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    // The MarketRangeDisplay component renders the words "Market" or similar.
+    // We just assert the median price shows up in the rendered tree.
+    expect(screen.getAllByText(/\$125/).length).toBeGreaterThan(0);
   });
 });

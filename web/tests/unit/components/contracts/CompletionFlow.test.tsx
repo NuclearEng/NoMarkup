@@ -124,4 +124,127 @@ describe('CompletionFlow', () => {
       screen.getByPlaceholderText(/Describe what changes are needed/i),
     ).toBeDefined();
   });
+
+  // ---- DEEPENING TESTS ----
+
+  it('renders nothing for a provider when no milestones are approved yet', () => {
+    setUser({ id: 'prov-1' });
+    const { container } = render(
+      createElement(CompletionFlow, {
+        contract: makeContract({
+          milestones: [makeMilestone({ status: 'pending' })],
+        }),
+      }),
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders the customer waiting summary with the formatted completion date', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    // The contract amount is rendered formatted as USD
+    expect(screen.getByText('$500.00')).toBeDefined();
+    // Year visible in formatted date
+    expect(screen.getByText(/2026/)).toBeDefined();
+  });
+
+  it('shows a validation error when revision notes are too short', async () => {
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    const textarea = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(textarea, 'too short');
+    await user.click(screen.getByRole('button', { name: /submit revision request/i }));
+    expect(screen.getByText(/at least 10 characters/i)).toBeDefined();
+    expect(mockRequestRevision).not.toHaveBeenCalled();
+  });
+
+  it('submits a valid revision request with the milestone id and notes', async () => {
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    const textarea = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(textarea, 'Please re-paint the trim, it was missed.');
+    await user.click(screen.getByRole('button', { name: /submit revision request/i }));
+    expect(mockRequestRevision).toHaveBeenCalledTimes(1);
+    const [args] = mockRequestRevision.mock.calls[0] as [
+      { milestoneId: string; contractId: string; revisionNotes: string },
+    ];
+    expect(args.milestoneId).toBe('m-1');
+    expect(args.contractId).toBe('c-1');
+    expect(args.revisionNotes).toContain('re-paint');
+  });
+
+  it('cancels the revision form and clears the notes textarea', async () => {
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    const textarea = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(textarea, 'something something');
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    // The original Approve / Request Revision buttons return
+    expect(screen.getByRole('button', { name: /approve completion/i })).toBeDefined();
+    expect(screen.queryByPlaceholderText(/Describe what changes are needed/i)).toBeNull();
+  });
+
+  it('renders the approved-amount summary for the provider when all milestones are approved', () => {
+    setUser({ id: 'prov-1' });
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({
+          milestones: [
+            makeMilestone({ id: 'm-1', amount_cents: 30000, status: 'approved' }),
+            makeMilestone({ id: 'm-2', amount_cents: 20000, status: 'approved' }),
+          ],
+        }),
+      }),
+    );
+    // Total approved = 30000 + 20000 = $500
+    expect(screen.getByText('$500.00')).toBeDefined();
+    expect(screen.getByText(/2 \/ 2 Approved/)).toBeDefined();
+  });
+
+  it('selects the milestone with the highest sort_order for revision requests', async () => {
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({
+          completed_at: '2026-04-22T00:00:00Z',
+          milestones: [
+            makeMilestone({ id: 'm-a', sort_order: 1 }),
+            makeMilestone({ id: 'm-z', sort_order: 5 }),
+            makeMilestone({ id: 'm-b', sort_order: 3 }),
+          ],
+        }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    const textarea = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(textarea, 'Need a thorough do-over of the work.');
+    await user.click(screen.getByRole('button', { name: /submit revision request/i }));
+    const [args] = mockRequestRevision.mock.calls[0] as [
+      { milestoneId: string },
+    ];
+    expect(args.milestoneId).toBe('m-z');
+  });
 });
