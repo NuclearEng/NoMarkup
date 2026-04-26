@@ -10,6 +10,7 @@ import {
   useUpdateEmployee,
 } from '@/hooks/useEmployees';
 import type { AddEmployeeInput, CompanyEmployee } from '@/types';
+import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -124,6 +125,14 @@ describe('useAddEmployee', () => {
     expect(result.current.data?.id).toBe('emp-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['employees'] });
   });
+
+  it('shows toast.error on add failure (covers onError)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useAddEmployee(), { wrapper: wrap(client) });
+    result.current.mutate(addEmployeeInput);
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add employee');
+  });
 });
 
 describe('useUpdateEmployee', () => {
@@ -148,6 +157,14 @@ describe('useUpdateEmployee', () => {
     expect(result.current.data?.status).toBe('suspended');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['employees'] });
   });
+
+  it('shows toast.error on update failure (covers onError)', async () => {
+    vi.mocked(api.patch).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useUpdateEmployee(), { wrapper: wrap(client) });
+    result.current.mutate({ id: 'emp-1', data: { status: 'suspended' } });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to update employee');
+  });
 });
 
 describe('useRemoveEmployee', () => {
@@ -165,5 +182,13 @@ describe('useRemoveEmployee', () => {
 
     expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/api/v1/providers/me/employees/emp-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['employees'] });
+  });
+
+  it('shows toast.error on remove failure (covers onError)', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useRemoveEmployee(), { wrapper: wrap(client) });
+    result.current.mutate('emp-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to remove employee');
   });
 });

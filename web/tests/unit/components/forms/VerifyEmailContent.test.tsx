@@ -73,4 +73,32 @@ describe('VerifyEmailContent', () => {
     render(createElement(VerifyEmailContent));
     expect(screen.getByText('No verification token provided')).toBeDefined();
   });
+
+  it('shows generic error message when caught value is not an Error instance', async () => {
+    // Covers the `error instanceof Error ? error.message : 'Verification failed'`
+    // ternary's else-branch when the rejection value is a non-Error (e.g. string).
+    useSearchParamsMock.mockReturnValue(
+      makeParams('non-error-token') as unknown as ReturnType<typeof useSearchParams>,
+    );
+    vi.mocked(api.postUnauthed).mockRejectedValue('rejected with string');
+
+    render(createElement(VerifyEmailContent));
+
+    await waitFor(() => {
+      // The alert role disambiguates from the CardDescription which also
+      // displays "Verification failed" as the heading.
+      expect(screen.getByRole('alert').textContent).toBe('Verification failed');
+    });
+  });
+
+  it('renders the Sign In CTA link', () => {
+    useSearchParamsMock.mockReturnValue(
+      makeParams('any') as unknown as ReturnType<typeof useSearchParams>,
+    );
+    vi.mocked(api.postUnauthed).mockImplementation(() => new Promise(() => undefined));
+
+    render(createElement(VerifyEmailContent));
+    const link = screen.getByRole('link', { name: /go to sign in/i });
+    expect(link.getAttribute('href')).toBe('/login');
+  });
 });

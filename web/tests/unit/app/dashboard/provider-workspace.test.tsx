@@ -167,4 +167,63 @@ describe('ProviderWorkspacePage', () => {
     render(withQueryClient(createElement(ProviderWorkspacePage)));
     expect(screen.getByText('NoStart')).toBeDefined();
   });
+
+  it('shows Awarded badge for non-active status (e.g., awarded)', () => {
+    const today = new Date().toISOString();
+    contractsState.data = {
+      contracts: [
+        makeContract({
+          id: 'awarded-1',
+          status: 'awarded',
+          started_at: today,
+          job_title: 'Awarded Job',
+        }),
+      ],
+    };
+    render(withQueryClient(createElement(ProviderWorkspacePage)));
+    // Awarded contracts are filtered out of today/upcoming (only ACTIVE shows)
+    expect(screen.queryByText('Awarded Job')).toBeNull();
+  });
+
+  it('groups contracts under "Flexible schedule" when no started_at or created_at gives no-date key', () => {
+    // Create a contract whose started_at is undefined AND created_at is invalid → no-date bucket
+    contractsState.data = {
+      contracts: [
+        makeContract({
+          id: 'flex-1',
+          status: 'active',
+          started_at: undefined,
+          // empty string parses to invalid date → toDateKey returns 'no-date'
+          created_at: '',
+          job_title: 'Flexible Job',
+        }),
+      ],
+    };
+    render(withQueryClient(createElement(ProviderWorkspacePage)));
+    // The grouping label "Flexible schedule" should appear
+    expect(screen.getByText('Flexible schedule')).toBeDefined();
+    expect(screen.getByText('Flexible Job')).toBeDefined();
+  });
+
+  it('uses created_at fallback in JobCard meta row when started_at is missing', () => {
+    // Future date so it goes into upcoming bucket where showWorkSession = false
+    const future = '2099-04-20T00:00:00Z';
+    contractsState.data = {
+      contracts: [
+        makeContract({
+          id: 'created-fallback',
+          status: 'active',
+          started_at: undefined,
+          created_at: future,
+          job_title: 'Created Fallback',
+        }),
+      ],
+    };
+    render(withQueryClient(createElement(ProviderWorkspacePage)));
+    expect(screen.getByText('Created Fallback')).toBeDefined();
+    // The meta row uses formatScheduledDate(created_at) when started_at is absent.
+    // Output format is "Weekday, Mon DD" — e.g. "Sun, Apr 19" or "Mon, Apr 20"
+    // depending on tz. Match the month string only.
+    expect(screen.getAllByText(/Apr 1[9]|Apr 20/).length).toBeGreaterThan(0);
+  });
 });

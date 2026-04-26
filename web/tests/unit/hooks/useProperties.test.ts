@@ -10,6 +10,7 @@ import {
   useUpdateProperty,
 } from '@/hooks/useProperties';
 import type { Property } from '@/hooks/useProperties';
+import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/lib/api', () => ({
@@ -80,6 +81,20 @@ describe('useCreateProperty', () => {
     expect(result.current.data?.id).toBe('p-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['properties'] });
   });
+
+  it('shows toast.error on create failure (covers onError)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useCreateProperty(), { wrapper: wrap(client) });
+    result.current.mutate({
+      nickname: 'Pine St',
+      address: '123 Pine',
+      city: 'Seattle',
+      state: 'WA',
+      zip_code: '98101',
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add property');
+  });
 });
 
 describe('useUpdateProperty', () => {
@@ -100,6 +115,14 @@ describe('useUpdateProperty', () => {
     // Verify PATCH was NOT called — the bug fix this hook embeds.
     expect(vi.mocked(api.patch)).not.toHaveBeenCalled();
   });
+
+  it('shows toast.error on update failure (covers onError)', async () => {
+    vi.mocked(api.put).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useUpdateProperty(), { wrapper: wrap(client) });
+    result.current.mutate({ id: 'p-1', input: { nickname: 'Renamed' } });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to update property');
+  });
 });
 
 describe('useDeleteProperty', () => {
@@ -117,5 +140,13 @@ describe('useDeleteProperty', () => {
 
     expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/api/v1/properties/p-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['properties'] });
+  });
+
+  it('shows toast.error on delete failure (covers onError)', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useDeleteProperty(), { wrapper: wrap(client) });
+    result.current.mutate('p-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to remove property');
   });
 });

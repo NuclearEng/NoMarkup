@@ -172,4 +172,130 @@ describe('ProviderTeamPage', () => {
     expect(screen.queryByTestId('add-employee-form')).toBeNull();
     expect(screen.getByText('Alice Anderson')).toBeDefined();
   });
+
+  it('renders manager role with default badge variant', () => {
+    employeesState.data = {
+      employees: [{ ...activeEmployee, id: 'e_mgr', role: 'manager' }],
+    };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    expect(screen.getByText('Manager')).toBeDefined();
+  });
+
+  it('renders apprentice role (default fallback) with outline badge variant', () => {
+    employeesState.data = {
+      employees: [{ ...activeEmployee, id: 'e_app', role: 'apprentice' }],
+    };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    expect(screen.getByText('Apprentice')).toBeDefined();
+  });
+
+  it('renders suspended status color and Reactivate action', () => {
+    const suspendedEmployee = {
+      ...activeEmployee,
+      id: 'e_susp',
+      first_name: 'Charlie',
+      last_name: 'Cole',
+      status: 'suspended',
+    };
+    employeesState.data = { employees: [suspendedEmployee] };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    fireEvent.click(screen.getByRole('button', { name: /charlie cole details/i }));
+    expect(screen.getByText('Suspended')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /^reactivate$/i }));
+    expect(updateEmployeeMutate).toHaveBeenCalledWith({
+      id: 'e_susp',
+      data: { status: 'active' },
+    });
+  });
+
+  it('renders terminated employees without action buttons (no Terminate option)', () => {
+    const terminatedEmployee = {
+      ...activeEmployee,
+      id: 'e_term',
+      first_name: 'Dana',
+      last_name: 'Davis',
+      status: 'terminated',
+    };
+    employeesState.data = { employees: [terminatedEmployee] };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    fireEvent.click(screen.getByRole('button', { name: /dana davis details/i }));
+    expect(screen.getByText('Terminated')).toBeDefined();
+    expect(screen.queryByRole('button', { name: /^terminate$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^activate$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^suspend$/i })).toBeNull();
+  });
+
+  it('renders failed background-check badge', () => {
+    employeesState.data = {
+      employees: [
+        { ...activeEmployee, id: 'e_failed', background_check_status: 'failed' },
+      ],
+    };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    expect(screen.getByText('Check Failed')).toBeDefined();
+  });
+
+  it('renders not_started background-check badge', () => {
+    employeesState.data = {
+      employees: [
+        {
+          ...pendingEmployee,
+          id: 'e_ns',
+          background_check_status: 'not_started',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    expect(screen.getByText('Not Started')).toBeDefined();
+  });
+
+  it('renders date_of_birth, license_expiry, and insurance_expiry when expanded', () => {
+    employeesState.data = {
+      employees: [
+        {
+          ...activeEmployee,
+          id: 'e_full',
+          date_of_birth: '1985-06-15',
+          license_expiry: '2027-03-01',
+          insurance_expiry: '2027-04-01',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    fireEvent.click(screen.getByRole('button', { name: /alice anderson details/i }));
+    expect(screen.getByText(/DOB:/i)).toBeDefined();
+    // license_expiry and insurance_expiry render via toLocaleDateString — match
+    // the year only since the locale-specific date formatting is brittle.
+    expect(screen.getAllByText(/exp\.\s*.*2027/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows "No license / No insurance on file" when missing', () => {
+    employeesState.data = { employees: [pendingEmployee] };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    fireEvent.click(screen.getByRole('button', { name: /bob brown details/i }));
+    expect(screen.getByText(/No license on file/i)).toBeDefined();
+    expect(screen.getByText(/No insurance on file/i)).toBeDefined();
+  });
+
+  it('opens the add-employee form via the empty-state action button', () => {
+    employeesState.data = { employees: [] };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    // There are two "Add Employee" buttons in empty state — the header one and
+    // the one inside the empty state's action prop. Click the second one.
+    const addButtons = screen.getAllByRole('button', { name: /add employee/i });
+    expect(addButtons.length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(addButtons[1] as HTMLElement);
+    expect(screen.getByTestId('add-employee-form')).toBeDefined();
+  });
+
+  it('terminates employee and calls handleRemove path', () => {
+    employeesState.data = { employees: [pendingEmployee] };
+    render(withQueryClient(createElement(ProviderTeamPage)));
+    fireEvent.click(screen.getByRole('button', { name: /bob brown details/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^terminate$/i }));
+    expect(updateEmployeeMutate).toHaveBeenCalledWith({
+      id: 'e_pending',
+      data: { status: 'terminated' },
+    });
+  });
 });

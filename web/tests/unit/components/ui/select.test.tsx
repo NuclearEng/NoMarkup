@@ -1,10 +1,16 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectScrollDownButton,
+  SelectScrollUpButton,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -70,5 +76,47 @@ describe('Select', () => {
       </Select>,
     );
     expect(screen.getByText('Banana')).toBeDefined();
+  });
+
+  it('renders SelectGroup, SelectLabel, and SelectSeparator inside an open menu', async () => {
+    const user = userEvent.setup();
+    render(
+      <Select>
+        <SelectTrigger aria-label="fruit">
+          <SelectValue placeholder="Choose" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectLabel className="custom-label">Fruits</SelectLabel>
+            <SelectItem value="apple">Apple</SelectItem>
+          </SelectGroup>
+          <SelectSeparator className="custom-sep" />
+          <SelectGroup>
+            <SelectLabel>Veggies</SelectLabel>
+            <SelectItem value="carrot">Carrot</SelectItem>
+          </SelectGroup>
+        </SelectContent>
+      </Select>,
+    );
+    // Open the menu via keyboard
+    const trigger = screen.getByRole('combobox', { name: 'fruit' });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    // Both group labels should be visible
+    const fruitsLabel = await screen.findByText('Fruits');
+    expect(fruitsLabel).toBeDefined();
+    expect(fruitsLabel.className).toContain('custom-label');
+    expect(screen.getByText('Veggies')).toBeDefined();
+    // Separator: rendered via Radix as role=none with our custom class
+    const sep = document.querySelector('.custom-sep');
+    expect(sep).not.toBeNull();
+  });
+
+  it('exports the scroll button primitives', () => {
+    // SelectContent already mounts SelectScrollUpButton and SelectScrollDownButton,
+    // so their forwardRef wrappers execute on every Select render. Verify they
+    // are exported for downstream consumers.
+    expect(typeof SelectScrollUpButton).toBe('object');
+    expect(typeof SelectScrollDownButton).toBe('object');
   });
 });

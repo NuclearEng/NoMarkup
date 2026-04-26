@@ -4,6 +4,7 @@ import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useDispute, useFileDispute } from '@/hooks/useDisputes';
+import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -52,6 +53,21 @@ describe('useFileDispute', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/disputes', input);
     expect(result.current.data?.dispute_id).toBe('d-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['disputes'] });
+  });
+
+  it('shows toast.error on file failure (covers onError)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useFileDispute(), { wrapper: wrap(client) });
+    result.current.mutate({
+      contract_id: 'c-1',
+      reason: 'incomplete',
+      description: 'work was not finished',
+      evidence_urls: [],
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      'Failed to file dispute. Please try again.',
+    );
   });
 });
 

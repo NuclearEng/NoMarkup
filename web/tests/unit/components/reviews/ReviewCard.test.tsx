@@ -1,7 +1,25 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Radix Select needs polyfills jsdom doesn't ship with.
+beforeAll(() => {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof globalThis.ResizeObserver;
+  Element.prototype.scrollIntoView = function scrollIntoView() {
+    /* noop */
+  };
+  Element.prototype.hasPointerCapture = function hasPointerCapture() {
+    return false;
+  };
+  Element.prototype.releasePointerCapture = function releasePointerCapture() {
+    /* noop */
+  };
+});
 
 import { ReviewCard } from '@/components/reviews/ReviewCard';
 import type { Review } from '@/types';
@@ -9,9 +27,20 @@ import type { Review } from '@/types';
 const mockRespond = vi.fn();
 const mockFlag = vi.fn();
 
+const respondState = { isPending: false, isError: false };
+const flagState = { isPending: false, isError: false };
+
 vi.mock('@/hooks/useReviews', () => ({
-  useRespondToReview: () => ({ mutate: mockRespond, isPending: false, isError: false }),
-  useFlagReview: () => ({ mutate: mockFlag, isPending: false, isError: false }),
+  useRespondToReview: () => ({
+    mutate: mockRespond,
+    isPending: respondState.isPending,
+    isError: respondState.isError,
+  }),
+  useFlagReview: () => ({
+    mutate: mockFlag,
+    isPending: flagState.isPending,
+    isError: flagState.isError,
+  }),
 }));
 
 vi.mock('@/stores/auth-store', () => ({
@@ -46,6 +75,10 @@ function makeReview(overrides: Partial<Review> = {}): Review {
 describe('ReviewCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    respondState.isPending = false;
+    respondState.isError = false;
+    flagState.isPending = false;
+    flagState.isError = false;
   });
 
   it('renders the review comment and direction label', () => {
@@ -254,5 +287,130 @@ describe('ReviewCard', () => {
       }),
     );
     expect(screen.getByText('Provider to Customer')).toBeDefined();
+  });
+
+  it('shows error message when response submission fails', async () => {
+    respondState.isError = true;
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    // Once the form is open, the error block is rendered (line 220-224)
+    expect(screen.getByText(/Failed to submit response/i)).toBeDefined();
+  });
+
+  it('disables the Cancel button while response mutation is pending', async () => {
+    respondState.isPending = true;
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    const submit = screen.getByRole('button', { name: /submit response/i });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    const cancel = screen.getByRole('button', { name: /cancel/i });
+    expect(cancel.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows pending spinner on Flag button while flag mutation is pending', async () => {
+    flagState.isPending = true;
+    setUser({ id: 'someone-else' });
+    const user = userEvent.setup();
+    const { container } = render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /report/i }));
+    // Loader2 spinner present inside the Flag button (line 261-263)
+    const spinner = container.querySelector('button .animate-spin');
+    expect(spinner).not.toBeNull();
+    // Cancel is disabled during pending too
+    const cancel = screen.getByRole('button', { name: /cancel/i });
+    expect(cancel.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows error message when flag submission fails', async () => {
+    flagState.isError = true;
+    setUser({ id: 'someone-else' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /report/i }));
+    expect(screen.getByText(/Failed to flag review/i)).toBeDefined();
+  });
+
+  it('shows pending spinner on Submit Response while pending', async () => {
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    // First render with default (not pending) so we can open the form
+    const { rerender, container } = render(
+      createElement(ReviewCard, { review: makeReview() }),
+    );
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    // Then flip pending and rerender to exercise the spinner branch
+    respondState.isPending = true;
+    rerender(createElement(ReviewCard, { review: makeReview() }));
+    const spinner = container.querySelector('button .animate-spin');
+    expect(spinner).not.toBeNull();
+  });
+
+  it('invokes onSuccess and closes the response form after a successful submit', async () => {
+    // Make the respond mutation invoke the onSuccess callback synchronously
+    mockRespond.mockImplementation((
+      _vars: { reviewId: string; comment: string },
+      opts: { onSuccess?: () => void },
+    ) => {
+      opts.onSuccess?.();
+    });
+    setUser({ id: 'reviewee-87654321' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /respond/i }));
+    const textarea = screen.getByPlaceholderText(/Write your response/i);
+    await user.type(textarea, 'A genuinely thoughtful response.');
+    await user.click(screen.getByRole('button', { name: /submit response/i }));
+    // Form should be hidden after onSuccess collapses showResponseForm
+    expect(screen.queryByPlaceholderText(/Write your response/i)).toBeNull();
+    // And the Respond trigger should be visible again
+    expect(screen.getByRole('button', { name: /respond/i })).toBeDefined();
+  });
+
+  it('invokes onSuccess and closes the flag form after a successful flag', async () => {
+    mockFlag.mockImplementation((
+      _vars: { reviewId: string; reason: string },
+      opts: { onSuccess?: () => void },
+    ) => {
+      opts.onSuccess?.();
+    });
+    setUser({ id: 'someone-else' });
+    const user = userEvent.setup();
+    render(createElement(ReviewCard, { review: makeReview() }));
+    await user.click(screen.getByRole('button', { name: /report/i }));
+    // Manually set a flag reason via the radix-driven state through pointer events
+    // is complex; instead, use the test-only path: the disabled button doesn't
+    // submit. To exercise onSuccess we must have a non-empty flagReason. The
+    // simplest path is to find the trigger and use keyboard interaction.
+    // Use radix Select keyboard nav: focus trigger, press space to open, then
+    // arrow + enter.
+    const trigger = screen.getByRole('combobox');
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    // Wait for menu, then pick first item (Inappropriate)
+    const item = await screen.findByText('Inappropriate');
+    await user.click(item);
+    // Now click the Flag button
+    await user.click(screen.getByRole('button', { name: /^flag$/i }));
+    // After onSuccess fires, the flag form should be hidden and Report visible
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByRole('button', { name: /report/i })).toBeDefined();
+  });
+
+  it('renders only specific sub-ratings when only some are present', () => {
+    setUser(null);
+    // Only quality_rating present — exercises the falsy branch for the other sub-ratings
+    render(
+      createElement(ReviewCard, {
+        review: makeReview({ quality_rating: 5 }),
+      }),
+    );
+    expect(screen.getByText('Quality')).toBeDefined();
+    expect(screen.queryByText('Communication')).toBeNull();
+    expect(screen.queryByText('Timeliness')).toBeNull();
+    expect(screen.queryByText('Value')).toBeNull();
   });
 });

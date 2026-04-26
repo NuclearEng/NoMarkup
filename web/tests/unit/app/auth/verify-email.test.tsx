@@ -26,4 +26,18 @@ describe('(auth)/verify-email/page', () => {
     expect(screen.getByTestId('verify-content')).toBeDefined();
     expect(screen.getByText('Verifying your email')).toBeDefined();
   });
+
+  it('exports a default function (page export contract)', () => {
+    expect(typeof VerifyEmailPage).toBe('function');
+  });
+
+  it('renders within a Suspense boundary (no crash with default fallback shape)', () => {
+    // Render twice to ensure the Suspense wrapping is idempotent — guards
+    // against accidental side-effects in module init.
+    const { unmount } = render(createElement(VerifyEmailPage));
+    expect(screen.getByTestId('verify-content')).toBeDefined();
+    unmount();
+    render(createElement(VerifyEmailPage));
+    expect(screen.getByTestId('verify-content')).toBeDefined();
+  });
 });

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useCreateExpense, useDeleteExpense, useExpenses } from '@/hooks/useExpenses';
 import type { ExpensesResponse, ProviderExpense } from '@/types';
+import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -121,6 +122,19 @@ describe('useCreateExpense', () => {
     expect(result.current.data?.id).toBe('exp-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['expenses'] });
   });
+
+  it('shows toast.error on create failure (covers onError)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useCreateExpense(), { wrapper: wrap(client) });
+    result.current.mutate({
+      category: 'fuel',
+      description: 'Diesel',
+      amount_cents: 7500,
+      expense_date: '2026-04-01',
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add expense');
+  });
 });
 
 describe('useDeleteExpense', () => {
@@ -138,5 +152,13 @@ describe('useDeleteExpense', () => {
 
     expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/api/v1/providers/me/expenses/exp-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['expenses'] });
+  });
+
+  it('shows toast.error on delete failure (covers onError)', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useDeleteExpense(), { wrapper: wrap(client) });
+    result.current.mutate('exp-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to delete expense');
   });
 });

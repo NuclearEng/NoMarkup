@@ -8,6 +8,7 @@ import {
   useGenerateTaxForm,
   useTaxForms,
 } from '@/hooks/useTaxForms';
+import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -81,6 +82,14 @@ describe('useGenerateTaxForm', () => {
     expect(result.current.data).toEqual(taxForm);
     expect(spy).toHaveBeenCalledWith({ queryKey: ['tax-forms'] });
   });
+
+  it('shows toast.error on tax-form generation failure (covers onError)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useGenerateTaxForm(), { wrapper: wrap(client) });
+    result.current.mutate(2025);
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to generate tax form');
+  });
 });
 
 describe('useGenerateInvoice', () => {
@@ -103,5 +112,22 @@ describe('useGenerateInvoice', () => {
       'invoice-c-1.html',
     );
     expect(spy).toHaveBeenCalledWith({ queryKey: ['invoices'] });
+  });
+
+  it('shows the Error.message on invoice failure (covers onError Error branch)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('network down'));
+    const { result } = renderHook(() => useGenerateInvoice(), { wrapper: wrap(client) });
+    result.current.mutate('c-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('network down');
+  });
+
+  it('shows fallback message on non-Error rejection (covers onError fallback branch)', async () => {
+    // Reject with a non-Error value — exercises the `err instanceof Error ? ... : fallback` branch.
+    vi.mocked(api.post).mockRejectedValueOnce('boom');
+    const { result } = renderHook(() => useGenerateInvoice(), { wrapper: wrap(client) });
+    result.current.mutate('c-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to generate invoice');
   });
 });
