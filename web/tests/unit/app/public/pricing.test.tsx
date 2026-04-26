@@ -176,4 +176,80 @@ describe('PricingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /clear zip filter/i }));
     expect(screen.queryByText(/showing prices for zip code/i)).toBeNull();
   });
+
+  it('renders detail loading skeletons when category data is loading', () => {
+    overviewState.data = { categories: [plumbing] };
+    categoryState.isLoading = true;
+    const { container } = render(withQueryClient(createElement(PricingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /view pricing for plumbing/i }));
+    // Detail-skeleton placeholders render with the h-60 class in the grid.
+    expect(container.querySelectorAll('.h-60').length).toBeGreaterThan(0);
+  });
+
+  it('shows ZIP-specific empty state in detail when filter is set but no rows match', () => {
+    overviewState.data = { categories: [plumbing] };
+    categoryState.data = { prices: [] };
+    render(withQueryClient(createElement(PricingPage)));
+    // Apply a ZIP first.
+    fireEvent.change(screen.getByLabelText(/filter by zip code/i), {
+      target: { value: '99999' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^search$/i }));
+    // Now drill into the category — its empty state should mention the ZIP.
+    fireEvent.click(screen.getByRole('button', { name: /view pricing for plumbing/i }));
+    expect(screen.getByText(/no pricing data for zip code 99999/i)).toBeDefined();
+  });
+
+  it('renders Avg savings line in PriceDetailCard when avg_savings_cents > 0', () => {
+    overviewState.data = { categories: [plumbing] };
+    categoryState.data = {
+      prices: [
+        {
+          category_slug: 'plumbing',
+          zip_code: '98101',
+          median_price_cents: 25000,
+          p25_price_cents: 18000,
+          p75_price_cents: 32000,
+          min_price_cents: 12000,
+          max_price_cents: 50000,
+          completed_jobs: 6,
+          avg_savings_cents: 4500,
+        },
+      ],
+    };
+    render(withQueryClient(createElement(PricingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /view pricing for plumbing/i }));
+    expect(screen.getByText(/avg\. savings vs\. budget/i)).toBeDefined();
+  });
+
+  it('omits Avg savings line in PriceDetailCard when avg_savings_cents is null', () => {
+    overviewState.data = { categories: [plumbing] };
+    categoryState.data = {
+      prices: [
+        {
+          category_slug: 'plumbing',
+          zip_code: '98101',
+          median_price_cents: 25000,
+          p25_price_cents: 18000,
+          p75_price_cents: 32000,
+          min_price_cents: 12000,
+          max_price_cents: 50000,
+          completed_jobs: 6,
+          avg_savings_cents: null,
+        },
+      ],
+    };
+    render(withQueryClient(createElement(PricingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /view pricing for plumbing/i }));
+    expect(screen.queryByText(/avg\. savings vs\. budget/i)).toBeNull();
+  });
+
+  it('triggers ZIP search via Enter key on the input', () => {
+    overviewState.data = { categories: [plumbing] };
+    render(withQueryClient(createElement(PricingPage)));
+    const input = screen.getByLabelText(/filter by zip code/i);
+    fireEvent.change(input, { target: { value: '90210' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByText(/showing prices for zip code/i)).toBeDefined();
+  });
 });

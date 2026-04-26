@@ -10,10 +10,38 @@ const mockMarkComplete = vi.fn();
 const mockApprove = vi.fn();
 const mockRequestRevision = vi.fn();
 
+const markState: { isPending: boolean; isError: boolean } = { isPending: false, isError: false };
+const approveState: { isPending: boolean; isError: boolean } = { isPending: false, isError: false };
+const revisionState: { isPending: boolean; isError: boolean } = { isPending: false, isError: false };
+
 vi.mock('@/hooks/useContracts', () => ({
-  useMarkComplete: () => ({ mutate: mockMarkComplete, isPending: false, isError: false }),
-  useApproveCompletion: () => ({ mutate: mockApprove, isPending: false, isError: false }),
-  useRequestRevision: () => ({ mutate: mockRequestRevision, isPending: false, isError: false }),
+  useMarkComplete: () => ({
+    mutate: mockMarkComplete,
+    get isPending() {
+      return markState.isPending;
+    },
+    get isError() {
+      return markState.isError;
+    },
+  }),
+  useApproveCompletion: () => ({
+    mutate: mockApprove,
+    get isPending() {
+      return approveState.isPending;
+    },
+    get isError() {
+      return approveState.isError;
+    },
+  }),
+  useRequestRevision: () => ({
+    mutate: mockRequestRevision,
+    get isPending() {
+      return revisionState.isPending;
+    },
+    get isError() {
+      return revisionState.isError;
+    },
+  }),
 }));
 
 vi.mock('@/stores/auth-store', () => ({
@@ -67,6 +95,12 @@ function makeContract(overrides: Partial<Contract> = {}): Contract {
 describe('CompletionFlow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    markState.isPending = false;
+    markState.isError = false;
+    approveState.isPending = false;
+    approveState.isError = false;
+    revisionState.isPending = false;
+    revisionState.isError = false;
   });
 
   it('renders nothing for users that are neither customer nor provider', () => {
@@ -246,5 +280,123 @@ describe('CompletionFlow', () => {
       { milestoneId: string },
     ];
     expect(args.milestoneId).toBe('m-z');
+  });
+
+  // ---- WAVE 13 DEEPENING TESTS ----
+
+  it('renders nothing for the customer when no milestones exist', () => {
+    setUser({ id: 'cust-1' });
+    const { container } = render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ milestones: [], completed_at: null }),
+      }),
+    );
+    // Empty milestones → not allMilestonesApproved + no completed_at → falls to null.
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('shows the marking-complete loading state for the provider while pending', () => {
+    setUser({ id: 'prov-1' });
+    markState.isPending = true;
+    render(createElement(CompletionFlow, { contract: makeContract() }));
+    const btn = screen.getByRole<HTMLButtonElement>('button', {
+      name: /Marking Complete/i,
+    });
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('shows the mark-complete error state for the provider', () => {
+    setUser({ id: 'prov-1' });
+    markState.isError = true;
+    render(createElement(CompletionFlow, { contract: makeContract() }));
+    expect(screen.getByText(/Failed to mark as complete/i)).toBeDefined();
+  });
+
+  it('shows the approving loading state for the customer', () => {
+    setUser({ id: 'cust-1' });
+    approveState.isPending = true;
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    expect(screen.getByRole('button', { name: /Approving/i })).toBeDefined();
+  });
+
+  it('shows the approve error message for the customer', () => {
+    setUser({ id: 'cust-1' });
+    approveState.isError = true;
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    expect(screen.getByText(/Failed to approve completion/i)).toBeDefined();
+  });
+
+  it('shows the revision-submission loading state', async () => {
+    setUser({ id: 'cust-1' });
+    revisionState.isPending = true;
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    expect(screen.getByText(/Submitting/i)).toBeDefined();
+  });
+
+  it('shows the revision error message after submit fails', async () => {
+    setUser({ id: 'cust-1' });
+    revisionState.isError = true;
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    expect(screen.getByText(/Failed to request revision/i)).toBeDefined();
+  });
+
+  it('clears the revision form after a successful revision submission', async () => {
+    setUser({ id: 'cust-1' });
+    mockRequestRevision.mockImplementation(
+      (
+        _vars: { milestoneId: string; contractId: string; revisionNotes: string },
+        opts?: { onSuccess?: () => void },
+      ) => {
+        opts?.onSuccess?.();
+      },
+    );
+    const user = userEvent.setup();
+    render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: '2026-04-22T00:00:00Z' }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    const textarea = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(textarea, 'Please revise the install fully.');
+    await user.click(screen.getByRole('button', { name: /submit revision request/i }));
+    // onSuccess flips showRevisionForm back to false → original buttons return.
+    expect(screen.queryByPlaceholderText(/Describe what changes are needed/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /approve completion/i })).toBeDefined();
+  });
+
+  it('renders the customer waiting card without the completion-date row when completed_at is null', () => {
+    // The customer-marked-complete branch is gated by providerMarkedComplete,
+    // which depends on completed_at being set. With completed_at = null, that
+    // branch is skipped — the provider mark-complete card is the active path.
+    // The customer view in this case returns the final null because no
+    // matching branch is true.
+    setUser({ id: 'cust-1' });
+    const { container } = render(
+      createElement(CompletionFlow, {
+        contract: makeContract({ completed_at: null }),
+      }),
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

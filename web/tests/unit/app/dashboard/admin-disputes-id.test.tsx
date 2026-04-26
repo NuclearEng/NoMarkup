@@ -1,6 +1,8 @@
 // Tests for the admin dispute detail page — exercises loading, error, info card,
-// resolution form interactions (notes, refund, guarantee checkbox), and resolved branch.
-import { fireEvent, render, screen } from '@testing-library/react';
+// resolution form interactions (notes, refund, guarantee checkbox), full
+// handleResolve flow with router push, and resolved-state read-only branch.
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,6 +42,55 @@ vi.mock('@/hooks/useAdmin', () => ({
   }),
 }));
 
+// Replace shadcn Select with a thin wrapper that exposes a hidden native
+// <select> alongside its children — bypasses Radix's pointer-capture API
+// which jsdom does not implement.
+vi.mock('@/components/ui/select', () => {
+  return {
+    Select: ({
+      value,
+      onValueChange,
+      children,
+    }: {
+      value: string;
+      onValueChange: (val: string) => void;
+      children: React.ReactNode;
+    }) =>
+      createElement(
+        'div',
+        null,
+        createElement(
+          'select',
+          {
+            'data-testid': 'resolution-type-select',
+            value,
+            onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+              onValueChange(e.target.value);
+            },
+          },
+          createElement('option', { value: '' }, ''),
+          createElement('option', { value: 'favor_customer' }, 'Favor Customer'),
+          createElement('option', { value: 'favor_provider' }, 'Favor Provider'),
+          createElement('option', { value: 'split' }, 'Split'),
+          createElement('option', { value: 'dismissed' }, 'Dismissed'),
+        ),
+        children,
+      ),
+    SelectTrigger: ({ children }: { children: React.ReactNode }) =>
+      createElement('span', null, children),
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children: React.ReactNode }) =>
+      createElement('span', null, children),
+    SelectItem: ({
+      value,
+      children,
+    }: {
+      value: string;
+      children: React.ReactNode;
+    }) => createElement('span', { 'data-select-value': value }, children),
+  };
+});
+
 const { default: AdminDisputeDetailPage } = await import(
   '@/app/(dashboard)/admin/disputes/[id]/page'
 );
@@ -66,6 +117,7 @@ beforeEach(() => {
   resolveState.isPending = false;
   resolveState.isError = false;
   resolveMutate.mockClear();
+  resolveMutate.mockImplementation(() => Promise.resolve({}));
   routerPush.mockReset();
 });
 
@@ -100,6 +152,23 @@ describe('AdminDisputeDetailPage', () => {
     expect(screen.getByText('Alice')).toBeDefined();
     expect(screen.getByText('Bob')).toBeDefined();
     expect(screen.getByText(/Provider did not finish/i)).toBeDefined();
+  });
+
+  it('falls back to truncated initiator id when initiator_name missing', () => {
+    disputeState.isLoading = false;
+    disputeState.data = {
+      dispute: makeDispute({ initiator_name: undefined, initiated_by: 'abc-defghijklmnop' }),
+    };
+    render(withQueryClient(createElement(AdminDisputeDetailPage)));
+    // First 12 chars of 'abc-defghijklmnop'
+    expect(screen.getByText('abc-defghijk')).toBeDefined();
+  });
+
+  it('shows N/A when respondent_name missing', () => {
+    disputeState.isLoading = false;
+    disputeState.data = { dispute: makeDispute({ respondent_name: undefined }) };
+    render(withQueryClient(createElement(AdminDisputeDetailPage)));
+    expect(screen.getByText('N/A')).toBeDefined();
   });
 
   it('shows resolution form for non-resolved disputes', () => {
@@ -181,5 +250,92 @@ describe('AdminDisputeDetailPage', () => {
     };
     render(withQueryClient(createElement(AdminDisputeDetailPage)));
     expect(screen.getByText('Refund Amount')).toBeDefined();
+  });
+
+  it('shows pending state in button when mutation is pending', () => {
+    resolveState.isPending = true;
+    disputeState.isLoading = false;
+    disputeState.data = { dispute: makeDispute() };
+    render(withQueryClient(createElement(AdminDisputeDetailPage)));
+    expect(screen.getByRole('button', { name: /Resolving\.\.\./i })).toBeDefined();
+  });
+
+  it('calls handleResolve and navigates after successful resolution', async () => {
+    disputeState.isLoading = false;
+    disputeState.data = { dispute: makeDispute() };
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(AdminDisputeDetailPage)));
+
+    // Fill notes & refund.
+    const notesInput = screen.getByLabelText(/Resolution Notes/i);
+    fireEvent.change(notesInput, { target: { value: 'Resolution rationale' } });
+    const refundInput = screen.getByLabelText(/Refund Amount/i);
+    fireEvent.change(refundInput, { target: { value: '50.00' } });
+
+    // Pick resolution type via the mocked native <select>.
+    const select = screen.getByTestId('resolution-type-select');
+    fireEvent.change(select, { target: { value: 'favor_customer' } });
+
+    // Click resolve.
+    const resolveBtn = screen.getByRole('button', { name: /Resolve Dispute/i });
+    await waitFor(() => {
+      expect((resolveBtn as HTMLButtonElement).disabled).toBe(false);
+    });
+    await user.click(resolveBtn);
+
+    await waitFor(() => {
+      expect(resolveMutate).toHaveBeenCalledTimes(1);
+    });
+    expect(resolveMutate).toHaveBeenCalledWith({
+      disputeId: 'dispute-1234567890',
+      resolution_type: 'favor_customer',
+      resolution_notes: 'Resolution rationale',
+      refund_amount_cents: 5000,
+      guarantee_claim: false,
+    });
+    await waitFor(() => {
+      expect(routerPush).toHaveBeenCalledWith('/admin/disputes');
+    });
+  });
+
+  it('handleResolve omits refund when none entered', async () => {
+    disputeState.isLoading = false;
+    disputeState.data = { dispute: makeDispute() };
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(AdminDisputeDetailPage)));
+
+    const select = screen.getByTestId('resolution-type-select');
+    fireEvent.change(select, { target: { value: 'split' } });
+
+    const checkbox = screen.getByLabelText(/File guarantee claim/i);
+    fireEvent.click(checkbox);
+
+    const resolveBtn = screen.getByRole('button', { name: /Resolve Dispute/i });
+    await waitFor(() => {
+      expect((resolveBtn as HTMLButtonElement).disabled).toBe(false);
+    });
+    await user.click(resolveBtn);
+
+    await waitFor(() => {
+      expect(resolveMutate).toHaveBeenCalledTimes(1);
+    });
+    expect(resolveMutate).toHaveBeenCalledWith({
+      disputeId: 'dispute-1234567890',
+      resolution_type: 'split',
+      resolution_notes: '',
+      refund_amount_cents: undefined,
+      guarantee_claim: true,
+    });
+  });
+
+  it('does not call resolve mutation when handleResolve is invoked without resolution type', async () => {
+    // This guards line 66: `if (!dispute || !resolutionType) return;`
+    disputeState.isLoading = false;
+    disputeState.data = { dispute: makeDispute() };
+    render(withQueryClient(createElement(AdminDisputeDetailPage)));
+    const resolveBtn = screen.getByRole('button', { name: /Resolve Dispute/i });
+    // Disabled prevents clicks but we can still confirm no call has occurred.
+    expect((resolveBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(resolveMutate).not.toHaveBeenCalled();
   });
 });

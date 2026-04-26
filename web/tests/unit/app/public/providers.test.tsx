@@ -196,4 +196,148 @@ describe('(public)/providers/page', () => {
     // No throw is enough; state updated.
     expect(screen.getByText(/Page/)).toBeDefined();
   });
+
+  it('renders ResponseTimeBadge when provider has a response_time_label', () => {
+    vi.mocked(useSearchProviders).mockReturnValue({
+      data: {
+        providers: [
+          {
+            id: 'pr1',
+            user_id: 'ur1',
+            display_name: 'Quick Plumber',
+            business_name: null,
+            bio: 'Fast service',
+            verified: false,
+            jobs_completed: 5,
+            response_time_label: 'Responds in 1 hour',
+            service_categories: [{ id: 'c1', name: 'Plumbing' }],
+          },
+        ],
+        pagination: { totalCount: 1, totalPages: 1, hasNext: false },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSearchProviders>);
+
+    render(createElement(ProvidersPage));
+    expect(screen.getByText(/Responds in 1 hour/)).toBeDefined();
+  });
+
+  it('renders trust score and review summary', () => {
+    vi.mocked(useSearchProviders).mockReturnValue({
+      data: {
+        providers: [
+          {
+            id: 'pr2',
+            user_id: 'ur2',
+            display_name: 'Trusted Pro',
+            business_name: null,
+            bio: null,
+            verified: true,
+            jobs_completed: 12,
+            review_summary: { average_rating: 4.85, review_count: 30 },
+            trust_score: { tier: 'high_trust' },
+            service_categories: [{ id: 'c1', name: 'Cleaning' }],
+          },
+        ],
+        pagination: { totalCount: 1, totalPages: 1, hasNext: false },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSearchProviders>);
+
+    render(createElement(ProvidersPage));
+    expect(screen.getByText(/4\.8 stars/)).toBeDefined();
+    expect(screen.getByText(/high trust/)).toBeDefined();
+  });
+
+  it('renders "+N more" badge when provider has more than 3 service categories', () => {
+    vi.mocked(useSearchProviders).mockReturnValue({
+      data: {
+        providers: [
+          {
+            id: 'pr3',
+            user_id: 'ur3',
+            display_name: 'All-Services Pro',
+            business_name: null,
+            bio: null,
+            verified: false,
+            jobs_completed: 7,
+            service_categories: [
+              { id: 'c1', name: 'Plumbing' },
+              { id: 'c2', name: 'Electrical' },
+              { id: 'c3', name: 'Painting' },
+              { id: 'c4', name: 'Roofing' },
+              { id: 'c5', name: 'Cleaning' },
+            ],
+          },
+        ],
+        pagination: { totalCount: 1, totalPages: 1, hasNext: false },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSearchProviders>);
+
+    render(createElement(ProvidersPage));
+    expect(screen.getByText('+2 more')).toBeDefined();
+  });
+
+  it('Previous pagination button decrements page after Next moved to page 2', () => {
+    vi.mocked(useSearchProviders).mockReturnValue({
+      data: {
+        providers: [
+          {
+            id: 'pp',
+            user_id: 'pp',
+            display_name: 'P',
+            business_name: null,
+            bio: null,
+            verified: false,
+            jobs_completed: 1,
+            service_categories: [],
+          },
+        ],
+        pagination: { totalCount: 30, totalPages: 3, hasNext: true },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSearchProviders>);
+
+    render(createElement(ProvidersPage));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' })); // page 1 -> 2
+    const prev = screen.getByRole('button', { name: 'Previous' });
+    expect((prev as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(prev); // exercises lines 288-289
+    expect(screen.getByText(/Page/)).toBeDefined();
+  });
+
+  it('falls back to display_name when business_name is missing', () => {
+    vi.mocked(useSearchProviders).mockReturnValue({
+      data: {
+        providers: [
+          {
+            id: 'pr4',
+            user_id: 'ur4',
+            display_name: 'Solo Worker',
+            business_name: null,
+            bio: null,
+            verified: false,
+            jobs_completed: 0,
+            service_categories: [],
+          },
+        ],
+        pagination: { totalCount: 1, totalPages: 1, hasNext: false },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSearchProviders>);
+
+    render(createElement(ProvidersPage));
+    expect(screen.getByText('Solo Worker')).toBeDefined();
+  });
 });

@@ -584,4 +584,199 @@ describe('AuctionArena', () => {
     // We just assert the median price shows up in the rendered tree.
     expect(screen.getAllByText(/\$125/).length).toBeGreaterThan(0);
   });
+
+  // ---- WAVE 13 DEEPENING TESTS ----
+
+  it('switches back to the Price History tab after a Depth Chart click', () => {
+    render(
+      createElement(AuctionArena, {
+        job: mockJobDetail,
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const depthTab = screen.getByRole('tab', { name: /depth chart/i });
+    fireEvent.click(depthTab);
+    const priceTab = screen.getByRole('tab', { name: /price history/i });
+    fireEvent.click(priceTab);
+    expect(priceTab.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('renders the bid velocity indicator when velocity > 0', () => {
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      isConnected: true,
+      velocity: 4,
+      velocityBuckets: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    });
+    render(
+      createElement(AuctionArena, {
+        job: mockJobDetail,
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    // BidVelocityIndicator exposes an aria-label naming the velocity value.
+    expect(screen.getByLabelText(/Bid velocity:.*4.*bids per minute/i)).toBeDefined();
+  });
+
+  it('builds the bid activity feed from displayEvents and marks the lowest-amount entry', () => {
+    const events = [
+      {
+        job_id: 'job-1',
+        amount_cents: 9000,
+        event_type: 'bid_placed' as const,
+        created_at: '2026-03-01T12:00:00Z',
+      },
+      {
+        job_id: 'job-1',
+        amount_cents: 7000,
+        event_type: 'bid_updated' as const,
+        created_at: '2026-03-01T12:01:00Z',
+      },
+      // Withdrawn events filter out — should not appear
+      {
+        job_id: 'job-1',
+        amount_cents: 5000,
+        event_type: 'bid_withdrawn' as const,
+        created_at: '2026-03-01T12:02:00Z',
+      },
+    ];
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      events,
+      isConnected: true,
+      currentLowest: 7000,
+      bidCount: 2,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: mockJobDetail,
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    // The BidActivityFeed renders provider labels for each retained event.
+    expect(screen.getByText('Provider 1')).toBeDefined();
+    expect(screen.getByText('Provider 2')).toBeDefined();
+    // Withdrawn event is filtered out → no Provider 3 in the activity feed.
+    expect(screen.queryByText('Provider 3')).toBeNull();
+  });
+
+  it('uses extreme urgency styling on the countdown when less than 5 minutes remain', () => {
+    const auctionEndsAt = new Date(Date.now() + 60 * 1000).toISOString(); // 1 min
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      isConnected: true,
+      auctionEndsAt,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: { ...mockJobDetail, auction_ends_at: auctionEndsAt },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    // The "extreme" urgency tints the timer red-500 — verify the colour class
+    // applied via the colorMap lookup.
+    const timer = screen.getByRole('timer');
+    expect(timer.className).toContain('text-red-500');
+  });
+
+  it('uses critical urgency styling between 5 and 15 minutes remaining', () => {
+    const auctionEndsAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      isConnected: true,
+      auctionEndsAt,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: { ...mockJobDetail, auction_ends_at: auctionEndsAt },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const timer = screen.getByRole('timer');
+    expect(timer.className).toContain('text-red-400');
+  });
+
+  it('uses warning urgency styling between 15 and 60 minutes remaining', () => {
+    const auctionEndsAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      isConnected: true,
+      auctionEndsAt,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: { ...mockJobDetail, auction_ends_at: auctionEndsAt },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const timer = screen.getByRole('timer');
+    expect(timer.className).toContain('text-amber-400');
+  });
+
+  it('uses ended urgency styling when the auction has expired', () => {
+    const auctionEndsAt = new Date(Date.now() - 1000).toISOString();
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      isConnected: true,
+      auctionEndsAt,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: { ...mockJobDetail, auction_ends_at: auctionEndsAt },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const timer = screen.getByRole('timer');
+    expect(timer.className).toContain('text-muted-foreground');
+  });
+
+  it('closes the savings celebration overlay when the dialog backdrop is clicked', () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    vi.mocked(useAuctionStream).mockReturnValue({
+      ...defaultStreamReturn,
+      currentLowest: 6000,
+      bidCount: 1,
+      isConnected: true,
+      auctionEndsAt: past,
+    });
+    render(
+      createElement(AuctionArena, {
+        job: {
+          ...mockJobDetail,
+          starting_bid_cents: 10000,
+          status: 'awarded',
+          market_range: {
+            low_cents: 5000,
+            median_cents: 9000,
+            high_cents: 12000,
+            sample_size: 5,
+          },
+        },
+        isProvider: false,
+        isJobOwner: true,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    // SavingsCelebration renders a role="dialog" backdrop whose onClick fires
+    // handleCloseCelebration. Clicking the dialog dismisses the overlay,
+    // which exercises the AuctionArena close handler.
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(dialog);
+    // After close, the dialog unmounts.
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 });

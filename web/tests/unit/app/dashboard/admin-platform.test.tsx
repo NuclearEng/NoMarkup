@@ -167,4 +167,86 @@ describe('AdminPlatformPage', () => {
     expect(screen.getByText('Plumbing')).toBeDefined();
     expect(screen.getByText('2.5')).toBeDefined();
   });
+
+  it('renders the growth loading skeleton (lines 156-158)', () => {
+    setHooks({ growthLoading: true });
+    const { container } = render(withQueryClient(createElement(AdminPlatformPage)));
+    // Growth section enters its loading branch: a 6-tall skeleton inside an h-48 wrapper.
+    // Easier to assert: empty data-points / no-growth message is NOT visible while loading.
+    expect(screen.queryByText(/No growth data available/)).toBeNull();
+    expect(screen.queryByText('GMV by Period')).toBeNull();
+    // The pulse-rounded skeleton bar is present.
+    expect(container.querySelector('.animate-pulse')).toBeTruthy();
+  });
+
+  it('renders the categories loading skeleton (lines 252-261)', () => {
+    setHooks({ categoriesLoading: true });
+    const { container } = render(withQueryClient(createElement(AdminPlatformPage)));
+    // Categories section enters loading branch — 5 skeleton rows.
+    expect(screen.queryByText('No category data available.')).toBeNull();
+    // Category Performance heading still rendered, but no table body.
+    expect(screen.getByText('Category Performance')).toBeDefined();
+    // Multiple animate-pulse skeletons exist.
+    const pulses = container.querySelectorAll('.animate-pulse');
+    expect(pulses.length).toBeGreaterThan(0);
+  });
+
+  it('renders both growth and categories loading states together', () => {
+    setHooks({ growthLoading: true, categoriesLoading: true });
+    const { container } = render(withQueryClient(createElement(AdminPlatformPage)));
+    expect(container).toBeTruthy();
+    // Neither empty state visible.
+    expect(screen.queryByText(/No growth data available/)).toBeNull();
+    expect(screen.queryByText('No category data available.')).toBeNull();
+  });
+
+  it('renders negative growth rates with red styling and minus sign (lines 211, 223, 235 negative branches)', () => {
+    setHooks({
+      growth: {
+        data_points: [
+          { period_start: '2026-01-01T00:00:00Z', gmv_cents: 100000 },
+          { period_start: '2026-02-01T00:00:00Z', gmv_cents: 50000 },
+        ],
+        gmv_growth_rate: -0.5,
+        user_growth_rate: -0.25,
+        job_growth_rate: -0.75,
+      },
+    });
+    render(withQueryClient(createElement(AdminPlatformPage)));
+    expect(screen.getByText('-50.0%')).toBeDefined();
+    expect(screen.getByText('-25.0%')).toBeDefined();
+    expect(screen.getByText('-75.0%')).toBeDefined();
+  });
+
+  it('uses 0 percentage when maxGmv is 0 (line 173 false branch)', () => {
+    setHooks({
+      growth: {
+        data_points: [
+          { period_start: '2026-01-01T00:00:00Z', gmv_cents: 0 },
+          { period_start: '2026-02-01T00:00:00Z', gmv_cents: 0 },
+        ],
+        gmv_growth_rate: 0,
+        user_growth_rate: 0,
+        job_growth_rate: 0,
+      },
+    });
+    render(withQueryClient(createElement(AdminPlatformPage)));
+    // Bars still rendered; growth rate row shows '+0.0%' for all three
+    // (MetricsCard `trend` prop also renders +0.0% for the same rates).
+    const zeros = screen.getAllByText('+0.0%');
+    expect(zeros.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('persists analytics toggle preference to localStorage', () => {
+    localStorage.clear();
+    render(withQueryClient(createElement(AdminPlatformPage)));
+    const toggle = screen.getByRole('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(localStorage.getItem('nomarkup_analytics_enabled')).toBe('true');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(localStorage.getItem('nomarkup_analytics_enabled')).toBe('false');
+  });
 });

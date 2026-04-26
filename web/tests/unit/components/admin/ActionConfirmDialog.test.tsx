@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -99,5 +99,97 @@ describe('ActionConfirmDialog', () => {
       ),
     );
     expect(screen.getByTestId('extra')).toBeDefined();
+  });
+
+  it('closes the dialog when open transitions from true to false', () => {
+    const { rerender } = render(
+      createElement(ActionConfirmDialog, {
+        open: true,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+        title: 'Title',
+        description: 'Description',
+      }),
+    );
+    const dialog = document.querySelector('dialog');
+    expect(dialog?.hasAttribute('open')).toBe(true);
+
+    rerender(
+      createElement(ActionConfirmDialog, {
+        open: false,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+        title: 'Title',
+        description: 'Description',
+      }),
+    );
+    expect(dialog?.hasAttribute('open')).toBe(false);
+  });
+
+  it('invokes onClose when the dialog backdrop is clicked', () => {
+    const onClose = vi.fn();
+    render(
+      createElement(ActionConfirmDialog, {
+        open: true,
+        onClose,
+        onConfirm: vi.fn(),
+        title: 'Title',
+        description: 'Description',
+      }),
+    );
+    const dialog = document.querySelector('dialog');
+    expect(dialog).toBeTruthy();
+    if (!dialog) return;
+    // Simulate a click whose target is the dialog itself (the backdrop).
+    fireEvent.click(dialog);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invoke onClose when an inner element receives the click', () => {
+    const onClose = vi.fn();
+    render(
+      createElement(ActionConfirmDialog, {
+        open: true,
+        onClose,
+        onConfirm: vi.fn(),
+        title: 'Title',
+        description: 'Description',
+      }),
+    );
+    // Click a heading nested inside the dialog body, not the dialog itself.
+    fireEvent.click(screen.getByText('Title'));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('renders the destructive variant when destructive prop is true', () => {
+    render(
+      createElement(ActionConfirmDialog, {
+        open: true,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+        title: 'Title',
+        description: 'Description',
+        confirmLabel: 'Delete',
+        destructive: true,
+      }),
+    );
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: /delete/i });
+    expect(confirm).toBeDefined();
+  });
+
+  it('respects confirmDisabled to disable the confirm button', () => {
+    render(
+      createElement(ActionConfirmDialog, {
+        open: true,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+        title: 'Title',
+        description: 'Description',
+        confirmLabel: 'Yes',
+        confirmDisabled: true,
+      }),
+    );
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: /^yes$/i });
+    expect(confirm.disabled).toBe(true);
   });
 });

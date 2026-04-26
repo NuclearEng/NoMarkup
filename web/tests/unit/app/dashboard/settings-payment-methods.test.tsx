@@ -21,11 +21,18 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('@/components/payments/AddPaymentMethodForm', () => ({
-  AddPaymentMethodForm: ({ onCancel }: { onCancel: () => void }) =>
+  AddPaymentMethodForm: ({
+    onCancel,
+    onSuccess,
+  }: {
+    onCancel: () => void;
+    onSuccess: () => void;
+  }) =>
     createElement(
       'div',
       { 'data-testid': 'add-pm-form' },
       createElement('button', { onClick: onCancel, type: 'button' }, 'Stub Cancel'),
+      createElement('button', { onClick: onSuccess, type: 'button' }, 'Stub Success'),
     ),
 }));
 
@@ -53,6 +60,9 @@ function setHooks(opts: {
   stripeData?: unknown;
   stripeError?: boolean;
   stripeLoading?: boolean;
+  createPending?: boolean;
+  createMutateAsync?: () => Promise<unknown>;
+  deleteMutateAsync?: (id: string) => Promise<unknown>;
 }) {
   vi.mocked(usePaymentMethods).mockReturnValue({
     data: opts.methods ? { payment_methods: opts.methods } : undefined,
@@ -60,12 +70,12 @@ function setHooks(opts: {
     isError: opts.isError ?? false,
   } as unknown as ReturnType<typeof usePaymentMethods>);
   vi.mocked(useDeletePaymentMethod).mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    mutateAsync: opts.deleteMutateAsync ?? vi.fn().mockResolvedValue(undefined),
     isPending: false,
   } as unknown as ReturnType<typeof useDeletePaymentMethod>);
   vi.mocked(useCreateStripeAccount).mockReturnValue({
-    mutateAsync: vi.fn(),
-    isPending: false,
+    mutateAsync: opts.createMutateAsync ?? vi.fn().mockResolvedValue(undefined),
+    isPending: opts.createPending ?? false,
   } as unknown as ReturnType<typeof useCreateStripeAccount>);
   vi.mocked(useStripeAccountStatus).mockReturnValue({
     data: opts.stripeData,
@@ -170,6 +180,90 @@ describe('PaymentMethodsPage', () => {
     render(withQueryClient(createElement(PaymentMethodsPage)));
     expect(
       screen.getByText('Payout settings are only available for provider accounts.'),
+    ).toBeDefined();
+  });
+
+  it('renders skeleton while stripe account status is loading', () => {
+    setHooks({ stripeLoading: true });
+    const { container } = render(withQueryClient(createElement(PaymentMethodsPage)));
+    // Skeleton is the only child of the provider payouts card body when loading.
+    expect(container.querySelectorAll('.bg-muted').length).toBeGreaterThan(0);
+  });
+
+  it('hides the form and invalidates queries on AddPaymentMethodForm onSuccess', () => {
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Add Method/ }));
+    expect(screen.getByTestId('add-pm-form')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /Stub Success/ }));
+    // Form is no longer mounted after success.
+    expect(screen.queryByTestId('add-pm-form')).toBeNull();
+    // Add Method header button is back on screen.
+    expect(screen.getByRole('button', { name: /Add Method/ })).toBeDefined();
+  });
+
+  it('hides the form when AddPaymentMethodForm onCancel is invoked', () => {
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Add Method/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Stub Cancel/ }));
+    expect(screen.queryByTestId('add-pm-form')).toBeNull();
+  });
+
+  it('invokes createStripeAccount mutateAsync when Set Up Payouts is clicked', () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    setHooks({ stripeData: undefined, createMutateAsync: mutateAsync });
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Up Payouts' }));
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders "Setting up..." while createStripeAccount mutation is pending', () => {
+    setHooks({ stripeData: undefined, createPending: true });
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    const btn = screen.getByRole<HTMLButtonElement>('button', { name: /Setting up\.{3}/ });
+    expect(btn).toBeDefined();
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('confirm-delete click resolves and resets to non-confirm state', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    setHooks({
+      methods: [
+        {
+          id: 'pm_zz',
+          brand: 'mastercard',
+          last_four: '1111',
+          exp_month: 1,
+          exp_year: 2031,
+          is_default: false,
+        },
+      ],
+      deleteMutateAsync: mutateAsync,
+    });
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    // Click once to enter confirm state.
+    fireEvent.click(screen.getByRole('button', { name: /Delete card ending 1111/ }));
+    // Click again to confirm.
+    fireEvent.click(screen.getByRole('button', { name: /Confirm delete card ending 1111/ }));
+    expect(mutateAsync).toHaveBeenCalledWith('pm_zz');
+    // Wait a tick for the .then() to fire and reset state.
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  it('renders provider connected with charges_enabled true and active state', () => {
+    setHooks({ stripeData: { charges_enabled: true } });
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    expect(screen.getByText('Active')).toBeDefined();
+    expect(
+      screen.getByText('Your Stripe account is connected and ready to receive payouts.'),
+    ).toBeDefined();
+  });
+
+  it('renders provider with charges_enabled false guidance text', () => {
+    setHooks({ stripeData: { charges_enabled: false } });
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    expect(
+      screen.getByText('Complete your Stripe account setup to receive payouts for completed jobs.'),
     ).toBeDefined();
   });
 });

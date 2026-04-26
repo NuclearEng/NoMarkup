@@ -1,6 +1,6 @@
 // Tests for the recurring jobs management page — exercises loading, error,
 // empty, and populated branches plus pause/cancel interactions.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -171,5 +171,112 @@ describe('RecurringJobsPage', () => {
     jobsState.data = { jobs: [monthly] };
     render(withQueryClient(createElement(RecurringJobsPage)));
     expect(screen.getByRole('button', { name: /post new job/i })).toBeDefined();
+  });
+
+  it('reverts paused state when the update mutation reports an error', () => {
+    jobsState.data = { jobs: [monthly] };
+    // Capture mutate args so we can drive its onError callback.
+    let capturedOpts: { onError?: () => void } | undefined;
+    updateJobMutate.mockImplementation((_input, opts) => {
+      capturedOpts = opts as { onError?: () => void };
+    });
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    fireEvent.click(screen.getByRole('button', { name: /pause recurring job/i }));
+    // After click, badge shows Paused.
+    expect(screen.getByText('Paused')).toBeDefined();
+    // Trigger the onError callback to revert.
+    expect(capturedOpts?.onError).toBeTypeOf('function');
+    act(() => {
+      capturedOpts?.onError?.();
+    });
+    // Now the resume button should be back.
+    expect(screen.getByRole('button', { name: /pause recurring job/i })).toBeDefined();
+  });
+
+  it('renders job card without price when starting_bid_cents is absent', () => {
+    const monthlyNoBid = { ...monthly, id: 'job_no_bid', starting_bid_cents: 0 };
+    jobsState.data = { jobs: [monthlyNoBid] };
+    const { container } = render(withQueryClient(createElement(RecurringJobsPage)));
+    // Card renders; no price element with $ formatting beyond the count card.
+    expect(container.textContent ?? '').not.toContain('$0.00');
+    expect(screen.getByRole('link', { name: 'Monthly Lawn Care' })).toBeDefined();
+  });
+
+  it('computes next occurrence for biweekly frequency with past scheduled date', () => {
+    const past = new Date();
+    past.setMonth(past.getMonth() - 1);
+    const biweekly = {
+      ...monthly,
+      id: 'job_biweekly',
+      title: 'Biweekly Job',
+      recurrence_frequency: 'biweekly',
+      scheduled_date: past.toISOString(),
+    };
+    jobsState.data = { jobs: [biweekly] };
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    expect(screen.getAllByText(/Bi-weekly/i).length).toBeGreaterThan(0);
+    // Some "Next:" text rendered; concrete date varies.
+    expect(screen.getByText(/Next:/)).toBeDefined();
+  });
+
+  it('computes next occurrence for quarterly frequency with past scheduled date', () => {
+    const past = new Date();
+    past.setMonth(past.getMonth() - 6);
+    const quarterly = {
+      ...monthly,
+      id: 'job_quarterly',
+      title: 'Quarterly Job',
+      recurrence_frequency: 'quarterly',
+      scheduled_date: past.toISOString(),
+    };
+    jobsState.data = { jobs: [quarterly] };
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    // Frequency badge contains "Quarterly".
+    expect(screen.getAllByText(/Quarterly/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Next:/)).toBeDefined();
+  });
+
+  it('falls back to monthly default when frequency is unknown and date is past', () => {
+    const past = new Date();
+    past.setMonth(past.getMonth() - 2);
+    const unknown = {
+      ...monthly,
+      id: 'job_unknown',
+      title: 'Unknown Job',
+      recurrence_frequency: 'yearly',
+      scheduled_date: past.toISOString(),
+    };
+    jobsState.data = { jobs: [unknown] };
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    // Frequency label maps to "Unknown" because not in FREQUENCY_LABELS.
+    expect(screen.getByText('Unknown')).toBeDefined();
+    expect(screen.getByText(/Next:/)).toBeDefined();
+  });
+
+  it('displays "Not scheduled" when job has no scheduled_date', () => {
+    const noDate = {
+      ...monthly,
+      id: 'job_no_date',
+      title: 'No Date Job',
+      scheduled_date: null,
+    };
+    jobsState.data = { jobs: [noDate] };
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    expect(screen.getByText(/Not scheduled/)).toBeDefined();
+  });
+
+  it('renders the future scheduled date directly when scheduled > now', () => {
+    const future = new Date();
+    future.setFullYear(future.getFullYear() + 1);
+    const futureJob = {
+      ...monthly,
+      id: 'job_future',
+      title: 'Future Job',
+      scheduled_date: future.toISOString(),
+    };
+    jobsState.data = { jobs: [futureJob] };
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    // The card should mention "Next:" with a date string for the future date.
+    expect(screen.getByText(/Next:/)).toBeDefined();
   });
 });
