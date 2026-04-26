@@ -15,12 +15,9 @@ vi.mock('@/lib/api', () => ({
 }));
 
 const mutateMock = vi.fn();
+const reviewState = { mutate: mutateMock, isPending: false, isError: false };
 vi.mock('@/hooks/useReviews', () => ({
-  useCreateReview: () => ({
-    mutate: mutateMock,
-    isPending: false,
-    isError: false,
-  }),
+  useCreateReview: () => reviewState,
 }));
 
 vi.mock('sonner', () => ({
@@ -39,6 +36,8 @@ describe('ReviewForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mutateMock.mockReset();
+    reviewState.isPending = false;
+    reviewState.isError = false;
   });
 
   it('renders the heading, comment textarea, and submit button', () => {
@@ -177,5 +176,104 @@ describe('ReviewForm', () => {
     expect(args.contractId).toBe('contract-42');
     expect(args.input.overall_rating).toBe(5);
     expect(args.input.comment.length).toBeGreaterThanOrEqual(50);
+  });
+
+  it('renders singular "1 day remaining" when exactly one day is left', () => {
+    const onSuccess = vi.fn();
+    // ~30 hours from now → ceil → 2 days. Use ~12h for ceil → 1 day.
+    const closesIn1Day = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+    render(
+      createElement(ReviewForm, {
+        contractId: 'contract-1',
+        direction: 'customer_to_provider',
+        reviewWindowClosesAt: closesIn1Day,
+        onSuccess,
+      }),
+    );
+    expect(screen.getByText(/1 day remaining/)).toBeDefined();
+    // Confirm there is no plural "1 days" leakage.
+    expect(screen.queryByText(/1 days remaining/)).toBeNull();
+  });
+
+  it('hides the days-remaining notice when the window has already closed', () => {
+    const onSuccess = vi.fn();
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    render(
+      createElement(ReviewForm, {
+        contractId: 'contract-1',
+        direction: 'customer_to_provider',
+        reviewWindowClosesAt: past,
+        onSuccess,
+      }),
+    );
+    expect(screen.queryByText(/remaining to submit your review/)).toBeNull();
+  });
+
+  it('disables the submit button and renders a spinner while createReview is pending', () => {
+    reviewState.isPending = true;
+    const onSuccess = vi.fn();
+    render(
+      createElement(ReviewForm, {
+        contractId: 'contract-1',
+        direction: 'customer_to_provider',
+        reviewWindowClosesAt: FUTURE_CLOSES_AT,
+        onSuccess,
+      }),
+    );
+    const submitBtn = screen.getByRole('button', { name: /Submit Review/ }) as HTMLButtonElement;
+    expect(submitBtn.disabled).toBe(true);
+    // Loader2 spinner has the animate-spin class.
+    expect(submitBtn.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('renders an error message when createReview.isError is true', () => {
+    reviewState.isError = true;
+    const onSuccess = vi.fn();
+    render(
+      createElement(ReviewForm, {
+        contractId: 'contract-1',
+        direction: 'customer_to_provider',
+        reviewWindowClosesAt: FUTURE_CLOSES_AT,
+        onSuccess,
+      }),
+    );
+    expect(screen.getByText(/Failed to submit review/)).toBeDefined();
+  });
+
+  it('does not add a duplicate photo URL', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    render(
+      createElement(ReviewForm, {
+        contractId: 'contract-1',
+        direction: 'customer_to_provider',
+        reviewWindowClosesAt: FUTURE_CLOSES_AT,
+        onSuccess,
+      }),
+    );
+    const photoInput = screen.getByPlaceholderText('https://example.com/photo.jpg');
+    await user.type(photoInput, 'https://cdn.example.com/dup.jpg');
+    await user.click(screen.getByRole('button', { name: /^Add$/ }));
+    // Adding the same URL again should be a no-op.
+    await user.type(photoInput, 'https://cdn.example.com/dup.jpg');
+    await user.click(screen.getByRole('button', { name: /^Add$/ }));
+    // Only ONE matching URL row.
+    expect(screen.getAllByText('https://cdn.example.com/dup.jpg').length).toBe(1);
+  });
+
+  it('does not add an empty/whitespace-only photo URL', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    render(
+      createElement(ReviewForm, {
+        contractId: 'contract-1',
+        direction: 'customer_to_provider',
+        reviewWindowClosesAt: FUTURE_CLOSES_AT,
+        onSuccess,
+      }),
+    );
+    const addBtn = screen.getByRole('button', { name: /^Add$/ }) as HTMLButtonElement;
+    // disabled while empty — the call should be a no-op.
+    expect(addBtn.disabled).toBe(true);
   });
 });

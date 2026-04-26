@@ -17,15 +17,8 @@ import type {
 } from '@/types';
 
 // Mock the api module
-vi.mock('@/lib/api', () => ({
-  api: {
-    get: vi.fn(),
-    getPublic: vi.fn(),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-  },
-  ApiError: class ApiError extends Error {
+vi.mock('@/lib/api', () => {
+  class ApiError extends Error {
     status: number;
     body: string;
     constructor(status: number, body: string) {
@@ -34,8 +27,18 @@ vi.mock('@/lib/api', () => ({
       this.status = status;
       this.body = body;
     }
-  },
-}));
+  }
+  return {
+    api: {
+      get: vi.fn(),
+      getPublic: vi.fn(),
+      post: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+    },
+    ApiError,
+  };
+});
 
 // Seed the auth store so `enabled: !!userId` is true and the query fires.
 vi.mock('@/stores/auth-store', () => ({
@@ -43,7 +46,7 @@ vi.mock('@/stores/auth-store', () => ({
     selector({ user: { id: 'user-1' } }),
 }));
 
-const { api } = await import('@/lib/api');
+const { api, ApiError: FakeApiError } = await import('@/lib/api');
 
 function createTestQueryClient(): QueryClient {
   return new QueryClient({
@@ -207,6 +210,28 @@ describe('useProviderAnalytics', () => {
 
     await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
+
+  it('returns null on 404 (graceful degrade)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(404, 'no analytics'));
+
+    const { result } = renderHook(() => useProviderAnalytics(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('returns null on 500', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(500, 'down'));
+
+    const { result } = renderHook(() => useProviderAnalytics(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
 });
 
 describe('useProviderEarnings', () => {
@@ -259,6 +284,38 @@ describe('useProviderEarnings', () => {
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=month'));
+  });
+
+  it('returns null on 404 (graceful degrade — earnings may not exist)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(404, 'no earnings'));
+
+    const { result } = renderHook(() => useProviderEarnings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('returns null on 500 (service degraded)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(500, 'down'));
+
+    const { result } = renderHook(() => useProviderEarnings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('rethrows non-404/500 ApiError so caller sees real bugs', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(401, 'unauthorized'));
+
+    const { result } = renderHook(() => useProviderEarnings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -322,5 +379,27 @@ describe('useCustomerSpending', () => {
     });
 
     await waitFor(() => { expect(result.current.isError).toBe(true); });
+  });
+
+  it('returns null on 404 (graceful degrade)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(404, 'no spend'));
+
+    const { result } = renderHook(() => useCustomerSpending(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('returns null on 500', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(500, 'down'));
+
+    const { result } = renderHook(() => useCustomerSpending(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
   });
 });

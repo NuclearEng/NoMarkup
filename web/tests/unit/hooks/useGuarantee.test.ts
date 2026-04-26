@@ -14,6 +14,8 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+const { toast } = await import('sonner');
+
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
@@ -70,6 +72,21 @@ describe('useSubmitGuaranteeClaim', () => {
     );
     expect(spy).toHaveBeenCalledWith({ queryKey: ['contract', 'c-1'] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['guarantee-claim', 'c-1'] });
+  });
+
+  it('shows the guarantee-claim failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useSubmitGuaranteeClaim(), { wrapper: wrap(client) });
+    result.current.mutate({
+      contractId: 'c-1',
+      reason: 'incomplete',
+      description: 'work unfinished',
+      evidence_urls: [],
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to submit guarantee claim');
   });
 });
 
@@ -168,5 +185,19 @@ describe('useReviewGuaranteeClaim', () => {
       '/api/v1/admin/guarantee-claims/d-1/review',
       { approved: false, resolution_notes: 'denied', payout_cents: 0 },
     );
+  });
+
+  it('shows the review failure toast on error', async () => {
+    vi.mocked(api.put).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useReviewGuaranteeClaim(), { wrapper: wrap(client) });
+    result.current.mutate({
+      claimId: 'd-1',
+      approved: true,
+      resolution_notes: 'approved',
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to review guarantee claim');
   });
 });

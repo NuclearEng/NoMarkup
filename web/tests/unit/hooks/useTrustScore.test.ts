@@ -100,6 +100,19 @@ describe('useTrustHistory', () => {
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
     expect(result.current.data).toBeNull();
   });
+
+  it('returns null on 500 (graceful degrade)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(500, 'svc down'));
+    const { result } = renderHook(() => useTrustHistory('u-1'), { wrapper: wrap(client) });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('rethrows non-404/500 errors so caller sees real bugs', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(403, 'forbidden'));
+    const { result } = renderHook(() => useTrustHistory('u-1'), { wrapper: wrap(client) });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+  });
 });
 
 describe('useTierRequirements', () => {
@@ -120,5 +133,11 @@ describe('useTierRequirements', () => {
     const { result } = renderHook(() => useTierRequirements(), { wrapper: wrap(client) });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
     expect(result.current.data).toBeNull();
+  });
+
+  it('rethrows non-404/500 errors so caller sees real bugs', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(401, 'unauthorized'));
+    const { result } = renderHook(() => useTierRequirements(), { wrapper: wrap(client) });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });

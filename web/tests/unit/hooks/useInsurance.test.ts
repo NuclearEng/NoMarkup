@@ -26,6 +26,8 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+const { toast } = await import('sonner');
+
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), getPublic: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
   ApiError: class ApiError extends Error {
@@ -235,6 +237,23 @@ describe('useFileInsuranceClaim', () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ['my-policies'] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['insurance-claims'] });
   });
+
+  it('shows the file-claim failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+
+    const input: FileInsuranceClaimInput = {
+      policy_id: 'pol-1',
+      claim_type: 'damage',
+      description: 'broken pipe',
+      evidence_urls: [],
+      claimed_amount_cents: 50000,
+    };
+    const { result } = renderHook(() => useFileInsuranceClaim(), { wrapper: wrap(client) });
+    result.current.mutate(input);
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to file claim');
+  });
 });
 
 describe('useInsuranceClaim', () => {
@@ -329,5 +348,19 @@ describe('useReviewInsuranceClaim', () => {
       '/api/v1/admin/insurance/claims/clm-1/review',
       { action: 'deny', approved_amount_cents: undefined, denial_reason: 'no coverage' },
     );
+  });
+
+  it('shows the review failure toast on error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useReviewInsuranceClaim(), { wrapper: wrap(client) });
+    result.current.mutate({
+      claimId: 'clm-1',
+      action: 'approve',
+      approved_amount_cents: 45000,
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to review claim');
   });
 });

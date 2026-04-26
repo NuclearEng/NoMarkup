@@ -22,6 +22,8 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+const { toast } = await import('sonner');
+
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
@@ -38,7 +40,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-const { api } = await import('@/lib/api');
+const { api, ApiError: FakeApiError } = await import('@/lib/api');
 
 function createTestQueryClient(): QueryClient {
   return new QueryClient({
@@ -377,5 +379,55 @@ describe('useOpenDispute', () => {
       '/api/v1/contracts/c-1/disputes',
       expect.objectContaining({ is_guarantee_claim: true }),
     );
+  });
+});
+
+// --- explainFailure error toasts (covers ApiError vs generic-Error branches) ---
+
+describe('useContracts onError toasts', () => {
+  let queryClient: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+  afterEach(() => { queryClient.clear(); });
+
+  it('uses ApiError userMessage when error is an ApiError (useAcceptContract)', async () => {
+    const apiErr = new (FakeApiError as unknown as new (msg: string) => Error)(
+      'contract already accepted',
+    );
+    vi.mocked(api.post).mockRejectedValueOnce(apiErr);
+
+    const { result } = renderHook(() => useAcceptContract(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate('c-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('contract already accepted');
+  });
+
+  it('falls back to fallback message for non-ApiError errors (useStartWork)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('network down'));
+
+    const { result } = renderHook(() => useStartWork(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate('c-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to start work');
+  });
+
+  it('shows the milestone-specific failure toast on error (useSubmitMilestone)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useSubmitMilestone(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({ milestoneId: 'm-1', contractId: 'c-1' });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to submit milestone');
   });
 });

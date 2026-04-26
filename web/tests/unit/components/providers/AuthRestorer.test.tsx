@@ -1,4 +1,5 @@
 import { render, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthRestorer } from '@/components/providers/AuthRestorer';
@@ -108,5 +109,76 @@ describe('AuthRestorer', () => {
     await waitFor(() => {
       expect(refreshTokenMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('clears oauth_access_token and oauth_token_expires cookies after consuming them', async () => {
+    parseJwtPayloadMock.mockReturnValue({
+      sub: 'u-2',
+      email: 'foo@bar.com',
+      roles: ['provider'],
+    });
+    document.cookie = 'oauth_access_token=tok-2; path=/';
+    document.cookie = 'oauth_token_expires=9999; path=/';
+    render(<AuthRestorer />);
+    await waitFor(() => {
+      expect(setAccessTokenMock).toHaveBeenCalledWith('tok-2');
+    });
+    // Both cookies should be cleared after consumption.
+    expect(document.cookie).not.toContain('oauth_access_token=');
+    expect(document.cookie).not.toContain('oauth_token_expires=');
+  });
+
+  it('uses the oauth path even when has_session cookie is also present', async () => {
+    parseJwtPayloadMock.mockReturnValue({
+      sub: 'u-3',
+      email: 'a@b.com',
+      roles: ['customer'],
+    });
+    document.cookie = 'has_session=1; path=/';
+    document.cookie = 'oauth_access_token=tok-3; path=/';
+    render(<AuthRestorer />);
+    await waitFor(() => {
+      expect(setAccessTokenMock).toHaveBeenCalledWith('tok-3');
+    });
+    // Oauth path returns early — never hits refreshToken.
+    expect(refreshTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('attempts restoration only once even under React StrictMode (effect runs twice)', async () => {
+    document.cookie = 'has_session=1; path=/';
+    render(
+      <StrictMode>
+        <AuthRestorer />
+      </StrictMode>,
+    );
+    await waitFor(() => {
+      expect(refreshTokenMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('decodes URL-encoded cookie values', async () => {
+    parseJwtPayloadMock.mockReturnValue({
+      sub: 'u-4',
+      email: 'enc@example.com',
+      roles: ['customer'],
+    });
+    // Encoded value: "tok+with/special=chars"
+    const encoded = encodeURIComponent('tok+with/special=chars');
+    document.cookie = `oauth_access_token=${encoded}; path=/`;
+    render(<AuthRestorer />);
+    await waitFor(() => {
+      expect(setAccessTokenMock).toHaveBeenCalledWith('tok+with/special=chars');
+    });
+  });
+
+  it('returns null cookie value when no matching cookie exists (negative match path)', async () => {
+    // Set an unrelated cookie so document.cookie is non-empty.
+    document.cookie = 'unrelated=foo; path=/';
+    // No has_session, no oauth_access_token → guard branch hit → setState({isHydrating:false}).
+    render(<AuthRestorer />);
+    await waitFor(() => {
+      expect(setStateMock).toHaveBeenCalledWith({ isHydrating: false });
+    });
+    expect(refreshTokenMock).not.toHaveBeenCalled();
   });
 });

@@ -121,6 +121,11 @@ function fireXhrLoad(status: number) {
   for (const cb of lastXhr.listeners['load'] ?? []) cb();
 }
 
+function fireXhrError() {
+  if (!lastXhr) throw new Error('no xhr captured');
+  for (const cb of lastXhr.listeners['error'] ?? []) cb();
+}
+
 describe('useImageUpload', () => {
   it('starts in idle status with progress=0 and no error', () => {
     const { result } = renderHook(() => useImageUpload({ context: 'job_photo' }));
@@ -373,5 +378,59 @@ describe('useImageUpload', () => {
     expect(result.current.status).toBe('idle');
     expect(result.current.progress).toBe(0);
     expect(result.current.error).toBeNull();
+  });
+
+  it('reports a "Network error" when the XHR error event fires', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      upload_url: 'https://s3.example/upload/xyz',
+      object_key: 'uploads/abc.jpg',
+    });
+
+    const onError = vi.fn();
+    const { result } = renderHook(() =>
+      useImageUpload({ context: 'job_photo', onError }),
+    );
+
+    let pending: Promise<unknown> | undefined;
+    act(() => {
+      pending = result.current.upload(makeFile());
+    });
+
+    await waitFor(() => { expect(lastXhr).not.toBeNull(); });
+
+    await act(async () => {
+      fireXhrError();
+      await pending;
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe('Network error during upload');
+    expect(onError).toHaveBeenCalledWith('Network error during upload');
+  });
+
+  it('formatBytes formats KB and MB sizes in the size-limit error message', async () => {
+    // Trigger the >= 1024 KB branch. maxSize is 2 MB, file is 3 MB.
+    const onError = vi.fn();
+    const { result } = renderHook(() =>
+      useImageUpload({
+        context: 'job_photo',
+        maxSizeBytes: 2 * 1024 * 1024,
+        onError,
+      }),
+    );
+
+    const huge = makeFile({ size: 3 * 1024 * 1024 });
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.upload(huge);
+    });
+
+    expect(returned).toBeNull();
+    expect(result.current.status).toBe('error');
+    // Both numbers should be formatted as MB (>= 1024 KB).
+    expect(result.current.error).toContain('3.0 MB');
+    expect(result.current.error).toContain('2.0 MB');
+    expect(onError).toHaveBeenCalled();
   });
 });

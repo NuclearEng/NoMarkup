@@ -17,6 +17,10 @@ import {
 } from '@/hooks/useJobs';
 import type { Job, JobDetail, JobsResponse } from '@/types';
 
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 // Mock the api module
 vi.mock('@/lib/api', () => ({
   api: {
@@ -34,7 +38,8 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-const { api } = await import('@/lib/api');
+const { api, ApiError: FakeApiError } = await import('@/lib/api');
+const { toast } = await import('sonner');
 
 function createTestQueryClient(): QueryClient {
   return new QueryClient({
@@ -502,5 +507,135 @@ describe('useCustomerDrafts', () => {
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/jobs/mine?status=draft',
     );
+  });
+});
+
+// --- onError toast paths (covers explainFailure ApiError vs generic branches) ---
+
+describe('useJobs error toasts', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('useCreateJob: shows ApiError userMessage when error is an ApiError', async () => {
+    const apiErr = new (FakeApiError as unknown as new (msg: string) => Error)(
+      'contract violation',
+    );
+    vi.mocked(api.post).mockRejectedValueOnce(apiErr);
+
+    const { result } = renderHook(() => useCreateJob(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      category_id: 'cat-1',
+      title: 'Fix kitchen sink plumbing issue',
+      description: 'A'.repeat(50),
+      schedule_type: 'flexible',
+      is_recurring: false,
+      auction_duration_hours: 48,
+    });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('contract violation');
+  });
+
+  it('useCreateJob: falls back to fallback message for non-ApiError errors', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('network down'));
+
+    const { result } = renderHook(() => useCreateJob(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      category_id: 'cat-1',
+      title: 'Fix kitchen sink plumbing issue',
+      description: 'A'.repeat(50),
+      schedule_type: 'flexible',
+      is_recurring: false,
+      auction_duration_hours: 48,
+    });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create job');
+  });
+
+  it('useDeleteDraft: shows the draft-specific failure toast on error', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useDeleteDraft(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate('job-1');
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to delete draft');
+  });
+});
+
+// --- buildSearchParams branch coverage ---
+
+describe('buildSearchParams branches via useSearchJobs', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('encodes every supported param simultaneously', async () => {
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockJobsResponse);
+
+    const { result } = renderHook(
+      () =>
+        useSearchJobs({
+          category_id: 'cat-1',
+          query: 'sink',
+          schedule_type: 'flexible',
+          is_recurring: true,
+          min_price_cents: 1000,
+          max_price_cents: 50000,
+          location_lat: 40.7,
+          location_lng: -74.006,
+          radius_km: 25,
+          sort_by: 'price',
+          sort_order: 'asc',
+          page: 2,
+          page_size: 50,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    const calledWith = vi.mocked(api.getPublic).mock.calls[0]?.[0] ?? '';
+    expect(calledWith).toContain('category_ids=cat-1');
+    expect(calledWith).toContain('q=sink');
+    expect(calledWith).toContain('schedule_type=flexible');
+    expect(calledWith).toContain('recurring_only=true');
+    expect(calledWith).toContain('min_price_cents=1000');
+    expect(calledWith).toContain('max_price_cents=50000');
+    expect(calledWith).toContain('latitude=40.7');
+    expect(calledWith).toContain('longitude=-74.006');
+    expect(calledWith).toContain('radius_km=25');
+    expect(calledWith).toContain('sort=price');
+    expect(calledWith).toContain('sort_dir=asc');
+    expect(calledWith).toContain('page=2');
+    expect(calledWith).toContain('page_size=50');
   });
 });

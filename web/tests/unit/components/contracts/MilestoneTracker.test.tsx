@@ -363,6 +363,74 @@ describe('MilestoneTracker', () => {
     expect(screen.queryByRole('button', { name: /^approve$/i })).toBeNull();
   });
 
+  it('shows "Resubmitting..." spinner for provider on revision_requested while pending', () => {
+    submitState.isPending = true;
+    setUser({ id: 'prov-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'revision_requested' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Resubmitting/)).toBeDefined();
+  });
+
+  it('renders submit-error for provider on revision_requested when submit failed', () => {
+    submitState.isError = true;
+    setUser({ id: 'prov-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'revision_requested' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Failed to submit milestone/i)).toBeDefined();
+  });
+
+  it('shows the "Requesting..." spinner while requestRevision is pending', async () => {
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'submitted' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    // Open the revision form first (button visible only before pending flips).
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    // Now flip pending state and re-render.
+    revisionState.isPending = true;
+    // Forces React to flush the new pending state via a typing event.
+    const ta = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(ta, 'a');
+    expect(screen.getByText(/Requesting/)).toBeDefined();
+    // Cancel and revision-request action buttons should be disabled while pending.
+    const reqBtn = screen.getByRole('button', { name: /requesting/i }) as HTMLButtonElement;
+    expect(reqBtn.disabled).toBe(true);
+  });
+
+  it('renders revision-error message when requestRevision mutation failed', async () => {
+    revisionState.isError = true;
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'submitted' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    expect(screen.getByText(/Failed to request revision/i)).toBeDefined();
+  });
+
   it('orders milestones by sort_order', () => {
     setUser({ id: 'cust-1' });
     render(

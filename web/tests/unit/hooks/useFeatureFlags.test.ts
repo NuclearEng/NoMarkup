@@ -111,4 +111,22 @@ describe('useFeatureFlag', () => {
     });
     expect(result.current).toBe(false);
   });
+
+  it('returns false (via ?? fallback) for a flag absent from both response and DEFAULT_FLAGS', async () => {
+    // The FeatureFlags interface has an index signature [key: string]: boolean,
+    // so callers can ask for arbitrary flag names. When the key is not in the
+    // gateway response AND not in DEFAULT_FLAGS, the index access returns
+    // undefined and the `?? false` fallback kicks in.
+    vi.mocked(api.getPublic).mockResolvedValueOnce({ fair_price_index: true });
+
+    const { result } = renderHook(
+      () => useFeatureFlag('not_a_real_flag' as 'fair_price_index'),
+      { wrapper: wrap(client) },
+    );
+
+    await waitFor(() => {
+      expect(vi.mocked(api.getPublic)).toHaveBeenCalled();
+    });
+    expect(result.current).toBe(false);
+  });
 });

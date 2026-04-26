@@ -169,4 +169,107 @@ describe('JobCard', () => {
     render(<JobCard job={{ ...mockJob, bid_count: 1 }} />);
     expect(screen.getByText('bid')).toBeDefined();
   });
+
+  it('renders the awarded status badge for contract_pending status', () => {
+    render(<JobCard job={{ ...mockJob, status: JOB_STATUS.CONTRACT_PENDING }} />);
+    expect(screen.getByText(/contract pending/i)).toBeDefined();
+  });
+
+  it('renders the completed status badge for reviewed status', () => {
+    render(<JobCard job={{ ...mockJob, status: JOB_STATUS.REVIEWED }} />);
+    expect(screen.getByText('reviewed')).toBeDefined();
+  });
+
+  it('renders the cancelled status badge for expired status', () => {
+    render(<JobCard job={{ ...mockJob, status: JOB_STATUS.EXPIRED }} />);
+    expect(screen.getByText('expired')).toBeDefined();
+  });
+
+  it('renders the secondary status badge for an unknown status (default branch)', () => {
+    // Use a string that does not exist in JOB_STATUS — exercises both
+    // getStatusVariant (line 51) and getStatusBorderColor default branches.
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          status: 'unknown_status_value' as unknown as Job['status'],
+        }}
+      />,
+    );
+    expect(screen.getByText(/unknown status value/)).toBeDefined();
+  });
+
+  it('renders "Date Range" label when schedule_type is date_range', () => {
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          schedule_type: 'date_range' as unknown as Job['schedule_type'],
+          scheduled_date: null,
+        }}
+      />,
+    );
+    expect(screen.getByText('Date Range')).toBeDefined();
+  });
+
+  it('hides the "From $X" label when starting_bid_cents is null', () => {
+    render(<JobCard job={{ ...mockJob, starting_bid_cents: null }} />);
+    expect(screen.queryByText(/^From /)).toBeNull();
+  });
+
+  it('hides the "Lowest:" label when lowest_bid_cents is null', () => {
+    render(<JobCard job={{ ...mockJob, lowest_bid_cents: null }} />);
+    expect(screen.queryByText('Lowest:')).toBeNull();
+  });
+
+  it('paints the progress bar red when >= 80% elapsed', () => {
+    // Auction started ~46h ago, ends in 2h, duration 48h → ~95% elapsed.
+    const endsAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          auction_ends_at: endsAt,
+          auction_duration_hours: 48,
+        }}
+      />,
+    );
+    const bar = screen.getByRole('progressbar');
+    const fill = bar.firstElementChild as HTMLElement | null;
+    expect(fill?.className).toContain('bg-red-500');
+  });
+
+  it('paints the progress bar amber when between 50% and 80% elapsed', () => {
+    // 12h left of a 24h auction → 50% elapsed.
+    const endsAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          auction_ends_at: endsAt,
+          auction_duration_hours: 24,
+        }}
+      />,
+    );
+    const bar = screen.getByRole('progressbar');
+    const fill = bar.firstElementChild as HTMLElement | null;
+    expect(fill?.className).toContain('bg-amber-500');
+  });
+
+  it('paints the progress bar emerald when < 50% elapsed', () => {
+    // 23h left of a 24h auction → ~4% elapsed.
+    const endsAt = new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString();
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          auction_ends_at: endsAt,
+          auction_duration_hours: 24,
+        }}
+      />,
+    );
+    const bar = screen.getByRole('progressbar');
+    const fill = bar.firstElementChild as HTMLElement | null;
+    expect(fill?.className).toContain('bg-emerald-500');
+  });
 });
