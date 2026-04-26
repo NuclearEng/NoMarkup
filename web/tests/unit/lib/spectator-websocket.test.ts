@@ -230,6 +230,30 @@ describe('spectatorWsManager', () => {
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
 
+  it('connect() called twice in rapid succession clears the prior debounce timer', () => {
+    spectatorWsManager.connect('job-A');
+    // First debounce in flight; no socket yet.
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    // Second connect within the debounce window must clearTimeout the prior
+    // schedule and replace it. Only ONE socket should ever be created.
+    spectatorWsManager.connect('job-B');
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    vi.advanceTimersByTime(100);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(FakeWebSocket.last().url).toContain('/ws/auction/job-B/spectate');
+  });
+
+  it('onerror handler does not throw (intentionally a no-op; close handles reconnect)', () => {
+    spectatorWsManager.connect('job-1');
+    vi.advanceTimersByTime(100);
+    const ws = FakeWebSocket.last();
+    expect(() => {
+      ws.emitError();
+    }).not.toThrow();
+  });
+
   it('onMessage returns an unsubscribe function that detaches the listener', () => {
     const received: SpectatorMessage[] = [];
     const off = spectatorWsManager.onMessage((m) => received.push(m));

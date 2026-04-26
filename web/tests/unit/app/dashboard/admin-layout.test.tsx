@@ -47,4 +47,14 @@ describe('AdminLayout', () => {
     );
     expect(container.textContent).toMatch(/CHILD/);
   });
+
+  it('shows access denied when user is null (covers `?? false` fallback)', () => {
+    // Forces the null-coalescing branch on line 11 — `user?.roles` short-circuits
+    // to `undefined`, then `?? false` provides the fallback.
+    mockState.user = null;
+    const { container } = render(
+      withQueryClient(createElement(AdminLayout, { children: 'CHILD' })),
+    );
+    expect(container.textContent).toMatch(/Access Denied/);
+  });
 });

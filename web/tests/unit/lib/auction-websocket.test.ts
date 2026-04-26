@@ -225,4 +225,27 @@ describe('auctionWsManager', () => {
     vi.advanceTimersByTime(500);
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
+
+  it('connect() called twice in rapid succession clears the prior debounce timer', () => {
+    auctionWsManager.connect('job-A', 'tokA');
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    // Second connect within the debounce window must clearTimeout the prior
+    // schedule and replace it.
+    auctionWsManager.connect('job-B', 'tokB');
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    vi.advanceTimersByTime(100);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(FakeWebSocket.last().url).toContain('/ws/auction/job-B?token=tokB');
+  });
+
+  it('onerror handler does not throw (intentionally a no-op; close handles reconnect)', () => {
+    auctionWsManager.connect('job-1', 'tok');
+    vi.advanceTimersByTime(100);
+    const ws = FakeWebSocket.last();
+    expect(() => {
+      ws.emitError();
+    }).not.toThrow();
+  });
 });

@@ -148,6 +148,29 @@ describe('NotificationBell', () => {
     expect(screen.getByText('New bid')).toBeDefined();
   });
 
+  it('invokes markAsRead when an unread notification item is clicked', () => {
+    mockNotifications(1, [
+      {
+        id: 'n-1',
+        user_id: 'u',
+        notification_type: 'new_bid',
+        title: 'New bid received',
+        body: 'Provider placed a bid',
+        action_url: '',
+        data: {},
+        is_read: false,
+        channels_sent: [],
+        read_at: null,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    render(<NotificationBell />);
+    fireEvent.click(screen.getByLabelText('Notifications, 1 unread'));
+    // The NotificationItem renders a button containing the title; click it.
+    fireEvent.click(screen.getByRole('button', { name: /new bid received/i }));
+    expect(markAsReadMock).toHaveBeenCalledWith('n-1');
+  });
+
   it('closes the dropdown when Escape is pressed', () => {
     mockNotifications(2, []);
     render(<NotificationBell />);

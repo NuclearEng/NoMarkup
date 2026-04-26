@@ -305,6 +305,57 @@ describe('useTerminalLayoutStore', () => {
         expect(layout.widgets).toHaveLength(0);
       }
     });
+
+    it('places a new widget into an open horizontal gap on the same row', () => {
+      // Existing layout occupies cols 0-5 (savings, w=6) on row 0.
+      // Adding a w=4 widget should fit in the gap at cols 6-9 of row 0.
+      const id = useTerminalLayoutStore.getState().createLayout('Sparse', [
+        { widgetId: 'savings', x: 0, y: 0, w: 6, h: 4 },
+      ]);
+      useTerminalLayoutStore.getState().setActiveLayout(id);
+
+      useTerminalLayoutStore.getState().addWidget('order-book'); // 4x10
+
+      const layout = useTerminalLayoutStore
+        .getState()
+        .layouts.find((l) => l.id === id);
+      expect(layout).toBeDefined();
+      if (layout) {
+        const ob = layout.widgets.find((w) => w.widgetId === 'order-book');
+        expect(ob).toBeDefined();
+        if (ob) {
+          // Found a fit on row 0 starting at col 6 (first column where the
+          // widget doesn't overlap the existing 'savings' widget).
+          expect(ob.x).toBe(6);
+          expect(ob.y).toBe(0);
+        }
+      }
+    });
+
+    it('falls back to placing below all widgets when no horizontal gap fits', () => {
+      // Pack the entire row 0 (12 cols) so there's no horizontal gap on row 0
+      // for a 4-wide widget. The new widget should fall through the
+      // findOpenPosition scan and land on the next row.
+      const id = useTerminalLayoutStore.getState().createLayout('Full row', [
+        { widgetId: 'price-hero', x: 0, y: 0, w: 12, h: 4 },
+      ]);
+      useTerminalLayoutStore.getState().setActiveLayout(id);
+
+      useTerminalLayoutStore.getState().addWidget('order-book'); // 4x10
+
+      const layout = useTerminalLayoutStore
+        .getState()
+        .layouts.find((l) => l.id === id);
+      expect(layout).toBeDefined();
+      if (layout) {
+        const ob = layout.widgets.find((w) => w.widgetId === 'order-book');
+        expect(ob).toBeDefined();
+        if (ob) {
+          // Cannot fit on rows 0-3 (occupied). Should land on row 4 at col 0.
+          expect(ob.y).toBeGreaterThanOrEqual(4);
+        }
+      }
+    });
   });
 
   describe('removeWidget', () => {

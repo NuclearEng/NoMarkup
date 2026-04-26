@@ -265,4 +265,124 @@ describe('wsManager (chat WebSocket client)', () => {
     vi.advanceTimersByTime(500);
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
+
+  it('onerror fires without throwing (stable handler)', () => {
+    wsManager.connect();
+    vi.advanceTimersByTime(100);
+    const ws = FakeWebSocket.last();
+    expect(() => {
+      ws.emitError();
+    }).not.toThrow();
+  });
+
+  it('connect() called twice within the debounce keeps a single scheduled open', () => {
+    wsManager.connect();
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    // Second connect() before the debounce fires — should hit the early-return
+    // guard at line 119 (connectTimer !== null) and NOT re-schedule.
+    wsManager.connect();
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    vi.advanceTimersByTime(100);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('uses wss:// when window.location.protocol is https', () => {
+    // Switch the jsdom location to exercise the https branch of the protocol
+    // ternary in openSocket(). jsdom forbids redefining individual location
+    // properties, so we replace the whole object.
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: { ...originalLocation, protocol: 'https:', host: 'app.example' },
+    });
+
+    try {
+      wsManager.connect();
+      vi.advanceTimersByTime(100);
+      const ws = FakeWebSocket.last();
+      expect(ws.url.startsWith('wss://')).toBe(true);
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        writable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it('connect() called from within an active reconnect timer is a no-op while the timer is pending', () => {
+    wsManager.connect();
+    vi.advanceTimersByTime(100);
+    const ws = FakeWebSocket.last();
+    ws.emitOpen();
+
+    // Schedule a reconnect.
+    ws.emitClose(1006);
+
+    // Calling connect() while a reconnect is scheduled should re-enter
+    // and (because connectTimer is now set after the inner call to
+    // scheduleReconnect's setTimeout->connect chain hasn't fired yet) hit
+    // the early returns. We just assert no extra socket appears.
+    wsManager.connect();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    // Allow reconnect+debounce to fire; the second socket should appear.
+    vi.advanceTimersByTime(1100);
+    expect(FakeWebSocket.instances.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('disconnect() while a reconnect timer is pending clears that timer', () => {
+    wsManager.connect();
+    vi.advanceTimersByTime(100);
+    const ws = FakeWebSocket.last();
+    ws.emitOpen();
+
+    // Unexpected close → reconnectTimer is scheduled.
+    ws.emitClose(1006);
+    expect(wsManager.connectionStatus).toBe(CONNECTION_STATUS.DISCONNECTED);
+
+    // Disconnect before the reconnect timer fires — must clear it.
+    wsManager.disconnect();
+    vi.advanceTimersByTime(120_000);
+    // Still only one socket — reconnect was cancelled.
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});
+
+describe('wsManager — non-empty API_BASE_URL builds a WS URL from it', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+    vi.doUnmock('@/lib/constants');
+    vi.doUnmock('@/lib/auth');
+  });
+
+  it('uses API_BASE_URL.replace(/^http/, ws) when it is set', async () => {
+    vi.doMock('@/lib/constants', () => ({
+      API_BASE_URL: 'https://api.nomarkup.test',
+    }));
+    vi.doMock('@/lib/auth', () => ({
+      getAccessToken: vi.fn(() => 'tok-zzz'),
+    }));
+
+    const mod = await import('@/lib/websocket');
+    mod.wsManager.connect();
+    vi.advanceTimersByTime(100);
+
+    const ws = FakeWebSocket.last();
+    expect(ws.url).toBe('wss://api.nomarkup.test/ws/chat?token=tok-zzz');
+
+    mod.wsManager.disconnect();
+  });
 });

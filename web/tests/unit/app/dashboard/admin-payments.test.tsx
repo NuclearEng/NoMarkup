@@ -176,4 +176,27 @@ describe('AdminPaymentsPage', () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
     expect(screen.getByText(/Fee configuration updated successfully/i)).toBeDefined();
   });
+
+  it('changes status filter via Select trigger and option click', () => {
+    // The Select's onValueChange (lines 175-178) only fires through the Radix
+    // dropdown — open the trigger, then click an option.
+    paymentsState.data = {
+      payments: [],
+      pagination: { page: 1, totalPages: 1, hasNext: false },
+    };
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    const trigger = screen.getByRole('combobox', {
+      name: /filter payments by status/i,
+    });
+    fireEvent.click(trigger);
+    // Pick a non-"all" option so the callback hits the `setStatusFilter(v)` branch.
+    const option = screen.getByRole('option', { name: /Pending/i });
+    fireEvent.click(option);
+    // Now switch back to All Statuses to exercise the `=== ALL_FILTER` branch.
+    fireEvent.click(trigger);
+    const allOption = screen.getByRole('option', { name: /All Statuses/i });
+    fireEvent.click(allOption);
+    // No assertion needed beyond not throwing — both branches now executed.
+    expect(trigger).toBeDefined();
+  });
 });

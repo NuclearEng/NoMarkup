@@ -123,6 +123,51 @@ describe('useSpectatorTerminal', () => {
     expect(result.current.sim.showCelebration).toBe(false);
   });
 
+  it('flashes multiple bids and clears each is_new marker independently', () => {
+    // Hits the inner map's false branch (b.id !== bid.id) when the flash timer
+    // for one bid runs while other bids exist in the array.
+    const events: AuctionBidEvent[] = [
+      { job_id: 'job-1', amount_cents: 50000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:00Z' },
+      { job_id: 'job-1', amount_cents: 30000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:01Z' },
+      { job_id: 'job-1', amount_cents: 40000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:02Z' },
+    ];
+    streamMock.mockReturnValue(buildStream({ events }));
+
+    const { result } = renderHook(() => useSpectatorTerminal('job-1'));
+    expect(result.current.sim.bids.every((b) => b.is_new)).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(2_500);
+    });
+    expect(result.current.sim.bids.every((b) => b.is_new === false)).toBe(true);
+  });
+
+  it('does not re-process events when the stream rerenders with no new events', () => {
+    // Hits the `newEvents.length === 0` early return at line 80 by giving the
+    // hook a fresh array reference (new identity) with the same contents. The
+    // useEffect will re-run because the deps changed by reference, but the
+    // event slice will be empty since bidCounterRef has already consumed them.
+    const eventA: AuctionBidEvent = {
+      job_id: 'job-1', amount_cents: 50000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:00Z',
+    };
+    streamMock.mockReturnValue(buildStream({ events: [eventA] }));
+
+    const { result, rerender } = renderHook(() => useSpectatorTerminal('job-1'));
+    expect(result.current.sim.bids).toHaveLength(1);
+    const firstBidId = result.current.sim.bids[0]?.id;
+
+    // New array reference but identical contents — useEffect re-runs, but
+    // newEvents.length will be 0.
+    streamMock.mockReturnValue(buildStream({ events: [eventA] }));
+    act(() => {
+      rerender();
+    });
+
+    // No duplicate bids; the same single bid is preserved (id-stable).
+    expect(result.current.sim.bids).toHaveLength(1);
+    expect(result.current.sim.bids[0]?.id).toBe(firstBidId);
+  });
+
   it('flashes new bids and clears the is_new marker after 2 seconds', () => {
     // Advance the system clock far enough that all bid timestamps fall outside
     // the 60s velocity window — this exercises the `age > 60_000` filter
@@ -166,6 +211,43 @@ describe('useSpectatorTerminal', () => {
       rerender();
     });
     expect(result.current.sim.bids).toHaveLength(3);
+  });
+
+  it('keeps currentLowest stable when a new bid is added that is not lower', () => {
+    // Drive previousLowest update in the useEffect at line 137: the first
+    // event sets previousLowest. A second, higher-priced bid keeps
+    // currentLowest unchanged (no useEffect update) — covers the
+    // currentLowest === previousLowest.current branch on a stable rerender.
+    const events: AuctionBidEvent[] = [
+      { job_id: 'job-1', amount_cents: 30000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:00Z' },
+    ];
+    streamMock.mockReturnValue(buildStream({ events }));
+
+    const { result, rerender } = renderHook(() => useSpectatorTerminal('job-1'));
+    expect(result.current.sim.currentLowest).toBe(30000);
+
+    // Add a higher-priced bid — currentLowest stays at 30000.
+    const events2: AuctionBidEvent[] = [
+      ...events,
+      { job_id: 'job-1', amount_cents: 50000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:01Z' },
+    ];
+    streamMock.mockReturnValue(buildStream({ events: events2 }));
+    act(() => {
+      rerender();
+    });
+
+    expect(result.current.sim.currentLowest).toBe(30000);
+  });
+
+  it('returns currentLowest of 0 when bids exist but all amount_cents are 0', () => {
+    // currentLowest > 0 false branch in the useEffect that updates previousLowest.
+    const events: AuctionBidEvent[] = [
+      { job_id: 'job-1', amount_cents: 0, event_type: 'bid_placed', created_at: '2026-04-25T00:00:00Z' },
+    ];
+    streamMock.mockReturnValue(buildStream({ events }));
+
+    const { result } = renderHook(() => useSpectatorTerminal('job-1'));
+    expect(result.current.sim.currentLowest).toBe(0);
   });
 
   it('counts bids inside the 15s velocity window and respects the 60s bucket cap', () => {

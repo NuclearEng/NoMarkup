@@ -200,6 +200,39 @@ describe('ReviewList', () => {
     expect(lastCall?.[1]).toMatchObject({ page: 2 });
   });
 
+  it('handles undefined data with isLoading=false and isError=false (defaults applied)', () => {
+    mockResult({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReviewsForUser>);
+    render(createElement(ReviewList, { userId: 'u-1' }));
+    // Falls back to "0 reviews" via the `?? 0` default and renders the empty state.
+    expect(screen.getByText('0 reviews')).toBeDefined();
+    expect(screen.getByText(/No reviews yet/i)).toBeDefined();
+  });
+
+  it('decrements the page when Previous is clicked on a non-first page', async () => {
+    mockResult({
+      data: {
+        reviews: [makeReview('r-1')],
+        average_rating: 4.5,
+        total_reviews: 25,
+        pagination: { page: 2, perPage: 10, totalCount: 25, totalPages: 3, hasNext: true },
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReviewsForUser>);
+    const user = userEvent.setup();
+    render(createElement(ReviewList, { userId: 'u-7' }));
+    // Move to page 2 first via Next so the local page state is 2.
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    // Now Previous should be enabled (page state is 2 in component) and clicking it goes back to 1.
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    const lastCall = vi.mocked(useReviewsForUser).mock.calls.at(-1);
+    expect(lastCall?.[1]).toMatchObject({ page: 1 });
+  });
+
   it('does not render pagination when there is only one page', () => {
     mockResult({
       data: {

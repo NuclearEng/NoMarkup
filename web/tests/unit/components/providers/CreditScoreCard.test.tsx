@@ -87,6 +87,49 @@ describe('CreditScoreCard', () => {
     expect(bar.getAttribute('aria-valuenow')).toBe('50');
   });
 
+  it('renders a B grade for moderate risk score', () => {
+    vi.mocked(useCreditLimit).mockReturnValue({
+      data: {
+        max_advance_cents: 1000000,
+        total_outstanding_cents: 400000,
+        available_cents: 600000,
+        risk_score: 0.4,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCreditLimit>);
+    render(<CreditScoreCard />);
+    expect(screen.getByLabelText('Risk grade: B')).toBeDefined();
+  });
+
+  it('renders a C grade for elevated risk score', () => {
+    vi.mocked(useCreditLimit).mockReturnValue({
+      data: {
+        max_advance_cents: 1000000,
+        total_outstanding_cents: 600000,
+        available_cents: 400000,
+        risk_score: 0.6,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCreditLimit>);
+    render(<CreditScoreCard />);
+    expect(screen.getByLabelText('Risk grade: C')).toBeDefined();
+  });
+
+  it('handles a zero advance limit without dividing by zero', () => {
+    vi.mocked(useCreditLimit).mockReturnValue({
+      data: {
+        max_advance_cents: 0,
+        total_outstanding_cents: 0,
+        available_cents: 0,
+        risk_score: 0.2,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCreditLimit>);
+    render(<CreditScoreCard />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('0');
+  });
+
   it('renders an improvement link to /provider/advances', () => {
     vi.mocked(useCreditLimit).mockReturnValue({
       data: {

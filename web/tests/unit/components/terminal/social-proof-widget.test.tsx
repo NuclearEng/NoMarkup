@@ -25,4 +25,16 @@ describe('SocialProofWidget', () => {
     );
     expect(screen.getByText(/Waiting for bids/)).toBeDefined();
   });
+
+  it('renders 0% savings when currentLowest is zero (avoids divide-by-zero)', () => {
+    render(
+      createElement(
+        SocialProofWidget,
+        makeWidgetProps({ sim: makeSim({ bidCount: 2, currentLowest: 0 }) }),
+      ),
+    );
+    expect(screen.getByText('2')).toBeDefined();
+    // savingsPct must default to 0, so the "% below asking price" copy is not rendered.
+    expect(screen.queryByText(/below asking price/)).toBeNull();
+  });
 });

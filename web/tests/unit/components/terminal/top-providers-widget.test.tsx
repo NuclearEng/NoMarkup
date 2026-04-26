@@ -42,4 +42,13 @@ describe('TopProvidersWidget', () => {
     );
     expect(screen.getByText(/Waiting for more bids/)).toBeDefined();
   });
+
+  it('falls back to a "?" initial when no mockProvider matches the bid name', () => {
+    // Provide an empty mockProviders list so the .find() never resolves; the
+    // component falls back to the placeholder "?" initial.
+    const props = makeWidgetProps({ mockProviders: [] });
+    render(createElement(TopProvidersWidget, props));
+    // Three bids in the default sim, all with no matching provider.
+    expect(screen.getAllByText('?').length).toBeGreaterThanOrEqual(3);
+  });
 });

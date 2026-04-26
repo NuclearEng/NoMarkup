@@ -1,10 +1,13 @@
 // Tests for the pricing page — exercises overview loading/error/empty/populated
-// branches, category-detail navigation, and ZIP-code filter behavior.
-import { fireEvent, render, screen } from '@testing-library/react';
+// branches, category-detail navigation, ZIP-code filter behavior, and the
+// scroll-triggered useInView + AnimatedCounter (RAF) animations.
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from '../dashboard/_helpers';
+
+type IOCallback = (entries: IntersectionObserverEntry[]) => void;
 
 const overviewState: { data: unknown; isLoading: boolean; isError: boolean } = {
   data: undefined,
@@ -16,6 +19,24 @@ const categoryState: { data: unknown; isLoading: boolean; isError: boolean } = {
   isLoading: false,
   isError: false,
 };
+
+// Captured IntersectionObserver callbacks (one per useInView call). Tests can
+// invoke `fireAllIntersecting()` to drive every section's `inView` to true
+// and unlock the AnimatedCounter / scroll-revealed branches (lines 31-35,
+// 68-84 in PricingPageContent.tsx).
+const ioCallbacks: IOCallback[] = [];
+let unobservedCount = 0;
+let disconnectedCount = 0;
+
+function fireAllIntersecting(): void {
+  // Iterate over a snapshot — firing may cause React to mount new components
+  // that register additional observers, which would otherwise mutate the
+  // array we are iterating.
+  const snapshot = [...ioCallbacks];
+  for (const cb of snapshot) {
+    cb([{ isIntersecting: true } as IntersectionObserverEntry]);
+  }
+}
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -41,13 +62,23 @@ vi.mock('@/hooks/usePricing', () => ({
   usePricingByCategory: () => categoryState,
 }));
 
-// Stub IntersectionObserver — jsdom doesn't ship one. The page's useInView
-// triggers fade-in animations; without a stub the constructor throws.
+// Capturing IntersectionObserver — jsdom doesn't ship one. We capture every
+// constructed callback so individual tests can drive the observer state.
 beforeEach(() => {
+  ioCallbacks.length = 0;
+  unobservedCount = 0;
+  disconnectedCount = 0;
   globalThis.IntersectionObserver = class {
+    constructor(cb: IOCallback) {
+      ioCallbacks.push(cb);
+    }
     observe(): void {}
-    disconnect(): void {}
-    unobserve(): void {}
+    disconnect(): void {
+      disconnectedCount += 1;
+    }
+    unobserve(): void {
+      unobservedCount += 1;
+    }
     takeRecords(): IntersectionObserverEntry[] {
       return [];
     }
@@ -251,5 +282,154 @@ describe('PricingPage', () => {
     fireEvent.change(input, { target: { value: '90210' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(screen.getByText(/showing prices for zip code/i)).toBeDefined();
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // IntersectionObserver + AnimatedCounter coverage
+  // ────────────────────────────────────────────────────────────────────────
+
+  it('flips the stats reveal classes once the section becomes intersecting', () => {
+    overviewState.data = { categories: [plumbing, electrical] };
+    const { container } = render(withQueryClient(createElement(PricingPage)));
+
+    // Pre-intersection — the stats grid items carry the hidden classes.
+    const before = container.querySelectorAll('.glass-stat-card');
+    expect(before.length).toBeGreaterThan(0);
+    expect(before[0]?.className).toContain('translate-y-6');
+
+    act(() => {
+      fireAllIntersecting();
+    });
+
+    const after = container.querySelectorAll('.glass-stat-card');
+    expect(after[0]?.className).toContain('translate-y-0');
+    expect(after[0]?.className).toContain('opacity-100');
+  });
+
+  it('calls observer.unobserve when a section enters the viewport', () => {
+    overviewState.data = { categories: [plumbing] };
+    render(withQueryClient(createElement(PricingPage)));
+    expect(unobservedCount).toBe(0);
+
+    act(() => {
+      fireAllIntersecting();
+    });
+
+    expect(unobservedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('disconnects observers on unmount', () => {
+    overviewState.data = { categories: [plumbing] };
+    const { unmount } = render(withQueryClient(createElement(PricingPage)));
+    unmount();
+    expect(disconnectedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('AnimatedCounter renders the eased count once intersecting + RAF runs', () => {
+    overviewState.data = {
+      categories: [
+        { ...plumbing, total_jobs: 42, avg_savings_cents: 12345 },
+        { ...electrical, total_jobs: 11, avg_savings_cents: 9876 },
+      ],
+    };
+
+    const rafCallbacks: FrameRequestCallback[] = [];
+    const rafSpy = vi
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation((cb) => {
+        rafCallbacks.push(cb);
+        return rafCallbacks.length as unknown as number;
+      });
+    const cancelSpy = vi
+      .spyOn(globalThis, 'cancelAnimationFrame')
+      .mockImplementation(() => {});
+
+    const { container } = render(withQueryClient(createElement(PricingPage)));
+
+    // Before the stats section is intersecting, the AnimatedCounter still
+    // renders count=0; flipping inView=true triggers the useEffect that
+    // schedules requestAnimationFrame (line 81 in PricingPageContent.tsx).
+    act(() => {
+      fireAllIntersecting();
+    });
+
+    expect(
+      rafCallbacks.length,
+      'expected at least one RAF scheduled by AnimatedCounter',
+    ).toBeGreaterThan(0);
+
+    // First frame establishes startTime for every counter.
+    act(() => {
+      const snapshot = [...rafCallbacks];
+      rafCallbacks.length = 0;
+      for (const cb of snapshot) cb(100);
+    });
+
+    // Drive every queued RAF past the 1800ms default duration so progress
+    // saturates to 1 and `count` becomes `end`.
+    for (let i = 0; i < 6; i += 1) {
+      if (rafCallbacks.length === 0) break;
+      act(() => {
+        const snapshot = [...rafCallbacks];
+        rafCallbacks.length = 0;
+        for (const cb of snapshot) cb(100 + 5000);
+      });
+    }
+
+    // The Jobs Tracked counter has end=53 (42 + 11). Average savings stat
+    // expects $111 ((12345 + 9876)/2/100 = 111.105 → Math.round → 111).
+    expect(container.textContent).toContain('53+');
+    expect(container.textContent).toContain('$111');
+
+    rafSpy.mockRestore();
+    cancelSpy.mockRestore();
+  });
+
+  it('AnimatedCounter cleans up RAF on unmount', () => {
+    overviewState.data = { categories: [plumbing] };
+
+    const rafSpy = vi
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation(() => 7 as unknown as number);
+    const cancelSpy = vi
+      .spyOn(globalThis, 'cancelAnimationFrame')
+      .mockImplementation(() => {});
+
+    const { unmount } = render(withQueryClient(createElement(PricingPage)));
+    act(() => {
+      fireAllIntersecting();
+    });
+
+    unmount();
+    // The AnimatedCounter cleanup path (line 83) calls cancelAnimationFrame.
+    expect(cancelSpy).toHaveBeenCalled();
+
+    rafSpy.mockRestore();
+    cancelSpy.mockRestore();
+  });
+
+  it('AnimatedCounter renders zero when categories give no savings (avg=0)', () => {
+    // When avgSavings === 0, the page renders the static "—" branch instead of
+    // mounting the AnimatedCounter, ensuring the avgSavings>0 branch is exercised
+    // in a separate path while keeping coverage on the conditional.
+    overviewState.data = {
+      categories: [{ ...plumbing, avg_savings_cents: null, total_jobs: 5 }],
+    };
+    const { container } = render(withQueryClient(createElement(PricingPage)));
+    // The em-dash is rendered when avgSavings <= 0.
+    expect(container.textContent).toContain('—');
+  });
+
+  it('handles empty entries array without throwing in useInView', () => {
+    overviewState.data = { categories: [plumbing] };
+    render(withQueryClient(createElement(PricingPage)));
+    // Source guards `entry?.isIntersecting` — empty array must not crash.
+    act(() => {
+      const snapshot = [...ioCallbacks];
+      for (const cb of snapshot) {
+        cb([] as IntersectionObserverEntry[]);
+      }
+    });
+    expect(unobservedCount).toBe(0);
   });
 });

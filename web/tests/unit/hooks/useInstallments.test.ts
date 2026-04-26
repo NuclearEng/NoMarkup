@@ -98,6 +98,27 @@ describe('useCreateInstallmentPlan', () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ['installment-plans'] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['payments'] });
   });
+
+  it('shows an error toast when plan creation fails', async () => {
+    const { toast } = await import('sonner');
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('insufficient funds'));
+
+    const input: CreateInstallmentPlanInput = {
+      contract_id: 'c-2',
+      customer_id: 'cust-2',
+      provider_id: 'prov-2',
+      total_amount_cents: 60000,
+      installment_count: 2,
+      payment_method_id: 'pm-2',
+      idempotency_key: 'idem-2',
+    };
+
+    const { result } = renderHook(() => useCreateInstallmentPlan(), { wrapper: wrap(client) });
+    result.current.mutate(input);
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create payment plan');
+  });
 });
 
 describe('useInstallmentPlan', () => {

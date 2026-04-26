@@ -91,4 +91,24 @@ describe('InvoiceTemplate', () => {
     render(<InvoiceTemplate contract={partial} providerName="Acme Plumbing" />);
     expect(screen.getByText('Additional services')).toBeDefined();
   });
+
+  it('falls back to created_at when contract has no completed_at date', () => {
+    const inProgress: Contract = {
+      ...mockContract,
+      completed_at: undefined,
+    };
+    render(<InvoiceTemplate contract={inProgress} providerName="Acme Plumbing" />);
+    // The created_at date is 2026-04-01T12:00:00Z -> "April 1, 2026"
+    expect(screen.getByText('April 1, 2026')).toBeDefined();
+  });
+
+  it('falls back to a job_id slice when contract has no job_title', () => {
+    const noTitle: Contract = {
+      ...mockContract,
+      job_title: '',
+    };
+    render(<InvoiceTemplate contract={noTitle} providerName="Acme Plumbing" />);
+    // job_id 'job-12345678' sliced to 8 chars
+    expect(screen.getByText('job-1234')).toBeDefined();
+  });
 });

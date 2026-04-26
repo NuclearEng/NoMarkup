@@ -3,7 +3,7 @@
 // mobile More drawer (open + close), the active-link highlighting, and the
 // Live Demo entry. AuthGuard, WebSocketProvider, and Header are mocked to
 // passthroughs so the nav structure renders without real plumbing.
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -248,5 +248,45 @@ describe('DashboardLayout', () => {
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
     const nav = screen.getByRole('navigation', { name: /Main navigation/i });
     expect(nav.textContent).toMatch(/Jobs/);
+  });
+
+  it('falls back to non-provider, non-admin nav when user is null', () => {
+    // Forces the `?? false` branches in `isProvider`/`isAdmin` (lines 165-166).
+    authStoreState.user = null;
+    render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
+    // No provider or admin nav items should render.
+    expect(screen.queryByText('Provider Dashboard')).toBeNull();
+    expect(screen.queryByText('Admin Panel')).toBeNull();
+    // Customer primary-tab "Jobs" should render (the customer fallback).
+    const nav = screen.getByRole('navigation', { name: /Main navigation/i });
+    expect(nav.textContent).toMatch(/Jobs/);
+  });
+
+  it('clicking a More-drawer nav link closes the drawer', () => {
+    // Covers the drawer-link onClick at line 320 — when a user clicks any nav
+    // link inside the More drawer, the drawer should close.
+    render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
+    fireEvent.click(screen.getByRole('button', { name: /More navigation options/i }));
+    const dialog = screen.getByRole('dialog', { name: /More navigation/i });
+    expect(dialog).toBeDefined();
+    // Click the Profile link inside the drawer (it's a Link → rendered as <a>).
+    const profileLink = within(dialog).getByText('Profile').closest('a');
+    expect(profileLink).not.toBeNull();
+    fireEvent.click(profileLink as HTMLElement);
+    expect(screen.queryByRole('dialog', { name: /More navigation/i })).toBeNull();
+  });
+
+  it('clicking the More-drawer Live Demo link closes the drawer', () => {
+    // Covers the Live Demo onClick at line 332 (the special CTA inside the drawer).
+    render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
+    fireEvent.click(screen.getByRole('button', { name: /More navigation options/i }));
+    const dialog = screen.getByRole('dialog', { name: /More navigation/i });
+    // The drawer contains a second "Live Demo" link.
+    const liveDemoLinks = within(dialog).getAllByText('Live Demo');
+    expect(liveDemoLinks.length).toBeGreaterThan(0);
+    const liveDemoLink = liveDemoLinks[0]?.closest('a');
+    expect(liveDemoLink).not.toBeNull();
+    fireEvent.click(liveDemoLink as HTMLElement);
+    expect(screen.queryByRole('dialog', { name: /More navigation/i })).toBeNull();
   });
 });

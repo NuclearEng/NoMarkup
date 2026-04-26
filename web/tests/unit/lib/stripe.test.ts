@@ -67,4 +67,25 @@ describe('lib/stripe', () => {
     expect(result).toBeInstanceOf(Promise);
     await expect(result).resolves.toBeNull();
   });
+
+  it('uses the nullish-coalescing fallback when the env var is undefined', async () => {
+    // Stash and delete to make process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    // truly undefined (rather than an empty string), forcing the `?? ''`
+    // branch in stripe.ts to evaluate its right-hand side.
+    const previous = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    try {
+      const { loadStripe } = await import('@stripe/stripe-js');
+      vi.mocked(loadStripe).mockReturnValue(Promise.resolve(null));
+
+      const { getStripe } = await import('@/lib/stripe');
+      void getStripe();
+
+      expect(loadStripe).toHaveBeenCalledWith('');
+    } finally {
+      if (previous !== undefined) {
+        process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = previous;
+      }
+    }
+  });
 });
