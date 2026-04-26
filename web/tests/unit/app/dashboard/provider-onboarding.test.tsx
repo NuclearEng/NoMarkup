@@ -7,6 +7,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
 
+// Radix Select uses pointer capture APIs that jsdom does not implement.
+// Polyfill them so the milestone-editor select dropdown can open in tests.
+if (!HTMLElement.prototype.hasPointerCapture) {
+  HTMLElement.prototype.hasPointerCapture = () => false;
+}
+if (!HTMLElement.prototype.setPointerCapture) {
+  HTMLElement.prototype.setPointerCapture = () => undefined;
+}
+if (!HTMLElement.prototype.releasePointerCapture) {
+  HTMLElement.prototype.releasePointerCapture = () => undefined;
+}
+// jsdom also lacks scrollIntoView used by Radix Select inside the popper.
+if (!HTMLElement.prototype.scrollIntoView) {
+  HTMLElement.prototype.scrollIntoView = () => undefined;
+}
+
 const providerProfileState: { data: unknown } = { data: undefined };
 const routerPush = vi.fn();
 const uploadImageMock = vi.fn();
@@ -48,8 +64,41 @@ vi.mock('@/components/payments/StripeOnboarding', () => ({
   StripeOnboarding: () => createElement('div', { 'data-testid': 'stripe-onboarding' }, 'stripe'),
 }));
 
+interface ImageUploadMockProps {
+  onUploadComplete?: (result: { confirmedUrl: string }) => void;
+  onRemove?: (url: string) => void;
+  existingImages?: string[];
+}
+
 vi.mock('@/components/ui/ImageUpload', () => ({
-  ImageUpload: () => createElement('div', { 'data-testid': 'image-upload' }, 'upload'),
+  ImageUpload: ({ onUploadComplete, onRemove, existingImages }: ImageUploadMockProps) =>
+    createElement(
+      'div',
+      { 'data-testid': 'image-upload' },
+      createElement(
+        'button',
+        {
+          type: 'button',
+          'data-testid': 'image-upload-add',
+          onClick: () => {
+            onUploadComplete?.({ confirmedUrl: `https://cdn.example/img-${String((existingImages?.length ?? 0) + 1)}.jpg` });
+          },
+        },
+        'add',
+      ),
+      ...(existingImages ?? []).map((url) =>
+        createElement(
+          'button',
+          {
+            key: url,
+            type: 'button',
+            'data-testid': `image-upload-remove-${url}`,
+            onClick: () => { onRemove?.(url); },
+          },
+          'remove',
+        ),
+      ),
+    ),
 }));
 
 vi.mock('@/hooks/useImageUpload', () => ({
@@ -387,5 +436,440 @@ describe('ProviderOnboardingPage', () => {
     const prevBtn = screen.getByRole('button', { name: /Previous/i });
     fireEvent.click(prevBtn);
     expect(screen.getByText(/Government-Issued ID/i)).toBeDefined();
+  });
+
+  // -------- New tests for uncovered handlers / branches --------
+
+  it('BusinessInfo submit calls updateProvider and advances to Categories', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    const businessName = screen.getByLabelText(/Business Name/i);
+    await user.type(businessName, 'Acme Roofing Co');
+    const bio = screen.getByLabelText(/^Bio$/i);
+    await user.type(bio, 'Best roofers around');
+    const addr = screen.getByLabelText(/Service Address/i);
+    await user.type(addr, '12 Main St');
+    const submitBtn = screen.getByRole('button', { name: /^Next$/i });
+    await user.click(submitBtn);
+    await waitFor(() => {
+      expect(updateProviderMutate).toHaveBeenCalled();
+    });
+    expect(updateProviderMutate.mock.calls[0]?.[0]).toMatchObject({
+      business_name: 'Acme Roofing Co',
+      bio: 'Best roofers around',
+      service_address: '12 Main St',
+    });
+    // Should now be on Categories step
+    expect(screen.getByTestId('category-selector')).toBeDefined();
+  });
+
+  it('BusinessInfo submit omits bio/address when empty', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    const businessName = screen.getByLabelText(/Business Name/i);
+    await user.type(businessName, 'Just A Name');
+    const submitBtn = screen.getByRole('button', { name: /^Next$/i });
+    await user.click(submitBtn);
+    await waitFor(() => {
+      expect(updateProviderMutate).toHaveBeenCalled();
+    });
+    const arg = updateProviderMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(arg['business_name']).toBe('Just A Name');
+    expect(arg['bio']).toBeUndefined();
+    expect(arg['service_address']).toBeUndefined();
+  });
+
+  it('BusinessInfo EIN/TIN auto-inserts a dash after two digits', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    const ein = screen.getByLabelText(/EIN \/ TIN/i) as HTMLInputElement;
+    await user.type(ein, '12');
+    expect(ein.value).toBe('12-');
+  });
+
+  it('BusinessInfo EIN/TIN strips non-digit characters', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    const ein = screen.getByLabelText(/EIN \/ TIN/i) as HTMLInputElement;
+    await user.type(ein, 'a1!b2');
+    expect(ein.value).toBe('12-');
+  });
+
+  it('BusinessInfo Insurance Coverage onChange parses number and clears to undefined when empty', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    const cov = screen.getByLabelText(/Insurance Coverage Amount/i) as HTMLInputElement;
+    fireEvent.change(cov, { target: { value: '500000' } });
+    expect(cov.value).toBe('500000');
+    fireEvent.change(cov, { target: { value: '' } });
+    expect(cov.value).toBe('');
+  });
+
+  it('Categories Next button calls updateCategories mutation when no selections (skips mutation)', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Categories/i }));
+    // With no selected ids, Next still advances but should not call mutation
+    const nextBtn = screen.getAllByRole('button', { name: /^Next$/i })[0];
+    if (!nextBtn) throw new Error('Next button missing');
+    await user.click(nextBtn);
+    expect(updateCategoriesMutate).not.toHaveBeenCalled();
+    // We should now be on Service Area step
+    expect(screen.getByLabelText(/Service Radius/i)).toBeDefined();
+  });
+
+  it('Categories Next calls mutation when prefilled selections exist', async () => {
+    providerProfileState.data = {
+      businessName: 'X',
+      bio: '',
+      serviceAddress: '',
+      serviceCategories: [{ id: 'cat-a' }, { id: 'cat-b' }],
+      serviceRadiusKm: 10,
+      defaultPaymentTiming: 'completion',
+      defaultMilestones: [],
+      cancellationPolicy: null,
+      warrantyTerms: null,
+    };
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Categories/i }));
+    const nextBtn = screen.getAllByRole('button', { name: /^Next$/i })[0];
+    if (!nextBtn) throw new Error('Next button missing');
+    await user.click(nextBtn);
+    await waitFor(() => {
+      expect(updateCategoriesMutate).toHaveBeenCalledWith(['cat-a', 'cat-b']);
+    });
+  });
+
+  it('Terms step submit calls setGlobalTerms with form values', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
+    const cancelArea = screen.getByLabelText(/Cancellation Policy/i);
+    await user.type(cancelArea, '24 hour notice');
+    const warrantyArea = screen.getByLabelText(/Warranty Terms/i);
+    await user.type(warrantyArea, '90-day labor warranty');
+    const submitBtn = screen.getAllByRole('button', { name: /^Next$/i })[0];
+    if (!submitBtn) throw new Error('Next button missing');
+    await user.click(submitBtn);
+    await waitFor(() => {
+      expect(setGlobalTermsMutate).toHaveBeenCalled();
+    });
+    expect(setGlobalTermsMutate.mock.calls[0]?.[0]).toMatchObject({
+      payment_timing: 'completion',
+      cancellation_policy: '24 hour notice',
+      warranty_terms: '90-day labor warranty',
+    });
+  });
+
+  it('Terms step Skip button advances without calling mutation', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
+    const skipBtn = screen.getAllByRole('button', { name: /Skip/i })[0];
+    if (!skipBtn) throw new Error('Skip button missing');
+    fireEvent.click(skipBtn);
+    // We should be on Portfolio step now
+    expect(screen.getByTestId('image-upload')).toBeDefined();
+    expect(setGlobalTermsMutate).not.toHaveBeenCalled();
+  });
+
+  it('Terms step Previous button returns to Service Area', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
+    const prevBtn = screen.getByRole('button', { name: /Previous/i });
+    fireEvent.click(prevBtn);
+    expect(screen.getByLabelText(/Service Radius/i)).toBeDefined();
+  });
+
+  it('Portfolio onUploadComplete adds an uploaded image and shows captions area', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Portfolio$/i }));
+    // Initially, no captions section
+    expect(screen.queryByText(/Add captions/i)).toBeNull();
+    const addBtn = screen.getByTestId('image-upload-add');
+    await user.click(addBtn);
+    expect(screen.getByText(/Add captions/i)).toBeDefined();
+    // A caption input should appear
+    const cap = screen.getByLabelText(/Caption for image 1/i) as HTMLInputElement;
+    fireEvent.change(cap, { target: { value: 'Front porch project' } });
+    expect(cap.value).toBe('Front porch project');
+  });
+
+  it('Portfolio onRemove drops the uploaded image and its caption', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Portfolio$/i }));
+    await user.click(screen.getByTestId('image-upload-add'));
+    expect(screen.getByLabelText(/Caption for image 1/i)).toBeDefined();
+    const url = 'https://cdn.example/img-1.jpg';
+    fireEvent.change(screen.getByLabelText(/Caption for image 1/i), {
+      target: { value: 'Will be removed' },
+    });
+    const removeBtn = screen.getByTestId(`image-upload-remove-${url}`);
+    await user.click(removeBtn);
+    expect(screen.queryByText(/Add captions/i)).toBeNull();
+  });
+
+  it('Portfolio Next persists uploaded urls with captions in order', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Portfolio$/i }));
+    await user.click(screen.getByTestId('image-upload-add'));
+    await user.click(screen.getByTestId('image-upload-add'));
+    const cap1 = screen.getByLabelText(/Caption for image 1/i);
+    fireEvent.change(cap1, { target: { value: 'First' } });
+    // Leave second caption empty so the `|| null` fallback path runs
+    const nextBtn = screen.getAllByRole('button', { name: /^Next$/i })[0];
+    if (!nextBtn) throw new Error('Next button missing');
+    await user.click(nextBtn);
+    await waitFor(() => {
+      expect(updatePortfolioMutate).toHaveBeenCalled();
+    });
+    expect(updatePortfolioMutate.mock.calls[0]?.[0]).toEqual([
+      { image_url: 'https://cdn.example/img-1.jpg', caption: 'First', sort_order: 0 },
+      { image_url: 'https://cdn.example/img-2.jpg', caption: null, sort_order: 1 },
+    ]);
+  });
+
+  it('Portfolio Previous returns to Terms step', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Portfolio$/i }));
+    const prevBtn = screen.getByRole('button', { name: /Previous/i });
+    fireEvent.click(prevBtn);
+    expect(screen.getByText(/Default Payment Timing/i)).toBeDefined();
+  });
+
+  it('Verification step rejects file exceeding 10MB size limit', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).toBeTruthy();
+    // Build an oversized File using a fake size override
+    const big = new File(['x'], 'big.png', { type: 'image/png' });
+    Object.defineProperty(big, 'size', { value: 11 * 1024 * 1024 });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [big] } });
+    expect(screen.getByText(/exceeds the/i)).toBeDefined();
+  });
+
+  it('Verification step allows removing a selected document', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).toBeTruthy();
+    const file = new File(['x'], 'id.png', { type: 'image/png' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    expect(screen.getByText('id.png')).toBeDefined();
+    const removeBtn = screen.getByRole('button', { name: /Remove Government-Issued ID/i });
+    fireEvent.click(removeBtn);
+    expect(screen.queryByText('id.png')).toBeNull();
+  });
+
+  it('Verification step finishes successfully when all required docs upload OK', async () => {
+    uploadImageMock.mockResolvedValue({ confirmedUrl: 'https://cdn.example/doc-1.pdf' });
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).toBeTruthy();
+    const file = new File(['x'], 'id.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    const finishBtn = screen.getByRole('button', { name: /Finish/i });
+    fireEvent.click(finishBtn);
+    await waitFor(() => {
+      expect(uploadImageMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(uploadVerifDocMutate).toHaveBeenCalled();
+    });
+    expect(uploadVerifDocMutate.mock.calls[0]?.[0]).toMatchObject({
+      document_type: 'government_id',
+      file_url: 'https://cdn.example/doc-1.pdf',
+      file_name: 'id.pdf',
+      mime_type: 'application/pdf',
+    });
+    // After successful finish, advances to payments step
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-onboarding')).toBeDefined();
+    });
+  });
+
+  it('Verification step surfaces submitError when uploadDocument rejects', async () => {
+    uploadImageMock.mockResolvedValue({ confirmedUrl: 'https://cdn.example/doc.pdf' });
+    uploadVerifDocMutate.mockRejectedValueOnce(new Error('network kaput'));
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).toBeTruthy();
+    const file = new File(['x'], 'id.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    const finishBtn = screen.getByRole('button', { name: /Finish/i });
+    fireEvent.click(finishBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/network kaput/i)).toBeDefined();
+    });
+  });
+
+  it('Verification step surfaces a generic submit error on non-Error throws', async () => {
+    uploadImageMock.mockResolvedValue({ confirmedUrl: 'https://cdn.example/doc.pdf' });
+    uploadVerifDocMutate.mockRejectedValueOnce('boom');
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const file = new File(['x'], 'id.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    const finishBtn = screen.getByRole('button', { name: /Finish/i });
+    fireEvent.click(finishBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to upload documents/i)).toBeDefined();
+    });
+  });
+
+  it('Verification step shows per-document upload failure error', async () => {
+    uploadImageMock.mockResolvedValue(undefined);
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const file = new File(['x'], 'id.png', { type: 'image/png' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    const finishBtn = screen.getByRole('button', { name: /Finish/i });
+    fireEvent.click(finishBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to upload id.png/i)).toBeDefined();
+    });
+  });
+
+  it('Verification document upload supports drag-and-drop interactions', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const dropZone = screen.getByRole('button', { name: /Upload Government-Issued ID/i });
+    // Drag enter / over / leave cycle should run handlers without throwing
+    fireEvent.dragEnter(dropZone);
+    // Drop file message appears within this drop zone
+    expect(dropZone.textContent).toMatch(/Drop file here/i);
+    fireEvent.dragOver(dropZone);
+    fireEvent.dragLeave(dropZone);
+    // After leave, the placeholder text reverts within this zone
+    expect(dropZone.textContent).toMatch(/Click or drag file to upload/i);
+    // Drop an actual file
+    const file = new File(['x'], 'id.png', { type: 'image/png' });
+    const dataTransfer = { files: [file], items: [], types: ['Files'] };
+    fireEvent.drop(dropZone, { dataTransfer });
+    expect(screen.getByText('id.png')).toBeDefined();
+  });
+
+  it('Verification document upload handles drop with no files (no-op)', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const dropZone = screen.getByRole('button', { name: /Upload Government-Issued ID/i });
+    fireEvent.drop(dropZone, { dataTransfer: { files: [], items: [], types: [] } });
+    // No file should appear
+    expect(screen.queryByText(/^id\./i)).toBeNull();
+  });
+
+  it('Verification document upload opens file picker when Enter is pressed', () => {
+    // Spy on HTMLInputElement.prototype.click so we capture the call regardless
+    // of how the ref is established by useRef inside the component.
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      render(withQueryClient(createElement(ProviderOnboardingPage)));
+      fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+      const dropZone = screen.getByRole('button', { name: /Upload Government-Issued ID/i });
+      fireEvent.keyDown(dropZone, { key: 'Enter' });
+      expect(clickSpy).toHaveBeenCalled();
+      const callsAfterEnter = clickSpy.mock.calls.length;
+      fireEvent.keyDown(dropZone, { key: ' ' });
+      expect(clickSpy.mock.calls.length).toBe(callsAfterEnter + 1);
+      // Other keys do nothing
+      fireEvent.keyDown(dropZone, { key: 'a' });
+      expect(clickSpy.mock.calls.length).toBe(callsAfterEnter + 1);
+      // Direct click on the drop zone also opens the picker (covers openFilePicker)
+      fireEvent.click(dropZone);
+      expect(clickSpy.mock.calls.length).toBe(callsAfterEnter + 2);
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it('Verification step shows file size formatted as KB/MB/B', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    // Confirm header text shows MB
+    expect(screen.getByText(/max\s*10\.0 MB/i)).toBeDefined();
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    // File under 1KB -> "B"
+    const tinyBytes = new File([new Uint8Array([1, 2, 3])], 'tiny.png', { type: 'image/png' });
+    Object.defineProperty(tinyBytes, 'size', { value: 500 });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [tinyBytes] } });
+    expect(screen.getByText(/500 B/)).toBeDefined();
+  });
+
+  it('Verification step formats KB-sized files', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const file = new File(['x'], 'mid.png', { type: 'image/png' });
+    Object.defineProperty(file, 'size', { value: 2048 });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    expect(screen.getByText(/2\.0 KB/)).toBeDefined();
+  });
+
+  it('Verification step Skip is hidden once required docs are present and runs Skip otherwise', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    // Skip is present when no required docs uploaded
+    expect(screen.getByRole('button', { name: /^Skip$/i })).toBeDefined();
+    // Add a required doc
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const file = new File(['x'], 'id.png', { type: 'image/png' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    expect(screen.queryByRole('button', { name: /^Skip$/i })).toBeNull();
+  });
+
+  it('Service Area renders the Mapbox visualization when token is set', () => {
+    const prev = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+    process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] = 'pk.test';
+    try {
+      render(withQueryClient(createElement(ProviderOnboardingPage)));
+      fireEvent.click(screen.getByRole('button', { name: /Service Area/i }));
+      // The dynamic mocked ServiceAreaMap should render a testid div
+      expect(screen.getAllByTestId('service-area-map').length).toBeGreaterThan(0);
+      // The radius mile-conversion line still shows
+      expect(screen.getAllByText(/km service radius/i).length).toBeGreaterThan(0);
+    } finally {
+      if (prev === undefined) {
+        delete process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+      } else {
+        process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] = prev;
+      }
+    }
+  });
+
+  it('Verification step displays PDF type label distinctly from images', () => {
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const pdf = new File(['x'], 'attestation.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [pdf] } });
+    // The card now shows a "- PDF" suffix on the file size label
+    expect(card?.textContent).toMatch(/- PDF/);
   });
 });
