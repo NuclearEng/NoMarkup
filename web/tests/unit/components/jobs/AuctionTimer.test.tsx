@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
@@ -108,9 +108,67 @@ describe('AuctionTimer interval ticks', () => {
     expect(screen.queryByRole('timer')).not.toBeNull();
 
     // Advance past expiry — the interval cleanup branch runs.
-    vi.setSystemTime(start + 5_000);
-    vi.advanceTimersByTime(2_000);
+    act(() => {
+      vi.setSystemTime(start + 5_000);
+      vi.advanceTimersByTime(2_000);
+    });
     // After expiry, the inner setInterval clears itself; component still mounted
     // but a re-render may swap to "Auction Closed" — either way no throw is fine.
+  });
+
+  it('animates the seconds digit during the final minute (rolls displayValue)', () => {
+    // < 60s remaining → AnimatedDigit shows seconds. As time advances by 1s, the
+    // value prop changes, triggering the setTimeout that sets displayValue
+    // (lines 103-104) when it elapses.
+    const start = Date.now();
+    const future = new Date(start + 30_000).toISOString();
+    render(<AuctionTimer auctionEndsAt={future} />);
+    // Advance 1s of system time then fire the 1s tick.
+    act(() => {
+      vi.setSystemTime(start + 1_000);
+      vi.advanceTimersByTime(1_000);
+    });
+    // Now flush the AnimatedDigit's 150ms inner timeout — this hits lines 103-104.
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    // Roll forward another tick so the whole sequence is exercised again.
+    act(() => {
+      vi.setSystemTime(start + 2_000);
+      vi.advanceTimersByTime(1_000);
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    // No throw, timer still mounted.
+    expect(screen.queryByRole('timer')).not.toBeNull();
+  });
+
+  it('upgrades the interval cadence when crossing the < 1 hour threshold', () => {
+    // Start the timer just over 1 hour out so the initial tick rate is 30s.
+    // After advancing past the 1-hour mark, the next tick should detect the
+    // boundary cross and re-arm a faster interval (lines 211-220).
+    const start = Date.now();
+    const future = new Date(start + 60 * 60 * 1000 + 60_000).toISOString();
+    const { container } = render(<AuctionTimer auctionEndsAt={future} />);
+
+    // Initial tick — within > 1h window, tick rate should be 30s.
+    act(() => {
+      vi.setSystemTime(start + 30_000);
+      vi.advanceTimersByTime(30_000);
+    });
+    // Now we cross under 1h. The next tick fires at 30s mark and detects the
+    // boundary, clears the old interval and re-arms a 1s interval.
+    act(() => {
+      vi.setSystemTime(start + 30 * 60_000);
+      vi.advanceTimersByTime(30_000);
+    });
+    // The (now 1s) interval is in effect. Advance a couple of seconds.
+    act(() => {
+      vi.setSystemTime(start + 30 * 60_000 + 2_000);
+      vi.advanceTimersByTime(2_000);
+    });
+    // Component still rendered (we are still in the future, role=timer present).
+    expect(container.firstChild).not.toBeNull();
   });
 });

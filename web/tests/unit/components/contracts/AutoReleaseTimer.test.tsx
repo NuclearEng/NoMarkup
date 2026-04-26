@@ -69,4 +69,23 @@ describe('AutoReleaseTimer', () => {
     expect(after.length).toBeGreaterThan(0);
     expect(before.length).toBeGreaterThan(0);
   });
+
+  it('clears the interval when the countdown reaches zero on a tick', () => {
+    // Completed nearly 7 days ago — only 1 second remains. The interval will
+    // fire once, observe totalMs <= 0, and call clearInterval (lines 59-61).
+    const now = new Date();
+    const completedAt = new Date(
+      now.getTime() - (7 * 24 * 60 * 60 * 1000 - 1000),
+    ).toISOString();
+    render(createElement(AutoReleaseTimer, { completedAt }));
+    // Initially the countdown should be visible.
+    expect(screen.queryByLabelText('Auto-release countdown')).not.toBeNull();
+    // Advance system time past expiry, then run the interval tick.
+    act(() => {
+      vi.setSystemTime(new Date(now.getTime() + 5_000));
+      vi.advanceTimersByTime(2_000);
+    });
+    // After the tick the auto-release message should appear.
+    expect(screen.getByText(/Payment has been auto-released/i)).toBeDefined();
+  });
 });

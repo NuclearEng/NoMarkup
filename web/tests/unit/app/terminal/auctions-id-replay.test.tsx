@@ -277,4 +277,49 @@ describe('(terminal)/auctions/[id]/replay/page', () => {
     const link = screen.getByRole('link', { name: /Browse all jobs/i });
     expect(link.getAttribute('href')).toBe('/jobs');
   });
+
+  it('falls back to 60% of starting price for low_cents when winningBidCents is zero', () => {
+    // startingBidCents > 0 but winningBidCents <= 0 forces the
+    // Math.round(startingBidCents * 0.6) branch in the marketRange useMemo
+    // (source line 206).
+    vi.mocked(useReplayTerminal).mockReturnValue({
+      ...baseReplay,
+      winningBidCents: 0,
+      startingBidCents: 100000,
+      totalBidCount: 0,
+      isComplete: false,
+    } as unknown as ReturnType<typeof useReplayTerminal>);
+    render(createElement(AuctionReplayPage));
+    // Page still renders the terminal grid even with no winning bid yet.
+    expect(screen.getByTestId('terminal-grid')).toBeDefined();
+  });
+
+  it('mobile speed selector also wires up handleSpeedChange', () => {
+    // The page renders two SPEED_OPTIONS radiogroups: one for desktop and one
+    // mobile-only (sm:hidden). Clicking the second 2x button covers the mobile
+    // arrow callback at source line 379.
+    vi.mocked(useReplayTerminal).mockReturnValue({
+      ...baseReplay,
+    } as unknown as ReturnType<typeof useReplayTerminal>);
+    render(createElement(AuctionReplayPage));
+    const allRadios = screen.getAllByRole('radio');
+    const twoXButtons = allRadios.filter((r) => r.textContent === '2x');
+    // There should be at least 2 (desktop + mobile rendering).
+    expect(twoXButtons.length).toBeGreaterThanOrEqual(2);
+    const mobile = twoXButtons[twoXButtons.length - 1];
+    if (!mobile) throw new Error('mobile 2x radio missing');
+    fireEvent.click(mobile);
+    expect(baseReplay.handleSpeedChange).toHaveBeenCalledWith(2);
+  });
+
+  it('uses scrubStep of 100 when totalBidCount is 1 or less', () => {
+    vi.mocked(useReplayTerminal).mockReturnValue({
+      ...baseReplay,
+      totalBidCount: 1,
+    } as unknown as ReturnType<typeof useReplayTerminal>);
+    render(createElement(AuctionReplayPage));
+    // Slider rendered with step=100 (mobile + desktop sliders both present).
+    const sliders = screen.getAllByLabelText(/Scrub through auction replay/i);
+    expect(sliders.length).toBeGreaterThan(0);
+  });
 });

@@ -157,4 +157,119 @@ describe('AuctionSpectator', () => {
     );
     expect(screen.getByText(/Saving \$200 vs starting price/i)).toBeDefined();
   });
+
+  // ---- DEEPENING TESTS ----
+
+  it('shows ended urgency when countdown is expired (line 20 branch)', () => {
+    vi.mocked(useCountdown).mockReturnValue({
+      timeLeft: 'Ended',
+      isExpired: true,
+      totalSeconds: 0,
+    } as unknown as ReturnType<typeof useCountdown>);
+    render(
+      <AuctionSpectator
+        jobId="job-1"
+        jobTitle="Job"
+        categoryName="Cat"
+        auctionEndsAt="2020-01-01T00:00:00Z"
+        startingBidCents={50000}
+      />,
+    );
+    const timer = screen.getByRole('timer');
+    expect(timer.className).toContain('text-muted-foreground');
+  });
+
+  it('shows critical urgency when 300 < totalSeconds <= 900 (line 23 branch)', () => {
+    vi.mocked(useCountdown).mockReturnValue({
+      timeLeft: '7m 0s',
+      isExpired: false,
+      totalSeconds: 420,
+    } as unknown as ReturnType<typeof useCountdown>);
+    render(
+      <AuctionSpectator
+        jobId="job-1"
+        jobTitle="Job"
+        categoryName="Cat"
+        auctionEndsAt={new Date(Date.now() + 420000).toISOString()}
+        startingBidCents={50000}
+      />,
+    );
+    const timer = screen.getByRole('timer');
+    expect(timer.className).toContain('text-red-400');
+  });
+
+  it('shows extreme urgency (and pulse animation) when totalSeconds <= 300 (line 24 branch + line 213 style)', () => {
+    vi.mocked(useCountdown).mockReturnValue({
+      timeLeft: '0m 30s',
+      isExpired: false,
+      totalSeconds: 30,
+    } as unknown as ReturnType<typeof useCountdown>);
+    render(
+      <AuctionSpectator
+        jobId="job-1"
+        jobTitle="Job"
+        categoryName="Cat"
+        auctionEndsAt={new Date(Date.now() + 30000).toISOString()}
+        startingBidCents={50000}
+      />,
+    );
+    const timer = screen.getByRole('timer');
+    expect(timer.className).toContain('text-red-500');
+    // Line 213: extreme path applies countdownPulse animation
+    expect(timer.style.animation).toContain('countdownPulse');
+  });
+
+  it('shows RECONNECTING when connectionStatus is reconnecting', () => {
+    vi.mocked(useSpectatorStream).mockReturnValue({
+      ...baseStream,
+      connectionStatus: 'reconnecting',
+      isConnected: false,
+    } as unknown as ReturnType<typeof useSpectatorStream>);
+    render(
+      <AuctionSpectator
+        jobId="job-1"
+        jobTitle="Job"
+        categoryName="Cat"
+        auctionEndsAt={null}
+        startingBidCents={50000}
+      />,
+    );
+    expect(screen.getByText('RECONNECTING')).toBeDefined();
+  });
+
+  it('renders singular "provider" when bidCount === 1 (social-proof branch)', () => {
+    vi.mocked(useSpectatorStream).mockReturnValue({
+      ...baseStream,
+      bidCount: 1,
+      currentLowest: 25000,
+    } as unknown as ReturnType<typeof useSpectatorStream>);
+    render(
+      <AuctionSpectator
+        jobId="job-1"
+        jobTitle="Job"
+        categoryName="Cat"
+        auctionEndsAt={null}
+        startingBidCents={50000}
+      />,
+    );
+    // "1 provider" singular (not "providers")
+    expect(screen.getByText(/1 provider/)).toBeDefined();
+  });
+
+  it('does not render savings pill when starting price is missing', () => {
+    vi.mocked(useSpectatorStream).mockReturnValue({
+      ...baseStream,
+      currentLowest: 0,
+    } as unknown as ReturnType<typeof useSpectatorStream>);
+    render(
+      <AuctionSpectator
+        jobId="job-1"
+        jobTitle="Job"
+        categoryName="Cat"
+        auctionEndsAt={null}
+        startingBidCents={null}
+      />,
+    );
+    expect(screen.queryByText(/Saving/)).toBeNull();
+  });
 });

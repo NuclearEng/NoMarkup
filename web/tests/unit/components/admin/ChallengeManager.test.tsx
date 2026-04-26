@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
+import { Children, createElement, isValidElement, type ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChallengeManager } from '@/components/admin/ChallengeManager';
@@ -20,6 +20,100 @@ vi.mock('@/hooks/useChallenges', () => ({
   useAdminChallenges: vi.fn(),
   useCreateChallenge: () => ({ mutate: mockCreate, isPending: false, isError: false }),
 }));
+
+// Replace Radix Select with a native <select> so onValueChange is triggerable
+// via fireEvent.change in jsdom (Radix Select triggers depend on pointer
+// events that jsdom doesn't simulate). Walk children to extract every
+// <SelectItem value="..." /> into <option> elements, and pluck the
+// <SelectTrigger id="..."> id so the native select keeps its label association.
+function collectFromChildren(
+  children: ReactNode,
+): { items: Array<{ value: string; label: ReactNode }>; triggerId: string | undefined } {
+  const items: Array<{ value: string; label: ReactNode }> = [];
+  let triggerId: string | undefined;
+  const walk = (node: ReactNode): void => {
+    Children.forEach(node, (child) => {
+      if (!isValidElement(child)) return;
+      const elementType = child.type as { displayName?: string } | string;
+      const displayName =
+        typeof elementType === 'string' ? '' : (elementType.displayName ?? '');
+      const props = child.props as {
+        value?: string;
+        id?: string;
+        children?: ReactNode;
+      };
+      if (displayName === 'MockSelectItem' && props.value !== undefined) {
+        items.push({ value: props.value, label: props.children });
+      }
+      if (displayName === 'MockSelectTrigger' && props.id !== undefined) {
+        triggerId = props.id;
+      }
+      if (props.children !== undefined) walk(props.children);
+    });
+  };
+  walk(children);
+  return { items, triggerId };
+}
+
+vi.mock('@/components/ui/select', () => {
+  function MockSelect({
+    children,
+    value,
+    onValueChange,
+  }: {
+    children?: ReactNode;
+    value?: string;
+    onValueChange?: (v: string) => void;
+  }): ReactNode {
+    const { items, triggerId } = collectFromChildren(children);
+    return createElement(
+      'select',
+      {
+        id: triggerId,
+        value: value ?? '',
+        onChange: (e: { target: { value: string } }) => {
+          onValueChange?.(e.target.value);
+        },
+      },
+      items.map((item) =>
+        createElement('option', { key: item.value, value: item.value }, item.label),
+      ),
+    );
+  }
+  function MockSelectTrigger({
+    children,
+    id,
+  }: {
+    children?: ReactNode;
+    id?: string;
+  }): ReactNode {
+    return createElement('span', { 'data-trigger-id': id }, children);
+  }
+  MockSelectTrigger.displayName = 'MockSelectTrigger';
+  function MockSelectContent({ children }: { children?: ReactNode }): ReactNode {
+    return createElement('span', null, children);
+  }
+  function MockSelectItem({
+    children,
+    value,
+  }: {
+    children?: ReactNode;
+    value: string;
+  }): ReactNode {
+    return createElement('span', { 'data-value': value }, children);
+  }
+  MockSelectItem.displayName = 'MockSelectItem';
+  function MockSelectValue(): ReactNode {
+    return null;
+  }
+  return {
+    Select: MockSelect,
+    SelectTrigger: MockSelectTrigger,
+    SelectContent: MockSelectContent,
+    SelectItem: MockSelectItem,
+    SelectValue: MockSelectValue,
+  };
+});
 
 const { useAdminChallenges } = await import('@/hooks/useChallenges');
 
@@ -198,5 +292,149 @@ describe('ChallengeManager', () => {
     } as unknown as ReturnType<typeof useAdminChallenges>);
     render(createElement(ChallengeManager));
     expect(screen.getByText('Spring 2026')).toBeDefined();
+  });
+
+  it('submits the form with all required fields and calls createChallenge.mutate', async () => {
+    vi.mocked(useAdminChallenges).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAdminChallenges>);
+
+    // Capture the mutate args to confirm onSuccess fires resetForm.
+    type MutateArg = {
+      onSuccess?: () => void;
+    };
+    let capturedOnSuccess: (() => void) | undefined;
+    mockCreate.mockImplementation((_input: unknown, options?: MutateArg) => {
+      capturedOnSuccess = options?.onSuccess;
+    });
+
+    const user = userEvent.setup();
+    const { container } = render(createElement(ChallengeManager));
+
+    await user.click(screen.getByRole('button', { name: /new challenge/i }));
+
+    // Fill all required fields.
+    await user.type(screen.getByLabelText(/^title$/i), 'Speed Demon');
+    await user.type(screen.getByLabelText(/^description$/i), 'Win 10 jobs in a week');
+    await user.type(screen.getByLabelText(/target value/i), '10');
+    await user.type(screen.getByLabelText(/reward value/i), 'Rising Star');
+
+    // Set datetime-local fields directly (userEvent.type chokes on segmented inputs).
+    const startsAt = container.querySelector('#starts-at') as HTMLInputElement;
+    const endsAt = container.querySelector('#ends-at') as HTMLInputElement;
+    // fireEvent for datetime-local — change event with full ISO-like value.
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.change(startsAt, { target: { value: '2026-04-01T00:00' } });
+    fireEvent.change(endsAt, { target: { value: '2026-05-01T00:00' } });
+
+    // Add an optional max-participants value to exercise that branch.
+    await user.type(screen.getByLabelText(/max participants/i), '50');
+
+    // Submit via the form (clicking the submit button triggers onSubmit if all
+    // native required fields are filled).
+    const submit = screen.getByRole('button', { name: /create challenge/i });
+    await user.click(submit);
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const args = mockCreate.mock.calls[0];
+    expect(args).toBeDefined();
+    const input = args?.[0] as { title: string; max_participants?: number };
+    expect(input.title).toBe('Speed Demon');
+    expect(input.max_participants).toBe(50);
+
+    // Fire onSuccess to drive resetForm — close the form, clear inputs.
+    expect(capturedOnSuccess).toBeDefined();
+    const { act } = await import('@testing-library/react');
+    act(() => {
+      capturedOnSuccess?.();
+    });
+    // After resetForm, the title input should be gone (form is hidden).
+    expect(screen.queryByLabelText(/^title$/i)).toBeNull();
+  });
+
+  it('changes the challenge_type and reward_type via the Select dropdowns', async () => {
+    vi.mocked(useAdminChallenges).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAdminChallenges>);
+
+    mockCreate.mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    const { container } = render(createElement(ChallengeManager));
+    await user.click(screen.getByRole('button', { name: /new challenge/i }));
+
+    const { fireEvent } = await import('@testing-library/react');
+    // Native <select> from our mock — change challenge type and reward type.
+    const challengeTypeSelect = container.querySelector(
+      'select#challenge-type',
+    ) as HTMLSelectElement;
+    fireEvent.change(challengeTypeSelect, { target: { value: 'five_star_reviews' } });
+    const rewardTypeSelect = container.querySelector(
+      'select#reward-type',
+    ) as HTMLSelectElement;
+    fireEvent.change(rewardTypeSelect, { target: { value: 'priority_placement' } });
+
+    await user.type(screen.getByLabelText(/^title$/i), 'X');
+    await user.type(screen.getByLabelText(/^description$/i), 'Y');
+    await user.type(screen.getByLabelText(/target value/i), '3');
+    await user.type(screen.getByLabelText(/reward value/i), 'Z');
+
+    fireEvent.change(container.querySelector('#starts-at') as HTMLInputElement, {
+      target: { value: '2026-04-01T00:00' },
+    });
+    fireEvent.change(container.querySelector('#ends-at') as HTMLInputElement, {
+      target: { value: '2026-05-01T00:00' },
+    });
+
+    await user.click(screen.getByRole('button', { name: /create challenge/i }));
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const input = mockCreate.mock.calls[0]?.[0] as {
+      challenge_type: string;
+      reward_type: string;
+    };
+    expect(input.challenge_type).toBe('five_star_reviews');
+    expect(input.reward_type).toBe('priority_placement');
+  });
+
+  it('submits with seasonal data including season_name when seasonal switch is on', async () => {
+    vi.mocked(useAdminChallenges).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAdminChallenges>);
+
+    mockCreate.mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    const { container } = render(createElement(ChallengeManager));
+
+    await user.click(screen.getByRole('button', { name: /new challenge/i }));
+    await user.type(screen.getByLabelText(/^title$/i), 'Spring Sprint');
+    await user.type(screen.getByLabelText(/^description$/i), 'Seasonal challenge');
+    await user.type(screen.getByLabelText(/target value/i), '5');
+    await user.type(screen.getByLabelText(/reward value/i), 'Spring Badge');
+
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.change(container.querySelector('#starts-at') as HTMLInputElement, {
+      target: { value: '2026-04-01T00:00' },
+    });
+    fireEvent.change(container.querySelector('#ends-at') as HTMLInputElement, {
+      target: { value: '2026-05-01T00:00' },
+    });
+
+    // Toggle seasonal — exposes season-name input.
+    await user.click(screen.getByLabelText(/seasonal event/i));
+    await user.type(screen.getByLabelText(/season name/i), 'Spring 2026');
+
+    await user.click(screen.getByRole('button', { name: /create challenge/i }));
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const input = mockCreate.mock.calls[0]?.[0] as {
+      is_seasonal: boolean;
+      season_name?: string;
+    };
+    expect(input.is_seasonal).toBe(true);
+    expect(input.season_name).toBe('Spring 2026');
   });
 });

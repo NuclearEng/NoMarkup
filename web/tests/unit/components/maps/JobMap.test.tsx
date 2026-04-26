@@ -428,4 +428,52 @@ describe('JobMap — token-set / map render branch', () => {
     expect(popupOpts?.['offset']).toBe(25);
     expect(popupOpts?.['className']).toBe('nomarkup-job-popup');
   });
+
+  it('builds the popup info text without price when starting_bid_cents is null', async () => {
+    // Exercises the `starting_bid_cents ? ... : bidText` branch at line 188-190.
+    render(
+      <JobMap
+        jobs={[makeJob({ starting_bid_cents: null, bid_count: 2, location_address: null })]}
+      />,
+    );
+    await waitFor(() => {
+      expect(mapInstance.handlers.load).toBeDefined();
+    });
+    act(() => {
+      mapInstance.handlers.load?.();
+    });
+    await waitFor(() => {
+      expect(PopupMock).toHaveBeenCalled();
+    });
+    // Marker should still be created with no price-fragment text.
+    expect(MarkerMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the static UI when the dynamic mapbox import fails', async () => {
+    // Make the Map constructor throw — initMap's try/catch will set mapError,
+    // exercising the catch branch at lines 123-127.
+    MapMock.mockImplementation(() => {
+      throw new Error('mapbox boom');
+    });
+    const { container } = render(<JobMap jobs={[makeJob()]} />);
+    await waitFor(() => {
+      expect(container.querySelector('[aria-label="Job locations map"]')).toBeNull();
+    });
+    expect(screen.getByText('Fix kitchen sink')).toBeDefined();
+  });
+});
+
+describe('JobMap fallback list — starting_bid_cents null branch', () => {
+  beforeEach(() => {
+    delete process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+  });
+
+  it('omits the price label when starting_bid_cents is null', () => {
+    // Exercises the `starting_bid_cents ? ... : null` else branch at line 68.
+    render(<JobMap jobs={[makeJob({ starting_bid_cents: null })]} />);
+    // No formatted price like "$0" or "$..." should appear next to the bid badge.
+    expect(screen.queryByText(/^\$\d/)).toBeNull();
+    // But the job title is still rendered.
+    expect(screen.getByText('Fix kitchen sink')).toBeDefined();
+  });
 });

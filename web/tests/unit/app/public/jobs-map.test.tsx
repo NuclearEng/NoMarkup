@@ -26,8 +26,15 @@ let jobMapStub: (props: {
 }) => ReturnType<typeof createElement> = () =>
   createElement('div', { 'data-testid': 'job-map' });
 
+// Invoke the loader passed to next/dynamic so the `(mod) => mod.JobMap`
+// arrow callback in the page module gets executed (function-coverage win).
 vi.mock('next/dynamic', () => ({
-  default: () => (props: unknown) => jobMapStub(props as Parameters<typeof jobMapStub>[0]),
+  default: (
+    loader: () => Promise<{ JobMap: (p: unknown) => unknown }>,
+  ): ((props: unknown) => unknown) => {
+    void loader().catch(() => undefined);
+    return (props: unknown) => jobMapStub(props as Parameters<typeof jobMapStub>[0]);
+  },
 }));
 
 vi.mock('@/components/maps/JobMap', () => ({

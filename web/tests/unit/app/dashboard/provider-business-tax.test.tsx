@@ -186,4 +186,82 @@ describe('ProviderTaxPage', () => {
     render(withQueryClient(createElement(ProviderTaxPage)));
     expect(screen.getByText(/No tax forms generated yet/i)).toBeDefined();
   });
+
+  it('shows the spinner Loader2 icon while the generate mutation is pending', () => {
+    earningsState.data = { net_earnings_cents: 0, total_jobs: 0, total_fees_cents: 0 };
+    generateState.isPending = true;
+    const { container } = render(withQueryClient(createElement(ProviderTaxPage)));
+    // The Loader2 icon has the animate-spin class — covers source line 267.
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    // Pending state disables the generate button.
+    const btn = screen.getByRole('button', { name: /Generate 1099-NEC/i });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('renders skeletons while existing tax forms are loading', () => {
+    earningsState.data = { net_earnings_cents: 0, total_jobs: 0, total_fees_cents: 0 };
+    taxFormsState.isLoading = true;
+    taxFormsState.data = undefined;
+    const { container } = render(withQueryClient(createElement(ProviderTaxPage)));
+    // The form-list skeleton block — covers source lines 282-285.
+    const skeletons = container.querySelectorAll('.h-12.w-full');
+    expect(skeletons.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows toast.error when the download mutation rejects with an Error', async () => {
+    const sonner = await import('sonner');
+    const errorSpy = vi.spyOn(sonner.toast, 'error').mockImplementation(() => 'id-1');
+    downloadAuth.mockReset();
+    downloadAuth.mockRejectedValueOnce(new Error('Download failed: server is on fire'));
+
+    earningsState.data = { net_earnings_cents: 80_000, total_jobs: 3, total_fees_cents: 1000 };
+    taxFormsState.data = {
+      forms: [
+        {
+          id: 'tf-err',
+          form_type: '1099-NEC',
+          tax_year: 2025,
+          generated_at: '2026-01-15T00:00:00Z',
+          status: 'ready',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(ProviderTaxPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Download$/i }));
+
+    // Wait for the rejected promise's catch handler to fire.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(errorSpy).toHaveBeenCalled();
+    const lastCall = errorSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toMatch(/Download failed: server is on fire/);
+    errorSpy.mockRestore();
+  });
+
+  it('shows fallback toast.error message when the download rejects with a non-Error', async () => {
+    const sonner = await import('sonner');
+    const errorSpy = vi.spyOn(sonner.toast, 'error').mockImplementation(() => 'id-2');
+    downloadAuth.mockReset();
+    // Reject with a non-Error so the `instanceof Error ? ... : 'Failed to download tax form'`
+    // branch picks the fallback message.
+    downloadAuth.mockRejectedValueOnce('weird non-error string');
+
+    earningsState.data = { net_earnings_cents: 80_000, total_jobs: 3, total_fees_cents: 1000 };
+    taxFormsState.data = {
+      forms: [
+        {
+          id: 'tf-fallback',
+          form_type: '1099-NEC',
+          tax_year: 2025,
+          generated_at: '2026-01-15T00:00:00Z',
+          status: 'ready',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(ProviderTaxPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Download$/i }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(errorSpy).toHaveBeenCalled();
+    expect(errorSpy.mock.calls.at(-1)?.[0]).toBe('Failed to download tax form');
+    errorSpy.mockRestore();
+  });
 });

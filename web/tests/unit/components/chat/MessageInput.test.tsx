@@ -316,4 +316,92 @@ describe('MessageInput', () => {
     render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
     expect(screen.getByText(/Press Enter to send/)).toBeDefined();
   });
+
+  // ---- DEEPENING TESTS ----
+
+  it('shows "Sending..." in the Send Proposal button when sendMessage is pending (line 144)', () => {
+    isPendingState.value = true;
+    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    actSync(() => {
+      fireEvent.click(screen.getByLabelText('Propose terms'));
+    });
+    expect(screen.getByRole('button', { name: /Sending\.\.\./ })).toBeDefined();
+  });
+
+  it('skips handleSubmit early when send mutation is already pending (line 189)', async () => {
+    isPendingState.value = true;
+    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    const textarea = screen.getByLabelText('Message input');
+    actSync(() => {
+      fireEvent.change(textarea, { target: { value: 'queued' } });
+    });
+    // Press Enter — handleSubmit returns early because isPending is true.
+    actSync(() => {
+      fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+    });
+    await flushAsync();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not call sendMessage when content fails the chatMessageSchema (early-return on Enter)', async () => {
+    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    const textarea = screen.getByLabelText('Message input');
+    // Empty content fails chatMessageSchema; pressing Enter should be a no-op.
+    actSync(() => {
+      fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+    });
+    await flushAsync();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('includes Milestones section when milestone payment-type and a milestones value is provided (line 216 truthy branch)', async () => {
+    const user = userEvent.setup();
+    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    actSync(() => {
+      fireEvent.click(screen.getByLabelText('Propose terms'));
+    });
+
+    // Switch to milestone payment type so the milestones textarea appears.
+    await user.click(screen.getByLabelText('Payment Type'));
+    const milestoneOption = await screen.findByRole('option', { name: /Milestone/ });
+    await user.click(milestoneOption);
+
+    actSync(() => {
+      fireEvent.change(screen.getByLabelText(/Milestones/), {
+        target: { value: 'Phase 1 - 50%\nPhase 2 - 50%' },
+      });
+    });
+    actSync(() => {
+      fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '500' } });
+    });
+    actSync(() => {
+      fireEvent.change(screen.getByLabelText(/Description/), {
+        target: { value: 'Two phase delivery' },
+      });
+    });
+    actSync(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Send Proposal/ }));
+    });
+    await flushAsync();
+
+    expect(mutateAsync).toHaveBeenCalled();
+    const firstCall = mutateAsync.mock.calls[0]?.[0] as
+      | { channelId: string; input: { content: string } }
+      | undefined;
+    expect(firstCall?.input.content).toContain('Milestones:');
+    expect(firstCall?.input.content).toContain('Phase 1 - 50%');
+  });
+
+  it('does not throw inside resizeTextarea when ref is unattached (line 171 no-ref branch)', () => {
+    // Triggering a change on the textarea calls resizeTextarea — but if rapid
+    // unmount/remount happens, textareaRef.current can be null. We can't easily
+    // simulate that, but we verify the rapid-change path doesn't crash.
+    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    const textarea = screen.getByLabelText('Message input');
+    expect(() => {
+      actSync(() => {
+        fireEvent.change(textarea, { target: { value: 'a\nb\nc\nd\ne\nf' } });
+      });
+    }).not.toThrow();
+  });
 });

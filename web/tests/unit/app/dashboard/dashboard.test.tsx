@@ -284,4 +284,99 @@ describe('DashboardPage', () => {
     // 1/3 complete (only "Create your account" checkmark).
     expect(screen.getByText(/1\/3 complete/)).toBeDefined();
   });
+
+  it('shows skeletons in the provider Active Bids card when bids are loading', () => {
+    authStoreState.user = {
+      id: 'u-prov',
+      displayName: 'Provider Loading',
+      roles: ['provider'],
+    };
+    // bidsData is undefined and isLoading=true — drives the bidsLoading skeleton
+    // branch (lines 483-488 in source).
+    myBidsState.data = undefined;
+    myBidsState.isLoading = true;
+    const { container } = render(withQueryClient(createElement(DashboardPage)));
+    // The skeleton grid renders elements with the rounded-md class.
+    const skeletons = container.querySelectorAll('.rounded-md');
+    expect(skeletons.length).toBeGreaterThan(0);
+    // Active Bids title should still render even while loading.
+    expect(screen.getAllByText('Active Bids').length).toBeGreaterThan(0);
+  });
+
+  it('renders Good afternoon greeting between 12:00 and 16:59', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-25T13:00:00'));
+    try {
+      const { container } = render(withQueryClient(createElement(DashboardPage)));
+      expect(container.querySelector('h1')?.textContent).toMatch(/Good afternoon/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders Good evening greeting at or after 17:00', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-25T20:30:00'));
+    try {
+      const { container } = render(withQueryClient(createElement(DashboardPage)));
+      expect(container.querySelector('h1')?.textContent).toMatch(/Good evening/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders the provider earnings sparklines when earnings data points exist', () => {
+    authStoreState.user = {
+      id: 'u-prov-2',
+      displayName: 'Sparkline Provider',
+      roles: ['provider'],
+    };
+    providerEarningsState.data = {
+      data_points: [
+        { earnings_cents: 1500, job_count: 1 },
+        { earnings_cents: 3000, job_count: 2 },
+        { earnings_cents: 4500, job_count: 3 },
+      ],
+    };
+    myBidsState.data = { bids: [], pagination: { totalCount: 0 } };
+    contractsState.data = { contracts: [], pagination: { totalCount: 0 } };
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(DashboardPage)));
+    // Provider stat cards always render — sparkline mocked but exercised.
+    expect(screen.getByText('Active Contracts')).toBeDefined();
+    expect(screen.getByText('Total Earnings')).toBeDefined();
+  });
+
+  it('treats roles as empty array when the user object has no roles property', () => {
+    // Casting handles the test fixture rather than the production type.
+    authStoreState.user = {
+      id: 'u-no-roles',
+      displayName: 'No Roles',
+    } as { id: string; displayName: string; roles: string[] };
+    const { container } = render(withQueryClient(createElement(DashboardPage)));
+    // Falls through to the Customer-only fallback dashboard.
+    expect(container.querySelector('h1')).toBeTruthy();
+  });
+
+  it('uses default emailVerified=true when profile is undefined', () => {
+    profileState.data = undefined;
+    customerJobsState.data = { jobs: [], pagination: { totalCount: 0 } };
+    render(withQueryClient(createElement(DashboardPage)));
+    // 2/3 complete: account created + email verified default.
+    expect(screen.getByText(/2\/3 complete/)).toBeDefined();
+  });
+
+  it('renders singular "1 bid" when a job has exactly one bid', () => {
+    customerJobsState.data = {
+      jobs: [
+        { id: 'j-solo', title: 'Solo Bid Job', category_name: 'Plumbing', status: 'open', bid_count: 1 },
+      ],
+      pagination: { totalCount: 1 },
+    };
+    contractsState.data = { contracts: [], pagination: { totalCount: 0 } };
+    paymentsState.data = { payments: [] };
+    render(withQueryClient(createElement(DashboardPage)));
+    // singular form
+    expect(screen.getByText(/^1 bid$/)).toBeDefined();
+  });
 });

@@ -267,4 +267,93 @@ describe('GuaranteeClaimForm', () => {
     const btn = screen.getByRole('button', { name: /submit claim/i });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it('clears the evidence_urls error when an upload succeeds after a failed submit', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(GuaranteeClaimForm, {
+        contractId: 'c-1',
+        onSuccess: vi.fn(),
+      }),
+    );
+
+    // Pick a claim type so the only validation error is evidence_urls.
+    const trigger = screen.getByLabelText(/Select claim type/);
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    await user.keyboard('{Enter}');
+
+    // Type a long-enough description to clear that validation gate.
+    const desc = screen.getByLabelText(/Description/i);
+    await user.type(desc, 'a'.repeat(60));
+
+    // Submit — only evidence_urls remains invalid.
+    await user.click(screen.getByRole('button', { name: /submit claim/i }));
+    expect(screen.getByText(/At least 1 photo is required/i)).toBeDefined();
+
+    // Now upload a file and fire onSuccess — exercises the errors['evidence_urls'] clear branch.
+    const fileInput = screen.getByLabelText(/Upload evidence photo/);
+    const file = new File([new Uint8Array(10)], 'evidence.png', { type: 'image/png' });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(uploadFn).toHaveBeenCalled();
+    });
+    act(() => {
+      imageUploadState.onSuccessRef?.({ confirmedUrl: 'https://cdn/evidence.png', publicId: 'p1' });
+    });
+    // The evidence_urls error message should now be gone.
+    await waitFor(() => {
+      expect(screen.queryByText(/At least 1 photo is required/i)).toBeNull();
+    });
+  });
+
+  it('submits the claim when all fields are valid', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    render(
+      createElement(GuaranteeClaimForm, {
+        contractId: 'contract-9',
+        onSuccess,
+      }),
+    );
+
+    // Select reason via keyboard since Radix Select is hard to drive in jsdom.
+    const trigger = screen.getByLabelText(/Select claim type/);
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    await user.keyboard('{Enter}');
+
+    // Type a long description.
+    const desc = screen.getByLabelText(/Description/i);
+    await user.type(desc, 'b'.repeat(60));
+
+    // Upload a photo so evidence_urls is satisfied.
+    const fileInput = screen.getByLabelText(/Upload evidence photo/);
+    const file = new File([new Uint8Array(10)], 'evidence.png', { type: 'image/png' });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(uploadFn).toHaveBeenCalled();
+    });
+    act(() => {
+      imageUploadState.onSuccessRef?.({ confirmedUrl: 'https://cdn/evidence.png', publicId: 'p1' });
+    });
+    await screen.findByAltText(/Evidence photo 1/);
+
+    // Submit — exercises the success-mutate path on lines 112-120.
+    await user.click(screen.getByRole('button', { name: /submit claim/i }));
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
+    const [payload, callbacks] = mockSubmit.mock.calls[0] as [
+      Record<string, unknown>,
+      { onSuccess: () => void },
+    ];
+    expect(payload).toMatchObject({
+      contractId: 'contract-9',
+      reason: 'quality',
+      evidence_urls: ['https://cdn/evidence.png'],
+    });
+    expect(typeof payload['description']).toBe('string');
+    expect((payload['description'] as string).length).toBeGreaterThanOrEqual(50);
+    // The form forwards the parent onSuccess via mutate options.
+    expect(callbacks.onSuccess).toBe(onSuccess);
+  });
 });

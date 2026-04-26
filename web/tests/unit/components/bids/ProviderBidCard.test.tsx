@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -288,5 +288,65 @@ describe('ProviderBidCard', () => {
     render(<ProviderBidCard bid={makeBid()} jobTitle="Job" />);
     await user.click(screen.getByRole('button', { name: /lower bid/i }));
     expect(screen.getByText(/Failed to update bid/i)).toBeDefined();
+  });
+
+  // ---- DEEPENING TESTS ----
+
+  it('invokes the lower-bid onSuccess callback (closes form, resets) — covers lines 93-95', async () => {
+    // Capture the onSuccess option passed to mutate.
+    let capturedOnSuccess: (() => void) | undefined;
+    updateMutate.mockImplementation((_args, opts) => {
+      capturedOnSuccess = (opts as { onSuccess?: () => void } | undefined)?.onSuccess;
+    });
+    const user = userEvent.setup();
+    render(<ProviderBidCard bid={makeBid({ amount_cents: 20000 })} jobTitle="Job" />);
+    await user.click(screen.getByRole('button', { name: /lower bid/i }));
+    const input = screen.getByPlaceholderText('0.00');
+    await user.type(input, '150');
+    const submits = screen.getAllByRole('button', { name: /^lower bid$/i });
+    await user.click(submits[submits.length - 1] as HTMLElement);
+    expect(capturedOnSuccess).toBeDefined();
+    // Trigger the onSuccess (lines 93-95: setShowLowerForm(false) + form.reset()).
+    act(() => {
+      capturedOnSuccess?.();
+    });
+    // After onSuccess, the form is closed → the action button "Lower Bid" is back.
+    expect(screen.getByRole('button', { name: /lower bid/i })).toBeDefined();
+    expect(screen.queryByPlaceholderText('0.00')).toBeNull();
+  });
+
+  it('invokes the withdraw onSuccess callback (closes confirm) — covers lines 103-104', async () => {
+    let capturedOnSuccess: (() => void) | undefined;
+    withdrawMutate.mockImplementation((_id, opts) => {
+      capturedOnSuccess = (opts as { onSuccess?: () => void } | undefined)?.onSuccess;
+    });
+    const user = userEvent.setup();
+    render(<ProviderBidCard bid={makeBid()} jobTitle="Job" />);
+    await user.click(screen.getByRole('button', { name: /^withdraw$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm withdraw/i }));
+    expect(capturedOnSuccess).toBeDefined();
+    act(() => {
+      capturedOnSuccess?.();
+    });
+    // Confirmation should be gone after onSuccess; the Withdraw action is back.
+    expect(screen.queryByText(/are you sure/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /^withdraw$/i })).toBeDefined();
+  });
+
+  it('renders the Loader2 spinner inside the submit button while update is pending (line 265)', async () => {
+    vi.mocked(useUpdateBid).mockReturnValue({
+      mutate: updateMutate,
+      isPending: true,
+      isError: false,
+    } as unknown as ReturnType<typeof useUpdateBid>);
+    const user = userEvent.setup();
+    render(<ProviderBidCard bid={makeBid()} jobTitle="Job" />);
+    await user.click(screen.getByRole('button', { name: /lower bid/i }));
+    // The submit button is named "Lower Bid" — find the form submit (last instance) and check it's disabled.
+    const submits = screen.getAllByRole('button', { name: /^lower bid$/i });
+    const submit = submits[submits.length - 1] as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    // Loader2 has class 'animate-spin' — at least one such element exists during pending.
+    expect(submit.querySelector('.animate-spin')).not.toBeNull();
   });
 });

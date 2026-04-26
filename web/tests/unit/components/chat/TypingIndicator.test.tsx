@@ -44,4 +44,23 @@ describe('TypingIndicator', () => {
     const live = container.querySelector('[aria-live="polite"]');
     expect(live).toBeDefined();
   });
+
+  it('renders nothing when the channel has no entry in typingUsers (default fallback)', () => {
+    // Selector returns undefined for the channelId — exercises the `?? []` default at line 6.
+    vi.mocked(useChatStore).mockImplementation(((selector: unknown) => {
+      const state = { typingUsers: {} as Record<string, string[]> } as unknown;
+      return (selector as (s: unknown) => unknown)(state);
+    }) as unknown as typeof useChatStore);
+    const { container } = render(<TypingIndicator channelId="missing-chan" />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('falls back to "Someone" label when first user entry is undefined', () => {
+    // typingUsers has length but the first slot is undefined — the `?? 'Someone'`
+    // default at line 10 is exercised.
+    const sparseUsers = [undefined as unknown as string];
+    mockTyping('chan-1', sparseUsers);
+    render(<TypingIndicator channelId="chan-1" />);
+    expect(screen.getByText('Someone is typing')).toBeDefined();
+  });
 });

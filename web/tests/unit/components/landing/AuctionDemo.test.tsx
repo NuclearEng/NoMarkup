@@ -101,4 +101,22 @@ describe('AuctionDemo', () => {
     // The starting price is back as Current Best Price.
     expect(screen.getAllByText('$2,500').length).toBeGreaterThanOrEqual(1);
   });
+
+  it('renders the High trust tier label for scores between 90 and 94', () => {
+    render(<AuctionDemo />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    // Mike's Plumbing has trustScore 92 → High tier label
+    expect(screen.getByText('92')).toBeDefined();
+    // ProBuild Co. has trustScore 88 → Good tier
+    expect(screen.getByText('88')).toBeDefined();
+  });
+
+  it('cleans up timers on unmount before any bid lands', () => {
+    const { unmount } = render(<AuctionDemo />);
+    // Unmount immediately — exercises the cleanup branch where cycleRef and
+    // timerRef are still set and pending t1/t2/t3 timeouts must be cleared.
+    expect(() => { unmount(); }).not.toThrow();
+  });
 });

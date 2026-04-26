@@ -28,7 +28,26 @@ const stubModule = (testid: string) => () =>
 vi.mock('@/components/bids/BidActivityFeed', () => ({ BidActivityFeed: stubModule('bid-activity') }));
 vi.mock('@/components/bids/BidForm', () => ({ BidForm: stubModule('bid-form') }));
 vi.mock('@/components/bids/BidList', () => ({ BidList: stubModule('bid-list') }));
-vi.mock('@/components/bids/BidPlacementPanel', () => ({ BidPlacementPanel: stubModule('bid-placement') }));
+// BidPlacementPanel stub forwards onPlaceBid via a button so we can fire the
+// page's placeBid.mutate handler from a test.
+vi.mock('@/components/bids/BidPlacementPanel', () => ({
+  BidPlacementPanel: ({
+    onPlaceBid,
+  }: {
+    onPlaceBid?: (amountCents: number) => void;
+  }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        'data-testid': 'bid-placement',
+        onClick: () => {
+          onPlaceBid?.(7777);
+        },
+      },
+      'Place bid',
+    ),
+}));
 vi.mock('@/components/bids/BidPriceChart', () => ({ BidPriceChart: stubModule('bid-price-chart') }));
 vi.mock('@/components/bids/LiveBidTicker', () => ({ LiveBidTicker: stubModule('live-bid-ticker') }));
 vi.mock('@/components/landing/GradientMesh', () => ({ GradientMesh: stubModule('mesh') }));
@@ -458,5 +477,32 @@ describe('(public)/jobs/[id]/page', () => {
     // Without auction_ends_at, the AuctionTimer is still not rendered (null branch).
     // The "Auction not started" copy should appear instead.
     expect(container.textContent).toContain('Auction not started');
+  });
+
+  it('renders the Instant Accept Price block when offer_accepted_cents is set', () => {
+    setHooks({
+      job: { ...baseJob, offer_accepted_cents: 25000 },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText('Instant Accept Price')).toBeDefined();
+  });
+
+  it('fires placeBid.mutate when BidPlacementPanel onPlaceBid invokes', () => {
+    const placeBidMutate = vi.fn();
+    setAuth({
+      user: { id: 'prov-new', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, lowest_bid_cents: 50000, starting_bid_cents: 100000 },
+      bids: [],
+      placeBidMutate,
+    });
+    render(createElement(JobDetailPage));
+    fireEvent.click(screen.getByTestId('bid-placement'));
+    expect(placeBidMutate).toHaveBeenCalledWith({
+      jobId: 'test-id',
+      input: { amount_cents: 7777 },
+    });
   });
 });

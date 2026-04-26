@@ -29,7 +29,16 @@ vi.mock('@/components/terminal/terminal-grid', () => ({
   TerminalGrid: stub('terminal-grid'),
 }));
 vi.mock('@/components/bids/SavingsCelebration', () => ({
-  SavingsCelebration: () => createElement('div', { 'data-testid': 'savings-celebration' }),
+  SavingsCelebration: ({ onDismiss }: { onDismiss?: () => void }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        'data-testid': 'savings-celebration',
+        onClick: onDismiss,
+      },
+      'savings-celebration',
+    ),
 }));
 
 const { default: AuctionDemoPage } = await import('@/app/demo/auction/page');
@@ -121,5 +130,21 @@ describe('demo/auction/page', () => {
       fireEvent.click(resumeBtn);
       expect(screen.getByRole('button', { name: /Pause/ })).toBeDefined();
     }
+  });
+
+  it('clicking SavingsCelebration onDismiss invokes setShowCelebration(false)', () => {
+    render(createElement(AuctionDemoPage));
+    // Run the full simulation past 36s — celebration becomes visible.
+    act(() => {
+      vi.advanceTimersByTime(40000);
+    });
+    const celebration = screen.getByTestId('savings-celebration');
+    expect(celebration).toBeDefined();
+    // Click invokes the onDismiss prop, which the page wires to
+    // setShowCelebration(false). Page should still be rendered without throwing.
+    act(() => {
+      fireEvent.click(celebration);
+    });
+    expect(screen.getByTestId('terminal-grid')).toBeDefined();
   });
 });

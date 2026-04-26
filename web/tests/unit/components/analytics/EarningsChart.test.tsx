@@ -98,4 +98,46 @@ describe('EarningsChart', () => {
     );
     expect(container.querySelector('.custom-card')).not.toBeNull();
   });
+
+  // ---- DEEPENING TESTS ----
+
+  it('renders bars with zero-height fallback when a point has zero earnings (line 125/135 fallback)', () => {
+    const { container } = render(
+      <EarningsChart
+        data={[
+          { period_start: '2026-01-01T00:00:00Z', earnings_cents: 0, fees_cents: 0, job_count: 0 },
+          { period_start: '2026-02-01T00:00:00Z', earnings_cents: 100, fees_cents: 10, job_count: 1 },
+        ]}
+        totalEarnings={100}
+        totalFees={10}
+        netEarnings={90}
+        totalJobs={1}
+      />,
+    );
+    // The zero-earnings bar produces an inner stack with height '0%' on both
+    // the net-earnings and fees portions (the falsy branch of `earningsHeight > 0`).
+    const zeroPercentBars = Array.from(container.querySelectorAll<HTMLDivElement>('div')).filter(
+      (el) => el.style.height === '0%',
+    );
+    expect(zeroPercentBars.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('exercises a single-point dataset (single bar renders, baseline math runs)', () => {
+    const { container } = render(
+      <EarningsChart
+        data={[
+          { period_start: '2026-04-01T00:00:00Z', earnings_cents: 50000, fees_cents: 5000, job_count: 2 },
+        ]}
+        totalEarnings={50000}
+        totalFees={5000}
+        netEarnings={45000}
+        totalJobs={2}
+      />,
+    );
+    // Exactly one bar (img with aria-label containing 'earnings') is rendered.
+    const bars = Array.from(container.querySelectorAll('[role="img"]')).filter((el) =>
+      el.getAttribute('aria-label')?.includes('earnings'),
+    );
+    expect(bars.length).toBe(1);
+  });
 });

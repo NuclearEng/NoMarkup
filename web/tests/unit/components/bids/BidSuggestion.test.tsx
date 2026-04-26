@@ -52,4 +52,43 @@ describe('BidSuggestion', () => {
     const range = screen.getByText(/\$150/);
     expect(range.textContent).toContain('$250');
   });
+
+  // ---- DEEPENING TESTS ----
+
+  it('uses singular "job" label when completed_jobs === 1', () => {
+    vi.mocked(usePricingByCategory).mockReturnValue({
+      data: {
+        prices: [
+          {
+            p25_price_cents: 10000,
+            p75_price_cents: 20000,
+            completed_jobs: 1,
+          },
+        ],
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePricingByCategory>);
+    render(<BidSuggestion categorySlug="plumbing" />);
+    // singular: "1 completed job" (no trailing 's')
+    expect(screen.getByText(/Based on 1 completed job\b/)).toBeDefined();
+  });
+
+  it('renders nothing when first pricing entry is undefined (defensive guard)', () => {
+    vi.mocked(usePricingByCategory).mockReturnValue({
+      // prices array has length but the first entry is undefined-equivalent
+      data: { prices: [undefined as unknown as never] },
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePricingByCategory>);
+    const { container } = render(<BidSuggestion categorySlug="plumbing" />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders nothing when data is undefined', () => {
+    vi.mocked(usePricingByCategory).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePricingByCategory>);
+    const { container } = render(<BidSuggestion categorySlug="plumbing" />);
+    expect(container.firstChild).toBeNull();
+  });
 });

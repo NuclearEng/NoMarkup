@@ -132,4 +132,82 @@ describe('PaymentMethodList', () => {
     await user.click(screen.getByRole('button', { name: /Confirm/ }));
     expect(mutateAsync).toHaveBeenCalledWith('pm-1');
   });
+
+  it('cancels the delete confirmation when Cancel is clicked', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    useDeleteMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeletePaymentMethod>);
+    useMethodsMock.mockReturnValue({
+      data: {
+        payment_methods: [
+          {
+            id: 'pm-1',
+            type: 'card',
+            brand: 'visa',
+            last_four: '4242',
+            exp_month: 12,
+            exp_year: 2030,
+            is_default: false,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof usePaymentMethods>);
+
+    const user = userEvent.setup();
+    render(createElement(PaymentMethodList));
+
+    await user.click(screen.getByRole('button', { name: /Delete payment method/ }));
+    await user.click(screen.getByRole('button', { name: /Cancel/ }));
+    // The delete-trigger button (with the trash icon) is back.
+    expect(screen.getByRole('button', { name: /Delete payment method/ })).toBeDefined();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('shows the Removing... label on the Confirm button while a delete is in flight', async () => {
+    // Exercises the isDeleting branch at line 58.
+    useDeleteMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: true,
+    } as unknown as ReturnType<typeof useDeletePaymentMethod>);
+    useMethodsMock.mockReturnValue({
+      data: {
+        payment_methods: [
+          {
+            id: 'pm-1',
+            type: 'card',
+            brand: 'visa',
+            last_four: '4242',
+            exp_month: 12,
+            exp_year: 2030,
+            is_default: false,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof usePaymentMethods>);
+
+    const user = userEvent.setup();
+    render(createElement(PaymentMethodList));
+
+    await user.click(screen.getByRole('button', { name: /Delete payment method/ }));
+    const removing = screen.getByRole('button', { name: /Removing\.\.\./ });
+    expect((removing as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('renders the empty-state when data is undefined (no payment_methods key)', () => {
+    // Exercises the `data?.payment_methods ?? []` fallback at line 122.
+    useMethodsMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof usePaymentMethods>);
+
+    render(createElement(PaymentMethodList));
+    expect(screen.getByText('No payment methods')).toBeDefined();
+  });
 });
