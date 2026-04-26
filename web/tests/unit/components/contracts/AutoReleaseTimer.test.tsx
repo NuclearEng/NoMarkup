@@ -55,19 +55,19 @@ describe('AutoReleaseTimer', () => {
     const countdown = screen.getByLabelText('Auto-release countdown');
     expect(countdown.className).toContain('text-red-600');
     // No days segment when < 1 day remains
-    expect(countdown.textContent ?? '').not.toMatch(/d /);
+    expect(countdown.textContent).not.toMatch(/d /);
   });
 
   it('updates the countdown each second via the interval', () => {
     render(createElement(AutoReleaseTimer, { completedAt: '2026-04-23T12:00:00Z' }));
-    const before = screen.getByLabelText('Auto-release countdown').textContent ?? '';
+    const before = screen.getByLabelText('Auto-release countdown').textContent;
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    const after = screen.getByLabelText('Auto-release countdown').textContent ?? '';
+    const after = screen.getByLabelText('Auto-release countdown').textContent;
     // Either ticked down or stayed (but shape is intact); guard against panic.
-    expect(after.length).toBeGreaterThan(0);
-    expect(before.length).toBeGreaterThan(0);
+    expect(after).toBeTruthy();
+    expect(before).toBeTruthy();
   });
 
   it('clears the interval when the countdown reaches zero on a tick', () => {

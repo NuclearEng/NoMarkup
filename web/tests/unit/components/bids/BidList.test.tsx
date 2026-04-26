@@ -14,15 +14,9 @@ beforeAll(() => {
     disconnect() {}
   } as unknown as typeof globalThis.ResizeObserver;
   // PointerEvent / hasPointerCapture are missing in jsdom — Radix Select uses them.
-  if (!Element.prototype.hasPointerCapture) {
-    Element.prototype.hasPointerCapture = () => false;
-  }
-  if (!Element.prototype.scrollIntoView) {
-    Element.prototype.scrollIntoView = () => {};
-  }
-  if (!Element.prototype.releasePointerCapture) {
-    Element.prototype.releasePointerCapture = () => {};
-  }
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.scrollIntoView = () => {};
+  Element.prototype.releasePointerCapture = () => {};
 });
 
 vi.mock('@/lib/api', () => ({

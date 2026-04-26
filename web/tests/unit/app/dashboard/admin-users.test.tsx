@@ -368,7 +368,7 @@ describe('AdminUsersPage', () => {
     expect(scope.getByText('provider')).toBeInTheDocument();
   });
 
-  it('submitting the search form prevents default and resets page to 1', async () => {
+  it('submitting the search form prevents default and resets page to 1', () => {
     useAdminUsersMock.mockReturnValue({
       data: { users: [], pagination: makePagination({ totalPages: 1, hasNext: false }) },
       isLoading: false,

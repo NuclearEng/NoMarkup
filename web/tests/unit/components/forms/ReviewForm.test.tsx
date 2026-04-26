@@ -261,8 +261,7 @@ describe('ReviewForm', () => {
     expect(screen.getAllByText('https://cdn.example.com/dup.jpg').length).toBe(1);
   });
 
-  it('does not add an empty/whitespace-only photo URL', async () => {
-    const user = userEvent.setup();
+  it('does not add an empty/whitespace-only photo URL', () => {
     const onSuccess = vi.fn();
     render(
       createElement(ReviewForm, {

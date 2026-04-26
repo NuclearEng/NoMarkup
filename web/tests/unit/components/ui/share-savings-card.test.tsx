@@ -59,7 +59,7 @@ describe('ShareSavingsCard', () => {
     await user.click(screen.getByRole('button', { name: 'Copy Link' }));
     await screen.findByText('Copied!');
 
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(2100);
     });
 

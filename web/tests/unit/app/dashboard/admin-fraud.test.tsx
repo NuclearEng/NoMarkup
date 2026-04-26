@@ -41,7 +41,7 @@ interface HookResult {
 }
 
 // Per-call configuration keyed by status+risk.
-const fraudConfig: Record<string, HookResult> = {};
+const fraudConfig = new Map<string, HookResult>();
 
 function configKey(args: FraudAlertsArgs): string {
   return `${args.status ?? '_'}::${args.risk_level ?? '_'}`;
@@ -49,7 +49,7 @@ function configKey(args: FraudAlertsArgs): string {
 
 vi.mock('@/hooks/useFraud', () => ({
   useFraudAlerts: (args: FraudAlertsArgs): HookResult =>
-    fraudConfig[configKey(args)] ?? {
+    fraudConfig.get(configKey(args)) ?? {
       data: { alerts: [], pagination: { totalCount: 0, page: 1, pageSize: 20, totalPages: 0 } },
       isLoading: false,
       isError: false,
@@ -64,17 +64,15 @@ vi.mock('@/components/admin/FraudAlertList', () => ({
 const { default: AdminFraudPage } = await import('@/app/(dashboard)/admin/fraud/page');
 
 function setConfig(key: string, result: Partial<HookResult>) {
-  fraudConfig[key] = {
+  fraudConfig.set(key, {
     data: result.data,
     isLoading: result.isLoading ?? false,
     isError: result.isError ?? false,
-  };
+  });
 }
 
 beforeEach(() => {
-  for (const k of Object.keys(fraudConfig)) {
-    delete fraudConfig[k];
-  }
+  fraudConfig.clear();
 });
 
 describe('AdminFraudPage', () => {

@@ -640,7 +640,7 @@ describe('JobPostingForm', () => {
         | null;
       onerror: (() => void) | null;
       onend: (() => void) | null;
-      start(): void;
+      start: () => void;
     };
     const recognition: Recognition = {
       lang: '',
@@ -690,7 +690,7 @@ describe('JobPostingForm', () => {
     expect(recognition.start).toHaveBeenCalled();
 
     // Simulate a successful recognition result.
-    await act(async () => {
+    act(() => {
       recognition.onresult?.({
         results: { 0: { 0: { transcript: 'Voice transcribed job title here' } } },
       });
@@ -701,7 +701,7 @@ describe('JobPostingForm', () => {
     });
 
     // Fire onend to flip the listening flag back off.
-    await act(async () => {
+    act(() => {
       recognition.onend?.();
     });
 
@@ -714,7 +714,7 @@ describe('JobPostingForm', () => {
       onresult: ((event: unknown) => void) | null;
       onerror: (() => void) | null;
       onend: (() => void) | null;
-      start(): void;
+      start: () => void;
       lang: string;
       interimResults: boolean;
       maxAlternatives: number;
@@ -764,7 +764,7 @@ describe('JobPostingForm', () => {
     await act(async () => {
       await user.click(screen.getByRole('button', { name: /Use voice input/ }));
     });
-    await act(async () => {
+    act(() => {
       recognition.onerror?.();
     });
 
@@ -792,7 +792,7 @@ describe('JobPostingForm', () => {
     await user.type(addressInput, '123 Main Street, San Francisco, CA');
 
     // Trigger debounce
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(700);
     });
     await act(async () => {
@@ -828,7 +828,7 @@ describe('JobPostingForm', () => {
       screen.getByPlaceholderText(/123 Main St, City, State, ZIP/),
       'Nonexistent Place',
     );
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(700);
     });
     vi.useRealTimers();
@@ -853,7 +853,7 @@ describe('JobPostingForm', () => {
       screen.getByPlaceholderText(/123 Main St, City, State, ZIP/),
       'Some Address Here',
     );
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(700);
     });
     vi.useRealTimers();
@@ -880,11 +880,11 @@ describe('JobPostingForm', () => {
 
     const input = screen.getByPlaceholderText(/123 Main St, City, State, ZIP/);
     await user.type(input, 'first attempt');
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(100);
     });
     await user.type(input, ' more text');
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(700);
     });
     vi.useRealTimers();
@@ -908,7 +908,7 @@ describe('JobPostingForm', () => {
     await advanceToStep(2, user);
 
     await user.type(screen.getByPlaceholderText(/123 Main St, City, State, ZIP/), 'BadAddress');
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(700);
     });
     vi.useRealTimers();
@@ -930,7 +930,7 @@ describe('JobPostingForm', () => {
     await advanceToStep(2, user);
 
     await user.type(screen.getByPlaceholderText(/123 Main St, City, State, ZIP/), '123');
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(700);
     });
     vi.useRealTimers();
@@ -947,7 +947,7 @@ describe('JobPostingForm', () => {
     expect(fileInput).not.toBeNull();
     const file = new File(['fake'], 'photo1.jpg', { type: 'image/jpeg' });
 
-    await act(async () => {
+    act(() => {
       fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
     });
 
@@ -964,7 +964,7 @@ describe('JobPostingForm', () => {
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['fake'], 'photo-to-remove.jpg', { type: 'image/jpeg' });
-    await act(async () => {
+    act(() => {
       fireEvent.change(fileInput, { target: { files: [file] } });
     });
 
@@ -989,7 +989,7 @@ describe('JobPostingForm', () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const goodFile = new File(['png'], 'ok.png', { type: 'image/png' });
     const badFile = new File(['pdf'], 'bad.pdf', { type: 'application/pdf' });
-    await act(async () => {
+    act(() => {
       fireEvent.change(fileInput, { target: { files: [goodFile, badFile] } });
     });
 
@@ -1008,18 +1008,18 @@ describe('JobPostingForm', () => {
       name: /Drag photos here or click to browse/,
     });
 
-    await act(async () => {
+    act(() => {
       fireEvent.dragEnter(dropzone);
     });
-    await act(async () => {
+    act(() => {
       fireEvent.dragOver(dropzone);
     });
-    await act(async () => {
+    act(() => {
       fireEvent.dragLeave(dropzone);
     });
     // Drop a file
     const file = new File(['x'], 'dropped.webp', { type: 'image/webp' });
-    await act(async () => {
+    act(() => {
       fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
     });
 
@@ -1038,7 +1038,7 @@ describe('JobPostingForm', () => {
     const dropzone = screen.getByRole('button', {
       name: /Drag photos here or click to browse/,
     });
-    await act(async () => {
+    act(() => {
       fireEvent.drop(dropzone, { dataTransfer: { files: [] } });
     });
     expect(screen.queryByText(/of 10 photos selected/)).toBeNull();
@@ -1056,7 +1056,7 @@ describe('JobPostingForm', () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const clickSpy = vi.spyOn(fileInput, 'click');
 
-    await act(async () => {
+    act(() => {
       fireEvent.keyDown(dropzone, { key: 'Enter' });
     });
     expect(clickSpy).toHaveBeenCalled();
@@ -1074,7 +1074,7 @@ describe('JobPostingForm', () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const clickSpy = vi.spyOn(fileInput, 'click');
 
-    await act(async () => {
+    act(() => {
       fireEvent.keyDown(dropzone, { key: ' ' });
     });
     expect(clickSpy).toHaveBeenCalled();
@@ -1092,7 +1092,7 @@ describe('JobPostingForm', () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const clickSpy = vi.spyOn(fileInput, 'click');
 
-    await act(async () => {
+    act(() => {
       fireEvent.keyDown(dropzone, { key: 'a' });
     });
     expect(clickSpy).not.toHaveBeenCalled();
@@ -1123,7 +1123,7 @@ describe('JobPostingForm', () => {
     // The slider exposes a hidden input via Radix — drive it by keyboard arrows.
     const sliderHandle = screen.getByRole('slider');
     sliderHandle.focus();
-    await act(async () => {
+    act(() => {
       fireEvent.keyDown(sliderHandle, { key: 'ArrowRight' });
     });
     // After arrow right, label should reflect 73 hours
@@ -1153,7 +1153,7 @@ describe('JobPostingForm', () => {
       screen.getByPlaceholderText(/123 Main St, City, State, ZIP/),
       '500 Castro St, Mountain View, CA',
     );
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(700);
     });
     vi.useRealTimers();
@@ -1251,7 +1251,7 @@ describe('JobPostingForm', () => {
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['x'], 'one.jpg', { type: 'image/jpeg' });
-    await act(async () => {
+    act(() => {
       fireEvent.change(fileInput, { target: { files: [file] } });
     });
 
@@ -1275,7 +1275,7 @@ describe('JobPostingForm', () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const f1 = new File(['1'], 'a.jpg', { type: 'image/jpeg' });
     const f2 = new File(['2'], 'b.jpg', { type: 'image/jpeg' });
-    await act(async () => {
+    act(() => {
       fireEvent.change(fileInput, { target: { files: [f1, f2] } });
     });
 
@@ -1481,7 +1481,7 @@ describe('JobPostingForm', () => {
     const sliderHandle = screen.getByRole('slider');
     sliderHandle.focus();
     for (let i = 0; i < 47; i += 1) {
-      await act(async () => {
+      act(() => {
         fireEvent.keyDown(sliderHandle, { key: 'ArrowLeft' });
       });
     }
@@ -1495,7 +1495,7 @@ describe('JobPostingForm', () => {
       onresult: ((event: { results: Record<number, unknown> }) => void) | null;
       onerror: (() => void) | null;
       onend: (() => void) | null;
-      start(): void;
+      start: () => void;
       lang: string;
       interimResults: boolean;
       maxAlternatives: number;
@@ -1547,7 +1547,7 @@ describe('JobPostingForm', () => {
       await user.click(screen.getByRole('button', { name: /Use voice input/ }));
     });
     // Fire onresult with an empty results object — transcript falls back to ''.
-    await act(async () => {
+    act(() => {
       recognition.onresult?.({ results: {} });
     });
     const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
@@ -1566,7 +1566,7 @@ describe('JobPostingForm', () => {
     const files = Array.from({ length: 10 }, (_, i) =>
       new File([`x${String(i)}`], `photo-${String(i)}.jpg`, { type: 'image/jpeg' }),
     );
-    await act(async () => {
+    act(() => {
       fireEvent.change(fileInput, { target: { files } });
     });
     await waitFor(() => {
@@ -1575,7 +1575,7 @@ describe('JobPostingForm', () => {
 
     // Try to add one more — slotsRemaining <= 0 → return path.
     const extra = new File(['y'], 'extra.jpg', { type: 'image/jpeg' });
-    await act(async () => {
+    act(() => {
       fireEvent.change(fileInput, { target: { files: [extra] } });
     });
 

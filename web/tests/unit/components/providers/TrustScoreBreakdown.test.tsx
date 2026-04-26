@@ -126,9 +126,11 @@ describe('TrustScoreBreakdown', () => {
   });
 
   it('omits identity-verification line when not required by next tier', () => {
+    const baseReq = tierRequirements[0];
+    if (!baseReq) throw new Error('expected tierRequirements[0]');
     const reqsNoVerify: TierRequirement[] = [
       {
-        ...tierRequirements[0]!,
+        ...baseReq,
         requires_verification: false,
       },
     ];

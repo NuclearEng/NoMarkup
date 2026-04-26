@@ -198,7 +198,7 @@ describe('RecurringJobsPage', () => {
     jobsState.data = { jobs: [monthlyNoBid] };
     const { container } = render(withQueryClient(createElement(RecurringJobsPage)));
     // Card renders; no price element with $ formatting beyond the count card.
-    expect(container.textContent ?? '').not.toContain('$0.00');
+    expect(container.textContent).not.toContain('$0.00');
     expect(screen.getByRole('link', { name: 'Monthly Lawn Care' })).toBeDefined();
   });
 

@@ -328,7 +328,7 @@ describe('AdminDisputeDetailPage', () => {
     });
   });
 
-  it('does not call resolve mutation when handleResolve is invoked without resolution type', async () => {
+  it('does not call resolve mutation when handleResolve is invoked without resolution type', () => {
     // This guards line 66: `if (!dispute || !resolutionType) return;`
     disputeState.isLoading = false;
     disputeState.data = { dispute: makeDispute() };

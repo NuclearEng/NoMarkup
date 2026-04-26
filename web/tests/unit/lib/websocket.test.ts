@@ -293,10 +293,26 @@ describe('wsManager (chat WebSocket client)', () => {
     // ternary in openSocket(). jsdom forbids redefining individual location
     // properties, so we replace the whole object.
     const originalLocation = window.location;
+    const stubLocation = {
+      protocol: 'https:',
+      host: 'app.example',
+      hostname: originalLocation.hostname,
+      href: originalLocation.href,
+      origin: originalLocation.origin,
+      pathname: originalLocation.pathname,
+      port: originalLocation.port,
+      search: originalLocation.search,
+      hash: originalLocation.hash,
+      assign: originalLocation.assign.bind(originalLocation),
+      reload: originalLocation.reload.bind(originalLocation),
+      replace: originalLocation.replace.bind(originalLocation),
+      ancestorOrigins: originalLocation.ancestorOrigins,
+      toString: () => originalLocation.toString(),
+    };
     Object.defineProperty(window, 'location', {
       configurable: true,
       writable: true,
-      value: { ...originalLocation, protocol: 'https:', host: 'app.example' },
+      value: stubLocation,
     });
 
     try {

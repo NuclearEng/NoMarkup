@@ -78,7 +78,7 @@ describe('MetricsCard', () => {
       }),
     );
     // useCountUp mock returns target verbatim; output spans render "$" + "1,234" + "/mo"
-    const text = container.textContent ?? '';
+    const text = container.textContent;
     expect(text).toContain('$');
     expect(text).toContain('1,234');
     expect(text).toContain('/mo');

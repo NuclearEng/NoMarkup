@@ -9,19 +9,11 @@ import { withQueryClient } from './_helpers';
 
 // Radix Select uses pointer capture APIs that jsdom does not implement.
 // Polyfill them so the milestone-editor select dropdown can open in tests.
-if (!HTMLElement.prototype.hasPointerCapture) {
-  HTMLElement.prototype.hasPointerCapture = () => false;
-}
-if (!HTMLElement.prototype.setPointerCapture) {
-  HTMLElement.prototype.setPointerCapture = () => undefined;
-}
-if (!HTMLElement.prototype.releasePointerCapture) {
-  HTMLElement.prototype.releasePointerCapture = () => undefined;
-}
+HTMLElement.prototype.hasPointerCapture = () => false;
+HTMLElement.prototype.setPointerCapture = () => undefined;
+HTMLElement.prototype.releasePointerCapture = () => undefined;
 // jsdom also lacks scrollIntoView used by Radix Select inside the popper.
-if (!HTMLElement.prototype.scrollIntoView) {
-  HTMLElement.prototype.scrollIntoView = () => undefined;
-}
+HTMLElement.prototype.scrollIntoView = () => undefined;
 
 const providerProfileState: { data: unknown } = { data: undefined };
 const routerPush = vi.fn();

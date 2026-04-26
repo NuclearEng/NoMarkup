@@ -164,11 +164,15 @@ describe('ContractAcceptance', () => {
     await user.click(confirmBtn);
 
     expect(mockCancelMutate).toHaveBeenCalledTimes(1);
-    const [contractId, options] = mockCancelMutate.mock.calls[0] ?? [];
+    const firstCall = mockCancelMutate.mock.calls[0] as
+      | [string, { onSuccess: () => void }]
+      | undefined;
+    const contractId = firstCall?.[0];
+    const options = firstCall?.[1];
     expect(contractId).toBe('c-1');
     // simulate onSuccess from the hook
     act(() => {
-      (options as { onSuccess: () => void }).onSuccess();
+      options?.onSuccess();
     });
     // confirmation banner should now be hidden — back to normal Accept/Decline buttons
     expect(screen.queryByText(/Are you sure you want to decline/i)).toBeNull();

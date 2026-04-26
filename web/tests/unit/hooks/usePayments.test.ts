@@ -543,7 +543,7 @@ describe('useStripeOnboardingLink', () => {
   });
   afterEach(() => { queryClient.clear(); });
 
-  it('does not auto-fetch — only runs after refetch is invoked', async () => {
+  it('does not auto-fetch — only runs after refetch is invoked', () => {
     const { result } = renderHook(
       () => useStripeOnboardingLink({
         return_url: 'https://app.test/return',

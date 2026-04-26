@@ -173,11 +173,7 @@ describe('(public)/jobs/page', () => {
     // Easier: drive an active filter via the mock and verify the clear button click resets things.
     // We rely on the page exposing the empty state with active filters when search is empty —
     // simulate this via re-rendering with new mock returns.
-    let firstCall = true;
-    vi.mocked(useSearchJobs).mockImplementation((params: unknown) => {
-      const p = params as { query?: string };
-      const isFiltered = !!p.query || !firstCall;
-      firstCall = false;
+    vi.mocked(useSearchJobs).mockImplementation(() => {
       return {
         data: {
           jobs: [],

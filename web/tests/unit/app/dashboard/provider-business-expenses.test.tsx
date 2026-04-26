@@ -318,7 +318,7 @@ describe('ProviderExpensesPage', () => {
         receipt_url: undefined,
         expense_date: '2026-04-15',
       },
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
+      expect.objectContaining({ onSuccess: expect.any(Function) as unknown }),
     );
     // After onSuccess, fields should be reset
     expect((screen.getByLabelText(/Amount/i)).value).toBe('');

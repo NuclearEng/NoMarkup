@@ -8,15 +8,9 @@ import type { FraudAlert, FraudSignal } from '@/types';
 
 beforeAll(() => {
   // Radix Select uses these jsdom-missing APIs.
-  if (!Element.prototype.hasPointerCapture) {
-    Element.prototype.hasPointerCapture = () => false;
-  }
-  if (!Element.prototype.scrollIntoView) {
-    Element.prototype.scrollIntoView = () => {};
-  }
-  if (!Element.prototype.releasePointerCapture) {
-    Element.prototype.releasePointerCapture = () => {};
-  }
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.scrollIntoView = () => {};
+  Element.prototype.releasePointerCapture = () => {};
 });
 
 const mockReview = vi.fn().mockResolvedValue(undefined);

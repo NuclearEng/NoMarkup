@@ -191,7 +191,7 @@ describe('AuctionReplay', () => {
     expect(screen.getByRole('radio', { name: '10x' }).getAttribute('aria-checked')).toBe('true');
   });
 
-  it('does not start playback when there are no events (handlePlay early return)', async () => {
+  it('does not start playback when there are no events (handlePlay early return)', () => {
     vi.mocked(useAuctionReplay).mockReturnValue({
       data: { ...sampleData, events: [] },
       isLoading: false,
@@ -233,7 +233,7 @@ describe('AuctionReplay', () => {
     expect(screen.getByText('$0')).toBeDefined();
   }, 20000);
 
-  it('handles scrubbing via the slider thumb keyboard interactions', async () => {
+  it('handles scrubbing via the slider thumb keyboard interactions', () => {
     vi.mocked(useAuctionReplay).mockReturnValue({
       data: sampleData,
       isLoading: false,
@@ -268,9 +268,11 @@ describe('AuctionReplay', () => {
   });
 
   it('renders single-event sample without crashing the elapsed/total labels', () => {
+    const firstEvent = sampleData.events[0];
+    if (!firstEvent) throw new Error('expected sampleData.events[0]');
     const singleEvent = {
       ...sampleData,
-      events: [sampleData.events[0]!],
+      events: [firstEvent],
       duration_seconds: 0,
     };
     vi.mocked(useAuctionReplay).mockReturnValue({

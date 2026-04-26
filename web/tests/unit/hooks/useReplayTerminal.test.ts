@@ -352,10 +352,12 @@ describe('useReplayTerminal', () => {
   });
 
   it('reports scrubValue=0 when the replay has only one event', () => {
+    const firstEvent = mockReplay.events[0];
+    if (!firstEvent) throw new Error('expected mockReplay.events[0]');
     const singleEventReplay = {
       ...mockReplay,
       bid_count: 1,
-      events: [mockReplay.events[0]!],
+      events: [firstEvent],
     };
     replayMock.mockReturnValue({
       data: singleEventReplay,

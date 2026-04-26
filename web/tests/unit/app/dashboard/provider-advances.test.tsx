@@ -467,7 +467,7 @@ describe('ProviderAdvancesPage', () => {
         contract_id: 'c-real',
         advance_amount_cents: 25050,
       },
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
+      expect.objectContaining({ onSuccess: expect.any(Function) as unknown }),
     );
     // After onSuccess, fields should be reset
     expect((amount).value).toBe('');
