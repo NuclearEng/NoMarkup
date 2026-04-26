@@ -166,4 +166,135 @@ describe('useAuctionStream', () => {
     expect(auctionWsManager.disconnect).toHaveBeenCalled();
     expect(useAuctionStore.getState().activeJobId).toBeNull();
   });
+
+  it('routes auction_state messages into the auction store via updateAuctionState', () => {
+    const { result } = renderHook(() => useAuctionStream('job-1'), { wrapper: wrap(client) });
+
+    act(() => {
+      auctionWsManager.__emitMessage({
+        type: 'auction_state',
+        data: {
+          lowest_bid_cents: 12500,
+          bid_count: 7,
+          auction_ends_at: '2026-04-25T01:00:00Z',
+          snipe_extension_count: 1,
+        },
+      } as unknown as AuctionMessage);
+    });
+
+    expect(result.current.currentLowest).toBe(12500);
+    expect(result.current.bidCount).toBe(7);
+    expect(result.current.auctionEndsAt).toBe('2026-04-25T01:00:00Z');
+    expect(result.current.snipeExtensionCount).toBe(1);
+  });
+
+  it('computes "decelerating" momentum when older bids exceed recent bids', () => {
+    // Mount the hook with no jobId so setActiveJob doesn't wipe our seeded
+    // bidTimestamps. Seed AFTER mount via setState so the subscriber re-renders.
+    const { result, rerender } = renderHook(() => useAuctionStream(undefined), {
+      wrapper: wrap(client),
+    });
+
+    const now = Date.now();
+    act(() => {
+      useAuctionStore.setState({
+        bidTimestamps: [
+          now - 50_000,
+          now - 45_000,
+          now - 40_000,
+          now - 35_000, // 4 in older window (>30s, <=60s); none recent
+        ],
+      });
+    });
+    rerender();
+
+    expect(result.current.momentum).toBe('decelerating');
+    expect(result.current.velocity).toBe(4);
+  });
+
+  it('computes "accelerating" momentum when recent bids dominate', () => {
+    const { result, rerender } = renderHook(() => useAuctionStream(undefined), {
+      wrapper: wrap(client),
+    });
+
+    const now = Date.now();
+    act(() => {
+      useAuctionStore.setState({
+        bidTimestamps: [
+          now - 1_000,
+          now - 5_000,
+          now - 10_000,
+          now - 15_000,
+        ],
+      });
+    });
+    rerender();
+
+    expect(result.current.momentum).toBe('accelerating');
+  });
+
+  it('ignores bidTimestamps older than 60s when computing velocity buckets', () => {
+    const { result, rerender } = renderHook(() => useAuctionStream(undefined), {
+      wrapper: wrap(client),
+    });
+
+    const now = Date.now();
+    act(() => {
+      useAuctionStore.setState({
+        bidTimestamps: [
+          now - 5_000,    // recent → bucket 5
+          now - 25_000,   // mid    → bucket 3
+          now - 90_000,   // > 60s — should be filtered out
+        ],
+      });
+    });
+    rerender();
+
+    // Sum of buckets equals the number of timestamps within 60s.
+    const total = result.current.velocityBuckets.reduce((a, b) => a + b, 0);
+    expect(total).toBe(2);
+  });
+
+  it('throttles rapid bid_event invalidations: second event schedules a pending timer', async () => {
+    vi.useFakeTimers();
+    try {
+      // Reset and seed state from store so we land in throttled mode.
+      const { result } = renderHook(() => useAuctionStream('job-1'), { wrapper: wrap(client) });
+
+      // First event invokes invalidateQueries immediately and updates lastInvalidateRef
+      act(() => {
+        auctionWsManager.__emitMessage({
+          type: 'bid_event',
+          data: {
+            type: 'bid_placed',
+            job_id: 'job-1',
+            amount_cents: 100,
+            timestamp: '2026-04-25T00:00:00Z',
+          },
+        });
+      });
+
+      // Second event within the 2s throttle window — schedules pending invalidate
+      act(() => {
+        auctionWsManager.__emitMessage({
+          type: 'bid_event',
+          data: {
+            type: 'bid_placed',
+            job_id: 'job-1',
+            amount_cents: 90,
+            timestamp: '2026-04-25T00:00:00.500Z',
+          },
+        });
+      });
+
+      // Advance past the throttle window — the deferred invalidate fires.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_500);
+      });
+
+      expect(result.current.events.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

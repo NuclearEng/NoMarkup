@@ -205,4 +205,120 @@ describe('Header', () => {
       expect(hamburger.getAttribute('aria-expanded')).toBe('false');
     });
   });
+
+  // ---- DEEPENING: invoke each mobile-link onClick handler ----
+
+  it('closes the mobile menu when My Jobs link is clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    const hamburger = screen.getByLabelText('Toggle navigation menu');
+    await user.click(hamburger);
+    fireEvent.click(screen.getByText('My Jobs'));
+    await waitFor(() => {
+      expect(hamburger.getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+
+  it('closes the mobile menu when mobile Browse Jobs link is clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    const hamburger = screen.getByLabelText('Toggle navigation menu');
+    await user.click(hamburger);
+    // Multiple "Browse Jobs" — desktop + mobile. Click mobile (last).
+    const browseLinks = screen.getAllByText('Browse Jobs');
+    const mobileBrowse = browseLinks[browseLinks.length - 1];
+    if (mobileBrowse) fireEvent.click(mobileBrowse);
+    await waitFor(() => {
+      expect(hamburger.getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+
+  it('closes the mobile menu when Messages link is clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    fireEvent.click(screen.getByText('Messages'));
+    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes the mobile menu when Post a Job link is clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    fireEvent.click(screen.getByText('Post a Job'));
+    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes the mobile menu when Provider Dashboard link is clicked', async () => {
+    mockAuth({
+      isAuthenticated: true,
+      user: { ...baseUser, roles: [USER_ROLE.PROVIDER, USER_ROLE.CUSTOMER] },
+    });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    fireEvent.click(screen.getByText('Provider Dashboard'));
+    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes the mobile menu when authenticated Live Demo link is clicked', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    // Two Live Demo links (desktop + mobile). Last is mobile.
+    const liveDemos = screen.getAllByText('Live Demo');
+    const mobileDemo = liveDemos[liveDemos.length - 1];
+    if (mobileDemo) fireEvent.click(mobileDemo);
+    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes the mobile menu when unauthenticated Live Demo link is clicked', async () => {
+    mockAuth({ isAuthenticated: false });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    const liveDemos = screen.getAllByText('Live Demo');
+    const mobileDemo = liveDemos[liveDemos.length - 1];
+    if (mobileDemo) fireEvent.click(mobileDemo);
+    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes the mobile menu when unauthenticated Get started link is clicked', async () => {
+    mockAuth({ isAuthenticated: false });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    const gets = screen.getAllByText('Get started');
+    const mobileGet = gets[gets.length - 1];
+    if (mobileGet) fireEvent.click(mobileGet);
+    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('does not render Provider Dashboard link for non-provider users in mobile menu', async () => {
+    mockAuth({ isAuthenticated: true, user: { ...baseUser, roles: [USER_ROLE.CUSTOMER] } });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    expect(screen.queryByText('Provider Dashboard')).toBeNull();
+  });
+
+  it('renders no menu items in the mobile menu while hydrating', async () => {
+    mockAuth({ isAuthenticated: true, user: baseUser, isHydrating: true });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByLabelText('Toggle navigation menu'));
+    expect(screen.queryByText('Dashboard')).toBeNull();
+    expect(screen.queryByText('Sign in')).toBeNull();
+  });
+
+  it('renders the Logo (no Dashboard link) when unauthenticated', () => {
+    mockAuth({ isAuthenticated: false });
+    render(<Header />);
+    expect(screen.queryByLabelText('Go to Dashboard')).toBeNull();
+  });
 });

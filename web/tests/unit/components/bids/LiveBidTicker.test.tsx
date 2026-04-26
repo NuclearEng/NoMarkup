@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
 
@@ -71,5 +71,94 @@ describe('LiveBidTicker', () => {
     );
     const live = screen.getByRole('status');
     expect(live.getAttribute('aria-label')).toContain('$200.00');
+  });
+
+  it('renders an "up" direction pill (red, rotated icon) when currentBid > previousBid', () => {
+    // Exercises the 'up' branch in the direction ternary (lines 31-33) and
+    // the rotate-180 + red color classes (line 74).
+    const { container } = render(
+      <LiveBidTicker
+        currentBid={28000}
+        previousBid={20000}
+        startingPrice={30000}
+        totalBids={4}
+      />,
+    );
+    // Direction is 'up' so a percent-below-ask pill renders. With currentBid 28000
+    // and startingPrice 30000, savings is 7%.
+    expect(screen.getByText(/7% below ask/i)).toBeDefined();
+    // The pill's icon should have the rotate-180 class (TrendingDown rotated up).
+    const rotated = container.querySelector('.rotate-180');
+    expect(rotated).not.toBeNull();
+    // The up pill uses red classes.
+    const up = container.querySelector('.bg-red-50');
+    expect(up).not.toBeNull();
+  });
+
+  it('omits the direction pill entirely when currentBid equals previousBid (flat)', () => {
+    // direction === 'flat' branch — pill is suppressed.
+    const { container } = render(
+      <LiveBidTicker
+        currentBid={20000}
+        previousBid={20000}
+        startingPrice={30000}
+        totalBids={3}
+      />,
+    );
+    expect(container.querySelector('.bg-emerald-50')).toBeNull();
+    expect(container.querySelector('.bg-red-50')).toBeNull();
+  });
+
+  it('handles startingPrice of 0 without dividing by zero (savings stays 0)', () => {
+    render(
+      <LiveBidTicker
+        currentBid={10000}
+        previousBid={20000}
+        startingPrice={0}
+        totalBids={1}
+      />,
+    );
+    // With startingPrice 0, savings is 0 — we still render the down pill
+    // since previousBid > currentBid.
+    expect(screen.getByText(/0% below ask/i)).toBeDefined();
+  });
+
+  it('flashes the price color on bid changes and clears after 600ms', async () => {
+    vi.useFakeTimers();
+    const { rerender, container } = render(
+      <LiveBidTicker
+        currentBid={20000}
+        previousBid={25000}
+        startingPrice={30000}
+        totalBids={3}
+      />,
+    );
+    // Down flash applies emerald-500
+    const flashEl = container.querySelector('.text-emerald-500');
+    expect(flashEl).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(600);
+    rerender(
+      <LiveBidTicker
+        currentBid={20000}
+        previousBid={25000}
+        startingPrice={30000}
+        totalBids={3}
+      />,
+    );
+    expect(container.querySelector('.text-emerald-500')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('does not render the watcher pill when watcherCount is 0', () => {
+    const { container } = render(
+      <LiveBidTicker
+        currentBid={20000}
+        startingPrice={30000}
+        totalBids={3}
+        watcherCount={0}
+      />,
+    );
+    expect(container.textContent).not.toMatch(/watching/i);
   });
 });

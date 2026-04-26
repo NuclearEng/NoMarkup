@@ -125,6 +125,17 @@ describe('useRequestAdvance', () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ['my-advances'] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['credit-limit'] });
   });
+
+  it('shows an error toast when the advance request fails', async () => {
+    const { toast } = await import('sonner');
+    vi.mocked(api.post).mockRejectedValueOnce(new FakeApiError(400, 'limit exceeded'));
+
+    const { result } = renderHook(() => useRequestAdvance(), { wrapper: wrap(client) });
+    result.current.mutate({ contract_id: 'c-1', advance_amount_cents: 999_999_999 });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(toast.error).toHaveBeenCalledWith('Failed to request advance');
+  });
 });
 
 describe('useAdminAdvances', () => {
@@ -171,6 +182,17 @@ describe('useReviewAdvance', () => {
     );
     expect(spy).toHaveBeenCalledWith({ queryKey: ['admin-advances'] });
   });
+
+  it('shows an error toast when the review request fails', async () => {
+    const { toast } = await import('sonner');
+    vi.mocked(api.post).mockRejectedValueOnce(new FakeApiError(500, 'boom'));
+
+    const { result } = renderHook(() => useReviewAdvance(), { wrapper: wrap(client) });
+    result.current.mutate({ advanceId: 'adv-1', action: 'reject' });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(toast.error).toHaveBeenCalledWith('Failed to review advance');
+  });
 });
 
 describe('useDisburseAdvance', () => {
@@ -190,5 +212,16 @@ describe('useDisburseAdvance', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/advances/adv-1/disburse');
     expect(result.current.data).toEqual(advance);
     expect(spy).toHaveBeenCalledWith({ queryKey: ['admin-advances'] });
+  });
+
+  it('shows an error toast when the disburse request fails', async () => {
+    const { toast } = await import('sonner');
+    vi.mocked(api.post).mockRejectedValueOnce(new FakeApiError(500, 'down'));
+
+    const { result } = renderHook(() => useDisburseAdvance(), { wrapper: wrap(client) });
+    result.current.mutate('adv-1');
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(toast.error).toHaveBeenCalledWith('Failed to disburse advance');
   });
 });

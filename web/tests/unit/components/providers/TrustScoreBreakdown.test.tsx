@@ -79,4 +79,92 @@ describe('TrustScoreBreakdown', () => {
     render(<TrustScoreBreakdown score={mockScore} />);
     expect(screen.queryByText(/Requirements for/)).toBeNull();
   });
+
+  it('renders red border (score < 0.4)', () => {
+    const lowScore: TrustScore = {
+      ...mockScore,
+      overall_score: 0.2,
+      feedback_score: 0.1,
+      volume_score: 0.2,
+      risk_score: 0.3,
+      fraud_score: 0.35,
+      tier: TRUST_TIER.UNDER_REVIEW,
+      data_points: 1,
+    };
+    const { container } = render(<TrustScoreBreakdown score={lowScore} />);
+    // border-red-500 utility class should appear on the circle
+    expect(container.querySelector('.border-red-500')).not.toBeNull();
+    // bg-red-500 score bar (red branch in getScoreColor)
+    expect(container.querySelector('.bg-red-500')).not.toBeNull();
+    // Singular: 1 data point (not "data points")
+    expect(screen.getByText(/Based on 1 data point$/)).toBeDefined();
+  });
+
+  it('renders amber border (0.4 <= score < 0.7)', () => {
+    const midScore: TrustScore = {
+      ...mockScore,
+      overall_score: 0.5,
+      feedback_score: 0.45,
+      volume_score: 0.5,
+      risk_score: 0.55,
+      fraud_score: 0.6,
+      tier: TRUST_TIER.RISING,
+    };
+    const { container } = render(<TrustScoreBreakdown score={midScore} />);
+    expect(container.querySelector('.border-amber-500')).not.toBeNull();
+    expect(container.querySelector('.bg-amber-500')).not.toBeNull();
+  });
+
+  it('renders met checkmark when overall_score meets next tier minimum', () => {
+    // Score 0.95 meets the 0.9 min_overall_score for TOP_RATED
+    const highScore: TrustScore = { ...mockScore, overall_score: 0.95 };
+    render(
+      <TrustScoreBreakdown score={highScore} tierRequirements={tierRequirements} />,
+    );
+    // The "met" checkmark span has aria-label="Requirement met"
+    expect(screen.getByLabelText('Requirement met')).toBeDefined();
+  });
+
+  it('omits identity-verification line when not required by next tier', () => {
+    const reqsNoVerify: TierRequirement[] = [
+      {
+        ...tierRequirements[0]!,
+        requires_verification: false,
+      },
+    ];
+    render(
+      <TrustScoreBreakdown score={mockScore} tierRequirements={reqsNoVerify} />,
+    );
+    expect(screen.queryByText(/Identity verification required/)).toBeNull();
+  });
+
+  it('returns null next-tier when current tier is the highest', () => {
+    const topScore: TrustScore = {
+      ...mockScore,
+      tier: TRUST_TIER.TOP_RATED,
+      overall_score: 0.95,
+    };
+    render(
+      <TrustScoreBreakdown score={topScore} tierRequirements={tierRequirements} />,
+    );
+    // No "Requirements for" section (already at top tier)
+    expect(screen.queryByText(/Requirements for/)).toBeNull();
+  });
+
+  it('returns null next-tier when no matching requirement found', () => {
+    // Currently TRUSTED → next is TOP_RATED, but tierRequirements doesn't include it
+    const reqs: TierRequirement[] = [
+      {
+        tier: TRUST_TIER.RISING,
+        min_overall_score: 0.5,
+        min_completed_jobs: 10,
+        min_reviews: 5,
+        min_rating: 4.0,
+        requires_verification: false,
+        description: 'Rising tier description',
+      },
+    ];
+    render(<TrustScoreBreakdown score={mockScore} tierRequirements={reqs} />);
+    expect(screen.queryByText(/Requirements for/)).toBeNull();
+  });
 });

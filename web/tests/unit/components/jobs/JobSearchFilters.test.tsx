@@ -275,4 +275,93 @@ describe('JobSearchFilters', () => {
     expect(screen.getByRole('option', { name: /Electrical/ })).toBeDefined();
     expect(screen.getByRole('option', { name: /All Categories/ })).toBeDefined();
   });
+
+  // ---- DEEPENING: schedule_type Select onValueChange (lines 124-128) ----
+
+  it('emits schedule_type=specific_date when Specific Date option is chosen', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<JobSearchFilters filters={baseFilters} onChange={onChange} />);
+
+    await user.click(screen.getByLabelText('Schedule Type'));
+    const opt = await screen.findByRole('option', { name: 'Specific Date' });
+    await user.click(opt);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ schedule_type: 'specific_date', page: 1 }),
+    );
+  });
+
+  it('emits schedule_type=undefined when Any Schedule is chosen', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, schedule_type: 'flexible' }}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Schedule Type'));
+    const opt = await screen.findByRole('option', { name: 'Any Schedule' });
+    await user.click(opt);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ schedule_type: undefined, page: 1 }),
+    );
+  });
+
+  // ---- DEEPENING: locationText onChange (lines 186-187) ----
+
+  it('updates the location input value as the user types', () => {
+    render(<JobSearchFilters filters={baseFilters} onChange={vi.fn()} />);
+    const loc = screen.getByLabelText('Location filter') as HTMLInputElement;
+    fireEvent.change(loc, { target: { value: 'San Francisco' } });
+    expect(loc.value).toBe('San Francisco');
+  });
+
+  // ---- DEEPENING: category Select onValueChange to ensure both branches hit ----
+
+  it('emits category_id when a Category option is chosen', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<JobSearchFilters filters={baseFilters} onChange={onChange} />);
+
+    await user.click(screen.getByLabelText('Category'));
+    const opt = await screen.findByRole('option', { name: /Electrical/ });
+    await user.click(opt);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ category_id: 'cat-2', page: 1 }),
+    );
+  });
+
+  it('emits category_id=undefined when All Categories is chosen', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, category_id: 'cat-1' }}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Category'));
+    const opt = await screen.findByRole('option', { name: /All Categories/ });
+    await user.click(opt);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ category_id: undefined, page: 1 }),
+    );
+  });
+
+  it('emits radius_km=undefined when radius input is cleared', () => {
+    const onChange = vi.fn();
+    render(
+      <JobSearchFilters
+        filters={{ ...baseFilters, radius_km: 50 }}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/Radius/), { target: { value: '' } });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ radius_km: undefined, page: 1 }),
+    );
+  });
 });

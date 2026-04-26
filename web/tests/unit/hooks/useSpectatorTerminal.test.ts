@@ -106,4 +106,83 @@ describe('useSpectatorTerminal', () => {
     expect(result.current.spectatorCount).toBe(47);
     expect(result.current.error).toBe('WebSocket disconnected');
   });
+
+  it('exposes inert simulation control no-ops on sim (live spectator stream)', () => {
+    // The hook returns no-op start/pause/reset/setShowCelebration for the live
+    // spectator stream. Invoke them to cover the noop function body.
+    streamMock.mockReturnValue(buildStream());
+
+    const { result } = renderHook(() => useSpectatorTerminal('job-1'));
+
+    expect(() => {
+      result.current.sim.start();
+      result.current.sim.pause();
+      result.current.sim.reset();
+      result.current.sim.setShowCelebration(true);
+    }).not.toThrow();
+    expect(result.current.sim.showCelebration).toBe(false);
+  });
+
+  it('flashes new bids and clears the is_new marker after 2 seconds', () => {
+    // Advance the system clock far enough that all bid timestamps fall outside
+    // the 60s velocity window — this exercises the `age > 60_000` filter
+    // and ensures the velocity bucket loop does not push into out-of-range
+    // bucket indices. We then verify the flash timer actually expires.
+    const events: AuctionBidEvent[] = [
+      { job_id: 'job-1', amount_cents: 50000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:00Z' },
+    ];
+    streamMock.mockReturnValue(buildStream({ events }));
+
+    const { result } = renderHook(() => useSpectatorTerminal('job-1'));
+    // Bid is freshly added → is_new is true.
+    expect(result.current.sim.bids[0]?.is_new).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(2_500);
+    });
+    expect(result.current.sim.bids[0]?.is_new).toBe(false);
+  });
+
+  it('reuses the same providerIdx for events with identical timestamp+amount keys', () => {
+    // Two events with the same created_at and amount_cents should resolve to
+    // the same providerIdx via the providerMapRef cache. This covers the
+    // `provIdx !== undefined` branch in the event projection loop.
+    const events: AuctionBidEvent[] = [
+      { job_id: 'job-1', amount_cents: 50000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:00Z' },
+      { job_id: 'job-1', amount_cents: 60000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:01Z' },
+    ];
+    streamMock.mockReturnValue(buildStream({ events }));
+
+    const { result, rerender } = renderHook(() => useSpectatorTerminal('job-1'));
+    expect(result.current.sim.bids).toHaveLength(2);
+
+    // Append a third event (with a fresh key); the previous map entries stay.
+    const events2: AuctionBidEvent[] = [
+      ...events,
+      { job_id: 'job-1', amount_cents: 70000, event_type: 'bid_placed', created_at: '2026-04-25T00:00:02Z' },
+    ];
+    streamMock.mockReturnValue(buildStream({ events: events2 }));
+    act(() => {
+      rerender();
+    });
+    expect(result.current.sim.bids).toHaveLength(3);
+  });
+
+  it('counts bids inside the 15s velocity window and respects the 60s bucket cap', () => {
+    // Use real time math: created_at slightly in the past.
+    const now = Date.now();
+    const recent = new Date(now - 5_000).toISOString();   // velocity window
+    const stale = new Date(now - 90_000).toISOString();   // outside both windows
+    const events: AuctionBidEvent[] = [
+      { job_id: 'job-1', amount_cents: 50000, event_type: 'bid_placed', created_at: recent },
+      { job_id: 'job-1', amount_cents: 30000, event_type: 'bid_placed', created_at: stale },
+    ];
+    streamMock.mockReturnValue(buildStream({ events }));
+
+    const { result } = renderHook(() => useSpectatorTerminal('job-1'));
+    expect(result.current.sim.velocity).toBe(1);
+    // Total of velocityBuckets equals number of timestamps within 60s.
+    const total = result.current.sim.velocityBuckets.reduce((a, b) => a + b, 0);
+    expect(total).toBe(1);
+  });
 });

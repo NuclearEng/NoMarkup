@@ -89,4 +89,52 @@ describe('PaymentHistory', () => {
     expect(screen.getByText('Refunded')).toBeDefined();
     expect(screen.getByText('Customer cancelled')).toBeDefined();
   });
+
+  it('shows failure_reason when payment failed', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(PaymentHistory, {
+        payments: [
+          makePayment({
+            status: 'failed',
+            failure_reason: 'Card declined by issuer',
+          }),
+        ],
+      }),
+    );
+    await user.click(screen.getByRole('button'));
+    expect(screen.getByText('Failure reason')).toBeDefined();
+    expect(screen.getByText('Card declined by issuer')).toBeDefined();
+  });
+
+  it('shows installment info when payment is part of an installment plan', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(PaymentHistory, {
+        payments: [
+          makePayment({
+            installment_number: 2,
+            total_installments: 4,
+          }),
+        ],
+      }),
+    );
+    await user.click(screen.getByRole('button'));
+    expect(screen.getByText('Installment')).toBeDefined();
+    expect(screen.getByText(/2 of 4/)).toBeDefined();
+  });
+
+  it('collapses the row when clicked twice', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(PaymentHistory, {
+        payments: [makePayment({})],
+      }),
+    );
+    const row = screen.getByRole('button');
+    await user.click(row);
+    expect(screen.getByText('Platform fee')).toBeDefined();
+    await user.click(row);
+    expect(screen.queryByText('Platform fee')).toBeNull();
+  });
 });

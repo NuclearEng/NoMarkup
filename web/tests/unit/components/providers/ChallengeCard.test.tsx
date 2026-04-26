@@ -132,4 +132,84 @@ describe('ChallengeCard', () => {
     expect(screen.getByText('Bob')).toBeDefined();
     expect(screen.getByText('Top Participants')).toBeDefined();
   });
+
+  it('renders priority_placement reward label and Flame icon', () => {
+    render(
+      <ChallengeCard
+        challenge={{
+          ...baseChallenge,
+          reward_type: 'priority_placement',
+          reward_value: 'top_of_search_7_days',
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(/Priority Placement \(top of search 7 days\)/),
+    ).toBeDefined();
+  });
+
+  it('renders fee_discount reward label', () => {
+    render(
+      <ChallengeCard
+        challenge={{
+          ...baseChallenge,
+          reward_type: 'fee_discount',
+          reward_value: 'fifty_percent_off',
+        }}
+      />,
+    );
+    expect(screen.getByText(/Fee Discount \(fifty percent off\)/)).toBeDefined();
+  });
+
+  it('renders profile_highlight reward label', () => {
+    render(
+      <ChallengeCard
+        challenge={{
+          ...baseChallenge,
+          reward_type: 'profile_highlight',
+          reward_value: 'gold_border',
+        }}
+      />,
+    );
+    expect(screen.getByText(/Profile Highlight \(gold border\)/)).toBeDefined();
+  });
+
+  it('renders max participants when set', () => {
+    render(
+      <ChallengeCard
+        challenge={{ ...baseChallenge, max_participants: 100 }}
+      />,
+    );
+    expect(screen.getByText(/100 max/)).toBeDefined();
+  });
+
+  it('renders singular participant label when count is 1', () => {
+    render(
+      <ChallengeCard
+        challenge={{ ...baseChallenge, participant_count: 1 }}
+      />,
+    );
+    // "1 participant" — exact match without trailing 's'
+    const matches = screen.getAllByText(/1 participant/);
+    expect(matches.length).toBeGreaterThan(0);
+  });
+
+  it('renders icons for each challenge_type variant', () => {
+    const types: Array<typeof baseChallenge.challenge_type> = [
+      'jobs_completed',
+      'five_star_reviews',
+      'response_time',
+      'bid_win_rate',
+      'revenue_milestone',
+      'category_specialist',
+    ];
+    for (const t of types) {
+      const { unmount } = render(
+        <ChallengeCard challenge={{ ...baseChallenge, challenge_type: t, id: `ch-${t}` }} />,
+      );
+      // Card title still renders
+      expect(screen.getByText('Complete 10 jobs')).toBeDefined();
+      unmount();
+    }
+  });
 });

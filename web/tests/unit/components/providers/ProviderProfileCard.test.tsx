@@ -132,4 +132,119 @@ describe('ProviderProfileCard', () => {
     );
     expect(screen.getByText('Responds in 1 hour')).toBeDefined();
   });
+
+  // ---- DEEPENING: branches uncovered (73, 85, 91, 106) ----
+
+  it('renders unfilled stars (text-muted-foreground branch) for low ratings', () => {
+    const { container } = render(
+      <ProviderProfileCard
+        profile={baseProfile}
+        displayName="Jane Doe"
+        avatarUrl={null}
+        averageRating={2}
+      />,
+    );
+    // With averageRating=2, only 2 of 5 stars get the yellow fill class — the
+    // remaining 3 should land on the text-muted-foreground branch (line 73).
+    const stars = container.querySelectorAll('svg.lucide-star');
+    const muted = Array.from(stars).filter((s) => s.classList.contains('text-muted-foreground'));
+    expect(muted.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('omits the response time badge when label is missing (line 85 branch)', () => {
+    render(
+      <ProviderProfileCard
+        profile={{ ...baseProfile, responseTimeLabel: null as unknown as string }}
+        displayName="Jane Doe"
+        avatarUrl={null}
+      />,
+    );
+    expect(screen.queryByText('Responds in 1 hour')).toBeNull();
+  });
+
+  it('omits the bio block when bio is null (line 91 branch)', () => {
+    render(
+      <ProviderProfileCard
+        profile={{ ...baseProfile, bio: null }}
+        displayName="Jane Doe"
+        avatarUrl={null}
+      />,
+    );
+    expect(screen.queryByText(/Trusted plumber/)).toBeNull();
+  });
+
+  it('omits the service-category section when there are no categories (line 106 branch)', () => {
+    render(
+      <ProviderProfileCard
+        profile={{ ...baseProfile, serviceCategories: [] }}
+        displayName="Jane Doe"
+        avatarUrl={null}
+      />,
+    );
+    // With no categories, neither original badges nor the +N more chip render.
+    expect(screen.queryByText('Plumbing')).toBeNull();
+    expect(screen.queryByText(/\+\d+ more/)).toBeNull();
+  });
+
+  it('renders without crashing when avatarUrl is provided', () => {
+    // shadcn AvatarImage may not load in jsdom; just assert the heading renders.
+    render(
+      <ProviderProfileCard
+        profile={baseProfile}
+        displayName="Jane Doe"
+        avatarUrl="https://cdn/jane.png"
+      />,
+    );
+    expect(screen.getByText('Acme Plumbing')).toBeDefined();
+  });
+
+  it('omits the rating row when averageRating is null', () => {
+    render(
+      <ProviderProfileCard
+        profile={baseProfile}
+        displayName="Jane Doe"
+        avatarUrl={null}
+        averageRating={null}
+      />,
+    );
+    expect(screen.queryByLabelText(/Rating:/)).toBeNull();
+  });
+
+  it('omits trust tier badge when trustTier is undefined', () => {
+    render(
+      <ProviderProfileCard
+        profile={baseProfile}
+        displayName="Jane Doe"
+        avatarUrl={null}
+      />,
+    );
+    expect(screen.queryByText('Trusted')).toBeNull();
+  });
+
+  it('omits Verified badge when verified is false', () => {
+    render(
+      <ProviderProfileCard
+        profile={baseProfile}
+        displayName="Jane Doe"
+        avatarUrl={null}
+        verified={false}
+      />,
+    );
+    expect(screen.queryByText('Verified')).toBeNull();
+  });
+
+  it('does not render +N more chip when there are exactly 5 categories', () => {
+    const five = {
+      ...baseProfile,
+      serviceCategories: Array.from({ length: 5 }, (_, i) => ({
+        id: `c-${String(i)}`,
+        name: `Cat ${String(i)}`,
+        slug: `cat-${String(i)}`,
+        level: 0,
+        parentName: null,
+      })),
+    };
+    render(<ProviderProfileCard profile={five} displayName="Jane" avatarUrl={null} />);
+    expect(screen.queryByText(/\+\d+ more/)).toBeNull();
+  });
 });

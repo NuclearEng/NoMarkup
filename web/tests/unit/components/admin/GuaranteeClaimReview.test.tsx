@@ -24,12 +24,17 @@ vi.mock('next/link', () => ({
 }));
 
 const mockReview = vi.fn().mockResolvedValue(undefined);
+const mutationState = { isPending: false, isError: false };
 
 vi.mock('@/hooks/useGuarantee', () => ({
   useReviewGuaranteeClaim: () => ({
     mutateAsync: mockReview,
-    isPending: false,
-    isError: false,
+    get isPending() {
+      return mutationState.isPending;
+    },
+    get isError() {
+      return mutationState.isError;
+    },
   }),
 }));
 
@@ -50,6 +55,8 @@ function makeClaim(overrides: Partial<Dispute> = {}): Dispute {
 describe('GuaranteeClaimReview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mutationState.isPending = false;
+    mutationState.isError = false;
   });
 
   it('renders claim header and details', () => {
@@ -204,5 +211,78 @@ describe('GuaranteeClaimReview', () => {
     await user.click(cancels[cancels.length - 1] as HTMLElement);
     // After cancel, the Rejection Reason label should disappear from the document
     expect(screen.queryByLabelText(/Rejection Reason/)).toBeNull();
+  });
+
+  // ---- DEEPENING: reviewMutation.isError branches (lines 322-324, 377-379) ----
+
+  it('renders the main-panel review error message when the mutation errors', () => {
+    mutationState.isError = true;
+    render(createElement(GuaranteeClaimReview, { claim: makeClaim() }));
+    expect(screen.getByText(/Failed to submit review/)).toBeDefined();
+  });
+
+  it('renders the reject-dialog error message when the mutation errors', async () => {
+    mutationState.isError = true;
+    const user = userEvent.setup();
+    render(createElement(GuaranteeClaimReview, { claim: makeClaim() }));
+    await user.click(screen.getByRole('button', { name: /reject claim/i }));
+    expect(screen.getByText(/Failed to reject claim/)).toBeDefined();
+  });
+
+  it('disables Approve and Reject buttons while the mutation is pending', () => {
+    mutationState.isPending = true;
+    render(createElement(GuaranteeClaimReview, { claim: makeClaim() }));
+    const approve = screen.getByRole<HTMLButtonElement>('button', { name: /Processing|Approve Claim/i });
+    const reject = screen.getByRole<HTMLButtonElement>('button', { name: /reject claim/i });
+    expect(approve.disabled).toBe(true);
+    expect(reject.disabled).toBe(true);
+  });
+
+  it('shows "Processing..." label on Approve while pending', () => {
+    mutationState.isPending = true;
+    render(createElement(GuaranteeClaimReview, { claim: makeClaim() }));
+    expect(screen.getByText(/Processing\.\.\./)).toBeDefined();
+  });
+
+  it('renders Resolved label when claim status is resolved', () => {
+    render(
+      createElement(GuaranteeClaimReview, {
+        claim: makeClaim({ status: 'resolved', resolved_at: '2026-04-12T10:00:00Z' }),
+      }),
+    );
+    // "Resolved" appears as the status badge AND the resolved-at field label.
+    expect(screen.getAllByText('Resolved').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders Resolution Notes summary when notes are present', () => {
+    render(
+      createElement(GuaranteeClaimReview, {
+        claim: makeClaim({
+          status: 'resolved',
+          resolution_notes: 'Approved with full payout.',
+          resolved_at: '2026-04-10T00:00:00Z',
+        }),
+      }),
+    );
+    expect(screen.getByText(/Resolution Notes/)).toBeDefined();
+    expect(screen.getByText('Approved with full payout.')).toBeDefined();
+  });
+
+  it('renders the Outcome label when guarantee_outcome is set', () => {
+    render(
+      createElement(GuaranteeClaimReview, {
+        claim: makeClaim({ guarantee_outcome: 'refund' }),
+      }),
+    );
+    expect(screen.getByText('Refund Issued')).toBeDefined();
+  });
+
+  it('hides the review panel when status is closed', () => {
+    render(
+      createElement(GuaranteeClaimReview, {
+        claim: makeClaim({ status: 'closed' as Dispute['status'] }),
+      }),
+    );
+    expect(screen.queryByRole('button', { name: /approve claim/i })).toBeNull();
   });
 });
