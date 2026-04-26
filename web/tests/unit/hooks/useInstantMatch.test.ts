@@ -9,6 +9,7 @@ import {
   useDeclineOffer,
   useProviderOffers,
 } from '@/hooks/useInstantMatch';
+import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -82,6 +83,18 @@ describe('useAcceptOffer', () => {
     expect(result.current.data?.status).toBe('accepted');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['provider-offers'] });
   });
+
+  it('shows an error toast when the accept mutation fails', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('expired'));
+
+    const { result } = renderHook(() => useAcceptOffer('j-1'), { wrapper: wrap(client) });
+    result.current.mutate();
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      'Failed to accept offer. It may have already expired.',
+    );
+  });
 });
 
 describe('useDeclineOffer', () => {
@@ -99,6 +112,16 @@ describe('useDeclineOffer', () => {
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/provider/offers/j-1/decline');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['provider-offers'] });
+  });
+
+  it('shows an error toast when the decline mutation fails', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useDeclineOffer('j-1'), { wrapper: wrap(client) });
+    result.current.mutate();
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to decline offer.');
   });
 });
 
@@ -119,5 +142,15 @@ describe('useCreateInstantMatch', () => {
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/jobs/j-1/instant-match');
     expect(result.current.data?.status).toBe('matching');
+  });
+
+  it('shows an error toast when the instant-match mutation fails', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('no providers'));
+
+    const { result } = renderHook(() => useCreateInstantMatch('j-1'), { wrapper: wrap(client) });
+    result.current.mutate();
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to start instant match.');
   });
 });

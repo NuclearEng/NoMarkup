@@ -31,21 +31,34 @@ vi.mock('@/components/terminal/terminal-grid', () => ({
 
 vi.mock('@/hooks/useJobs', () => ({ useJob: vi.fn() }));
 vi.mock('@/hooks/useSpectatorTerminal', () => ({
-  useSpectatorTerminal: () => ({
+  useSpectatorTerminal: vi.fn(),
+}));
+
+const { useJob } = await import('@/hooks/useJobs');
+const { useSpectatorTerminal } = await import('@/hooks/useSpectatorTerminal');
+const { default: SpectatorPage } = await import('@/app/(public)/auctions/[id]/spectate/page');
+
+function setSpectatorMock(overrides: Partial<{
+  sim: object;
+  providers: readonly unknown[];
+  spectatorCount: number;
+  isConnected: boolean;
+  error: Error | null;
+}> = {}) {
+  vi.mocked(useSpectatorTerminal).mockReturnValue({
     sim: {},
     providers: [],
     spectatorCount: 3,
     isConnected: true,
     error: null,
-  }),
-}));
-
-const { useJob } = await import('@/hooks/useJobs');
-const { default: SpectatorPage } = await import('@/app/(public)/auctions/[id]/spectate/page');
+    ...overrides,
+  } as unknown as ReturnType<typeof useSpectatorTerminal>);
+}
 
 describe('(public)/auctions/[id]/spectate/page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setSpectatorMock();
   });
 
   it('shows the loading state', () => {
@@ -90,5 +103,55 @@ describe('(public)/auctions/[id]/spectate/page', () => {
     expect(screen.getByTestId('terminal-grid')).toBeDefined();
     expect(screen.getByTestId('terminal-toolbar')).toBeDefined();
     expect(screen.getByText(/3 watching/)).toBeDefined();
+  });
+
+  it('renders the disconnected (error) connection chip when the WS errors out', () => {
+    vi.mocked(useJob).mockReturnValue({
+      data: {
+        id: 'test-id',
+        title: 'Roof repair',
+        location_address: '123 Main St',
+        starting_bid_cents: 50000,
+        market_range: null,
+        auction_ends_at: null,
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useJob>);
+    setSpectatorMock({
+      isConnected: false,
+      error: new Error('WS connection failed'),
+      spectatorCount: 0,
+    });
+
+    render(createElement(SpectatorPage));
+    expect(screen.getByText('Disconnected')).toBeDefined();
+    expect(screen.getByLabelText('Connection error')).toBeDefined();
+  });
+
+  it('renders the connecting connection chip when not yet connected and no error', () => {
+    vi.mocked(useJob).mockReturnValue({
+      data: {
+        id: 'test-id',
+        title: 'Roof repair',
+        location_address: null,
+        starting_bid_cents: 0,
+        market_range: { low_cents: 100, median_cents: 200, high_cents: 300, sample_size: 5 },
+        auction_ends_at: '2026-04-26T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useJob>);
+    setSpectatorMock({
+      isConnected: false,
+      error: null,
+      spectatorCount: 0,
+    });
+
+    render(createElement(SpectatorPage));
+    expect(screen.getByText('Connecting')).toBeDefined();
+    expect(screen.getByLabelText('Connecting to live stream')).toBeDefined();
+    // No spectator count chip when count is 0.
+    expect(screen.queryByText(/watching/)).toBeNull();
   });
 });

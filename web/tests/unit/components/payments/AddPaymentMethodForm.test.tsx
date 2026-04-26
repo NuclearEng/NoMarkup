@@ -4,13 +4,20 @@ import { createElement, type ReactNode } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // Stub Stripe SDK before the component is imported.
+type ConfirmSetupResult = { error?: { message?: string } };
+const stripeStub: { confirmSetup: ReturnType<typeof vi.fn> } = {
+  confirmSetup: vi.fn<() => Promise<ConfirmSetupResult>>(),
+};
+let stripeAvailable = true;
+let elementsAvailable = true;
+
 vi.mock('@stripe/react-stripe-js', () => ({
   Elements: ({ children }: { children: ReactNode }) =>
     createElement('div', { 'data-testid': 'stripe-elements' }, children),
   PaymentElement: () =>
     createElement('div', { 'data-testid': 'stripe-payment-element' }, 'PaymentElement'),
-  useStripe: () => ({ confirmSetup: vi.fn() }),
-  useElements: () => ({ getElement: vi.fn() }),
+  useStripe: () => (stripeAvailable ? stripeStub : null),
+  useElements: () => (elementsAvailable ? { getElement: vi.fn() } : null),
 }));
 
 vi.mock('@stripe/stripe-js', () => ({
@@ -47,6 +54,9 @@ describe('AddPaymentMethodForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useDevAddMock.mockReturnValue(defaultDevAdd());
+    stripeAvailable = true;
+    elementsAvailable = true;
+    stripeStub.confirmSetup.mockReset();
   });
 
   it('renders the initial Enter Payment Details CTA', () => {
@@ -375,6 +385,252 @@ describe('AddPaymentMethodForm', () => {
     });
     await waitFor(() => {
       expect(onSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it('changes the dev brand select value', async () => {
+    const user = userEvent.setup();
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_zzz' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Brand/)).toBeDefined();
+    });
+    const brand = screen.getByLabelText(/Brand/) as HTMLSelectElement;
+    await user.selectOptions(brand, 'amex');
+    expect(brand.value).toBe('amex');
+  });
+
+  it('cancels the dev card form via the dev Cancel button', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_xyz' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel,
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Last 4 digits/)).toBeDefined();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Cancel$/ }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a fallback error message when the dev mutation rejects with a non-Error value', async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockRejectedValue('plain string');
+    useDevAddMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    } as unknown as ReturnType<typeof useAddDevPaymentMethod>);
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'dev_seti_str' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Last 4 digits/)).toBeDefined();
+    });
+
+    await user.type(screen.getByLabelText(/Last 4 digits/), '4242');
+    await user.type(screen.getByLabelText(/Exp month/), '6');
+    await user.type(screen.getByLabelText(/Exp year/), '2030');
+    await user.click(screen.getByRole('button', { name: /Save Dev Card/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to add card.')).toBeDefined();
+    });
+  });
+
+  it('calls onSuccess after a successful Stripe confirmSetup', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    stripeStub.confirmSetup.mockResolvedValue({ error: undefined });
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'pi_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess,
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-element')).toBeDefined();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Save Payment Method/ }));
+
+    await waitFor(() => {
+      expect(stripeStub.confirmSetup).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('shows the Stripe error message when confirmSetup returns an error with a message', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    stripeStub.confirmSetup.mockResolvedValue({ error: { message: 'card declined' } });
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'pi_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess,
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-element')).toBeDefined();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Save Payment Method/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText('card declined')).toBeDefined();
+    });
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it('shows a fallback error message when confirmSetup returns an error without a message', async () => {
+    const user = userEvent.setup();
+    stripeStub.confirmSetup.mockResolvedValue({ error: {} });
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'pi_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-element')).toBeDefined();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Save Payment Method/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText('An unexpected error occurred.')).toBeDefined();
+    });
+  });
+
+  it('no-ops on submit when the Stripe SDK is not yet available', async () => {
+    const user = userEvent.setup();
+    stripeAvailable = false;
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'pi_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-element')).toBeDefined();
+    });
+
+    // Save button should be disabled while stripe isn't loaded.
+    const save = screen.getByRole('button', { name: /Save Payment Method/ }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(stripeStub.confirmSetup).not.toHaveBeenCalled();
+  });
+
+  it('cancels the Stripe form via its Cancel button', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'pi_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel,
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-element')).toBeDefined();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Cancel$/ }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an Initializing… indicator while the setup intent request is in flight', async () => {
+    const user = userEvent.setup();
+    let resolveCreate: ((value: { client_secret: string }) => void) | undefined;
+    const pending = new Promise<{ client_secret: string }>((resolve) => {
+      resolveCreate = resolve;
+    });
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockReturnValue(pending),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+
+    expect(screen.getByText('Initializing...')).toBeDefined();
+
+    resolveCreate?.({ client_secret: 'pi_done' });
+    await waitFor(() => {
+      expect(screen.queryByText('Initializing...')).toBeNull();
     });
   });
 });

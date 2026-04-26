@@ -12,6 +12,18 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   } as unknown as typeof globalThis.ResizeObserver;
+  if (!('hasPointerCapture' in HTMLElement.prototype)) {
+    Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', {
+      configurable: true,
+      value: () => false,
+    });
+  }
+  if (!('scrollIntoView' in HTMLElement.prototype)) {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: () => {},
+    });
+  }
   // Stub URL.createObjectURL for evidence file upload tests.
   Object.defineProperty(globalThis.URL, 'createObjectURL', {
     configurable: true,
@@ -226,5 +238,153 @@ describe('InsuranceClaimForm', () => {
 
     // Loader2 has the animate-spin class
     expect(container.querySelectorAll('.animate-spin').length).toBeGreaterThan(0);
+  });
+
+  it('shows the claimed amount validation error when blank/invalid on submit', async () => {
+    const user = userEvent.setup();
+    const longDescription = 'a'.repeat(120);
+    const mutate = vi.fn();
+    useFile.mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useFileInsuranceClaim>);
+
+    render(
+      createElement(InsuranceClaimForm, {
+        policyId: 'pol-1',
+        coverageAmountCents: 1_000_00,
+      }),
+    );
+
+    await user.type(screen.getByLabelText(/Description/), longDescription);
+    // Leave Claimed Amount blank — RHF default value is ''. Submit should show the
+    // refine() error on claimed_amount_dollars.
+    await user.click(screen.getByRole('button', { name: /Submit Claim/ }));
+
+    expect(await screen.findByText(/Enter a valid amount/)).toBeDefined();
+    expect(mutate).not.toHaveBeenCalled();
+
+    // The Input should now point to the claimed-amount-error region via aria-describedby
+    const amountInput = screen.getByLabelText(/Claimed Amount/);
+    expect(amountInput.getAttribute('aria-describedby')).toBe('claimed-amount-error');
+  });
+
+  it('does not call mutate when amount exceeds coverage on submit (early return)', async () => {
+    const user = userEvent.setup();
+    const longDescription = 'b'.repeat(120);
+    const mutate = vi.fn();
+    useFile.mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useFileInsuranceClaim>);
+
+    render(
+      createElement(InsuranceClaimForm, {
+        policyId: 'pol-1',
+        coverageAmountCents: 100_00,
+      }),
+    );
+
+    await user.type(screen.getByLabelText(/Description/), longDescription);
+    await user.type(screen.getByLabelText(/Claimed Amount/), '500');
+    await user.click(screen.getByRole('button', { name: /Submit Claim/ }));
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it('submits successfully and invokes onSuccess when no errors', async () => {
+    const user = userEvent.setup();
+    const longDescription = 'c'.repeat(120);
+    const onSuccess = vi.fn();
+    const mutate = vi.fn(
+      (
+        _vars: unknown,
+        opts: { onSuccess: () => void },
+      ) => {
+        opts.onSuccess();
+      },
+    );
+    useFile.mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useFileInsuranceClaim>);
+
+    render(
+      createElement(InsuranceClaimForm, {
+        policyId: 'pol-1',
+        coverageAmountCents: 1_000_00,
+        onSuccess,
+      }),
+    );
+
+    // Choose claim type
+    await user.click(screen.getByRole('combobox'));
+    const option = await screen.findByRole('option', { name: 'Property Damage' });
+    await user.click(option);
+
+    await user.type(screen.getByLabelText(/Description/), longDescription);
+    await user.type(screen.getByLabelText(/Claimed Amount/), '50');
+
+    await user.click(screen.getByRole('button', { name: /Submit Claim/ }));
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    const [vars] = mutate.mock.calls[0] ?? [];
+    expect((vars as { policy_id: string }).policy_id).toBe('pol-1');
+    expect((vars as { claim_type: string }).claim_type).toBe('damage');
+    expect((vars as { claimed_amount_cents: number }).claimed_amount_cents).toBe(5000);
+  });
+
+  it('does not call onSuccess if it is undefined when mutation succeeds', async () => {
+    const user = userEvent.setup();
+    const longDescription = 'd'.repeat(120);
+    const mutate = vi.fn(
+      (
+        _vars: unknown,
+        opts: { onSuccess: () => void },
+      ) => {
+        opts.onSuccess();
+      },
+    );
+    useFile.mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useFileInsuranceClaim>);
+
+    render(
+      createElement(InsuranceClaimForm, {
+        policyId: 'pol-1',
+        coverageAmountCents: 1_000_00,
+      }),
+    );
+
+    await user.click(screen.getByRole('combobox'));
+    const option = await screen.findByRole('option', { name: 'Other' });
+    await user.click(option);
+
+    await user.type(screen.getByLabelText(/Description/), longDescription);
+    await user.type(screen.getByLabelText(/Claimed Amount/), '25');
+
+    // No onSuccess prop passed — should not throw when undefined
+    await user.click(screen.getByRole('button', { name: /Submit Claim/ }));
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows validation error when claim type is missing on submit', async () => {
+    const user = userEvent.setup();
+    const longDescription = 'e'.repeat(120);
+    render(
+      createElement(InsuranceClaimForm, {
+        policyId: 'pol-1',
+        coverageAmountCents: 1_000_00,
+      }),
+    );
+    await user.type(screen.getByLabelText(/Description/), longDescription);
+    await user.type(screen.getByLabelText(/Claimed Amount/), '25');
+    await user.click(screen.getByRole('button', { name: /Submit Claim/ }));
+    expect(await screen.findByText(/Select a claim type/)).toBeDefined();
   });
 });
