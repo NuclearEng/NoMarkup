@@ -5,9 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
 
+const mockPathname: { value: string } = { value: '/provider' };
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
-  usePathname: () => '/provider',
+  usePathname: () => mockPathname.value,
   useSearchParams: () => new URLSearchParams(),
   redirect: vi.fn(),
   notFound: vi.fn(),
@@ -16,8 +17,12 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { children: ReactNode; href: string }) =>
-    createElement('a', { href }, children),
+  default: ({
+    children,
+    href,
+    ...rest
+  }: { children: ReactNode; href: string } & Record<string, unknown>) =>
+    createElement('a', { href, ...rest }, children),
 }));
 
 const mockState: { user: { id: string; roles: string[] } | null; isHydrating: boolean } = {
@@ -57,5 +62,18 @@ describe('ProviderLayout', () => {
       withQueryClient(createElement(ProviderLayout, { children: 'CHILD' })),
     );
     expect(container.querySelector('.animate-spin')).toBeTruthy();
+  });
+
+  it('marks the current nav item as active when pathname matches', () => {
+    mockState.user = { id: 'u1', roles: ['provider'] };
+    mockState.isHydrating = false;
+    mockPathname.value = '/provider/offers';
+    const { container } = render(
+      withQueryClient(createElement(ProviderLayout, { children: 'CHILD' })),
+    );
+    const activeLink = container.querySelector('a[aria-current="page"]');
+    expect(activeLink).toBeTruthy();
+    expect(activeLink?.getAttribute('href')).toBe('/provider/offers');
+    mockPathname.value = '/provider';
   });
 });
