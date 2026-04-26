@@ -115,7 +115,7 @@ describe('AddEmployeeForm', () => {
   it('strips non-digits from the SSN field and limits to 4 chars', async () => {
     const user = userEvent.setup();
     render(<AddEmployeeForm />);
-    const ssn = screen.getByPlaceholderText('XXXX') as HTMLInputElement;
+    const ssn = screen.getByPlaceholderText('XXXX');
     await user.type(ssn, 'a1b2c34567');
     expect(ssn.value).toBe('1234');
   });

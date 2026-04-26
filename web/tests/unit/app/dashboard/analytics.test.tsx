@@ -392,7 +392,7 @@ describe('AnalyticsPage', () => {
         category_breakdown: [],
       };
       render(withQueryClient(createElement(AnalyticsPage)));
-      const select = screen.getByTestId('date-range-select') as HTMLSelectElement;
+      const select = screen.getByTestId('date-range-select');
       act(() => {
         fireEvent.change(select, { target: { value: val } });
       });
@@ -419,7 +419,7 @@ describe('AnalyticsPage', () => {
         category_breakdown: [],
       };
       render(withQueryClient(createElement(AnalyticsPage)));
-      const select = screen.getByTestId('date-range-select') as HTMLSelectElement;
+      const select = screen.getByTestId('date-range-select');
       act(() => {
         fireEvent.change(select, { target: { value: val } });
       });

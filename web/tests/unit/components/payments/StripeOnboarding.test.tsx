@@ -159,7 +159,7 @@ describe('StripeOnboarding', () => {
 
     render(createElement(StripeOnboarding));
     expect(screen.getByText('Setting up...')).toBeDefined();
-    const button = screen.getByRole('button', { name: /Setting up/ }) as HTMLButtonElement;
+    const button = screen.getByRole('button', { name: /Setting up/ });
     expect(button.disabled).toBe(true);
   });
 
@@ -331,7 +331,7 @@ describe('StripeOnboarding', () => {
 
     render(createElement(StripeOnboarding));
     expect(screen.getByText('Loading...')).toBeDefined();
-    const button = screen.getByRole('button', { name: /Loading/ }) as HTMLButtonElement;
+    const button = screen.getByRole('button', { name: /Loading/ });
     expect(button.disabled).toBe(true);
   });
 

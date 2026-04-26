@@ -170,7 +170,7 @@ describe('AdminUserDetailPage', () => {
     userState.data = { user: makeUser() };
     render(withQueryClient(createElement(AdminUserDetailPage)));
     fireEvent.click(screen.getByLabelText(/Suspend this user/i));
-    const textarea = screen.getByLabelText(/^Reason$/i) as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText(/^Reason$/i);
     fireEvent.change(textarea, { target: { value: 'temp reason' } });
     expect(textarea.value).toBe('temp reason');
     fireEvent.click(screen.getByLabelText(/Cancel action/i));
@@ -180,7 +180,7 @@ describe('AdminUserDetailPage', () => {
     expect((dialog as HTMLDialogElement).hasAttribute('open')).toBe(false);
     // And the reason textarea has been cleared on next open.
     fireEvent.click(screen.getByLabelText(/Suspend this user/i));
-    const reopened = screen.getByLabelText(/^Reason$/i) as HTMLTextAreaElement;
+    const reopened = screen.getByLabelText(/^Reason$/i);
     expect(reopened.value).toBe('');
   });
 

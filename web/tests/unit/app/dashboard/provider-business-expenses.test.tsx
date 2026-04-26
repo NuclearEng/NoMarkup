@@ -321,8 +321,8 @@ describe('ProviderExpensesPage', () => {
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
     // After onSuccess, fields should be reset
-    expect((screen.getByLabelText(/Amount/i) as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText(/^Description$/i) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/Amount/i)).value).toBe('');
+    expect((screen.getByLabelText(/^Description$/i)).value).toBe('');
   });
 
   it('submits with receipt URL when provided', () => {

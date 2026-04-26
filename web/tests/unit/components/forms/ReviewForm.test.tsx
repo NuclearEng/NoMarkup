@@ -220,7 +220,7 @@ describe('ReviewForm', () => {
         onSuccess,
       }),
     );
-    const submitBtn = screen.getByRole('button', { name: /Submit Review/ }) as HTMLButtonElement;
+    const submitBtn = screen.getByRole('button', { name: /Submit Review/ });
     expect(submitBtn.disabled).toBe(true);
     // Loader2 spinner has the animate-spin class.
     expect(submitBtn.querySelector('.animate-spin')).not.toBeNull();
@@ -272,7 +272,7 @@ describe('ReviewForm', () => {
         onSuccess,
       }),
     );
-    const addBtn = screen.getByRole('button', { name: /^Add$/ }) as HTMLButtonElement;
+    const addBtn = screen.getByRole('button', { name: /^Add$/ });
     // disabled while empty — the call should be a no-op.
     expect(addBtn.disabled).toBe(true);
   });

@@ -313,7 +313,7 @@ describe('JobSearchFilters', () => {
 
   it('updates the location input value as the user types', () => {
     render(<JobSearchFilters filters={baseFilters} onChange={vi.fn()} />);
-    const loc = screen.getByLabelText('Location filter') as HTMLInputElement;
+    const loc = screen.getByLabelText('Location filter');
     fireEvent.change(loc, { target: { value: 'San Francisco' } });
     expect(loc.value).toBe('San Francisco');
   });

@@ -502,7 +502,7 @@ describe('ProviderOnboardingPage', () => {
   it('BusinessInfo EIN/TIN auto-inserts a dash after two digits', async () => {
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
-    const ein = screen.getByLabelText(/EIN \/ TIN/i) as HTMLInputElement;
+    const ein = screen.getByLabelText(/EIN \/ TIN/i);
     await user.type(ein, '12');
     expect(ein.value).toBe('12-');
   });
@@ -510,14 +510,14 @@ describe('ProviderOnboardingPage', () => {
   it('BusinessInfo EIN/TIN strips non-digit characters', async () => {
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
-    const ein = screen.getByLabelText(/EIN \/ TIN/i) as HTMLInputElement;
+    const ein = screen.getByLabelText(/EIN \/ TIN/i);
     await user.type(ein, 'a1!b2');
     expect(ein.value).toBe('12-');
   });
 
   it('BusinessInfo Insurance Coverage onChange parses number and clears to undefined when empty', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
-    const cov = screen.getByLabelText(/Insurance Coverage Amount/i) as HTMLInputElement;
+    const cov = screen.getByLabelText(/Insurance Coverage Amount/i);
     fireEvent.change(cov, { target: { value: '500000' } });
     expect(cov.value).toBe('500000');
     fireEvent.change(cov, { target: { value: '' } });
@@ -610,7 +610,7 @@ describe('ProviderOnboardingPage', () => {
     await user.click(addBtn);
     expect(screen.getByText(/Add captions/i)).toBeDefined();
     // A caption input should appear
-    const cap = screen.getByLabelText(/Caption for image 1/i) as HTMLInputElement;
+    const cap = screen.getByLabelText(/Caption for image 1/i);
     fireEvent.change(cap, { target: { value: 'Front porch project' } });
     expect(cap.value).toBe('Front porch project');
   });
@@ -999,7 +999,7 @@ describe('ProviderOnboardingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
     await user.click(screen.getByRole('button', { name: /Add Milestone/i }));
     // The percentage input is the input with placeholder="%"
-    const pct = screen.getByPlaceholderText('%') as HTMLInputElement;
+    const pct = screen.getByPlaceholderText('%');
     fireEvent.change(pct, { target: { value: '50' } });
     expect(pct.value).toBe('50');
   });
@@ -1020,7 +1020,7 @@ describe('ProviderOnboardingPage', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
     await user.click(screen.getByRole('button', { name: /Add Milestone/i }));
-    const desc = screen.getByPlaceholderText('Milestone description') as HTMLInputElement;
+    const desc = screen.getByPlaceholderText('Milestone description');
     fireEvent.change(desc, { target: { value: 'Initial Deposit' } });
     expect(desc.value).toBe('Initial Deposit');
   });
@@ -1042,9 +1042,9 @@ describe('ProviderOnboardingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
     // Add one milestone summing to 100% so the schema's refine passes.
     await user.click(screen.getByRole('button', { name: /Add Milestone/i }));
-    const desc = screen.getByPlaceholderText('Milestone description') as HTMLInputElement;
+    const desc = screen.getByPlaceholderText('Milestone description');
     fireEvent.change(desc, { target: { value: 'Full Payment' } });
-    const pct = screen.getByPlaceholderText('%') as HTMLInputElement;
+    const pct = screen.getByPlaceholderText('%');
     fireEvent.change(pct, { target: { value: '100' } });
     const submitBtn = screen.getAllByRole('button', { name: /^Next$/i })[0];
     if (!submitBtn) throw new Error('Next button missing');

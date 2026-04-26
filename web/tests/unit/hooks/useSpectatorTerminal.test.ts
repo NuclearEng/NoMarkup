@@ -139,7 +139,7 @@ describe('useSpectatorTerminal', () => {
     act(() => {
       vi.advanceTimersByTime(2_500);
     });
-    expect(result.current.sim.bids.every((b) => b.is_new === false)).toBe(true);
+    expect(result.current.sim.bids.every((b) => !b.is_new)).toBe(true);
   });
 
   it('does not re-process events when the stream rerenders with no new events', () => {

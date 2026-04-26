@@ -611,10 +611,10 @@ describe('JobPostingForm', () => {
 
     // Clear the existing fields before invoking the AI button so we can assert
     // its onResult populates them.
-    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/) as HTMLInputElement;
+    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
     const descInput = screen.getByPlaceholderText(
       /Describe the work you need done in detail/,
-    ) as HTMLTextAreaElement;
+    );
     await user.clear(titleInput);
     await user.clear(descInput);
 
@@ -695,7 +695,7 @@ describe('JobPostingForm', () => {
         results: { 0: { 0: { transcript: 'Voice transcribed job title here' } } },
       });
     });
-    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/) as HTMLInputElement;
+    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
     await waitFor(() => {
       expect(titleInput.value).toBe('Voice transcribed job title here');
     });
@@ -1191,7 +1191,7 @@ describe('JobPostingForm', () => {
     await user.click(trigger);
     await user.click(await screen.findByRole('option', { name: /Specific Date/ }));
 
-    const dateInput = screen.getByLabelText(/Preferred Date/) as HTMLInputElement;
+    const dateInput = screen.getByLabelText(/Preferred Date/);
     fireEvent.change(dateInput, { target: { value: '2030-06-15' } });
 
     // Continue forward
@@ -1550,7 +1550,7 @@ describe('JobPostingForm', () => {
     await act(async () => {
       recognition.onresult?.({ results: {} });
     });
-    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/) as HTMLInputElement;
+    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
     expect(titleInput.value).toBe('');
 
     delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
@@ -1603,7 +1603,7 @@ describe('JobPostingForm', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 2 of 7/)).toBeDefined();
     });
-    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/) as HTMLInputElement;
+    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
     await user.clear(titleInput);
     // Type a too-short title so step 2 stays valid against trigger but fails
     // the >= 10 char draft gate.
@@ -1684,7 +1684,7 @@ describe('JobPostingForm', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 2 of 7/)).toBeDefined();
     });
-    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/) as HTMLInputElement;
+    const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
     await user.clear(titleInput);
     fireEvent.change(titleInput, { target: { value: 'short' } });
 

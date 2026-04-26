@@ -457,7 +457,7 @@ describe('ProviderAdvancesPage', () => {
       target: { value: 'c-real' },
     });
     // Set the amount input
-    const amount = screen.getByLabelText(/Amount/) as HTMLInputElement;
+    const amount = screen.getByLabelText(/Amount/);
     fireEvent.change(amount, { target: { value: '250.50' } });
     // Submit the form
     const form = screen.getByRole('button', { name: /^Request Advance$/ }).closest('form') as HTMLElement;
@@ -570,7 +570,7 @@ describe('ProviderAdvancesPage', () => {
 
     render(withQueryClient(createElement(ProviderAdvancesPage)));
     // Type a valid amount in advance input
-    const amount = screen.getByLabelText(/Amount/) as HTMLInputElement;
+    const amount = screen.getByLabelText(/Amount/);
     fireEvent.change(amount, { target: { value: '100' } });
     // The retry button has no selectedContract so the inner condition fails and
     // mutate is NOT called — that's the false branch.
