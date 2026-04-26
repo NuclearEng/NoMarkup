@@ -470,7 +470,8 @@ describe('ProviderAdvancesPage', () => {
       expect.objectContaining({ onSuccess: expect.any(Function) as unknown }),
     );
     // After onSuccess, fields should be reset
-    expect((amount).value).toBe('');
+    if (!(amount instanceof HTMLInputElement)) throw new Error('expected input element');
+    expect(amount.value).toBe('');
   });
 
   it('handleRequestAdvance: bails out when amount is NaN', () => {

@@ -412,6 +412,7 @@ describe('MilestoneTracker', () => {
     expect(screen.getByText(/Requesting/)).toBeDefined();
     // Cancel and revision-request action buttons should be disabled while pending.
     const reqBtn = screen.getByRole('button', { name: /requesting/i });
+    if (!(reqBtn instanceof HTMLButtonElement)) throw new Error('expected button element');
     expect(reqBtn.disabled).toBe(true);
   });
 

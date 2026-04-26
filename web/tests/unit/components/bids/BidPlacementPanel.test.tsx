@@ -14,6 +14,7 @@ describe('BidPlacementPanel', () => {
     render(<BidPlacementPanel currentLowest={20000} startingPrice={30000} />);
     const input = screen.getByLabelText('Bid amount in dollars');
     // Suggested = 95% of 20000 cents = 19000 cents = $190.00
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(input.value).toBe('190.00');
   });
 
@@ -23,6 +24,7 @@ describe('BidPlacementPanel', () => {
     const input = screen.getByLabelText('Bid amount in dollars');
     const minus = screen.getByLabelText('Decrease bid by $5');
     await user.click(minus);
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(input.value).toBe('185.00');
   });
 
@@ -32,6 +34,7 @@ describe('BidPlacementPanel', () => {
     const input = screen.getByLabelText('Bid amount in dollars');
     const plus = screen.getByLabelText('Increase bid by $5');
     await user.click(plus);
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(input.value).toBe('195.00');
   });
 
@@ -41,6 +44,7 @@ describe('BidPlacementPanel', () => {
     const input = screen.getByLabelText('Bid amount in dollars');
     await user.click(screen.getByRole('button', { name: '-10%' }));
     // 90% of 20000 = 18000 = $180.00
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(input.value).toBe('180.00');
   });
 

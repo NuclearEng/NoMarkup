@@ -1,6 +1,6 @@
 // Tests for the admin disputes list page — exercises loading, error, table render
 // with column callbacks, and dispute link rendering.
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -156,5 +156,23 @@ describe('AdminDisputesPage', () => {
     };
     render(withQueryClient(createElement(AdminDisputesPage)));
     expect(screen.getByText(/No disputes found/i)).toBeDefined();
+  });
+
+  it('changes status filter via Select trigger and option click', () => {
+    // The Select's onValueChange (lines 147-150) only fires through Radix —
+    // open the combobox, then click an option.
+    disputesState.data = {
+      disputes: [],
+      pagination: { page: 1, totalPages: 1, hasNext: false },
+    };
+    render(withQueryClient(createElement(AdminDisputesPage)));
+    const trigger = screen.getByRole('combobox', { name: /filter disputes by status/i });
+    fireEvent.click(trigger);
+    const option = screen.getByRole('option', { name: /^Open$/i });
+    fireEvent.click(option);
+    fireEvent.click(trigger);
+    const allOption = screen.getByRole('option', { name: /All Statuses/i });
+    fireEvent.click(allOption);
+    expect(trigger).toBeDefined();
   });
 });

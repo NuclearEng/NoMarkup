@@ -622,6 +622,8 @@ describe('JobPostingForm', () => {
       await user.click(screen.getByTestId('mock-image-analysis'));
     });
 
+    if (!(titleInput instanceof HTMLInputElement)) throw new Error('expected input element');
+    if (!(descInput instanceof HTMLTextAreaElement)) throw new Error('expected textarea element');
     await waitFor(() => {
       expect(titleInput.value).toBe('AI suggested title for the job');
     });
@@ -696,6 +698,7 @@ describe('JobPostingForm', () => {
       });
     });
     const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
+    if (!(titleInput instanceof HTMLInputElement)) throw new Error('expected input element');
     await waitFor(() => {
       expect(titleInput.value).toBe('Voice transcribed job title here');
     });
@@ -1551,6 +1554,7 @@ describe('JobPostingForm', () => {
       recognition.onresult?.({ results: {} });
     });
     const titleInput = screen.getByPlaceholderText(/Kitchen sink repair/);
+    if (!(titleInput instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(titleInput.value).toBe('');
 
     delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;

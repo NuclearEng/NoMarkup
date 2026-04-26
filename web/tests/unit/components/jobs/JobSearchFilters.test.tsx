@@ -315,6 +315,7 @@ describe('JobSearchFilters', () => {
     render(<JobSearchFilters filters={baseFilters} onChange={vi.fn()} />);
     const loc = screen.getByLabelText('Location filter');
     fireEvent.change(loc, { target: { value: 'San Francisco' } });
+    if (!(loc instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(loc.value).toBe('San Francisco');
   });
 

@@ -290,6 +290,17 @@ describe('ProviderDashboardPage', () => {
     expect(screen.getByTestId('instant-payout')).toBeDefined();
   });
 
+  it('renders performance skeleton placeholders while analytics is loading without data', () => {
+    // analytics is undefined + isLoading true → renders the 3-skeleton fallback (lines 197-202).
+    analyticsState.data = undefined;
+    analyticsState.isLoading = true;
+    const { container } = render(withQueryClient(createElement(ProviderDashboardPage)));
+    // The performance section renders a 3-column grid of Skeleton placeholders with
+    // the unique `skel-perf-` key prefix on each child.
+    const skeletons = container.querySelectorAll('.bg-muted');
+    expect(skeletons.length).toBeGreaterThanOrEqual(3);
+  });
+
   it('passes total earnings to InstantPayoutButton when analytics loads', () => {
     analyticsState.data = {
       jobs_completed: 0,

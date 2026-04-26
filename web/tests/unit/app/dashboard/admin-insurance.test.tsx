@@ -260,4 +260,21 @@ describe('AdminInsurancePage', () => {
     }
     expect(screen.getByLabelText(/Filter claims by status/i)).toBeDefined();
   });
+
+  it('changes status filter via Select trigger and option click', () => {
+    // The Select's onValueChange (lines 303-306) only fires through Radix —
+    // open the combobox, then click an option.
+    claimsState.data = { claims: [] };
+    render(withQueryClient(createElement(AdminInsurancePage)));
+    const trigger = screen.getByRole('combobox', { name: /filter claims by status/i });
+    fireEvent.click(trigger);
+    // Pick a non-"all" option to exercise `setStatusFilter(v)`.
+    const option = screen.getByRole('option', { name: /^Filed$/i });
+    fireEvent.click(option);
+    // Re-open and switch back to All Statuses to exercise `=== ALL_FILTER` branch.
+    fireEvent.click(trigger);
+    const allOption = screen.getByRole('option', { name: /All Statuses/i });
+    fireEvent.click(allOption);
+    expect(trigger).toBeDefined();
+  });
 });

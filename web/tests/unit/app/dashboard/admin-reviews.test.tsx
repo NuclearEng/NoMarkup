@@ -244,4 +244,25 @@ describe('AdminReviewsPage', () => {
       expect.objectContaining({ page: 2 }),
     );
   });
+
+  it('changes status filter via Select trigger and option click', () => {
+    // The Select's onValueChange (lines 183-186) only fires through Radix —
+    // open the combobox, then click an option.
+    useAdminFlaggedReviewsMock.mockReturnValue({
+      data: { flags: [], pagination: makePagination({ totalPages: 1, hasNext: false }) },
+      isLoading: false,
+      isError: false,
+    });
+    render(withQueryClient(createElement(AdminReviewsPage)));
+    const trigger = screen.getByRole('combobox', { name: /filter flags by status/i });
+    fireEvent.click(trigger);
+    const option = screen.getByRole('option', { name: /^Upheld$/i });
+    fireEvent.click(option);
+    fireEvent.click(trigger);
+    const allOption = screen.getByRole('option', { name: /All Statuses/i });
+    fireEvent.click(allOption);
+    expect(useAdminFlaggedReviewsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: undefined, page: 1 }),
+    );
+  });
 });

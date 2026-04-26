@@ -212,6 +212,7 @@ describe('BidForm', () => {
     fireEvent.change(input, { target: { value: '100' } });
     // Default step is $10
     await user.click(screen.getByLabelText('Increase bid by $10'));
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(input.value).toBe('110');
   });
 
@@ -231,6 +232,7 @@ describe('BidForm', () => {
     const input = screen.getByPlaceholderText('0.00');
     fireEvent.change(input, { target: { value: '100' } });
     await user.click(screen.getByLabelText('Decrease bid by $10'));
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(input.value).toBe('90');
   });
 

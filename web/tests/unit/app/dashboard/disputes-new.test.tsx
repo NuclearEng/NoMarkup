@@ -546,6 +546,56 @@ describe('DisputeNewPage', () => {
     expect(screen.getByText(/Step 1 of 5/i)).toBeDefined();
   });
 
+  it('renders Uploading... NN% label on the upload button when status=uploading at the evidence step', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    imageUploadState.status = 'uploading';
+    imageUploadState.progress = 73;
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+    expect(screen.getByText(/Uploading\.\.\. 73%/)).toBeDefined();
+  });
+
+  it('hides the upload button when MAX_EVIDENCE photos have been added', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+
+    // Upload 5 photos to hit MAX_EVIDENCE, exercising the !(evidenceUrls.length < MAX) branch.
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    for (let i = 0; i < 5; i++) {
+      const file = new File(['x'], `photo-${String(i)}.png`, { type: 'image/png' });
+      await act(() => {
+        fireEvent.change(input, { target: { files: [file] } });
+        return Promise.resolve();
+      });
+      await flush();
+    }
+    // Photo counter should now read 5/5
+    expect(screen.getByText(/5\/5 photos/)).toBeDefined();
+  });
+
   it('image upload error callback is invoked when onError fires', async () => {
     // When onError fires inside imageUpload, the page handler does `void error;` — line 87.
     // Mock the upload hook to invoke onError, and trigger an upload.

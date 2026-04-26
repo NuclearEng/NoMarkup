@@ -117,6 +117,7 @@ describe('AddEmployeeForm', () => {
     render(<AddEmployeeForm />);
     const ssn = screen.getByPlaceholderText('XXXX');
     await user.type(ssn, 'a1b2c34567');
+    if (!(ssn instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(ssn.value).toBe('1234');
   });
 

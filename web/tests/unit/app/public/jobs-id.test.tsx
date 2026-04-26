@@ -506,4 +506,119 @@ describe('(public)/jobs/[id]/page', () => {
       input: { amount_cents: 7777 },
     });
   });
+
+  it('renders the static map without the address overlay when location_address is missing', () => {
+    process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] = 'pk.test_token';
+    setHooks({
+      job: {
+        ...baseJob,
+        location_lat: 37.7749,
+        location_lng: -122.4194,
+        location_address: null,
+      },
+    });
+    const { container } = render(createElement(JobDetailPage));
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    // The address overlay div is not rendered without an address.
+    expect(container.querySelector('.bg-zinc-900\\/80')).toBeNull();
+    delete process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+  });
+
+  it('renders the SavingsBadge when lowest bid and market median are both present', () => {
+    setHooks({
+      job: {
+        ...baseJob,
+        lowest_bid_cents: 80000,
+        starting_bid_cents: 100000,
+        market_range: { low_cents: 90000, median_cents: 100000, high_cents: 110000, sample_size: 5 },
+      },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByTestId('savings-badge')).toBeDefined();
+  });
+
+  it('renders BidList with canAward true for an owner of a closed job', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, status: 'closed' },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByTestId('bid-list')).toBeDefined();
+  });
+
+  it('falls back to provider_business_name when display_name is empty in BidActivityFeed', () => {
+    setAuth({ user: { id: 'cust-1', roles: ['customer'] }, isAuthenticated: true });
+    setHooks({
+      job: baseJob,
+      bids: [
+        {
+          bid: {
+            id: 'b-fallback',
+            amount_cents: 9999,
+            provider_id: 'p-x',
+            created_at: '2026-04-10T00:00:00Z',
+          },
+          provider_display_name: '',
+          provider_business_name: 'Fallback Biz LLC',
+        },
+      ],
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByTestId('bid-activity')).toBeDefined();
+  });
+
+  it('uses the Specific Date schedule label when schedule_type is specific_date', () => {
+    setHooks({
+      job: { ...baseJob, schedule_type: 'specific_date' },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText('Specific Date')).toBeDefined();
+  });
+
+  it('uses the Date Range schedule label when schedule_type is date_range', () => {
+    setHooks({
+      job: { ...baseJob, schedule_type: 'date_range' },
+    });
+    render(createElement(JobDetailPage));
+    expect(screen.getByText('Date Range')).toBeDefined();
+  });
+
+  it('renders the outline status badge variant for non-active, non-draft job statuses', () => {
+    setHooks({
+      job: { ...baseJob, status: 'closed' },
+    });
+    render(createElement(JobDetailPage));
+    // The status text is replaced underscore→space; status remains "closed".
+    expect(screen.getByText('closed')).toBeDefined();
+  });
+
+  it('finds and uses the existing bid for an authenticated provider', () => {
+    // Exercises the existingBid lookup branch where bidsData.bids contains the user's bid.
+    setAuth({
+      user: { id: 'prov-self', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: baseJob,
+      bids: [
+        {
+          bid: {
+            id: 'b-self',
+            amount_cents: 4000,
+            provider_id: 'prov-self',
+            created_at: '2026-04-10T00:00:00Z',
+          },
+          provider_display_name: 'Self',
+          provider_business_name: 'Self LLC',
+        },
+      ],
+    });
+    render(createElement(JobDetailPage));
+    // BidForm renders for a provider with an existing bid (lines 590-599).
+    expect(screen.getByTestId('bid-form')).toBeDefined();
+  });
 });

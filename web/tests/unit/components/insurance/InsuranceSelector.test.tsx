@@ -218,6 +218,7 @@ describe('InsuranceSelector', () => {
 
     // Add Protection should be disabled while no quote is available.
     const button = screen.getByRole('button', { name: /Add Protection/ });
+    if (!(button instanceof HTMLButtonElement)) throw new Error('expected button element');
     expect(button.disabled).toBe(true);
   });
 
@@ -245,6 +246,7 @@ describe('InsuranceSelector', () => {
     );
 
     const button = screen.getByRole('button', { name: /Add Protection/ });
+    if (!(button instanceof HTMLButtonElement)) throw new Error('expected button element');
     expect(button.disabled).toBe(true);
   });
 
@@ -354,6 +356,7 @@ describe('InsuranceSelector', () => {
 
     // Without a quote the Add Protection button is disabled and clicking does nothing.
     const button = screen.getByRole('button', { name: /Add Protection/ });
+    if (!(button instanceof HTMLButtonElement)) throw new Error('expected button element');
     expect(button.disabled).toBe(true);
     await user.click(button);
     expect(container.textContent).toContain('Damage Protection');

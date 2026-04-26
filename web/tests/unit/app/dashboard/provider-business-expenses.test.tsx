@@ -321,8 +321,12 @@ describe('ProviderExpensesPage', () => {
       expect.objectContaining({ onSuccess: expect.any(Function) as unknown }),
     );
     // After onSuccess, fields should be reset
-    expect((screen.getByLabelText(/Amount/i)).value).toBe('');
-    expect((screen.getByLabelText(/^Description$/i)).value).toBe('');
+    const amountInput = screen.getByLabelText(/Amount/i);
+    if (!(amountInput instanceof HTMLInputElement)) throw new Error('expected input element');
+    expect(amountInput.value).toBe('');
+    const descriptionInput = screen.getByLabelText(/^Description$/i);
+    if (!(descriptionInput instanceof HTMLTextAreaElement)) throw new Error('expected textarea element');
+    expect(descriptionInput.value).toBe('');
   });
 
   it('submits with receipt URL when provided', () => {

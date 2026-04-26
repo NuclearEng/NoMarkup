@@ -461,4 +461,80 @@ describe('ContractDetailPage', () => {
     render(withQueryClient(createElement(ContractDetailPage)));
     expect(screen.getByTestId('completion-flow')).toBeDefined();
   });
+
+  it('renders the spinner when startWork mutation is pending', () => {
+    authUser.user = { id: 'prov-1' };
+    startWorkState.isPending = true;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    const { container } = render(withQueryClient(createElement(ContractDetailPage)));
+    // Spinner appears inside the Start Work button while pending
+    const startBtn = screen.getByRole('button', { name: /Start Work/i });
+    expect((startBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('renders the spinner when markComplete mutation is pending', () => {
+    authUser.user = { id: 'prov-1' };
+    markCompleteState.isPending = true;
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'active', started_at: '2026-04-05T00:00:00Z' }),
+      change_orders: [],
+    };
+    const { container } = render(withQueryClient(createElement(ContractDetailPage)));
+    const markBtn = screen.getByRole('button', { name: /Mark as Complete/i });
+    expect((markBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('renders the spinner when approveCompletion mutation is pending', () => {
+    authUser.user = { id: 'cust-1' };
+    approveCompletionState.isPending = true;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    const { container } = render(withQueryClient(createElement(ContractDetailPage)));
+    const approveBtn = screen.getByRole('button', { name: /Approve Completion/i });
+    expect((approveBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('renders the spinner inside Confirm Cancel while cancel mutation is pending', () => {
+    cancelContractState.isPending = true;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    const { container } = render(withQueryClient(createElement(ContractDetailPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Cancel Contract$/i }));
+    const confirmBtn = screen.getByRole('button', { name: /Confirm Cancel/i });
+    expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('falls back to truncated job_id when job_title is missing', () => {
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'active', job_title: '', job_id: 'jobid12345678' }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    // Truncated to first 8 chars: 'jobid123'
+    expect(screen.getByText(/jobid123/)).toBeDefined();
+  });
+
+  it('cancel onSuccess callback closes the cancel-confirm panel', () => {
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    // Make the cancelContract.mutate handler fire its onSuccess synchronously.
+    cancelContractMutate.mockImplementation(
+      (_id: unknown, options?: { onSuccess?: () => void }) => {
+        options?.onSuccess?.();
+      },
+    );
+    render(withQueryClient(createElement(ContractDetailPage)));
+    fireEvent.click(screen.getByRole('button', { name: /^Cancel Contract$/i }));
+    expect(screen.getByText(/Are you sure you want to cancel/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /Confirm Cancel/i }));
+    // The onSuccess closes the confirm panel.
+    expect(screen.queryByText(/Are you sure you want to cancel/i)).toBeNull();
+  });
 });

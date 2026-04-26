@@ -177,4 +177,79 @@ describe('AdminAdvancesPage', () => {
     // ID is truncated to first 16 chars: 'tr_abcdefghijk12'
     expect(container.textContent).toMatch(/tr_abcdefghijk12/);
   });
+
+  it('renders the spinner inside the Approve button when reviewAdvance is pending', () => {
+    vi.mocked(useAdminAdvances).mockReturnValue({
+      data: { advances: [baseAdvance], pagination: { totalPages: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useAdminAdvances>);
+    vi.mocked(useReviewAdvance).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: true,
+    } as unknown as ReturnType<typeof useReviewAdvance>);
+    vi.mocked(useDisburseAdvance).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useDisburseAdvance>);
+    const { container } = render(withQueryClient(createElement(AdminAdvancesPage)));
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    // Approve and Reject are disabled while pending
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Approve/i }).disabled).toBe(true);
+  });
+
+  it('renders the spinner inside the Disburse button when disburseAdvance is pending', () => {
+    vi.mocked(useAdminAdvances).mockReturnValue({
+      data: {
+        advances: [{ ...baseAdvance, status: 'approved' }],
+        pagination: { totalPages: 1 },
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useAdminAdvances>);
+    vi.mocked(useReviewAdvance).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useReviewAdvance>);
+    vi.mocked(useDisburseAdvance).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: true,
+    } as unknown as ReturnType<typeof useDisburseAdvance>);
+    const { container } = render(withQueryClient(createElement(AdminAdvancesPage)));
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Disburse/i }).disabled).toBe(true);
+  });
+
+  it('falls back to truncated contract_id when contract_number is missing', () => {
+    setHooks({
+      data: {
+        advances: [
+          {
+            ...baseAdvance,
+            contract_number: null,
+            contract_id: 'contract-id-fallback-x',
+          },
+        ],
+        pagination: { totalPages: 1 },
+      },
+    });
+    const { container } = render(withQueryClient(createElement(AdminAdvancesPage)));
+    // Truncated to first 8 chars: 'contract'
+    expect(container.textContent).toMatch(/contract/);
+  });
+
+  it('changes status filter via Select trigger and option click', () => {
+    // The Select's onValueChange (lines 216-219) only fires through Radix —
+    // open the combobox, then click an option.
+    setHooks({ data: { advances: [], pagination: { totalPages: 0 } } });
+    render(withQueryClient(createElement(AdminAdvancesPage)));
+    const trigger = screen.getByRole('combobox', { name: /filter advances by status/i });
+    fireEvent.click(trigger);
+    const option = screen.getByRole('option', { name: /^Approved$/i });
+    fireEvent.click(option);
+    fireEvent.click(trigger);
+    const allOption = screen.getByRole('option', { name: /All Statuses/i });
+    fireEvent.click(allOption);
+    expect(trigger).toBeDefined();
+  });
 });

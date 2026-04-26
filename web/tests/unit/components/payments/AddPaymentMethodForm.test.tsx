@@ -314,6 +314,7 @@ describe('AddPaymentMethodForm', () => {
 
     const last4 = screen.getByLabelText(/Last 4 digits/);
     await user.type(last4, 'a4b2c');
+    if (!(last4 instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(last4.value).toBe('42');
   });
 
@@ -408,6 +409,7 @@ describe('AddPaymentMethodForm', () => {
     });
     const brand = screen.getByLabelText(/Brand/);
     await user.selectOptions(brand, 'amex');
+    if (!(brand instanceof HTMLSelectElement)) throw new Error('expected select element');
     expect(brand.value).toBe('amex');
   });
 
@@ -578,6 +580,7 @@ describe('AddPaymentMethodForm', () => {
 
     // Save button should be disabled while stripe isn't loaded.
     const save = screen.getByRole('button', { name: /Save Payment Method/ });
+    if (!(save instanceof HTMLButtonElement)) throw new Error('expected button element');
     expect(save.disabled).toBe(true);
     expect(stripeStub.confirmSetup).not.toHaveBeenCalled();
   });

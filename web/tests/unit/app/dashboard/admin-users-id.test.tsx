@@ -172,6 +172,7 @@ describe('AdminUserDetailPage', () => {
     fireEvent.click(screen.getByLabelText(/Suspend this user/i));
     const textarea = screen.getByLabelText(/^Reason$/i);
     fireEvent.change(textarea, { target: { value: 'temp reason' } });
+    if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('expected textarea element');
     expect(textarea.value).toBe('temp reason');
     fireEvent.click(screen.getByLabelText(/Cancel action/i));
     // After Cancel, the dialog element drops the open attribute (closed).
@@ -181,6 +182,7 @@ describe('AdminUserDetailPage', () => {
     // And the reason textarea has been cleared on next open.
     fireEvent.click(screen.getByLabelText(/Suspend this user/i));
     const reopened = screen.getByLabelText(/^Reason$/i);
+    if (!(reopened instanceof HTMLTextAreaElement)) throw new Error('expected textarea element');
     expect(reopened.value).toBe('');
   });
 

@@ -1,5 +1,6 @@
 // Behavior tests for the admin jobs management page.
 import { act, fireEvent, render, screen } from '@testing-library/react';
+// Note: fireEvent import is required for Radix Select dropdown interactions below.
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -279,6 +280,27 @@ describe('AdminJobsPage', () => {
     await user.click(screen.getByRole('button', { name: /go to next page/i }));
     expect(useAdminJobsMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 2 }),
+    );
+  });
+
+  it('changes status filter via Select trigger and option click', () => {
+    // The Select's onValueChange (lines 171-174) only fires through Radix —
+    // open the combobox, then click an option.
+    useAdminJobsMock.mockReturnValue({
+      data: { jobs: [], pagination: makePagination({ totalPages: 1, hasNext: false }) },
+      isLoading: false,
+      isError: false,
+    });
+    render(withQueryClient(createElement(AdminJobsPage)));
+    const trigger = screen.getByRole('combobox', { name: /filter jobs by status/i });
+    fireEvent.click(trigger);
+    const option = screen.getByRole('option', { name: /^Active$/i });
+    fireEvent.click(option);
+    fireEvent.click(trigger);
+    const allOption = screen.getByRole('option', { name: /All Statuses/i });
+    fireEvent.click(allOption);
+    expect(useAdminJobsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: undefined, page: 1 }),
     );
   });
 });

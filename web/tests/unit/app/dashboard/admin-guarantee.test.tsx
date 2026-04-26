@@ -1,5 +1,5 @@
 // Behavior tests for the admin guarantee claims list page.
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -211,5 +211,27 @@ describe('AdminGuaranteePage', () => {
     });
     render(withQueryClient(createElement(AdminGuaranteePage)));
     expect(screen.getByRole('button', { name: /go to previous page/i })).toBeDisabled();
+  });
+
+  it('changes status filter via Select trigger and option click', () => {
+    // The Select's onValueChange (lines 161-164) only fires through Radix —
+    // open the combobox, then click an option.
+    useAdminGuaranteeClaimsMock.mockReturnValue({
+      data: { guarantee_claims: [], pagination: makePagination({ totalPages: 1, hasNext: false }) },
+      isLoading: false,
+      isError: false,
+    });
+    render(withQueryClient(createElement(AdminGuaranteePage)));
+    const trigger = screen.getByRole('combobox', { name: /filter claims by status/i });
+    fireEvent.click(trigger);
+    const option = screen.getByRole('option', { name: /^Investigating$/i });
+    fireEvent.click(option);
+    fireEvent.click(trigger);
+    const allOption = screen.getByRole('option', { name: /All Statuses/i });
+    fireEvent.click(allOption);
+    // Switching back to All Statuses sets status to undefined.
+    expect(useAdminGuaranteeClaimsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: undefined, page: 1 }),
+    );
   });
 });

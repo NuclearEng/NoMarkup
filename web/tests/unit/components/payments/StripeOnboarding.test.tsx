@@ -160,6 +160,7 @@ describe('StripeOnboarding', () => {
     render(createElement(StripeOnboarding));
     expect(screen.getByText('Setting up...')).toBeDefined();
     const button = screen.getByRole('button', { name: /Setting up/ });
+    if (!(button instanceof HTMLButtonElement)) throw new Error('expected button element');
     expect(button.disabled).toBe(true);
   });
 
@@ -332,6 +333,7 @@ describe('StripeOnboarding', () => {
     render(createElement(StripeOnboarding));
     expect(screen.getByText('Loading...')).toBeDefined();
     const button = screen.getByRole('button', { name: /Loading/ });
+    if (!(button instanceof HTMLButtonElement)) throw new Error('expected button element');
     expect(button.disabled).toBe(true);
   });
 

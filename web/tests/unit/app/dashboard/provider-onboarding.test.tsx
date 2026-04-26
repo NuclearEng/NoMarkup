@@ -496,6 +496,7 @@ describe('ProviderOnboardingPage', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const ein = screen.getByLabelText(/EIN \/ TIN/i);
     await user.type(ein, '12');
+    if (!(ein instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(ein.value).toBe('12-');
   });
 
@@ -504,6 +505,7 @@ describe('ProviderOnboardingPage', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const ein = screen.getByLabelText(/EIN \/ TIN/i);
     await user.type(ein, 'a1!b2');
+    if (!(ein instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(ein.value).toBe('12-');
   });
 
@@ -511,6 +513,7 @@ describe('ProviderOnboardingPage', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const cov = screen.getByLabelText(/Insurance Coverage Amount/i);
     fireEvent.change(cov, { target: { value: '500000' } });
+    if (!(cov instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(cov.value).toBe('500000');
     fireEvent.change(cov, { target: { value: '' } });
     expect(cov.value).toBe('');
@@ -604,6 +607,7 @@ describe('ProviderOnboardingPage', () => {
     // A caption input should appear
     const cap = screen.getByLabelText(/Caption for image 1/i);
     fireEvent.change(cap, { target: { value: 'Front porch project' } });
+    if (!(cap instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(cap.value).toBe('Front porch project');
   });
 
@@ -993,6 +997,7 @@ describe('ProviderOnboardingPage', () => {
     // The percentage input is the input with placeholder="%"
     const pct = screen.getByPlaceholderText('%');
     fireEvent.change(pct, { target: { value: '50' } });
+    if (!(pct instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(pct.value).toBe('50');
   });
 
@@ -1014,6 +1019,7 @@ describe('ProviderOnboardingPage', () => {
     await user.click(screen.getByRole('button', { name: /Add Milestone/i }));
     const desc = screen.getByPlaceholderText('Milestone description');
     fireEvent.change(desc, { target: { value: 'Initial Deposit' } });
+    if (!(desc instanceof HTMLInputElement)) throw new Error('expected input element');
     expect(desc.value).toBe('Initial Deposit');
   });
 
