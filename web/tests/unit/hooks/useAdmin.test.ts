@@ -8,15 +8,35 @@ import {
   useAdminUser,
   useSuspendUser,
   useBanUser,
+  useVerificationQueue,
+  useReviewDocument,
+  useAdminJobs,
+  useSuspendJob,
+  useRemoveJob,
   useAdminDisputes,
   useAdminDispute,
+  useResolveDispute,
+  useAdminFlaggedReviews,
+  useResolveReviewFlag,
+  useRemoveReview,
+  useAdminPayments,
+  useAdminPaymentDetails,
   usePlatformMetrics,
   useRevenueReport,
+  useUpdateFeeConfig,
+  useGrowthMetrics,
+  useCategoryMetrics,
 } from '@/hooks/useAdmin';
 import type {
   AdminUsersResponse,
   AdminUser,
   AdminDisputesResponse,
+  AdminFlaggedReviewsResponse,
+  AdminJobsResponse,
+  AdminPaymentsResponse,
+  CategoryMetricsResponse,
+  FeeConfig,
+  GrowthMetrics,
   PlatformMetrics,
   RevenueReport,
 } from '@/types';
@@ -72,6 +92,14 @@ const mockUsersResponse: AdminUsersResponse = {
   },
 };
 
+const emptyPagination = {
+  totalCount: 0,
+  page: 1,
+  pageSize: 20,
+  totalPages: 0,
+  hasNext: false,
+};
+
 describe('useAdminUsers', () => {
   let queryClient: QueryClient;
 
@@ -91,7 +119,9 @@ describe('useAdminUsers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(result.current.data?.users).toHaveLength(1);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/users');
@@ -105,10 +135,28 @@ describe('useAdminUsers', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('query=test'));
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('status=active'));
+  });
+
+  it('passes role and page_size params', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(mockUsersResponse);
+
+    const { result } = renderHook(
+      () => useAdminUsers({ role: 'provider', page_size: 50 }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('role=provider'));
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('page_size=50'));
   });
 
   it('handles API errors', async () => {
@@ -118,7 +166,9 @@ describe('useAdminUsers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
   });
 });
 
@@ -141,7 +191,9 @@ describe('useAdminUser', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(result.current.data?.user.id).toBe('user-1');
   });
@@ -169,7 +221,9 @@ describe('useSuspendUser', () => {
   });
 
   it('suspends a user and invalidates queries', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ user: { ...mockAdminUser, status: 'suspended' } });
+    vi.mocked(api.post).mockResolvedValueOnce({
+      user: { ...mockAdminUser, status: 'suspended' },
+    });
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     const { result } = renderHook(() => useSuspendUser(), {
@@ -178,12 +232,28 @@ describe('useSuspendUser', () => {
 
     result.current.mutate({ userId: 'user-1', reason: 'Policy violation' });
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/users/user-1/suspend', {
       reason: 'Policy violation',
     });
-    expect(invalidateSpy).toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin'] });
+  });
+
+  it('handles suspend failure', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useSuspendUser(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ userId: 'user-1', reason: 'x' });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
   });
 });
 
@@ -199,8 +269,11 @@ describe('useBanUser', () => {
     queryClient.clear();
   });
 
-  it('bans a user', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ user: { ...mockAdminUser, status: 'banned' } });
+  it('bans a user and invalidates the admin scope', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      user: { ...mockAdminUser, status: 'banned' },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     const { result } = renderHook(() => useBanUser(), {
       wrapper: createWrapper(queryClient),
@@ -208,11 +281,247 @@ describe('useBanUser', () => {
 
     result.current.mutate({ userId: 'user-1', reason: 'Fraud' });
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/users/user-1/ban', {
       reason: 'Fraud',
     });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin'] });
+  });
+});
+
+describe('useVerificationQueue', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches with no params', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      documents: [],
+      pagination: emptyPagination,
+    });
+
+    const { result } = renderHook(() => useVerificationQueue(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/verification/queue');
+  });
+
+  it('fetches with paging params', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      documents: [],
+      pagination: emptyPagination,
+    });
+
+    const { result } = renderHook(() => useVerificationQueue(2, 25), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      expect.stringMatching(/page=2/),
+    );
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      expect.stringMatching(/page_size=25/),
+    );
+  });
+});
+
+describe('useReviewDocument', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('approves a document and invalidates verification queue', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ status: 'approved' });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useReviewDocument(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ documentId: 'doc-1', approved: true });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/admin/verification/doc-1/review',
+      { approved: true, rejection_reason: undefined },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['admin', 'verification'],
+    });
+  });
+
+  it('rejects a document with a reason', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ status: 'rejected' });
+
+    const { result } = renderHook(() => useReviewDocument(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      documentId: 'doc-2',
+      approved: false,
+      rejection_reason: 'blurry image',
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/admin/verification/doc-2/review',
+      { approved: false, rejection_reason: 'blurry image' },
+    );
+  });
+});
+
+describe('useAdminJobs', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches admin jobs with no filters', async () => {
+    const empty: AdminJobsResponse = { jobs: [], pagination: emptyPagination };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(() => useAdminJobs(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/jobs');
+  });
+
+  it('encodes status, customer_id, category_id', async () => {
+    const empty: AdminJobsResponse = { jobs: [], pagination: emptyPagination };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(
+      () =>
+        useAdminJobs({
+          status: 'open',
+          customer_id: 'cust-1',
+          category_id: 'cat-1',
+          page: 3,
+          page_size: 10,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const url = vi.mocked(api.get).mock.calls[0]?.[0] as string;
+    expect(url).toContain('status=open');
+    expect(url).toContain('customer_id=cust-1');
+    expect(url).toContain('category_id=cat-1');
+    expect(url).toContain('page=3');
+    expect(url).toContain('page_size=10');
+  });
+});
+
+describe('useSuspendJob', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('suspends a job and invalidates job-scoped queries', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({});
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSuspendJob(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ jobId: 'job-1', reason: 'spam' });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/jobs/job-1/suspend', {
+      reason: 'spam',
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin', 'jobs'] });
+  });
+});
+
+describe('useRemoveJob', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('removes a job and invalidates job-scoped queries', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({});
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useRemoveJob(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ jobId: 'job-2', reason: 'illegal' });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/jobs/job-2/remove', {
+      reason: 'illegal',
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin', 'jobs'] });
   });
 });
 
@@ -231,13 +540,7 @@ describe('useAdminDisputes', () => {
   it('fetches disputes list', async () => {
     const mockDisputes: AdminDisputesResponse = {
       disputes: [],
-      pagination: {
-        totalCount: 0,
-        page: 1,
-        pageSize: 20,
-        totalPages: 0,
-        hasNext: false,
-      },
+      pagination: emptyPagination,
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockDisputes);
 
@@ -245,7 +548,9 @@ describe('useAdminDisputes', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/disputes');
   });
@@ -253,23 +558,23 @@ describe('useAdminDisputes', () => {
   it('passes status filter', async () => {
     const mockDisputes: AdminDisputesResponse = {
       disputes: [],
-      pagination: {
-        totalCount: 0,
-        page: 1,
-        pageSize: 20,
-        totalPages: 0,
-        hasNext: false,
-      },
+      pagination: emptyPagination,
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockDisputes);
 
-    const { result } = renderHook(() => useAdminDisputes({ status: 'open', page: 1 }), {
-      wrapper: createWrapper(queryClient),
+    const { result } = renderHook(
+      () => useAdminDisputes({ status: 'open', page: 1, page_size: 5 }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
     });
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
-
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('status=open'));
+    const url = vi.mocked(api.get).mock.calls[0]?.[0] as string;
+    expect(url).toContain('status=open');
+    expect(url).toContain('page=1');
+    expect(url).toContain('page_size=5');
   });
 });
 
@@ -292,6 +597,326 @@ describe('useAdminDispute', () => {
 
     expect(result.current.fetchStatus).toBe('idle');
   });
+
+  it('fetches when disputeId is present', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ dispute: { id: 'd-1' } });
+
+    const { result } = renderHook(() => useAdminDispute('d-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/disputes/d-1');
+  });
+});
+
+describe('useResolveDispute', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('maps guarantee_claim true to "approved"', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({});
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useResolveDispute(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      disputeId: 'd-1',
+      resolution_type: 'refund',
+      resolution_notes: 'cust right',
+      refund_amount_cents: 5000,
+      guarantee_claim: true,
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/disputes/d-1/resolve', {
+      resolution_type: 'refund',
+      resolution_notes: 'cust right',
+      refund_amount_cents: 5000,
+      guarantee_outcome: 'approved',
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['admin', 'disputes'],
+    });
+  });
+
+  it('maps undefined guarantee_claim to empty string', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({});
+
+    const { result } = renderHook(() => useResolveDispute(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      disputeId: 'd-2',
+      resolution_type: 'reject',
+      resolution_notes: 'no merit',
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/disputes/d-2/resolve', {
+      resolution_type: 'reject',
+      resolution_notes: 'no merit',
+      refund_amount_cents: undefined,
+      guarantee_outcome: '',
+    });
+  });
+});
+
+describe('useAdminFlaggedReviews', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches flagged reviews with status', async () => {
+    const empty: AdminFlaggedReviewsResponse = {
+      flags: [],
+      pagination: emptyPagination,
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(
+      () => useAdminFlaggedReviews({ status: 'pending', page: 1, page_size: 10 }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const url = vi.mocked(api.get).mock.calls[0]?.[0] as string;
+    expect(url).toContain('/api/v1/admin/reviews/flagged');
+    expect(url).toContain('status=pending');
+  });
+
+  it('fetches without filters', async () => {
+    const empty: AdminFlaggedReviewsResponse = {
+      flags: [],
+      pagination: emptyPagination,
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(() => useAdminFlaggedReviews(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/reviews/flagged');
+  });
+});
+
+describe('useResolveReviewFlag', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('resolves a flag and invalidates reviews scope', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({});
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useResolveReviewFlag(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ flagId: 'f-1', action: 'dismiss', notes: 'looks fine' });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/admin/reviews/flags/f-1/resolve',
+      { action: 'dismiss', notes: 'looks fine' },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['admin', 'reviews'],
+    });
+  });
+});
+
+describe('useRemoveReview', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('removes a review with a reason and invalidates reviews scope', async () => {
+    vi.mocked(api.delete).mockResolvedValueOnce({});
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useRemoveReview(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ reviewId: 'r-1', reason: 'abusive' });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/api/v1/admin/reviews/r-1', {
+      reason: 'abusive',
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['admin', 'reviews'],
+    });
+  });
+
+  it('handles delete failure', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useRemoveReview(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ reviewId: 'r-1', reason: 'x' });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+  });
+});
+
+describe('useAdminPayments', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches payments with no params', async () => {
+    const empty: AdminPaymentsResponse = {
+      payments: [],
+      pagination: emptyPagination,
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(() => useAdminPayments(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/payments');
+  });
+
+  it('encodes user_id, status, and date range', async () => {
+    const empty: AdminPaymentsResponse = {
+      payments: [],
+      pagination: emptyPagination,
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(
+      () =>
+        useAdminPayments({
+          user_id: 'u-1',
+          status: 'succeeded',
+          start_date: '2026-01-01',
+          end_date: '2026-04-01',
+          page: 2,
+          page_size: 50,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const url = vi.mocked(api.get).mock.calls[0]?.[0] as string;
+    expect(url).toContain('user_id=u-1');
+    expect(url).toContain('status=succeeded');
+    expect(url).toContain('start_date=2026-01-01');
+    expect(url).toContain('end_date=2026-04-01');
+    expect(url).toContain('page=2');
+    expect(url).toContain('page_size=50');
+  });
+});
+
+describe('useAdminPaymentDetails', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('does not fetch when paymentId is empty', () => {
+    const { result } = renderHook(() => useAdminPaymentDetails(''), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+
+  it('fetches a single payment when id is present', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ payment: { id: 'pay-1' } });
+
+    const { result } = renderHook(() => useAdminPaymentDetails('pay-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/payments/pay-1');
+  });
 });
 
 describe('usePlatformMetrics', () => {
@@ -306,7 +931,7 @@ describe('usePlatformMetrics', () => {
     queryClient.clear();
   });
 
-  it('fetches platform metrics', async () => {
+  it('fetches platform metrics with no filters', async () => {
     const mockMetrics: PlatformMetrics = {
       total_gmv_cents: 10000000,
       total_revenue_cents: 5000000,
@@ -333,9 +958,28 @@ describe('usePlatformMetrics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/platform/metrics');
+  });
+
+  it('fetches with date range', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({} as PlatformMetrics);
+
+    const { result } = renderHook(
+      () => usePlatformMetrics('2026-01-01', '2026-03-01'),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const url = vi.mocked(api.get).mock.calls[0]?.[0] as string;
+    expect(url).toContain('start_date=2026-01-01');
+    expect(url).toContain('end_date=2026-03-01');
   });
 });
 
@@ -361,15 +1005,163 @@ describe('useRevenueReport', () => {
     };
     vi.mocked(api.get).mockResolvedValueOnce(mockRevenue);
 
-    const { result } = renderHook(() => useRevenueReport('2026-01-01', '2026-03-01', 'month'), {
-      wrapper: createWrapper(queryClient),
-    });
+    const { result } = renderHook(
+      () => useRevenueReport('2026-01-01', '2026-03-01', 'month'),
+      { wrapper: createWrapper(queryClient) },
+    );
 
-    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       expect.stringContaining('start_date=2026-01-01'),
     );
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=month'));
+  });
+
+  it('fetches with no filters', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({} as RevenueReport);
+
+    const { result } = renderHook(() => useRevenueReport(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/revenue');
+  });
+});
+
+describe('useUpdateFeeConfig', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('PUTs the fee config and invalidates the admin scope', async () => {
+    const config: FeeConfig = {
+      category_id: 'cat-1',
+      fee_percentage: 10,
+      guarantee_percentage: 2,
+      min_fee_cents: 100,
+      max_fee_cents: 5000,
+    };
+    vi.mocked(api.put).mockResolvedValueOnce(config);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useUpdateFeeConfig(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate(config);
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.put)).toHaveBeenCalledWith('/api/v1/admin/fees', config);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin'] });
+  });
+});
+
+describe('useGrowthMetrics', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches with all params', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({} as GrowthMetrics);
+
+    const { result } = renderHook(
+      () => useGrowthMetrics('2026-01-01', '2026-03-01', 'week'),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const url = vi.mocked(api.get).mock.calls[0]?.[0] as string;
+    expect(url).toContain('/api/v1/admin/platform/growth');
+    expect(url).toContain('start_date=2026-01-01');
+    expect(url).toContain('end_date=2026-03-01');
+    expect(url).toContain('group_by=week');
+  });
+
+  it('fetches with no params', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({} as GrowthMetrics);
+
+    const { result } = renderHook(() => useGrowthMetrics(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/platform/growth');
+  });
+});
+
+describe('useCategoryMetrics', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches category metrics', async () => {
+    const empty: CategoryMetricsResponse = { categories: [] };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(
+      () => useCategoryMetrics('2026-01-01', '2026-04-01'),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const url = vi.mocked(api.get).mock.calls[0]?.[0] as string;
+    expect(url).toContain('/api/v1/admin/platform/categories');
+    expect(url).toContain('start_date=2026-01-01');
+    expect(url).toContain('end_date=2026-04-01');
+  });
+
+  it('fetches with no filters', async () => {
+    const empty: CategoryMetricsResponse = { categories: [] };
+    vi.mocked(api.get).mockResolvedValueOnce(empty);
+
+    const { result } = renderHook(() => useCategoryMetrics(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/platform/categories');
   });
 });

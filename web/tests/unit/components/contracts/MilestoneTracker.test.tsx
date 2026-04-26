@@ -10,10 +10,14 @@ const mockSubmitMilestone = vi.fn();
 const mockApproveMilestone = vi.fn();
 const mockRequestRevision = vi.fn();
 
+const submitState = { mutate: mockSubmitMilestone, isPending: false, isError: false };
+const approveState = { mutate: mockApproveMilestone, isPending: false, isError: false };
+const revisionState = { mutate: mockRequestRevision, isPending: false, isError: false };
+
 vi.mock('@/hooks/useContracts', () => ({
-  useSubmitMilestone: () => ({ mutate: mockSubmitMilestone, isPending: false, isError: false }),
-  useApproveMilestone: () => ({ mutate: mockApproveMilestone, isPending: false, isError: false }),
-  useRequestRevision: () => ({ mutate: mockRequestRevision, isPending: false, isError: false }),
+  useSubmitMilestone: () => submitState,
+  useApproveMilestone: () => approveState,
+  useRequestRevision: () => revisionState,
 }));
 
 vi.mock('@/stores/auth-store', () => ({
@@ -43,9 +47,19 @@ function makeMilestone(overrides: Partial<Milestone> = {}): Milestone {
   };
 }
 
+function resetMutationState(): void {
+  submitState.isPending = false;
+  submitState.isError = false;
+  approveState.isPending = false;
+  approveState.isError = false;
+  revisionState.isPending = false;
+  revisionState.isError = false;
+}
+
 describe('MilestoneTracker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetMutationState();
   });
 
   it('renders empty state when no milestones', () => {
@@ -130,5 +144,240 @@ describe('MilestoneTracker', () => {
     );
     expect(screen.getByText(/Please redo the trim/i)).toBeDefined();
     expect(screen.getByText(/1\/3 revisions used/i)).toBeDefined();
+  });
+
+  it('shows Resubmit button to provider for revision_requested milestones', async () => {
+    setUser({ id: 'prov-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'revision_requested' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    const btn = screen.getByRole('button', { name: /resubmit for review/i });
+    await user.click(btn);
+    expect(mockSubmitMilestone).toHaveBeenCalled();
+  });
+
+  it('opens the revision form, validates short input, then submits', async () => {
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'submitted' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    // Open the revision form via the secondary "Request Revision" button.
+    const openBtn = screen.getByRole('button', { name: /request revision/i });
+    await user.click(openBtn);
+
+    // Now we have a textarea.
+    const ta = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(ta, 'too short');
+    const submitBtn = screen.getByRole('button', { name: /^request revision$/i });
+    await user.click(submitBtn);
+    // Expect a validation error to appear.
+    expect(screen.getAllByText(/at least|minimum|10 chars|10 characters/i).length).toBeGreaterThan(0);
+    expect(mockRequestRevision).not.toHaveBeenCalled();
+
+    // Provide enough text and submit again.
+    await user.clear(ta);
+    await user.type(ta, 'this is a long enough description of the issue');
+    await user.click(submitBtn);
+    expect(mockRequestRevision).toHaveBeenCalled();
+    const callArgs = mockRequestRevision.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(callArgs).toBeDefined();
+    expect((callArgs as { contractId: string }).contractId).toBe('c-1');
+  });
+
+  it('cancels the revision form and clears state', async () => {
+    setUser({ id: 'cust-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'submitted' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /request revision/i }));
+    const ta = screen.getByPlaceholderText(/Describe what changes are needed/i);
+    await user.type(ta, 'some notes here');
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    // Approve button should be visible again.
+    expect(screen.getByRole('button', { name: /^approve$/i })).toBeDefined();
+  });
+
+  it('hides the Request Revision button when revision_count has reached the max', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'submitted', revision_count: 3 })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.queryByRole('button', { name: /request revision/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /^approve$/i })).toBeDefined();
+  });
+
+  it('renders submit-error message for provider when submit mutation failed', () => {
+    submitState.isError = true;
+    setUser({ id: 'prov-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'in_progress' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Failed to submit milestone/i)).toBeDefined();
+  });
+
+  it('renders approve-error message for customer when approve mutation failed', () => {
+    approveState.isError = true;
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'submitted' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Failed to approve milestone/i)).toBeDefined();
+  });
+
+  it('disables the submit button while submission is pending', () => {
+    submitState.isPending = true;
+    setUser({ id: 'prov-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'in_progress' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    const btn = screen.getByRole('button', { name: /submitting/i });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows Approving... when approval mutation is pending', () => {
+    approveState.isPending = true;
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'submitted' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Approving/)).toBeDefined();
+  });
+
+  it('renders the Approved badge with date for approved milestones', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [
+          makeMilestone({
+            status: 'approved',
+            approved_at: '2026-03-15T12:00:00Z',
+          } as Partial<Milestone>),
+        ],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Approved on/)).toBeDefined();
+    expect(screen.getByText(/Mar/)).toBeDefined();
+  });
+
+  it('renders the Submitted date when present', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [
+          makeMilestone({
+            status: 'submitted',
+            submitted_at: '2026-02-10T09:00:00Z',
+          } as Partial<Milestone>),
+        ],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Submitted on/)).toBeDefined();
+  });
+
+  it('renders the Disputed badge for disputed milestones', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'disputed' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText(/Disputed/)).toBeDefined();
+  });
+
+  it('renders the Pending badge for pending milestones', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'pending' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.getByText('Pending')).toBeDefined();
+  });
+
+  it('shows no provider/customer actions when viewer is neither party', () => {
+    setUser({ id: 'someone-else' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [makeMilestone({ status: 'in_progress' })],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    expect(screen.queryByRole('button', { name: /submit for review/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^approve$/i })).toBeNull();
+  });
+
+  it('orders milestones by sort_order', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(MilestoneTracker, {
+        milestones: [
+          makeMilestone({ id: 'b', description: 'Second one', sort_order: 2 }),
+          makeMilestone({ id: 'a', description: 'First one', sort_order: 1 }),
+        ],
+        contractId: 'c-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+      }),
+    );
+    const headings = screen.getAllByText(/^Milestone \d/);
+    expect(headings[0]?.textContent).toBe('Milestone 1');
+    expect(headings[1]?.textContent).toBe('Milestone 2');
   });
 });

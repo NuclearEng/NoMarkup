@@ -11,6 +11,10 @@ interface ServiceAreaMapProps {
   className?: string;
 }
 
+function getMapboxToken(): string {
+  return process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+}
+
 export function ServiceAreaMap({
   radiusKm,
   center = [-98.5795, 39.8283],
@@ -20,7 +24,7 @@ export function ServiceAreaMap({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const [mapError, setMapError] = useState(false);
 
-  const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+  const mapboxToken = getMapboxToken();
 
   useEffect(() => {
     if (!mapboxToken || !mapContainerRef.current || mapRef.current) return;
@@ -33,7 +37,7 @@ export function ServiceAreaMap({
 
         if (cancelled || !mapContainerRef.current) return;
 
-        mapboxgl.accessToken = mapboxToken as string;
+        mapboxgl.accessToken = mapboxToken;
 
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,

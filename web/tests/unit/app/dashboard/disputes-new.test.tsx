@@ -1,6 +1,7 @@
 // Tests for the file-a-dispute multi-step wizard — exercises step rendering,
-// reason selection, navigation, and the submitted success state.
-import { fireEvent, render, screen } from '@testing-library/react';
+// reason selection, navigation, evidence upload + remove, review step, and
+// the submitted success state.
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { act, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,10 +23,14 @@ const imageUploadState: {
 } = { status: 'idle', progress: 0, error: null };
 const uploadFn = vi.fn();
 
+const searchParamsRef: { current: URLSearchParams } = {
+  current: new URLSearchParams(),
+};
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/disputes/new',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParamsRef.current,
   redirect: vi.fn(),
   notFound: vi.fn(),
   useParams: () => ({}),
@@ -50,8 +55,16 @@ vi.mock('@/hooks/useDisputes', () => ({
 }));
 
 vi.mock('@/hooks/useImageUpload', () => ({
-  useImageUpload: () => ({
-    upload: uploadFn,
+  useImageUpload: ({
+    onSuccess,
+  }: {
+    onSuccess?: (r: { confirmedUrl: string }) => void;
+  }) => ({
+    upload: (file: File) => {
+      uploadFn(file);
+      onSuccess?.({ confirmedUrl: `https://cdn.example/${file.name}` });
+      return Promise.resolve();
+    },
     status: imageUploadState.status,
     progress: imageUploadState.progress,
     error: imageUploadState.error,
@@ -81,6 +94,22 @@ function makeContract(overrides: Record<string, unknown> = {}): Record<string, u
   };
 }
 
+async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function clickNext(): Promise<void> {
+  const btn = await screen.findByRole('button', { name: /^Next$/i });
+  await act(async () => {
+    fireEvent.click(btn);
+    await Promise.resolve();
+  });
+  await flush();
+}
+
 beforeEach(() => {
   contractsState.data = undefined;
   contractsState.isLoading = false;
@@ -90,7 +119,9 @@ beforeEach(() => {
   imageUploadState.status = 'idle';
   imageUploadState.progress = 0;
   imageUploadState.error = null;
+  searchParamsRef.current = new URLSearchParams();
   fileDisputeMutate.mockClear();
+  fileDisputeMutate.mockImplementation(() => Promise.resolve({ dispute_id: 'd-9999' }));
   uploadFn.mockReset();
 });
 
@@ -129,7 +160,6 @@ describe('DisputeNewPage', () => {
       fireEvent.click(nextBtn);
       return Promise.resolve();
     });
-    // Still on step 1 (validation failed)
     expect(screen.getByText(/Step 1 of 5/i)).toBeDefined();
   });
 
@@ -137,7 +167,6 @@ describe('DisputeNewPage', () => {
     render(withQueryClient(createElement(DisputeNewPage)));
     const nav = await screen.findByRole('navigation', { name: /Dispute filing steps/i });
     const buttons = nav.querySelectorAll('button');
-    // First is current/enabled; subsequent are disabled
     expect((buttons[0] as HTMLButtonElement).disabled).toBe(false);
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
   });
@@ -151,9 +180,6 @@ describe('DisputeNewPage', () => {
   it('shows the No contracts found item when contract list is empty', async () => {
     contractsState.data = { contracts: [] };
     render(withQueryClient(createElement(DisputeNewPage)));
-    // The Select trigger renders with the placeholder; "No contracts found"
-    // is inside the SelectContent which renders only when opened. Verify
-    // the placeholder text is shown instead.
     expect(await screen.findByText(/Select the contract for this dispute/i)).toBeDefined();
   });
 
@@ -166,7 +192,6 @@ describe('DisputeNewPage', () => {
   it('renders the file-input fallback when image-upload error occurs', async () => {
     imageUploadState.error = 'upload boom';
     render(withQueryClient(createElement(DisputeNewPage)));
-    // Error wouldn't be shown until evidence step; ensure page still renders.
     expect(await screen.findByRole('heading', { name: /File a Dispute/i })).toBeDefined();
   });
 
@@ -180,7 +205,6 @@ describe('DisputeNewPage', () => {
       fireEvent.click(futureBtn);
       return Promise.resolve();
     });
-    // Still on step 1.
     expect(screen.getByText(/Step 1 of 5/i)).toBeDefined();
   });
 
@@ -190,13 +214,9 @@ describe('DisputeNewPage', () => {
   });
 
   it('Submitting state shows Submitting... label when fileDispute is pending', async () => {
-    contractsState.data = {
-      contracts: [makeContract()],
-    };
+    contractsState.data = { contracts: [makeContract()] };
     fileDisputeState.isPending = true;
     render(withQueryClient(createElement(DisputeNewPage)));
-    // We can't easily traverse all 5 steps, so confirm the page renders without
-    // crashing in the pending state.
     expect(await screen.findByRole('heading', { name: /File a Dispute/i })).toBeDefined();
   });
 
@@ -204,7 +224,203 @@ describe('DisputeNewPage', () => {
     imageUploadState.status = 'uploading';
     imageUploadState.progress = 42;
     render(withQueryClient(createElement(DisputeNewPage)));
-    // Upload UI lives on step 4 — page still renders from step 1 without throwing.
     expect(await screen.findByRole('heading', { name: /File a Dispute/i })).toBeDefined();
+  });
+
+  // ---- Deeper traversal tests ----
+
+  it('advances to reason step when prefilled contractId is in URL params', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    expect(screen.getByText(/Step 2 of 5/i)).toBeDefined();
+    expect(screen.getByRole('radiogroup', { name: /Select dispute reason/i })).toBeDefined();
+  });
+
+  it('selects a reason radio and advances to description step', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext(); // step 1 -> 2
+    const radio = screen.getByRole('radio', { name: /Quality Issue/i });
+    await act(() => {
+      fireEvent.click(radio);
+      return Promise.resolve();
+    });
+    await flush();
+    await clickNext(); // step 2 -> 3
+    expect(screen.getByText(/Step 3 of 5/i)).toBeDefined();
+    expect(screen.getByLabelText('Description')).toBeDefined();
+  });
+
+  it('shows character counter and blocks Next when description too short', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Quality Issue/i }));
+    await flush();
+    await clickNext(); // -> description
+    const textarea = screen.getByLabelText('Description');
+    fireEvent.change(textarea, { target: { value: 'too short' } });
+    await flush();
+    expect(screen.getByText(/9\/5000/)).toBeDefined();
+    await clickNext();
+    // Validation kept us on step 3.
+    expect(screen.getByText(/Step 3 of 5/i)).toBeDefined();
+  });
+
+  it('reaches the Review step after filling all required fields', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract({ contract_number: 'CON-XYZ' })] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /No-Show/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'The provider did not show up and we waited two hours past the agreed time.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+    expect(screen.getByText(/Step 4 of 5/i)).toBeDefined();
+    await clickNext(); // -> review
+    expect(screen.getByText(/Step 5 of 5/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /Submit Dispute/i })).toBeDefined();
+    // Selected reason label rendered in review summary.
+    expect(screen.getByText('No-Show')).toBeDefined();
+    // Selected contract rendered with number.
+    expect(screen.getByText(/CON-XYZ/)).toBeDefined();
+  });
+
+  it('Previous button moves the wizard back one step', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    expect(screen.getByText(/Step 2 of 5/i)).toBeDefined();
+    const prev = screen.getByRole('button', { name: /^Previous$/i });
+    await act(() => {
+      fireEvent.click(prev);
+      return Promise.resolve();
+    });
+    expect(screen.getByText(/Step 1 of 5/i)).toBeDefined();
+  });
+
+  it('uploads evidence on the Evidence step and removes a previewed photo', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Other/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'A long enough description that satisfies the fifty character minimum here.' },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+
+    const file = new File(['hi'], 'photo.png', { type: 'image/png' });
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    await act(() => {
+      fireEvent.change(input, { target: { files: [file] } });
+      return Promise.resolve();
+    });
+    await flush();
+    expect(uploadFn).toHaveBeenCalled();
+    const removeBtn = await screen.findByRole('button', {
+      name: /Remove evidence photo 1/i,
+    });
+    await act(() => {
+      fireEvent.click(removeBtn);
+      return Promise.resolve();
+    });
+    await flush();
+    // Photo counter should now be back to 0.
+    expect(screen.getByText('0/5 photos')).toBeDefined();
+  });
+
+  it('submits the dispute and shows the success screen with the dispute ID', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Property Damage/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext(); // -> evidence
+    await clickNext(); // -> review
+    const submit = screen.getByRole('button', { name: /Submit Dispute/i });
+    await act(() => {
+      fireEvent.click(submit);
+      return Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(fileDisputeMutate).toHaveBeenCalled();
+    });
+    await flush();
+    expect(await screen.findByRole('heading', { name: /Dispute Filed/i })).toBeDefined();
+    expect(screen.getByText('d-9999')).toBeDefined();
+    expect(screen.getByText('Filed')).toBeDefined();
+  });
+
+  it('handles submit error gracefully and keeps wizard on Review step', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    fileDisputeMutate.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext();
+    fireEvent.click(screen.getByRole('radio', { name: /Incomplete Work/i }));
+    await flush();
+    await clickNext();
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: {
+        value: 'A long enough description that satisfies the fifty character minimum here.',
+      },
+    });
+    await flush();
+    await clickNext();
+    await clickNext();
+    const submit = screen.getByRole('button', { name: /Submit Dispute/i });
+    await act(() => {
+      fireEvent.click(submit);
+      return Promise.resolve();
+    });
+    await flush();
+    // Still on review step (success view did not render).
+    expect(screen.queryByRole('heading', { name: /Dispute Filed/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Submit Dispute/i })).toBeDefined();
+  });
+
+  it('jumping back via step indicator works for completed steps', async () => {
+    searchParamsRef.current = new URLSearchParams('contractId=contract-1');
+    contractsState.data = { contracts: [makeContract()] };
+    render(withQueryClient(createElement(DisputeNewPage)));
+    await clickNext(); // step 2
+    await clickNext(); // validation fails on reason — still step 2
+    fireEvent.click(screen.getByRole('radio', { name: /Quality Issue/i }));
+    await flush();
+    await clickNext(); // step 3
+    const nav = screen.getByRole('navigation', { name: /Dispute filing steps/i });
+    const stepButtons = within(nav).getAllByRole('button');
+    // The first step indicator should be enabled (idx < step) and clickable.
+    const firstStep = stepButtons[0];
+    if (!firstStep) throw new Error('Expected step indicator buttons');
+    await act(() => {
+      fireEvent.click(firstStep);
+      return Promise.resolve();
+    });
+    await flush();
+    expect(screen.getByText(/Step 1 of 5/i)).toBeDefined();
   });
 });

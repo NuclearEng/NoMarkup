@@ -9,7 +9,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { usePricingOverview } from '@/hooks/usePricing';
 import type { PricingOverviewCategory } from '@/hooks/usePricing';
 
-const MAPBOX_TOKEN = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+function getMapboxToken(): string {
+  return process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+}
 
 interface PriceHeatMapProps {
   categorySlug?: string;
@@ -58,6 +60,8 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(false);
 
+  const mapboxToken = getMapboxToken();
+
   const { data, isLoading } = usePricingOverview();
 
   // Filter to a single category if provided
@@ -71,7 +75,7 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
 
   // Initialize the map
   useEffect(() => {
-    if (!MAPBOX_TOKEN || !mapContainerRef.current || mapRef.current) return;
+    if (!mapboxToken || !mapContainerRef.current || mapRef.current) return;
 
     let cancelled = false;
 
@@ -81,7 +85,7 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
 
         if (cancelled || !mapContainerRef.current) return;
 
-        mapboxgl.accessToken = MAPBOX_TOKEN as string;
+        mapboxgl.accessToken = mapboxToken;
 
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
@@ -115,7 +119,7 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
         mapRef.current = null;
       }
     };
-  }, []);
+  }, [mapboxToken]);
 
   // Add/update the heatmap layer when data or map readiness changes
   useEffect(() => {
@@ -164,7 +168,7 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
   }, [categories, mapLoaded]);
 
   // No token — show a graceful placeholder
-  if (!MAPBOX_TOKEN) {
+  if (!mapboxToken) {
     return (
       <div
         className={`bg-muted flex items-center justify-center rounded-lg border ${className ?? ''}`}

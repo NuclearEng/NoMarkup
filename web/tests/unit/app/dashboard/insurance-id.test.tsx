@@ -156,4 +156,53 @@ describe('InsurancePolicyPage', () => {
     render(withQueryClient(createElement(InsurancePolicyPage)));
     expect(screen.getByText('Cancelled')).toBeDefined();
   });
+
+  it('renders the Claimed status badge', () => {
+    policyState.isLoading = false;
+    policyState.data = { policy: makePolicy({ status: 'claimed' }) };
+    render(withQueryClient(createElement(InsurancePolicyPage)));
+    expect(screen.getByText('Claimed')).toBeDefined();
+  });
+
+  it('renders all formatted dates in the Policy Period card', () => {
+    policyState.isLoading = false;
+    policyState.data = {
+      policy: makePolicy({
+        effective_date: '2026-04-01T00:00:00Z',
+        expiration_date: '2027-04-01T00:00:00Z',
+      }),
+    };
+    render(withQueryClient(createElement(InsurancePolicyPage)));
+    expect(screen.getByText('Effective Date')).toBeDefined();
+    expect(screen.getByText('Expiration Date')).toBeDefined();
+    expect(screen.getByText('Purchased')).toBeDefined();
+  });
+
+  it('hides the File a Claim button after submission success and re-shows it', () => {
+    policyState.isLoading = false;
+    policyState.data = { policy: makePolicy({ status: 'active' }) };
+    render(withQueryClient(createElement(InsurancePolicyPage)));
+    fireEvent.click(screen.getByRole('button', { name: /File a Claim/i }));
+    expect(screen.getByTestId('insurance-claim-form')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // After form's onSuccess, the File a Claim button should reappear.
+    expect(screen.getByRole('button', { name: /File a Claim/i })).toBeDefined();
+  });
+
+  it('renders the Coverage Type and Premium Paid rows in the details card', () => {
+    policyState.isLoading = false;
+    policyState.data = {
+      policy: makePolicy({
+        product: {
+          name: 'Workers Comp',
+          coverage_type: 'workers_comp',
+          description: 'Workers compensation coverage.',
+        },
+      }),
+    };
+    render(withQueryClient(createElement(InsurancePolicyPage)));
+    expect(screen.getByText('Premium Paid')).toBeDefined();
+    expect(screen.getByText('Coverage Type')).toBeDefined();
+    expect(screen.getByText('workers_comp')).toBeDefined();
+  });
 });

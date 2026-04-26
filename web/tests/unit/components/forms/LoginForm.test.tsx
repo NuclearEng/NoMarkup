@@ -36,6 +36,7 @@ vi.mock('@/components/auth/oauth-buttons', () => ({
 }));
 
 const { LoginForm } = await import('@/components/forms/LoginForm');
+const { MFARequiredError } = await import('@/stores/auth-store');
 
 describe('LoginForm', () => {
   beforeEach(() => {
@@ -92,8 +93,104 @@ describe('LoginForm', () => {
     expect(await screen.findByText('Bad credentials')).toBeDefined();
   });
 
+  it('shows generic message when login throws non-Error value', async () => {
+    loginMock.mockRejectedValue('string thrown');
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    expect(await screen.findByText('Login failed')).toBeDefined();
+  });
+
   it('renders a forgot-password link', () => {
     render(createElement(LoginForm));
     expect(screen.getByRole('link', { name: /Forgot password/ })).toBeDefined();
+  });
+
+  it('renders a register link', () => {
+    render(createElement(LoginForm));
+    expect(screen.getByRole('link', { name: /Create one/ })).toBeDefined();
+  });
+
+  it('toggles the remember-me checkbox', async () => {
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+    const cb = screen.getByLabelText(/Remember me/);
+    if (!(cb instanceof HTMLInputElement)) throw new Error('expected input');
+    expect(cb.checked).toBe(false);
+    await user.click(cb);
+    expect(cb.checked).toBe(true);
+  });
+
+  it('shows the MFA step when login throws MFARequiredError', async () => {
+    loginMock.mockRejectedValue(new MFARequiredError('user-id-1', 'challenge-tok-1'));
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    expect(await screen.findByText(/Two-factor authentication/i)).toBeDefined();
+    expect(screen.getByLabelText(/Verification code/)).toBeDefined();
+  });
+
+  it('disables the verify button until the code is at least 6 chars', async () => {
+    loginMock.mockRejectedValue(new MFARequiredError('user-id-1', 'tok'));
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    const verifyBtn = await screen.findByRole('button', { name: /Verify/ });
+    expect((verifyBtn as HTMLButtonElement).disabled).toBe(true);
+    await user.type(screen.getByLabelText(/Verification code/), '12345');
+    expect((verifyBtn as HTMLButtonElement).disabled).toBe(true);
+    await user.type(screen.getByLabelText(/Verification code/), '6');
+    expect((verifyBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('completes MFA login and redirects on success', async () => {
+    loginMock.mockRejectedValue(new MFARequiredError('user-id-1', 'tok-99'));
+    completeMFAMock.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    const code = await screen.findByLabelText(/Verification code/);
+    await user.type(code, '123456');
+    await user.click(screen.getByRole('button', { name: /^Verify$/ }));
+    await waitFor(() => {
+      expect(completeMFAMock).toHaveBeenCalledWith('tok-99', '123456');
+    });
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith('/dashboard');
+    });
+  });
+
+  it('shows MFA error message when completeMFALogin throws', async () => {
+    loginMock.mockRejectedValue(new MFARequiredError('user-id-1', 'tok-99'));
+    completeMFAMock.mockRejectedValue(new Error('Invalid code'));
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    const code = await screen.findByLabelText(/Verification code/);
+    await user.type(code, '123456');
+    await user.click(screen.getByRole('button', { name: /^Verify$/ }));
+    expect(await screen.findByText('Invalid code')).toBeDefined();
+  });
+
+  it('returns to login screen when Back to login is clicked from MFA step', async () => {
+    loginMock.mockRejectedValue(new MFARequiredError('uid', 'ct'));
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+    await screen.findByText(/Two-factor authentication/i);
+    await user.click(screen.getByRole('button', { name: /Back to login/i }));
+    expect(screen.getByRole('button', { name: /Sign in/ })).toBeDefined();
   });
 });

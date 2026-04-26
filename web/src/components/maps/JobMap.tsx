@@ -16,6 +16,10 @@ interface JobMapProps {
   onJobSelect?: (job: Job) => void;
 }
 
+function getMapboxToken(): string {
+  return process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+}
+
 function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: Job) => void }) {
   const jobsWithLocation = jobs.filter(
     (job) => job.location_lat !== null && job.location_lng !== null,
@@ -82,7 +86,7 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(false);
 
-  const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+  const mapboxToken = getMapboxToken();
 
   useEffect(() => {
     if (!mapboxToken || !mapContainerRef.current || mapRef.current) return;
@@ -95,7 +99,7 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
 
         if (cancelled || !mapContainerRef.current) return;
 
-        mapboxgl.accessToken = mapboxToken as string;
+        mapboxgl.accessToken = mapboxToken;
 
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
