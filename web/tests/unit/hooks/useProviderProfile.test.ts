@@ -103,7 +103,7 @@ describe('useUpdateProviderProfile', () => {
     const spy = vi.spyOn(client, 'invalidateQueries');
 
     const { result } = renderHook(() => useUpdateProviderProfile(), { wrapper: wrap(client) });
-    const input = { businessName: 'New Co' };
+    const input = { business_name: 'New Co' };
     result.current.mutate(input);
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
@@ -129,7 +129,12 @@ describe('useSetGlobalTerms', () => {
     const spy = vi.spyOn(client, 'invalidateQueries');
 
     const { result } = renderHook(() => useSetGlobalTerms(), { wrapper: wrap(client) });
-    const input = { paymentTerms: 'net30' };
+    const input = {
+      payment_timing: 'net30',
+      milestones: [],
+      cancellation_policy: '',
+      warranty_terms: '',
+    };
     result.current.mutate(input);
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);

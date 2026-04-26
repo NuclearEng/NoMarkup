@@ -88,7 +88,7 @@ describe('DataTable', () => {
         page: 2,
         pagination: {
           page: 2,
-          perPage: 10,
+          pageSize: 10,
           totalCount: 30,
           totalPages: 3,
           hasNext: true,

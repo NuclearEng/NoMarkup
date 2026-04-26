@@ -12,7 +12,7 @@ describe('BidPlacementPanel', () => {
 
   it('seeds the bid input with a value below the current lowest', () => {
     render(<BidPlacementPanel currentLowest={20000} startingPrice={30000} />);
-    const input = screen.getByLabelText('Bid amount in dollars');
+    const input = screen.getByLabelText('Bid amount in dollars') as HTMLInputElement;
     // Suggested = 95% of 20000 cents = 19000 cents = $190.00
     expect(input.value).toBe('190.00');
   });
@@ -20,7 +20,7 @@ describe('BidPlacementPanel', () => {
   it('decreases the bid by $5 when the minus button is clicked', async () => {
     const user = userEvent.setup();
     render(<BidPlacementPanel currentLowest={20000} startingPrice={30000} />);
-    const input = screen.getByLabelText('Bid amount in dollars');
+    const input = screen.getByLabelText('Bid amount in dollars') as HTMLInputElement;
     const minus = screen.getByLabelText('Decrease bid by $5');
     await user.click(minus);
     expect(input.value).toBe('185.00');
@@ -29,7 +29,7 @@ describe('BidPlacementPanel', () => {
   it('increases the bid by $5 when the plus button is clicked', async () => {
     const user = userEvent.setup();
     render(<BidPlacementPanel currentLowest={20000} startingPrice={30000} />);
-    const input = screen.getByLabelText('Bid amount in dollars');
+    const input = screen.getByLabelText('Bid amount in dollars') as HTMLInputElement;
     const plus = screen.getByLabelText('Increase bid by $5');
     await user.click(plus);
     expect(input.value).toBe('195.00');
@@ -38,7 +38,7 @@ describe('BidPlacementPanel', () => {
   it('snaps the bid to a quick-amount pill', async () => {
     const user = userEvent.setup();
     render(<BidPlacementPanel currentLowest={20000} startingPrice={30000} />);
-    const input = screen.getByLabelText('Bid amount in dollars');
+    const input = screen.getByLabelText('Bid amount in dollars') as HTMLInputElement;
     await user.click(screen.getByRole('button', { name: '-10%' }));
     // 90% of 20000 = 18000 = $180.00
     expect(input.value).toBe('180.00');

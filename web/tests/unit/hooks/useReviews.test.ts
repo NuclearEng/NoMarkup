@@ -63,13 +63,13 @@ describe('useCreateReview', () => {
     const { result } = renderHook(() => useCreateReview(), { wrapper: wrap(client) });
     result.current.mutate({
       contractId: 'c-1',
-      input: { overall_rating: 5, review_text: 'great' },
+      input: { overall_rating: 5, comment: 'great' },
     });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/contracts/c-1/reviews',
-      { overall_rating: 5, review_text: 'great' },
+      { overall_rating: 5, comment: 'great' },
     );
     expect(spy).toHaveBeenCalledWith({ queryKey: ['reviewEligibility', 'c-1'] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['contract', 'c-1'] });

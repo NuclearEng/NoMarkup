@@ -255,8 +255,8 @@ describe('ServiceAreaMap — token-set / map render branch', () => {
       expect(mapInstance.fitBounds).toHaveBeenCalled();
     });
     const bounds = mapInstance.fitBounds.mock.calls[0]?.[0] as [number[], number[]];
-    expect(bounds[0][0]).toBeLessThan(bounds[1][0]);
-    expect(bounds[0][1]).toBeLessThan(bounds[1][1]);
+    expect(bounds[0][0] ?? 0).toBeLessThan(bounds[1][0] ?? 0);
+    expect(bounds[0][1] ?? 0).toBeLessThan(bounds[1][1] ?? 0);
   });
 
   it('updates the existing source data when radiusKm changes after map load', async () => {

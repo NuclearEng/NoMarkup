@@ -53,9 +53,8 @@ const mockChannel: Channel = {
   provider_id: 'prov-1',
   channel_type: 'pre_award',
   status: 'active',
-  last_message_at: null,
-  unread_count_customer: 0,
-  unread_count_provider: 0,
+  unread_count: 0,
+  message_count: 0,
   created_at: '2026-04-25T00:00:00Z',
   updated_at: '2026-04-25T00:00:00Z',
 };
@@ -66,10 +65,8 @@ const mockMessage: ChatMessage = {
   sender_id: 'cust-1',
   message_type: 'text',
   content: 'hi there',
-  flagged: false,
-  flagged_reason: null,
+  flagged_contact_info: false,
   is_deleted: false,
-  read_at: null,
   created_at: '2026-04-25T00:01:00Z',
 };
 
@@ -86,7 +83,10 @@ describe('useChannels', () => {
   });
 
   it('fetches the channel list with no params', async () => {
-    const response: ChannelsResponse = { channels: [mockChannel], total: 1 };
+    const response: ChannelsResponse = {
+      channels: [mockChannel],
+      pagination: { totalCount: 1, page: 1, pageSize: 25, totalPages: 1, hasNext: false },
+    };
     vi.mocked(api.get).mockResolvedValueOnce(response);
 
     const { result } = renderHook(() => useChannels(), {
@@ -277,14 +277,14 @@ describe('useUnreadCount', () => {
   });
 
   it('fetches the global unread count', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ unread_count: 7 });
+    vi.mocked(api.get).mockResolvedValueOnce({ total_unread: 7, channels: [] });
 
     const { result } = renderHook(() => useUnreadCount(), {
       wrapper: createWrapper(queryClient),
     });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(result.current.data?.unread_count).toBe(7);
+    expect(result.current.data?.total_unread).toBe(7);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/channels/unread');
   });
 });

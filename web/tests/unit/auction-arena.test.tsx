@@ -466,7 +466,7 @@ describe('AuctionArena', () => {
           withdrawn_at: null,
         },
         provider_display_name: 'Excluded Provider',
-        provider_business_name: null,
+        provider_business_name: '',
         provider_avatar_url: null,
         trust_score: null,
         review_summary: null,

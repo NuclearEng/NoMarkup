@@ -217,7 +217,15 @@ describe('useUpdatePreferences', () => {
     const spy = vi.spyOn(client, 'invalidateQueries');
 
     const { result } = renderHook(() => useUpdatePreferences(), { wrapper: wrap(client) });
-    const payload = { preferences: [{ category: 'job', email_enabled: true }] };
+    const payload = {
+      preferences: [{
+        notification_type: 'new_bid' as const,
+        push_enabled: false,
+        email_enabled: true,
+        sms_enabled: false,
+        in_app_enabled: true,
+      }],
+    };
     result.current.mutate(payload);
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);

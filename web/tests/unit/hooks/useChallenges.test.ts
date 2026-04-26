@@ -141,10 +141,15 @@ describe('useCreateChallenge', () => {
   it('posts the challenge payload + invalidates the all-challenges key', async () => {
     const created = { id: 'c-2', name: 'Speed run' };
     const input = {
-      name: 'Speed run',
+      title: 'Speed run',
       description: 'win 5 jobs in a week',
-      start_at: '2026-05-01',
-      end_at: '2026-05-08',
+      challenge_type: 'jobs_completed' as const,
+      target_value: 5,
+      reward_type: 'badge' as const,
+      reward_value: 'speedster',
+      starts_at: '2026-05-01',
+      ends_at: '2026-05-08',
+      is_seasonal: false,
     };
     vi.mocked(api.post).mockResolvedValueOnce(created);
     const spy = vi.spyOn(client, 'invalidateQueries');

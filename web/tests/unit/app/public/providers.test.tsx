@@ -88,7 +88,7 @@ describe('(public)/providers/page', () => {
 
   it('typing then clicking Search invokes the hook with the query', async () => {
     const user = userEvent.setup();
-    const searchSpy = vi.fn(() => ({
+    const searchSpy = vi.fn((..._args: unknown[]) => ({
       data: { providers: [], pagination: { totalCount: 0, totalPages: 0, hasNext: false } },
       isLoading: false,
       isError: false,
@@ -110,7 +110,7 @@ describe('(public)/providers/page', () => {
 
   it('pressing Enter in the search input triggers a search', async () => {
     const user = userEvent.setup();
-    const searchSpy = vi.fn(() => ({
+    const searchSpy = vi.fn((..._args: unknown[]) => ({
       data: { providers: [], pagination: { totalCount: 0, totalPages: 0, hasNext: false } },
       isLoading: false,
       isError: false,

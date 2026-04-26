@@ -208,7 +208,7 @@ describe('BidForm', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('0.00');
+    const input = screen.getByPlaceholderText('0.00') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '100' } });
     // Default step is $10
     await user.click(screen.getByLabelText('Increase bid by $10'));
@@ -228,7 +228,7 @@ describe('BidForm', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('0.00');
+    const input = screen.getByPlaceholderText('0.00') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '100' } });
     await user.click(screen.getByLabelText('Decrease bid by $10'));
     expect(input.value).toBe('90');

@@ -75,13 +75,13 @@ describe('useReviewFraudAlert', () => {
     const { result } = renderHook(() => useReviewFraudAlert(), { wrapper: wrap(client) });
     result.current.mutate({
       alertId: 'a-1',
-      input: { action: 'dismiss', notes: 'false positive' },
+      input: { status: 'dismissed', resolution_notes: 'false positive', restrict_user: false },
     });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/admin/fraud/alerts/a-1/review',
-      { action: 'dismiss', notes: 'false positive' },
+      { status: 'dismissed', resolution_notes: 'false positive', restrict_user: false },
     );
     expect(result.current.data).toEqual(alert);
     expect(spy).toHaveBeenCalledWith({ queryKey: ['fraud-alerts'] });

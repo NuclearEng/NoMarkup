@@ -143,6 +143,7 @@ describe('useAuctionStream', () => {
     act(() => {
       auctionWsManager.__emitMessage({
         type: 'bid_event',
+        job_id: 'job-1',
         data: {
           type: 'bid_placed',
           job_id: 'job-1',

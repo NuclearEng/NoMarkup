@@ -36,13 +36,13 @@ describe('ImageUpload', () => {
   });
 
   it('renders the drop zone with default placeholder', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     expect(screen.getByRole('button', { name: /Drop an image/ })).toBeDefined();
   });
 
   it('renders a custom placeholder when provided', () => {
     render(
-      <ImageUpload context="job" onUploadComplete={vi.fn()} placeholder="Upload a logo" />,
+      <ImageUpload context="job_photo" onUploadComplete={vi.fn()} placeholder="Upload a logo" />,
     );
     expect(screen.getByText('Upload a logo')).toBeDefined();
   });
@@ -50,7 +50,7 @@ describe('ImageUpload', () => {
   it('renders existing image thumbnails', () => {
     render(
       <ImageUpload
-        context="job"
+        context="job_photo"
         onUploadComplete={vi.fn()}
         existingImages={['https://example.com/a.jpg']}
       />,
@@ -60,19 +60,19 @@ describe('ImageUpload', () => {
 
   it('forwards className', () => {
     const { container } = render(
-      <ImageUpload context="job" onUploadComplete={vi.fn()} className="my-upload" />,
+      <ImageUpload context="job_photo" onUploadComplete={vi.fn()} className="my-upload" />,
     );
     expect((container.firstChild as HTMLElement).className).toContain('my-upload');
   });
 
   it('shows multiple-images placeholder when multiple is true', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} multiple />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} multiple />);
     expect(screen.getByText(/Drop images here/)).toBeDefined();
   });
 
   it('opens file picker when drop zone is clicked', async () => {
     const user = userEvent.setup();
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     // file input is hidden; clicking the role=button triggers .click() on the input.
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const clickSpy = vi.fn();
@@ -85,7 +85,7 @@ describe('ImageUpload', () => {
   });
 
   it('opens file picker when Enter is pressed', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
     const clickSpy = vi.fn();
@@ -97,7 +97,7 @@ describe('ImageUpload', () => {
   });
 
   it('opens file picker when Space is pressed', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
     const clickSpy = vi.fn();
@@ -109,7 +109,7 @@ describe('ImageUpload', () => {
   });
 
   it('ignores other keys', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
     const clickSpy = vi.fn();
@@ -121,14 +121,14 @@ describe('ImageUpload', () => {
   });
 
   it('shows drag visual state on dragenter', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     fireEvent.dragEnter(dropZone);
     expect(screen.getByText('Drop to upload')).toBeDefined();
   });
 
   it('clears drag state on dragleave', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     fireEvent.dragEnter(dropZone);
     expect(screen.getByText('Drop to upload')).toBeDefined();
@@ -137,7 +137,7 @@ describe('ImageUpload', () => {
   });
 
   it('handles dragOver without changing state', () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     fireEvent.dragOver(dropZone);
     // dragOver alone should not toggle the drop-to-upload visual
@@ -145,7 +145,7 @@ describe('ImageUpload', () => {
   });
 
   it('rejects files of disallowed type with a descriptive error', async () => {
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
     if (!input) throw new Error('input not found');
@@ -160,7 +160,7 @@ describe('ImageUpload', () => {
   it('rejects files larger than maxSizeBytes', async () => {
     render(
       <ImageUpload
-        context="job"
+        context="job_photo"
         onUploadComplete={vi.fn()}
         maxSizeBytes={500}
       />,
@@ -178,7 +178,7 @@ describe('ImageUpload', () => {
   it('blocks new uploads when maxFiles already reached via existing images', async () => {
     render(
       <ImageUpload
-        context="job"
+        context="job_photo"
         onUploadComplete={vi.fn()}
         maxFiles={1}
         existingImages={['https://example.com/x.jpg']}
@@ -197,7 +197,7 @@ describe('ImageUpload', () => {
   it('starts an upload and notifies parent on success', async () => {
     const onComplete = vi.fn();
     uploadMock.mockResolvedValue({ confirmedUrl: 'https://cdn/1.png', publicId: 'p1' });
-    render(<ImageUpload context="job" onUploadComplete={onComplete} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={onComplete} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
     if (!input) throw new Error('input not found');
@@ -212,7 +212,7 @@ describe('ImageUpload', () => {
 
   it('shows a failed-upload card with dismiss button when upload returns null', async () => {
     uploadMock.mockResolvedValue(null);
-    render(<ImageUpload context="job" onUploadComplete={vi.fn()} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
     if (!input) throw new Error('input not found');
@@ -228,7 +228,7 @@ describe('ImageUpload', () => {
   it('handles file drop via drag and drop', async () => {
     const onComplete = vi.fn();
     uploadMock.mockResolvedValue({ confirmedUrl: 'https://cdn/d.png', publicId: 'd' });
-    render(<ImageUpload context="job" onUploadComplete={onComplete} />);
+    render(<ImageUpload context="job_photo" onUploadComplete={onComplete} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const file = makeFile('drop.png');
     fireEvent.drop(dropZone, {
@@ -244,7 +244,7 @@ describe('ImageUpload', () => {
     uploadMock.mockResolvedValue({ confirmedUrl: 'https://cdn/c.png', publicId: 'c' });
     render(
       <ImageUpload
-        context="job"
+        context="job_photo"
         onUploadComplete={vi.fn()}
         onRemove={onRemove}
       />,
@@ -262,7 +262,7 @@ describe('ImageUpload', () => {
     const onRemove = vi.fn();
     render(
       <ImageUpload
-        context="job"
+        context="job_photo"
         onUploadComplete={vi.fn()}
         existingImages={['https://example.com/old.jpg']}
         onRemove={onRemove}

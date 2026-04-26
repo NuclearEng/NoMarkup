@@ -17,7 +17,7 @@ const prefsState: {
   isError: boolean;
 } = { data: undefined, isLoading: false, isError: false };
 
-const updateMutate = vi.fn(() => Promise.resolve({}));
+const updateMutate = vi.fn((..._args: unknown[]) => Promise.resolve({}));
 const updateState = { isPending: false };
 
 vi.mock('next/navigation', () => ({

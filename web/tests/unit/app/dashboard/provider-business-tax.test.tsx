@@ -25,7 +25,7 @@ const taxFormsState: {
 
 const generateMutate = vi.fn();
 const generateState = { isPending: false, isError: false };
-const downloadAuth = vi.fn(() => Promise.resolve());
+const downloadAuth = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),

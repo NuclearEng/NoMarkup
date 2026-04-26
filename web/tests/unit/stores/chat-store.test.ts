@@ -142,9 +142,9 @@ describe('useChatStore', () => {
         CONNECTION_STATUS.CONNECTED,
       );
 
-      useChatStore.getState().setConnectionStatus(CONNECTION_STATUS.ERROR);
+      useChatStore.getState().setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
       expect(useChatStore.getState().connectionStatus).toBe(
-        CONNECTION_STATUS.ERROR,
+        CONNECTION_STATUS.DISCONNECTED,
       );
     });
   });

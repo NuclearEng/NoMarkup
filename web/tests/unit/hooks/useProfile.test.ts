@@ -90,7 +90,7 @@ describe('useUpdateProfile', () => {
     const spy = vi.spyOn(client, 'invalidateQueries');
 
     const { result } = renderHook(() => useUpdateProfile(), { wrapper: wrap(client) });
-    const input = { displayName: 'Jane Renamed' };
+    const input = { display_name: 'Jane Renamed' };
     result.current.mutate(input);
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
