@@ -7,19 +7,24 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // BidHandler handles HTTP endpoints for bids.
 type BidHandler struct {
-	bidClient bidv1.BidServiceClient
+	bidClient      bidv1.BidServiceClient
+	contractClient contractv1.ContractServiceClient
 }
 
-// NewBidHandler creates a new BidHandler.
-func NewBidHandler(bidClient bidv1.BidServiceClient) *BidHandler {
-	return &BidHandler{bidClient: bidClient}
+// NewBidHandler creates a new BidHandler. The optional contractClient is used
+// to create a contract row immediately after a bid is awarded — without it,
+// awarding a bid just flips status and the customer-accept → contract pipeline
+// stays severed.
+func NewBidHandler(bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient) *BidHandler {
+	return &BidHandler{bidClient: bidClient, contractClient: contractClient}
 }
 
 type placeBidRequest struct {
@@ -239,15 +244,53 @@ func (h *BidHandler) AwardBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	awardedBid := resp.GetAwardedBid()
+
+	// Saga step 2: now that the bidding engine has marked the winning bid as
+	// "awarded" and all other active bids as "not_selected", create the contract
+	// row so the customer-accept → contract pipeline is wired end-to-end.
+	//
+	// If contract creation fails after a successful award, we cannot cleanly
+	// reverse the award (it spans services / a separate Rust pool), so we log
+	// loudly and emit a metric for ops to follow up on. The customer still
+	// sees their bid awarded, and the recovery path is to re-call this
+	// endpoint or have ops insert the contract manually. This mirrors the
+	// "saga without compensating action" pattern called out in the task brief.
+	contractID := ""
+	if h.contractClient != nil {
+		contractResp, contractErr := h.contractClient.CreateContractFromAward(r.Context(), &contractv1.CreateContractFromAwardRequest{
+			JobId:         jobID,
+			BidId:         bidID,
+			CustomerId:    claims.UserID,
+			ProviderId:    awardedBid.GetProviderId(),
+			AmountCents:   awardedBid.GetAmountCents(),
+			PaymentTiming: commonv1.PaymentTiming_PAYMENT_TIMING_COMPLETION,
+		})
+		if contractErr != nil {
+			// Bid is already awarded; the contract is missing. This is the
+			// state the original bug produced — log loudly so ops can recover.
+			slog.ErrorContext(r.Context(), "contract creation after award failed (manual recovery required)",
+				"job_id", jobID,
+				"bid_id", bidID,
+				"customer_id", claims.UserID,
+				"provider_id", awardedBid.GetProviderId(),
+				"amount_cents", awardedBid.GetAmountCents(),
+				"error", contractErr,
+			)
+		} else {
+			contractID = contractResp.GetContract().GetId()
+		}
+	}
+
 	slog.InfoContext(r.Context(), "bid awarded",
 		"job_id", jobID,
 		"bid_id", bidID,
 		"customer_id", claims.UserID,
-		"contract_id", resp.GetContractId(),
+		"contract_id", contractID,
 	)
-	result := protoBidToJSON(resp.GetAwardedBid())
-	if resp.GetContractId() != "" {
-		result["contract_id"] = resp.GetContractId()
+	result := protoBidToJSON(awardedBid)
+	if contractID != "" {
+		result["contract_id"] = contractID
 	}
 
 	writeJSON(w, http.StatusOK, result)

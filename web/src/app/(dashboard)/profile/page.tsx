@@ -164,17 +164,17 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {providerProfile.businessName ? (
+              {providerProfile.business_name ? (
                 <div>
                   <dt className="text-zinc-300 text-sm font-medium">Business Name</dt>
-                  <dd className="text-sm">{providerProfile.businessName}</dd>
+                  <dd className="text-sm">{providerProfile.business_name}</dd>
                 </div>
               ) : null}
-              {providerProfile.serviceCategories.length > 0 ? (
+              {providerProfile.service_categories.length > 0 ? (
                 <div>
                   <dt className="text-zinc-300 text-sm font-medium">Service Categories</dt>
                   <dd className="flex flex-wrap gap-1 pt-1">
-                    {providerProfile.serviceCategories.map((cat) => (
+                    {providerProfile.service_categories.map((cat) => (
                       <Badge key={cat.id} variant="outline" className="glass-badge text-xs">
                         {cat.name}
                       </Badge>
@@ -184,27 +184,27 @@ export default function ProfilePage() {
               ) : null}
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Service Radius</dt>
-                <dd className="text-sm">{String(providerProfile.serviceRadiusKm)} km</dd>
+                <dd className="text-sm">{String(providerProfile.service_radius_km)} km</dd>
               </div>
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Jobs Completed</dt>
-                <dd className="text-sm">{String(providerProfile.jobsCompleted)}</dd>
+                <dd className="text-sm">{String(providerProfile.jobs_completed)}</dd>
               </div>
-              {providerProfile.onTimeRate !== null ? (
+              {providerProfile.on_time_rate !== null ? (
                 <div>
                   <dt className="text-zinc-300 text-sm font-medium">On-Time Rate</dt>
-                  <dd className="text-sm">{(providerProfile.onTimeRate * 100).toFixed(0)}%</dd>
+                  <dd className="text-sm">{(providerProfile.on_time_rate * 100).toFixed(0)}%</dd>
                 </div>
               ) : null}
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Stripe</dt>
                 <dd className="text-sm">
-                  {providerProfile.stripeOnboardingComplete ? 'Connected' : 'Not connected'}
+                  {providerProfile.stripe_onboarding_complete ? 'Connected' : 'Not connected'}
                 </dd>
               </div>
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Profile Completeness</dt>
-                <dd className="text-sm">{String(providerProfile.profileCompleteness)}%</dd>
+                <dd className="text-sm">{String(providerProfile.profile_completeness)}%</dd>
               </div>
             </dl>
             {providerProfile.bio ? (

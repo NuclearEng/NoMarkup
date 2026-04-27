@@ -57,6 +57,7 @@ const (
 	UserService_AdminSearchUsers_FullMethodName        = "/nomarkup.user.v1.UserService/AdminSearchUsers"
 	UserService_AdminSuspendUser_FullMethodName        = "/nomarkup.user.v1.UserService/AdminSuspendUser"
 	UserService_AdminBanUser_FullMethodName            = "/nomarkup.user.v1.UserService/AdminBanUser"
+	UserService_AdminReactivateUser_FullMethodName     = "/nomarkup.user.v1.UserService/AdminReactivateUser"
 	UserService_AdminReviewDocument_FullMethodName     = "/nomarkup.user.v1.UserService/AdminReviewDocument"
 	UserService_SearchProviders_FullMethodName         = "/nomarkup.user.v1.UserService/SearchProviders"
 )
@@ -112,6 +113,7 @@ type UserServiceClient interface {
 	AdminSearchUsers(ctx context.Context, in *AdminSearchUsersRequest, opts ...grpc.CallOption) (*AdminSearchUsersResponse, error)
 	AdminSuspendUser(ctx context.Context, in *AdminSuspendUserRequest, opts ...grpc.CallOption) (*AdminSuspendUserResponse, error)
 	AdminBanUser(ctx context.Context, in *AdminBanUserRequest, opts ...grpc.CallOption) (*AdminBanUserResponse, error)
+	AdminReactivateUser(ctx context.Context, in *AdminReactivateUserRequest, opts ...grpc.CallOption) (*AdminReactivateUserResponse, error)
 	AdminReviewDocument(ctx context.Context, in *AdminReviewDocumentRequest, opts ...grpc.CallOption) (*AdminReviewDocumentResponse, error)
 	// Search
 	SearchProviders(ctx context.Context, in *SearchProvidersRequest, opts ...grpc.CallOption) (*SearchProvidersResponse, error)
@@ -505,6 +507,16 @@ func (c *userServiceClient) AdminBanUser(ctx context.Context, in *AdminBanUserRe
 	return out, nil
 }
 
+func (c *userServiceClient) AdminReactivateUser(ctx context.Context, in *AdminReactivateUserRequest, opts ...grpc.CallOption) (*AdminReactivateUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminReactivateUserResponse)
+	err := c.cc.Invoke(ctx, UserService_AdminReactivateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *userServiceClient) AdminReviewDocument(ctx context.Context, in *AdminReviewDocumentRequest, opts ...grpc.CallOption) (*AdminReviewDocumentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AdminReviewDocumentResponse)
@@ -576,6 +588,7 @@ type UserServiceServer interface {
 	AdminSearchUsers(context.Context, *AdminSearchUsersRequest) (*AdminSearchUsersResponse, error)
 	AdminSuspendUser(context.Context, *AdminSuspendUserRequest) (*AdminSuspendUserResponse, error)
 	AdminBanUser(context.Context, *AdminBanUserRequest) (*AdminBanUserResponse, error)
+	AdminReactivateUser(context.Context, *AdminReactivateUserRequest) (*AdminReactivateUserResponse, error)
 	AdminReviewDocument(context.Context, *AdminReviewDocumentRequest) (*AdminReviewDocumentResponse, error)
 	// Search
 	SearchProviders(context.Context, *SearchProvidersRequest) (*SearchProvidersResponse, error)
@@ -702,6 +715,9 @@ func (UnimplementedUserServiceServer) AdminSuspendUser(context.Context, *AdminSu
 }
 func (UnimplementedUserServiceServer) AdminBanUser(context.Context, *AdminBanUserRequest) (*AdminBanUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdminBanUser not implemented")
+}
+func (UnimplementedUserServiceServer) AdminReactivateUser(context.Context, *AdminReactivateUserRequest) (*AdminReactivateUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminReactivateUser not implemented")
 }
 func (UnimplementedUserServiceServer) AdminReviewDocument(context.Context, *AdminReviewDocumentRequest) (*AdminReviewDocumentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdminReviewDocument not implemented")
@@ -1414,6 +1430,24 @@ func _UserService_AdminBanUser_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_AdminReactivateUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminReactivateUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).AdminReactivateUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_AdminReactivateUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).AdminReactivateUser(ctx, req.(*AdminReactivateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UserService_AdminReviewDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AdminReviewDocumentRequest)
 	if err := dec(in); err != nil {
@@ -1608,6 +1642,10 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdminBanUser",
 			Handler:    _UserService_AdminBanUser_Handler,
+		},
+		{
+			MethodName: "AdminReactivateUser",
+			Handler:    _UserService_AdminReactivateUser_Handler,
 		},
 		{
 			MethodName: "AdminReviewDocument",

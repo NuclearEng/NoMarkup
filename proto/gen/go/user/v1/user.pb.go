@@ -5040,6 +5040,110 @@ func (x *AdminBanUserResponse) GetUser() *User {
 	return nil
 }
 
+type AdminReactivateUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	AdminId       string                 `protobuf:"bytes,2,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"` // optional reason / note for audit log
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminReactivateUserRequest) Reset() {
+	*x = AdminReactivateUserRequest{}
+	mi := &file_user_v1_user_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminReactivateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminReactivateUserRequest) ProtoMessage() {}
+
+func (x *AdminReactivateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminReactivateUserRequest.ProtoReflect.Descriptor instead.
+func (*AdminReactivateUserRequest) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *AdminReactivateUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AdminReactivateUserRequest) GetAdminId() string {
+	if x != nil {
+		return x.AdminId
+	}
+	return ""
+}
+
+func (x *AdminReactivateUserRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type AdminReactivateUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminReactivateUserResponse) Reset() {
+	*x = AdminReactivateUserResponse{}
+	mi := &file_user_v1_user_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminReactivateUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminReactivateUserResponse) ProtoMessage() {}
+
+func (x *AdminReactivateUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminReactivateUserResponse.ProtoReflect.Descriptor instead.
+func (*AdminReactivateUserResponse) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *AdminReactivateUserResponse) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
 type AdminReviewDocumentRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	DocumentId      string                 `protobuf:"bytes,1,opt,name=document_id,json=documentId,proto3" json:"document_id,omitempty"`
@@ -5052,7 +5156,7 @@ type AdminReviewDocumentRequest struct {
 
 func (x *AdminReviewDocumentRequest) Reset() {
 	*x = AdminReviewDocumentRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[87]
+	mi := &file_user_v1_user_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5064,7 +5168,7 @@ func (x *AdminReviewDocumentRequest) String() string {
 func (*AdminReviewDocumentRequest) ProtoMessage() {}
 
 func (x *AdminReviewDocumentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[87]
+	mi := &file_user_v1_user_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5077,7 +5181,7 @@ func (x *AdminReviewDocumentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReviewDocumentRequest.ProtoReflect.Descriptor instead.
 func (*AdminReviewDocumentRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{87}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *AdminReviewDocumentRequest) GetDocumentId() string {
@@ -5117,7 +5221,7 @@ type AdminReviewDocumentResponse struct {
 
 func (x *AdminReviewDocumentResponse) Reset() {
 	*x = AdminReviewDocumentResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[88]
+	mi := &file_user_v1_user_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5129,7 +5233,7 @@ func (x *AdminReviewDocumentResponse) String() string {
 func (*AdminReviewDocumentResponse) ProtoMessage() {}
 
 func (x *AdminReviewDocumentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[88]
+	mi := &file_user_v1_user_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5142,7 +5246,7 @@ func (x *AdminReviewDocumentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReviewDocumentResponse.ProtoReflect.Descriptor instead.
 func (*AdminReviewDocumentResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{88}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *AdminReviewDocumentResponse) GetStatus() v1.VerificationStatus {
@@ -5169,7 +5273,7 @@ type SearchProvidersRequest struct {
 
 func (x *SearchProvidersRequest) Reset() {
 	*x = SearchProvidersRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[89]
+	mi := &file_user_v1_user_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5181,7 +5285,7 @@ func (x *SearchProvidersRequest) String() string {
 func (*SearchProvidersRequest) ProtoMessage() {}
 
 func (x *SearchProvidersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[89]
+	mi := &file_user_v1_user_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5194,7 +5298,7 @@ func (x *SearchProvidersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchProvidersRequest.ProtoReflect.Descriptor instead.
 func (*SearchProvidersRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{89}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *SearchProvidersRequest) GetCategoryIds() []string {
@@ -5270,7 +5374,7 @@ type SearchProvidersResponse struct {
 
 func (x *SearchProvidersResponse) Reset() {
 	*x = SearchProvidersResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[90]
+	mi := &file_user_v1_user_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5282,7 +5386,7 @@ func (x *SearchProvidersResponse) String() string {
 func (*SearchProvidersResponse) ProtoMessage() {}
 
 func (x *SearchProvidersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[90]
+	mi := &file_user_v1_user_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5295,7 +5399,7 @@ func (x *SearchProvidersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchProvidersResponse.ProtoReflect.Descriptor instead.
 func (*SearchProvidersResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{90}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *SearchProvidersResponse) GetProviders() []*ProviderSearchResult {
@@ -5330,7 +5434,7 @@ type ProviderSearchResult struct {
 
 func (x *ProviderSearchResult) Reset() {
 	*x = ProviderSearchResult{}
-	mi := &file_user_v1_user_proto_msgTypes[91]
+	mi := &file_user_v1_user_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5342,7 +5446,7 @@ func (x *ProviderSearchResult) String() string {
 func (*ProviderSearchResult) ProtoMessage() {}
 
 func (x *ProviderSearchResult) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[91]
+	mi := &file_user_v1_user_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5355,7 +5459,7 @@ func (x *ProviderSearchResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderSearchResult.ProtoReflect.Descriptor instead.
 func (*ProviderSearchResult) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{91}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *ProviderSearchResult) GetUserId() string {
@@ -5822,6 +5926,12 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x19\n" +
 	"\badmin_id\x18\x03 \x01(\tR\aadminId\"B\n" +
 	"\x14AdminBanUserResponse\x12*\n" +
+	"\x04user\x18\x01 \x01(\v2\x16.nomarkup.user.v1.UserR\x04user\"d\n" +
+	"\x1aAdminReactivateUserRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x19\n" +
+	"\badmin_id\x18\x02 \x01(\tR\aadminId\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"I\n" +
+	"\x1bAdminReactivateUserResponse\x12*\n" +
 	"\x04user\x18\x01 \x01(\v2\x16.nomarkup.user.v1.UserR\x04user\"\x9f\x01\n" +
 	"\x1aAdminReviewDocumentRequest\x12\x1f\n" +
 	"\vdocument_id\x18\x01 \x01(\tR\n" +
@@ -5869,7 +5979,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"categories\x18\t \x03(\v2(.nomarkup.user.v1.ServiceCategorySummaryR\n" +
 	"categories\x12+\n" +
 	"\x11instant_available\x18\n" +
-	" \x01(\bR\x10instantAvailable2\xd5\x1f\n" +
+	" \x01(\bR\x10instantAvailable2\xc9 \n" +
 	"\vUserService\x12Q\n" +
 	"\bRegister\x12!.nomarkup.user.v1.RegisterRequest\x1a\".nomarkup.user.v1.RegisterResponse\x12H\n" +
 	"\x05Login\x12\x1e.nomarkup.user.v1.LoginRequest\x1a\x1f.nomarkup.user.v1.LoginResponse\x12]\n" +
@@ -5912,6 +6022,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x10AdminSearchUsers\x12).nomarkup.user.v1.AdminSearchUsersRequest\x1a*.nomarkup.user.v1.AdminSearchUsersResponse\x12i\n" +
 	"\x10AdminSuspendUser\x12).nomarkup.user.v1.AdminSuspendUserRequest\x1a*.nomarkup.user.v1.AdminSuspendUserResponse\x12]\n" +
 	"\fAdminBanUser\x12%.nomarkup.user.v1.AdminBanUserRequest\x1a&.nomarkup.user.v1.AdminBanUserResponse\x12r\n" +
+	"\x13AdminReactivateUser\x12,.nomarkup.user.v1.AdminReactivateUserRequest\x1a-.nomarkup.user.v1.AdminReactivateUserResponse\x12r\n" +
 	"\x13AdminReviewDocument\x12,.nomarkup.user.v1.AdminReviewDocumentRequest\x1a-.nomarkup.user.v1.AdminReviewDocumentResponse\x12f\n" +
 	"\x0fSearchProviders\x12(.nomarkup.user.v1.SearchProvidersRequest\x1a).nomarkup.user.v1.SearchProvidersResponseB3Z1github.com/nomarkup/nomarkup/proto/user/v1;userv1b\x06proto3"
 
@@ -5927,7 +6038,7 @@ func file_user_v1_user_proto_rawDescGZIP() []byte {
 	return file_user_v1_user_proto_rawDescData
 }
 
-var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 92)
+var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 94)
 var file_user_v1_user_proto_goTypes = []any{
 	(*RegisterRequest)(nil),                 // 0: nomarkup.user.v1.RegisterRequest
 	(*RegisterResponse)(nil),                // 1: nomarkup.user.v1.RegisterResponse
@@ -6016,56 +6127,58 @@ var file_user_v1_user_proto_goTypes = []any{
 	(*AdminSuspendUserResponse)(nil),        // 84: nomarkup.user.v1.AdminSuspendUserResponse
 	(*AdminBanUserRequest)(nil),             // 85: nomarkup.user.v1.AdminBanUserRequest
 	(*AdminBanUserResponse)(nil),            // 86: nomarkup.user.v1.AdminBanUserResponse
-	(*AdminReviewDocumentRequest)(nil),      // 87: nomarkup.user.v1.AdminReviewDocumentRequest
-	(*AdminReviewDocumentResponse)(nil),     // 88: nomarkup.user.v1.AdminReviewDocumentResponse
-	(*SearchProvidersRequest)(nil),          // 89: nomarkup.user.v1.SearchProvidersRequest
-	(*SearchProvidersResponse)(nil),         // 90: nomarkup.user.v1.SearchProvidersResponse
-	(*ProviderSearchResult)(nil),            // 91: nomarkup.user.v1.ProviderSearchResult
-	(v1.UserRole)(0),                        // 92: nomarkup.common.v1.UserRole
-	(*timestamppb.Timestamp)(nil),           // 93: google.protobuf.Timestamp
-	(v1.UserStatus)(0),                      // 94: nomarkup.common.v1.UserStatus
-	(*v1.Location)(nil),                     // 95: nomarkup.common.v1.Location
-	(v1.PaymentTiming)(0),                   // 96: nomarkup.common.v1.PaymentTiming
-	(v1.VerificationStatus)(0),              // 97: nomarkup.common.v1.VerificationStatus
-	(v1.TrustTier)(0),                       // 98: nomarkup.common.v1.TrustTier
-	(*v1.Address)(nil),                      // 99: nomarkup.common.v1.Address
-	(*v1.FileReference)(nil),                // 100: nomarkup.common.v1.FileReference
-	(*v1.PaginationRequest)(nil),            // 101: nomarkup.common.v1.PaginationRequest
-	(*v1.PaginationResponse)(nil),           // 102: nomarkup.common.v1.PaginationResponse
-	(*v1.SortRequest)(nil),                  // 103: nomarkup.common.v1.SortRequest
+	(*AdminReactivateUserRequest)(nil),      // 87: nomarkup.user.v1.AdminReactivateUserRequest
+	(*AdminReactivateUserResponse)(nil),     // 88: nomarkup.user.v1.AdminReactivateUserResponse
+	(*AdminReviewDocumentRequest)(nil),      // 89: nomarkup.user.v1.AdminReviewDocumentRequest
+	(*AdminReviewDocumentResponse)(nil),     // 90: nomarkup.user.v1.AdminReviewDocumentResponse
+	(*SearchProvidersRequest)(nil),          // 91: nomarkup.user.v1.SearchProvidersRequest
+	(*SearchProvidersResponse)(nil),         // 92: nomarkup.user.v1.SearchProvidersResponse
+	(*ProviderSearchResult)(nil),            // 93: nomarkup.user.v1.ProviderSearchResult
+	(v1.UserRole)(0),                        // 94: nomarkup.common.v1.UserRole
+	(*timestamppb.Timestamp)(nil),           // 95: google.protobuf.Timestamp
+	(v1.UserStatus)(0),                      // 96: nomarkup.common.v1.UserStatus
+	(*v1.Location)(nil),                     // 97: nomarkup.common.v1.Location
+	(v1.PaymentTiming)(0),                   // 98: nomarkup.common.v1.PaymentTiming
+	(v1.VerificationStatus)(0),              // 99: nomarkup.common.v1.VerificationStatus
+	(v1.TrustTier)(0),                       // 100: nomarkup.common.v1.TrustTier
+	(*v1.Address)(nil),                      // 101: nomarkup.common.v1.Address
+	(*v1.FileReference)(nil),                // 102: nomarkup.common.v1.FileReference
+	(*v1.PaginationRequest)(nil),            // 103: nomarkup.common.v1.PaginationRequest
+	(*v1.PaginationResponse)(nil),           // 104: nomarkup.common.v1.PaginationResponse
+	(*v1.SortRequest)(nil),                  // 105: nomarkup.common.v1.SortRequest
 }
 var file_user_v1_user_proto_depIdxs = []int32{
-	92,  // 0: nomarkup.user.v1.RegisterRequest.roles:type_name -> nomarkup.common.v1.UserRole
-	93,  // 1: nomarkup.user.v1.RegisterResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	93,  // 2: nomarkup.user.v1.LoginResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	93,  // 3: nomarkup.user.v1.RefreshTokenResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	93,  // 4: nomarkup.user.v1.VerifyMFAResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	93,  // 5: nomarkup.user.v1.FindOrCreateByOAuthResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	92,  // 6: nomarkup.user.v1.User.roles:type_name -> nomarkup.common.v1.UserRole
-	94,  // 7: nomarkup.user.v1.User.status:type_name -> nomarkup.common.v1.UserStatus
-	93,  // 8: nomarkup.user.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	93,  // 9: nomarkup.user.v1.User.last_active_at:type_name -> google.protobuf.Timestamp
+	94,  // 0: nomarkup.user.v1.RegisterRequest.roles:type_name -> nomarkup.common.v1.UserRole
+	95,  // 1: nomarkup.user.v1.RegisterResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	95,  // 2: nomarkup.user.v1.LoginResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	95,  // 3: nomarkup.user.v1.RefreshTokenResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	95,  // 4: nomarkup.user.v1.VerifyMFAResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	95,  // 5: nomarkup.user.v1.FindOrCreateByOAuthResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	94,  // 6: nomarkup.user.v1.User.roles:type_name -> nomarkup.common.v1.UserRole
+	96,  // 7: nomarkup.user.v1.User.status:type_name -> nomarkup.common.v1.UserStatus
+	95,  // 8: nomarkup.user.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	95,  // 9: nomarkup.user.v1.User.last_active_at:type_name -> google.protobuf.Timestamp
 	30,  // 10: nomarkup.user.v1.GetUserResponse.user:type_name -> nomarkup.user.v1.User
 	30,  // 11: nomarkup.user.v1.UpdateUserResponse.user:type_name -> nomarkup.user.v1.User
-	92,  // 12: nomarkup.user.v1.EnableRoleRequest.role:type_name -> nomarkup.common.v1.UserRole
+	94,  // 12: nomarkup.user.v1.EnableRoleRequest.role:type_name -> nomarkup.common.v1.UserRole
 	30,  // 13: nomarkup.user.v1.EnableRoleResponse.user:type_name -> nomarkup.user.v1.User
-	95,  // 14: nomarkup.user.v1.ProviderProfile.service_location:type_name -> nomarkup.common.v1.Location
-	96,  // 15: nomarkup.user.v1.ProviderProfile.default_payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	97,  // 14: nomarkup.user.v1.ProviderProfile.service_location:type_name -> nomarkup.common.v1.Location
+	98,  // 15: nomarkup.user.v1.ProviderProfile.default_payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
 	40,  // 16: nomarkup.user.v1.ProviderProfile.default_milestones:type_name -> nomarkup.user.v1.MilestoneTemplate
 	41,  // 17: nomarkup.user.v1.ProviderProfile.service_categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
 	42,  // 18: nomarkup.user.v1.ProviderProfile.portfolio:type_name -> nomarkup.user.v1.PortfolioImage
 	43,  // 19: nomarkup.user.v1.ProviderProfile.verification_badges:type_name -> nomarkup.user.v1.VerificationBadge
 	44,  // 20: nomarkup.user.v1.ProviderProfile.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
 	45,  // 21: nomarkup.user.v1.ProviderProfile.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
-	93,  // 22: nomarkup.user.v1.ProviderProfile.member_since:type_name -> google.protobuf.Timestamp
-	97,  // 23: nomarkup.user.v1.VerificationBadge.status:type_name -> nomarkup.common.v1.VerificationStatus
-	93,  // 24: nomarkup.user.v1.VerificationBadge.verified_at:type_name -> google.protobuf.Timestamp
-	93,  // 25: nomarkup.user.v1.VerificationBadge.expires_at:type_name -> google.protobuf.Timestamp
-	98,  // 26: nomarkup.user.v1.TrustScoreSummary.tier:type_name -> nomarkup.common.v1.TrustTier
+	95,  // 22: nomarkup.user.v1.ProviderProfile.member_since:type_name -> google.protobuf.Timestamp
+	99,  // 23: nomarkup.user.v1.VerificationBadge.status:type_name -> nomarkup.common.v1.VerificationStatus
+	95,  // 24: nomarkup.user.v1.VerificationBadge.verified_at:type_name -> google.protobuf.Timestamp
+	95,  // 25: nomarkup.user.v1.VerificationBadge.expires_at:type_name -> google.protobuf.Timestamp
+	100, // 26: nomarkup.user.v1.TrustScoreSummary.tier:type_name -> nomarkup.common.v1.TrustTier
 	39,  // 27: nomarkup.user.v1.GetProviderProfileResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
-	95,  // 28: nomarkup.user.v1.UpdateProviderProfileRequest.service_location:type_name -> nomarkup.common.v1.Location
+	97,  // 28: nomarkup.user.v1.UpdateProviderProfileRequest.service_location:type_name -> nomarkup.common.v1.Location
 	39,  // 29: nomarkup.user.v1.UpdateProviderProfileResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
-	96,  // 30: nomarkup.user.v1.SetGlobalTermsRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	98,  // 30: nomarkup.user.v1.SetGlobalTermsRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
 	40,  // 31: nomarkup.user.v1.SetGlobalTermsRequest.milestones:type_name -> nomarkup.user.v1.MilestoneTemplate
 	39,  // 32: nomarkup.user.v1.SetGlobalTermsResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
 	41,  // 33: nomarkup.user.v1.UpdateServiceCategoriesResponse.categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
@@ -6075,125 +6188,128 @@ var file_user_v1_user_proto_depIdxs = []int32{
 	59,  // 37: nomarkup.user.v1.ServiceCategory.children:type_name -> nomarkup.user.v1.ServiceCategory
 	59,  // 38: nomarkup.user.v1.GetServiceCategoriesResponse.categories:type_name -> nomarkup.user.v1.ServiceCategory
 	59,  // 39: nomarkup.user.v1.GetCategoryTreeResponse.categories:type_name -> nomarkup.user.v1.ServiceCategory
-	99,  // 40: nomarkup.user.v1.Property.address:type_name -> nomarkup.common.v1.Address
-	93,  // 41: nomarkup.user.v1.Property.created_at:type_name -> google.protobuf.Timestamp
-	99,  // 42: nomarkup.user.v1.CreatePropertyRequest.address:type_name -> nomarkup.common.v1.Address
+	101, // 40: nomarkup.user.v1.Property.address:type_name -> nomarkup.common.v1.Address
+	95,  // 41: nomarkup.user.v1.Property.created_at:type_name -> google.protobuf.Timestamp
+	101, // 42: nomarkup.user.v1.CreatePropertyRequest.address:type_name -> nomarkup.common.v1.Address
 	64,  // 43: nomarkup.user.v1.CreatePropertyResponse.property:type_name -> nomarkup.user.v1.Property
 	64,  // 44: nomarkup.user.v1.UpdatePropertyResponse.property:type_name -> nomarkup.user.v1.Property
 	64,  // 45: nomarkup.user.v1.ListPropertiesResponse.properties:type_name -> nomarkup.user.v1.Property
-	100, // 46: nomarkup.user.v1.UploadDocumentRequest.file:type_name -> nomarkup.common.v1.FileReference
-	93,  // 47: nomarkup.user.v1.UploadDocumentRequest.expires_at:type_name -> google.protobuf.Timestamp
-	97,  // 48: nomarkup.user.v1.UploadDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
-	97,  // 49: nomarkup.user.v1.GetDocumentStatusResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
-	93,  // 50: nomarkup.user.v1.GetDocumentStatusResponse.expires_at:type_name -> google.protobuf.Timestamp
+	102, // 46: nomarkup.user.v1.UploadDocumentRequest.file:type_name -> nomarkup.common.v1.FileReference
+	95,  // 47: nomarkup.user.v1.UploadDocumentRequest.expires_at:type_name -> google.protobuf.Timestamp
+	99,  // 48: nomarkup.user.v1.UploadDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
+	99,  // 49: nomarkup.user.v1.GetDocumentStatusResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
+	95,  // 50: nomarkup.user.v1.GetDocumentStatusResponse.expires_at:type_name -> google.protobuf.Timestamp
 	76,  // 51: nomarkup.user.v1.ListDocumentsResponse.documents:type_name -> nomarkup.user.v1.GetDocumentStatusResponse
 	30,  // 52: nomarkup.user.v1.AdminGetUserResponse.user:type_name -> nomarkup.user.v1.User
 	39,  // 53: nomarkup.user.v1.AdminGetUserResponse.provider_profile:type_name -> nomarkup.user.v1.ProviderProfile
 	76,  // 54: nomarkup.user.v1.AdminGetUserResponse.documents:type_name -> nomarkup.user.v1.GetDocumentStatusResponse
 	44,  // 55: nomarkup.user.v1.AdminGetUserResponse.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
-	94,  // 56: nomarkup.user.v1.AdminSearchUsersRequest.status_filter:type_name -> nomarkup.common.v1.UserStatus
-	92,  // 57: nomarkup.user.v1.AdminSearchUsersRequest.role_filter:type_name -> nomarkup.common.v1.UserRole
-	101, // 58: nomarkup.user.v1.AdminSearchUsersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	96,  // 56: nomarkup.user.v1.AdminSearchUsersRequest.status_filter:type_name -> nomarkup.common.v1.UserStatus
+	94,  // 57: nomarkup.user.v1.AdminSearchUsersRequest.role_filter:type_name -> nomarkup.common.v1.UserRole
+	103, // 58: nomarkup.user.v1.AdminSearchUsersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	30,  // 59: nomarkup.user.v1.AdminSearchUsersResponse.users:type_name -> nomarkup.user.v1.User
-	102, // 60: nomarkup.user.v1.AdminSearchUsersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	104, // 60: nomarkup.user.v1.AdminSearchUsersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	30,  // 61: nomarkup.user.v1.AdminSuspendUserResponse.user:type_name -> nomarkup.user.v1.User
 	30,  // 62: nomarkup.user.v1.AdminBanUserResponse.user:type_name -> nomarkup.user.v1.User
-	97,  // 63: nomarkup.user.v1.AdminReviewDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
-	95,  // 64: nomarkup.user.v1.SearchProvidersRequest.location:type_name -> nomarkup.common.v1.Location
-	98,  // 65: nomarkup.user.v1.SearchProvidersRequest.min_trust_tier:type_name -> nomarkup.common.v1.TrustTier
-	103, // 66: nomarkup.user.v1.SearchProvidersRequest.sort:type_name -> nomarkup.common.v1.SortRequest
-	101, // 67: nomarkup.user.v1.SearchProvidersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	91,  // 68: nomarkup.user.v1.SearchProvidersResponse.providers:type_name -> nomarkup.user.v1.ProviderSearchResult
-	102, // 69: nomarkup.user.v1.SearchProvidersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	45,  // 70: nomarkup.user.v1.ProviderSearchResult.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
-	44,  // 71: nomarkup.user.v1.ProviderSearchResult.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
-	43,  // 72: nomarkup.user.v1.ProviderSearchResult.badges:type_name -> nomarkup.user.v1.VerificationBadge
-	41,  // 73: nomarkup.user.v1.ProviderSearchResult.categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
-	0,   // 74: nomarkup.user.v1.UserService.Register:input_type -> nomarkup.user.v1.RegisterRequest
-	2,   // 75: nomarkup.user.v1.UserService.Login:input_type -> nomarkup.user.v1.LoginRequest
-	4,   // 76: nomarkup.user.v1.UserService.RefreshToken:input_type -> nomarkup.user.v1.RefreshTokenRequest
-	6,   // 77: nomarkup.user.v1.UserService.Logout:input_type -> nomarkup.user.v1.LogoutRequest
-	8,   // 78: nomarkup.user.v1.UserService.VerifyEmail:input_type -> nomarkup.user.v1.VerifyEmailRequest
-	10,  // 79: nomarkup.user.v1.UserService.ResendVerification:input_type -> nomarkup.user.v1.ResendVerificationRequest
-	12,  // 80: nomarkup.user.v1.UserService.VerifyPhone:input_type -> nomarkup.user.v1.VerifyPhoneRequest
-	14,  // 81: nomarkup.user.v1.UserService.SendPhoneOTP:input_type -> nomarkup.user.v1.SendPhoneOTPRequest
-	16,  // 82: nomarkup.user.v1.UserService.RequestPasswordReset:input_type -> nomarkup.user.v1.RequestPasswordResetRequest
-	18,  // 83: nomarkup.user.v1.UserService.ResetPassword:input_type -> nomarkup.user.v1.ResetPasswordRequest
-	28,  // 84: nomarkup.user.v1.UserService.FindOrCreateByOAuth:input_type -> nomarkup.user.v1.FindOrCreateByOAuthRequest
-	20,  // 85: nomarkup.user.v1.UserService.EnableMFA:input_type -> nomarkup.user.v1.EnableMFARequest
-	22,  // 86: nomarkup.user.v1.UserService.ConfirmMFASetup:input_type -> nomarkup.user.v1.ConfirmMFASetupRequest
-	24,  // 87: nomarkup.user.v1.UserService.VerifyMFA:input_type -> nomarkup.user.v1.VerifyMFARequest
-	26,  // 88: nomarkup.user.v1.UserService.DisableMFA:input_type -> nomarkup.user.v1.DisableMFARequest
-	31,  // 89: nomarkup.user.v1.UserService.GetUser:input_type -> nomarkup.user.v1.GetUserRequest
-	33,  // 90: nomarkup.user.v1.UserService.UpdateUser:input_type -> nomarkup.user.v1.UpdateUserRequest
-	35,  // 91: nomarkup.user.v1.UserService.EnableRole:input_type -> nomarkup.user.v1.EnableRoleRequest
-	37,  // 92: nomarkup.user.v1.UserService.DeactivateAccount:input_type -> nomarkup.user.v1.DeactivateAccountRequest
-	46,  // 93: nomarkup.user.v1.UserService.GetProviderProfile:input_type -> nomarkup.user.v1.GetProviderProfileRequest
-	48,  // 94: nomarkup.user.v1.UserService.UpdateProviderProfile:input_type -> nomarkup.user.v1.UpdateProviderProfileRequest
-	50,  // 95: nomarkup.user.v1.UserService.SetGlobalTerms:input_type -> nomarkup.user.v1.SetGlobalTermsRequest
-	52,  // 96: nomarkup.user.v1.UserService.UpdateServiceCategories:input_type -> nomarkup.user.v1.UpdateServiceCategoriesRequest
-	54,  // 97: nomarkup.user.v1.UserService.UpdatePortfolio:input_type -> nomarkup.user.v1.UpdatePortfolioRequest
-	56,  // 98: nomarkup.user.v1.UserService.SetInstantAvailability:input_type -> nomarkup.user.v1.SetInstantAvailabilityRequest
-	60,  // 99: nomarkup.user.v1.UserService.GetServiceCategories:input_type -> nomarkup.user.v1.GetServiceCategoriesRequest
-	62,  // 100: nomarkup.user.v1.UserService.GetCategoryTree:input_type -> nomarkup.user.v1.GetCategoryTreeRequest
-	65,  // 101: nomarkup.user.v1.UserService.CreateProperty:input_type -> nomarkup.user.v1.CreatePropertyRequest
-	67,  // 102: nomarkup.user.v1.UserService.UpdateProperty:input_type -> nomarkup.user.v1.UpdatePropertyRequest
-	69,  // 103: nomarkup.user.v1.UserService.DeleteProperty:input_type -> nomarkup.user.v1.DeletePropertyRequest
-	71,  // 104: nomarkup.user.v1.UserService.ListProperties:input_type -> nomarkup.user.v1.ListPropertiesRequest
-	73,  // 105: nomarkup.user.v1.UserService.UploadDocument:input_type -> nomarkup.user.v1.UploadDocumentRequest
-	75,  // 106: nomarkup.user.v1.UserService.GetDocumentStatus:input_type -> nomarkup.user.v1.GetDocumentStatusRequest
-	77,  // 107: nomarkup.user.v1.UserService.ListDocuments:input_type -> nomarkup.user.v1.ListDocumentsRequest
-	79,  // 108: nomarkup.user.v1.UserService.AdminGetUser:input_type -> nomarkup.user.v1.AdminGetUserRequest
-	81,  // 109: nomarkup.user.v1.UserService.AdminSearchUsers:input_type -> nomarkup.user.v1.AdminSearchUsersRequest
-	83,  // 110: nomarkup.user.v1.UserService.AdminSuspendUser:input_type -> nomarkup.user.v1.AdminSuspendUserRequest
-	85,  // 111: nomarkup.user.v1.UserService.AdminBanUser:input_type -> nomarkup.user.v1.AdminBanUserRequest
-	87,  // 112: nomarkup.user.v1.UserService.AdminReviewDocument:input_type -> nomarkup.user.v1.AdminReviewDocumentRequest
-	89,  // 113: nomarkup.user.v1.UserService.SearchProviders:input_type -> nomarkup.user.v1.SearchProvidersRequest
-	1,   // 114: nomarkup.user.v1.UserService.Register:output_type -> nomarkup.user.v1.RegisterResponse
-	3,   // 115: nomarkup.user.v1.UserService.Login:output_type -> nomarkup.user.v1.LoginResponse
-	5,   // 116: nomarkup.user.v1.UserService.RefreshToken:output_type -> nomarkup.user.v1.RefreshTokenResponse
-	7,   // 117: nomarkup.user.v1.UserService.Logout:output_type -> nomarkup.user.v1.LogoutResponse
-	9,   // 118: nomarkup.user.v1.UserService.VerifyEmail:output_type -> nomarkup.user.v1.VerifyEmailResponse
-	11,  // 119: nomarkup.user.v1.UserService.ResendVerification:output_type -> nomarkup.user.v1.ResendVerificationResponse
-	13,  // 120: nomarkup.user.v1.UserService.VerifyPhone:output_type -> nomarkup.user.v1.VerifyPhoneResponse
-	15,  // 121: nomarkup.user.v1.UserService.SendPhoneOTP:output_type -> nomarkup.user.v1.SendPhoneOTPResponse
-	17,  // 122: nomarkup.user.v1.UserService.RequestPasswordReset:output_type -> nomarkup.user.v1.RequestPasswordResetResponse
-	19,  // 123: nomarkup.user.v1.UserService.ResetPassword:output_type -> nomarkup.user.v1.ResetPasswordResponse
-	29,  // 124: nomarkup.user.v1.UserService.FindOrCreateByOAuth:output_type -> nomarkup.user.v1.FindOrCreateByOAuthResponse
-	21,  // 125: nomarkup.user.v1.UserService.EnableMFA:output_type -> nomarkup.user.v1.EnableMFAResponse
-	23,  // 126: nomarkup.user.v1.UserService.ConfirmMFASetup:output_type -> nomarkup.user.v1.ConfirmMFASetupResponse
-	25,  // 127: nomarkup.user.v1.UserService.VerifyMFA:output_type -> nomarkup.user.v1.VerifyMFAResponse
-	27,  // 128: nomarkup.user.v1.UserService.DisableMFA:output_type -> nomarkup.user.v1.DisableMFAResponse
-	32,  // 129: nomarkup.user.v1.UserService.GetUser:output_type -> nomarkup.user.v1.GetUserResponse
-	34,  // 130: nomarkup.user.v1.UserService.UpdateUser:output_type -> nomarkup.user.v1.UpdateUserResponse
-	36,  // 131: nomarkup.user.v1.UserService.EnableRole:output_type -> nomarkup.user.v1.EnableRoleResponse
-	38,  // 132: nomarkup.user.v1.UserService.DeactivateAccount:output_type -> nomarkup.user.v1.DeactivateAccountResponse
-	47,  // 133: nomarkup.user.v1.UserService.GetProviderProfile:output_type -> nomarkup.user.v1.GetProviderProfileResponse
-	49,  // 134: nomarkup.user.v1.UserService.UpdateProviderProfile:output_type -> nomarkup.user.v1.UpdateProviderProfileResponse
-	51,  // 135: nomarkup.user.v1.UserService.SetGlobalTerms:output_type -> nomarkup.user.v1.SetGlobalTermsResponse
-	53,  // 136: nomarkup.user.v1.UserService.UpdateServiceCategories:output_type -> nomarkup.user.v1.UpdateServiceCategoriesResponse
-	55,  // 137: nomarkup.user.v1.UserService.UpdatePortfolio:output_type -> nomarkup.user.v1.UpdatePortfolioResponse
-	58,  // 138: nomarkup.user.v1.UserService.SetInstantAvailability:output_type -> nomarkup.user.v1.SetInstantAvailabilityResponse
-	61,  // 139: nomarkup.user.v1.UserService.GetServiceCategories:output_type -> nomarkup.user.v1.GetServiceCategoriesResponse
-	63,  // 140: nomarkup.user.v1.UserService.GetCategoryTree:output_type -> nomarkup.user.v1.GetCategoryTreeResponse
-	66,  // 141: nomarkup.user.v1.UserService.CreateProperty:output_type -> nomarkup.user.v1.CreatePropertyResponse
-	68,  // 142: nomarkup.user.v1.UserService.UpdateProperty:output_type -> nomarkup.user.v1.UpdatePropertyResponse
-	70,  // 143: nomarkup.user.v1.UserService.DeleteProperty:output_type -> nomarkup.user.v1.DeletePropertyResponse
-	72,  // 144: nomarkup.user.v1.UserService.ListProperties:output_type -> nomarkup.user.v1.ListPropertiesResponse
-	74,  // 145: nomarkup.user.v1.UserService.UploadDocument:output_type -> nomarkup.user.v1.UploadDocumentResponse
-	76,  // 146: nomarkup.user.v1.UserService.GetDocumentStatus:output_type -> nomarkup.user.v1.GetDocumentStatusResponse
-	78,  // 147: nomarkup.user.v1.UserService.ListDocuments:output_type -> nomarkup.user.v1.ListDocumentsResponse
-	80,  // 148: nomarkup.user.v1.UserService.AdminGetUser:output_type -> nomarkup.user.v1.AdminGetUserResponse
-	82,  // 149: nomarkup.user.v1.UserService.AdminSearchUsers:output_type -> nomarkup.user.v1.AdminSearchUsersResponse
-	84,  // 150: nomarkup.user.v1.UserService.AdminSuspendUser:output_type -> nomarkup.user.v1.AdminSuspendUserResponse
-	86,  // 151: nomarkup.user.v1.UserService.AdminBanUser:output_type -> nomarkup.user.v1.AdminBanUserResponse
-	88,  // 152: nomarkup.user.v1.UserService.AdminReviewDocument:output_type -> nomarkup.user.v1.AdminReviewDocumentResponse
-	90,  // 153: nomarkup.user.v1.UserService.SearchProviders:output_type -> nomarkup.user.v1.SearchProvidersResponse
-	114, // [114:154] is the sub-list for method output_type
-	74,  // [74:114] is the sub-list for method input_type
-	74,  // [74:74] is the sub-list for extension type_name
-	74,  // [74:74] is the sub-list for extension extendee
-	0,   // [0:74] is the sub-list for field type_name
+	30,  // 63: nomarkup.user.v1.AdminReactivateUserResponse.user:type_name -> nomarkup.user.v1.User
+	99,  // 64: nomarkup.user.v1.AdminReviewDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
+	97,  // 65: nomarkup.user.v1.SearchProvidersRequest.location:type_name -> nomarkup.common.v1.Location
+	100, // 66: nomarkup.user.v1.SearchProvidersRequest.min_trust_tier:type_name -> nomarkup.common.v1.TrustTier
+	105, // 67: nomarkup.user.v1.SearchProvidersRequest.sort:type_name -> nomarkup.common.v1.SortRequest
+	103, // 68: nomarkup.user.v1.SearchProvidersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	93,  // 69: nomarkup.user.v1.SearchProvidersResponse.providers:type_name -> nomarkup.user.v1.ProviderSearchResult
+	104, // 70: nomarkup.user.v1.SearchProvidersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	45,  // 71: nomarkup.user.v1.ProviderSearchResult.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
+	44,  // 72: nomarkup.user.v1.ProviderSearchResult.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
+	43,  // 73: nomarkup.user.v1.ProviderSearchResult.badges:type_name -> nomarkup.user.v1.VerificationBadge
+	41,  // 74: nomarkup.user.v1.ProviderSearchResult.categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
+	0,   // 75: nomarkup.user.v1.UserService.Register:input_type -> nomarkup.user.v1.RegisterRequest
+	2,   // 76: nomarkup.user.v1.UserService.Login:input_type -> nomarkup.user.v1.LoginRequest
+	4,   // 77: nomarkup.user.v1.UserService.RefreshToken:input_type -> nomarkup.user.v1.RefreshTokenRequest
+	6,   // 78: nomarkup.user.v1.UserService.Logout:input_type -> nomarkup.user.v1.LogoutRequest
+	8,   // 79: nomarkup.user.v1.UserService.VerifyEmail:input_type -> nomarkup.user.v1.VerifyEmailRequest
+	10,  // 80: nomarkup.user.v1.UserService.ResendVerification:input_type -> nomarkup.user.v1.ResendVerificationRequest
+	12,  // 81: nomarkup.user.v1.UserService.VerifyPhone:input_type -> nomarkup.user.v1.VerifyPhoneRequest
+	14,  // 82: nomarkup.user.v1.UserService.SendPhoneOTP:input_type -> nomarkup.user.v1.SendPhoneOTPRequest
+	16,  // 83: nomarkup.user.v1.UserService.RequestPasswordReset:input_type -> nomarkup.user.v1.RequestPasswordResetRequest
+	18,  // 84: nomarkup.user.v1.UserService.ResetPassword:input_type -> nomarkup.user.v1.ResetPasswordRequest
+	28,  // 85: nomarkup.user.v1.UserService.FindOrCreateByOAuth:input_type -> nomarkup.user.v1.FindOrCreateByOAuthRequest
+	20,  // 86: nomarkup.user.v1.UserService.EnableMFA:input_type -> nomarkup.user.v1.EnableMFARequest
+	22,  // 87: nomarkup.user.v1.UserService.ConfirmMFASetup:input_type -> nomarkup.user.v1.ConfirmMFASetupRequest
+	24,  // 88: nomarkup.user.v1.UserService.VerifyMFA:input_type -> nomarkup.user.v1.VerifyMFARequest
+	26,  // 89: nomarkup.user.v1.UserService.DisableMFA:input_type -> nomarkup.user.v1.DisableMFARequest
+	31,  // 90: nomarkup.user.v1.UserService.GetUser:input_type -> nomarkup.user.v1.GetUserRequest
+	33,  // 91: nomarkup.user.v1.UserService.UpdateUser:input_type -> nomarkup.user.v1.UpdateUserRequest
+	35,  // 92: nomarkup.user.v1.UserService.EnableRole:input_type -> nomarkup.user.v1.EnableRoleRequest
+	37,  // 93: nomarkup.user.v1.UserService.DeactivateAccount:input_type -> nomarkup.user.v1.DeactivateAccountRequest
+	46,  // 94: nomarkup.user.v1.UserService.GetProviderProfile:input_type -> nomarkup.user.v1.GetProviderProfileRequest
+	48,  // 95: nomarkup.user.v1.UserService.UpdateProviderProfile:input_type -> nomarkup.user.v1.UpdateProviderProfileRequest
+	50,  // 96: nomarkup.user.v1.UserService.SetGlobalTerms:input_type -> nomarkup.user.v1.SetGlobalTermsRequest
+	52,  // 97: nomarkup.user.v1.UserService.UpdateServiceCategories:input_type -> nomarkup.user.v1.UpdateServiceCategoriesRequest
+	54,  // 98: nomarkup.user.v1.UserService.UpdatePortfolio:input_type -> nomarkup.user.v1.UpdatePortfolioRequest
+	56,  // 99: nomarkup.user.v1.UserService.SetInstantAvailability:input_type -> nomarkup.user.v1.SetInstantAvailabilityRequest
+	60,  // 100: nomarkup.user.v1.UserService.GetServiceCategories:input_type -> nomarkup.user.v1.GetServiceCategoriesRequest
+	62,  // 101: nomarkup.user.v1.UserService.GetCategoryTree:input_type -> nomarkup.user.v1.GetCategoryTreeRequest
+	65,  // 102: nomarkup.user.v1.UserService.CreateProperty:input_type -> nomarkup.user.v1.CreatePropertyRequest
+	67,  // 103: nomarkup.user.v1.UserService.UpdateProperty:input_type -> nomarkup.user.v1.UpdatePropertyRequest
+	69,  // 104: nomarkup.user.v1.UserService.DeleteProperty:input_type -> nomarkup.user.v1.DeletePropertyRequest
+	71,  // 105: nomarkup.user.v1.UserService.ListProperties:input_type -> nomarkup.user.v1.ListPropertiesRequest
+	73,  // 106: nomarkup.user.v1.UserService.UploadDocument:input_type -> nomarkup.user.v1.UploadDocumentRequest
+	75,  // 107: nomarkup.user.v1.UserService.GetDocumentStatus:input_type -> nomarkup.user.v1.GetDocumentStatusRequest
+	77,  // 108: nomarkup.user.v1.UserService.ListDocuments:input_type -> nomarkup.user.v1.ListDocumentsRequest
+	79,  // 109: nomarkup.user.v1.UserService.AdminGetUser:input_type -> nomarkup.user.v1.AdminGetUserRequest
+	81,  // 110: nomarkup.user.v1.UserService.AdminSearchUsers:input_type -> nomarkup.user.v1.AdminSearchUsersRequest
+	83,  // 111: nomarkup.user.v1.UserService.AdminSuspendUser:input_type -> nomarkup.user.v1.AdminSuspendUserRequest
+	85,  // 112: nomarkup.user.v1.UserService.AdminBanUser:input_type -> nomarkup.user.v1.AdminBanUserRequest
+	87,  // 113: nomarkup.user.v1.UserService.AdminReactivateUser:input_type -> nomarkup.user.v1.AdminReactivateUserRequest
+	89,  // 114: nomarkup.user.v1.UserService.AdminReviewDocument:input_type -> nomarkup.user.v1.AdminReviewDocumentRequest
+	91,  // 115: nomarkup.user.v1.UserService.SearchProviders:input_type -> nomarkup.user.v1.SearchProvidersRequest
+	1,   // 116: nomarkup.user.v1.UserService.Register:output_type -> nomarkup.user.v1.RegisterResponse
+	3,   // 117: nomarkup.user.v1.UserService.Login:output_type -> nomarkup.user.v1.LoginResponse
+	5,   // 118: nomarkup.user.v1.UserService.RefreshToken:output_type -> nomarkup.user.v1.RefreshTokenResponse
+	7,   // 119: nomarkup.user.v1.UserService.Logout:output_type -> nomarkup.user.v1.LogoutResponse
+	9,   // 120: nomarkup.user.v1.UserService.VerifyEmail:output_type -> nomarkup.user.v1.VerifyEmailResponse
+	11,  // 121: nomarkup.user.v1.UserService.ResendVerification:output_type -> nomarkup.user.v1.ResendVerificationResponse
+	13,  // 122: nomarkup.user.v1.UserService.VerifyPhone:output_type -> nomarkup.user.v1.VerifyPhoneResponse
+	15,  // 123: nomarkup.user.v1.UserService.SendPhoneOTP:output_type -> nomarkup.user.v1.SendPhoneOTPResponse
+	17,  // 124: nomarkup.user.v1.UserService.RequestPasswordReset:output_type -> nomarkup.user.v1.RequestPasswordResetResponse
+	19,  // 125: nomarkup.user.v1.UserService.ResetPassword:output_type -> nomarkup.user.v1.ResetPasswordResponse
+	29,  // 126: nomarkup.user.v1.UserService.FindOrCreateByOAuth:output_type -> nomarkup.user.v1.FindOrCreateByOAuthResponse
+	21,  // 127: nomarkup.user.v1.UserService.EnableMFA:output_type -> nomarkup.user.v1.EnableMFAResponse
+	23,  // 128: nomarkup.user.v1.UserService.ConfirmMFASetup:output_type -> nomarkup.user.v1.ConfirmMFASetupResponse
+	25,  // 129: nomarkup.user.v1.UserService.VerifyMFA:output_type -> nomarkup.user.v1.VerifyMFAResponse
+	27,  // 130: nomarkup.user.v1.UserService.DisableMFA:output_type -> nomarkup.user.v1.DisableMFAResponse
+	32,  // 131: nomarkup.user.v1.UserService.GetUser:output_type -> nomarkup.user.v1.GetUserResponse
+	34,  // 132: nomarkup.user.v1.UserService.UpdateUser:output_type -> nomarkup.user.v1.UpdateUserResponse
+	36,  // 133: nomarkup.user.v1.UserService.EnableRole:output_type -> nomarkup.user.v1.EnableRoleResponse
+	38,  // 134: nomarkup.user.v1.UserService.DeactivateAccount:output_type -> nomarkup.user.v1.DeactivateAccountResponse
+	47,  // 135: nomarkup.user.v1.UserService.GetProviderProfile:output_type -> nomarkup.user.v1.GetProviderProfileResponse
+	49,  // 136: nomarkup.user.v1.UserService.UpdateProviderProfile:output_type -> nomarkup.user.v1.UpdateProviderProfileResponse
+	51,  // 137: nomarkup.user.v1.UserService.SetGlobalTerms:output_type -> nomarkup.user.v1.SetGlobalTermsResponse
+	53,  // 138: nomarkup.user.v1.UserService.UpdateServiceCategories:output_type -> nomarkup.user.v1.UpdateServiceCategoriesResponse
+	55,  // 139: nomarkup.user.v1.UserService.UpdatePortfolio:output_type -> nomarkup.user.v1.UpdatePortfolioResponse
+	58,  // 140: nomarkup.user.v1.UserService.SetInstantAvailability:output_type -> nomarkup.user.v1.SetInstantAvailabilityResponse
+	61,  // 141: nomarkup.user.v1.UserService.GetServiceCategories:output_type -> nomarkup.user.v1.GetServiceCategoriesResponse
+	63,  // 142: nomarkup.user.v1.UserService.GetCategoryTree:output_type -> nomarkup.user.v1.GetCategoryTreeResponse
+	66,  // 143: nomarkup.user.v1.UserService.CreateProperty:output_type -> nomarkup.user.v1.CreatePropertyResponse
+	68,  // 144: nomarkup.user.v1.UserService.UpdateProperty:output_type -> nomarkup.user.v1.UpdatePropertyResponse
+	70,  // 145: nomarkup.user.v1.UserService.DeleteProperty:output_type -> nomarkup.user.v1.DeletePropertyResponse
+	72,  // 146: nomarkup.user.v1.UserService.ListProperties:output_type -> nomarkup.user.v1.ListPropertiesResponse
+	74,  // 147: nomarkup.user.v1.UserService.UploadDocument:output_type -> nomarkup.user.v1.UploadDocumentResponse
+	76,  // 148: nomarkup.user.v1.UserService.GetDocumentStatus:output_type -> nomarkup.user.v1.GetDocumentStatusResponse
+	78,  // 149: nomarkup.user.v1.UserService.ListDocuments:output_type -> nomarkup.user.v1.ListDocumentsResponse
+	80,  // 150: nomarkup.user.v1.UserService.AdminGetUser:output_type -> nomarkup.user.v1.AdminGetUserResponse
+	82,  // 151: nomarkup.user.v1.UserService.AdminSearchUsers:output_type -> nomarkup.user.v1.AdminSearchUsersResponse
+	84,  // 152: nomarkup.user.v1.UserService.AdminSuspendUser:output_type -> nomarkup.user.v1.AdminSuspendUserResponse
+	86,  // 153: nomarkup.user.v1.UserService.AdminBanUser:output_type -> nomarkup.user.v1.AdminBanUserResponse
+	88,  // 154: nomarkup.user.v1.UserService.AdminReactivateUser:output_type -> nomarkup.user.v1.AdminReactivateUserResponse
+	90,  // 155: nomarkup.user.v1.UserService.AdminReviewDocument:output_type -> nomarkup.user.v1.AdminReviewDocumentResponse
+	92,  // 156: nomarkup.user.v1.UserService.SearchProviders:output_type -> nomarkup.user.v1.SearchProvidersResponse
+	116, // [116:157] is the sub-list for method output_type
+	75,  // [75:116] is the sub-list for method input_type
+	75,  // [75:75] is the sub-list for extension type_name
+	75,  // [75:75] is the sub-list for extension extendee
+	0,   // [0:75] is the sub-list for field type_name
 }
 
 func init() { file_user_v1_user_proto_init() }
@@ -6206,14 +6322,14 @@ func file_user_v1_user_proto_init() {
 	file_user_v1_user_proto_msgTypes[60].OneofWrappers = []any{}
 	file_user_v1_user_proto_msgTypes[67].OneofWrappers = []any{}
 	file_user_v1_user_proto_msgTypes[81].OneofWrappers = []any{}
-	file_user_v1_user_proto_msgTypes[89].OneofWrappers = []any{}
+	file_user_v1_user_proto_msgTypes[91].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_v1_user_proto_rawDesc), len(file_user_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   92,
+			NumMessages:   94,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -188,39 +188,39 @@ export interface ServiceCategorySummary {
   name: string;
   slug: string;
   level: number;
-  parentName: string | null;
+  parent_name: string | null;
 }
 
 export interface PortfolioImage {
   id: string;
-  imageUrl: string;
+  image_url: string;
   caption: string | null;
-  sortOrder: number;
+  sort_order: number;
 }
 
 export interface ProviderProfile {
   id: string;
-  userId: string;
-  businessName: string | null;
+  user_id: string;
+  business_name: string | null;
   bio: string | null;
-  serviceAddress: string | null;
-  serviceLocation: { latitude: number; longitude: number } | null;
-  serviceRadiusKm: number;
-  defaultPaymentTiming: PaymentTiming;
-  defaultMilestones: MilestoneTemplate[];
-  cancellationPolicy: string | null;
-  warrantyTerms: string | null;
-  instantEnabled: boolean;
-  instantAvailable: boolean;
-  jobsCompleted: number;
-  avgResponseTimeMinutes: number | null;
-  onTimeRate: number | null;
-  profileCompleteness: number;
-  stripeOnboardingComplete: boolean;
-  serviceCategories: ServiceCategorySummary[];
+  service_address: string | null;
+  service_location: { latitude: number; longitude: number } | null;
+  service_radius_km: number;
+  default_payment_timing: PaymentTiming;
+  default_milestones: MilestoneTemplate[];
+  cancellation_policy: string | null;
+  warranty_terms: string | null;
+  instant_enabled: boolean;
+  instant_available: boolean;
+  jobs_completed: number;
+  avg_response_time_minutes: number | null;
+  on_time_rate: number | null;
+  profile_completeness: number;
+  stripe_onboarding_complete: boolean;
+  service_categories: ServiceCategorySummary[];
   portfolio: PortfolioImage[];
-  memberSince: string;
-  responseTimeLabel?: string;
+  member_since: string;
+  response_time_label?: string;
 }
 
 export interface ServiceCategory {

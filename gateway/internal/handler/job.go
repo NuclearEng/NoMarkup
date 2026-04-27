@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -21,13 +23,45 @@ const viewerWindowSeconds = 120
 
 // JobHandler handles HTTP endpoints for jobs.
 type JobHandler struct {
-	jobClient jobv1.JobServiceClient
-	cache     *cache.Client
+	jobClient   jobv1.JobServiceClient
+	cache       *cache.Client
+	fraudClient fraudv1.FraudServiceClient // optional — if nil, fraud signal recording is skipped
 }
 
-// NewJobHandler creates a new JobHandler.
-func NewJobHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client) *JobHandler {
-	return &JobHandler{jobClient: jobClient, cache: cacheClient}
+// NewJobHandler creates a new JobHandler. The fraud client is optional —
+// callers may pass nil to disable fraud signal recording (e.g. in tests).
+func NewJobHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client, fraudClient fraudv1.FraudServiceClient) *JobHandler {
+	return &JobHandler{jobClient: jobClient, cache: cacheClient, fraudClient: fraudClient}
+}
+
+// recordJobCreationSignal fires a velocity fraud signal asynchronously after
+// a job is created. We do not block the response on the fraud engine: it has
+// a hard 500ms timeout, errors are logged and swallowed so a fraud-engine
+// outage cannot stall job creation.
+func (h *JobHandler) recordJobCreationSignal(parent context.Context, userID, jobID, ipAddress string) {
+	if h.fraudClient == nil {
+		return
+	}
+
+	// Detach from the request context so the call survives the HTTP response.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		_, err := h.fraudClient.RecordSignal(ctx, &fraudv1.RecordSignalRequest{
+			UserId:        userID,
+			SignalType:    fraudv1.FraudSignalType_FRAUD_SIGNAL_TYPE_VELOCITY,
+			Confidence:    0.5, // velocity heuristic; engine tunes its own threshold
+			Details:       "job_created",
+			IpAddress:     ipAddress,
+			ReferenceType: "job",
+			ReferenceId:   jobID,
+		})
+		if err != nil {
+			slog.WarnContext(parent, "fraud signal record failed",
+				"user_id", userID, "job_id", jobID, "error", err)
+		}
+	}()
 }
 
 type createJobRequest struct {
@@ -140,6 +174,10 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeGRPCError(w, err)
 		return
 	}
+
+	// Fire-and-forget velocity fraud signal. Failures here must not block
+	// or fail the response — the fraud engine has its own retry/aggregation.
+	h.recordJobCreationSignal(r.Context(), claims.UserID, resp.GetJob().GetId(), r.RemoteAddr)
 
 	writeJSON(w, http.StatusCreated, protoJobToJSON(resp.GetJob()))
 }

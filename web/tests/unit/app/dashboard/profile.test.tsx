@@ -162,13 +162,13 @@ describe('ProfilePage', () => {
     profileState.isLoading = false;
     profileState.data = { ...baseUser, roles: ['customer', 'provider'] };
     providerProfileState.data = {
-      businessName: 'Tanner Plumbing Co',
-      serviceCategories: [{ id: 'c1', name: 'Plumbing' }],
-      serviceRadiusKm: 25,
-      jobsCompleted: 42,
-      onTimeRate: 0.95,
-      stripeOnboardingComplete: true,
-      profileCompleteness: 80,
+      business_name: 'Tanner Plumbing Co',
+      service_categories: [{ id: 'c1', name: 'Plumbing' }],
+      service_radius_km: 25,
+      jobs_completed: 42,
+      on_time_rate: 0.95,
+      stripe_onboarding_complete: true,
+      profile_completeness: 80,
       bio: 'Bio here',
     };
     render(withQueryClient(createElement(ProfilePage)));
@@ -185,13 +185,13 @@ describe('ProfilePage', () => {
     profileState.isLoading = false;
     profileState.data = { ...baseUser, roles: ['customer', 'provider'] };
     providerProfileState.data = {
-      businessName: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      jobsCompleted: 0,
-      onTimeRate: null,
-      stripeOnboardingComplete: false,
-      profileCompleteness: 30,
+      business_name: '',
+      service_categories: [],
+      service_radius_km: 10,
+      jobs_completed: 0,
+      on_time_rate: null,
+      stripe_onboarding_complete: false,
+      profile_completeness: 30,
       bio: '',
     };
     render(withQueryClient(createElement(ProfilePage)));

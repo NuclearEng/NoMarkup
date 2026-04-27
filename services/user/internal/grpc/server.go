@@ -794,6 +794,38 @@ func (s *Server) AdminSuspendUser(ctx context.Context, req *userv1.AdminSuspendU
 	}, nil
 }
 
+func (s *Server) AdminReactivateUser(ctx context.Context, req *userv1.AdminReactivateUserRequest) (*userv1.AdminReactivateUserResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	if err := s.admin.ReactivateUser(ctx, req.GetUserId(), req.GetAdminId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	if err := s.admin.InsertAuditLog(ctx, req.GetAdminId(), "reactivate_user", "user", req.GetUserId(), map[string]any{
+		"note": req.GetNote(),
+	}, ""); err != nil {
+		slog.Warn("failed to insert audit log for reactivate",
+			"user_id", req.GetUserId(),
+			"admin_id", req.GetAdminId(),
+			"error", err,
+		)
+	}
+
+	user, err := s.admin.AdminGetUser(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.AdminReactivateUserResponse{
+		User: domainUserToProto(user),
+	}, nil
+}
+
 func (s *Server) AdminBanUser(ctx context.Context, req *userv1.AdminBanUserRequest) (*userv1.AdminBanUserResponse, error) {
 	if req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")

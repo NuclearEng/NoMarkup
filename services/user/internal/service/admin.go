@@ -59,6 +59,27 @@ func (a *Admin) BanUser(ctx context.Context, userID, reason, adminID string) err
 	return nil
 }
 
+// ReactivateUser flips a previously-suspended (or banned/deactivated) user
+// back to status='active' and clears the suspension reason. Existing refresh
+// tokens stay revoked — the user will need to log in again, which is the
+// expected behaviour. Used as the counterpart to SuspendUser.
+func (a *Admin) ReactivateUser(ctx context.Context, userID, adminID string) error {
+	if err := a.repo.ReactivateUser(ctx, userID, adminID); err != nil {
+		slog.Error("reactivate user failed",
+			"user_id", userID,
+			"admin_id", adminID,
+			"error", err,
+		)
+		return fmt.Errorf("reactivate user: %w", err)
+	}
+
+	slog.Info("user reactivated",
+		"user_id", userID,
+		"admin_id", adminID,
+	)
+	return nil
+}
+
 // AdminSearchUsers searches for users with optional query and status filters.
 func (a *Admin) AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error) {
 	users, total, err := a.repo.AdminSearchUsers(ctx, query, status, page, pageSize)

@@ -6,30 +6,30 @@ import { TRUST_TIER, type ProviderProfile } from '@/types';
 
 const baseProfile: ProviderProfile = {
   id: 'p-1',
-  userId: 'u-1',
-  businessName: 'Acme Plumbing',
+  user_id: 'u-1',
+  business_name: 'Acme Plumbing',
   bio: 'Trusted plumber serving the bay area for 10+ years.',
-  serviceAddress: '123 Market St',
-  serviceLocation: { latitude: 37.77, longitude: -122.42 },
-  serviceRadiusKm: 30,
-  defaultPaymentTiming: 'milestone',
-  defaultMilestones: [],
-  cancellationPolicy: null,
-  warrantyTerms: null,
-  instantEnabled: true,
-  instantAvailable: true,
-  jobsCompleted: 42,
-  avgResponseTimeMinutes: 30,
-  onTimeRate: 0.95,
-  profileCompleteness: 90,
-  stripeOnboardingComplete: true,
-  serviceCategories: [
-    { id: 'c-1', name: 'Plumbing', slug: 'plumbing', level: 0, parentName: null },
-    { id: 'c-2', name: 'Drain Cleaning', slug: 'drain', level: 0, parentName: null },
+  service_address: '123 Market St',
+  service_location: { latitude: 37.77, longitude: -122.42 },
+  service_radius_km: 30,
+  default_payment_timing: 'milestone',
+  default_milestones: [],
+  cancellation_policy: null,
+  warranty_terms: null,
+  instant_enabled: true,
+  instant_available: true,
+  jobs_completed: 42,
+  avg_response_time_minutes: 30,
+  on_time_rate: 0.95,
+  profile_completeness: 90,
+  stripe_onboarding_complete: true,
+  service_categories: [
+    { id: 'c-1', name: 'Plumbing', slug: 'plumbing', level: 0, parent_name: null },
+    { id: 'c-2', name: 'Drain Cleaning', slug: 'drain', level: 0, parent_name: null },
   ],
   portfolio: [],
-  memberSince: '2024-01-01T00:00:00Z',
-  responseTimeLabel: 'Responds in 1 hour',
+  member_since: '2024-01-01T00:00:00Z',
+  response_time_label: 'Responds in 1 hour',
 };
 
 describe('ProviderProfileCard', () => {
@@ -48,7 +48,7 @@ describe('ProviderProfileCard', () => {
   it('falls back to display name when business name is missing', () => {
     render(
       <ProviderProfileCard
-        profile={{ ...baseProfile, businessName: null }}
+        profile={{ ...baseProfile, business_name: null }}
         displayName="Jane Doe"
         avatarUrl={null}
       />,
@@ -108,12 +108,12 @@ describe('ProviderProfileCard', () => {
   it('renders service category badges and a +N more chip when over 5', () => {
     const many = {
       ...baseProfile,
-      serviceCategories: Array.from({ length: 7 }, (_, i) => ({
+      service_categories: Array.from({ length: 7 }, (_, i) => ({
         id: `c-${String(i)}`,
         name: `Cat ${String(i)}`,
         slug: `cat-${String(i)}`,
         level: 0,
-        parentName: null,
+        parent_name: null,
       })),
     };
     render(
@@ -154,7 +154,7 @@ describe('ProviderProfileCard', () => {
   it('omits the response time badge when label is missing (line 85 branch)', () => {
     render(
       <ProviderProfileCard
-        profile={{ ...baseProfile, responseTimeLabel: null as unknown as string }}
+        profile={{ ...baseProfile, response_time_label: null as unknown as string }}
         displayName="Jane Doe"
         avatarUrl={null}
       />,
@@ -176,7 +176,7 @@ describe('ProviderProfileCard', () => {
   it('omits the service-category section when there are no categories (line 106 branch)', () => {
     render(
       <ProviderProfileCard
-        profile={{ ...baseProfile, serviceCategories: [] }}
+        profile={{ ...baseProfile, service_categories: [] }}
         displayName="Jane Doe"
         avatarUrl={null}
       />,
@@ -236,12 +236,12 @@ describe('ProviderProfileCard', () => {
   it('does not render +N more chip when there are exactly 5 categories', () => {
     const five = {
       ...baseProfile,
-      serviceCategories: Array.from({ length: 5 }, (_, i) => ({
+      service_categories: Array.from({ length: 5 }, (_, i) => ({
         id: `c-${String(i)}`,
         name: `Cat ${String(i)}`,
         slug: `cat-${String(i)}`,
         level: 0,
-        parentName: null,
+        parent_name: null,
       })),
     };
     render(<ProviderProfileCard profile={five} displayName="Jane" avatarUrl={null} />);

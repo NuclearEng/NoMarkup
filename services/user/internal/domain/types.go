@@ -391,6 +391,9 @@ type UserRepository interface {
 	// BanUserAndRevokeTokens performs both operations in a single
 	// transaction. Either both succeed or neither.
 	BanUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error
+	// ReactivateUser flips a suspended/banned/deactivated user back to
+	// active and clears the suspension reason. No-op if already active.
+	ReactivateUser(ctx context.Context, userID, adminID string) error
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
 	AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]User, int, error)
 

@@ -384,7 +384,7 @@ func TestJobHandler_Create(t *testing.T) {
 			t.Parallel()
 
 			client := &mockJobClient{createJobFn: tt.mockFn}
-			h := NewJobHandler(client, nil)
+			h := NewJobHandler(client, nil, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -418,7 +418,7 @@ func TestJobHandler_Search(t *testing.T) {
 			}, nil
 		},
 	}
-	h := NewJobHandler(client, nil)
+	h := NewJobHandler(client, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=plumbing", nil)
 	rec := httptest.NewRecorder()
@@ -440,7 +440,7 @@ func TestJobHandler_Search_grpc_error(t *testing.T) {
 			return nil, status.Error(codes.Internal, "search unavailable")
 		},
 	}
-	h := NewJobHandler(client, nil)
+	h := NewJobHandler(client, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=test", nil)
 	rec := httptest.NewRecorder()
@@ -465,7 +465,7 @@ func TestJobHandler_Update_forwards_customer_id(t *testing.T) {
 			return &jobv1.UpdateJobResponse{Job: &jobv1.Job{Id: req.GetJobId(), CustomerId: req.GetCustomerId()}}, nil
 		},
 	}
-	h := NewJobHandler(client, nil)
+	h := NewJobHandler(client, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/jobs/job-1", bytes.NewBufferString(`{"title":"New Title"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -492,7 +492,7 @@ func TestJobHandler_Delete_forwards_customer_id(t *testing.T) {
 			return &jobv1.DeleteDraftResponse{}, nil
 		},
 	}
-	h := NewJobHandler(client, nil)
+	h := NewJobHandler(client, nil, nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/job-1", nil)
 	req = addClaimsToRequest(req, "user-authenticated", "a@example.com", []string{"customer"})
@@ -516,7 +516,7 @@ func TestJobHandler_Publish_forwards_customer_id(t *testing.T) {
 			return &jobv1.PublishJobResponse{Job: &jobv1.Job{Id: req.GetJobId(), Status: jobv1.JobStatus_JOB_STATUS_ACTIVE}}, nil
 		},
 	}
-	h := NewJobHandler(client, nil)
+	h := NewJobHandler(client, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/publish", nil)
 	req = addClaimsToRequest(req, "user-authenticated", "a@example.com", []string{"customer"})

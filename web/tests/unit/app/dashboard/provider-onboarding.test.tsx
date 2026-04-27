@@ -228,15 +228,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('prefills business info form from existing profile', () => {
     providerProfileState.data = {
-      businessName: 'Pre-Filled LLC',
+      business_name: 'Pre-Filled LLC',
       bio: 'My bio',
-      serviceAddress: '42 Oak St',
-      serviceCategories: [],
-      serviceRadiusKm: 25,
-      defaultPaymentTiming: 'completion',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '42 Oak St',
+      service_categories: [],
+      service_radius_km: 25,
+      default_payment_timing: 'completion',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const input = screen.getByLabelText(/Business Name/i);
@@ -245,15 +245,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Categories step shows existing serviceCategories prefill', () => {
     providerProfileState.data = {
-      businessName: 'X',
+      business_name: 'X',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [{ id: 'cat-a' }, { id: 'cat-b' }],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'completion',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [{ id: 'cat-a' }, { id: 'cat-b' }],
+      service_radius_km: 10,
+      default_payment_timing: 'completion',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const categoriesBtn = screen.getByRole('button', { name: /Categories/i });
@@ -263,15 +263,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Service Area step prefills the radius input from existing profile', () => {
     providerProfileState.data = {
-      businessName: 'X',
+      business_name: 'X',
       bio: '',
-      serviceAddress: '12 Pine Ln',
-      serviceCategories: [],
-      serviceRadiusKm: 75,
-      defaultPaymentTiming: 'completion',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '12 Pine Ln',
+      service_categories: [],
+      service_radius_km: 75,
+      default_payment_timing: 'completion',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const serviceAreaBtn = screen.getByRole('button', { name: /Service Area/i });
@@ -282,15 +282,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step renders cancellation policy textarea prefilled from profile', () => {
     providerProfileState.data = {
-      businessName: 'X',
+      business_name: 'X',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestones',
-      defaultMilestones: [],
-      cancellationPolicy: '24-hour cancellation',
-      warrantyTerms: '90-day warranty',
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestones',
+      default_milestones: [],
+      cancellation_policy: '24-hour cancellation',
+      warranty_terms: '90-day warranty',
     };
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
@@ -534,15 +534,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Categories Next calls mutation when prefilled selections exist', async () => {
     providerProfileState.data = {
-      businessName: 'X',
+      business_name: 'X',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [{ id: 'cat-a' }, { id: 'cat-b' }],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'completion',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [{ id: 'cat-a' }, { id: 'cat-b' }],
+      service_radius_km: 10,
+      default_payment_timing: 'completion',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
@@ -896,15 +896,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step renders milestone editor when defaultPaymentTiming is "milestone"', () => {
     providerProfileState.data = {
-      businessName: 'Acme',
+      business_name: 'Acme',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestone',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestone',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /^Terms$/i }));
@@ -914,15 +914,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step Add Milestone twice renders two milestone rows with their indices', async () => {
     providerProfileState.data = {
-      businessName: 'Acme',
+      business_name: 'Acme',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestone',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestone',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
@@ -935,15 +935,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step Add Milestone button appends a new empty milestone row', async () => {
     providerProfileState.data = {
-      businessName: 'Acme',
+      business_name: 'Acme',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestone',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestone',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
@@ -958,15 +958,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step Remove Milestone removes the milestone row at that index', async () => {
     providerProfileState.data = {
-      businessName: 'Acme',
+      business_name: 'Acme',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestone',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestone',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
@@ -980,15 +980,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step milestone percentage input parses the typed value as a number', async () => {
     providerProfileState.data = {
-      businessName: 'Acme',
+      business_name: 'Acme',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestone',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestone',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
@@ -1003,15 +1003,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step milestone description input accepts text changes', async () => {
     providerProfileState.data = {
-      businessName: 'Acme',
+      business_name: 'Acme',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestone',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestone',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));
@@ -1025,15 +1025,15 @@ describe('ProviderOnboardingPage', () => {
 
   it('Terms step submits milestone payment timing with milestones in payload', async () => {
     providerProfileState.data = {
-      businessName: 'Acme',
+      business_name: 'Acme',
       bio: '',
-      serviceAddress: '',
-      serviceCategories: [],
-      serviceRadiusKm: 10,
-      defaultPaymentTiming: 'milestone',
-      defaultMilestones: [],
-      cancellationPolicy: null,
-      warrantyTerms: null,
+      service_address: '',
+      service_categories: [],
+      service_radius_km: 10,
+      default_payment_timing: 'milestone',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
     };
     const user = userEvent.setup();
     render(withQueryClient(createElement(ProviderOnboardingPage)));

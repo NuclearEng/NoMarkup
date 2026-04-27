@@ -1,5 +1,8 @@
 'use client';
 
+import { useMemo } from 'react';
+
+import { usePricingOverview } from '@/hooks/usePricing';
 import { cn } from '@/lib/utils';
 
 interface TickerItem {
@@ -13,7 +16,11 @@ interface TickerItem {
 }
 
 interface MarketTickerStripProps {
-  items: TickerItem[];
+  /**
+   * Optional pre-supplied items. When omitted, the strip fetches real
+   * category-level pricing data from /api/v1/pricing.
+   */
+  items?: TickerItem[];
   speed?: 'slow' | 'normal' | 'fast';
   className?: string;
 }
@@ -84,11 +91,73 @@ function TickerItemDisplay({ item }: { item: TickerItem }) {
   );
 }
 
+function TickerSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'relative w-full overflow-hidden bg-black/30 backdrop-blur-md',
+        'border-b border-white/5',
+        className,
+      )}
+      aria-label="Loading marketplace activity"
+      aria-busy="true"
+    >
+      <div className="flex items-center gap-6 py-2.5 px-5">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <span
+            key={`ticker-skel-${String(i)}`}
+            className="inline-block h-3 w-32 shrink-0 rounded-full bg-white/[0.06]"
+            aria-hidden="true"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MarketTickerStrip({ items, speed = 'normal', className }: MarketTickerStripProps) {
   const duration = SPEED_DURATION[speed];
 
+  // When items are not supplied, fetch real category-level pricing data.
+  const { data, isLoading, isError } = usePricingOverview();
+
+  const resolvedItems = useMemo<TickerItem[]>(() => {
+    if (items) return items;
+    if (!data) return [];
+    return data.categories
+      .filter((c) => c.total_jobs > 0 && c.avg_median_cents > 0)
+      .map((c): TickerItem => {
+        const hasSavings = c.avg_savings_cents != null && c.avg_savings_cents > 0;
+        return {
+          category: c.category_name,
+          location: `${String(c.total_jobs)} jobs`,
+          currentPrice: c.avg_median_cents,
+          ...(hasSavings && c.avg_savings_cents != null
+            ? { originalPrice: c.avg_median_cents + c.avg_savings_cents }
+            : {}),
+          status: hasSavings ? ('completed' as const) : ('active' as const),
+        };
+      });
+  }, [items, data]);
+
+  // When the parent didn't supply items and the API failed, hide the strip
+  // gracefully instead of crashing the landing hero.
+  if (!items && isError) {
+    return null;
+  }
+
+  // While the hook is loading (parent didn't supply items), show a skeleton.
+  if (!items && isLoading) {
+    return <TickerSkeleton className={className} />;
+  }
+
+  // No items to show after fetch — hide rather than render an empty marquee.
+  if (resolvedItems.length === 0) {
+    return null;
+  }
+
   // Duplicate items for seamless infinite loop
-  const allItems = [...items, ...items];
+  const allItems = [...resolvedItems, ...resolvedItems];
 
   return (
     <div

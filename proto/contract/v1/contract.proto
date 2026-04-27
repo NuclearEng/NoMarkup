@@ -13,6 +13,7 @@ import "common/v1/common.proto";
 
 service ContractService {
   // Contract lifecycle
+  rpc CreateContractFromAward(CreateContractFromAwardRequest) returns (CreateContractFromAwardResponse);
   rpc GetContract(GetContractRequest) returns (GetContractResponse);
   rpc AcceptContract(AcceptContractRequest) returns (AcceptContractResponse);
   rpc StartWork(StartWorkRequest) returns (StartWorkResponse);
@@ -152,6 +153,23 @@ message RecurringInstance {
 // ============================================================
 // Contract Lifecycle RPCs
 // ============================================================
+
+// CreateContractFromAwardRequest is sent by the gateway after the bidding
+// engine has marked a bid as awarded. It triggers contract creation in the
+// job/contract service so customer-accept → contract is wired end-to-end.
+message CreateContractFromAwardRequest {
+  string job_id = 1;
+  string bid_id = 2;
+  string customer_id = 3;
+  string provider_id = 4;
+  int64 amount_cents = 5;
+  // payment_timing defaults to "completion" when unspecified.
+  nomarkup.common.v1.PaymentTiming payment_timing = 6;
+}
+
+message CreateContractFromAwardResponse {
+  Contract contract = 1;
+}
 
 message GetContractRequest {
   string contract_id = 1;

@@ -89,19 +89,19 @@ export default function ProviderDashboardPage() {
       </div>
 
       {/* Profile completeness */}
-      {profile && profile.profileCompleteness < 100 ? (
+      {profile && profile.profile_completeness < 100 ? (
         <Card className="glass glass-highlight border border-amber-500/20 bg-amber-500/10">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="min-w-0 flex-1">
               <p className="font-medium">Complete your profile</p>
               <p className="text-zinc-300 text-sm">
-                A complete profile helps you win more jobs. {String(profile.profileCompleteness)}%
+                A complete profile helps you win more jobs. {String(profile.profile_completeness)}%
                 complete.
               </p>
               <Progress
-                value={profile.profileCompleteness}
+                value={profile.profile_completeness}
                 className="mt-2 h-2"
-                aria-label={`Profile ${String(profile.profileCompleteness)}% complete`}
+                aria-label={`Profile ${String(profile.profile_completeness)}% complete`}
               />
             </div>
             <Link href="/provider/onboarding">

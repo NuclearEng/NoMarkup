@@ -54,7 +54,7 @@ export function ProviderProfileCard({
 
           <div className="flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold">{profile.businessName ?? displayName}</h3>
+              <h3 className="font-semibold">{profile.business_name ?? displayName}</h3>
               {trustTier ? (
                 <Badge variant="outline">{TRUST_TIER_LABELS[trustTier]}</Badge>
               ) : null}
@@ -76,12 +76,12 @@ export function ProviderProfileCard({
                   />
                 ))}
                 <span className="ml-1 text-sm text-muted-foreground">
-                  ({profile.jobsCompleted} jobs)
+                  ({profile.jobs_completed} jobs)
                 </span>
               </div>
             ) : null}
-            {profile.responseTimeLabel ? (
-              <ResponseTimeBadge label={profile.responseTimeLabel} />
+            {profile.response_time_label ? (
+              <ResponseTimeBadge label={profile.response_time_label} />
             ) : null}
           </div>
         </div>
@@ -90,16 +90,16 @@ export function ProviderProfileCard({
           <p className="mt-4 line-clamp-3 text-sm text-muted-foreground">{profile.bio}</p>
         ) : null}
 
-        {profile.serviceCategories.length > 0 ? (
+        {profile.service_categories.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-1.5">
-            {profile.serviceCategories.slice(0, 5).map((cat) => (
+            {profile.service_categories.slice(0, 5).map((cat) => (
               <Badge key={cat.id} variant="secondary" className="text-xs">
                 {cat.name}
               </Badge>
             ))}
-            {profile.serviceCategories.length > 5 ? (
+            {profile.service_categories.length > 5 ? (
               <Badge variant="secondary" className="text-xs">
-                +{profile.serviceCategories.length - 5} more
+                +{profile.service_categories.length - 5} more
               </Badge>
             ) : null}
           </div>

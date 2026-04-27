@@ -156,6 +156,12 @@ func (m *mockUserRepo) BanUserAndRevokeTokens(ctx context.Context, userID, reaso
 	}
 	return nil
 }
+func (m *mockUserRepo) ReactivateUser(ctx context.Context, userID, adminID string) error {
+	// No mock hook needed today — admin tests exercise the full Admin service
+	// directly and do not assert on this path. Return nil so the interface is
+	// satisfied without changing existing test expectations.
+	return nil
+}
 func (m *mockUserRepo) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error {
 	if m.insertAuditLogFn != nil {
 		return m.insertAuditLogFn(ctx, adminID, action, targetType, targetID, details, ipAddress)

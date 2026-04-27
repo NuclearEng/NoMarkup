@@ -155,25 +155,26 @@ func (r *PostgresRepository) GetProviderAnalytics(ctx context.Context, providerI
 		return nil, fmt.Errorf("provider analytics earnings: %w", err)
 	}
 
-	// Reviews.
+	// Reviews. Column is overall_rating (not rating).
 	err = r.pool.QueryRow(ctx, `
-		SELECT COALESCE(AVG(rating), 0),
+		SELECT COALESCE(AVG(overall_rating), 0),
 		       COUNT(*)::int
 		FROM reviews
 		WHERE reviewee_id = $1
+		  AND status = 'published'
 		  AND created_at >= $2 AND created_at <= $3`,
 		providerID, startDate, endDate).Scan(&a.AverageRating, &a.TotalReviews)
 	if err != nil {
 		return nil, fmt.Errorf("provider analytics reviews: %w", err)
 	}
 
-	// Category breakdown.
+	// Category breakdown. Reviews column is overall_rating (not rating).
 	catRows, err := r.pool.Query(ctx, `
-		SELECT j.category_id,
+		SELECT j.category_id::text,
 		       COALESCE(sc.name, '') AS category_name,
 		       COUNT(*)::int AS jobs_completed,
 		       COALESCE(SUM(p.provider_payout_cents), 0)::bigint AS total_earnings,
-		       COALESCE(AVG(r.rating), 0) AS avg_rating
+		       COALESCE(AVG(r.overall_rating), 0) AS avg_rating
 		FROM contracts c
 		JOIN jobs j ON j.id = c.job_id
 		LEFT JOIN service_categories sc ON sc.id = j.category_id
@@ -335,15 +336,59 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 }
 
 func (r *PostgresRepository) RecordTransaction(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `
+	// Schema note: analytics_transactions does not have category_id /
+	// subcategory_id / region / platform_fee_cents / transaction_id columns.
+	// Required fields are job_id, contract_id, service_type_id, zip/city/state,
+	// amount_cents, bid_count, completed_at. We accept the older signature for
+	// callers but treat transactionID as job_id, parse "City, ST" from region,
+	// and discard fee/category fields. bid_count defaults to 0 if not derivable.
+	jobID := transactionID
+	city := ""
+	state := ""
+	zip := ""
+	if region != "" {
+		// Best-effort split of "City, ST" or "ZIP" forms.
+		comma := -1
+		for i := 0; i < len(region); i++ {
+			if region[i] == ',' {
+				comma = i
+				break
+			}
+		}
+		if comma > 0 {
+			city = region[:comma]
+			rest := region[comma+1:]
+			for len(rest) > 0 && rest[0] == ' ' {
+				rest = rest[1:]
+			}
+			state = rest
+		} else {
+			zip = region
+		}
+	}
+	_ = categoryID
+	_ = subcategoryID
+	_ = platformFeeCents
+
+	// Look up contract_id for this job; fall back to inserting with NULL would
+	// fail (contract_id is NOT NULL), so skip if no contract exists.
+	var contractID string
+	err := r.pool.QueryRow(ctx,
+		`SELECT id FROM contracts WHERE job_id = $1 ORDER BY created_at DESC LIMIT 1`, jobID).Scan(&contractID)
+	if err != nil {
+		return fmt.Errorf("record transaction lookup contract: %w", err)
+	}
+
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO analytics_transactions (
-			transaction_id, category_id, subcategory_id, service_type_id,
-			region, amount_cents, platform_fee_cents,
-			customer_id, provider_id, completed_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		transactionID, categoryID, subcategoryID, serviceTypeID,
-		region, amountCents, platformFeeCents,
-		customerID, providerID, completedAt)
+			job_id, contract_id, customer_id, provider_id, service_type_id,
+			zip_code, city, state,
+			amount_cents, bid_count,
+			completed_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10)`,
+		jobID, contractID, customerID, providerID, serviceTypeID,
+		zip, city, state,
+		amountCents, completedAt)
 	if err != nil {
 		return fmt.Errorf("record transaction: %w", err)
 	}
@@ -353,7 +398,8 @@ func (r *PostgresRepository) RecordTransaction(ctx context.Context, transactionI
 func (r *PostgresRepository) GetPlatformMetrics(ctx context.Context, startDate, endDate time.Time) (*domain.PlatformMetrics, error) {
 	m := &domain.PlatformMetrics{}
 
-	// GMV and revenue from analytics_transactions.
+	// GMV from analytics_transactions; platform fee revenue from payments
+	// (analytics_transactions has no platform_fee_cents column — see schema).
 	err := r.pool.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amount_cents), 0)::bigint
 		FROM analytics_transactions
@@ -361,6 +407,15 @@ func (r *PostgresRepository) GetPlatformMetrics(ctx context.Context, startDate, 
 		startDate, endDate).Scan(&m.TotalGMVCents)
 	if err != nil {
 		return nil, fmt.Errorf("platform metrics gmv: %w", err)
+	}
+
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(platform_fee_cents), 0)::bigint
+		FROM payments
+		WHERE status IN ('completed', 'released')
+		  AND created_at >= $1 AND created_at <= $2`,
+		startDate, endDate).Scan(&m.TotalRevenueCents); err != nil {
+		return nil, fmt.Errorf("platform metrics revenue: %w", err)
 	}
 
 	if m.TotalGMVCents > 0 {
@@ -446,6 +501,11 @@ func (r *PostgresRepository) GetGrowthMetrics(ctx context.Context, startDate, en
 		truncUnit = "month"
 	}
 
+	// Schema notes:
+	//  - users.roles is text[] not a single role column; use ANY()
+	//  - analytics_transactions has no platform_fee_cents column —
+	//    revenue is reported as 0 here until the fee snapshot is added
+	//    (tracked in fees roadmap). amount_cents represents GMV.
 	query := fmt.Sprintf(`
 		WITH periods AS (
 			SELECT date_trunc('%s', gs) AS period_start
@@ -454,9 +514,10 @@ func (r *PostgresRepository) GetGrowthMetrics(ctx context.Context, startDate, en
 		user_counts AS (
 			SELECT date_trunc('%s', created_at) AS period,
 			       COUNT(*)::int AS new_users,
-			       COUNT(*) FILTER (WHERE role = 'provider')::int AS new_providers
+			       COUNT(*) FILTER (WHERE 'provider' = ANY(roles))::int AS new_providers
 			FROM users
 			WHERE created_at >= $1 AND created_at <= $2
+			  AND deleted_at IS NULL
 			GROUP BY period
 		),
 		job_counts AS (
@@ -464,6 +525,7 @@ func (r *PostgresRepository) GetGrowthMetrics(ctx context.Context, startDate, en
 			       COUNT(*)::int AS jobs_posted
 			FROM jobs
 			WHERE created_at >= $1 AND created_at <= $2
+			  AND deleted_at IS NULL
 			GROUP BY period
 		),
 		completion_counts AS (
@@ -471,12 +533,12 @@ func (r *PostgresRepository) GetGrowthMetrics(ctx context.Context, startDate, en
 			       COUNT(*)::int AS jobs_completed
 			FROM jobs
 			WHERE status = 'completed' AND updated_at >= $1 AND updated_at <= $2
+			  AND deleted_at IS NULL
 			GROUP BY period
 		),
 		transaction_sums AS (
 			SELECT date_trunc('%s', completed_at) AS period,
-			       COALESCE(SUM(amount_cents), 0)::bigint AS gmv_cents,
-			       COALESCE(SUM(platform_fee_cents), 0)::bigint AS revenue_cents
+			       COALESCE(SUM(amount_cents), 0)::bigint AS gmv_cents
 			FROM analytics_transactions
 			WHERE completed_at >= $1 AND completed_at <= $2
 			GROUP BY period
@@ -487,7 +549,7 @@ func (r *PostgresRepository) GetGrowthMetrics(ctx context.Context, startDate, en
 		       COALESCE(j.jobs_posted, 0)::int,
 		       COALESCE(cc.jobs_completed, 0)::int,
 		       COALESCE(t.gmv_cents, 0)::bigint,
-		       COALESCE(t.revenue_cents, 0)::bigint
+		       0::bigint AS revenue_cents
 		FROM periods p
 		LEFT JOIN user_counts u ON u.period = p.period_start
 		LEFT JOIN job_counts j ON j.period = p.period_start
@@ -520,6 +582,11 @@ func (r *PostgresRepository) GetGrowthMetrics(ctx context.Context, startDate, en
 }
 
 func (r *PostgresRepository) GetCategoryMetrics(ctx context.Context, startDate, endDate time.Time) ([]domain.CategoryMetrics, error) {
+	// Schema note: analytics_transactions has no category_id column — only
+	// service_type_id (which references service_categories). We join through
+	// jobs.category_id instead, which is the canonical category for the job.
+	// jobs.status uses 'active' (not 'bidding') and 'closed' for closed-with-bids,
+	// so the fill-rate filter set is updated accordingly.
 	rows, err := r.pool.Query(ctx, `
 		SELECT sc.id AS category_id,
 		       COALESCE(sc.name, '') AS category_name,
@@ -527,19 +594,22 @@ func (r *PostgresRepository) GetCategoryMetrics(ctx context.Context, startDate, 
 		       COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2)::int AS jobs_completed,
 		       COALESCE(SUM(at.amount_cents) FILTER (WHERE at.completed_at >= $1 AND at.completed_at <= $2), 0)::bigint AS gmv_cents,
 		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
-		            THEN COUNT(DISTINCT b.id) FILTER (WHERE b.created_at >= $1 AND b.created_at <= $2)::float / COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float
+		            THEN COUNT(DISTINCT b.id) FILTER (WHERE b.created_at >= $1 AND b.created_at <= $2)::float
+		                 / NULLIF(COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float, 0)
 		            ELSE 0 END AS avg_bids_per_job,
 		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2) > 0
-		            THEN COALESCE(SUM(at.amount_cents) FILTER (WHERE at.completed_at >= $1 AND at.completed_at <= $2), 0)::bigint / COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2)::bigint
+		            THEN COALESCE(SUM(at.amount_cents) FILTER (WHERE at.completed_at >= $1 AND at.completed_at <= $2), 0)::bigint
+		                 / NULLIF(COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2), 0)::bigint
 		            ELSE 0 END AS avg_job_value_cents,
 		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
-		            THEN COUNT(DISTINCT j.id) FILTER (WHERE j.status IN ('bidding','awarded','in_progress','completed') AND j.created_at >= $1 AND j.created_at <= $2)::float / COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float
+		            THEN COUNT(DISTINCT j.id) FILTER (WHERE j.status IN ('active','awarded','in_progress','completed') AND j.created_at >= $1 AND j.created_at <= $2)::float
+		                 / NULLIF(COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float, 0)
 		            ELSE 0 END AS fill_rate,
 		       COUNT(DISTINCT b.provider_id) FILTER (WHERE b.created_at >= $1 AND b.created_at <= $2)::int AS active_providers
 		FROM service_categories sc
-		LEFT JOIN jobs j ON j.category_id = sc.id
+		LEFT JOIN jobs j ON j.category_id = sc.id AND j.deleted_at IS NULL
 		LEFT JOIN bids b ON b.job_id = j.id
-		LEFT JOIN analytics_transactions at ON at.category_id = sc.id
+		LEFT JOIN analytics_transactions at ON at.job_id = j.id
 		GROUP BY sc.id, sc.name
 		HAVING COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
 		ORDER BY gmv_cents DESC
@@ -569,16 +639,18 @@ func (r *PostgresRepository) GetCategoryMetrics(ctx context.Context, startDate, 
 }
 
 func (r *PostgresRepository) GetGeographicMetrics(ctx context.Context, startDate, endDate time.Time) ([]domain.RegionMetrics, error) {
+	// Schema note: analytics_transactions has no `region` column. We synthesize
+	// "City, ST" as the region key from the city + state columns we do have.
 	rows, err := r.pool.Query(ctx, `
-		SELECT at.region,
+		SELECT (at.city || ', ' || at.state) AS region,
 		       COUNT(DISTINCT at.customer_id)::int AS active_users,
 		       COUNT(DISTINCT at.provider_id)::int AS active_providers,
 		       COUNT(*)::int AS jobs_posted,
 		       COALESCE(SUM(at.amount_cents), 0)::bigint AS gmv_cents
 		FROM analytics_transactions at
 		WHERE at.completed_at >= $1 AND at.completed_at <= $2
-		  AND at.region != ''
-		GROUP BY at.region
+		  AND at.city <> '' AND at.state <> ''
+		GROUP BY at.city, at.state
 		ORDER BY gmv_cents DESC
 		LIMIT 200`,
 		startDate, endDate)

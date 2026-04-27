@@ -126,8 +126,8 @@ export default function InvoicesPage() {
   const isLoading = contractsLoading || profileLoading;
 
   const contracts = contractsData?.contracts ?? [];
-  const providerName = profile?.businessName ?? 'Provider';
-  const providerAddress = profile?.serviceAddress ?? undefined;
+  const providerName = profile?.business_name ?? 'Provider';
+  const providerAddress = profile?.service_address ?? undefined;
 
   return (
     <PageTransition>

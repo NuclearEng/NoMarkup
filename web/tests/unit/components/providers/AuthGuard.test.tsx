@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 
 const replaceMock = vi.fn();
-const refreshTokenMock = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: replaceMock }),
@@ -16,19 +15,27 @@ vi.mock('@/stores/auth-store', () => ({
 
 const { useAuthStore } = await import('@/stores/auth-store');
 
+interface MockState {
+  isAuthenticated: boolean;
+  isHydrating: boolean;
+}
+
+function setStore(state: MockState) {
+  vi.mocked(useAuthStore).mockImplementation(((selector?: unknown) => {
+    if (typeof selector === 'function') {
+      return (selector as (s: unknown) => unknown)(state);
+    }
+    return state;
+  }) as unknown as typeof useAuthStore);
+}
+
 describe('AuthGuard', () => {
   beforeEach(() => {
     replaceMock.mockReset();
-    refreshTokenMock.mockReset();
-    refreshTokenMock.mockResolvedValue(false);
-    document.cookie = 'has_session=; path=/; max-age=0';
   });
 
-  it('renders children when already authenticated', () => {
-    vi.mocked(useAuthStore).mockReturnValue({
-      isAuthenticated: true,
-      refreshToken: refreshTokenMock,
-    });
+  it('renders children when authenticated and hydration is complete', () => {
+    setStore({ isAuthenticated: true, isHydrating: false });
     render(
       <AuthGuard>
         <div data-testid="content">protected</div>
@@ -37,11 +44,19 @@ describe('AuthGuard', () => {
     expect(screen.getByTestId('content').textContent).toBe('protected');
   });
 
-  it('redirects to /login when no session cookie is present', async () => {
-    vi.mocked(useAuthStore).mockReturnValue({
-      isAuthenticated: false,
-      refreshToken: refreshTokenMock,
-    });
+  it('shows loader while AuthRestorer is still hydrating (does NOT call refresh itself)', () => {
+    setStore({ isAuthenticated: false, isHydrating: true });
+    render(
+      <AuthGuard>
+        <div data-testid="content">protected</div>
+      </AuthGuard>,
+    );
+    expect(screen.queryByTestId('content')).toBeNull();
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it('redirects to /login when hydration finishes and user is unauthenticated', async () => {
+    setStore({ isAuthenticated: false, isHydrating: false });
     render(
       <AuthGuard>
         <div data-testid="content">protected</div>
@@ -50,40 +65,15 @@ describe('AuthGuard', () => {
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith('/login');
     });
-    expect(refreshTokenMock).not.toHaveBeenCalled();
   });
 
-  it('attempts refreshToken when session sentinel cookie is present', async () => {
-    document.cookie = 'has_session=1; path=/';
-    refreshTokenMock.mockResolvedValue(true);
-    vi.mocked(useAuthStore).mockReturnValue({
-      isAuthenticated: false,
-      refreshToken: refreshTokenMock,
-    });
+  it('does not redirect when authenticated', () => {
+    setStore({ isAuthenticated: true, isHydrating: false });
     render(
       <AuthGuard>
         <div data-testid="content">protected</div>
       </AuthGuard>,
     );
-    await waitFor(() => {
-      expect(refreshTokenMock).toHaveBeenCalled();
-    });
-  });
-
-  it('redirects to /login when refresh fails', async () => {
-    document.cookie = 'has_session=1; path=/';
-    refreshTokenMock.mockResolvedValue(false);
-    vi.mocked(useAuthStore).mockReturnValue({
-      isAuthenticated: false,
-      refreshToken: refreshTokenMock,
-    });
-    render(
-      <AuthGuard>
-        <div data-testid="content">protected</div>
-      </AuthGuard>,
-    );
-    await waitFor(() => {
-      expect(replaceMock).toHaveBeenCalledWith('/login');
-    });
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 });

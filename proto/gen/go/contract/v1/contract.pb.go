@@ -856,6 +856,138 @@ func (x *RecurringInstance) GetCompletedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// CreateContractFromAwardRequest is sent by the gateway after the bidding
+// engine has marked a bid as awarded. It triggers contract creation in the
+// job/contract service so customer-accept → contract is wired end-to-end.
+type CreateContractFromAwardRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	JobId       string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	BidId       string                 `protobuf:"bytes,2,opt,name=bid_id,json=bidId,proto3" json:"bid_id,omitempty"`
+	CustomerId  string                 `protobuf:"bytes,3,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	ProviderId  string                 `protobuf:"bytes,4,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	AmountCents int64                  `protobuf:"varint,5,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	// payment_timing defaults to "completion" when unspecified.
+	PaymentTiming v1.PaymentTiming `protobuf:"varint,6,opt,name=payment_timing,json=paymentTiming,proto3,enum=nomarkup.common.v1.PaymentTiming" json:"payment_timing,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateContractFromAwardRequest) Reset() {
+	*x = CreateContractFromAwardRequest{}
+	mi := &file_contract_v1_contract_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateContractFromAwardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateContractFromAwardRequest) ProtoMessage() {}
+
+func (x *CreateContractFromAwardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_contract_v1_contract_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateContractFromAwardRequest.ProtoReflect.Descriptor instead.
+func (*CreateContractFromAwardRequest) Descriptor() ([]byte, []int) {
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CreateContractFromAwardRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *CreateContractFromAwardRequest) GetBidId() string {
+	if x != nil {
+		return x.BidId
+	}
+	return ""
+}
+
+func (x *CreateContractFromAwardRequest) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *CreateContractFromAwardRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *CreateContractFromAwardRequest) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *CreateContractFromAwardRequest) GetPaymentTiming() v1.PaymentTiming {
+	if x != nil {
+		return x.PaymentTiming
+	}
+	return v1.PaymentTiming(0)
+}
+
+type CreateContractFromAwardResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Contract      *Contract              `protobuf:"bytes,1,opt,name=contract,proto3" json:"contract,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateContractFromAwardResponse) Reset() {
+	*x = CreateContractFromAwardResponse{}
+	mi := &file_contract_v1_contract_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateContractFromAwardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateContractFromAwardResponse) ProtoMessage() {}
+
+func (x *CreateContractFromAwardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_contract_v1_contract_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateContractFromAwardResponse.ProtoReflect.Descriptor instead.
+func (*CreateContractFromAwardResponse) Descriptor() ([]byte, []int) {
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CreateContractFromAwardResponse) GetContract() *Contract {
+	if x != nil {
+		return x.Contract
+	}
+	return nil
+}
+
 type GetContractRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ContractId       string                 `protobuf:"bytes,1,opt,name=contract_id,json=contractId,proto3" json:"contract_id,omitempty"`
@@ -866,7 +998,7 @@ type GetContractRequest struct {
 
 func (x *GetContractRequest) Reset() {
 	*x = GetContractRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[5]
+	mi := &file_contract_v1_contract_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -878,7 +1010,7 @@ func (x *GetContractRequest) String() string {
 func (*GetContractRequest) ProtoMessage() {}
 
 func (x *GetContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[5]
+	mi := &file_contract_v1_contract_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -891,7 +1023,7 @@ func (x *GetContractRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetContractRequest.ProtoReflect.Descriptor instead.
 func (*GetContractRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{5}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetContractRequest) GetContractId() string {
@@ -918,7 +1050,7 @@ type GetContractResponse struct {
 
 func (x *GetContractResponse) Reset() {
 	*x = GetContractResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[6]
+	mi := &file_contract_v1_contract_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1062,7 @@ func (x *GetContractResponse) String() string {
 func (*GetContractResponse) ProtoMessage() {}
 
 func (x *GetContractResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[6]
+	mi := &file_contract_v1_contract_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1075,7 @@ func (x *GetContractResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetContractResponse.ProtoReflect.Descriptor instead.
 func (*GetContractResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{6}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetContractResponse) GetContract() *Contract {
@@ -970,7 +1102,7 @@ type AcceptContractRequest struct {
 
 func (x *AcceptContractRequest) Reset() {
 	*x = AcceptContractRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[7]
+	mi := &file_contract_v1_contract_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1114,7 @@ func (x *AcceptContractRequest) String() string {
 func (*AcceptContractRequest) ProtoMessage() {}
 
 func (x *AcceptContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[7]
+	mi := &file_contract_v1_contract_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1127,7 @@ func (x *AcceptContractRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptContractRequest.ProtoReflect.Descriptor instead.
 func (*AcceptContractRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{7}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AcceptContractRequest) GetContractId() string {
@@ -1021,7 +1153,7 @@ type AcceptContractResponse struct {
 
 func (x *AcceptContractResponse) Reset() {
 	*x = AcceptContractResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[8]
+	mi := &file_contract_v1_contract_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1033,7 +1165,7 @@ func (x *AcceptContractResponse) String() string {
 func (*AcceptContractResponse) ProtoMessage() {}
 
 func (x *AcceptContractResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[8]
+	mi := &file_contract_v1_contract_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1046,7 +1178,7 @@ func (x *AcceptContractResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptContractResponse.ProtoReflect.Descriptor instead.
 func (*AcceptContractResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{8}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AcceptContractResponse) GetContract() *Contract {
@@ -1066,7 +1198,7 @@ type StartWorkRequest struct {
 
 func (x *StartWorkRequest) Reset() {
 	*x = StartWorkRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[9]
+	mi := &file_contract_v1_contract_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1078,7 +1210,7 @@ func (x *StartWorkRequest) String() string {
 func (*StartWorkRequest) ProtoMessage() {}
 
 func (x *StartWorkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[9]
+	mi := &file_contract_v1_contract_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1223,7 @@ func (x *StartWorkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWorkRequest.ProtoReflect.Descriptor instead.
 func (*StartWorkRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{9}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StartWorkRequest) GetContractId() string {
@@ -1117,7 +1249,7 @@ type StartWorkResponse struct {
 
 func (x *StartWorkResponse) Reset() {
 	*x = StartWorkResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[10]
+	mi := &file_contract_v1_contract_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1129,7 +1261,7 @@ func (x *StartWorkResponse) String() string {
 func (*StartWorkResponse) ProtoMessage() {}
 
 func (x *StartWorkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[10]
+	mi := &file_contract_v1_contract_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1142,7 +1274,7 @@ func (x *StartWorkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWorkResponse.ProtoReflect.Descriptor instead.
 func (*StartWorkResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{10}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StartWorkResponse) GetContract() *Contract {
@@ -1161,7 +1293,7 @@ type ExportContractPDFRequest struct {
 
 func (x *ExportContractPDFRequest) Reset() {
 	*x = ExportContractPDFRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[11]
+	mi := &file_contract_v1_contract_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1173,7 +1305,7 @@ func (x *ExportContractPDFRequest) String() string {
 func (*ExportContractPDFRequest) ProtoMessage() {}
 
 func (x *ExportContractPDFRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[11]
+	mi := &file_contract_v1_contract_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1186,7 +1318,7 @@ func (x *ExportContractPDFRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportContractPDFRequest.ProtoReflect.Descriptor instead.
 func (*ExportContractPDFRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{11}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ExportContractPDFRequest) GetContractId() string {
@@ -1205,7 +1337,7 @@ type ExportContractPDFResponse struct {
 
 func (x *ExportContractPDFResponse) Reset() {
 	*x = ExportContractPDFResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[12]
+	mi := &file_contract_v1_contract_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1217,7 +1349,7 @@ func (x *ExportContractPDFResponse) String() string {
 func (*ExportContractPDFResponse) ProtoMessage() {}
 
 func (x *ExportContractPDFResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[12]
+	mi := &file_contract_v1_contract_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1230,7 +1362,7 @@ func (x *ExportContractPDFResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportContractPDFResponse.ProtoReflect.Descriptor instead.
 func (*ExportContractPDFResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{12}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ExportContractPDFResponse) GetPdfUrl() string {
@@ -1251,7 +1383,7 @@ type ListContractsRequest struct {
 
 func (x *ListContractsRequest) Reset() {
 	*x = ListContractsRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[13]
+	mi := &file_contract_v1_contract_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1263,7 +1395,7 @@ func (x *ListContractsRequest) String() string {
 func (*ListContractsRequest) ProtoMessage() {}
 
 func (x *ListContractsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[13]
+	mi := &file_contract_v1_contract_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1276,7 +1408,7 @@ func (x *ListContractsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListContractsRequest.ProtoReflect.Descriptor instead.
 func (*ListContractsRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{13}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListContractsRequest) GetUserId() string {
@@ -1310,7 +1442,7 @@ type ListContractsResponse struct {
 
 func (x *ListContractsResponse) Reset() {
 	*x = ListContractsResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[14]
+	mi := &file_contract_v1_contract_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1322,7 +1454,7 @@ func (x *ListContractsResponse) String() string {
 func (*ListContractsResponse) ProtoMessage() {}
 
 func (x *ListContractsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[14]
+	mi := &file_contract_v1_contract_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1335,7 +1467,7 @@ func (x *ListContractsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListContractsResponse.ProtoReflect.Descriptor instead.
 func (*ListContractsResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{14}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListContractsResponse) GetContracts() []*Contract {
@@ -1362,7 +1494,7 @@ type SubmitMilestoneRequest struct {
 
 func (x *SubmitMilestoneRequest) Reset() {
 	*x = SubmitMilestoneRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[15]
+	mi := &file_contract_v1_contract_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1374,7 +1506,7 @@ func (x *SubmitMilestoneRequest) String() string {
 func (*SubmitMilestoneRequest) ProtoMessage() {}
 
 func (x *SubmitMilestoneRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[15]
+	mi := &file_contract_v1_contract_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1387,7 +1519,7 @@ func (x *SubmitMilestoneRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitMilestoneRequest.ProtoReflect.Descriptor instead.
 func (*SubmitMilestoneRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{15}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SubmitMilestoneRequest) GetMilestoneId() string {
@@ -1413,7 +1545,7 @@ type SubmitMilestoneResponse struct {
 
 func (x *SubmitMilestoneResponse) Reset() {
 	*x = SubmitMilestoneResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[16]
+	mi := &file_contract_v1_contract_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1425,7 +1557,7 @@ func (x *SubmitMilestoneResponse) String() string {
 func (*SubmitMilestoneResponse) ProtoMessage() {}
 
 func (x *SubmitMilestoneResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[16]
+	mi := &file_contract_v1_contract_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1438,7 +1570,7 @@ func (x *SubmitMilestoneResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitMilestoneResponse.ProtoReflect.Descriptor instead.
 func (*SubmitMilestoneResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{16}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SubmitMilestoneResponse) GetMilestone() *Milestone {
@@ -1458,7 +1590,7 @@ type ApproveMilestoneRequest struct {
 
 func (x *ApproveMilestoneRequest) Reset() {
 	*x = ApproveMilestoneRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[17]
+	mi := &file_contract_v1_contract_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1470,7 +1602,7 @@ func (x *ApproveMilestoneRequest) String() string {
 func (*ApproveMilestoneRequest) ProtoMessage() {}
 
 func (x *ApproveMilestoneRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[17]
+	mi := &file_contract_v1_contract_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1483,7 +1615,7 @@ func (x *ApproveMilestoneRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveMilestoneRequest.ProtoReflect.Descriptor instead.
 func (*ApproveMilestoneRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{17}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ApproveMilestoneRequest) GetMilestoneId() string {
@@ -1510,7 +1642,7 @@ type ApproveMilestoneResponse struct {
 
 func (x *ApproveMilestoneResponse) Reset() {
 	*x = ApproveMilestoneResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[18]
+	mi := &file_contract_v1_contract_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1522,7 +1654,7 @@ func (x *ApproveMilestoneResponse) String() string {
 func (*ApproveMilestoneResponse) ProtoMessage() {}
 
 func (x *ApproveMilestoneResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[18]
+	mi := &file_contract_v1_contract_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1535,7 +1667,7 @@ func (x *ApproveMilestoneResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveMilestoneResponse.ProtoReflect.Descriptor instead.
 func (*ApproveMilestoneResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{18}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ApproveMilestoneResponse) GetMilestone() *Milestone {
@@ -1563,7 +1695,7 @@ type RequestRevisionRequest struct {
 
 func (x *RequestRevisionRequest) Reset() {
 	*x = RequestRevisionRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[19]
+	mi := &file_contract_v1_contract_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1575,7 +1707,7 @@ func (x *RequestRevisionRequest) String() string {
 func (*RequestRevisionRequest) ProtoMessage() {}
 
 func (x *RequestRevisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[19]
+	mi := &file_contract_v1_contract_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1588,7 +1720,7 @@ func (x *RequestRevisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestRevisionRequest.ProtoReflect.Descriptor instead.
 func (*RequestRevisionRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{19}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RequestRevisionRequest) GetMilestoneId() string {
@@ -1621,7 +1753,7 @@ type RequestRevisionResponse struct {
 
 func (x *RequestRevisionResponse) Reset() {
 	*x = RequestRevisionResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[20]
+	mi := &file_contract_v1_contract_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1633,7 +1765,7 @@ func (x *RequestRevisionResponse) String() string {
 func (*RequestRevisionResponse) ProtoMessage() {}
 
 func (x *RequestRevisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[20]
+	mi := &file_contract_v1_contract_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1646,7 +1778,7 @@ func (x *RequestRevisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestRevisionResponse.ProtoReflect.Descriptor instead.
 func (*RequestRevisionResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{20}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RequestRevisionResponse) GetMilestone() *Milestone {
@@ -1666,7 +1798,7 @@ type MarkCompleteRequest struct {
 
 func (x *MarkCompleteRequest) Reset() {
 	*x = MarkCompleteRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[21]
+	mi := &file_contract_v1_contract_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1678,7 +1810,7 @@ func (x *MarkCompleteRequest) String() string {
 func (*MarkCompleteRequest) ProtoMessage() {}
 
 func (x *MarkCompleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[21]
+	mi := &file_contract_v1_contract_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1691,7 +1823,7 @@ func (x *MarkCompleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkCompleteRequest.ProtoReflect.Descriptor instead.
 func (*MarkCompleteRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{21}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *MarkCompleteRequest) GetContractId() string {
@@ -1717,7 +1849,7 @@ type MarkCompleteResponse struct {
 
 func (x *MarkCompleteResponse) Reset() {
 	*x = MarkCompleteResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[22]
+	mi := &file_contract_v1_contract_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1729,7 +1861,7 @@ func (x *MarkCompleteResponse) String() string {
 func (*MarkCompleteResponse) ProtoMessage() {}
 
 func (x *MarkCompleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[22]
+	mi := &file_contract_v1_contract_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1742,7 +1874,7 @@ func (x *MarkCompleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkCompleteResponse.ProtoReflect.Descriptor instead.
 func (*MarkCompleteResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{22}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *MarkCompleteResponse) GetContract() *Contract {
@@ -1762,7 +1894,7 @@ type ApproveCompletionRequest struct {
 
 func (x *ApproveCompletionRequest) Reset() {
 	*x = ApproveCompletionRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[23]
+	mi := &file_contract_v1_contract_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1774,7 +1906,7 @@ func (x *ApproveCompletionRequest) String() string {
 func (*ApproveCompletionRequest) ProtoMessage() {}
 
 func (x *ApproveCompletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[23]
+	mi := &file_contract_v1_contract_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1787,7 +1919,7 @@ func (x *ApproveCompletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveCompletionRequest.ProtoReflect.Descriptor instead.
 func (*ApproveCompletionRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{23}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ApproveCompletionRequest) GetContractId() string {
@@ -1814,7 +1946,7 @@ type ApproveCompletionResponse struct {
 
 func (x *ApproveCompletionResponse) Reset() {
 	*x = ApproveCompletionResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[24]
+	mi := &file_contract_v1_contract_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1826,7 +1958,7 @@ func (x *ApproveCompletionResponse) String() string {
 func (*ApproveCompletionResponse) ProtoMessage() {}
 
 func (x *ApproveCompletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[24]
+	mi := &file_contract_v1_contract_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1839,7 +1971,7 @@ func (x *ApproveCompletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveCompletionResponse.ProtoReflect.Descriptor instead.
 func (*ApproveCompletionResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{24}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ApproveCompletionResponse) GetContract() *Contract {
@@ -1870,7 +2002,7 @@ type ProposeChangeOrderRequest struct {
 
 func (x *ProposeChangeOrderRequest) Reset() {
 	*x = ProposeChangeOrderRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[25]
+	mi := &file_contract_v1_contract_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1882,7 +2014,7 @@ func (x *ProposeChangeOrderRequest) String() string {
 func (*ProposeChangeOrderRequest) ProtoMessage() {}
 
 func (x *ProposeChangeOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[25]
+	mi := &file_contract_v1_contract_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1895,7 +2027,7 @@ func (x *ProposeChangeOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProposeChangeOrderRequest.ProtoReflect.Descriptor instead.
 func (*ProposeChangeOrderRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{25}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ProposeChangeOrderRequest) GetContractId() string {
@@ -1949,7 +2081,7 @@ type ProposeChangeOrderResponse struct {
 
 func (x *ProposeChangeOrderResponse) Reset() {
 	*x = ProposeChangeOrderResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[26]
+	mi := &file_contract_v1_contract_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1961,7 +2093,7 @@ func (x *ProposeChangeOrderResponse) String() string {
 func (*ProposeChangeOrderResponse) ProtoMessage() {}
 
 func (x *ProposeChangeOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[26]
+	mi := &file_contract_v1_contract_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1974,7 +2106,7 @@ func (x *ProposeChangeOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProposeChangeOrderResponse.ProtoReflect.Descriptor instead.
 func (*ProposeChangeOrderResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{26}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ProposeChangeOrderResponse) GetChangeOrder() *ChangeOrder {
@@ -1995,7 +2127,7 @@ type RespondToChangeOrderRequest struct {
 
 func (x *RespondToChangeOrderRequest) Reset() {
 	*x = RespondToChangeOrderRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[27]
+	mi := &file_contract_v1_contract_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2007,7 +2139,7 @@ func (x *RespondToChangeOrderRequest) String() string {
 func (*RespondToChangeOrderRequest) ProtoMessage() {}
 
 func (x *RespondToChangeOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[27]
+	mi := &file_contract_v1_contract_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2020,7 +2152,7 @@ func (x *RespondToChangeOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondToChangeOrderRequest.ProtoReflect.Descriptor instead.
 func (*RespondToChangeOrderRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{27}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RespondToChangeOrderRequest) GetChangeOrderId() string {
@@ -2053,7 +2185,7 @@ type RespondToChangeOrderResponse struct {
 
 func (x *RespondToChangeOrderResponse) Reset() {
 	*x = RespondToChangeOrderResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[28]
+	mi := &file_contract_v1_contract_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2065,7 +2197,7 @@ func (x *RespondToChangeOrderResponse) String() string {
 func (*RespondToChangeOrderResponse) ProtoMessage() {}
 
 func (x *RespondToChangeOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[28]
+	mi := &file_contract_v1_contract_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2078,7 +2210,7 @@ func (x *RespondToChangeOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondToChangeOrderResponse.ProtoReflect.Descriptor instead.
 func (*RespondToChangeOrderResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{28}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *RespondToChangeOrderResponse) GetChangeOrder() *ChangeOrder {
@@ -2099,7 +2231,7 @@ type CancelContractRequest struct {
 
 func (x *CancelContractRequest) Reset() {
 	*x = CancelContractRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[29]
+	mi := &file_contract_v1_contract_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2111,7 +2243,7 @@ func (x *CancelContractRequest) String() string {
 func (*CancelContractRequest) ProtoMessage() {}
 
 func (x *CancelContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[29]
+	mi := &file_contract_v1_contract_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2124,7 +2256,7 @@ func (x *CancelContractRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelContractRequest.ProtoReflect.Descriptor instead.
 func (*CancelContractRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{29}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *CancelContractRequest) GetContractId() string {
@@ -2157,7 +2289,7 @@ type CancelContractResponse struct {
 
 func (x *CancelContractResponse) Reset() {
 	*x = CancelContractResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[30]
+	mi := &file_contract_v1_contract_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2169,7 +2301,7 @@ func (x *CancelContractResponse) String() string {
 func (*CancelContractResponse) ProtoMessage() {}
 
 func (x *CancelContractResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[30]
+	mi := &file_contract_v1_contract_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2182,7 +2314,7 @@ func (x *CancelContractResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelContractResponse.ProtoReflect.Descriptor instead.
 func (*CancelContractResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{30}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *CancelContractResponse) GetContract() *Contract {
@@ -2201,7 +2333,7 @@ type GetRecurringConfigRequest struct {
 
 func (x *GetRecurringConfigRequest) Reset() {
 	*x = GetRecurringConfigRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[31]
+	mi := &file_contract_v1_contract_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2213,7 +2345,7 @@ func (x *GetRecurringConfigRequest) String() string {
 func (*GetRecurringConfigRequest) ProtoMessage() {}
 
 func (x *GetRecurringConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[31]
+	mi := &file_contract_v1_contract_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2226,7 +2358,7 @@ func (x *GetRecurringConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRecurringConfigRequest.ProtoReflect.Descriptor instead.
 func (*GetRecurringConfigRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{31}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetRecurringConfigRequest) GetContractId() string {
@@ -2245,7 +2377,7 @@ type GetRecurringConfigResponse struct {
 
 func (x *GetRecurringConfigResponse) Reset() {
 	*x = GetRecurringConfigResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[32]
+	mi := &file_contract_v1_contract_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2257,7 +2389,7 @@ func (x *GetRecurringConfigResponse) String() string {
 func (*GetRecurringConfigResponse) ProtoMessage() {}
 
 func (x *GetRecurringConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[32]
+	mi := &file_contract_v1_contract_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2270,7 +2402,7 @@ func (x *GetRecurringConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRecurringConfigResponse.ProtoReflect.Descriptor instead.
 func (*GetRecurringConfigResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{32}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetRecurringConfigResponse) GetConfig() *RecurringConfig {
@@ -2292,7 +2424,7 @@ type UpdateRecurringConfigRequest struct {
 
 func (x *UpdateRecurringConfigRequest) Reset() {
 	*x = UpdateRecurringConfigRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[33]
+	mi := &file_contract_v1_contract_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2304,7 +2436,7 @@ func (x *UpdateRecurringConfigRequest) String() string {
 func (*UpdateRecurringConfigRequest) ProtoMessage() {}
 
 func (x *UpdateRecurringConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[33]
+	mi := &file_contract_v1_contract_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2317,7 +2449,7 @@ func (x *UpdateRecurringConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRecurringConfigRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRecurringConfigRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{33}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *UpdateRecurringConfigRequest) GetRecurringId() string {
@@ -2357,7 +2489,7 @@ type UpdateRecurringConfigResponse struct {
 
 func (x *UpdateRecurringConfigResponse) Reset() {
 	*x = UpdateRecurringConfigResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[34]
+	mi := &file_contract_v1_contract_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2369,7 +2501,7 @@ func (x *UpdateRecurringConfigResponse) String() string {
 func (*UpdateRecurringConfigResponse) ProtoMessage() {}
 
 func (x *UpdateRecurringConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[34]
+	mi := &file_contract_v1_contract_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2382,7 +2514,7 @@ func (x *UpdateRecurringConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRecurringConfigResponse.ProtoReflect.Descriptor instead.
 func (*UpdateRecurringConfigResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{34}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *UpdateRecurringConfigResponse) GetConfig() *RecurringConfig {
@@ -2402,7 +2534,7 @@ type PauseRecurringRequest struct {
 
 func (x *PauseRecurringRequest) Reset() {
 	*x = PauseRecurringRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[35]
+	mi := &file_contract_v1_contract_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2414,7 +2546,7 @@ func (x *PauseRecurringRequest) String() string {
 func (*PauseRecurringRequest) ProtoMessage() {}
 
 func (x *PauseRecurringRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[35]
+	mi := &file_contract_v1_contract_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2427,7 +2559,7 @@ func (x *PauseRecurringRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseRecurringRequest.ProtoReflect.Descriptor instead.
 func (*PauseRecurringRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{35}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *PauseRecurringRequest) GetRecurringId() string {
@@ -2453,7 +2585,7 @@ type PauseRecurringResponse struct {
 
 func (x *PauseRecurringResponse) Reset() {
 	*x = PauseRecurringResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[36]
+	mi := &file_contract_v1_contract_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2465,7 +2597,7 @@ func (x *PauseRecurringResponse) String() string {
 func (*PauseRecurringResponse) ProtoMessage() {}
 
 func (x *PauseRecurringResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[36]
+	mi := &file_contract_v1_contract_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2478,7 +2610,7 @@ func (x *PauseRecurringResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseRecurringResponse.ProtoReflect.Descriptor instead.
 func (*PauseRecurringResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{36}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *PauseRecurringResponse) GetConfig() *RecurringConfig {
@@ -2498,7 +2630,7 @@ type ResumeRecurringRequest struct {
 
 func (x *ResumeRecurringRequest) Reset() {
 	*x = ResumeRecurringRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[37]
+	mi := &file_contract_v1_contract_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2510,7 +2642,7 @@ func (x *ResumeRecurringRequest) String() string {
 func (*ResumeRecurringRequest) ProtoMessage() {}
 
 func (x *ResumeRecurringRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[37]
+	mi := &file_contract_v1_contract_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2523,7 +2655,7 @@ func (x *ResumeRecurringRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeRecurringRequest.ProtoReflect.Descriptor instead.
 func (*ResumeRecurringRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{37}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ResumeRecurringRequest) GetRecurringId() string {
@@ -2549,7 +2681,7 @@ type ResumeRecurringResponse struct {
 
 func (x *ResumeRecurringResponse) Reset() {
 	*x = ResumeRecurringResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[38]
+	mi := &file_contract_v1_contract_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2561,7 +2693,7 @@ func (x *ResumeRecurringResponse) String() string {
 func (*ResumeRecurringResponse) ProtoMessage() {}
 
 func (x *ResumeRecurringResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[38]
+	mi := &file_contract_v1_contract_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2574,7 +2706,7 @@ func (x *ResumeRecurringResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeRecurringResponse.ProtoReflect.Descriptor instead.
 func (*ResumeRecurringResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{38}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ResumeRecurringResponse) GetConfig() *RecurringConfig {
@@ -2594,7 +2726,7 @@ type CancelRecurringRequest struct {
 
 func (x *CancelRecurringRequest) Reset() {
 	*x = CancelRecurringRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[39]
+	mi := &file_contract_v1_contract_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2606,7 +2738,7 @@ func (x *CancelRecurringRequest) String() string {
 func (*CancelRecurringRequest) ProtoMessage() {}
 
 func (x *CancelRecurringRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[39]
+	mi := &file_contract_v1_contract_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2619,7 +2751,7 @@ func (x *CancelRecurringRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRecurringRequest.ProtoReflect.Descriptor instead.
 func (*CancelRecurringRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{39}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *CancelRecurringRequest) GetRecurringId() string {
@@ -2645,7 +2777,7 @@ type CancelRecurringResponse struct {
 
 func (x *CancelRecurringResponse) Reset() {
 	*x = CancelRecurringResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[40]
+	mi := &file_contract_v1_contract_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2657,7 +2789,7 @@ func (x *CancelRecurringResponse) String() string {
 func (*CancelRecurringResponse) ProtoMessage() {}
 
 func (x *CancelRecurringResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[40]
+	mi := &file_contract_v1_contract_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2670,7 +2802,7 @@ func (x *CancelRecurringResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRecurringResponse.ProtoReflect.Descriptor instead.
 func (*CancelRecurringResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{40}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *CancelRecurringResponse) GetConfig() *RecurringConfig {
@@ -2690,7 +2822,7 @@ type ListRecurringInstancesRequest struct {
 
 func (x *ListRecurringInstancesRequest) Reset() {
 	*x = ListRecurringInstancesRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[41]
+	mi := &file_contract_v1_contract_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2702,7 +2834,7 @@ func (x *ListRecurringInstancesRequest) String() string {
 func (*ListRecurringInstancesRequest) ProtoMessage() {}
 
 func (x *ListRecurringInstancesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[41]
+	mi := &file_contract_v1_contract_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2715,7 +2847,7 @@ func (x *ListRecurringInstancesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRecurringInstancesRequest.ProtoReflect.Descriptor instead.
 func (*ListRecurringInstancesRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{41}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ListRecurringInstancesRequest) GetRecurringId() string {
@@ -2742,7 +2874,7 @@ type ListRecurringInstancesResponse struct {
 
 func (x *ListRecurringInstancesResponse) Reset() {
 	*x = ListRecurringInstancesResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[42]
+	mi := &file_contract_v1_contract_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2754,7 +2886,7 @@ func (x *ListRecurringInstancesResponse) String() string {
 func (*ListRecurringInstancesResponse) ProtoMessage() {}
 
 func (x *ListRecurringInstancesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[42]
+	mi := &file_contract_v1_contract_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2767,7 +2899,7 @@ func (x *ListRecurringInstancesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRecurringInstancesResponse.ProtoReflect.Descriptor instead.
 func (*ListRecurringInstancesResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{42}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ListRecurringInstancesResponse) GetInstances() []*RecurringInstance {
@@ -2794,7 +2926,7 @@ type CompleteRecurringInstanceRequest struct {
 
 func (x *CompleteRecurringInstanceRequest) Reset() {
 	*x = CompleteRecurringInstanceRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[43]
+	mi := &file_contract_v1_contract_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2806,7 +2938,7 @@ func (x *CompleteRecurringInstanceRequest) String() string {
 func (*CompleteRecurringInstanceRequest) ProtoMessage() {}
 
 func (x *CompleteRecurringInstanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[43]
+	mi := &file_contract_v1_contract_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2819,7 +2951,7 @@ func (x *CompleteRecurringInstanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteRecurringInstanceRequest.ProtoReflect.Descriptor instead.
 func (*CompleteRecurringInstanceRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{43}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CompleteRecurringInstanceRequest) GetInstanceId() string {
@@ -2845,7 +2977,7 @@ type CompleteRecurringInstanceResponse struct {
 
 func (x *CompleteRecurringInstanceResponse) Reset() {
 	*x = CompleteRecurringInstanceResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[44]
+	mi := &file_contract_v1_contract_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2857,7 +2989,7 @@ func (x *CompleteRecurringInstanceResponse) String() string {
 func (*CompleteRecurringInstanceResponse) ProtoMessage() {}
 
 func (x *CompleteRecurringInstanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[44]
+	mi := &file_contract_v1_contract_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2870,7 +3002,7 @@ func (x *CompleteRecurringInstanceResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CompleteRecurringInstanceResponse.ProtoReflect.Descriptor instead.
 func (*CompleteRecurringInstanceResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{44}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *CompleteRecurringInstanceResponse) GetInstance() *RecurringInstance {
@@ -2890,7 +3022,7 @@ type ApproveRecurringInstanceRequest struct {
 
 func (x *ApproveRecurringInstanceRequest) Reset() {
 	*x = ApproveRecurringInstanceRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[45]
+	mi := &file_contract_v1_contract_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2902,7 +3034,7 @@ func (x *ApproveRecurringInstanceRequest) String() string {
 func (*ApproveRecurringInstanceRequest) ProtoMessage() {}
 
 func (x *ApproveRecurringInstanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[45]
+	mi := &file_contract_v1_contract_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2915,7 +3047,7 @@ func (x *ApproveRecurringInstanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveRecurringInstanceRequest.ProtoReflect.Descriptor instead.
 func (*ApproveRecurringInstanceRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{45}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ApproveRecurringInstanceRequest) GetInstanceId() string {
@@ -2942,7 +3074,7 @@ type ApproveRecurringInstanceResponse struct {
 
 func (x *ApproveRecurringInstanceResponse) Reset() {
 	*x = ApproveRecurringInstanceResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[46]
+	mi := &file_contract_v1_contract_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2954,7 +3086,7 @@ func (x *ApproveRecurringInstanceResponse) String() string {
 func (*ApproveRecurringInstanceResponse) ProtoMessage() {}
 
 func (x *ApproveRecurringInstanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[46]
+	mi := &file_contract_v1_contract_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2967,7 +3099,7 @@ func (x *ApproveRecurringInstanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveRecurringInstanceResponse.ProtoReflect.Descriptor instead.
 func (*ApproveRecurringInstanceResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{46}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ApproveRecurringInstanceResponse) GetInstance() *RecurringInstance {
@@ -3005,7 +3137,7 @@ type Dispute struct {
 
 func (x *Dispute) Reset() {
 	*x = Dispute{}
-	mi := &file_contract_v1_contract_proto_msgTypes[47]
+	mi := &file_contract_v1_contract_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3017,7 +3149,7 @@ func (x *Dispute) String() string {
 func (*Dispute) ProtoMessage() {}
 
 func (x *Dispute) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[47]
+	mi := &file_contract_v1_contract_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3030,7 +3162,7 @@ func (x *Dispute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Dispute.ProtoReflect.Descriptor instead.
 func (*Dispute) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{47}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *Dispute) GetId() string {
@@ -3138,7 +3270,7 @@ type OpenDisputeRequest struct {
 
 func (x *OpenDisputeRequest) Reset() {
 	*x = OpenDisputeRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[48]
+	mi := &file_contract_v1_contract_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3150,7 +3282,7 @@ func (x *OpenDisputeRequest) String() string {
 func (*OpenDisputeRequest) ProtoMessage() {}
 
 func (x *OpenDisputeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[48]
+	mi := &file_contract_v1_contract_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3163,7 +3295,7 @@ func (x *OpenDisputeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenDisputeRequest.ProtoReflect.Descriptor instead.
 func (*OpenDisputeRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{48}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *OpenDisputeRequest) GetContractId() string {
@@ -3217,7 +3349,7 @@ type OpenDisputeResponse struct {
 
 func (x *OpenDisputeResponse) Reset() {
 	*x = OpenDisputeResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[49]
+	mi := &file_contract_v1_contract_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3229,7 +3361,7 @@ func (x *OpenDisputeResponse) String() string {
 func (*OpenDisputeResponse) ProtoMessage() {}
 
 func (x *OpenDisputeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[49]
+	mi := &file_contract_v1_contract_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3242,7 +3374,7 @@ func (x *OpenDisputeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenDisputeResponse.ProtoReflect.Descriptor instead.
 func (*OpenDisputeResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{49}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *OpenDisputeResponse) GetDispute() *Dispute {
@@ -3261,7 +3393,7 @@ type GetDisputeRequest struct {
 
 func (x *GetDisputeRequest) Reset() {
 	*x = GetDisputeRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[50]
+	mi := &file_contract_v1_contract_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3273,7 +3405,7 @@ func (x *GetDisputeRequest) String() string {
 func (*GetDisputeRequest) ProtoMessage() {}
 
 func (x *GetDisputeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[50]
+	mi := &file_contract_v1_contract_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3286,7 +3418,7 @@ func (x *GetDisputeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDisputeRequest.ProtoReflect.Descriptor instead.
 func (*GetDisputeRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{50}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetDisputeRequest) GetDisputeId() string {
@@ -3305,7 +3437,7 @@ type GetDisputeResponse struct {
 
 func (x *GetDisputeResponse) Reset() {
 	*x = GetDisputeResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[51]
+	mi := &file_contract_v1_contract_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3317,7 +3449,7 @@ func (x *GetDisputeResponse) String() string {
 func (*GetDisputeResponse) ProtoMessage() {}
 
 func (x *GetDisputeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[51]
+	mi := &file_contract_v1_contract_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3330,7 +3462,7 @@ func (x *GetDisputeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDisputeResponse.ProtoReflect.Descriptor instead.
 func (*GetDisputeResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{51}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetDisputeResponse) GetDispute() *Dispute {
@@ -3353,7 +3485,7 @@ type ListDisputesRequest struct {
 
 func (x *ListDisputesRequest) Reset() {
 	*x = ListDisputesRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[52]
+	mi := &file_contract_v1_contract_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3365,7 +3497,7 @@ func (x *ListDisputesRequest) String() string {
 func (*ListDisputesRequest) ProtoMessage() {}
 
 func (x *ListDisputesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[52]
+	mi := &file_contract_v1_contract_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3378,7 +3510,7 @@ func (x *ListDisputesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDisputesRequest.ProtoReflect.Descriptor instead.
 func (*ListDisputesRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{52}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListDisputesRequest) GetContractId() string {
@@ -3426,7 +3558,7 @@ type ListDisputesResponse struct {
 
 func (x *ListDisputesResponse) Reset() {
 	*x = ListDisputesResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[53]
+	mi := &file_contract_v1_contract_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3438,7 +3570,7 @@ func (x *ListDisputesResponse) String() string {
 func (*ListDisputesResponse) ProtoMessage() {}
 
 func (x *ListDisputesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[53]
+	mi := &file_contract_v1_contract_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3451,7 +3583,7 @@ func (x *ListDisputesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDisputesResponse.ProtoReflect.Descriptor instead.
 func (*ListDisputesResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{53}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ListDisputesResponse) GetDisputes() []*Dispute {
@@ -3482,7 +3614,7 @@ type AdminResolveDisputeRequest struct {
 
 func (x *AdminResolveDisputeRequest) Reset() {
 	*x = AdminResolveDisputeRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[54]
+	mi := &file_contract_v1_contract_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3494,7 +3626,7 @@ func (x *AdminResolveDisputeRequest) String() string {
 func (*AdminResolveDisputeRequest) ProtoMessage() {}
 
 func (x *AdminResolveDisputeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[54]
+	mi := &file_contract_v1_contract_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3507,7 +3639,7 @@ func (x *AdminResolveDisputeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminResolveDisputeRequest.ProtoReflect.Descriptor instead.
 func (*AdminResolveDisputeRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{54}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *AdminResolveDisputeRequest) GetDisputeId() string {
@@ -3561,7 +3693,7 @@ type AdminResolveDisputeResponse struct {
 
 func (x *AdminResolveDisputeResponse) Reset() {
 	*x = AdminResolveDisputeResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[55]
+	mi := &file_contract_v1_contract_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3573,7 +3705,7 @@ func (x *AdminResolveDisputeResponse) String() string {
 func (*AdminResolveDisputeResponse) ProtoMessage() {}
 
 func (x *AdminResolveDisputeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[55]
+	mi := &file_contract_v1_contract_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3586,7 +3718,7 @@ func (x *AdminResolveDisputeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminResolveDisputeResponse.ProtoReflect.Descriptor instead.
 func (*AdminResolveDisputeResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{55}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *AdminResolveDisputeResponse) GetDispute() *Dispute {
@@ -3606,7 +3738,7 @@ type ReportNoShowRequest struct {
 
 func (x *ReportNoShowRequest) Reset() {
 	*x = ReportNoShowRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[56]
+	mi := &file_contract_v1_contract_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3618,7 +3750,7 @@ func (x *ReportNoShowRequest) String() string {
 func (*ReportNoShowRequest) ProtoMessage() {}
 
 func (x *ReportNoShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[56]
+	mi := &file_contract_v1_contract_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3631,7 +3763,7 @@ func (x *ReportNoShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportNoShowRequest.ProtoReflect.Descriptor instead.
 func (*ReportNoShowRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{56}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ReportNoShowRequest) GetContractId() string {
@@ -3657,7 +3789,7 @@ type ReportNoShowResponse struct {
 
 func (x *ReportNoShowResponse) Reset() {
 	*x = ReportNoShowResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[57]
+	mi := &file_contract_v1_contract_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3669,7 +3801,7 @@ func (x *ReportNoShowResponse) String() string {
 func (*ReportNoShowResponse) ProtoMessage() {}
 
 func (x *ReportNoShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[57]
+	mi := &file_contract_v1_contract_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3682,7 +3814,7 @@ func (x *ReportNoShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportNoShowResponse.ProtoReflect.Descriptor instead.
 func (*ReportNoShowResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{57}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ReportNoShowResponse) GetContract() *Contract {
@@ -3702,7 +3834,7 @@ type ReportAbandonmentRequest struct {
 
 func (x *ReportAbandonmentRequest) Reset() {
 	*x = ReportAbandonmentRequest{}
-	mi := &file_contract_v1_contract_proto_msgTypes[58]
+	mi := &file_contract_v1_contract_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3714,7 +3846,7 @@ func (x *ReportAbandonmentRequest) String() string {
 func (*ReportAbandonmentRequest) ProtoMessage() {}
 
 func (x *ReportAbandonmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[58]
+	mi := &file_contract_v1_contract_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3727,7 +3859,7 @@ func (x *ReportAbandonmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportAbandonmentRequest.ProtoReflect.Descriptor instead.
 func (*ReportAbandonmentRequest) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{58}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ReportAbandonmentRequest) GetContractId() string {
@@ -3753,7 +3885,7 @@ type ReportAbandonmentResponse struct {
 
 func (x *ReportAbandonmentResponse) Reset() {
 	*x = ReportAbandonmentResponse{}
-	mi := &file_contract_v1_contract_proto_msgTypes[59]
+	mi := &file_contract_v1_contract_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3765,7 +3897,7 @@ func (x *ReportAbandonmentResponse) String() string {
 func (*ReportAbandonmentResponse) ProtoMessage() {}
 
 func (x *ReportAbandonmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_contract_v1_contract_proto_msgTypes[59]
+	mi := &file_contract_v1_contract_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3778,7 +3910,7 @@ func (x *ReportAbandonmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportAbandonmentResponse.ProtoReflect.Descriptor instead.
 func (*ReportAbandonmentResponse) Descriptor() ([]byte, []int) {
-	return file_contract_v1_contract_proto_rawDescGZIP(), []int{59}
+	return file_contract_v1_contract_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ReportAbandonmentResponse) GetContract() *Contract {
@@ -3864,7 +3996,18 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12!\n" +
 	"\famount_cents\x18\x05 \x01(\x03R\vamountCents\x12#\n" +
 	"\rauto_approved\x18\x06 \x01(\bR\fautoApproved\x12=\n" +
-	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"c\n" +
+	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xfd\x01\n" +
+	"\x1eCreateContractFromAwardRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x15\n" +
+	"\x06bid_id\x18\x02 \x01(\tR\x05bidId\x12\x1f\n" +
+	"\vcustomer_id\x18\x03 \x01(\tR\n" +
+	"customerId\x12\x1f\n" +
+	"\vprovider_id\x18\x04 \x01(\tR\n" +
+	"providerId\x12!\n" +
+	"\famount_cents\x18\x05 \x01(\x03R\vamountCents\x12H\n" +
+	"\x0epayment_timing\x18\x06 \x01(\x0e2!.nomarkup.common.v1.PaymentTimingR\rpaymentTiming\"]\n" +
+	"\x1fCreateContractFromAwardResponse\x12:\n" +
+	"\bcontract\x18\x01 \x01(\v2\x1e.nomarkup.contract.v1.ContractR\bcontract\"c\n" +
 	"\x12GetContractRequest\x12\x1f\n" +
 	"\vcontract_id\x18\x01 \x01(\tR\n" +
 	"contractId\x12,\n" +
@@ -4128,8 +4271,9 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"\x1bDISPUTE_STATUS_UNDER_REVIEW\x10\x02\x12\x1b\n" +
 	"\x17DISPUTE_STATUS_RESOLVED\x10\x03\x12\x1c\n" +
 	"\x18DISPUTE_STATUS_ESCALATED\x10\x04\x12\x19\n" +
-	"\x15DISPUTE_STATUS_CLOSED\x10\x052\xa4\x18\n" +
-	"\x0fContractService\x12b\n" +
+	"\x15DISPUTE_STATUS_CLOSED\x10\x052\xad\x19\n" +
+	"\x0fContractService\x12\x86\x01\n" +
+	"\x17CreateContractFromAward\x124.nomarkup.contract.v1.CreateContractFromAwardRequest\x1a5.nomarkup.contract.v1.CreateContractFromAwardResponse\x12b\n" +
 	"\vGetContract\x12(.nomarkup.contract.v1.GetContractRequest\x1a).nomarkup.contract.v1.GetContractResponse\x12k\n" +
 	"\x0eAcceptContract\x12+.nomarkup.contract.v1.AcceptContractRequest\x1a,.nomarkup.contract.v1.AcceptContractResponse\x12\\\n" +
 	"\tStartWork\x12&.nomarkup.contract.v1.StartWorkRequest\x1a'.nomarkup.contract.v1.StartWorkResponse\x12t\n" +
@@ -4172,7 +4316,7 @@ func file_contract_v1_contract_proto_rawDescGZIP() []byte {
 }
 
 var file_contract_v1_contract_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_contract_v1_contract_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
+var file_contract_v1_contract_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
 var file_contract_v1_contract_proto_goTypes = []any{
 	(ContractStatus)(0),                       // 0: nomarkup.contract.v1.ContractStatus
 	(MilestoneStatus)(0),                      // 1: nomarkup.contract.v1.MilestoneStatus
@@ -4183,185 +4327,191 @@ var file_contract_v1_contract_proto_goTypes = []any{
 	(*ChangeOrder)(nil),                       // 6: nomarkup.contract.v1.ChangeOrder
 	(*RecurringConfig)(nil),                   // 7: nomarkup.contract.v1.RecurringConfig
 	(*RecurringInstance)(nil),                 // 8: nomarkup.contract.v1.RecurringInstance
-	(*GetContractRequest)(nil),                // 9: nomarkup.contract.v1.GetContractRequest
-	(*GetContractResponse)(nil),               // 10: nomarkup.contract.v1.GetContractResponse
-	(*AcceptContractRequest)(nil),             // 11: nomarkup.contract.v1.AcceptContractRequest
-	(*AcceptContractResponse)(nil),            // 12: nomarkup.contract.v1.AcceptContractResponse
-	(*StartWorkRequest)(nil),                  // 13: nomarkup.contract.v1.StartWorkRequest
-	(*StartWorkResponse)(nil),                 // 14: nomarkup.contract.v1.StartWorkResponse
-	(*ExportContractPDFRequest)(nil),          // 15: nomarkup.contract.v1.ExportContractPDFRequest
-	(*ExportContractPDFResponse)(nil),         // 16: nomarkup.contract.v1.ExportContractPDFResponse
-	(*ListContractsRequest)(nil),              // 17: nomarkup.contract.v1.ListContractsRequest
-	(*ListContractsResponse)(nil),             // 18: nomarkup.contract.v1.ListContractsResponse
-	(*SubmitMilestoneRequest)(nil),            // 19: nomarkup.contract.v1.SubmitMilestoneRequest
-	(*SubmitMilestoneResponse)(nil),           // 20: nomarkup.contract.v1.SubmitMilestoneResponse
-	(*ApproveMilestoneRequest)(nil),           // 21: nomarkup.contract.v1.ApproveMilestoneRequest
-	(*ApproveMilestoneResponse)(nil),          // 22: nomarkup.contract.v1.ApproveMilestoneResponse
-	(*RequestRevisionRequest)(nil),            // 23: nomarkup.contract.v1.RequestRevisionRequest
-	(*RequestRevisionResponse)(nil),           // 24: nomarkup.contract.v1.RequestRevisionResponse
-	(*MarkCompleteRequest)(nil),               // 25: nomarkup.contract.v1.MarkCompleteRequest
-	(*MarkCompleteResponse)(nil),              // 26: nomarkup.contract.v1.MarkCompleteResponse
-	(*ApproveCompletionRequest)(nil),          // 27: nomarkup.contract.v1.ApproveCompletionRequest
-	(*ApproveCompletionResponse)(nil),         // 28: nomarkup.contract.v1.ApproveCompletionResponse
-	(*ProposeChangeOrderRequest)(nil),         // 29: nomarkup.contract.v1.ProposeChangeOrderRequest
-	(*ProposeChangeOrderResponse)(nil),        // 30: nomarkup.contract.v1.ProposeChangeOrderResponse
-	(*RespondToChangeOrderRequest)(nil),       // 31: nomarkup.contract.v1.RespondToChangeOrderRequest
-	(*RespondToChangeOrderResponse)(nil),      // 32: nomarkup.contract.v1.RespondToChangeOrderResponse
-	(*CancelContractRequest)(nil),             // 33: nomarkup.contract.v1.CancelContractRequest
-	(*CancelContractResponse)(nil),            // 34: nomarkup.contract.v1.CancelContractResponse
-	(*GetRecurringConfigRequest)(nil),         // 35: nomarkup.contract.v1.GetRecurringConfigRequest
-	(*GetRecurringConfigResponse)(nil),        // 36: nomarkup.contract.v1.GetRecurringConfigResponse
-	(*UpdateRecurringConfigRequest)(nil),      // 37: nomarkup.contract.v1.UpdateRecurringConfigRequest
-	(*UpdateRecurringConfigResponse)(nil),     // 38: nomarkup.contract.v1.UpdateRecurringConfigResponse
-	(*PauseRecurringRequest)(nil),             // 39: nomarkup.contract.v1.PauseRecurringRequest
-	(*PauseRecurringResponse)(nil),            // 40: nomarkup.contract.v1.PauseRecurringResponse
-	(*ResumeRecurringRequest)(nil),            // 41: nomarkup.contract.v1.ResumeRecurringRequest
-	(*ResumeRecurringResponse)(nil),           // 42: nomarkup.contract.v1.ResumeRecurringResponse
-	(*CancelRecurringRequest)(nil),            // 43: nomarkup.contract.v1.CancelRecurringRequest
-	(*CancelRecurringResponse)(nil),           // 44: nomarkup.contract.v1.CancelRecurringResponse
-	(*ListRecurringInstancesRequest)(nil),     // 45: nomarkup.contract.v1.ListRecurringInstancesRequest
-	(*ListRecurringInstancesResponse)(nil),    // 46: nomarkup.contract.v1.ListRecurringInstancesResponse
-	(*CompleteRecurringInstanceRequest)(nil),  // 47: nomarkup.contract.v1.CompleteRecurringInstanceRequest
-	(*CompleteRecurringInstanceResponse)(nil), // 48: nomarkup.contract.v1.CompleteRecurringInstanceResponse
-	(*ApproveRecurringInstanceRequest)(nil),   // 49: nomarkup.contract.v1.ApproveRecurringInstanceRequest
-	(*ApproveRecurringInstanceResponse)(nil),  // 50: nomarkup.contract.v1.ApproveRecurringInstanceResponse
-	(*Dispute)(nil),                           // 51: nomarkup.contract.v1.Dispute
-	(*OpenDisputeRequest)(nil),                // 52: nomarkup.contract.v1.OpenDisputeRequest
-	(*OpenDisputeResponse)(nil),               // 53: nomarkup.contract.v1.OpenDisputeResponse
-	(*GetDisputeRequest)(nil),                 // 54: nomarkup.contract.v1.GetDisputeRequest
-	(*GetDisputeResponse)(nil),                // 55: nomarkup.contract.v1.GetDisputeResponse
-	(*ListDisputesRequest)(nil),               // 56: nomarkup.contract.v1.ListDisputesRequest
-	(*ListDisputesResponse)(nil),              // 57: nomarkup.contract.v1.ListDisputesResponse
-	(*AdminResolveDisputeRequest)(nil),        // 58: nomarkup.contract.v1.AdminResolveDisputeRequest
-	(*AdminResolveDisputeResponse)(nil),       // 59: nomarkup.contract.v1.AdminResolveDisputeResponse
-	(*ReportNoShowRequest)(nil),               // 60: nomarkup.contract.v1.ReportNoShowRequest
-	(*ReportNoShowResponse)(nil),              // 61: nomarkup.contract.v1.ReportNoShowResponse
-	(*ReportAbandonmentRequest)(nil),          // 62: nomarkup.contract.v1.ReportAbandonmentRequest
-	(*ReportAbandonmentResponse)(nil),         // 63: nomarkup.contract.v1.ReportAbandonmentResponse
-	(v1.PaymentTiming)(0),                     // 64: nomarkup.common.v1.PaymentTiming
-	(*timestamppb.Timestamp)(nil),             // 65: google.protobuf.Timestamp
-	(v1.RecurrenceFrequency)(0),               // 66: nomarkup.common.v1.RecurrenceFrequency
-	(*v1.PaginationRequest)(nil),              // 67: nomarkup.common.v1.PaginationRequest
-	(*v1.PaginationResponse)(nil),             // 68: nomarkup.common.v1.PaginationResponse
+	(*CreateContractFromAwardRequest)(nil),    // 9: nomarkup.contract.v1.CreateContractFromAwardRequest
+	(*CreateContractFromAwardResponse)(nil),   // 10: nomarkup.contract.v1.CreateContractFromAwardResponse
+	(*GetContractRequest)(nil),                // 11: nomarkup.contract.v1.GetContractRequest
+	(*GetContractResponse)(nil),               // 12: nomarkup.contract.v1.GetContractResponse
+	(*AcceptContractRequest)(nil),             // 13: nomarkup.contract.v1.AcceptContractRequest
+	(*AcceptContractResponse)(nil),            // 14: nomarkup.contract.v1.AcceptContractResponse
+	(*StartWorkRequest)(nil),                  // 15: nomarkup.contract.v1.StartWorkRequest
+	(*StartWorkResponse)(nil),                 // 16: nomarkup.contract.v1.StartWorkResponse
+	(*ExportContractPDFRequest)(nil),          // 17: nomarkup.contract.v1.ExportContractPDFRequest
+	(*ExportContractPDFResponse)(nil),         // 18: nomarkup.contract.v1.ExportContractPDFResponse
+	(*ListContractsRequest)(nil),              // 19: nomarkup.contract.v1.ListContractsRequest
+	(*ListContractsResponse)(nil),             // 20: nomarkup.contract.v1.ListContractsResponse
+	(*SubmitMilestoneRequest)(nil),            // 21: nomarkup.contract.v1.SubmitMilestoneRequest
+	(*SubmitMilestoneResponse)(nil),           // 22: nomarkup.contract.v1.SubmitMilestoneResponse
+	(*ApproveMilestoneRequest)(nil),           // 23: nomarkup.contract.v1.ApproveMilestoneRequest
+	(*ApproveMilestoneResponse)(nil),          // 24: nomarkup.contract.v1.ApproveMilestoneResponse
+	(*RequestRevisionRequest)(nil),            // 25: nomarkup.contract.v1.RequestRevisionRequest
+	(*RequestRevisionResponse)(nil),           // 26: nomarkup.contract.v1.RequestRevisionResponse
+	(*MarkCompleteRequest)(nil),               // 27: nomarkup.contract.v1.MarkCompleteRequest
+	(*MarkCompleteResponse)(nil),              // 28: nomarkup.contract.v1.MarkCompleteResponse
+	(*ApproveCompletionRequest)(nil),          // 29: nomarkup.contract.v1.ApproveCompletionRequest
+	(*ApproveCompletionResponse)(nil),         // 30: nomarkup.contract.v1.ApproveCompletionResponse
+	(*ProposeChangeOrderRequest)(nil),         // 31: nomarkup.contract.v1.ProposeChangeOrderRequest
+	(*ProposeChangeOrderResponse)(nil),        // 32: nomarkup.contract.v1.ProposeChangeOrderResponse
+	(*RespondToChangeOrderRequest)(nil),       // 33: nomarkup.contract.v1.RespondToChangeOrderRequest
+	(*RespondToChangeOrderResponse)(nil),      // 34: nomarkup.contract.v1.RespondToChangeOrderResponse
+	(*CancelContractRequest)(nil),             // 35: nomarkup.contract.v1.CancelContractRequest
+	(*CancelContractResponse)(nil),            // 36: nomarkup.contract.v1.CancelContractResponse
+	(*GetRecurringConfigRequest)(nil),         // 37: nomarkup.contract.v1.GetRecurringConfigRequest
+	(*GetRecurringConfigResponse)(nil),        // 38: nomarkup.contract.v1.GetRecurringConfigResponse
+	(*UpdateRecurringConfigRequest)(nil),      // 39: nomarkup.contract.v1.UpdateRecurringConfigRequest
+	(*UpdateRecurringConfigResponse)(nil),     // 40: nomarkup.contract.v1.UpdateRecurringConfigResponse
+	(*PauseRecurringRequest)(nil),             // 41: nomarkup.contract.v1.PauseRecurringRequest
+	(*PauseRecurringResponse)(nil),            // 42: nomarkup.contract.v1.PauseRecurringResponse
+	(*ResumeRecurringRequest)(nil),            // 43: nomarkup.contract.v1.ResumeRecurringRequest
+	(*ResumeRecurringResponse)(nil),           // 44: nomarkup.contract.v1.ResumeRecurringResponse
+	(*CancelRecurringRequest)(nil),            // 45: nomarkup.contract.v1.CancelRecurringRequest
+	(*CancelRecurringResponse)(nil),           // 46: nomarkup.contract.v1.CancelRecurringResponse
+	(*ListRecurringInstancesRequest)(nil),     // 47: nomarkup.contract.v1.ListRecurringInstancesRequest
+	(*ListRecurringInstancesResponse)(nil),    // 48: nomarkup.contract.v1.ListRecurringInstancesResponse
+	(*CompleteRecurringInstanceRequest)(nil),  // 49: nomarkup.contract.v1.CompleteRecurringInstanceRequest
+	(*CompleteRecurringInstanceResponse)(nil), // 50: nomarkup.contract.v1.CompleteRecurringInstanceResponse
+	(*ApproveRecurringInstanceRequest)(nil),   // 51: nomarkup.contract.v1.ApproveRecurringInstanceRequest
+	(*ApproveRecurringInstanceResponse)(nil),  // 52: nomarkup.contract.v1.ApproveRecurringInstanceResponse
+	(*Dispute)(nil),                           // 53: nomarkup.contract.v1.Dispute
+	(*OpenDisputeRequest)(nil),                // 54: nomarkup.contract.v1.OpenDisputeRequest
+	(*OpenDisputeResponse)(nil),               // 55: nomarkup.contract.v1.OpenDisputeResponse
+	(*GetDisputeRequest)(nil),                 // 56: nomarkup.contract.v1.GetDisputeRequest
+	(*GetDisputeResponse)(nil),                // 57: nomarkup.contract.v1.GetDisputeResponse
+	(*ListDisputesRequest)(nil),               // 58: nomarkup.contract.v1.ListDisputesRequest
+	(*ListDisputesResponse)(nil),              // 59: nomarkup.contract.v1.ListDisputesResponse
+	(*AdminResolveDisputeRequest)(nil),        // 60: nomarkup.contract.v1.AdminResolveDisputeRequest
+	(*AdminResolveDisputeResponse)(nil),       // 61: nomarkup.contract.v1.AdminResolveDisputeResponse
+	(*ReportNoShowRequest)(nil),               // 62: nomarkup.contract.v1.ReportNoShowRequest
+	(*ReportNoShowResponse)(nil),              // 63: nomarkup.contract.v1.ReportNoShowResponse
+	(*ReportAbandonmentRequest)(nil),          // 64: nomarkup.contract.v1.ReportAbandonmentRequest
+	(*ReportAbandonmentResponse)(nil),         // 65: nomarkup.contract.v1.ReportAbandonmentResponse
+	(v1.PaymentTiming)(0),                     // 66: nomarkup.common.v1.PaymentTiming
+	(*timestamppb.Timestamp)(nil),             // 67: google.protobuf.Timestamp
+	(v1.RecurrenceFrequency)(0),               // 68: nomarkup.common.v1.RecurrenceFrequency
+	(*v1.PaginationRequest)(nil),              // 69: nomarkup.common.v1.PaginationRequest
+	(*v1.PaginationResponse)(nil),             // 70: nomarkup.common.v1.PaginationResponse
 }
 var file_contract_v1_contract_proto_depIdxs = []int32{
-	64, // 0: nomarkup.contract.v1.Contract.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	66, // 0: nomarkup.contract.v1.Contract.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
 	0,  // 1: nomarkup.contract.v1.Contract.status:type_name -> nomarkup.contract.v1.ContractStatus
-	65, // 2: nomarkup.contract.v1.Contract.acceptance_deadline:type_name -> google.protobuf.Timestamp
+	67, // 2: nomarkup.contract.v1.Contract.acceptance_deadline:type_name -> google.protobuf.Timestamp
 	5,  // 3: nomarkup.contract.v1.Contract.milestones:type_name -> nomarkup.contract.v1.Milestone
 	7,  // 4: nomarkup.contract.v1.Contract.recurring:type_name -> nomarkup.contract.v1.RecurringConfig
-	65, // 5: nomarkup.contract.v1.Contract.accepted_at:type_name -> google.protobuf.Timestamp
-	65, // 6: nomarkup.contract.v1.Contract.started_at:type_name -> google.protobuf.Timestamp
-	65, // 7: nomarkup.contract.v1.Contract.completed_at:type_name -> google.protobuf.Timestamp
-	65, // 8: nomarkup.contract.v1.Contract.created_at:type_name -> google.protobuf.Timestamp
+	67, // 5: nomarkup.contract.v1.Contract.accepted_at:type_name -> google.protobuf.Timestamp
+	67, // 6: nomarkup.contract.v1.Contract.started_at:type_name -> google.protobuf.Timestamp
+	67, // 7: nomarkup.contract.v1.Contract.completed_at:type_name -> google.protobuf.Timestamp
+	67, // 8: nomarkup.contract.v1.Contract.created_at:type_name -> google.protobuf.Timestamp
 	1,  // 9: nomarkup.contract.v1.Milestone.status:type_name -> nomarkup.contract.v1.MilestoneStatus
-	65, // 10: nomarkup.contract.v1.Milestone.submitted_at:type_name -> google.protobuf.Timestamp
-	65, // 11: nomarkup.contract.v1.Milestone.approved_at:type_name -> google.protobuf.Timestamp
-	65, // 12: nomarkup.contract.v1.ChangeOrder.created_at:type_name -> google.protobuf.Timestamp
-	66, // 13: nomarkup.contract.v1.RecurringConfig.frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
-	65, // 14: nomarkup.contract.v1.RecurringConfig.next_occurrence:type_name -> google.protobuf.Timestamp
-	65, // 15: nomarkup.contract.v1.RecurringInstance.occurrence_date:type_name -> google.protobuf.Timestamp
-	65, // 16: nomarkup.contract.v1.RecurringInstance.completed_at:type_name -> google.protobuf.Timestamp
-	4,  // 17: nomarkup.contract.v1.GetContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	6,  // 18: nomarkup.contract.v1.GetContractResponse.change_orders:type_name -> nomarkup.contract.v1.ChangeOrder
-	4,  // 19: nomarkup.contract.v1.AcceptContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	4,  // 20: nomarkup.contract.v1.StartWorkResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	0,  // 21: nomarkup.contract.v1.ListContractsRequest.status_filter:type_name -> nomarkup.contract.v1.ContractStatus
-	67, // 22: nomarkup.contract.v1.ListContractsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	4,  // 23: nomarkup.contract.v1.ListContractsResponse.contracts:type_name -> nomarkup.contract.v1.Contract
-	68, // 24: nomarkup.contract.v1.ListContractsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	5,  // 25: nomarkup.contract.v1.SubmitMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
-	5,  // 26: nomarkup.contract.v1.ApproveMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
-	5,  // 27: nomarkup.contract.v1.RequestRevisionResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
-	4,  // 28: nomarkup.contract.v1.MarkCompleteResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	4,  // 29: nomarkup.contract.v1.ApproveCompletionResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	5,  // 30: nomarkup.contract.v1.ProposeChangeOrderRequest.added_milestones:type_name -> nomarkup.contract.v1.Milestone
-	6,  // 31: nomarkup.contract.v1.ProposeChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
-	6,  // 32: nomarkup.contract.v1.RespondToChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
-	4,  // 33: nomarkup.contract.v1.CancelContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	7,  // 34: nomarkup.contract.v1.GetRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 35: nomarkup.contract.v1.UpdateRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 36: nomarkup.contract.v1.PauseRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 37: nomarkup.contract.v1.ResumeRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 38: nomarkup.contract.v1.CancelRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	67, // 39: nomarkup.contract.v1.ListRecurringInstancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	8,  // 40: nomarkup.contract.v1.ListRecurringInstancesResponse.instances:type_name -> nomarkup.contract.v1.RecurringInstance
-	68, // 41: nomarkup.contract.v1.ListRecurringInstancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	8,  // 42: nomarkup.contract.v1.CompleteRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
-	8,  // 43: nomarkup.contract.v1.ApproveRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
-	2,  // 44: nomarkup.contract.v1.Dispute.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
-	3,  // 45: nomarkup.contract.v1.Dispute.status:type_name -> nomarkup.contract.v1.DisputeStatus
-	65, // 46: nomarkup.contract.v1.Dispute.created_at:type_name -> google.protobuf.Timestamp
-	65, // 47: nomarkup.contract.v1.Dispute.resolved_at:type_name -> google.protobuf.Timestamp
-	2,  // 48: nomarkup.contract.v1.OpenDisputeRequest.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
-	51, // 49: nomarkup.contract.v1.OpenDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
-	51, // 50: nomarkup.contract.v1.GetDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
-	3,  // 51: nomarkup.contract.v1.ListDisputesRequest.status_filter:type_name -> nomarkup.contract.v1.DisputeStatus
-	67, // 52: nomarkup.contract.v1.ListDisputesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	51, // 53: nomarkup.contract.v1.ListDisputesResponse.disputes:type_name -> nomarkup.contract.v1.Dispute
-	68, // 54: nomarkup.contract.v1.ListDisputesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	51, // 55: nomarkup.contract.v1.AdminResolveDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
-	4,  // 56: nomarkup.contract.v1.ReportNoShowResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	4,  // 57: nomarkup.contract.v1.ReportAbandonmentResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	9,  // 58: nomarkup.contract.v1.ContractService.GetContract:input_type -> nomarkup.contract.v1.GetContractRequest
-	11, // 59: nomarkup.contract.v1.ContractService.AcceptContract:input_type -> nomarkup.contract.v1.AcceptContractRequest
-	13, // 60: nomarkup.contract.v1.ContractService.StartWork:input_type -> nomarkup.contract.v1.StartWorkRequest
-	15, // 61: nomarkup.contract.v1.ContractService.ExportContractPDF:input_type -> nomarkup.contract.v1.ExportContractPDFRequest
-	17, // 62: nomarkup.contract.v1.ContractService.ListContracts:input_type -> nomarkup.contract.v1.ListContractsRequest
-	19, // 63: nomarkup.contract.v1.ContractService.SubmitMilestone:input_type -> nomarkup.contract.v1.SubmitMilestoneRequest
-	21, // 64: nomarkup.contract.v1.ContractService.ApproveMilestone:input_type -> nomarkup.contract.v1.ApproveMilestoneRequest
-	23, // 65: nomarkup.contract.v1.ContractService.RequestRevision:input_type -> nomarkup.contract.v1.RequestRevisionRequest
-	25, // 66: nomarkup.contract.v1.ContractService.MarkComplete:input_type -> nomarkup.contract.v1.MarkCompleteRequest
-	27, // 67: nomarkup.contract.v1.ContractService.ApproveCompletion:input_type -> nomarkup.contract.v1.ApproveCompletionRequest
-	29, // 68: nomarkup.contract.v1.ContractService.ProposeChangeOrder:input_type -> nomarkup.contract.v1.ProposeChangeOrderRequest
-	31, // 69: nomarkup.contract.v1.ContractService.RespondToChangeOrder:input_type -> nomarkup.contract.v1.RespondToChangeOrderRequest
-	33, // 70: nomarkup.contract.v1.ContractService.CancelContract:input_type -> nomarkup.contract.v1.CancelContractRequest
-	35, // 71: nomarkup.contract.v1.ContractService.GetRecurringConfig:input_type -> nomarkup.contract.v1.GetRecurringConfigRequest
-	37, // 72: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:input_type -> nomarkup.contract.v1.UpdateRecurringConfigRequest
-	39, // 73: nomarkup.contract.v1.ContractService.PauseRecurring:input_type -> nomarkup.contract.v1.PauseRecurringRequest
-	41, // 74: nomarkup.contract.v1.ContractService.ResumeRecurring:input_type -> nomarkup.contract.v1.ResumeRecurringRequest
-	43, // 75: nomarkup.contract.v1.ContractService.CancelRecurring:input_type -> nomarkup.contract.v1.CancelRecurringRequest
-	45, // 76: nomarkup.contract.v1.ContractService.ListRecurringInstances:input_type -> nomarkup.contract.v1.ListRecurringInstancesRequest
-	47, // 77: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:input_type -> nomarkup.contract.v1.CompleteRecurringInstanceRequest
-	49, // 78: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:input_type -> nomarkup.contract.v1.ApproveRecurringInstanceRequest
-	52, // 79: nomarkup.contract.v1.ContractService.OpenDispute:input_type -> nomarkup.contract.v1.OpenDisputeRequest
-	54, // 80: nomarkup.contract.v1.ContractService.GetDispute:input_type -> nomarkup.contract.v1.GetDisputeRequest
-	56, // 81: nomarkup.contract.v1.ContractService.ListDisputes:input_type -> nomarkup.contract.v1.ListDisputesRequest
-	58, // 82: nomarkup.contract.v1.ContractService.AdminResolveDispute:input_type -> nomarkup.contract.v1.AdminResolveDisputeRequest
-	60, // 83: nomarkup.contract.v1.ContractService.ReportNoShow:input_type -> nomarkup.contract.v1.ReportNoShowRequest
-	62, // 84: nomarkup.contract.v1.ContractService.ReportAbandonment:input_type -> nomarkup.contract.v1.ReportAbandonmentRequest
-	10, // 85: nomarkup.contract.v1.ContractService.GetContract:output_type -> nomarkup.contract.v1.GetContractResponse
-	12, // 86: nomarkup.contract.v1.ContractService.AcceptContract:output_type -> nomarkup.contract.v1.AcceptContractResponse
-	14, // 87: nomarkup.contract.v1.ContractService.StartWork:output_type -> nomarkup.contract.v1.StartWorkResponse
-	16, // 88: nomarkup.contract.v1.ContractService.ExportContractPDF:output_type -> nomarkup.contract.v1.ExportContractPDFResponse
-	18, // 89: nomarkup.contract.v1.ContractService.ListContracts:output_type -> nomarkup.contract.v1.ListContractsResponse
-	20, // 90: nomarkup.contract.v1.ContractService.SubmitMilestone:output_type -> nomarkup.contract.v1.SubmitMilestoneResponse
-	22, // 91: nomarkup.contract.v1.ContractService.ApproveMilestone:output_type -> nomarkup.contract.v1.ApproveMilestoneResponse
-	24, // 92: nomarkup.contract.v1.ContractService.RequestRevision:output_type -> nomarkup.contract.v1.RequestRevisionResponse
-	26, // 93: nomarkup.contract.v1.ContractService.MarkComplete:output_type -> nomarkup.contract.v1.MarkCompleteResponse
-	28, // 94: nomarkup.contract.v1.ContractService.ApproveCompletion:output_type -> nomarkup.contract.v1.ApproveCompletionResponse
-	30, // 95: nomarkup.contract.v1.ContractService.ProposeChangeOrder:output_type -> nomarkup.contract.v1.ProposeChangeOrderResponse
-	32, // 96: nomarkup.contract.v1.ContractService.RespondToChangeOrder:output_type -> nomarkup.contract.v1.RespondToChangeOrderResponse
-	34, // 97: nomarkup.contract.v1.ContractService.CancelContract:output_type -> nomarkup.contract.v1.CancelContractResponse
-	36, // 98: nomarkup.contract.v1.ContractService.GetRecurringConfig:output_type -> nomarkup.contract.v1.GetRecurringConfigResponse
-	38, // 99: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:output_type -> nomarkup.contract.v1.UpdateRecurringConfigResponse
-	40, // 100: nomarkup.contract.v1.ContractService.PauseRecurring:output_type -> nomarkup.contract.v1.PauseRecurringResponse
-	42, // 101: nomarkup.contract.v1.ContractService.ResumeRecurring:output_type -> nomarkup.contract.v1.ResumeRecurringResponse
-	44, // 102: nomarkup.contract.v1.ContractService.CancelRecurring:output_type -> nomarkup.contract.v1.CancelRecurringResponse
-	46, // 103: nomarkup.contract.v1.ContractService.ListRecurringInstances:output_type -> nomarkup.contract.v1.ListRecurringInstancesResponse
-	48, // 104: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:output_type -> nomarkup.contract.v1.CompleteRecurringInstanceResponse
-	50, // 105: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:output_type -> nomarkup.contract.v1.ApproveRecurringInstanceResponse
-	53, // 106: nomarkup.contract.v1.ContractService.OpenDispute:output_type -> nomarkup.contract.v1.OpenDisputeResponse
-	55, // 107: nomarkup.contract.v1.ContractService.GetDispute:output_type -> nomarkup.contract.v1.GetDisputeResponse
-	57, // 108: nomarkup.contract.v1.ContractService.ListDisputes:output_type -> nomarkup.contract.v1.ListDisputesResponse
-	59, // 109: nomarkup.contract.v1.ContractService.AdminResolveDispute:output_type -> nomarkup.contract.v1.AdminResolveDisputeResponse
-	61, // 110: nomarkup.contract.v1.ContractService.ReportNoShow:output_type -> nomarkup.contract.v1.ReportNoShowResponse
-	63, // 111: nomarkup.contract.v1.ContractService.ReportAbandonment:output_type -> nomarkup.contract.v1.ReportAbandonmentResponse
-	85, // [85:112] is the sub-list for method output_type
-	58, // [58:85] is the sub-list for method input_type
-	58, // [58:58] is the sub-list for extension type_name
-	58, // [58:58] is the sub-list for extension extendee
-	0,  // [0:58] is the sub-list for field type_name
+	67, // 10: nomarkup.contract.v1.Milestone.submitted_at:type_name -> google.protobuf.Timestamp
+	67, // 11: nomarkup.contract.v1.Milestone.approved_at:type_name -> google.protobuf.Timestamp
+	67, // 12: nomarkup.contract.v1.ChangeOrder.created_at:type_name -> google.protobuf.Timestamp
+	68, // 13: nomarkup.contract.v1.RecurringConfig.frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
+	67, // 14: nomarkup.contract.v1.RecurringConfig.next_occurrence:type_name -> google.protobuf.Timestamp
+	67, // 15: nomarkup.contract.v1.RecurringInstance.occurrence_date:type_name -> google.protobuf.Timestamp
+	67, // 16: nomarkup.contract.v1.RecurringInstance.completed_at:type_name -> google.protobuf.Timestamp
+	66, // 17: nomarkup.contract.v1.CreateContractFromAwardRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	4,  // 18: nomarkup.contract.v1.CreateContractFromAwardResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 19: nomarkup.contract.v1.GetContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	6,  // 20: nomarkup.contract.v1.GetContractResponse.change_orders:type_name -> nomarkup.contract.v1.ChangeOrder
+	4,  // 21: nomarkup.contract.v1.AcceptContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 22: nomarkup.contract.v1.StartWorkResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	0,  // 23: nomarkup.contract.v1.ListContractsRequest.status_filter:type_name -> nomarkup.contract.v1.ContractStatus
+	69, // 24: nomarkup.contract.v1.ListContractsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	4,  // 25: nomarkup.contract.v1.ListContractsResponse.contracts:type_name -> nomarkup.contract.v1.Contract
+	70, // 26: nomarkup.contract.v1.ListContractsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	5,  // 27: nomarkup.contract.v1.SubmitMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
+	5,  // 28: nomarkup.contract.v1.ApproveMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
+	5,  // 29: nomarkup.contract.v1.RequestRevisionResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
+	4,  // 30: nomarkup.contract.v1.MarkCompleteResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 31: nomarkup.contract.v1.ApproveCompletionResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	5,  // 32: nomarkup.contract.v1.ProposeChangeOrderRequest.added_milestones:type_name -> nomarkup.contract.v1.Milestone
+	6,  // 33: nomarkup.contract.v1.ProposeChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
+	6,  // 34: nomarkup.contract.v1.RespondToChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
+	4,  // 35: nomarkup.contract.v1.CancelContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	7,  // 36: nomarkup.contract.v1.GetRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 37: nomarkup.contract.v1.UpdateRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 38: nomarkup.contract.v1.PauseRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 39: nomarkup.contract.v1.ResumeRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 40: nomarkup.contract.v1.CancelRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	69, // 41: nomarkup.contract.v1.ListRecurringInstancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	8,  // 42: nomarkup.contract.v1.ListRecurringInstancesResponse.instances:type_name -> nomarkup.contract.v1.RecurringInstance
+	70, // 43: nomarkup.contract.v1.ListRecurringInstancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	8,  // 44: nomarkup.contract.v1.CompleteRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
+	8,  // 45: nomarkup.contract.v1.ApproveRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
+	2,  // 46: nomarkup.contract.v1.Dispute.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
+	3,  // 47: nomarkup.contract.v1.Dispute.status:type_name -> nomarkup.contract.v1.DisputeStatus
+	67, // 48: nomarkup.contract.v1.Dispute.created_at:type_name -> google.protobuf.Timestamp
+	67, // 49: nomarkup.contract.v1.Dispute.resolved_at:type_name -> google.protobuf.Timestamp
+	2,  // 50: nomarkup.contract.v1.OpenDisputeRequest.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
+	53, // 51: nomarkup.contract.v1.OpenDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
+	53, // 52: nomarkup.contract.v1.GetDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
+	3,  // 53: nomarkup.contract.v1.ListDisputesRequest.status_filter:type_name -> nomarkup.contract.v1.DisputeStatus
+	69, // 54: nomarkup.contract.v1.ListDisputesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	53, // 55: nomarkup.contract.v1.ListDisputesResponse.disputes:type_name -> nomarkup.contract.v1.Dispute
+	70, // 56: nomarkup.contract.v1.ListDisputesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	53, // 57: nomarkup.contract.v1.AdminResolveDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
+	4,  // 58: nomarkup.contract.v1.ReportNoShowResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 59: nomarkup.contract.v1.ReportAbandonmentResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	9,  // 60: nomarkup.contract.v1.ContractService.CreateContractFromAward:input_type -> nomarkup.contract.v1.CreateContractFromAwardRequest
+	11, // 61: nomarkup.contract.v1.ContractService.GetContract:input_type -> nomarkup.contract.v1.GetContractRequest
+	13, // 62: nomarkup.contract.v1.ContractService.AcceptContract:input_type -> nomarkup.contract.v1.AcceptContractRequest
+	15, // 63: nomarkup.contract.v1.ContractService.StartWork:input_type -> nomarkup.contract.v1.StartWorkRequest
+	17, // 64: nomarkup.contract.v1.ContractService.ExportContractPDF:input_type -> nomarkup.contract.v1.ExportContractPDFRequest
+	19, // 65: nomarkup.contract.v1.ContractService.ListContracts:input_type -> nomarkup.contract.v1.ListContractsRequest
+	21, // 66: nomarkup.contract.v1.ContractService.SubmitMilestone:input_type -> nomarkup.contract.v1.SubmitMilestoneRequest
+	23, // 67: nomarkup.contract.v1.ContractService.ApproveMilestone:input_type -> nomarkup.contract.v1.ApproveMilestoneRequest
+	25, // 68: nomarkup.contract.v1.ContractService.RequestRevision:input_type -> nomarkup.contract.v1.RequestRevisionRequest
+	27, // 69: nomarkup.contract.v1.ContractService.MarkComplete:input_type -> nomarkup.contract.v1.MarkCompleteRequest
+	29, // 70: nomarkup.contract.v1.ContractService.ApproveCompletion:input_type -> nomarkup.contract.v1.ApproveCompletionRequest
+	31, // 71: nomarkup.contract.v1.ContractService.ProposeChangeOrder:input_type -> nomarkup.contract.v1.ProposeChangeOrderRequest
+	33, // 72: nomarkup.contract.v1.ContractService.RespondToChangeOrder:input_type -> nomarkup.contract.v1.RespondToChangeOrderRequest
+	35, // 73: nomarkup.contract.v1.ContractService.CancelContract:input_type -> nomarkup.contract.v1.CancelContractRequest
+	37, // 74: nomarkup.contract.v1.ContractService.GetRecurringConfig:input_type -> nomarkup.contract.v1.GetRecurringConfigRequest
+	39, // 75: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:input_type -> nomarkup.contract.v1.UpdateRecurringConfigRequest
+	41, // 76: nomarkup.contract.v1.ContractService.PauseRecurring:input_type -> nomarkup.contract.v1.PauseRecurringRequest
+	43, // 77: nomarkup.contract.v1.ContractService.ResumeRecurring:input_type -> nomarkup.contract.v1.ResumeRecurringRequest
+	45, // 78: nomarkup.contract.v1.ContractService.CancelRecurring:input_type -> nomarkup.contract.v1.CancelRecurringRequest
+	47, // 79: nomarkup.contract.v1.ContractService.ListRecurringInstances:input_type -> nomarkup.contract.v1.ListRecurringInstancesRequest
+	49, // 80: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:input_type -> nomarkup.contract.v1.CompleteRecurringInstanceRequest
+	51, // 81: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:input_type -> nomarkup.contract.v1.ApproveRecurringInstanceRequest
+	54, // 82: nomarkup.contract.v1.ContractService.OpenDispute:input_type -> nomarkup.contract.v1.OpenDisputeRequest
+	56, // 83: nomarkup.contract.v1.ContractService.GetDispute:input_type -> nomarkup.contract.v1.GetDisputeRequest
+	58, // 84: nomarkup.contract.v1.ContractService.ListDisputes:input_type -> nomarkup.contract.v1.ListDisputesRequest
+	60, // 85: nomarkup.contract.v1.ContractService.AdminResolveDispute:input_type -> nomarkup.contract.v1.AdminResolveDisputeRequest
+	62, // 86: nomarkup.contract.v1.ContractService.ReportNoShow:input_type -> nomarkup.contract.v1.ReportNoShowRequest
+	64, // 87: nomarkup.contract.v1.ContractService.ReportAbandonment:input_type -> nomarkup.contract.v1.ReportAbandonmentRequest
+	10, // 88: nomarkup.contract.v1.ContractService.CreateContractFromAward:output_type -> nomarkup.contract.v1.CreateContractFromAwardResponse
+	12, // 89: nomarkup.contract.v1.ContractService.GetContract:output_type -> nomarkup.contract.v1.GetContractResponse
+	14, // 90: nomarkup.contract.v1.ContractService.AcceptContract:output_type -> nomarkup.contract.v1.AcceptContractResponse
+	16, // 91: nomarkup.contract.v1.ContractService.StartWork:output_type -> nomarkup.contract.v1.StartWorkResponse
+	18, // 92: nomarkup.contract.v1.ContractService.ExportContractPDF:output_type -> nomarkup.contract.v1.ExportContractPDFResponse
+	20, // 93: nomarkup.contract.v1.ContractService.ListContracts:output_type -> nomarkup.contract.v1.ListContractsResponse
+	22, // 94: nomarkup.contract.v1.ContractService.SubmitMilestone:output_type -> nomarkup.contract.v1.SubmitMilestoneResponse
+	24, // 95: nomarkup.contract.v1.ContractService.ApproveMilestone:output_type -> nomarkup.contract.v1.ApproveMilestoneResponse
+	26, // 96: nomarkup.contract.v1.ContractService.RequestRevision:output_type -> nomarkup.contract.v1.RequestRevisionResponse
+	28, // 97: nomarkup.contract.v1.ContractService.MarkComplete:output_type -> nomarkup.contract.v1.MarkCompleteResponse
+	30, // 98: nomarkup.contract.v1.ContractService.ApproveCompletion:output_type -> nomarkup.contract.v1.ApproveCompletionResponse
+	32, // 99: nomarkup.contract.v1.ContractService.ProposeChangeOrder:output_type -> nomarkup.contract.v1.ProposeChangeOrderResponse
+	34, // 100: nomarkup.contract.v1.ContractService.RespondToChangeOrder:output_type -> nomarkup.contract.v1.RespondToChangeOrderResponse
+	36, // 101: nomarkup.contract.v1.ContractService.CancelContract:output_type -> nomarkup.contract.v1.CancelContractResponse
+	38, // 102: nomarkup.contract.v1.ContractService.GetRecurringConfig:output_type -> nomarkup.contract.v1.GetRecurringConfigResponse
+	40, // 103: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:output_type -> nomarkup.contract.v1.UpdateRecurringConfigResponse
+	42, // 104: nomarkup.contract.v1.ContractService.PauseRecurring:output_type -> nomarkup.contract.v1.PauseRecurringResponse
+	44, // 105: nomarkup.contract.v1.ContractService.ResumeRecurring:output_type -> nomarkup.contract.v1.ResumeRecurringResponse
+	46, // 106: nomarkup.contract.v1.ContractService.CancelRecurring:output_type -> nomarkup.contract.v1.CancelRecurringResponse
+	48, // 107: nomarkup.contract.v1.ContractService.ListRecurringInstances:output_type -> nomarkup.contract.v1.ListRecurringInstancesResponse
+	50, // 108: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:output_type -> nomarkup.contract.v1.CompleteRecurringInstanceResponse
+	52, // 109: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:output_type -> nomarkup.contract.v1.ApproveRecurringInstanceResponse
+	55, // 110: nomarkup.contract.v1.ContractService.OpenDispute:output_type -> nomarkup.contract.v1.OpenDisputeResponse
+	57, // 111: nomarkup.contract.v1.ContractService.GetDispute:output_type -> nomarkup.contract.v1.GetDisputeResponse
+	59, // 112: nomarkup.contract.v1.ContractService.ListDisputes:output_type -> nomarkup.contract.v1.ListDisputesResponse
+	61, // 113: nomarkup.contract.v1.ContractService.AdminResolveDispute:output_type -> nomarkup.contract.v1.AdminResolveDisputeResponse
+	63, // 114: nomarkup.contract.v1.ContractService.ReportNoShow:output_type -> nomarkup.contract.v1.ReportNoShowResponse
+	65, // 115: nomarkup.contract.v1.ContractService.ReportAbandonment:output_type -> nomarkup.contract.v1.ReportAbandonmentResponse
+	88, // [88:116] is the sub-list for method output_type
+	60, // [60:88] is the sub-list for method input_type
+	60, // [60:60] is the sub-list for extension type_name
+	60, // [60:60] is the sub-list for extension extendee
+	0,  // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_contract_v1_contract_proto_init() }
@@ -4369,16 +4519,16 @@ func file_contract_v1_contract_proto_init() {
 	if File_contract_v1_contract_proto != nil {
 		return
 	}
-	file_contract_v1_contract_proto_msgTypes[13].OneofWrappers = []any{}
-	file_contract_v1_contract_proto_msgTypes[33].OneofWrappers = []any{}
-	file_contract_v1_contract_proto_msgTypes[52].OneofWrappers = []any{}
+	file_contract_v1_contract_proto_msgTypes[15].OneofWrappers = []any{}
+	file_contract_v1_contract_proto_msgTypes[35].OneofWrappers = []any{}
+	file_contract_v1_contract_proto_msgTypes[54].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_contract_v1_contract_proto_rawDesc), len(file_contract_v1_contract_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   60,
+			NumMessages:   62,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

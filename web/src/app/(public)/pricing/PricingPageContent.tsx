@@ -291,13 +291,13 @@ export function PricingPageContent() {
               className={`glass-stat-card glass-highlight flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
               style={{ transitionDelay: '0ms' }}
             >
-              <p className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(220,70%,55%)' }}>
+              <div className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(220,70%,55%)' }}>
                 {overviewLoading ? (
                   <Skeleton className="h-8 w-16 rounded" />
                 ) : (
                   <AnimatedCounter end={totalJobs} suffix="+" />
                 )}
-              </p>
+              </div>
               <p className="text-muted-foreground relative z-[3] mt-1 text-[10px] font-medium uppercase tracking-wide sm:mt-2 sm:text-xs">
                 Jobs Tracked
               </p>
@@ -308,7 +308,7 @@ export function PricingPageContent() {
               className={`glass-stat-card glass-highlight flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
               style={{ transitionDelay: '120ms' }}
             >
-              <p className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(142,71%,45%)' }}>
+              <div className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(142,71%,45%)' }}>
                 {overviewLoading ? (
                   <Skeleton className="h-8 w-20 rounded" />
                 ) : avgSavings > 0 ? (
@@ -316,7 +316,7 @@ export function PricingPageContent() {
                 ) : (
                   <span>—</span>
                 )}
-              </p>
+              </div>
               <p className="text-muted-foreground relative z-[3] mt-1 text-[10px] font-medium uppercase tracking-wide sm:mt-2 sm:text-xs">
                 Avg. Savings
               </p>
@@ -327,13 +327,13 @@ export function PricingPageContent() {
               className={`glass-stat-card glass-highlight flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
               style={{ transitionDelay: '240ms' }}
             >
-              <p className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(38,92%,50%)' }}>
+              <div className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(38,92%,50%)' }}>
                 {overviewLoading ? (
                   <Skeleton className="h-8 w-10 rounded" />
                 ) : (
                   <AnimatedCounter end={categoryCount} />
                 )}
-              </p>
+              </div>
               <p className="text-muted-foreground relative z-[3] mt-1 text-[10px] font-medium uppercase tracking-wide sm:mt-2 sm:text-xs">
                 Categories
               </p>

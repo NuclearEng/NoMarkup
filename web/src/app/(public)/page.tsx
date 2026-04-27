@@ -148,82 +148,6 @@ function MicroSparkline({ data, color }: { data: readonly number[]; color: strin
 }
 
 // ---------------------------------------------------------------------------
-// Ticker data (mock marketplace activity)
-// ---------------------------------------------------------------------------
-const TICKER_ITEMS = [
-  {
-    category: 'Plumbing',
-    location: 'Austin',
-    currentPrice: 34000,
-    originalPrice: 80000,
-    status: 'completed' as const,
-  },
-  {
-    category: 'House Cleaning',
-    location: 'SF',
-    currentPrice: 8900,
-    bidCount: 12,
-    status: 'active' as const,
-  },
-  {
-    category: 'Lawn Care',
-    location: 'Denver',
-    currentPrice: 15500,
-    timeRemaining: 'Ending in 2h',
-    status: 'ending-soon' as const,
-  },
-  {
-    category: 'Painting',
-    location: 'Seattle',
-    currentPrice: 120000,
-    originalPrice: 185000,
-    status: 'completed' as const,
-  },
-  {
-    category: 'Electrical',
-    location: 'Chicago',
-    currentPrice: 42000,
-    bidCount: 8,
-    status: 'active' as const,
-  },
-  {
-    category: 'Roofing',
-    location: 'Portland',
-    currentPrice: 680000,
-    originalPrice: 950000,
-    status: 'completed' as const,
-  },
-  {
-    category: 'HVAC Repair',
-    location: 'Miami',
-    currentPrice: 28000,
-    timeRemaining: 'Ending in 45m',
-    status: 'ending-soon' as const,
-  },
-  {
-    category: 'Moving',
-    location: 'Dallas',
-    currentPrice: 95000,
-    bidCount: 15,
-    status: 'active' as const,
-  },
-  {
-    category: 'Tree Removal',
-    location: 'Atlanta',
-    currentPrice: 45000,
-    originalPrice: 72000,
-    status: 'completed' as const,
-  },
-  {
-    category: 'Carpet Cleaning',
-    location: 'Phoenix',
-    currentPrice: 19500,
-    bidCount: 6,
-    status: 'active' as const,
-  },
-] as const;
-
-// ---------------------------------------------------------------------------
 // Category data
 // ---------------------------------------------------------------------------
 const CATEGORIES = [
@@ -293,7 +217,7 @@ export default function LandingPage() {
 
         {/* Market ticker strip at top */}
         <div className="relative z-[2]">
-          <MarketTickerStrip items={[...TICKER_ITEMS]} speed="normal" />
+          <MarketTickerStrip speed="normal" />
         </div>
 
         <div className="relative z-[2] mx-auto max-w-7xl px-4 pt-12 pb-16 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8 lg:pt-28 lg:pb-36">

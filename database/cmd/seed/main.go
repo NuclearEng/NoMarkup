@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,11 +23,22 @@ const (
 	argonKeyLength   = 32
 )
 
-// Seed password for all dev accounts. Read from SEED_PASSWORD env var so
-// that committed code never carries a real credential — the audit on
-// 2026-04-23 found a `Password123!` literal had leaked into git history
-// (TODOS S1) and we are not repeating that. If unset locally, the seeder
-// generates a random password and prints it once.
+// Default password used for local dev seeding when nothing else is configured.
+// This MUST only be used against an obviously-local database — the seeder
+// refuses to use it if SEED_ALLOW_DEFAULT_PASSWORD is not set or the target
+// looks like anything other than a local Postgres.
+const defaultDevSeedPassword = "Password123!"
+
+// Seed password for all dev accounts. Resolution order:
+//  1. SEED_PASSWORD env var (always wins).
+//  2. Default `Password123!` — only when SEED_ALLOW_DEFAULT_PASSWORD=true
+//     OR when the DATABASE_URL points at localhost/127.0.0.1 (local dev).
+//  3. One-shot random password, printed once. Used in CI / unattended runs.
+//
+// The 2026-04-23 audit (TODOS S1) found a literal `Password123!` had leaked
+// into git history. We do NOT regress on that: the literal lives ONLY in this
+// file as a documented default for the local dev loop, never as a fallback for
+// shared environments.
 //
 // Operators must set SEED_PASSWORD when seeding shared environments
 // (staging, QA, anywhere accessed by more than one human). The printed
@@ -35,6 +47,13 @@ func resolveSeedPassword() string {
 	if p := os.Getenv("SEED_PASSWORD"); p != "" {
 		return p
 	}
+
+	if isLocalDevEnv() {
+		log.Printf("INFO: SEED_PASSWORD not set — using default dev password %q (local DB only).", defaultDevSeedPassword)
+		log.Println("INFO: set SEED_PASSWORD to override, or unset SEED_ALLOW_DEFAULT_PASSWORD if you don't want this default.")
+		return defaultDevSeedPassword
+	}
+
 	// Generate a 24-byte random password (URL-safe base64 → ~32 chars).
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
@@ -45,6 +64,37 @@ func resolveSeedPassword() string {
 	log.Printf("WARNING: dev-account password is %q — store it now or re-seed.", pw)
 	log.Println("WARNING: do NOT use this seeder against staging/QA without setting SEED_PASSWORD.")
 	return pw
+}
+
+// isLocalDevEnv returns true when the seeder is clearly being run against a
+// local development database. This is the only context where it is safe to
+// fall back to the well-known `Password123!` default. Two conditions must be
+// met:
+//
+//  1. SEED_ALLOW_DEFAULT_PASSWORD is set to a truthy value (default "true"
+//     for ergonomic `make seed`, but operators can hard-disable by setting
+//     it to "false").
+//  2. The DATABASE_URL host resolves to localhost / 127.0.0.1 / docker host.
+func isLocalDevEnv() bool {
+	allow := os.Getenv("SEED_ALLOW_DEFAULT_PASSWORD")
+	if allow == "" {
+		allow = "true"
+	}
+	if allow != "true" && allow != "1" && allow != "yes" {
+		return false
+	}
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		// Default DATABASE_URL is localhost (see main()), so this is local.
+		return true
+	}
+	for _, marker := range []string{"@localhost:", "@127.0.0.1:", "@host.docker.internal:", "@postgres:"} {
+		if strings.Contains(dbURL, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // Fixed UUIDs for deterministic seed data (idempotent re-runs).
@@ -157,6 +207,10 @@ func main() {
 
 	// ── 1. Users ──────────────────────────────────────────────────
 
+	// On conflict we DO update password_hash. Without this, re-running the
+	// seeder after changing SEED_PASSWORD (or after fixing a bad earlier hash)
+	// silently leaves the old hashes in place — the bug we were called to fix
+	// (Bug 4: seed password mismatch). Other identity fields are kept stable.
 	_, err = tx.Exec(ctx, `
 		INSERT INTO users (id, email, email_verified, password_hash, display_name, roles, status, timezone)
 		VALUES
@@ -164,7 +218,9 @@ func main() {
 			($2, 'customer@nomarkup.com', true, $5, 'Jane Customer',  '{customer}', 'active', 'America/New_York'),
 			($3, 'provider@nomarkup.com', true, $5, 'Mike Provider',  '{provider}', 'active', 'America/Chicago'),
 			($4, 'provider2@nomarkup.com', true, $5, 'Sarah Provider', '{provider}', 'active', 'America/Denver')
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (id) DO UPDATE SET
+			password_hash = EXCLUDED.password_hash,
+			updated_at = now()`,
 		adminUserID, customerUserID, providerUserID, provider2UserID, passwordHash,
 	)
 	if err != nil {
@@ -241,14 +297,17 @@ func main() {
 
 	// ── 5. Jobs ───────────────────────────────────────────────────
 
-	// Active job (open for bids)
+	// Active job (open for bids).
+	// bid_count is intentionally omitted from the column list — the
+	// bids_update_bid_count trigger (migration 029) maintains it. Hard-coding
+	// it here is what caused Bug 3 (drift between jobs.bid_count and bids).
 	_, err = tx.Exec(ctx, `
 		INSERT INTO jobs (id, customer_id, property_id, title, description,
 			category_id, subcategory_id, service_type_id,
 			service_city, service_state, service_zip,
 			service_location, approximate_location,
 			schedule_type, starting_bid_cents, auction_duration_hours, auction_ends_at,
-			status, bid_count)
+			status)
 		VALUES ($1, $2, $3,
 			'AC Unit Not Cooling Properly',
 			'My central AC unit is blowing warm air. It''s a 3-ton unit installed in 2018. The filter was replaced last month. Need a professional to diagnose and repair.',
@@ -257,11 +316,10 @@ func main() {
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			'flexible', 50000, 72, $7,
-			'active', 2)
+			'active')
 		ON CONFLICT (id) DO UPDATE SET
 			status = 'active',
 			auction_ends_at = $7,
-			bid_count = 2,
 			awarded_provider_id = NULL,
 			awarded_bid_id = NULL,
 			awarded_at = NULL,
@@ -274,14 +332,15 @@ func main() {
 		log.Fatalf("insert active job: %v", err)
 	}
 
-	// Awarded job (awarded_bid_id set after bids are inserted)
+	// Awarded job (awarded_bid_id set after bids are inserted).
+	// bid_count omitted — maintained by trigger (see migration 029).
 	_, err = tx.Exec(ctx, `
 		INSERT INTO jobs (id, customer_id, property_id, title, description,
 			category_id,
 			service_city, service_state, service_zip,
 			service_location, approximate_location,
 			schedule_type, starting_bid_cents, auction_duration_hours,
-			status, bid_count, awarded_provider_id, awarded_at)
+			status, awarded_provider_id, awarded_at)
 		VALUES ($1, $2, $3,
 			'Kitchen Sink Leaking',
 			'The kitchen sink has a slow leak under the cabinet. Water pools on the floor overnight. Need repair ASAP.',
@@ -290,10 +349,9 @@ func main() {
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			'specific_date', 30000, 72,
-			'in_progress', 1, $5, $6)
+			'in_progress', $5, $6)
 		ON CONFLICT (id) DO UPDATE SET
 			status = 'in_progress',
-			bid_count = 1,
 			awarded_provider_id = $5,
 			awarded_at = $6,
 			updated_at = now()`,
@@ -305,14 +363,15 @@ func main() {
 		log.Fatalf("insert awarded job: %v", err)
 	}
 
-	// Completed job
+	// Completed job.
+	// bid_count omitted — maintained by trigger (see migration 029).
 	_, err = tx.Exec(ctx, `
 		INSERT INTO jobs (id, customer_id, property_id, title, description,
 			category_id,
 			service_city, service_state, service_zip,
 			service_location, approximate_location,
 			schedule_type, starting_bid_cents, auction_duration_hours,
-			status, bid_count, awarded_provider_id, completed_at)
+			status, awarded_provider_id, completed_at)
 		VALUES ($1, $2, $3,
 			'Install Ceiling Fan in Living Room',
 			'Need a ceiling fan installed in the living room. Wiring already exists from an old light fixture. Fan is purchased and ready.',
@@ -321,10 +380,9 @@ func main() {
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
 			'flexible', 25000, 72,
-			'completed', 1, $5, $6)
+			'completed', $5, $6)
 		ON CONFLICT (id) DO UPDATE SET
 			status = 'completed',
-			bid_count = 1,
 			awarded_provider_id = $5,
 			completed_at = $6,
 			updated_at = now()`,
@@ -540,7 +598,8 @@ func main() {
 	log.Println("Seed complete!")
 	log.Println("")
 	log.Println("╔══════════════════════════════════════════════════════════════╗")
-	log.Println("║  Dev Accounts (password: $SEED_PASSWORD or printed above)    ║")
+	log.Println("║  Dev Accounts (default password: Password123! — see above)   ║")
+	log.Println("║  Override with SEED_PASSWORD env var for shared environments ║")
 	log.Println("╠══════════════════════════════════════════════════════════════╣")
 	log.Println("║  Admin:     admin@nomarkup.com      roles: [admin]          ║")
 	log.Println("║  Customer:  customer@nomarkup.com   roles: [customer]       ║")

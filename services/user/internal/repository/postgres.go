@@ -790,6 +790,26 @@ func (r *PostgresRepository) BanUserAndRevokeTokens(ctx context.Context, userID,
 	return r.suspendOrBanWithRevoke(ctx, userID, reason, "banned", "ban user")
 }
 
+// ReactivateUser flips users.status back to 'active' and clears
+// suspension_reason. Used by AdminReactivateUser to undo a suspension
+// (counterpart to SuspendUserAndRevokeTokens). No-op if the user is
+// already active. Returns ErrUserNotFound if the user doesn't exist.
+func (r *PostgresRepository) ReactivateUser(ctx context.Context, userID, adminID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE users
+		   SET status            = 'active',
+		       suspension_reason = NULL,
+		       updated_at        = now()
+		 WHERE id = $1 AND deleted_at IS NULL`, userID)
+	if err != nil {
+		return fmt.Errorf("reactivate user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("reactivate user: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error {
 	detailsJSON, err := json.Marshal(details)
 	if err != nil {

@@ -198,7 +198,7 @@ func TestIntegration_AuthenticatedJobCreation(t *testing.T) {
 			t.Parallel()
 
 			client := &mockJobClient{createJobFn: tt.mockFn}
-			h := NewJobHandler(client)
+			h := NewJobHandler(client, nil, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -231,7 +231,7 @@ func TestIntegration_SearchJobsEndpoint(t *testing.T) {
 			}, nil
 		},
 	}
-	h := NewJobHandler(client)
+	h := NewJobHandler(client, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=fix", nil)
 	rec := httptest.NewRecorder()

@@ -220,8 +220,10 @@ func main() {
 	userHandler := handler.NewUserHandler(userClient, dbPool)
 	providerHandler := handler.NewProviderHandler(userClient, dbPool)
 	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)
-	jobHandler := handler.NewJobHandler(jobClient, cacheClient)
-	bidHandler := handler.NewBidHandler(bidClient)
+	jobHandler := handler.NewJobHandler(jobClient, cacheClient, fraudClient)
+	// bidHandler depends on the contract client so awarding a bid also creates
+	// a contract row in the same request (fixes severed customer-accept pipeline).
+	bidHandler := handler.NewBidHandler(bidClient, contractClient)
 	contractHandler := handler.NewContractHandler(contractClient)
 
 	// Review service lives on the same gRPC server as the job service.

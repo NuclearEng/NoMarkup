@@ -119,14 +119,14 @@ describe('ProviderDashboardPage', () => {
   });
 
   it('renders profile completeness banner when profile is incomplete', () => {
-    profileState.data = { profileCompleteness: 60 };
+    profileState.data = { profile_completeness: 60 };
     render(withQueryClient(createElement(ProviderDashboardPage)));
     expect(screen.getByText('Complete your profile')).toBeDefined();
     expect(screen.getByText(/60% complete/)).toBeDefined();
   });
 
   it('hides profile completeness banner when profile is 100% complete', () => {
-    profileState.data = { profileCompleteness: 100 };
+    profileState.data = { profile_completeness: 100 };
     render(withQueryClient(createElement(ProviderDashboardPage)));
     expect(screen.queryByText('Complete your profile')).toBeNull();
   });

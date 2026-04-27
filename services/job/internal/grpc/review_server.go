@@ -245,16 +245,16 @@ func domainReviewToProto(r *domain.Review) *reviewv1.Review {
 		return nil
 	}
 
+	// Direction and IsFlagged are derived (not persisted columns) — see review_types.go.
 	pb := &reviewv1.Review{
 		Id:            r.ID,
 		ContractId:    r.ContractID,
 		ReviewerId:    r.ReviewerID,
 		RevieweeId:    r.RevieweeID,
-		Direction:     stringToProtoReviewDirection(r.Direction),
+		Direction:     stringToProtoReviewDirection(r.Direction()),
 		OverallRating: int32(r.OverallRating),
-		Comment:       r.Comment,
-		PhotoUrls:     r.PhotoURLs,
-		IsFlagged:     r.IsFlagged,
+		Comment:       r.ReviewText,
+		IsFlagged:     r.IsFlagged(),
 		CreatedAt:     timestamppb.New(r.CreatedAt),
 	}
 

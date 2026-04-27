@@ -1,7 +1,13 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MarketTickerStrip } from '@/components/landing/MarketTickerStrip';
+
+vi.mock('@/hooks/usePricing', () => ({
+  usePricingOverview: vi.fn(),
+}));
+
+const { usePricingOverview } = await import('@/hooks/usePricing');
 
 const baseItems = [
   {
@@ -29,6 +35,15 @@ const baseItems = [
 ];
 
 describe('MarketTickerStrip', () => {
+  beforeEach(() => {
+    // Default: hook returns idle/empty, so explicit `items` props are exercised.
+    vi.mocked(usePricingOverview).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof usePricingOverview>);
+  });
+
   it('renders categories and locations from the items list', () => {
     render(<MarketTickerStrip items={baseItems} />);
     // Items are duplicated for the loop, so each appears twice
@@ -67,5 +82,66 @@ describe('MarketTickerStrip', () => {
 
   it('accepts an empty items list without crashing', () => {
     expect(() => render(<MarketTickerStrip items={[]} />)).not.toThrow();
+  });
+
+  describe('with no items prop (real-data mode)', () => {
+    it('renders a skeleton while pricing data is loading', () => {
+      vi.mocked(usePricingOverview).mockReturnValue({
+        data: undefined,
+        isLoading: true,
+        isError: false,
+      } as unknown as ReturnType<typeof usePricingOverview>);
+      const { container } = render(<MarketTickerStrip />);
+      expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    });
+
+    it('hides the strip gracefully when the pricing API errors', () => {
+      vi.mocked(usePricingOverview).mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+      } as unknown as ReturnType<typeof usePricingOverview>);
+      const { container } = render(<MarketTickerStrip />);
+      expect(container.firstChild).toBeNull();
+    });
+
+    it('renders real category data when the hook resolves', () => {
+      vi.mocked(usePricingOverview).mockReturnValue({
+        data: {
+          categories: [
+            {
+              category_name: 'Plumbing',
+              category_slug: 'plumbing',
+              total_jobs: 42,
+              avg_median_cents: 25000,
+              avg_savings_cents: 10000,
+            },
+            {
+              category_name: 'Electrical',
+              category_slug: 'electrical',
+              total_jobs: 8,
+              avg_median_cents: 18000,
+              avg_savings_cents: null,
+            },
+          ],
+        },
+        isLoading: false,
+        isError: false,
+      } as unknown as ReturnType<typeof usePricingOverview>);
+      render(<MarketTickerStrip />);
+      expect(screen.getAllByText('Plumbing').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Electrical').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('$250').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('hides when the API returns no usable categories', () => {
+      vi.mocked(usePricingOverview).mockReturnValue({
+        data: { categories: [] },
+        isLoading: false,
+        isError: false,
+      } as unknown as ReturnType<typeof usePricingOverview>);
+      const { container } = render(<MarketTickerStrip />);
+      expect(container.firstChild).toBeNull();
+    });
   });
 });

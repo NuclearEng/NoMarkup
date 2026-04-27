@@ -67,6 +67,7 @@ service UserService {
   rpc AdminSearchUsers(AdminSearchUsersRequest) returns (AdminSearchUsersResponse);
   rpc AdminSuspendUser(AdminSuspendUserRequest) returns (AdminSuspendUserResponse);
   rpc AdminBanUser(AdminBanUserRequest) returns (AdminBanUserResponse);
+  rpc AdminReactivateUser(AdminReactivateUserRequest) returns (AdminReactivateUserResponse);
   rpc AdminReviewDocument(AdminReviewDocumentRequest) returns (AdminReviewDocumentResponse);
 
   // Search
@@ -601,6 +602,16 @@ message AdminBanUserRequest {
 }
 
 message AdminBanUserResponse {
+  User user = 1;
+}
+
+message AdminReactivateUserRequest {
+  string user_id = 1;
+  string admin_id = 2;
+  string note = 3;     // optional reason / note for audit log
+}
+
+message AdminReactivateUserResponse {
   User user = 1;
 }
 

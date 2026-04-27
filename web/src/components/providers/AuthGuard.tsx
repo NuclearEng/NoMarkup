@@ -1,17 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 import { useAuthStore } from '@/stores/auth-store';
 
 interface AuthGuardProps {
   children: React.ReactNode;
-}
-
-function hasSessionCookie(): boolean {
-  if (typeof document === 'undefined') return false;
-  return /(?:^|; )has_session=1(?:;|$)/.test(document.cookie);
 }
 
 function Loader() {
@@ -22,35 +17,26 @@ function Loader() {
   );
 }
 
+/**
+ * AuthGuard waits for AuthRestorer (mounted at the root layout) to finish
+ * the single shared refresh-token call, then either renders children or
+ * redirects to /login. We deliberately avoid calling refreshToken() here
+ * because refresh tokens are single-use — a second concurrent call would
+ * race the restorer and 401.
+ */
 export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
-  const { isAuthenticated, refreshToken } = useAuthStore();
-  const [checking, setChecking] = useState(!isAuthenticated);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isHydrating = useAuthStore((s) => s.isHydrating);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      setChecking(false);
-      return;
-    }
-
-    // No server-set session sentinel — skip the guaranteed-to-fail refresh
-    // call and redirect straight to /login.
-    if (!hasSessionCookie()) {
+    if (isHydrating) return;
+    if (!isAuthenticated) {
       router.replace('/login');
-      setChecking(false);
-      return;
     }
+  }, [isHydrating, isAuthenticated, router]);
 
-    // Sentinel present: try to restore session from the refresh token cookie.
-    void refreshToken().then((success) => {
-      if (!success) {
-        router.replace('/login');
-      }
-      setChecking(false);
-    });
-  }, [isAuthenticated, refreshToken, router]);
-
-  if (checking || !isAuthenticated) {
+  if (isHydrating || !isAuthenticated) {
     return <Loader />;
   }
 

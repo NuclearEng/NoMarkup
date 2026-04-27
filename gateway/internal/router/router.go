@@ -437,6 +437,7 @@ func New(
 				r.Get("/{id}", adminUsersHandler.GetUser)
 				r.Post("/{id}/suspend", adminUsersHandler.SuspendUser)
 				r.Post("/{id}/ban", adminUsersHandler.BanUser)
+				r.Post("/{id}/reactivate", adminUsersHandler.ReactivateUser)
 			})
 
 			// Verification

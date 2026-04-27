@@ -174,6 +174,50 @@ func (h *AdminUsersHandler) SuspendUser(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// ReactivateUser handles POST /api/v1/admin/users/{id}/reactivate.
+//
+// Counterpart to SuspendUser — flips users.status back to 'active' and
+// clears the suspension reason. Existing refresh tokens stay revoked, so
+// the user must log in again. Body is optional; if present, `note` is
+// recorded in the admin audit log.
+func (h *AdminUsersHandler) ReactivateUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user id required")
+		return
+	}
+
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	// Body is optional — accept empty/missing payload.
+	var body struct {
+		Note string `json:"note"`
+	}
+	if r.ContentLength > 0 {
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+	}
+
+	resp, err := h.userClient.AdminReactivateUser(r.Context(), &userv1.AdminReactivateUserRequest{
+		UserId:  userID,
+		AdminId: claims.UserID,
+		Note:    body.Note,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"user": adminUserToJSON(resp.GetUser()),
+	})
+}
+
 // BanUser handles POST /api/v1/admin/users/{id}/ban.
 func (h *AdminUsersHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")

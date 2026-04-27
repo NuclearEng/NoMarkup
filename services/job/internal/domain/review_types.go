@@ -20,27 +20,53 @@ var (
 )
 
 // Review represents a review left by one party for another after a contract.
+//
+// Persisted columns (see migrations) — note the schema uses reviewer_role and
+// review_text rather than the older direction/comment naming, has no separate
+// is_flagged or photo_urls columns (flag state is derived from status='flagged'
+// + flagged_at, photos live elsewhere), and the window column is named
+// review_window_ends (no _at suffix).
 type Review struct {
 	ID                  string
 	ContractID          string
+	JobID               string
 	ReviewerID          string
 	RevieweeID          string
-	Direction           string // customer_to_provider, provider_to_customer
+	ReviewerRole        string // customer or provider — replaces legacy "direction"
 	OverallRating       int
 	QualityRating       *int // customer->provider only
 	CommunicationRating *int
 	TimelinessRating    *int
 	ValueRating         *int // customer->provider only
-	Comment             string
-	PhotoURLs           []string
+	ReviewText          string
 	Status              string // pending, published, flagged, removed
-	IsFlagged           bool
-	ReviewWindowEndsAt  time.Time
+	FlaggedAt           *time.Time
+	FlagReason          string
+	ReviewWindowEnds    time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 
 	// Populated via JOIN
 	Response *ReviewResponse
+}
+
+// IsFlagged returns true when the review has been flagged for moderation.
+// Derived from status, since the schema has no boolean is_flagged column.
+func (r *Review) IsFlagged() bool {
+	return r.Status == "flagged" || r.FlaggedAt != nil
+}
+
+// Direction returns the legacy direction string derived from ReviewerRole.
+// Kept so the gRPC layer can map to the existing ReviewDirection enum.
+func (r *Review) Direction() string {
+	switch r.ReviewerRole {
+	case "customer":
+		return "customer_to_provider"
+	case "provider":
+		return "provider_to_customer"
+	default:
+		return ""
+	}
 }
 
 // ReviewResponse represents a response to a review by the reviewee.

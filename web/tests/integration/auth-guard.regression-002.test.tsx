@@ -20,10 +20,17 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: () => ({
-    isAuthenticated: false,
-    refreshToken: refreshTokenMock,
-  }),
+  useAuthStore: (selector?: unknown) => {
+    const state = {
+      isAuthenticated: false,
+      isHydrating: false,
+      refreshToken: refreshTokenMock,
+    };
+    if (typeof selector === 'function') {
+      return (selector as (s: unknown) => unknown)(state);
+    }
+    return state;
+  },
 }));
 
 import { AuthGuard } from '@/components/providers/AuthGuard';
@@ -69,13 +76,18 @@ describe('AuthGuard — ISSUE-002 regression', () => {
     expect(loader).not.toBeNull();
   });
 
-  it('calls refreshToken when has_session=1 is present', () => {
+  it('never calls refreshToken itself — that is delegated to AuthRestorer to avoid racing the single-use refresh token', () => {
+    // The original ISSUE-002 fix prevented AuthGuard from calling refresh when
+    // no session sentinel was present. The follow-up refactor (see AuthGuard
+    // docstring) moved refresh to AuthRestorer entirely so the two never race
+    // on the single-use refresh token. Either way, AuthGuard must never call
+    // refreshToken from within its own effect.
     setCookie('has_session=1');
     render(
       <AuthGuard>
         <div>secret</div>
       </AuthGuard>,
     );
-    expect(refreshTokenMock).toHaveBeenCalledTimes(1);
+    expect(refreshTokenMock).not.toHaveBeenCalled();
   });
 });

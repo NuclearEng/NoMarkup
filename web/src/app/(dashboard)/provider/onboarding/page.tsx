@@ -143,15 +143,15 @@ export default function ProviderOnboardingPage() {
             <CategoriesStep
               onNext={goNext}
               onPrev={goPrev}
-              existingIds={providerProfile?.serviceCategories.map((c) => c.id) ?? []}
+              existingIds={providerProfile?.service_categories.map((c) => c.id) ?? []}
             />
           ) : null}
           {step === 2 ? (
             <ServiceAreaStep
               onNext={goNext}
               onPrev={goPrev}
-              existingRadius={providerProfile?.serviceRadiusKm}
-              existingAddress={providerProfile?.serviceAddress ?? undefined}
+              existingRadius={providerProfile?.service_radius_km}
+              existingAddress={providerProfile?.service_address ?? undefined}
             />
           ) : null}
           {step === 3 ? <GlobalTermsStep onNext={goNext} onPrev={goPrev} existingProfile={providerProfile} /> : null}
@@ -193,9 +193,9 @@ function BusinessInfoStep({
   useEffect(() => {
     if (existingProfile) {
       form.reset({
-        businessName: existingProfile.businessName ?? '',
+        businessName: existingProfile.business_name ?? '',
         bio: existingProfile.bio ?? '',
-        serviceAddress: existingProfile.serviceAddress ?? '',
+        serviceAddress: existingProfile.service_address ?? '',
         einTin: '',
         insuranceProvider: '',
         insurancePolicyNumber: '',
@@ -564,10 +564,10 @@ function GlobalTermsStep({
   useEffect(() => {
     if (existingProfile) {
       form.reset({
-        paymentTiming: existingProfile.defaultPaymentTiming,
-        milestones: existingProfile.defaultMilestones,
-        cancellationPolicy: existingProfile.cancellationPolicy ?? '',
-        warrantyTerms: existingProfile.warrantyTerms ?? '',
+        paymentTiming: existingProfile.default_payment_timing,
+        milestones: existingProfile.default_milestones,
+        cancellationPolicy: existingProfile.cancellation_policy ?? '',
+        warrantyTerms: existingProfile.warranty_terms ?? '',
       });
     }
   }, [existingProfile, form]);

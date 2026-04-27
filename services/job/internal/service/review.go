@@ -59,29 +59,36 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 		return nil, fmt.Errorf("create review: %w", err)
 	}
 
-	var direction, revieweeID string
+	// Persisted column is reviewer_role: "customer" or "provider".
+	var role, direction, revieweeID string
 	if reviewerID == contract.CustomerID {
+		role = "customer"
 		direction = "customer_to_provider"
 		revieweeID = contract.ProviderID
 	} else if reviewerID == contract.ProviderID {
+		role = "provider"
 		direction = "provider_to_customer"
 		revieweeID = contract.CustomerID
 	} else {
 		return nil, fmt.Errorf("create review: %w", domain.ErrNotEligible)
 	}
 
+	// photoURLs is currently dropped on the floor — the reviews schema has no
+	// photo_urls column. Photos for reviews are not yet implemented; if/when
+	// they are, add a separate review_photos table or column and persist here.
+	_ = photoURLs
+
 	review := &domain.Review{
 		ContractID:          contractID,
 		ReviewerID:          reviewerID,
 		RevieweeID:          revieweeID,
-		Direction:           direction,
+		ReviewerRole:        role,
 		OverallRating:       overallRating,
 		QualityRating:       qualityRating,
 		CommunicationRating: communicationRating,
 		TimelinessRating:    timelinessRating,
 		ValueRating:         valueRating,
-		Comment:             comment,
-		PhotoURLs:           photoURLs,
+		ReviewText:          comment,
 	}
 
 	created, err := s.reviewRepo.CreateReview(ctx, review)

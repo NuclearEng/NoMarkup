@@ -33,6 +33,71 @@ func RegisterContract(s *grpclib.Server, srv *ContractServer) {
 	contractv1.RegisterContractServiceServer(s, srv)
 }
 
+// CreateContractFromAward creates a contract row after the bidding engine has
+// flipped the winning bid to "awarded". The gateway calls this immediately
+// after BidService.AwardBid succeeds so accepting a bid actually produces a
+// contract downstream (closing the severed pipeline).
+func (s *ContractServer) CreateContractFromAward(ctx context.Context, req *contractv1.CreateContractFromAwardRequest) (*contractv1.CreateContractFromAwardResponse, error) {
+	if req.GetJobId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "job_id is required")
+	}
+	if req.GetBidId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "bid_id is required")
+	}
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	if req.GetProviderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "provider_id is required")
+	}
+	if req.GetAmountCents() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "amount_cents must be positive")
+	}
+
+	paymentTiming := protoPaymentTimingToString(req.GetPaymentTiming())
+	if paymentTiming == "" {
+		// Default to "completion" — full amount released when the work is done.
+		paymentTiming = "completion"
+	}
+
+	contract, err := s.svc.CreateContractFromAward(
+		ctx,
+		req.GetJobId(),
+		req.GetBidId(),
+		req.GetCustomerId(),
+		req.GetProviderId(),
+		req.GetAmountCents(),
+		paymentTiming,
+		nil, // single full-amount milestone created by default
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.CreateContractFromAwardResponse{
+		Contract: domainContractToProto(contract),
+	}, nil
+}
+
+// protoPaymentTimingToString converts the proto enum back to the domain string
+// used by the contract repository.
+func protoPaymentTimingToString(pt commonv1.PaymentTiming) string {
+	switch pt {
+	case commonv1.PaymentTiming_PAYMENT_TIMING_UPFRONT:
+		return "upfront"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_MILESTONE:
+		return "milestone"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_COMPLETION:
+		return "completion"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_PAYMENT_PLAN:
+		return "payment_plan"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_RECURRING:
+		return "recurring"
+	default:
+		return ""
+	}
+}
+
 func (s *ContractServer) GetContract(ctx context.Context, req *contractv1.GetContractRequest) (*contractv1.GetContractResponse, error) {
 	contract, err := s.svc.GetContract(ctx, req.GetContractId(), req.GetRequestingUserId())
 	if err != nil {
