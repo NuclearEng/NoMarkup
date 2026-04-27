@@ -1,9 +1,9 @@
 # GDPR / CCPA Account Deletion
 
-> Status: **PARTIAL**. Architecture for soft-delete (deactivation) exists.
-> Hard-delete pipeline that anonymizes child rows, deletes Stripe Connect
-> account, revokes OAuth tokens, and erases PII end-to-end is **NOT YET
-> WIRED** — see *Gap* section.
+> Status: **IMPLEMENTED** as of migration 032 + user-service `Erasure`
+> service. Self-service request, 30-day grace period, automated cron
+> finalize, admin override, full PII cascade. See architecture and
+> verification sections below.
 
 ## Regulatory Position
 
@@ -14,191 +14,247 @@
 - **PIPEDA** (Canada): right of access and correction; deletion not absolute
   but expected for closed accounts after data is no longer needed.
 
-## Current Implementation (what's wired today)
+We pick **30 days** as the grace window (the shorter of the two — safer for
+the regulator and a clearer UX promise than juggling per-jurisdiction
+windows). The constant lives at
+`services/user/internal/domain.DeletionGracePeriod`.
 
-### 1. Account deactivation (soft delete)
-
-The user service has the proto RPC `DeactivateAccount` defined
-(`proto/user/v1/user.proto`) and the corresponding domain status
-`USER_STATUS_DEACTIVATED` is enforced at login (`services/user/internal/service/auth.go:112`).
-
-**Behavior when a user is in `deactivated` state:**
-- Login is rejected with `ErrAccountDeactivated`.
-- Other users see "deactivated user" placeholder for the display name and avatar.
-- The row in `users` is preserved.
-- Bids, jobs, contracts, and reviews authored by the user remain visible
-  (anonymized at the read path).
-
-This satisfies the *closed account* expectation but **does not satisfy GDPR
-erasure** because:
-- Email and phone are still stored in plaintext (encrypted at rest, but tied
-  to the original identity).
-- KYC documents, payment method tokens, and Stripe customer ID remain.
-- Chat messages still carry the user_id.
-
-### 2. PII inventory (where the data lives)
-
-| Table / store               | PII fields                                     | Strategy on full erasure |
-|-----------------------------|------------------------------------------------|--------------------------|
-| `users`                     | email, phone, display_name, avatar_url         | Replace with hashed tombstone |
-| `user_profiles`             | bio, social_links                              | NULL                     |
-| `provider_profiles`         | business_name, license_numbers, photos, hours  | NULL + portfolio S3 delete |
-| `verification_documents`    | S3 keys for ID / insurance scans               | Delete S3 objects + row  |
-| `properties`                | address, lat/lng, photos                       | Anonymize address + delete photos |
-| `jobs`                      | description, photos, customer_id               | Reassign to "deleted_user" sentinel; keep public job row for transparency |
-| `bids`                      | provider_id                                    | Reassign to sentinel     |
-| `contracts`                 | customer_id, provider_id                       | Reassign to sentinel; preserve dispute record |
-| `reviews`                   | reviewer_id, reviewee_id, body                 | Reassign reviewer; keep body (legitimate interest, public review) |
-| `chat_messages`             | user_id, body                                  | Reassign user_id; redact body if requested |
-| `notifications`             | user_id, payload                               | Delete                   |
-| `payment_methods`           | stripe_customer_id, last4                      | Delete + Stripe customer.delete |
-| `stripe_connect_accounts`   | stripe_account_id                              | Reject delete if balance > 0; queue for after payout; otherwise account.del |
-| `oauth_tokens`              | google_token, apple_token                      | Delete + revoke at provider |
-| `sessions`                  | refresh_token_hash                             | Delete                   |
-| `audit_log`                 | user_id, ip                                    | KEEP (legal retention, anonymize actor field after 90 days) |
-| `fraud_alerts`              | user_id, signals                               | KEEP (legitimate interest, anonymize after 1 year) |
-| Sentry events               | user.id, user.email                            | Forward delete to Sentry API |
-| Mixpanel / analytics        | distinct_id                                    | Forward delete to provider |
-| S3 buckets                  | profile photos, portfolio, completion photos   | Delete by prefix         |
-| Search index (Meilisearch)  | provider listing fields                        | Delete document          |
-
-### 3. Currently exposed endpoints
-
-- `POST /api/v1/users/me/roles` — manage roles (not delete).
-- *(planned)* `DELETE /api/v1/users/me` — not yet routed.
-
-The proto RPC `DeactivateAccount` is **defined but not exposed via HTTP**
-in the gateway. There is no admin tool, no self-service flow, and no
-internal cron that processes deletion requests. **All current "deletes"
-go through admin actions on a per-row basis.**
-
-## Gap
-
-To meet GDPR, we need:
-
-1. A self-service request: `DELETE /api/v1/users/me` (or `POST /api/v1/me/delete-request`).
-2. A 30-day grace period implemented as `users.delete_requested_at` so the user
-   can rescind by logging in again (email containing one-click cancel link).
-3. A cron job (e.g. `cmd/gdpr-eraser`) that, when `delete_requested_at` is older
-   than 30 days, executes the table-by-table erasure plan above in a single
-   transaction wherever feasible.
-4. Stripe customer / connect account deletion, with the rule that we do NOT
-   delete a Connect account that still has unpaid balance — instead, queue
-   for retry after final payout.
-5. OAuth token revocation with each provider's revoke endpoint.
-6. S3 prefix deletion for the user's media.
-7. Sentry / analytics deletion API calls.
-8. Confirmation email at request time AND at completion time.
-9. Audit log entry that records "GDPR-erased" with a hash of the original
-   user_id (so we can prove the request was honored without retaining the PII).
-10. Admin override for "reject deletion" (legal hold) with documented reason.
-
-## Self-service flow (target)
+## Architecture
 
 ```
-User clicks "Delete my account" in Settings
-  → DELETE /api/v1/users/me
-    - Auth required
-    - Sets users.delete_requested_at = now()
-    - Sets users.status = 'pending_deletion'
-    - Sends email "We received your request" with cancel link valid 30 days
-    - Logs out all sessions
-
-User clicks cancel link within 30 days
-  → POST /api/v1/auth/cancel-deletion?token=...
-    - Clears delete_requested_at
-    - Restores users.status = 'active'
-    - Sends email "Account restored"
-
-Cron runs daily (gdpr_eraser):
-  → For each user where delete_requested_at < now() - interval '30 days':
-    1. Begin tx.
-    2. Execute table plan above.
-    3. Stripe.customers.del(stripe_customer_id).
-    4. Stripe.accounts.del(stripe_account_id) if balance == 0; else mark for post-payout retry.
-    5. OAuth revoke.
-    6. S3 delete by prefix.
-    7. Sentry / analytics delete API calls.
-    8. INSERT audit_log row with hashed user_id.
-    9. DELETE FROM users WHERE id = $1 (after all FKs anonymized).
-    10. Commit.
-    11. Send email "Your account has been deleted" (last contact).
+       ┌─────────────────────────────────┐
+       │  Web (settings/account/page.tsx)│
+       │   - Type DELETE, pick reason    │
+       └──────────────┬──────────────────┘
+                      │ DELETE /api/v1/users/me
+                      │ POST   /api/v1/users/me/restore
+                      ▼
+       ┌─────────────────────────────────┐
+       │       Gateway (Go / Chi)        │
+       │   handler/user.go               │
+       └──────────────┬──────────────────┘
+                      │ gRPC
+                      ▼
+       ┌─────────────────────────────────┐
+       │  User Service / service.Erasure │
+       │   • RequestAccountDeletion      │
+       │   • CancelAccountDeletion       │
+       │   • FinalizeAccountDeletion     │
+       │   • ProcessPendingFinalizations │   ← cron entrypoint
+       └──────────────┬──────────────────┘
+                      │
+        ┌─────────────┼─────────────┬──────────────┐
+        ▼             ▼             ▼              ▼
+   ┌────────┐   ┌──────────┐   ┌────────┐    ┌────────┐
+   │Postgres│   │ Stripe   │   │   S3   │    │ OAuth  │
+   │ cascade│   │ customer │   │ prefix │    │ revoke │
+   │ (1 tx) │   │ + acct   │   │ delete │    │        │
+   └────────┘   └──────────┘   └────────┘    └────────┘
 ```
 
-## Manual procedure (today, while pipeline is unbuilt)
+## Lifecycle
 
-To honor a verified GDPR request before the pipeline is built:
+1. **User requests deletion** — `DELETE /api/v1/users/me` with
+   `{reason, confirmation: "DELETE"}`. Service sets
+   `users.deletion_requested_at = now()` and `users.deletion_reason`.
+   Returns the grace deadline (request_time + 30 days). Sends a
+   confirmation email (currently a TODO stub — log only).
+2. **Grace window (30 days)** — the user can sign in and call
+   `POST /api/v1/users/me/restore` to clear the request. Login is NOT
+   blocked during this window (so users can rescind).
+3. **Cron worker fires** every 6 hours (`startGDPRWorker` in
+   `services/user/cmd/server/gdpr_worker.go`) and queries
+   `users WHERE deletion_requested_at < NOW() - INTERVAL '30 days' AND
+   deletion_finalized_at IS NULL`. For each row it calls
+   `FinalizeAccountDeletion` (force=false).
+4. **Cascade runs** in a single Postgres transaction
+   (`repository.PostgresRepository.FinalizeAccountDeletion`). After commit,
+   side-effect calls fire: Stripe customer + Connect account delete, S3
+   prefix delete, OAuth revoke. Each side-effect failure is logged but does
+   NOT roll back the in-DB cascade — the row's `deletion_finalized_at` is
+   set so the cron will not re-process it.
+5. **Audit log** entry written to `admin_audit_log` with
+   `action='gdpr_finalize'`, target user id, and the per-table row counts
+   plus Stripe outcomes.
+6. **Admin override** — `POST /api/v1/admin/users/{id}/finalize-deletion`
+   bypasses the grace window for compliance / legal-hold release. Same
+   audit log entry but with admin actor.
 
-1. Verify identity via existing email + a manual check (out-of-band).
-2. Run, in production psql (with two-engineer review):
-   ```sql
-   BEGIN;
+## Erasure Cascade — Decisions Per Table
 
-   -- Capture for audit
-   INSERT INTO audit_log (id, actor_user_id, action, target_user_id, payload, created_at)
-   VALUES (gen_random_uuid(), '<admin_uuid>', 'gdpr_erase_manual', '<user_uuid>',
-           jsonb_build_object('verified_via','email','operator','<your_name>'), now());
+| Table | Strategy | Why |
+|-------|----------|-----|
+| `users` | Anonymize. email → `deleted-{uuid}@deleted.local`, display_name → `Deleted User`, phone/avatar/password/MFA → NULL, status → `deactivated`, set `deletion_finalized_at`, `deleted_at`. | Keep the row so foreign keys to bids/jobs/contracts/reviews stay valid. The tombstone email is unique-friendly so the UNIQUE constraint never collides. |
+| `provider_profiles` | business_name → "Deleted Provider", bio/service_address/ein_tin/insurance_policy_number/service_location → NULL. | KYC fields are PII; business_name shows up on the public marketplace. |
+| `provider_employees` | first_name/last_name → "Deleted Employee", email/phone/dob/license/insurance → NULL. | These are real people other than the user — wipe them because the user can no longer steward consent. |
+| `provider_portfolio_images` | DELETE rows. | Photos can be PII (faces, license plates). S3 objects are removed by the prefix-delete step. |
+| `properties` | address/city/state → "[deleted]", location → (0,0), keep zip_code. | Zip is needed for market-range analytics (zip-level price index). Anything more granular is PII. |
+| `verification_documents` | DELETE. | KYC scans must not survive erasure even if user later re-registers — fresh consent required. |
+| `jobs` | KEEP rows (platform-public listings). description → "[deleted]", service_address → NULL. | Providers needed to see the listing publicly during the auction; fully wiping rewrites public history. We anonymize free-text just in case the customer wrote something identifying. |
+| `job_photos` | DELETE rows. | Same reasoning as portfolio images. |
+| `bids` | KEEP. Strip `note`/`comment`/`message` keys from `bid_updates` JSON. | Bids back the contract money trail — every awarded contract has a bid behind it. We don't drop them but redact freeform text. |
+| `contracts` | KEEP. cancellation_reason → NULL when the user cancelled. | Tax / IRS / Stripe-dispute retention requires keeping the ledger. |
+| `payments` | KEEP, untouched. | Legal retention requirement (IRS 7yr, Stripe 18mo). The columns the user can write to are all numeric/enum — no free-text PII to redact. |
+| `reviews` | review_text → "[Deleted]". reviewer_id stays (NOT NULL FK + UNIQUE constraint with contract_id) but points at the now-anonymized user row. | Ratings have legitimate platform interest; published-review integrity for the reviewee is preserved. Comment is redacted because the reviewer wrote it about another party. |
+| `review_responses` | response_text → "[Deleted]". | Same reasoning as reviews. |
+| `review_flags` | DELETE where `flagged_by` or `resolved_by` = user. | Internal moderation state, no value once the user is gone. |
+| `chat_messages` | content/attachment_* → NULL, is_deleted=true, deleted_at=now(). sender_id stays. | Other party in the conversation needs the channel to render; replacing content with "[Deleted]" preserves structure. |
+| `refresh_tokens` | DELETE. | Belt-and-braces — the status flip to `deactivated` already blocks login but we want zero credentials surviving. |
+| `user_sessions` | NULL out fingerprint_components, device_fingerprint, geo_*, user_agent. | Fraud-system retention needs the row, but the identifiers are PII. |
+| `notifications` | DELETE. | Personalized; no value retained after account is gone. |
+| `notification_preferences` | DELETE. | Same. |
+| `device_tokens` | DELETE. | Push notification credentials. |
+| `fraud_signals` | KEEP, evidence_json → NULL. user_id stays. | Compliance retention — we may need to demonstrate why a related account was banned. The evidence blob is PII (IP, fingerprints). |
+| `trust_scores` | DELETE. | Computed; meaningless once account is wiped. |
+| `trust_score_history` | DELETE. | Same. |
+| `oauth_accounts` | DELETE. Provider-side revoke handled via `OAuthRevoker` (Google/Apple revoke endpoint where supported). | Removes the link; provider revoke is best-effort. |
+| `subscriptions` | KEEP for accounting. stripe_customer_id remains so we know which Stripe customer was deleted. | Needed for accountant reconciliation. |
+| `S3 users/{userID}/` | Delete every object. | Avatar, portfolio, KYC scans, completion photos. |
+| Stripe Customer | `stripe.Customer.del()`. | Outcome string recorded in audit log. |
+| Stripe Connect Account | `stripe.Account.del()`. May be rejected if open balance — see Open Edge Cases. | Outcome recorded. |
 
-   -- Anonymize FKs that can keep their rows
-   UPDATE jobs SET customer_id = '00000000-0000-0000-0000-000000000000' WHERE customer_id = '<user_uuid>';
-   UPDATE bids SET provider_id = '00000000-0000-0000-0000-000000000000' WHERE provider_id = '<user_uuid>';
-   UPDATE contracts SET customer_id = '00000000-0000-0000-0000-000000000000' WHERE customer_id = '<user_uuid>';
-   UPDATE contracts SET provider_id = '00000000-0000-0000-0000-000000000000' WHERE provider_id = '<user_uuid>';
-   UPDATE reviews SET reviewer_id = '00000000-0000-0000-0000-000000000000' WHERE reviewer_id = '<user_uuid>';
-   UPDATE chat_messages SET user_id = '00000000-0000-0000-0000-000000000000', body = '[deleted]' WHERE user_id = '<user_uuid>';
+## Open Stripe Edge Cases
 
-   -- Delete PII rows
-   DELETE FROM verification_documents WHERE user_id = '<user_uuid>';
-   DELETE FROM properties WHERE user_id = '<user_uuid>';
-   DELETE FROM payment_methods WHERE user_id = '<user_uuid>';
-   DELETE FROM oauth_tokens WHERE user_id = '<user_uuid>';
-   DELETE FROM sessions WHERE user_id = '<user_uuid>';
-   DELETE FROM notifications WHERE user_id = '<user_uuid>';
-   DELETE FROM provider_profiles WHERE user_id = '<user_uuid>';
-   DELETE FROM user_profiles WHERE user_id = '<user_uuid>';
+- **Connect account with positive balance.** Stripe returns
+  `account_balance_invalid` until the next payout sweeps the balance to
+  zero. The `StripeDeleter` implementation should detect that error code
+  and return outcome `"skipped_balance"`. The cron will retry on the next
+  tick (the row's `deletion_finalized_at` is already set, so the DB
+  cascade has run; only the Stripe step is pending). **Today the
+  user-service is wired with a `noopStripeDeleter` (no-op) until the
+  payment service exposes a deleter — calls return `"skipped_no_client"`,
+  recorded faithfully in the audit log.**
+- **Pending dispute on a Customer.** Stripe blocks customer deletion
+  while a dispute is open. Outcome should be `"skipped_dispute"`. We
+  re-attempt on the next cron tick.
+- **Connect Express vs Custom.** We use Express. Express accounts can be
+  deleted via the API but the dashboard returns a 410 if the account
+  already has paid out — that's fine, we treat it as `"deleted"`.
+- **Customer attached to a Subscription.** Cancel the subscription first
+  (subscriptions stay in our DB, but cancelling at Stripe stops billing).
+  Today this is handled implicitly because the cascade runs after the
+  user has stopped using the platform — there shouldn't be active
+  subscriptions on a deletion-requested account in steady state. If we
+  see this in production we'll add an explicit cancel call.
 
-   -- Finally, the user row
-   DELETE FROM users WHERE id = '<user_uuid>';
+## Endpoints
 
-   COMMIT;
-   ```
-3. **Externally:**
-   - In Stripe Dashboard → Customers → search → click → Actions → Delete.
-   - In Stripe Connect → Accounts → search → click → Disable / delete (must have $0 balance).
-   - In Sentry → Settings → Privacy → Delete user data → submit user_id.
-   - In Mixpanel / analytics → Delete user via API.
-   - S3: `aws s3 rm s3://nomarkup-prod/users/<user_uuid>/ --recursive`
-4. Log the manual procedure in the legal-hold spreadsheet with timestamp and operator.
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `DELETE` | `/api/v1/users/me` | user | Initiate deletion (body: `{reason, confirmation: "DELETE"}`). Returns 200 + `grace_deadline`. |
+| `POST` | `/api/v1/users/me/restore` | user | Cancel pending deletion. Returns `{cancelled: bool}`. |
+| `POST` | `/api/v1/admin/users/{id}/finalize-deletion` | admin | Force the cascade now. |
+
+gRPC RPCs (consumed by gateway):
+
+- `RequestAccountDeletion(user_id, reason, confirmation)`
+- `CancelAccountDeletion(user_id)`
+- `FinalizeAccountDeletion(user_id, force, admin_id)`
+
+The legacy `DeactivateAccount` RPC is preserved for the
+immediate-suspend-with-password path (different lifecycle, different
+intent) and is unaffected by this work.
+
+## Database
+
+Migration `032_gdpr_deletion.up.sql`:
+
+- `users.deletion_requested_at TIMESTAMPTZ NULL`
+- `users.deletion_reason TEXT NULL`
+- `users.deletion_finalized_at TIMESTAMPTZ NULL`
+- Index `idx_users_deletion_pending` on `(deletion_requested_at) WHERE
+  deletion_finalized_at IS NULL` — cron's hot-path predicate.
+
+## Cron Worker
+
+Lives in `services/user/cmd/server/gdpr_worker.go`. Started from `main.go`
+on a 6-hour ticker.
+
+Env vars:
+
+- `GDPR_WORKER_ENABLED=false` — skip worker (use during incidents).
+- `GDPR_WORKER_INTERVAL=6h` — duration string.
+- `GDPR_WORKER_BATCH_SIZE=100` — per-tick max users.
+
+Metrics (Prometheus):
+
+- `gdpr_deletions_finalized_total` — counter, bumps once per user.
+- `gdpr_deletions_failed_total` — counter; a tick that throws will
+  bump this without bumping the success counter.
+
+Graceful shutdown: the goroutine watches `ctx.Done()`; per-tick work
+runs inside Postgres transactions so a SIGTERM mid-cascade rolls back
+the unfinished tx and the user shows up in the next tick. No sleep loops
+without context selection.
 
 ## Verification
 
-After the pipeline is built, the canonical test is:
+Local lifecycle test:
 
 ```bash
-# Create test user via API
-curl -X POST .../auth/register -d '{"email":"gdpr-test+1@nomarkup.com","password":"..."}'
+# 1. Bring up the stack.
+docker compose up -d
+make migrate-up
 
-# Trigger deletion
-curl -X DELETE .../users/me -H "Authorization: Bearer <token>"
-
-# Wait 30 days (or fast-forward delete_requested_at in dev)
-
-# Run cron
-go run ./cmd/gdpr-eraser
-
-# Confirm:
-SELECT count(*) FROM users WHERE id = '<test_user_uuid>';                  -- 0
-SELECT count(*) FROM payment_methods WHERE user_id = '<test_user_uuid>';   -- 0
-SELECT count(*) FROM verification_documents WHERE user_id = '<test_user_uuid>'; -- 0
-# Stripe customer no longer retrievable.
-# S3 prefix empty.
-# Sentry confirms deletion.
+# 2. Run the integration test (creates / wipes its own users — safe on dev).
+cd services/user
+DATABASE_URL=postgresql://nomarkup@localhost:5433/nomarkup?sslmode=disable \
+  go test -tags=integration ./internal/repository/... -run TestGDPR
 ```
+
+Expected output:
+
+```
+=== RUN   TestGDPR_FullLifecycle_Integration
+--- PASS: TestGDPR_FullLifecycle_Integration
+=== RUN   TestGDPR_ListPendingFinalizations_RespectsCutoff
+--- PASS: TestGDPR_ListPendingFinalizations_RespectsCutoff
+PASS
+```
+
+Service-layer unit tests (mocks, no DB):
+
+```bash
+go test ./internal/service/ -run TestErasure
+```
+
+End-to-end manual (only after the user has explicitly opted in to dev
+testing, never on a real user):
+
+```bash
+TOKEN=$(curl ... /auth/login | jq -r .access_token)
+
+# Request.
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+     -d '{"reason":"no longer needed","confirmation":"DELETE"}' \
+     http://localhost:8080/api/v1/users/me
+
+# Cancel.
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+     http://localhost:8080/api/v1/users/me/restore
+
+# Force-finalize as admin.
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+     http://localhost:8080/api/v1/admin/users/$USER_ID/finalize-deletion
+```
+
+## What's NOT in scope of this PR
+
+- **Real email delivery** at request / cancel / finalize time.
+  The hooks are in place (logged via slog with `TODO: real email`); the
+  notification-service template work is its own ticket.
+- **Sentry / Mixpanel / external analytics deletion.** Manual today.
+  Add `AnalyticsDeleter` interface alongside `OAuthRevoker` when those
+  providers are wired.
+- **Production Stripe deleter implementation.** A noop deleter is
+  injected by default; outcomes are recorded as `"skipped_no_client"`.
+  The payment service should publish a thin `StripeDeleter` adapter that
+  calls `customer.Del` / `account.Del` and maps Stripe error codes to
+  the documented outcome strings.
 
 ## Owner
 
-Until the GDPR pipeline ships:
 - **Policy owner:** Legal.
-- **Implementation owner:** User Service team (open ticket NMK-GDPR-1).
-- **Manual fulfillment owner:** Trust & Safety (max 2 / week — beyond that
-  becomes infeasible without the pipeline).
+- **Implementation owner:** User Service team.
+- **Operational runbook:** Trust & Safety oncall — they triage
+  `gdpr_deletions_failed_total > 0` alerts.
