@@ -144,10 +144,13 @@ var routeTiers = []struct {
 	{"/healthz", TierNone},
 	{"/readyz", TierNone},
 
-	// Auth endpoints (unauthenticated) — auth tier.
+	// Auth endpoints (unauthenticated) — auth tier (5/15min, abuse defense).
+	// NOTE: /auth/refresh is NOT here — it's called on every page navigation
+	// by AuthRestorer, so it gets the standard tier instead. Brute-forcing
+	// refresh tokens directly would require already having a stolen
+	// refresh-token cookie, which is itself an HttpOnly compromise.
 	{"/api/v1/auth/register", TierAuth},
 	{"/api/v1/auth/login", TierAuth},
-	{"/api/v1/auth/refresh", TierAuth},
 	{"/api/v1/auth/verify-email", TierAuth},
 	{"/api/v1/auth/verify-phone", TierAuth},
 	{"/api/v1/auth/reset-password", TierAuth},
