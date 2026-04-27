@@ -27,17 +27,23 @@ type Server struct {
 	admin              *service.Admin
 	phone              *service.PhoneVerification
 	verification       *service.Verification
+	erasure            *service.Erasure
 	notificationClient notificationv1.NotificationServiceClient
 	baseURL            string
 }
 
 // NewServer creates a new gRPC server for the user service.
+//
+// `erasure` may be nil — when nil, the GDPR/CCPA endpoints will return
+// FailedPrecondition. This lets older test setups keep working without
+// having to wire the erasure pipeline.
 func NewServer(
 	auth *service.Auth,
 	profile *service.Profile,
 	admin *service.Admin,
 	phone *service.PhoneVerification,
 	verification *service.Verification,
+	erasure *service.Erasure,
 	notificationClient notificationv1.NotificationServiceClient,
 	baseURL string,
 ) *Server {
@@ -47,6 +53,7 @@ func NewServer(
 		admin:              admin,
 		phone:              phone,
 		verification:       verification,
+		erasure:            erasure,
 		notificationClient: notificationClient,
 		baseURL:            baseURL,
 	}
@@ -1344,7 +1351,96 @@ func mapDomainError(err error) error {
 		return status.Error(codes.Unauthenticated, "invalid or expired MFA challenge token")
 	case errors.Is(err, domain.ErrPropertyNotFound):
 		return status.Error(codes.NotFound, "property not found")
+	case errors.Is(err, domain.ErrDeletionAlreadyRequested):
+		return status.Error(codes.AlreadyExists, "deletion already requested")
+	case errors.Is(err, domain.ErrDeletionNotRequested):
+		return status.Error(codes.FailedPrecondition, "no deletion request pending")
+	case errors.Is(err, domain.ErrDeletionAlreadyFinalized):
+		return status.Error(codes.FailedPrecondition, "deletion already finalized")
+	case errors.Is(err, domain.ErrDeletionGracePeriodActive):
+		return status.Error(codes.FailedPrecondition, "deletion grace period still active")
+	case errors.Is(err, domain.ErrDeletionConfirmation):
+		return status.Error(codes.InvalidArgument, "deletion confirmation phrase invalid")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+// RequestAccountDeletion handles the GDPR/CCPA self-service erasure request.
+func (s *Server) RequestAccountDeletion(ctx context.Context, req *userv1.RequestAccountDeletionRequest) (*userv1.RequestAccountDeletionResponse, error) {
+	if s.erasure == nil {
+		return nil, status.Error(codes.FailedPrecondition, "erasure pipeline not configured")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	deadline, created, err := s.erasure.RequestAccountDeletion(ctx, req.GetUserId(), req.GetReason(), req.GetConfirmation())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &userv1.RequestAccountDeletionResponse{
+		GraceDeadline: timestamppb.New(deadline),
+		Created:       created,
+	}, nil
+}
+
+// CancelAccountDeletion clears a pending deletion request within the grace
+// window.
+func (s *Server) CancelAccountDeletion(ctx context.Context, req *userv1.CancelAccountDeletionRequest) (*userv1.CancelAccountDeletionResponse, error) {
+	if s.erasure == nil {
+		return nil, status.Error(codes.FailedPrecondition, "erasure pipeline not configured")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cancelled, err := s.erasure.CancelAccountDeletion(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &userv1.CancelAccountDeletionResponse{Cancelled: cancelled}, nil
+}
+
+// FinalizeAccountDeletion runs the erasure cascade. Used by the cron worker
+// (force=false) and admin override (force=true).
+func (s *Server) FinalizeAccountDeletion(ctx context.Context, req *userv1.FinalizeAccountDeletionRequest) (*userv1.FinalizeAccountDeletionResponse, error) {
+	if s.erasure == nil {
+		return nil, status.Error(codes.FailedPrecondition, "erasure pipeline not configured")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	outcome, err := s.erasure.FinalizeAccountDeletion(ctx, req.GetUserId(), req.GetForce())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	// Audit-log every finalize (admin force gets the admin_id; cron uses the
+	// user's own id as actor since it is system-driven).
+	actor := req.GetAdminId()
+	if actor == "" {
+		actor = req.GetUserId()
+	}
+	if logErr := s.admin.InsertAuditLog(ctx, actor, "gdpr_finalize", "user", req.GetUserId(), map[string]any{
+		"force":                   req.GetForce(),
+		"counts":                  outcome.Counts,
+		"stripe_customer_outcome": outcome.StripeCustomerOutcome,
+		"stripe_account_outcome":  outcome.StripeAccountOutcome,
+	}, ""); logErr != nil {
+		slog.Warn("gdpr: failed to write audit log",
+			"user_id", req.GetUserId(),
+			"error", logErr,
+		)
+	}
+
+	rows := make(map[string]int64, len(outcome.Counts))
+	for k, v := range outcome.Counts {
+		rows[k] = v
+	}
+
+	return &userv1.FinalizeAccountDeletionResponse{
+		FinalizedAt:           timestamppb.New(outcome.FinalizedAt),
+		RowsAffected:          rows,
+		StripeCustomerOutcome: outcome.StripeCustomerOutcome,
+		StripeAccountOutcome:  outcome.StripeAccountOutcome,
+	}, nil
 }

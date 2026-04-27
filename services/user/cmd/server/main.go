@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
+	"github.com/nomarkup/nomarkup/services/user/internal/crypto"
 	grpcserver "github.com/nomarkup/nomarkup/services/user/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
 	"github.com/nomarkup/nomarkup/services/user/internal/service"
@@ -178,14 +179,27 @@ func main() {
 		slog.Warn("email verification will be skipped on registration (no notification service)")
 	}
 
-	repo := repository.NewPostgresRepository(pool)
+	// Build the PII cipher (libsodium-compatible nacl/secretbox). In
+	// production a missing ENCRYPTION_KEY is fatal; in development an
+	// ephemeral key is generated and a WARN is logged. See CLAUDE.md §6.
+	cipher, err := crypto.FromEnv()
+	if err != nil {
+		slog.Error("failed to initialize PII cipher", "error", err)
+		os.Exit(1)
+	}
+
+	repo := repository.NewPostgresRepository(pool, cipher)
 	jwtManager := service.NewJWTManager(privateKey)
 	authService := service.NewAuth(repo, jwtManager, verificationSecret, skipEmailVerification)
 	profileService := service.NewProfile(repo)
 	adminService := service.NewAdmin(repo)
 	phoneService := service.NewPhoneVerification(repo, rdb, smsClient)
 	verificationService := service.NewVerification(repo)
-	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, notifClient, baseURL)
+	// GDPR/CCPA erasure pipeline. Stripe/S3/OAuth dependencies are nil for
+	// now — the service degrades gracefully (logs the skip in audit). Wiring
+	// real implementations is tracked in docs/operations/gdpr-delete.md.
+	erasureService := service.NewErasure(repo, nil, nil, nil)
+	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, erasureService, notifClient, baseURL)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
@@ -206,6 +220,16 @@ func main() {
 
 	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
 	startObservabilityServer(sigCtx, "user-service", port, pool, rdb)
+
+	// GDPR cron worker — every 6 hours, drain a batch of users whose
+	// 30-day grace window has elapsed. Cleanly stops on SIGINT/SIGTERM.
+	gdprInterval := parseDurationOrDefault(os.Getenv("GDPR_WORKER_INTERVAL"), 6*time.Hour)
+	gdprBatch := parseIntOrDefault(os.Getenv("GDPR_WORKER_BATCH_SIZE"), 100)
+	if os.Getenv("GDPR_WORKER_ENABLED") == "false" {
+		slog.Info("gdpr cron worker disabled via GDPR_WORKER_ENABLED=false")
+	} else {
+		startGDPRWorker(sigCtx, erasureService, gdprInterval, gdprBatch)
+	}
 
 	go func() {
 		slog.Info("user service starting", "port", port)

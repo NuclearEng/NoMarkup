@@ -30,7 +30,49 @@ var (
 	ErrInvalidMFAChallengeToken = errors.New("invalid or expired MFA challenge token")
 	ErrEmailNotVerified         = errors.New("email not verified")
 	ErrPropertyNotFound         = errors.New("property not found")
+
+	// GDPR / CCPA erasure pipeline.
+	ErrDeletionAlreadyRequested = errors.New("account deletion already requested")
+	ErrDeletionNotRequested     = errors.New("account deletion not requested")
+	ErrDeletionAlreadyFinalized = errors.New("account deletion already finalized")
+	ErrDeletionGracePeriodActive = errors.New("account deletion grace period still active")
+	ErrDeletionConfirmation     = errors.New("deletion confirmation phrase invalid")
 )
+
+// DeletionGracePeriod is the window between a user requesting account
+// deletion and the cron finalizing it. Aligns with GDPR Article 17 (30 days)
+// and CCPA's 45-day default. Picking the shorter of the two is the safer
+// regulator-facing choice.
+const DeletionGracePeriod = 30 * 24 * time.Hour
+
+// DeletionConfirmationPhrase is the literal string the client must echo when
+// requesting deletion. The frontend renders this in the confirmation dialog
+// so the action cannot be triggered by an accidental click.
+const DeletionConfirmationPhrase = "DELETE"
+
+// PendingDeletion summarises a user that has an unfinalized deletion request.
+// Used by the cron worker to materialize the work queue.
+type PendingDeletion struct {
+	UserID              string
+	Email               string
+	StripeCustomerID    string
+	StripeAccountID     string
+	DeletionRequestedAt time.Time
+}
+
+// ErasureCounts holds per-table row anonymization counts so the audit log
+// can record exactly what was wiped during a finalize call.
+type ErasureCounts map[string]int64
+
+// FinalizeOutcome captures everything the cascade did so it can be both
+// returned over gRPC and written into the admin_audit_log payload.
+type FinalizeOutcome struct {
+	UserID                string
+	FinalizedAt           time.Time
+	Counts                ErasureCounts
+	StripeCustomerOutcome string
+	StripeAccountOutcome  string
+}
 
 // User represents a platform user.
 type User struct {
@@ -405,4 +447,26 @@ type UserRepository interface {
 	ListProperties(ctx context.Context, userID string) ([]Property, error)
 	UpdateProperty(ctx context.Context, propertyID string, input UpdatePropertyInput) (*Property, error)
 	DeleteProperty(ctx context.Context, propertyID string) error
+
+	// GDPR / CCPA erasure pipeline.
+	// MarkDeletionRequested records that the user has asked for erasure,
+	// returns ErrDeletionAlreadyRequested if there's already an unfinalized
+	// request, and ErrDeletionAlreadyFinalized if the user has already been
+	// finalized.
+	MarkDeletionRequested(ctx context.Context, userID, reason string, requestedAt time.Time) error
+	// ClearDeletionRequest removes a pending request (within grace period).
+	// Returns ErrDeletionNotRequested when nothing was pending and
+	// ErrDeletionAlreadyFinalized once finalize has run.
+	ClearDeletionRequest(ctx context.Context, userID string) error
+	// GetUserDeletionState returns the timestamps for a user — needed by
+	// admin tooling and the lifecycle service. Returns ErrUserNotFound
+	// if the user does not exist.
+	GetUserDeletionState(ctx context.Context, userID string) (requestedAt, finalizedAt *time.Time, err error)
+	// ListPendingFinalizations returns rows whose grace period has expired
+	// and have not yet been finalized. The cron worker drains this queue.
+	ListPendingFinalizations(ctx context.Context, olderThan time.Time, limit int) ([]PendingDeletion, error)
+	// FinalizeAccountDeletion runs the full anonymization cascade in a
+	// single transaction. Returns the per-table counts; idempotent
+	// (returns ErrDeletionAlreadyFinalized on a second call).
+	FinalizeAccountDeletion(ctx context.Context, userID string) (ErasureCounts, error)
 }

@@ -232,6 +232,24 @@ func (m *mockUserRepo) DeleteProperty(_ context.Context, _ string) error {
 	return nil
 }
 
+// --- GDPR / CCPA erasure stubs (full mocks live in deletion_test.go) ---
+
+func (m *mockUserRepo) MarkDeletionRequested(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+func (m *mockUserRepo) ClearDeletionRequest(_ context.Context, _ string) error {
+	return nil
+}
+func (m *mockUserRepo) GetUserDeletionState(_ context.Context, _ string) (*time.Time, *time.Time, error) {
+	return nil, nil, nil
+}
+func (m *mockUserRepo) ListPendingFinalizations(_ context.Context, _ time.Time, _ int) ([]domain.PendingDeletion, error) {
+	return nil, nil
+}
+func (m *mockUserRepo) FinalizeAccountDeletion(_ context.Context, _ string) (domain.ErasureCounts, error) {
+	return nil, nil
+}
+
 // --- helpers ---
 
 func testKeyPair(t *testing.T) *rsa.PrivateKey {
