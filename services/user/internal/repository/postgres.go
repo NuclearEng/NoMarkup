@@ -12,17 +12,22 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/services/user/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/user/internal/domain"
 )
 
 // PostgresRepository implements domain.UserRepository using pgx.
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
-// NewPostgresRepository creates a new PostgreSQL-backed user repository.
-func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{pool: pool}
+// NewPostgresRepository creates a new PostgreSQL-backed user repository with
+// the given PII cipher. Pass a cipher built from
+// crypto.FromEnv() — all PII columns flagged in migration 031 are
+// encrypted/decrypted through it.
+func NewPostgresRepository(pool *pgxpool.Pool, cipher *crypto.Cipher) *PostgresRepository {
+	return &PostgresRepository{pool: pool, cipher: cipher}
 }
 
 func (r *PostgresRepository) CreateUser(ctx context.Context, user *domain.User) error {
@@ -56,11 +61,11 @@ func (r *PostgresRepository) GetUserByID(ctx context.Context, id string) (*domai
 		       display_name, avatar_url, roles, status, suspension_reason,
 		       mfa_enabled, mfa_secret, mfa_backup_codes,
 		       last_login_at, last_active_at, timezone,
-		       created_at, updated_at, deleted_at
+		       created_at, updated_at, deleted_at, pii_encrypted_v1
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL`
 
-	u, err := scanUser(r.pool.QueryRow(ctx, query, id))
+	u, err := scanUser(r.pool.QueryRow(ctx, query, id), r.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("get user by id: %w", domain.ErrUserNotFound)
@@ -76,11 +81,11 @@ func (r *PostgresRepository) GetUserByEmail(ctx context.Context, email string) (
 		       display_name, avatar_url, roles, status, suspension_reason,
 		       mfa_enabled, mfa_secret, mfa_backup_codes,
 		       last_login_at, last_active_at, timezone,
-		       created_at, updated_at, deleted_at
+		       created_at, updated_at, deleted_at, pii_encrypted_v1
 		FROM users
 		WHERE email = $1 AND deleted_at IS NULL`
 
-	u, err := scanUser(r.pool.QueryRow(ctx, query, email))
+	u, err := scanUser(r.pool.QueryRow(ctx, query, email), r.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("get user by email: %w", domain.ErrUserNotFound)
@@ -196,12 +201,12 @@ func (r *PostgresRepository) FindUserByOAuth(ctx context.Context, provider, prov
 		       u.display_name, u.avatar_url, u.roles, u.status, u.suspension_reason,
 		       u.mfa_enabled, u.mfa_secret, u.mfa_backup_codes,
 		       u.last_login_at, u.last_active_at, u.timezone,
-		       u.created_at, u.updated_at, u.deleted_at
+		       u.created_at, u.updated_at, u.deleted_at, u.pii_encrypted_v1
 		FROM users u
 		JOIN oauth_accounts oa ON oa.user_id = u.id
 		WHERE oa.provider = $1 AND oa.provider_id = $2 AND u.deleted_at IS NULL`
 
-	u, err := scanUser(r.pool.QueryRow(ctx, query, provider, providerID))
+	u, err := scanUser(r.pool.QueryRow(ctx, query, provider, providerID), r.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("find user by oauth: %w", domain.ErrUserNotFound)
@@ -278,8 +283,13 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, userID string, inpu
 		argIdx++
 	}
 	if input.Phone != nil {
+		// Encrypt phone before storing. Empty string passes through (encryptStringOrEmpty).
+		encrypted, err := r.cipher.EncryptString(*input.Phone)
+		if err != nil {
+			return nil, fmt.Errorf("update user: encrypt phone: %w", err)
+		}
 		setClauses = append(setClauses, fmt.Sprintf("phone = $%d", argIdx))
-		args = append(args, *input.Phone)
+		args = append(args, encrypted)
 		argIdx++
 	}
 	if input.AvatarURL != nil {
@@ -297,6 +307,15 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, userID string, inpu
 		return r.GetUserByID(ctx, userID)
 	}
 
+	// Any update touching encrypted columns marks the row as encrypted so reads
+	// know to decrypt. Setting it unconditionally is fine because all
+	// non-encrypted columns above are no-ops on the flag's meaning, but only
+	// the encrypted-column writes (phone) actually need the flip. We set it
+	// only when phone was present to avoid lying about the row's state.
+	if input.Phone != nil {
+		setClauses = append(setClauses, "pii_encrypted_v1 = TRUE")
+	}
+
 	setClauses = append(setClauses, "updated_at = now()")
 	args = append(args, userID)
 
@@ -307,10 +326,10 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, userID string, inpu
 		          display_name, avatar_url, roles, status, suspension_reason,
 		          mfa_enabled, mfa_secret, mfa_backup_codes,
 		          last_login_at, last_active_at, timezone,
-		          created_at, updated_at, deleted_at`,
+		          created_at, updated_at, deleted_at, pii_encrypted_v1`,
 		strings.Join(setClauses, ", "), argIdx)
 
-	u, err := scanUser(r.pool.QueryRow(ctx, query, args...))
+	u, err := scanUser(r.pool.QueryRow(ctx, query, args...), r.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("update user: %w", domain.ErrUserNotFound)
@@ -333,9 +352,9 @@ func (r *PostgresRepository) EnableRole(ctx context.Context, userID string, role
 		          display_name, avatar_url, roles, status, suspension_reason,
 		          mfa_enabled, mfa_secret, mfa_backup_codes,
 		          last_login_at, last_active_at, timezone,
-		          created_at, updated_at, deleted_at`
+		          created_at, updated_at, deleted_at, pii_encrypted_v1`
 
-	u, err := scanUser(r.pool.QueryRow(ctx, query, role, userID))
+	u, err := scanUser(r.pool.QueryRow(ctx, query, role, userID), r.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("enable role: %w", domain.ErrUserNotFound)
@@ -356,9 +375,9 @@ func (r *PostgresRepository) CreateProviderProfile(ctx context.Context, userID s
 		          cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
 		          instant_available, jobs_completed, avg_response_time_minutes,
 		          on_time_rate, profile_completeness, stripe_account_id,
-		          stripe_onboarding_complete, created_at, updated_at`
+		          stripe_onboarding_complete, created_at, updated_at, pii_encrypted_v1`
 
-	p, err := scanProviderProfile(r.pool.QueryRow(ctx, query, userID))
+	p, err := scanProviderProfile(r.pool.QueryRow(ctx, query, userID), r.cipher)
 	if err != nil {
 		return nil, fmt.Errorf("create provider profile: %w", err)
 	}
@@ -373,11 +392,11 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, userID stri
 		       cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
 		       instant_available, jobs_completed, avg_response_time_minutes,
 		       on_time_rate, profile_completeness, stripe_account_id,
-		       stripe_onboarding_complete, created_at, updated_at
+		       stripe_onboarding_complete, created_at, updated_at, pii_encrypted_v1
 		FROM provider_profiles
 		WHERE user_id = $1`
 
-	p, err := scanProviderProfile(r.pool.QueryRow(ctx, query, userID))
+	p, err := scanProviderProfile(r.pool.QueryRow(ctx, query, userID), r.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("get provider profile: %w", domain.ErrProviderProfileNotFound)
@@ -416,9 +435,14 @@ func (r *PostgresRepository) UpdateProviderProfile(ctx context.Context, userID s
 		argIdx++
 	}
 	if input.ServiceAddress != nil {
+		encrypted, err := r.cipher.EncryptString(*input.ServiceAddress)
+		if err != nil {
+			return nil, fmt.Errorf("update provider profile: encrypt service_address: %w", err)
+		}
 		setClauses = append(setClauses, fmt.Sprintf("service_address = $%d", argIdx))
-		args = append(args, *input.ServiceAddress)
+		args = append(args, encrypted)
 		argIdx++
+		setClauses = append(setClauses, "pii_encrypted_v1 = TRUE")
 	}
 	if input.Latitude != nil && input.Longitude != nil {
 		setClauses = append(setClauses, fmt.Sprintf("service_location = ST_SetSRID(ST_MakePoint($%d, $%d), 4326)", argIdx, argIdx+1))
@@ -447,10 +471,10 @@ func (r *PostgresRepository) UpdateProviderProfile(ctx context.Context, userID s
 		          cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
 		          instant_available, jobs_completed, avg_response_time_minutes,
 		          on_time_rate, profile_completeness, stripe_account_id,
-		          stripe_onboarding_complete, created_at, updated_at`,
+		          stripe_onboarding_complete, created_at, updated_at, pii_encrypted_v1`,
 		strings.Join(setClauses, ", "), argIdx)
 
-	p, err := scanProviderProfile(r.pool.QueryRow(ctx, query, args...))
+	p, err := scanProviderProfile(r.pool.QueryRow(ctx, query, args...), r.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("update provider profile: %w", domain.ErrProviderProfileNotFound)
@@ -833,9 +857,11 @@ func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status
 	argIdx := 1
 
 	if query != "" {
+		// Phone is stored encrypted (per migration 031 / nacl secretbox), so
+		// ILIKE on phone cannot match. Search by email and display_name only.
 		whereClauses = append(whereClauses, fmt.Sprintf(
-			"(email ILIKE $%d OR display_name ILIKE $%d OR phone ILIKE $%d)",
-			argIdx, argIdx, argIdx,
+			"(email ILIKE $%d OR display_name ILIKE $%d)",
+			argIdx, argIdx,
 		))
 		args = append(args, "%"+query+"%")
 		argIdx++
@@ -862,7 +888,7 @@ func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status
 		       display_name, avatar_url, roles, status, suspension_reason,
 		       mfa_enabled, mfa_secret, mfa_backup_codes,
 		       last_login_at, last_active_at, timezone,
-		       created_at, updated_at, deleted_at
+		       created_at, updated_at, deleted_at, pii_encrypted_v1
 		FROM users
 		WHERE %s
 		ORDER BY created_at DESC
@@ -878,7 +904,7 @@ func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status
 
 	var users []domain.User
 	for rows.Next() {
-		u, err := scanUserFromRows(rows)
+		u, err := scanUserFromRows(rows, r.cipher)
 		if err != nil {
 			return nil, 0, fmt.Errorf("admin search users scan: %w", err)
 		}
@@ -890,10 +916,14 @@ func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status
 	return users, total, nil
 }
 
-// scanUserFromRows scans a single user from a pgx.Rows iterator.
-func scanUserFromRows(rows pgx.Rows) (*domain.User, error) {
+// scanUserFromRows scans a single user from a pgx.Rows iterator. When the
+// row's pii_encrypted_v1 flag is true, phone and mfa_secret are decrypted
+// through cipher; legacy plaintext rows are passed through unchanged so the
+// repo continues to work pre-encrypt-pii backfill.
+func scanUserFromRows(rows pgx.Rows, cipher *crypto.Cipher) (*domain.User, error) {
 	var u domain.User
 	var phone, avatarURL, suspensionReason, mfaSecret *string
+	var piiEncrypted bool
 	err := rows.Scan(
 		&u.ID,
 		&u.Email,
@@ -915,12 +945,10 @@ func scanUserFromRows(rows pgx.Rows) (*domain.User, error) {
 		&u.CreatedAt,
 		&u.UpdatedAt,
 		&u.DeletedAt,
+		&piiEncrypted,
 	)
 	if err != nil {
 		return nil, err
-	}
-	if phone != nil {
-		u.Phone = *phone
 	}
 	if avatarURL != nil {
 		u.AvatarURL = *avatarURL
@@ -928,15 +956,50 @@ func scanUserFromRows(rows pgx.Rows) (*domain.User, error) {
 	if suspensionReason != nil {
 		u.SuspensionReason = *suspensionReason
 	}
-	if mfaSecret != nil {
-		u.MFASecret = *mfaSecret
+	if err := decryptUserPII(&u, phone, mfaSecret, piiEncrypted, cipher); err != nil {
+		return nil, err
 	}
 	return &u, nil
 }
 
-func scanProviderProfile(row pgx.Row) (*domain.ProviderProfile, error) {
+// decryptUserPII assigns Phone / MFASecret from raw column values, decrypting
+// when the row is flagged as encrypted. mfa_backup_codes are argon2id hashes
+// (one-way) and are left as-is.
+func decryptUserPII(u *domain.User, phone, mfaSecret *string, piiEncrypted bool, cipher *crypto.Cipher) error {
+	if !piiEncrypted {
+		if phone != nil {
+			u.Phone = *phone
+		}
+		if mfaSecret != nil {
+			u.MFASecret = *mfaSecret
+		}
+		return nil
+	}
+	if phone != nil && *phone != "" {
+		decrypted, err := cipher.DecryptString(*phone)
+		if err != nil {
+			return fmt.Errorf("decrypt phone: %w", err)
+		}
+		u.Phone = decrypted
+	}
+	if mfaSecret != nil && *mfaSecret != "" {
+		decrypted, err := cipher.DecryptString(*mfaSecret)
+		if err != nil {
+			return fmt.Errorf("decrypt mfa secret: %w", err)
+		}
+		u.MFASecret = decrypted
+	}
+	return nil
+}
+
+// scanProviderProfile decrypts service_address when pii_encrypted_v1 is true.
+// ein_tin and insurance_policy_number are not selected by this scanner because
+// no current code path reads them, but they are encrypted in place by the
+// encrypt-pii backfill tool.
+func scanProviderProfile(row pgx.Row, cipher *crypto.Cipher) (*domain.ProviderProfile, error) {
 	var p domain.ProviderProfile
 	var businessName, bio, serviceAddress, cancellationPolicy, warrantyTerms, stripeAccountID *string
+	var piiEncrypted bool
 	err := row.Scan(
 		&p.ID, &p.UserID, &businessName, &bio, &serviceAddress,
 		&p.Latitude, &p.Longitude,
@@ -944,7 +1007,7 @@ func scanProviderProfile(row pgx.Row) (*domain.ProviderProfile, error) {
 		&cancellationPolicy, &warrantyTerms, &p.InstantEnabled, &p.InstantSchedule,
 		&p.InstantAvailable, &p.JobsCompleted, &p.AvgResponseTimeMinutes,
 		&p.OnTimeRate, &p.ProfileCompleteness, &stripeAccountID,
-		&p.StripeOnboardingComplete, &p.CreatedAt, &p.UpdatedAt,
+		&p.StripeOnboardingComplete, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
 	)
 	if err != nil {
 		return nil, err
@@ -955,9 +1018,6 @@ func scanProviderProfile(row pgx.Row) (*domain.ProviderProfile, error) {
 	if bio != nil {
 		p.Bio = *bio
 	}
-	if serviceAddress != nil {
-		p.ServiceAddress = *serviceAddress
-	}
 	if cancellationPolicy != nil {
 		p.CancellationPolicy = *cancellationPolicy
 	}
@@ -966,6 +1026,17 @@ func scanProviderProfile(row pgx.Row) (*domain.ProviderProfile, error) {
 	}
 	if stripeAccountID != nil {
 		p.StripeAccountID = *stripeAccountID
+	}
+	if serviceAddress != nil {
+		if piiEncrypted && *serviceAddress != "" {
+			plain, err := cipher.DecryptString(*serviceAddress)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt service_address: %w", err)
+			}
+			p.ServiceAddress = plain
+		} else {
+			p.ServiceAddress = *serviceAddress
+		}
 	}
 	return &p, nil
 }
@@ -1000,10 +1071,12 @@ func ComputeProfileCompleteness(p *domain.ProviderProfile) int {
 	return (filled * 100) / total
 }
 
-// scanUser scans a single user row from a pgx.Row.
-func scanUser(row pgx.Row) (*domain.User, error) {
+// scanUser scans a single user row from a pgx.Row. See scanUserFromRows for
+// the decryption behavior.
+func scanUser(row pgx.Row, cipher *crypto.Cipher) (*domain.User, error) {
 	var u domain.User
 	var phone, avatarURL, suspensionReason, mfaSecret *string
+	var piiEncrypted bool
 	err := row.Scan(
 		&u.ID,
 		&u.Email,
@@ -1025,12 +1098,10 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 		&u.CreatedAt,
 		&u.UpdatedAt,
 		&u.DeletedAt,
+		&piiEncrypted,
 	)
 	if err != nil {
 		return nil, err
-	}
-	if phone != nil {
-		u.Phone = *phone
 	}
 	if avatarURL != nil {
 		u.AvatarURL = *avatarURL
@@ -1038,8 +1109,8 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 	if suspensionReason != nil {
 		u.SuspensionReason = *suspensionReason
 	}
-	if mfaSecret != nil {
-		u.MFASecret = *mfaSecret
+	if err := decryptUserPII(&u, phone, mfaSecret, piiEncrypted, cipher); err != nil {
+		return nil, err
 	}
 	return &u, nil
 }
@@ -1195,9 +1266,17 @@ func (r *PostgresRepository) UpdateDocumentStatus(ctx context.Context, documentI
 
 // --- MFA ---
 
-func (r *PostgresRepository) StoreMFASecret(ctx context.Context, userID, encryptedSecret string) error {
-	query := `UPDATE users SET mfa_secret = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`
-	tag, err := r.pool.Exec(ctx, query, encryptedSecret, userID)
+// StoreMFASecret encrypts the TOTP secret with the row's PII cipher and
+// writes it. Sets pii_encrypted_v1 = TRUE so subsequent reads decrypt.
+// The parameter name historically said "encryptedSecret" but the service
+// always passed plaintext; we now actually do the encryption here.
+func (r *PostgresRepository) StoreMFASecret(ctx context.Context, userID, plaintextSecret string) error {
+	encrypted, err := r.cipher.EncryptString(plaintextSecret)
+	if err != nil {
+		return fmt.Errorf("store mfa secret: encrypt: %w", err)
+	}
+	query := `UPDATE users SET mfa_secret = $1, pii_encrypted_v1 = TRUE, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`
+	tag, err := r.pool.Exec(ctx, query, encrypted, userID)
 	if err != nil {
 		return fmt.Errorf("store mfa secret: %w", err)
 	}
@@ -1207,10 +1286,15 @@ func (r *PostgresRepository) StoreMFASecret(ctx context.Context, userID, encrypt
 	return nil
 }
 
+// GetMFASecret returns the decrypted TOTP secret for the given user. Rows that
+// predate the PII encryption rollout (pii_encrypted_v1 = false) return their
+// plaintext value, preserving backwards compatibility until the re-encryption
+// job runs.
 func (r *PostgresRepository) GetMFASecret(ctx context.Context, userID string) (string, error) {
-	query := `SELECT mfa_secret FROM users WHERE id = $1 AND deleted_at IS NULL`
+	query := `SELECT mfa_secret, pii_encrypted_v1 FROM users WHERE id = $1 AND deleted_at IS NULL`
 	var secret *string
-	err := r.pool.QueryRow(ctx, query, userID).Scan(&secret)
+	var encrypted bool
+	err := r.pool.QueryRow(ctx, query, userID).Scan(&secret, &encrypted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("get mfa secret: %w", domain.ErrUserNotFound)
@@ -1220,11 +1304,20 @@ func (r *PostgresRepository) GetMFASecret(ctx context.Context, userID string) (s
 	if secret == nil {
 		return "", fmt.Errorf("get mfa secret: %w", domain.ErrMFANotSetup)
 	}
-	return *secret, nil
+	if !encrypted || *secret == "" {
+		return *secret, nil
+	}
+	plaintext, err := r.cipher.DecryptString(*secret)
+	if err != nil {
+		return "", fmt.Errorf("get mfa secret: decrypt: %w", err)
+	}
+	return plaintext, nil
 }
 
+// EnableMFA persists argon2id-hashed backup codes. The hashes are one-way and
+// never decrypted — they are compared via crypto/subtle in the service layer.
 func (r *PostgresRepository) EnableMFA(ctx context.Context, userID string, hashedBackupCodes []string) error {
-	query := `UPDATE users SET mfa_enabled = true, mfa_backup_codes = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`
+	query := `UPDATE users SET mfa_enabled = true, mfa_backup_codes = $1, pii_encrypted_v1 = TRUE, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`
 	tag, err := r.pool.Exec(ctx, query, hashedBackupCodes, userID)
 	if err != nil {
 		return fmt.Errorf("enable mfa: %w", err)
@@ -1671,3 +1764,4 @@ func (r *PostgresRepository) getPropertyByID(ctx context.Context, propertyID str
 	}
 	return p, nil
 }
+

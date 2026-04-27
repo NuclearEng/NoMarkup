@@ -46,6 +46,17 @@ seed:
 	@echo "Seeding database with dev data..."
 	cd database && go run ./cmd/seed
 
+# Backfill / re-encrypt PII columns flagged in migration 031. Idempotent: only
+# touches rows where pii_encrypted_v1 = FALSE. Requires ENCRYPTION_KEY (and,
+# during a rotation, ENCRYPTION_KEY_PREVIOUS) to be set in the environment.
+# See docs/operations/encryption-key-rotation.md.
+encrypt-pii:
+	@echo "Backfilling PII encryption..."
+	cd database && go run ./cmd/encrypt-pii
+
+encrypt-pii-dry-run:
+	cd database && go run ./cmd/encrypt-pii -dry-run
+
 # ── Toolchain Setup ───────────────────────────────────────────
 
 setup-tools:

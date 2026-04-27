@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -14,9 +15,59 @@ import (
 	"time"
 
 	"github.com/pquerna/otp/totp"
+	"golang.org/x/crypto/argon2"
 
 	"github.com/nomarkup/nomarkup/services/user/internal/domain"
 )
+
+// argon2idHashBackupCode produces an encoded argon2id digest for a single
+// MFA backup code. The encoding is "argon2id$<saltB64>$<hashB64>" using
+// fixed parameters (memory=65536, iterations=3, parallelism=4) which match
+// CLAUDE.md §6 password-hashing guidance. Backup codes are short hex strings
+// (32 bits of entropy) and only need to resist brute-force from someone who
+// already has the database — argon2id with these parameters takes ~50ms per
+// guess, which is sufficient given the codes are also rate-limited at the
+// service layer.
+func argon2idHashBackupCode(code string) (string, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("generate argon2id salt: %w", err)
+	}
+	hash := argon2.IDKey([]byte(code), salt, 3, 64*1024, 4, 32)
+	return fmt.Sprintf("argon2id$%s$%s",
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(hash),
+	), nil
+}
+
+// verifyArgon2idBackupCode returns true when code matches the encoded hash
+// using a constant-time compare. Hashes that don't have the expected
+// argon2id$ prefix (legacy SHA-256 hex digests) fall back to a sha256-vs-hex
+// compare so users mid-rotation can still log in. New writes always use
+// argon2id.
+func verifyArgon2idBackupCode(code, encoded string) bool {
+	if !strings.HasPrefix(encoded, "argon2id$") {
+		// Legacy sha256 hex digest — kept for backwards compatibility until
+		// users re-enable MFA.
+		h := sha256.Sum256([]byte(code))
+		want := hex.EncodeToString(h[:])
+		return subtle.ConstantTimeCompare([]byte(want), []byte(encoded)) == 1
+	}
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 3 {
+		return false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	want, err := base64.RawStdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	got := argon2.IDKey([]byte(code), salt, 3, 64*1024, 4, uint32(len(want)))
+	return subtle.ConstantTimeCompare(want, got) == 1
+}
 
 // mfaChallengeTokenExpiry is how long the MFA challenge token remains valid after
 // the user supplies correct credentials. This gives them time to enter the TOTP code.
@@ -71,7 +122,9 @@ func (a *Auth) GenerateMFASetup(ctx context.Context, userID string) (secret stri
 
 // VerifyAndEnableMFA validates the TOTP code and enables MFA for the user.
 // The backup codes must be provided (the same ones returned from GenerateMFASetup)
-// so they can be hashed and stored.
+// so they can be hashed and stored. Hashes use argon2id (one-way) rather than
+// encrypted, per CLAUDE.md §6 — backup codes are user secrets, not data we
+// ever need to recover.
 func (a *Auth) VerifyAndEnableMFA(ctx context.Context, userID, code string, backupCodes []string) error {
 	secret, err := a.repo.GetMFASecret(ctx, userID)
 	if err != nil {
@@ -82,11 +135,13 @@ func (a *Auth) VerifyAndEnableMFA(ctx context.Context, userID, code string, back
 		return fmt.Errorf("verify and enable mfa: %w", domain.ErrInvalidMFACode)
 	}
 
-	// Hash backup codes before storing.
 	hashedCodes := make([]string, len(backupCodes))
 	for i, bc := range backupCodes {
-		h := sha256.Sum256([]byte(bc))
-		hashedCodes[i] = hex.EncodeToString(h[:])
+		hashed, err := argon2idHashBackupCode(bc)
+		if err != nil {
+			return fmt.Errorf("verify and enable mfa: hash backup code: %w", err)
+		}
+		hashedCodes[i] = hashed
 	}
 
 	if err := a.repo.EnableMFA(ctx, userID, hashedCodes); err != nil {
@@ -117,7 +172,8 @@ func (a *Auth) DisableMFA(ctx context.Context, userID, code string) error {
 }
 
 // ValidateMFACode checks whether the provided TOTP code (or backup code) is valid
-// for the given user.
+// for the given user. When a backup code matches it is consumed (one-time use)
+// by re-saving the user's backup-code list with the matched hash removed.
 func (a *Auth) ValidateMFACode(ctx context.Context, userID, code string) (bool, error) {
 	secret, err := a.repo.GetMFASecret(ctx, userID)
 	if err != nil {
@@ -128,22 +184,34 @@ func (a *Auth) ValidateMFACode(ctx context.Context, userID, code string) (bool, 
 		return true, nil
 	}
 
-	// Check backup codes — a backup code is a hex string (8 chars).
-	// We match against hashed backup codes stored in the DB.
 	user, err := a.repo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("validate mfa code: %w", err)
 	}
 
-	codeHash := sha256.Sum256([]byte(code))
-	codeHashHex := hex.EncodeToString(codeHash[:])
-	for _, stored := range user.MFABackupCodes {
-		if stored == codeHashHex {
-			return true, nil
+	matchIdx := -1
+	for i, stored := range user.MFABackupCodes {
+		if verifyArgon2idBackupCode(code, stored) {
+			matchIdx = i
+			break
 		}
 	}
+	if matchIdx == -1 {
+		return false, nil
+	}
 
-	return false, nil
+	// Consume the matched code so it can't be reused.
+	remaining := make([]string, 0, len(user.MFABackupCodes)-1)
+	remaining = append(remaining, user.MFABackupCodes[:matchIdx]...)
+	remaining = append(remaining, user.MFABackupCodes[matchIdx+1:]...)
+	if err := a.repo.EnableMFA(ctx, userID, remaining); err != nil {
+		// Log but still allow login — the security cost of allowing a
+		// reused backup code is bounded (admin-revocable, requires
+		// possession of the code), and the alternative would be to
+		// reject a valid login on a transient DB blip.
+		slog.Error("failed to consume backup code", "user_id", userID, "error", err)
+	}
+	return true, nil
 }
 
 // GenerateMFAChallengeToken creates an HMAC-signed token that encodes the user ID
