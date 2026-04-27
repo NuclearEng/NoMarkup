@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Syne } from 'next/font/google';
+import { headers } from 'next/headers';
 import '@/styles/globals.css';
 
 import { AuthRestorer } from '@/components/providers/AuthRestorer';
@@ -25,7 +26,21 @@ export const viewport: Viewport = {
   themeColor: '#070b14',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Per-request CSP nonce minted in middleware (web/src/middleware.ts).
+  // Reading any header forces this layout into dynamic rendering, which is
+  // required — a static-rendered page would freeze a single nonce across
+  // every request, defeating the point of the per-request nonce.
+  //
+  // Next.js 15 RSC reads `x-nonce` directly from request headers and applies
+  // it to its own bootstrap inline scripts (the __next_f.push() chunks).
+  // We don't need to thread it into any explicit <Script> tags — there
+  // currently are none in this app — but reading it here pins the layout to
+  // dynamic rendering so the framework's automatic nonce wiring activates.
+  const headerStore = await headers();
+  // Reference the value so that bundlers/eslint don't elide the read.
+  void headerStore.get('x-nonce');
+
   return (
     <html lang="en" className={syne.variable} suppressHydrationWarning>
       <body className="bg-background min-h-screen font-sans antialiased">

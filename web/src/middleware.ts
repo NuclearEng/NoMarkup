@@ -1,11 +1,25 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * Edge auth guard for authenticated routes.
+ * Edge auth guard for authenticated routes + per-request CSP nonce.
  *
- * The gateway is the authoritative authenticator — this middleware only
- * checks for the presence of session indicators so unauthenticated clients
- * (bots, direct fetches, SSR probes) are redirected before pages render.
+ * Two responsibilities:
+ *
+ * 1. AUTH GUARD — The gateway is the authoritative authenticator; this
+ *    middleware only checks for the presence of session indicators so
+ *    unauthenticated clients (bots, direct fetches, SSR probes) are redirected
+ *    before pages render.
+ *
+ * 2. CSP NONCE — A cryptographically-random nonce is generated per request
+ *    and embedded in the Content-Security-Policy header so we can drop
+ *    'unsafe-inline' from script-src. Next.js 15 RSC reads the nonce from the
+ *    `x-nonce` request header (set here) and automatically attaches it to its
+ *    bootstrapping inline scripts. Page components can also read it via
+ *    `headers().get('x-nonce')` and pass it to <Script> tags.
+ *
+ *    The nonce is also paired with 'strict-dynamic', which trusts scripts
+ *    transitively loaded by an explicitly-trusted (nonce'd) script. This lets
+ *    Next.js bootstrap chunks load without enumerating every chunk URL.
  *
  * Cookies in play:
  *   - has_session=1          — sentinel set by the gateway when a refresh
@@ -59,9 +73,50 @@ function hasSessionIndicator(req: NextRequest): boolean {
   return false;
 }
 
+/**
+ * Generate a 128-bit random nonce, base64-encoded. Edge runtime supports
+ * the Web Crypto API; we avoid Node's `Buffer` so this works in both.
+ */
+function generateNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    // bounds-checked above; assertion is safe here
+    bin += String.fromCharCode(bytes[i] as number);
+  }
+  return btoa(bin);
+}
+
+/**
+ * Build the per-request CSP. The nonce gates script-src; everything else
+ * matches the previously-static policy in next.config.ts. With
+ * 'strict-dynamic' present, allowlist hosts on script-src are ignored by
+ * CSP3-aware browsers — but legacy browsers still honor them, so we keep
+ * api.mapbox.com and js.stripe.com listed for graceful fallback.
+ */
+function buildCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://api.mapbox.com https://js.stripe.com`,
+    "style-src 'self' 'unsafe-inline' https://api.mapbox.com",
+    "img-src 'self' data: blob: https: http://localhost:9000",
+    "font-src 'self' data:",
+    "connect-src 'self' ws: wss: https://api.mapbox.com https://events.mapbox.com https://*.sentry.io https://api.stripe.com",
+    "worker-src 'self' blob:",
+    "frame-src https://js.stripe.com https://hooks.stripe.com",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    'upgrade-insecure-requests',
+  ].join('; ');
+}
+
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
 
+  // ─── Auth gate ──────────────────────────────────────────────────────────
   const isProtectedPage = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(p + '/'),
   );
@@ -69,27 +124,57 @@ export function middleware(req: NextRequest): NextResponse {
     (p) => pathname === p || pathname.startsWith(p + '/'),
   );
 
-  if (!isProtectedPage && !isProtectedApi) {
+  if ((isProtectedPage || isProtectedApi) && !hasSessionIndicator(req)) {
+    if (isProtectedApi) {
+      return new NextResponse(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    const loginUrl = new URL('/login', req.url);
+    loginUrl.searchParams.set('next', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // ─── CSP nonce injection ────────────────────────────────────────────────
+  // Skip CSP work for asset-y paths the matcher already excludes most of, but
+  // also avoid generating a nonce for raw API rewrites since they don't
+  // render HTML.
+  const isApiPath = pathname.startsWith('/api/') || pathname.startsWith('/ws/');
+
+  if (isApiPath) {
     return NextResponse.next();
   }
 
-  if (hasSessionIndicator(req)) {
-    return NextResponse.next();
-  }
+  const nonce = generateNonce();
+  const csp = buildCsp(nonce);
 
-  if (isProtectedApi) {
-    return new NextResponse(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
+  // Forward the nonce to RSC/page components via a request header.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set('x-nonce', nonce);
+  // Some Next.js docs samples use this name; setting both is harmless and
+  // covers patterns that copy from those examples.
+  requestHeaders.set('content-security-policy', csp);
 
-  const loginUrl = new URL('/login', req.url);
-  loginUrl.searchParams.set('next', pathname);
-  return NextResponse.redirect(loginUrl);
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+  response.headers.set('Content-Security-Policy', csp);
+
+  return response;
 }
 
 export const config = {
   // Skip Next.js internals and static assets; everything else flows through.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon|public/).*)'],
+  matcher: [
+    {
+      source: '/((?!_next/static|_next/image|favicon.ico|icon|public/).*)',
+      missing: [
+        // Don't bother running middleware on prefetch requests — they don't
+        // render HTML and would otherwise consume CSRNG budget unnecessarily.
+        { type: 'header', key: 'next-router-prefetch' },
+        { type: 'header', key: 'purpose', value: 'prefetch' },
+      ],
+    },
+  ],
 };

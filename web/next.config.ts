@@ -3,32 +3,14 @@ import { withSentryConfig } from '@sentry/nextjs';
 
 const API_URL = process.env['API_URL'] ?? process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8081';
 
-// Strict CSP for Next.js HTML pages.
-// Notes:
-//   - 'unsafe-inline' is included on style-src because Tailwind/Next.js inline styles in JIT
-//     mode and Sentry/RSC hydration markers require it. WCAG/CLAUDE.md only forbids unsafe-inline
-//     on script-src; it is permitted on style-src per security best practice tradeoffs.
-//   - 'unsafe-inline' on script-src is intentionally NOT present.
-//   - Mapbox + Stripe origins are allowed for the relevant resource types.
-const CSP_DIRECTIVES = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://api.mapbox.com https://js.stripe.com",
-  "style-src 'self' 'unsafe-inline' https://api.mapbox.com",
-  "img-src 'self' data: blob: https: http://localhost:9000",
-  "font-src 'self' data:",
-  "connect-src 'self' ws: wss: https://api.mapbox.com https://events.mapbox.com https://*.sentry.io https://api.stripe.com",
-  "worker-src 'self' blob:",
-  "frame-src https://js.stripe.com https://hooks.stripe.com",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  // upgrade-insecure-requests is honored only over HTTPS; safe to include
-  'upgrade-insecure-requests',
-].join('; ');
-
+// Security headers other than CSP are static and safe to set here. The CSP
+// itself is injected per-request from web/src/middleware.ts so that it can
+// embed a fresh nonce on every response (see middleware.ts for the full
+// directive set + rationale). We deliberately do NOT set a static
+// Content-Security-Policy header here — middleware always overrides it,
+// but listing it twice causes browsers to honor the strictest of both,
+// which would defeat the nonce.
 const SECURITY_HEADERS = [
-  { key: 'Content-Security-Policy', value: CSP_DIRECTIVES },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
