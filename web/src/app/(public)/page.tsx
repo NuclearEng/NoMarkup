@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
   Megaphone,
@@ -23,7 +24,30 @@ import {
 import { Button } from '@/components/ui/button';
 import { MarketTickerStrip } from '@/components/landing/MarketTickerStrip';
 import { GradientMesh } from '@/components/landing/GradientMesh';
-import { AuctionDemo } from '@/components/landing/AuctionDemo';
+
+// AuctionDemo is a heavy client-only widget (~358 lines, 12+ animated states,
+// requestAnimationFrame loops, plus its own dependencies). It sits in the hero
+// right column and is NOT the LCP element — the gradient-gold "market prices"
+// headline is. Splitting it out shaves the page-specific bundle and lets
+// hydration of the headline + CTAs proceed without waiting on the demo.
+//
+// `ssr: false` is intentional: the demo's countdown clock and animation state
+// rely on `Date.now()` and `requestAnimationFrame`, both of which produce
+// hydration mismatches when SSR'd. We render an aspect-ratio placeholder of
+// the same height to keep CLS at zero (matches the demo's lg:max-h ~ 540px).
+const AuctionDemo = dynamic(
+  () => import('@/components/landing/AuctionDemo').then((m) => ({ default: m.AuctionDemo })),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        aria-hidden="true"
+        className="w-full rounded-2xl bg-white/[0.02]"
+        style={{ aspectRatio: '1 / 1.05', minHeight: 320 }}
+      />
+    ),
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Intersection Observer hook for scroll-triggered animations
