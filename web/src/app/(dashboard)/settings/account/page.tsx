@@ -137,7 +137,7 @@ export default function AccountSettingsPage() {
               aria-label="Account recovery actions"
             >
               <Button
-                onClick={handleRestore}
+                onClick={() => { void handleRestore(); }}
                 disabled={restoring || restored}
                 className="min-h-[44px]"
               >
@@ -146,7 +146,7 @@ export default function AccountSettingsPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={handleLogout}
+                onClick={() => { void handleLogout(); }}
                 className="min-h-[44px]"
               >
                 Sign out
@@ -237,7 +237,7 @@ export default function AccountSettingsPage() {
             <Input
               id="deletion-confirm"
               value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
+              onChange={(e) => { setConfirmation(e.target.value); }}
               placeholder="DELETE"
               autoComplete="off"
               aria-describedby="deletion-confirm-help"
@@ -261,7 +261,7 @@ export default function AccountSettingsPage() {
 
           <Button
             variant="destructive"
-            onClick={handleDelete}
+            onClick={() => { void handleDelete(); }}
             disabled={!canSubmit}
             className="min-h-[44px]"
           >
