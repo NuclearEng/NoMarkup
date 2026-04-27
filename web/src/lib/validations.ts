@@ -264,10 +264,11 @@ export const changePasswordSchema = z
 
 export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
 
-// Property schemas
+// Property schemas — `street` is the form field; the API nests it inside
+// `address: { street, city, state, zip_code, ... }`.
 export const propertySchema = z.object({
   nickname: z.string().min(1, 'Nickname is required').max(100),
-  address: z.string().min(1, 'Address is required'),
+  street: z.string().min(1, 'Street is required'),
   city: z.string().min(1, 'City is required'),
   state: z.string().min(1, 'State is required').max(2),
   zip_code: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid zip code'),

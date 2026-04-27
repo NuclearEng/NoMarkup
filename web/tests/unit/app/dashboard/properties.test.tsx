@@ -52,10 +52,7 @@ const { default: PropertiesPage } = await import('@/app/(dashboard)/properties/p
 const lakeHouse = {
   id: 'p1',
   nickname: 'Lake House',
-  address: '123 Lakefront Rd',
-  city: 'Bellevue',
-  state: 'WA',
-  zip_code: '98004',
+  address: { street: '123 Lakefront Rd', city: 'Bellevue', state: 'WA', zip_code: '98004' },
   notes: 'Gate code 1234',
   active_jobs: 2,
   total_spend_cents: 250000,
@@ -63,10 +60,7 @@ const lakeHouse = {
 const studio = {
   id: 'p2',
   nickname: 'Studio',
-  address: '456 City Ave',
-  city: 'Seattle',
-  state: 'WA',
-  zip_code: '98101',
+  address: { street: '456 City Ave', city: 'Seattle', state: 'WA', zip_code: '98101' },
   notes: '',
   active_jobs: 1,
   total_spend_cents: 50000,

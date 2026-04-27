@@ -36,10 +36,7 @@ function wrap(client: QueryClient) {
 const mockProp: Property = {
   id: 'p-1',
   nickname: 'Pine St',
-  address: '123 Pine',
-  city: 'Seattle',
-  state: 'WA',
-  zip_code: '98101',
+  address: { street: '123 Pine', city: 'Seattle', state: 'WA', zip_code: '98101' },
   notes: null,
   active_jobs: 0,
   total_spend_cents: 0,
@@ -71,7 +68,7 @@ describe('useCreateProperty', () => {
     const { result } = renderHook(() => useCreateProperty(), { wrapper: wrap(client) });
     result.current.mutate({
       nickname: 'Pine St',
-      address: '123 Pine',
+      street: '123 Pine',
       city: 'Seattle',
       state: 'WA',
       zip_code: '98101',
@@ -87,7 +84,7 @@ describe('useCreateProperty', () => {
     const { result } = renderHook(() => useCreateProperty(), { wrapper: wrap(client) });
     result.current.mutate({
       nickname: 'Pine St',
-      address: '123 Pine',
+      street: '123 Pine',
       city: 'Seattle',
       state: 'WA',
       zip_code: '98101',

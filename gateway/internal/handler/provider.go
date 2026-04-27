@@ -564,7 +564,9 @@ func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]
 			"slug": c.GetSlug(),
 		})
 	}
-	result["categories"] = cats
+	// Field is named `service_categories` in the public PublicProvider TS type
+	// (matches ProviderProfile naming for consistency on the client).
+	result["service_categories"] = cats
 
 	return result
 }

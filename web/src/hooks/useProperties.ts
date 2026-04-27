@@ -3,22 +3,29 @@ import { toast } from 'sonner';
 
 import { api } from '@/lib/api';
 
-export interface Property {
-  id: string;
-  nickname: string;
-  address: string;
+export interface PropertyAddress {
+  street: string;
   city: string;
   state: string;
   zip_code: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface Property {
+  id: string;
+  nickname: string;
+  address: PropertyAddress;
   notes: string | null;
-  active_jobs: number;
-  total_spend_cents: number;
+  is_primary?: boolean;
+  active_jobs?: number;
+  total_spend_cents?: number;
   created_at: string;
 }
 
 export interface CreatePropertyInput {
   nickname: string;
-  address: string;
+  street: string;
   city: string;
   state: string;
   zip_code: string;

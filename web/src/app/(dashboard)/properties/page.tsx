@@ -37,7 +37,7 @@ export default function PropertiesPage() {
     resolver: zodResolver(propertySchema),
     defaultValues: {
       nickname: '',
-      address: '',
+      street: '',
       city: '',
       state: '',
       zip_code: '',
@@ -105,7 +105,7 @@ export default function PropertiesPage() {
 
                 <FormField
                   control={form.control}
-                  name="address"
+                  name="street"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Street Address</FormLabel>
@@ -262,18 +262,18 @@ export default function PropertiesPage() {
                   </Button>
                 </div>
                 <p className="text-zinc-300 text-sm">
-                  {property.address}, {property.city}, {property.state} {property.zip_code}
+                  {property.address.street}, {property.address.city}, {property.address.state} {property.address.zip_code}
                 </p>
                 {property.notes ? (
                   <p className="text-zinc-300 mt-1 text-xs">{property.notes}</p>
                 ) : null}
                 <div className="mt-3 flex items-center gap-3">
                   <Badge variant="secondary">
-                    {String(property.active_jobs)} active job
-                    {property.active_jobs !== 1 ? 's' : ''}
+                    {String(property.active_jobs ?? 0)} active job
+                    {(property.active_jobs ?? 0) !== 1 ? 's' : ''}
                   </Badge>
                   <span className="text-sm font-medium">
-                    {formatCents(property.total_spend_cents)} spent
+                    {formatCents(property.total_spend_cents ?? 0)} spent
                   </span>
                 </div>
               </CardContent>
