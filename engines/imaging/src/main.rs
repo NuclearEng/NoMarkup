@@ -136,10 +136,17 @@ async fn main() -> anyhow::Result<()> {
     let pipeline = Arc::new(ImagePipeline::new(s3_client, bucket, public_url));
     let service = ImagingServiceImpl::new(pipeline);
 
+    // gRPC health check — see bidding/src/main.rs for design notes.
+    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+    health_reporter
+        .set_serving::<ImagingServiceServer<ImagingServiceImpl>>()
+        .await;
+
     let addr = format!("0.0.0.0:{port}").parse()?;
     tracing::info!("imaging engine starting on {}", addr);
 
     tonic::transport::Server::builder()
+        .add_service(health_service)
         .add_service(ImagingServiceServer::new(service))
         .serve_with_shutdown(addr, async {
             if let Err(e) = tokio::signal::ctrl_c().await {

@@ -181,6 +181,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
+	// Also exposes stripe_webhook_processing_duration_seconds — see observability.go.
+	startObservabilityServer(ctx, "payment-service", port, pool)
+
 	go func() {
 		slog.Info("payment service starting", "port", port)
 		if err := s.Serve(lis); err != nil {

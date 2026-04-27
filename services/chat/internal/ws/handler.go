@@ -109,6 +109,19 @@ func (h *Hub) Unregister(conn *Connection) {
 	)
 }
 
+// ActiveCount returns the total number of currently registered connections
+// across all users. Used by Prometheus metric exporters
+// (active_websocket_connections per CLAUDE.md §11).
+func (h *Hub) ActiveCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	total := 0
+	for _, conns := range h.connections {
+		total += len(conns)
+	}
+	return total
+}
+
 // CloseAll closes all connections in the hub. Used during graceful shutdown.
 func (h *Hub) CloseAll() {
 	h.mu.RLock()

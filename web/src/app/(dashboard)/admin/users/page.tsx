@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
       render: (user) => (
         <Link
           href={`/admin/users/${user.id}` as Route}
-          className="text-primary font-medium hover:underline"
+          className="text-primary -my-2 -mx-2 inline-flex min-h-[44px] items-center px-2 py-2 font-medium hover:underline"
         >
           {user.display_name || user.email}
         </Link>

@@ -214,6 +214,7 @@ export function MarketRangeDisplay({
 
           {/* Median vertical line */}
           <div
+            role="img"
             className="absolute -top-1 h-4 w-px bg-zinc-600/60 dark:bg-zinc-300/60"
             style={{ left: `${String(medianPosition)}%` }}
             aria-label={`Median price: ${formatCents(median_cents)}`}

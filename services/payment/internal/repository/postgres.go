@@ -343,6 +343,26 @@ func (r *PostgresRepository) SetStripeAccountID(ctx context.Context, userID stri
 	return nil
 }
 
+// SetStripeOnboardingComplete flips the provider_profiles.stripe_onboarding_complete
+// flag for the provider whose Connect account ID matches the given value.
+// Returns nil even if no rows match — Stripe sends account.updated for accounts
+// the platform doesn't track (e.g. ones created in another environment), and
+// those should be silently ignored rather than failing the webhook.
+func (r *PostgresRepository) SetStripeOnboardingComplete(ctx context.Context, stripeAccountID string, complete bool) error {
+	if stripeAccountID == "" {
+		return fmt.Errorf("set stripe onboarding complete: account id required")
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE provider_profiles
+		SET stripe_onboarding_complete = $2, updated_at = now()
+		WHERE stripe_account_id = $1`,
+		stripeAccountID, complete)
+	if err != nil {
+		return fmt.Errorf("set stripe onboarding complete: %w", err)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) GetStripeCustomerID(ctx context.Context, userID string) (string, error) {
 	var customerID *string
 	err := r.pool.QueryRow(ctx, `

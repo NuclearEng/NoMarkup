@@ -198,9 +198,9 @@ export default function ProvidersPage() {
               {data.pagination.totalCount !== 1 ? 's' : ''} found
             </p>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {data.providers.map((provider) => (
-                <Link key={provider.id} href={`/providers/${provider.id}`} className="block">
+                <Link key={provider.id} href={`/providers/${provider.id}`} className="block min-w-0">
                   <div className="glass glass-highlight glass-interactive h-full rounded-xl border border-[var(--brand-gold)]/10 p-5">
                     <div className="mb-3 flex items-start gap-3">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--brand-gold)]/10 text-lg font-semibold text-[var(--brand-gold)]">

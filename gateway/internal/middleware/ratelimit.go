@@ -29,13 +29,17 @@ const (
 const (
 	defaultStandardLimit = 60
 	defaultStrictLimit   = 10
-	defaultAuthLimit     = 20
+	// CLAUDE.md §6: 5 attempts / 15 min on auth endpoints.
+	defaultAuthLimit = 5
 
-	// Development multiplier for all limits.
+	// Development multiplier for STANDARD/STRICT tiers only — auth is never
+	// inflated in dev so brute-force-style tests behave like prod.
 	devMultiplier = 10
 
-	// rateLimitWindow is the duration of the sliding window.
+	// rateLimitWindow is the sliding window for the standard/strict tiers.
 	rateLimitWindow = 1 * time.Minute
+	// authRateLimitWindow is the sliding window for the auth tier.
+	authRateLimitWindow = 15 * time.Minute
 	// cleanupInterval is how often stale entries are removed from the in-memory fallback map.
 	cleanupInterval = 5 * time.Minute
 )
@@ -92,9 +96,9 @@ func (ml *memoryLimiter) cleanup() {
 	}
 }
 
-func (ml *memoryLimiter) allow(key string, limit int) (bool, int) {
+func (ml *memoryLimiter) allow(key string, limit int, window time.Duration) (bool, int) {
 	now := time.Now()
-	cutoff := now.Add(-rateLimitWindow)
+	cutoff := now.Add(-window)
 
 	val, _ := ml.entries.LoadOrStore(key, &rateLimitEntry{})
 	entry := val.(*rateLimitEntry)
@@ -106,7 +110,7 @@ func (ml *memoryLimiter) allow(key string, limit int) (bool, int) {
 
 	if len(entry.timestamps) >= limit {
 		oldest := entry.timestamps[0]
-		retryAfter := int(oldest.Add(rateLimitWindow).Sub(now).Seconds()) + 1
+		retryAfter := int(oldest.Add(window).Sub(now).Seconds()) + 1
 		if retryAfter < 1 {
 			retryAfter = 1
 		}
@@ -203,7 +207,8 @@ func NewRateLimiter(cacheClient *cache.Client, production bool, authLimitOverrid
 	if !production {
 		stdLimit *= devMultiplier
 		strictLimit *= devMultiplier
-		authLimit *= devMultiplier
+		// Auth tier does NOT get the dev multiplier — abuse-defense tests
+		// (CLAUDE.md: 5 attempts/15 min) need to behave like prod even in dev.
 	}
 
 	if authLimitOverride > 0 {
@@ -240,12 +245,22 @@ func (rl *RateLimiter) limitForTier(tier RateLimitTier) int {
 	}
 }
 
-func (rl *RateLimiter) allow(key string, limit int) (bool, int) {
+// windowForTier returns the sliding window duration for a tier. Auth tier
+// uses a 15-minute window per CLAUDE.md §6 (account-lockout policy);
+// other tiers use the standard 1-minute window.
+func windowForTier(tier RateLimitTier) time.Duration {
+	if tier == TierAuth {
+		return authRateLimitWindow
+	}
+	return rateLimitWindow
+}
+
+func (rl *RateLimiter) allow(key string, limit int, window time.Duration) (bool, int) {
 	if rl.cache != nil {
 		redisKey := cache.Key("rl", key)
-		return rl.cache.RateLimitCheck(context.Background(), redisKey, limit, rateLimitWindow)
+		return rl.cache.RateLimitCheck(context.Background(), redisKey, limit, window)
 	}
-	return rl.fallback.allow(key, limit)
+	return rl.fallback.allow(key, limit, window)
 }
 
 // Middleware returns an http.Handler middleware that enforces rate limits.
@@ -263,12 +278,13 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		}
 
 		limit := rl.limitForTier(tier)
+		window := windowForTier(tier)
 		ip := ClientIP(r)
 		tierName := tierString(tier)
 
 		// Per-IP check.
 		ipKey := tierName + ":ip:" + ip
-		allowed, retryAfter := rl.allow(ipKey, limit)
+		allowed, retryAfter := rl.allow(ipKey, limit, window)
 		if !allowed {
 			writeRateLimitResponse(w, ip, path, tierName, limit, retryAfter)
 			return
@@ -279,7 +295,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		// user from consuming the entire IP bucket (e.g., shared office IP).
 		if claims, ok := GetClaims(r.Context()); ok && claims.UserID != "" {
 			userKey := tierName + ":user:" + claims.UserID
-			allowed, retryAfter = rl.allow(userKey, limit)
+			allowed, retryAfter = rl.allow(userKey, limit, window)
 			if !allowed {
 				writeRateLimitResponse(w, ip, path, tierName, limit, retryAfter)
 				return

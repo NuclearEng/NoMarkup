@@ -127,8 +127,7 @@ func (s *PaymentService) dispatchWebhookEvent(ctx context.Context, event stripe.
 	case "charge.refunded":
 		return s.handleChargeRefunded(ctx, event)
 	case "account.updated":
-		slog.Info("stripe connect account updated", "event_id", event.ID)
-		return nil
+		return s.handleAccountUpdated(ctx, event)
 
 	// Subscription events — delegate to SubscriptionService
 	case "customer.subscription.updated",
@@ -269,6 +268,40 @@ func (s *PaymentService) handleTransferCreated(ctx context.Context, event stripe
 		slog.Info("payment released via transfer", "payment_id", payment.ID, "transfer_id", t.ID)
 	}
 
+	return nil
+}
+
+// handleAccountUpdated persists Stripe Connect onboarding completion so the
+// local DB stays in sync with Stripe. Stripe sends account.updated whenever
+// requirements/capabilities/details change; we treat onboarding as "complete"
+// when the account has details_submitted=true AND charges_enabled=true AND
+// payouts_enabled=true (the three signals that the account can actually
+// receive money). Otherwise we set it to false so a regression in any of
+// these (e.g. Stripe re-requesting documents) is reflected in the DB.
+func (s *PaymentService) handleAccountUpdated(ctx context.Context, event stripe.Event) error {
+	var acct stripe.Account
+	if err := json.Unmarshal(event.Data.Raw, &acct); err != nil {
+		return fmt.Errorf("parse account.updated: %w", err)
+	}
+
+	if acct.ID == "" {
+		slog.Warn("account.updated event missing account id", "event_id", event.ID)
+		return nil
+	}
+
+	complete := acct.DetailsSubmitted && acct.ChargesEnabled && acct.PayoutsEnabled
+	if err := s.repo.SetStripeOnboardingComplete(ctx, acct.ID, complete); err != nil {
+		return fmt.Errorf("update onboarding flag: %w", err)
+	}
+
+	slog.Info("stripe connect account updated",
+		"event_id", event.ID,
+		"account_id", acct.ID,
+		"details_submitted", acct.DetailsSubmitted,
+		"charges_enabled", acct.ChargesEnabled,
+		"payouts_enabled", acct.PayoutsEnabled,
+		"onboarding_complete", complete,
+	)
 	return nil
 }
 

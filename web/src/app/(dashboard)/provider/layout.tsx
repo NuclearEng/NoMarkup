@@ -25,7 +25,7 @@ function ProviderNav() {
           <Link
             key={item.href}
             href={item.href as Route}
-            className={`flex min-h-[36px] items-center gap-2 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+            className={`flex min-h-[44px] items-center gap-2 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               isActive
                 ? 'bg-primary/10 text-primary'
                 : 'hover:bg-muted/50 text-zinc-400 hover:text-zinc-200'

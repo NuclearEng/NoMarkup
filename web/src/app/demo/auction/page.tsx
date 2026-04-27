@@ -261,7 +261,8 @@ export default function AuctionDemoPage() {
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="flex items-center gap-1.5 text-sm text-white/65 transition-colors hover:text-white/80"
+              aria-label="Back to home"
+              className="flex min-h-[44px] min-w-[44px] items-center gap-1.5 -mx-1.5 px-1.5 text-sm text-white/65 transition-colors hover:text-white/80"
             >
               <ArrowLeft className="h-4 w-4" />
               <span className="hidden sm:inline">Back</span>

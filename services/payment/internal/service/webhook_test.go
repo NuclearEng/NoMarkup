@@ -97,6 +97,92 @@ func TestHandleWebhook_dedup_skips_duplicate_event(t *testing.T) {
 	assert.Zero(t, findCalled, "duplicate event must not re-trigger handler logic")
 }
 
+// TestHandleWebhook_account_updated_persists_onboarding_complete verifies
+// that the account.updated event flips provider_profiles.stripe_onboarding_complete
+// when the account has details_submitted, charges_enabled, and payouts_enabled
+// all true. Without this, the local DB column stays false forever even after
+// providers finish onboarding.
+func TestHandleWebhook_account_updated_persists_onboarding_complete(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name             string
+		acct             stripe.Account
+		expectComplete   bool
+	}{
+		{
+			name: "all_three_true_marks_complete",
+			acct: stripe.Account{
+				ID:               "acct_123",
+				DetailsSubmitted: true,
+				ChargesEnabled:   true,
+				PayoutsEnabled:   true,
+			},
+			expectComplete: true,
+		},
+		{
+			name: "missing_payouts_keeps_incomplete",
+			acct: stripe.Account{
+				ID:               "acct_456",
+				DetailsSubmitted: true,
+				ChargesEnabled:   true,
+				PayoutsEnabled:   false,
+			},
+			expectComplete: false,
+		},
+		{
+			name: "no_details_submitted_keeps_incomplete",
+			acct: stripe.Account{
+				ID:               "acct_789",
+				DetailsSubmitted: false,
+				ChargesEnabled:   false,
+				PayoutsEnabled:   false,
+			},
+			expectComplete: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			payload, err := json.Marshal(tc.acct)
+			require.NoError(t, err)
+
+			event := stripe.Event{
+				ID:   "evt_acct_" + tc.acct.ID,
+				Type: "account.updated",
+			}
+			event.Data = &stripe.EventData{Raw: payload}
+
+			var gotAccountID string
+			var gotComplete bool
+			var calls int
+			repo := &mockPaymentRepo{
+				recordStripeEventStartFn: func(_ context.Context, _, _ string) (bool, error) {
+					return false, nil
+				},
+				markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+				setStripeOnboardingCompleteFn: func(_ context.Context, accountID string, complete bool) error {
+					calls++
+					gotAccountID = accountID
+					gotComplete = complete
+					return nil
+				},
+			}
+			svc := newTestPaymentService(repo, nil)
+			svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+			err = svc.HandleWebhook(context.Background(), payload, "sig")
+			require.NoError(t, err)
+			assert.Equal(t, 1, calls, "SetStripeOnboardingComplete must be called exactly once")
+			assert.Equal(t, tc.acct.ID, gotAccountID)
+			assert.Equal(t, tc.expectComplete, gotComplete)
+		})
+	}
+}
+
 // TestHandleWebhook_first_delivery_marks_processed verifies the happy path:
 // event is recorded, handler runs, and processed_at is stamped.
 func TestHandleWebhook_first_delivery_marks_processed(t *testing.T) {

@@ -48,6 +48,15 @@ func (c *Client) Redis() *redis.Client {
 	return c.rdb
 }
 
+// Ping verifies the cache backend is reachable. Used by /readyz handlers.
+// Safe to call on a nil receiver — returns nil (no cache means no probe).
+func (c *Client) Ping(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+	return c.rdb.Ping(ctx).Err()
+}
+
 // GetJSON retrieves a cached value and unmarshals it into dest.
 // Returns false if the key is missing or on any error.
 func (c *Client) GetJSON(ctx context.Context, key string, dest interface{}) bool {

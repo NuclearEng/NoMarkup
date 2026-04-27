@@ -16,6 +16,7 @@ license = "proprietary"
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
 tonic = "0.12"
+tonic-health = "0.12"
 prost = "0.13"
 prost-types = "0.13"
 tonic-build = "0.12"

@@ -148,6 +148,9 @@ func main() {
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
+	startObservabilityServer(sigCtx, "job-service", port, pool)
+
 	go func() {
 		slog.Info("job service starting", "port", port)
 		if err := s.Serve(lis); err != nil {

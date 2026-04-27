@@ -221,7 +221,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           <WebSocketProvider>
             {/* Main content — mobile padding clears the fixed bottom tab bar */}
-            <div className="dashboard-ambient flex-1 px-3 pt-3 sm:px-4 sm:pt-4 md:px-6 md:pt-6 mobile-bottom-inset">
+            <div className="dashboard-ambient min-w-0 flex-1 px-3 pt-3 sm:px-4 sm:pt-4 md:px-6 md:pt-6 mobile-bottom-inset">
               {children}
             </div>
           </WebSocketProvider>

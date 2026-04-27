@@ -145,6 +145,9 @@ func main() {
 	)
 	chatgrpc.Register(s, srv)
 
+	// Observability HTTP server (healthz / readyz / metrics + active_websocket_connections gauge).
+	startObservabilityServer(ctx, "chat-service", port, pool, rdb, hub)
+
 	go func() {
 		slog.Info("chat gRPC service starting", "port", port)
 		if err := s.Serve(lis); err != nil {

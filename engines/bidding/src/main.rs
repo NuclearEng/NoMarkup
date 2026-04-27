@@ -144,9 +144,19 @@ async fn main() -> anyhow::Result<()> {
     let engine = Arc::new(BiddingEngine::new(pool, redis_conn));
     let service = BidServiceImpl::new(engine);
 
+    // gRPC health check (grpc.health.v1.Health). Kubernetes can probe this
+    // with grpc_health_probe, and load balancers can route to /grpc.health.v1.
+    // We mark the bidding service as SERVING; readiness can flip this to
+    // NOT_SERVING during shutdown via the health_reporter handle.
+    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+    health_reporter
+        .set_serving::<BidServiceServer<BidServiceImpl>>()
+        .await;
+
     tracing::info!("bidding engine starting on {}", addr);
 
     tonic::transport::Server::builder()
+        .add_service(health_service)
         .add_service(BidServiceServer::new(service))
         .serve_with_shutdown(addr, async {
             if let Err(e) = tokio::signal::ctrl_c().await {

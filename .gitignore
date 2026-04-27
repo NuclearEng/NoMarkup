@@ -75,3 +75,5 @@ npm-debug.log*
 .claude/worktrees/
 .claude/settings.local.json
 .gstack/
+.vite/
+.claude/scheduled_tasks.lock

@@ -127,9 +127,16 @@ async fn main() -> anyhow::Result<()> {
     let engine = Arc::new(TrustScorer::new(pool));
     let service = TrustServiceImpl::new(engine);
 
+    // gRPC health check — see bidding/src/main.rs for design notes.
+    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+    health_reporter
+        .set_serving::<TrustServiceServer<TrustServiceImpl>>()
+        .await;
+
     tracing::info!("trust engine starting on {}", addr);
 
     tonic::transport::Server::builder()
+        .add_service(health_service)
         .add_service(TrustServiceServer::new(service))
         .serve_with_shutdown(addr, async {
             if let Err(e) = tokio::signal::ctrl_c().await {

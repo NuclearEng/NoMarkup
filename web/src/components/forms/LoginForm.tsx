@@ -224,12 +224,13 @@ export function LoginForm() {
                 control={form.control}
                 name="rememberMe"
                 render={({ field }) => (
-                  <label className="flex cursor-pointer items-center gap-2 py-1">
+                  <label className="flex min-h-[44px] cursor-pointer items-center gap-2 py-1">
                     <input
                       type="checkbox"
                       checked={field.value}
                       onChange={field.onChange}
-                      className="h-4 w-4 rounded border-white/20 bg-white/5 accent-[var(--brand-gold)]"
+                      aria-label="Remember me"
+                      className="h-5 w-5 rounded border-white/20 bg-white/5 accent-[var(--brand-gold)]"
                     />
                     <span className="text-sm text-white/65">Remember me</span>
                   </label>

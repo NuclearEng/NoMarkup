@@ -139,6 +139,9 @@ func main() {
 	)
 	notificationgrpc.Register(s, srv)
 
+	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
+	startObservabilityServer(ctx, "notification-service", port, pool)
+
 	go func() {
 		slog.Info("notification service starting", "port", port)
 		if err := s.Serve(lis); err != nil {

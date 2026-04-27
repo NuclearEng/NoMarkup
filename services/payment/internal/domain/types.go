@@ -300,6 +300,10 @@ type PaymentRepository interface {
 	UpdateRefund(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
 	GetStripeAccountID(ctx context.Context, userID string) (string, error)
 	SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error
+	// SetStripeOnboardingComplete flips the provider_profiles.stripe_onboarding_complete
+	// flag for the user owning the given Stripe Connect account ID. Wired off
+	// the account.updated webhook so the local DB stays in sync with Stripe.
+	SetStripeOnboardingComplete(ctx context.Context, stripeAccountID string, complete bool) error
 	GetStripeCustomerID(ctx context.Context, userID string) (string, error)
 
 	// Admin operations

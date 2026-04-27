@@ -23,8 +23,9 @@ type mockPaymentRepo struct {
 	findByStripePIFn      func(ctx context.Context, paymentIntentID string) (*domain.Payment, error)
 	updateStripeFieldsFn  func(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
 	updateRefundFn        func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
-	getStripeAccountIDFn  func(ctx context.Context, userID string) (string, error)
-	setStripeAccountIDFn  func(ctx context.Context, userID string, stripeAccountID string) error
+	getStripeAccountIDFn         func(ctx context.Context, userID string) (string, error)
+	setStripeAccountIDFn         func(ctx context.Context, userID string, stripeAccountID string) error
+	setStripeOnboardingCompleteFn func(ctx context.Context, stripeAccountID string, complete bool) error
 	// Expense methods
 	createExpenseFn func(ctx context.Context, expense *domain.Expense) error
 	listExpensesFn  func(ctx context.Context, providerID string, startDate, endDate *time.Time, page, pageSize int) ([]*domain.Expense, int64, int, error)
@@ -100,6 +101,12 @@ func (m *mockPaymentRepo) GetStripeAccountID(ctx context.Context, userID string)
 }
 func (m *mockPaymentRepo) SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error {
 	return m.setStripeAccountIDFn(ctx, userID, stripeAccountID)
+}
+func (m *mockPaymentRepo) SetStripeOnboardingComplete(ctx context.Context, stripeAccountID string, complete bool) error {
+	if m.setStripeOnboardingCompleteFn != nil {
+		return m.setStripeOnboardingCompleteFn(ctx, stripeAccountID, complete)
+	}
+	return nil
 }
 func (m *mockPaymentRepo) CreateExpense(ctx context.Context, expense *domain.Expense) error {
 	if m.createExpenseFn != nil {

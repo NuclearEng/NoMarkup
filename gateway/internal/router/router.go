@@ -1,9 +1,11 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -81,8 +83,15 @@ func New(
 	r.Use(middleware.SecurityHeaders(production))
 	r.Use(rateLimiter.Middleware)
 
-	// Observability endpoints (public, no auth)
+	// Observability endpoints (public, no auth).
+	// /healthz   — liveness: always returns 200 if the process can respond.
+	// /readyz    — readiness: 200 only if backend dependencies are reachable.
+	// /metrics   — Prometheus exposition.
+	// /health    — legacy alias (kept for backward compatibility with older
+	//              load balancer configs and the launch-checklist smoke tests).
+	r.Get("/healthz", healthHandler)
 	r.Get("/health", healthHandler)
+	r.Get("/readyz", readinessHandler(dbPool, cacheClient))
 	r.Handle("/metrics", promhttp.Handler())
 
 	// Public auth routes (no auth middleware)
@@ -607,6 +616,61 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// readinessHandler returns 200 only when all critical backing dependencies
+// are reachable. Used by Kubernetes readiness probes and load balancers to
+// remove the pod from rotation when it is unable to serve real traffic.
+//
+// Probes:
+//   - PostgreSQL: pgxpool.Ping with 1s deadline (only when DATABASE_URL is set).
+//   - Redis: cache.Ping with 1s deadline (only when REDIS_URL is set).
+//
+// Downstream gRPC services are NOT probed here because gateway uses
+// grpc.NewClient with lazy connection — a 503 here would mask actual gateway
+// health when a single dependency is briefly unhealthy. Prefer per-service
+// readiness probes on each backend.
+func readinessHandler(dbPool *pgxpool.Pool, cacheClient *cache.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 1*time.Second)
+		defer cancel()
+
+		checks := map[string]string{}
+		ready := true
+
+		if dbPool != nil {
+			if err := dbPool.Ping(ctx); err != nil {
+				checks["postgres"] = "unhealthy: " + err.Error()
+				ready = false
+			} else {
+				checks["postgres"] = "ok"
+			}
+		} else {
+			checks["postgres"] = "skipped (DATABASE_URL not set)"
+		}
+
+		if cacheClient != nil {
+			if err := cacheClient.Ping(ctx); err != nil {
+				checks["redis"] = "unhealthy: " + err.Error()
+				ready = false
+			} else {
+				checks["redis"] = "ok"
+			}
+		} else {
+			checks["redis"] = "skipped (REDIS_URL not set)"
+		}
+
+		status := http.StatusOK
+		body := map[string]any{"status": "ready", "checks": checks}
+		if !ready {
+			status = http.StatusServiceUnavailable
+			body["status"] = "not_ready"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(body)
+	}
 }
 
 // optionalAuth tries to extract auth claims if an Authorization header is present,
