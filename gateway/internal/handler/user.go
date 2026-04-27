@@ -116,6 +116,114 @@ func (h *UserHandler) EnableRole(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, protoUserToJSON(resp.GetUser()))
 }
 
+type requestDeletionRequest struct {
+	Reason       string `json:"reason"`
+	Confirmation string `json:"confirmation"`
+}
+
+// RequestMyDeletion handles DELETE /api/v1/users/me — initiates GDPR/CCPA
+// erasure with a 30-day grace window. Returns the grace deadline in 200.
+//
+// The endpoint is intentionally non-blocking: the cascade itself runs
+// asynchronously via the user-service cron. Stripe / S3 cleanup happens at
+// finalize time, not request time.
+func (h *UserHandler) RequestMyDeletion(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req requestDeletionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	resp, err := h.userClient.RequestAccountDeletion(r.Context(), &userv1.RequestAccountDeletionRequest{
+		UserId:       claims.UserID,
+		Reason:       req.Reason,
+		Confirmation: req.Confirmation,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	slog.Info("gdpr deletion request accepted",
+		"user_id", claims.UserID,
+		"created", resp.GetCreated(),
+		"grace_deadline", resp.GetGraceDeadline().AsTime(),
+	)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"created":        resp.GetCreated(),
+		"grace_deadline": resp.GetGraceDeadline().AsTime().UTC().Format(time.RFC3339),
+		"message":        "Account deletion requested. You can cancel within 30 days by signing in and clicking 'Restore my account'.",
+	})
+}
+
+// RestoreMyAccount handles POST /api/v1/users/me/restore — cancels a
+// pending deletion request within the grace window.
+func (h *UserHandler) RestoreMyAccount(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	resp, err := h.userClient.CancelAccountDeletion(r.Context(), &userv1.CancelAccountDeletionRequest{
+		UserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"cancelled": resp.GetCancelled(),
+	})
+}
+
+// AdminFinalizeDeletion handles POST /api/v1/admin/users/{id}/finalize-deletion.
+// Compliance team uses this to expedite a finalize ahead of the 30-day cron.
+func (h *UserHandler) AdminFinalizeDeletion(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	userID := chi.URLParam(r, "id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user id required")
+		return
+	}
+
+	resp, err := h.userClient.FinalizeAccountDeletion(r.Context(), &userv1.FinalizeAccountDeletionRequest{
+		UserId:  userID,
+		Force:   true,
+		AdminId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	slog.Warn("gdpr admin override finalize",
+		"target_user_id", userID,
+		"admin_id", claims.UserID,
+		"counts", resp.GetRowsAffected(),
+		"stripe_customer_outcome", resp.GetStripeCustomerOutcome(),
+		"stripe_account_outcome", resp.GetStripeAccountOutcome(),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"finalized_at":            resp.GetFinalizedAt().AsTime().UTC().Format(time.RFC3339),
+		"rows_affected":           resp.GetRowsAffected(),
+		"stripe_customer_outcome": resp.GetStripeCustomerOutcome(),
+		"stripe_account_outcome":  resp.GetStripeAccountOutcome(),
+	})
+}
+
 // GetSavings handles GET /api/v1/users/me/savings.
 func (h *UserHandler) GetSavings(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())

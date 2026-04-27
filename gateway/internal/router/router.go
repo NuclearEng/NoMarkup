@@ -216,6 +216,9 @@ func New(
 			r.Patch("/me", userHandler.UpdateMe)
 			r.Post("/me/roles", userHandler.EnableRole)
 			r.Get("/me/savings", userHandler.GetSavings)
+			// GDPR / CCPA right-to-erasure pipeline.
+			r.Delete("/me", userHandler.RequestMyDeletion)
+			r.Post("/me/restore", userHandler.RestoreMyAccount)
 			r.Get("/{id}", userHandler.GetUser)
 			r.Get("/{id}/reviews", reviewHandler.ListReviewsForUser)
 			r.Get("/{id}/trust-score", trustHandler.GetTrustScore)
@@ -447,6 +450,9 @@ func New(
 				r.Post("/{id}/suspend", adminUsersHandler.SuspendUser)
 				r.Post("/{id}/ban", adminUsersHandler.BanUser)
 				r.Post("/{id}/reactivate", adminUsersHandler.ReactivateUser)
+				// GDPR/CCPA admin override — bypasses the 30-day grace and
+				// runs the cascade now. Audit-logged at the user service.
+				r.Post("/{id}/finalize-deletion", userHandler.AdminFinalizeDeletion)
 			})
 
 			// Verification
