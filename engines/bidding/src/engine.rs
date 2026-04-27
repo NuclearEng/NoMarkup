@@ -71,8 +71,17 @@ impl BiddingEngine {
             .offer_accepted_cents
             .is_some_and(|offer| amount_cents <= offer);
 
-        // Insert bid and increment bid count in a single transaction to
-        // prevent race conditions where the count diverges from actual bids.
+        // Insert bid and let the database trigger maintain bid_count.
+        //
+        // NOTE: jobs.bid_count is maintained by the AFTER-INSERT trigger
+        // bids_update_bid_count installed by migration 029 and switched
+        // to atomic delta updates (`bid_count = bid_count + 1`) by
+        // migration 030. We MUST NOT also do an explicit increment from
+        // app code — under concurrency, an explicit `+1` racing the
+        // trigger's atomic delta produces over-counts, and a recomputing
+        // trigger (the v029 form) racing in-flight inserts produces
+        // under-counts. Tier 1 audit caught both modes via
+        // services/job/internal/service/bid_race_test.go.
         let mut tx = self.pool.begin().await?;
 
         let bid = sqlx::query_as::<_, Bid>(
@@ -93,11 +102,6 @@ impl BiddingEngine {
                 BidError::DatabaseError(e)
             }
         })?;
-
-        sqlx::query("UPDATE jobs SET bid_count = bid_count + 1 WHERE id = $1")
-            .bind(job_id)
-            .execute(&mut *tx)
-            .await?;
 
         // Live auction: record event and check anti-snipe
         if job.auction_type == "live" {
