@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, CreditCard, Crown, Shield } from 'lucide-react';
+import { Bell, CreditCard, Crown, Shield, UserX } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -12,6 +12,7 @@ const SETTINGS_NAV = [
   { href: '/settings/notifications' as Route, label: 'Notifications', icon: Bell },
   { href: '/settings/payment-methods' as Route, label: 'Payment Methods', icon: CreditCard },
   { href: '/settings/subscription' as Route, label: 'Subscription', icon: Crown },
+  { href: '/settings/account' as Route, label: 'Account', icon: UserX },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
