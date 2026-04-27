@@ -39,6 +39,16 @@ service UserService {
   rpc EnableRole(EnableRoleRequest) returns (EnableRoleResponse);
   rpc DeactivateAccount(DeactivateAccountRequest) returns (DeactivateAccountResponse);
 
+  // GDPR / CCPA right-to-erasure pipeline.
+  // RequestAccountDeletion starts a 30-day grace window during which the user
+  // can rescind by calling CancelAccountDeletion. After the grace deadline,
+  // a worker calls FinalizeAccountDeletion to perform the actual erasure
+  // cascade. Admins can also call FinalizeAccountDeletion directly to
+  // expedite (compliance / legal hold release).
+  rpc RequestAccountDeletion(RequestAccountDeletionRequest) returns (RequestAccountDeletionResponse);
+  rpc CancelAccountDeletion(CancelAccountDeletionRequest) returns (CancelAccountDeletionResponse);
+  rpc FinalizeAccountDeletion(FinalizeAccountDeletionRequest) returns (FinalizeAccountDeletionResponse);
+
   // Provider profile
   rpc GetProviderProfile(GetProviderProfileRequest) returns (GetProviderProfileResponse);
   rpc UpdateProviderProfile(UpdateProviderProfileRequest) returns (UpdateProviderProfileResponse);
@@ -290,6 +300,59 @@ message DeactivateAccountRequest {
 }
 
 message DeactivateAccountResponse {}
+
+// ============================================================
+// GDPR / CCPA Account Erasure Messages
+// ============================================================
+
+message RequestAccountDeletionRequest {
+  string user_id = 1;
+  // Free-text reason supplied by the user. Optional but encouraged for
+  // exit-survey insights.
+  string reason = 2;
+  // Confirmation phrase the client must echo (e.g. "DELETE"). Server
+  // re-validates as a guard against accidental requests.
+  string confirmation = 3;
+}
+
+message RequestAccountDeletionResponse {
+  // When the cron will finalize the deletion (request_time + 30 days).
+  google.protobuf.Timestamp grace_deadline = 1;
+  // True if the request was newly created. False on idempotent re-call
+  // (request already pending). Either way grace_deadline is populated.
+  bool created = 2;
+}
+
+message CancelAccountDeletionRequest {
+  string user_id = 1;
+}
+
+message CancelAccountDeletionResponse {
+  // True if a pending request was cleared; false if no pending request
+  // existed (no-op). Returns FailedPrecondition if the request has
+  // already been finalized.
+  bool cancelled = 1;
+}
+
+message FinalizeAccountDeletionRequest {
+  string user_id = 1;
+  // When true (admin override), the erasure runs even if the grace
+  // period has not elapsed. When false (normal cron path), the worker
+  // must wait for grace_deadline.
+  bool force = 2;
+  // Admin user ID for audit trail when force=true.
+  string admin_id = 3;
+}
+
+message FinalizeAccountDeletionResponse {
+  google.protobuf.Timestamp finalized_at = 1;
+  // Per-table row anonymization counts for the audit trail.
+  map<string, int64> rows_affected = 2;
+  // Stripe deletion outcome ("deleted", "skipped_no_id", "skipped_balance",
+  // "error: <reason>"). Stored verbatim in the audit log.
+  string stripe_customer_outcome = 3;
+  string stripe_account_outcome = 4;
+}
 
 // ============================================================
 // Provider Profile Messages

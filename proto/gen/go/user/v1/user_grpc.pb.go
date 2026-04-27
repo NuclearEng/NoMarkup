@@ -38,6 +38,9 @@ const (
 	UserService_UpdateUser_FullMethodName              = "/nomarkup.user.v1.UserService/UpdateUser"
 	UserService_EnableRole_FullMethodName              = "/nomarkup.user.v1.UserService/EnableRole"
 	UserService_DeactivateAccount_FullMethodName       = "/nomarkup.user.v1.UserService/DeactivateAccount"
+	UserService_RequestAccountDeletion_FullMethodName  = "/nomarkup.user.v1.UserService/RequestAccountDeletion"
+	UserService_CancelAccountDeletion_FullMethodName   = "/nomarkup.user.v1.UserService/CancelAccountDeletion"
+	UserService_FinalizeAccountDeletion_FullMethodName = "/nomarkup.user.v1.UserService/FinalizeAccountDeletion"
 	UserService_GetProviderProfile_FullMethodName      = "/nomarkup.user.v1.UserService/GetProviderProfile"
 	UserService_UpdateProviderProfile_FullMethodName   = "/nomarkup.user.v1.UserService/UpdateProviderProfile"
 	UserService_SetGlobalTerms_FullMethodName          = "/nomarkup.user.v1.UserService/SetGlobalTerms"
@@ -89,6 +92,15 @@ type UserServiceClient interface {
 	UpdateUser(ctx context.Context, in *UpdateUserRequest, opts ...grpc.CallOption) (*UpdateUserResponse, error)
 	EnableRole(ctx context.Context, in *EnableRoleRequest, opts ...grpc.CallOption) (*EnableRoleResponse, error)
 	DeactivateAccount(ctx context.Context, in *DeactivateAccountRequest, opts ...grpc.CallOption) (*DeactivateAccountResponse, error)
+	// GDPR / CCPA right-to-erasure pipeline.
+	// RequestAccountDeletion starts a 30-day grace window during which the user
+	// can rescind by calling CancelAccountDeletion. After the grace deadline,
+	// a worker calls FinalizeAccountDeletion to perform the actual erasure
+	// cascade. Admins can also call FinalizeAccountDeletion directly to
+	// expedite (compliance / legal hold release).
+	RequestAccountDeletion(ctx context.Context, in *RequestAccountDeletionRequest, opts ...grpc.CallOption) (*RequestAccountDeletionResponse, error)
+	CancelAccountDeletion(ctx context.Context, in *CancelAccountDeletionRequest, opts ...grpc.CallOption) (*CancelAccountDeletionResponse, error)
+	FinalizeAccountDeletion(ctx context.Context, in *FinalizeAccountDeletionRequest, opts ...grpc.CallOption) (*FinalizeAccountDeletionResponse, error)
 	// Provider profile
 	GetProviderProfile(ctx context.Context, in *GetProviderProfileRequest, opts ...grpc.CallOption) (*GetProviderProfileResponse, error)
 	UpdateProviderProfile(ctx context.Context, in *UpdateProviderProfileRequest, opts ...grpc.CallOption) (*UpdateProviderProfileResponse, error)
@@ -311,6 +323,36 @@ func (c *userServiceClient) DeactivateAccount(ctx context.Context, in *Deactivat
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeactivateAccountResponse)
 	err := c.cc.Invoke(ctx, UserService_DeactivateAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) RequestAccountDeletion(ctx context.Context, in *RequestAccountDeletionRequest, opts ...grpc.CallOption) (*RequestAccountDeletionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestAccountDeletionResponse)
+	err := c.cc.Invoke(ctx, UserService_RequestAccountDeletion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) CancelAccountDeletion(ctx context.Context, in *CancelAccountDeletionRequest, opts ...grpc.CallOption) (*CancelAccountDeletionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelAccountDeletionResponse)
+	err := c.cc.Invoke(ctx, UserService_CancelAccountDeletion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) FinalizeAccountDeletion(ctx context.Context, in *FinalizeAccountDeletionRequest, opts ...grpc.CallOption) (*FinalizeAccountDeletionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FinalizeAccountDeletionResponse)
+	err := c.cc.Invoke(ctx, UserService_FinalizeAccountDeletion_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -564,6 +606,15 @@ type UserServiceServer interface {
 	UpdateUser(context.Context, *UpdateUserRequest) (*UpdateUserResponse, error)
 	EnableRole(context.Context, *EnableRoleRequest) (*EnableRoleResponse, error)
 	DeactivateAccount(context.Context, *DeactivateAccountRequest) (*DeactivateAccountResponse, error)
+	// GDPR / CCPA right-to-erasure pipeline.
+	// RequestAccountDeletion starts a 30-day grace window during which the user
+	// can rescind by calling CancelAccountDeletion. After the grace deadline,
+	// a worker calls FinalizeAccountDeletion to perform the actual erasure
+	// cascade. Admins can also call FinalizeAccountDeletion directly to
+	// expedite (compliance / legal hold release).
+	RequestAccountDeletion(context.Context, *RequestAccountDeletionRequest) (*RequestAccountDeletionResponse, error)
+	CancelAccountDeletion(context.Context, *CancelAccountDeletionRequest) (*CancelAccountDeletionResponse, error)
+	FinalizeAccountDeletion(context.Context, *FinalizeAccountDeletionRequest) (*FinalizeAccountDeletionResponse, error)
 	// Provider profile
 	GetProviderProfile(context.Context, *GetProviderProfileRequest) (*GetProviderProfileResponse, error)
 	UpdateProviderProfile(context.Context, *UpdateProviderProfileRequest) (*UpdateProviderProfileResponse, error)
@@ -658,6 +709,15 @@ func (UnimplementedUserServiceServer) EnableRole(context.Context, *EnableRoleReq
 }
 func (UnimplementedUserServiceServer) DeactivateAccount(context.Context, *DeactivateAccountRequest) (*DeactivateAccountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeactivateAccount not implemented")
+}
+func (UnimplementedUserServiceServer) RequestAccountDeletion(context.Context, *RequestAccountDeletionRequest) (*RequestAccountDeletionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestAccountDeletion not implemented")
+}
+func (UnimplementedUserServiceServer) CancelAccountDeletion(context.Context, *CancelAccountDeletionRequest) (*CancelAccountDeletionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelAccountDeletion not implemented")
+}
+func (UnimplementedUserServiceServer) FinalizeAccountDeletion(context.Context, *FinalizeAccountDeletionRequest) (*FinalizeAccountDeletionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FinalizeAccountDeletion not implemented")
 }
 func (UnimplementedUserServiceServer) GetProviderProfile(context.Context, *GetProviderProfileRequest) (*GetProviderProfileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetProviderProfile not implemented")
@@ -1084,6 +1144,60 @@ func _UserService_DeactivateAccount_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UserServiceServer).DeactivateAccount(ctx, req.(*DeactivateAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_RequestAccountDeletion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestAccountDeletionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).RequestAccountDeletion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_RequestAccountDeletion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).RequestAccountDeletion(ctx, req.(*RequestAccountDeletionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_CancelAccountDeletion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelAccountDeletionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).CancelAccountDeletion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_CancelAccountDeletion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).CancelAccountDeletion(ctx, req.(*CancelAccountDeletionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_FinalizeAccountDeletion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FinalizeAccountDeletionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).FinalizeAccountDeletion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_FinalizeAccountDeletion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).FinalizeAccountDeletion(ctx, req.(*FinalizeAccountDeletionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1566,6 +1680,18 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeactivateAccount",
 			Handler:    _UserService_DeactivateAccount_Handler,
+		},
+		{
+			MethodName: "RequestAccountDeletion",
+			Handler:    _UserService_RequestAccountDeletion_Handler,
+		},
+		{
+			MethodName: "CancelAccountDeletion",
+			Handler:    _UserService_CancelAccountDeletion_Handler,
+		},
+		{
+			MethodName: "FinalizeAccountDeletion",
+			Handler:    _UserService_FinalizeAccountDeletion_Handler,
 		},
 		{
 			MethodName: "GetProviderProfile",
