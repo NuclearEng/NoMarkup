@@ -414,6 +414,14 @@ func New(
 		r.Get("/listings/bids/mine", listingsHandler.MyListingBids)
 		r.Post("/listings/{id}/bids", listingsHandler.PlaceListingBid)
 
+		// Seller write paths — create, edit, cancel, delete-draft.
+		// The web client at web/src/hooks/useListings.ts:101-153 calls
+		// these endpoints. Implementation lives in handler/listings_write.go.
+		r.Post("/listings", listingsHandler.CreateListing)
+		r.Patch("/listings/{id}", listingsHandler.UpdateListing)
+		r.Post("/listings/{id}/cancel", listingsHandler.CancelListing)
+		r.Delete("/listings/{id}", listingsHandler.DeleteListingDraft)
+
 		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {
 			r.Use(middleware.RequireIdempotencyKey(cacheClient))
