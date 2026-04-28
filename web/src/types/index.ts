@@ -1932,6 +1932,18 @@ export interface Listing {
   is_user_winning: boolean;
   was_outbid: boolean;
   /**
+   * StockX-style condition grade. null = seller didn't say. When set the
+   * scoreboard surfaces a condition pill on the listing card.
+   */
+  condition?:
+    | 'new'
+    | 'like_new'
+    | 'very_good'
+    | 'good'
+    | 'acceptable'
+    | 'for_parts'
+    | null;
+  /**
    * Live spectator count from the gateway's Redis sorted-set aggregator.
    * Optional because legacy responses may omit it; the scoreboard treats
    * undefined as zero.
@@ -1979,6 +1991,15 @@ export interface CreateListingInput {
   reserve_price_cents?: number;
   /** Optional fixed-price closeout. Omit for auction-only listings. */
   buy_now_price_cents?: number;
+  /** Optional StockX-style condition grade. Omit for "seller didn't say". */
+  condition?:
+    | 'new'
+    | 'like_new'
+    | 'very_good'
+    | 'good'
+    | 'acceptable'
+    | 'for_parts'
+    | null;
   auction_duration_hours: ListingDurationHours;
   publish?: boolean;
 }
@@ -2023,6 +2044,37 @@ export interface SearchListingsParams {
 export interface ListingsResponse {
   listings: Listing[];
   pagination: PaginationResponse;
+}
+
+/**
+ * Autocomplete suggestion from /api/v1/listings/autocomplete.
+ *
+ * Two flavors are returned in a single, sorted list:
+ *   - type='category' carries `category_slug` + `label`
+ *   - type='listing'  carries `id`, `title`, `category_slug`, `starting_price_cents`
+ *
+ * The component layer (SearchBar) renders them with different affordances
+ * (chip vs. row) but treats the dropdown as a single keyboard list.
+ */
+export interface AutocompleteSuggestion {
+  type: 'listing' | 'category';
+  id?: string;
+  title?: string;
+  category_slug?: string;
+  label?: string;
+  starting_price_cents?: number;
+}
+
+export interface AutocompleteResponse {
+  suggestions: AutocompleteSuggestion[];
+}
+
+/**
+ * Response from /api/v1/listings/{id}/similar — up to 12 fully-hydrated
+ * Listing rows ranked by Meilisearch relevance against the source.
+ */
+export interface SimilarListingsResponse {
+  listings: Listing[];
 }
 
 export interface MyListingsResponse {

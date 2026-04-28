@@ -73,6 +73,8 @@ vi.mock('@/components/marketplace/ListingFilters', () => ({
 
 vi.mock('@/hooks/useListings', () => ({
   useListings: () => listingsState,
+  useListingsAutocomplete: () => ({ data: { suggestions: [] }, isLoading: false }),
+  useSimilarListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
 }));
 
 import MarketplacePage from '@/app/(public)/marketplace/page';

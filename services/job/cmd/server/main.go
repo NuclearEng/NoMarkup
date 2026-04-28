@@ -21,6 +21,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
 
+	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	grpcserver "github.com/nomarkup/nomarkup/services/job/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/job/internal/repository"
 	"github.com/nomarkup/nomarkup/services/job/internal/service"
@@ -95,6 +96,7 @@ func main() {
 	meiliKey := os.Getenv("MEILISEARCH_API_KEY")
 
 	var searchEngine *service.SearchEngine
+	var listingSearchEngine *service.ListingSearchEngine
 	if meiliHost != "" {
 		se, err := service.NewSearchEngine(meiliHost, meiliKey)
 		if err != nil {
@@ -103,11 +105,28 @@ func main() {
 			searchEngine = se
 			slog.Info("connected to meilisearch", "host", meiliHost)
 		}
+		// Listings index is independent of jobs. Failure to configure
+		// either does not stop the service from booting.
+		lse, err := service.NewListingSearchEngine(meiliHost, meiliKey)
+		if err != nil {
+			slog.Warn("failed to initialize listing search engine, continuing without listing search", "error", err)
+		} else {
+			listingSearchEngine = lse
+			slog.Info("listings search index ready", "host", meiliHost)
+		}
 	}
-
 	// Wire up dependencies.
 	repo := repository.NewPostgresRepository(pool)
 	jobService := service.NewJobService(repo, searchEngine)
+
+	// Wire up ListingService with the listings Meilisearch indexer. The
+	// gateway currently bypasses this service for read traffic (see
+	// gateway/internal/handler/listings.go) but the service hooks fire
+	// from any gRPC writes and from the reindex-listings CLI backfill.
+	listingRepo := repository.NewListingPostgresRepository(pool)
+	listingHydrate := buildListingHydrator(pool)
+	listingService := service.NewListingService(listingRepo).WithSearch(listingSearchEngine, listingHydrate)
+	_ = listingService // reserved for future gRPC wiring; keeps build clean
 
 	// Wire up provider matching engine.
 	matchingService := service.NewMatchingService(repo)
@@ -223,6 +242,48 @@ func loggingUnaryInterceptor(ctx context.Context, req interface{}, info *grpclib
 		)
 	}
 	return resp, err
+}
+
+// buildListingHydrator returns a closure that joins service_categories +
+// reads the optional condition column to enrich Meilisearch documents.
+// The category JOIN is single-row, so the cost is negligible per index op.
+//
+// Schema note: the `condition` column is added by Agent H in migration 040.
+// We probe via information_schema once at startup; if absent we omit it.
+func buildListingHydrator(pool *pgxpool.Pool) service.ListingHydrator {
+	hasCondition := false
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var exists bool
+		_ = pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				 WHERE table_name = 'listings' AND column_name = 'condition'
+			)`).Scan(&exists)
+		hasCondition = exists
+	}
+	return func(ctx context.Context, l *domain.Listing) service.ListingExtraFields {
+		var extras service.ListingExtraFields
+		if pool == nil || l == nil {
+			return extras
+		}
+		// service_categories JOIN.
+		_ = pool.QueryRow(ctx, `
+			SELECT COALESCE(name,''), COALESCE(slug,'')
+			  FROM service_categories WHERE id = $1`, l.CategoryID,
+		).Scan(&extras.CategoryName, &extras.CategorySlug)
+		// Optional condition column.
+		if hasCondition {
+			var cond string
+			if err := pool.QueryRow(ctx, `
+				SELECT COALESCE(condition,'') FROM listings WHERE id = $1`, l.ID,
+			).Scan(&cond); err == nil {
+				extras.Condition = cond
+			}
+		}
+		return extras
+	}
 }
 
 // loggingStreamInterceptor logs every streaming gRPC call with method name, duration, and any error.

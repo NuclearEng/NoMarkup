@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 
 import { ListingFilters } from '@/components/marketplace/ListingFilters';
 import { ScoreboardCard } from '@/components/marketplace/ScoreboardCard';
+import { SearchBar } from '@/components/marketplace/SearchBar';
 import { UrgencyStrip } from '@/components/marketplace/UrgencyStrip';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -84,11 +85,40 @@ export default function MarketplacePage() {
       </div>
 
       {/* Hero scoreboard strip */}
-      <div className="mb-8">
+      <div className="mb-6">
         <UrgencyStrip
           closingSoonCount={closingSoonCount}
           totalWatchers={totalWatchers}
           liveBidsCount={liveBidsCount}
+        />
+      </div>
+
+      {/* Autocomplete search — Meilisearch-backed typeahead. Sits above
+          the filters so the search is the primary find affordance,
+          while the sidebar filters remain for refinement. */}
+      <div className="mb-8">
+        <SearchBar
+          defaultValue={filters.query ?? ''}
+          onSubmitQuery={(q) => {
+            setFilters((prev) => ({
+              ...prev,
+              query: q.length > 0 ? q : undefined,
+              page: 1,
+            }));
+          }}
+          onSelectSuggestion={(s) => {
+            if (s.type === 'listing' && s.id) {
+              window.location.assign(`/marketplace/${s.id}`);
+              return;
+            }
+            if (s.type === 'category' && s.label) {
+              setFilters((prev) => ({
+                ...prev,
+                query: s.label,
+                page: 1,
+              }));
+            }
+          }}
         />
       </div>
 

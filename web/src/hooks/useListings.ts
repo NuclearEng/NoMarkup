@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 
 import { ApiError, api } from '@/lib/api';
 import type {
+  AutocompleteResponse,
   CreateListingInput,
   Listing,
   ListingBidHistory,
@@ -14,6 +15,7 @@ import type {
   PlaceListingBidInput,
   PlaceListingBidResponse,
   SearchListingsParams,
+  SimilarListingsResponse,
   UpdateListingInput,
 } from '@/types';
 
@@ -62,6 +64,49 @@ export function useListing(id: string) {
         .getPublic<{ listing: ListingDetail }>(`/api/v1/listings/${id}`)
         .then((res) => res.listing),
     enabled: !!id,
+  });
+}
+
+/**
+ * Search-as-you-type suggestions for the marketplace SearchBar.
+ *
+ * Hits the public /listings/autocomplete endpoint (Meilisearch-backed)
+ * once the user has typed at least 2 characters. Disabled below 2 chars
+ * so we don't fire a request after every keystroke. The component layer
+ * is expected to debounce its `q` input — see SearchBar.tsx.
+ *
+ * staleTime is 30s — autocomplete suggestions are stable enough that
+ * repeated identical prefixes within a session don't need to refetch.
+ */
+export function useListingsAutocomplete(q: string) {
+  const trimmed = q.trim();
+  return useQuery({
+    queryKey: ['listings', 'autocomplete', trimmed],
+    queryFn: () =>
+      api.getPublic<AutocompleteResponse>(
+        `/api/v1/listings/autocomplete?q=${encodeURIComponent(trimmed)}&limit=10`,
+      ),
+    enabled: trimmed.length >= 2,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * "You may also like" rail on the listing detail page.
+ *
+ * Hits /listings/{id}/similar which returns up to 12 same-category
+ * active listings ranked by Meilisearch relevance against the source
+ * listing's title+description. Empty array when none found.
+ */
+export function useSimilarListings(listingId: string) {
+  return useQuery({
+    queryKey: ['listings', listingId, 'similar'],
+    queryFn: () =>
+      api.getPublic<SimilarListingsResponse>(
+        `/api/v1/listings/${listingId}/similar?limit=12`,
+      ),
+    enabled: !!listingId,
+    staleTime: 60_000,
   });
 }
 

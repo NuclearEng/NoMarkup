@@ -38,6 +38,7 @@ vi.mock('@/hooks/useListings', () => ({
   useListing: () => listingState,
   useListingBids: () => bidsState,
   usePlaceListingBid: () => placeBidState,
+  useSimilarListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
 }));
 
 vi.mock('@/hooks/useCountdown', () => ({

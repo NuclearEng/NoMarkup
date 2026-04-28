@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { BuyItNowButton } from '@/components/marketplace/BuyItNowButton';
 import { ListingBidPanel } from '@/components/marketplace/ListingBidPanel';
 import { ListingPhotoCarousel } from '@/components/marketplace/ListingPhotoCarousel';
+import { SimilarListings } from '@/components/marketplace/SimilarListings';
 import { SnipeExtensionBanner } from '@/components/marketplace/SnipeExtensionBanner';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { Badge } from '@/components/ui/badge';
@@ -386,6 +387,9 @@ export default function ListingDetailPage() {
           </Link>
         </div>
       </div>
+
+      {/* Similar items rail — Meilisearch-ranked, hidden when none match. */}
+      <SimilarListings listingId={listingId} />
     </div>
   );
 }

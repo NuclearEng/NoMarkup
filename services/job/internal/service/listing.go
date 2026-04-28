@@ -30,6 +30,15 @@ type ListingService struct {
 	// `listing:{id}` event consumed by the gateway marketplace
 	// spectator WebSocket. nil-safe — service still works without it.
 	rdb *redis.Client
+	// search is optional. When non-nil, lifecycle events (create/update/
+	// cancel/close) trigger Meilisearch upserts/deletes via fire-and-forget
+	// goroutines with retry. Mirrors JobService's search wiring.
+	search *ListingSearchEngine
+	// hydrate optionally fills in fields not present on the domain.Listing
+	// struct (category_name, category_slug, condition, pickup_city). When
+	// nil, the indexed document carries only the bare fields the listing
+	// already has — search still works against title/description.
+	hydrate ListingHydrator
 }
 
 // NewListingService wires a ListingService against a repository.
@@ -41,6 +50,15 @@ func NewListingService(repo domain.ListingRepository) *ListingService {
 // events to the `listing:{id}` channel. Returns the service for chaining.
 func (s *ListingService) WithRedis(rdb *redis.Client) *ListingService {
 	s.rdb = rdb
+	return s
+}
+
+// WithSearch attaches an optional Meilisearch indexer. The hydrate callback
+// supplies denormalized fields (category name/slug, condition, pickup
+// city/state) that aren't on the domain.Listing struct.
+func (s *ListingService) WithSearch(search *ListingSearchEngine, hydrate ListingHydrator) *ListingService {
+	s.search = search
+	s.hydrate = hydrate
 	return s
 }
 
@@ -74,7 +92,49 @@ func (s *ListingService) CreateListing(ctx context.Context, sellerID string, inp
 		"starting_price_cents", listing.StartingPriceCents,
 		"auction_duration_hours", listing.AuctionDurationHours,
 	)
+	// Search indexing — only published listings are searchable.
+	if listing.Status == "active" && s.search != nil {
+		indexListingWithRetry(s.search, listing, s.hydrate, "create")
+	}
+	// Followable-seller fan-out: publish a `notify:seller_new_listing:{seller_id}`
+	// Redis event so the notification service can fan to followers.
+	// Drafts don't publish — followers don't see drafts. The publish
+	// path on draft -> active activation is owned by listings_write.go
+	// in the gateway (we can't double-fire from here without an event id).
+	if listing.Status == "active" {
+		s.publishListingCreated(ctx, listing)
+	}
 	return listing, nil
+}
+
+// publishListingCreated fires the `notify:seller_new_listing:{seller_id}`
+// Redis event consumed by services/notification/cmd/server/follows_pubsub.go.
+// Best-effort: any failure is logged and never propagated.
+func (s *ListingService) publishListingCreated(ctx context.Context, listing *domain.Listing) {
+	if s.rdb == nil {
+		return
+	}
+	payload := map[string]interface{}{
+		"type":                 "seller_new_listing",
+		"listing_id":           listing.ID,
+		"seller_id":            listing.SellerID,
+		"title":                listing.Title,
+		"starting_price_cents": listing.StartingPriceCents,
+		"timestamp":            time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		slog.Warn("publish seller_new_listing: marshal failed", "error", err)
+		return
+	}
+	channel := fmt.Sprintf("notify:seller_new_listing:%s", listing.SellerID)
+	if err := s.rdb.Publish(ctx, channel, data).Err(); err != nil {
+		slog.Warn("publish seller_new_listing: redis publish failed",
+			"listing_id", listing.ID,
+			"seller_id", listing.SellerID,
+			"error", err,
+		)
+	}
 }
 
 // GetListing returns a listing by ID.
@@ -107,6 +167,10 @@ func (s *ListingService) UpdateListing(ctx context.Context, listingID, sellerID 
 	if err != nil {
 		return nil, fmt.Errorf("update listing: %w", err)
 	}
+	// Re-index when the listing is currently active. Drafts aren't searchable.
+	if l != nil && l.Status == "active" && s.search != nil {
+		indexListingWithRetry(s.search, l, s.hydrate, "update")
+	}
 	return l, nil
 }
 
@@ -117,6 +181,9 @@ func (s *ListingService) CancelListing(ctx context.Context, listingID, sellerID,
 		return nil, fmt.Errorf("cancel listing: %w", err)
 	}
 	slog.Info("listing cancelled", "listing_id", listingID, "seller_id", sellerID, "reason", reason)
+	if s.search != nil {
+		removeListingFromSearchWithRetry(s.search, listingID, "cancel")
+	}
 	return l, nil
 }
 
@@ -204,6 +271,10 @@ func (s *ListingService) CloseListingAuction(ctx context.Context, listingID stri
 		)
 	} else {
 		slog.Info("listing auction expired with no bids", "listing_id", l.ID)
+	}
+	// Sold or expired listings should disappear from search.
+	if s.search != nil {
+		removeListingFromSearchWithRetry(s.search, listingID, "close")
 	}
 	return l, o, nil
 }
