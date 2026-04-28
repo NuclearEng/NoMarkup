@@ -92,6 +92,12 @@ service PaymentService {
   // Tax form / invoice HTML retrieval
   rpc GetTaxFormHTML(GetTaxFormHTMLRequest) returns (GetTaxFormHTMLResponse);
   rpc GetInvoiceHTML(GetInvoiceHTMLRequest) returns (GetInvoiceHTMLResponse);
+
+  // GDPR — delete a customer's Stripe Customer + Connect Express account.
+  // Called by the user service's Erasure pipeline after the local DB cascade
+  // commits. Outcomes are recorded verbatim in the user service's audit log.
+  // See docs/operations/gdpr-delete.md.
+  rpc DeleteStripeAccounts(DeleteStripeAccountsRequest) returns (DeleteStripeAccountsResponse);
 }
 
 // ============================================================
@@ -881,4 +887,26 @@ message GetInvoiceHTMLRequest {
 
 message GetInvoiceHTMLResponse {
   string html = 1;
+}
+
+// ============================================================
+// GDPR Stripe Deletion RPCs
+// ============================================================
+
+message DeleteStripeAccountsRequest {
+  // Either or both may be empty; empty fields are skipped (the response
+  // outcome will be "skipped_no_id"). The user service determines per-call
+  // whether the user actually had a Stripe customer / Connect account.
+  string stripe_customer_id = 1;
+  string stripe_account_id = 2;
+}
+
+message DeleteStripeAccountsResponse {
+  // Outcome strings recorded in the user service's audit log. One of:
+  // "deleted", "deleted_already_gone", "skipped_no_id",
+  // "skipped_open_invoices", "skipped_dispute", "skipped_balance",
+  // "skipped_no_client", or "error: <detail>" if a transient error
+  // bubbled up unhandled.
+  string customer_outcome = 1;
+  string account_outcome = 2;
 }

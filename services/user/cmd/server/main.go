@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/user/internal/crypto"
 	grpcserver "github.com/nomarkup/nomarkup/services/user/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
@@ -195,10 +196,33 @@ func main() {
 	adminService := service.NewAdmin(repo)
 	phoneService := service.NewPhoneVerification(repo, rdb, smsClient)
 	verificationService := service.NewVerification(repo)
-	// GDPR/CCPA erasure pipeline. Stripe/S3/OAuth dependencies are nil for
-	// now — the service degrades gracefully (logs the skip in audit). Wiring
-	// real implementations is tracked in docs/operations/gdpr-delete.md.
-	erasureService := service.NewErasure(repo, nil, nil, nil)
+
+	// GDPR/CCPA erasure pipeline.
+	//
+	// Stripe deletion is now wired to the payment service via the
+	// PaymentService/DeleteStripeAccounts gRPC method (added 2026-04).
+	// When PAYMENT_SERVICE_ADDR is unset (e.g. unit tests, isolated user-
+	// service stack) the deleter is left nil and Erasure falls back to
+	// "skipped_no_client" outcomes — see deletion.go's noopStripeDeleter.
+	//
+	// S3 and OAuth deleters are still TODO.
+	var stripeDeleter service.StripeDeleter
+	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
+		paymentConn, err := grpclib.NewClient(paymentAddr,
+			grpclib.WithTransportCredentials(insecure.NewCredentials()),
+			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
+		)
+		if err != nil {
+			slog.Warn("failed to connect to payment service, GDPR Stripe deletion disabled",
+				"addr", paymentAddr, "error", err)
+		} else {
+			stripeDeleter = newStripeDeleterClient(paymentv1.NewPaymentServiceClient(paymentConn))
+			slog.Info("payment service connected for GDPR deletion", "addr", paymentAddr)
+		}
+	} else {
+		slog.Warn("PAYMENT_SERVICE_ADDR not set; GDPR Stripe deletion will record skipped_no_client")
+	}
+	erasureService := service.NewErasure(repo, stripeDeleter, nil, nil)
 	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, erasureService, notifClient, baseURL)
 
 	// Start gRPC server.

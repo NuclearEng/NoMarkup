@@ -45,11 +45,19 @@ windows). The constant lives at
                       │
         ┌─────────────┼─────────────┬──────────────┐
         ▼             ▼             ▼              ▼
-   ┌────────┐   ┌──────────┐   ┌────────┐    ┌────────┐
-   │Postgres│   │ Stripe   │   │   S3   │    │ OAuth  │
-   │ cascade│   │ customer │   │ prefix │    │ revoke │
-   │ (1 tx) │   │ + acct   │   │ delete │    │        │
-   └────────┘   └──────────┘   └────────┘    └────────┘
+   ┌────────┐   ┌──────────────┐ ┌────────┐  ┌────────┐
+   │Postgres│   │PaymentService│ │   S3   │  │ OAuth  │
+   │ cascade│   │/DeleteStripe-│ │ prefix │  │ revoke │
+   │ (1 tx) │   │   Accounts   │ │ delete │  │        │
+   │        │   │  (gRPC)      │ │        │  │        │
+   └────────┘   └──────┬───────┘ └────────┘  └────────┘
+                      │
+                      ▼
+                ┌──────────────┐
+                │ Stripe API   │
+                │ customer.Del │
+                │ account.Del  │
+                └──────────────┘
 ```
 
 ## Lifecycle
@@ -113,29 +121,66 @@ windows). The constant lives at
 | Stripe Customer | `stripe.Customer.del()`. | Outcome string recorded in audit log. |
 | Stripe Connect Account | `stripe.Account.del()`. May be rejected if open balance — see Open Edge Cases. | Outcome recorded. |
 
+## Stripe Deletion Adapter
+
+The user service does NOT call Stripe directly. The payment service owns
+the stripe-go SDK and exposes a single GDPR-erasure RPC:
+
+```
+PaymentService/DeleteStripeAccounts(stripe_customer_id, stripe_account_id)
+  → (customer_outcome, account_outcome)
+```
+
+The user service ships a thin gRPC adapter (`stripeDeleterClient` in
+`services/user/cmd/server/stripe_deleter.go`) that satisfies the
+`service.StripeDeleter` interface and delegates each call to the payment
+service. Wiring is via `PAYMENT_SERVICE_ADDR`:
+
+| `PAYMENT_SERVICE_ADDR` | Behaviour |
+|------------------------|-----------|
+| set + reachable | Real Stripe `customer.Del` / `account.Del`, mapped outcomes below. |
+| set + unreachable | Connection error logged at WARN; falls back to noop deleter (`skipped_no_client`). |
+| unset | Falls back to noop deleter (`skipped_no_client`). |
+
+### Outcome Strings (audit-log values)
+
+The audit log records `stripe_customer_outcome` and `stripe_account_outcome`
+verbatim. The payment-service classifier (`classifyStripeDeleteErr` in
+`services/payment/internal/service/stripe_deleter.go`) returns one of:
+
+| Outcome | When | Operator Action |
+|---------|------|-----------------|
+| `"deleted"` | Stripe accepted the delete. | None. |
+| `"deleted_already_gone"` | Stripe returned 404 / `resource_missing`. | None — assume a prior partial run handled it. |
+| `"skipped_no_id"` | The user had no Stripe customer / account ID at cascade time. | None. |
+| `"skipped_no_client"` | User service wired with no deleter (dev / `PAYMENT_SERVICE_ADDR` unset) OR payment service in dev mode. | Re-run finalize once the deleter is wired. |
+| `"skipped_open_invoices"` | Customer has open invoices — Stripe blocks deletion. | Settle invoices in Stripe dashboard, then `POST /api/v1/admin/users/{id}/finalize-deletion` to retry. |
+| `"skipped_dispute"` | Customer has an active dispute. | Wait for dispute resolution, then admin re-finalize. |
+| `"skipped_balance"` | Connect account has positive balance OR an active subscription. | Wait for the next payout sweep, then admin re-finalize. |
+| `"error: <detail>"` | Transient/unrecognized Stripe error. | The cron will NOT pick the user up again (deletion_finalized_at is set). Operator reviews the audit log and triggers admin re-finalize. |
+
+`"deleted"`, `"deleted_already_gone"`, and the `skipped_*` outcomes are
+considered terminal — the audit row is the source of truth and no further
+automatic retry happens. Only the cron's first tick after the grace window
+runs the cascade; subsequent re-attempts are operator-driven via the admin
+finalize endpoint.
+
 ## Open Stripe Edge Cases
 
-- **Connect account with positive balance.** Stripe returns
-  `account_balance_invalid` until the next payout sweeps the balance to
-  zero. The `StripeDeleter` implementation should detect that error code
-  and return outcome `"skipped_balance"`. The cron will retry on the next
-  tick (the row's `deletion_finalized_at` is already set, so the DB
-  cascade has run; only the Stripe step is pending). **Today the
-  user-service is wired with a `noopStripeDeleter` (no-op) until the
-  payment service exposes a deleter — calls return `"skipped_no_client"`,
-  recorded faithfully in the audit log.**
-- **Pending dispute on a Customer.** Stripe blocks customer deletion
-  while a dispute is open. Outcome should be `"skipped_dispute"`. We
-  re-attempt on the next cron tick.
+- **Connect account with positive balance.** Returns
+  `"skipped_balance"`. Operator-initiated retry needed once Stripe sweeps
+  the balance.
+- **Pending dispute on a Customer.** Returns `"skipped_dispute"`.
+- **Customer with open invoices.** Returns `"skipped_open_invoices"`.
 - **Connect Express vs Custom.** We use Express. Express accounts can be
-  deleted via the API but the dashboard returns a 410 if the account
-  already has paid out — that's fine, we treat it as `"deleted"`.
-- **Customer attached to a Subscription.** Cancel the subscription first
-  (subscriptions stay in our DB, but cancelling at Stripe stops billing).
-  Today this is handled implicitly because the cascade runs after the
-  user has stopped using the platform — there shouldn't be active
-  subscriptions on a deletion-requested account in steady state. If we
-  see this in production we'll add an explicit cancel call.
+  deleted via the API but the dashboard returns a 410 if the account has
+  already paid out — we treat it as `"deleted"`.
+- **Customer attached to a Subscription.** Cancel the subscription
+  before requesting deletion. The cascade runs after the user has
+  stopped using the platform; in steady state there shouldn't be active
+  subscriptions on a deletion-requested account. If we see this in
+  production we'll add an explicit cancel-then-delete chain in the
+  payment service adapter.
 
 ## Endpoints
 
@@ -246,11 +291,10 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
 - **Sentry / Mixpanel / external analytics deletion.** Manual today.
   Add `AnalyticsDeleter` interface alongside `OAuthRevoker` when those
   providers are wired.
-- **Production Stripe deleter implementation.** A noop deleter is
-  injected by default; outcomes are recorded as `"skipped_no_client"`.
-  The payment service should publish a thin `StripeDeleter` adapter that
-  calls `customer.Del` / `account.Del` and maps Stripe error codes to
-  the documented outcome strings.
+- **S3 prefix deletion + OAuth revoke.** Interfaces are in place
+  (`ObjectStoreDeleter`, `OAuthRevoker`) but main.go still wires `nil`.
+  Stripe deletion (the previous TODO) shipped 2026-04 — see
+  "Stripe Deletion Adapter" above.
 
 ## Owner
 

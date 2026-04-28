@@ -67,6 +67,7 @@ const (
 	PaymentService_GenerateInvoice_FullMethodName          = "/nomarkup.payment.v1.PaymentService/GenerateInvoice"
 	PaymentService_GetTaxFormHTML_FullMethodName           = "/nomarkup.payment.v1.PaymentService/GetTaxFormHTML"
 	PaymentService_GetInvoiceHTML_FullMethodName           = "/nomarkup.payment.v1.PaymentService/GetInvoiceHTML"
+	PaymentService_DeleteStripeAccounts_FullMethodName     = "/nomarkup.payment.v1.PaymentService/DeleteStripeAccounts"
 )
 
 // PaymentServiceClient is the client API for PaymentService service.
@@ -139,6 +140,11 @@ type PaymentServiceClient interface {
 	// Tax form / invoice HTML retrieval
 	GetTaxFormHTML(ctx context.Context, in *GetTaxFormHTMLRequest, opts ...grpc.CallOption) (*GetTaxFormHTMLResponse, error)
 	GetInvoiceHTML(ctx context.Context, in *GetInvoiceHTMLRequest, opts ...grpc.CallOption) (*GetInvoiceHTMLResponse, error)
+	// GDPR — delete a customer's Stripe Customer + Connect Express account.
+	// Called by the user service's Erasure pipeline after the local DB cascade
+	// commits. Outcomes are recorded verbatim in the user service's audit log.
+	// See docs/operations/gdpr-delete.md.
+	DeleteStripeAccounts(ctx context.Context, in *DeleteStripeAccountsRequest, opts ...grpc.CallOption) (*DeleteStripeAccountsResponse, error)
 }
 
 type paymentServiceClient struct {
@@ -629,6 +635,16 @@ func (c *paymentServiceClient) GetInvoiceHTML(ctx context.Context, in *GetInvoic
 	return out, nil
 }
 
+func (c *paymentServiceClient) DeleteStripeAccounts(ctx context.Context, in *DeleteStripeAccountsRequest, opts ...grpc.CallOption) (*DeleteStripeAccountsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteStripeAccountsResponse)
+	err := c.cc.Invoke(ctx, PaymentService_DeleteStripeAccounts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PaymentServiceServer is the server API for PaymentService service.
 // All implementations must embed UnimplementedPaymentServiceServer
 // for forward compatibility.
@@ -699,6 +715,11 @@ type PaymentServiceServer interface {
 	// Tax form / invoice HTML retrieval
 	GetTaxFormHTML(context.Context, *GetTaxFormHTMLRequest) (*GetTaxFormHTMLResponse, error)
 	GetInvoiceHTML(context.Context, *GetInvoiceHTMLRequest) (*GetInvoiceHTMLResponse, error)
+	// GDPR — delete a customer's Stripe Customer + Connect Express account.
+	// Called by the user service's Erasure pipeline after the local DB cascade
+	// commits. Outcomes are recorded verbatim in the user service's audit log.
+	// See docs/operations/gdpr-delete.md.
+	DeleteStripeAccounts(context.Context, *DeleteStripeAccountsRequest) (*DeleteStripeAccountsResponse, error)
 	mustEmbedUnimplementedPaymentServiceServer()
 }
 
@@ -852,6 +873,9 @@ func (UnimplementedPaymentServiceServer) GetTaxFormHTML(context.Context, *GetTax
 }
 func (UnimplementedPaymentServiceServer) GetInvoiceHTML(context.Context, *GetInvoiceHTMLRequest) (*GetInvoiceHTMLResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetInvoiceHTML not implemented")
+}
+func (UnimplementedPaymentServiceServer) DeleteStripeAccounts(context.Context, *DeleteStripeAccountsRequest) (*DeleteStripeAccountsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteStripeAccounts not implemented")
 }
 func (UnimplementedPaymentServiceServer) mustEmbedUnimplementedPaymentServiceServer() {}
 func (UnimplementedPaymentServiceServer) testEmbeddedByValue()                        {}
@@ -1738,6 +1762,24 @@ func _PaymentService_GetInvoiceHTML_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PaymentService_DeleteStripeAccounts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteStripeAccountsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).DeleteStripeAccounts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_DeleteStripeAccounts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).DeleteStripeAccounts(ctx, req.(*DeleteStripeAccountsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PaymentService_ServiceDesc is the grpc.ServiceDesc for PaymentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1936,6 +1978,10 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInvoiceHTML",
 			Handler:    _PaymentService_GetInvoiceHTML_Handler,
+		},
+		{
+			MethodName: "DeleteStripeAccounts",
+			Handler:    _PaymentService_DeleteStripeAccounts_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

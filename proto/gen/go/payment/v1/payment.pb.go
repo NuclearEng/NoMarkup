@@ -7124,6 +7124,118 @@ func (x *GetInvoiceHTMLResponse) GetHtml() string {
 	return ""
 }
 
+type DeleteStripeAccountsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Either or both may be empty; empty fields are skipped (the response
+	// outcome will be "skipped_no_id"). The user service determines per-call
+	// whether the user actually had a Stripe customer / Connect account.
+	StripeCustomerId string `protobuf:"bytes,1,opt,name=stripe_customer_id,json=stripeCustomerId,proto3" json:"stripe_customer_id,omitempty"`
+	StripeAccountId  string `protobuf:"bytes,2,opt,name=stripe_account_id,json=stripeAccountId,proto3" json:"stripe_account_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeleteStripeAccountsRequest) Reset() {
+	*x = DeleteStripeAccountsRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[109]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteStripeAccountsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteStripeAccountsRequest) ProtoMessage() {}
+
+func (x *DeleteStripeAccountsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[109]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteStripeAccountsRequest.ProtoReflect.Descriptor instead.
+func (*DeleteStripeAccountsRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{109}
+}
+
+func (x *DeleteStripeAccountsRequest) GetStripeCustomerId() string {
+	if x != nil {
+		return x.StripeCustomerId
+	}
+	return ""
+}
+
+func (x *DeleteStripeAccountsRequest) GetStripeAccountId() string {
+	if x != nil {
+		return x.StripeAccountId
+	}
+	return ""
+}
+
+type DeleteStripeAccountsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Outcome strings recorded in the user service's audit log. One of:
+	// "deleted", "deleted_already_gone", "skipped_no_id",
+	// "skipped_open_invoices", "skipped_dispute", "skipped_balance",
+	// "skipped_no_client", or "error: <detail>" if a transient error
+	// bubbled up unhandled.
+	CustomerOutcome string `protobuf:"bytes,1,opt,name=customer_outcome,json=customerOutcome,proto3" json:"customer_outcome,omitempty"`
+	AccountOutcome  string `protobuf:"bytes,2,opt,name=account_outcome,json=accountOutcome,proto3" json:"account_outcome,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DeleteStripeAccountsResponse) Reset() {
+	*x = DeleteStripeAccountsResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[110]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteStripeAccountsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteStripeAccountsResponse) ProtoMessage() {}
+
+func (x *DeleteStripeAccountsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[110]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteStripeAccountsResponse.ProtoReflect.Descriptor instead.
+func (*DeleteStripeAccountsResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{110}
+}
+
+func (x *DeleteStripeAccountsResponse) GetCustomerOutcome() string {
+	if x != nil {
+		return x.CustomerOutcome
+	}
+	return ""
+}
+
+func (x *DeleteStripeAccountsResponse) GetAccountOutcome() string {
+	if x != nil {
+		return x.AccountOutcome
+	}
+	return ""
+}
+
 var File_payment_v1_payment_proto protoreflect.FileDescriptor
 
 const file_payment_v1_payment_proto_rawDesc = "" +
@@ -7765,7 +7877,13 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\vcontract_id\x18\x01 \x01(\tR\n" +
 	"contractId\",\n" +
 	"\x16GetInvoiceHTMLResponse\x12\x12\n" +
-	"\x04html\x18\x01 \x01(\tR\x04html*\xdb\x02\n" +
+	"\x04html\x18\x01 \x01(\tR\x04html\"w\n" +
+	"\x1bDeleteStripeAccountsRequest\x12,\n" +
+	"\x12stripe_customer_id\x18\x01 \x01(\tR\x10stripeCustomerId\x12*\n" +
+	"\x11stripe_account_id\x18\x02 \x01(\tR\x0fstripeAccountId\"r\n" +
+	"\x1cDeleteStripeAccountsResponse\x12)\n" +
+	"\x10customer_outcome\x18\x01 \x01(\tR\x0fcustomerOutcome\x12'\n" +
+	"\x0faccount_outcome\x18\x02 \x01(\tR\x0eaccountOutcome*\xdb\x02\n" +
 	"\rPaymentStatus\x12\x1e\n" +
 	"\x1aPAYMENT_STATUS_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16PAYMENT_STATUS_PENDING\x10\x01\x12\x1d\n" +
@@ -7787,7 +7905,7 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x17ADVANCE_STATUS_REPAYING\x10\x04\x12\x19\n" +
 	"\x15ADVANCE_STATUS_REPAID\x10\x05\x12\x1c\n" +
 	"\x18ADVANCE_STATUS_DEFAULTED\x10\x06\x12\x1b\n" +
-	"\x17ADVANCE_STATUS_REJECTED\x10\a2\xe9*\n" +
+	"\x17ADVANCE_STATUS_REJECTED\x10\a2\xe6+\n" +
 	"\x0ePaymentService\x12x\n" +
 	"\x13CreateStripeAccount\x12/.nomarkup.payment.v1.CreateStripeAccountRequest\x1a0.nomarkup.payment.v1.CreateStripeAccountResponse\x12\x84\x01\n" +
 	"\x17GetStripeOnboardingLink\x123.nomarkup.payment.v1.GetStripeOnboardingLinkRequest\x1a4.nomarkup.payment.v1.GetStripeOnboardingLinkResponse\x12\x81\x01\n" +
@@ -7839,7 +7957,8 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\fListTaxForms\x12(.nomarkup.payment.v1.ListTaxFormsRequest\x1a).nomarkup.payment.v1.ListTaxFormsResponse\x12l\n" +
 	"\x0fGenerateInvoice\x12+.nomarkup.payment.v1.GenerateInvoiceRequest\x1a,.nomarkup.payment.v1.GenerateInvoiceResponse\x12i\n" +
 	"\x0eGetTaxFormHTML\x12*.nomarkup.payment.v1.GetTaxFormHTMLRequest\x1a+.nomarkup.payment.v1.GetTaxFormHTMLResponse\x12i\n" +
-	"\x0eGetInvoiceHTML\x12*.nomarkup.payment.v1.GetInvoiceHTMLRequest\x1a+.nomarkup.payment.v1.GetInvoiceHTMLResponseB9Z7github.com/nomarkup/nomarkup/proto/payment/v1;paymentv1b\x06proto3"
+	"\x0eGetInvoiceHTML\x12*.nomarkup.payment.v1.GetInvoiceHTMLRequest\x1a+.nomarkup.payment.v1.GetInvoiceHTMLResponse\x12{\n" +
+	"\x14DeleteStripeAccounts\x120.nomarkup.payment.v1.DeleteStripeAccountsRequest\x1a1.nomarkup.payment.v1.DeleteStripeAccountsResponseB9Z7github.com/nomarkup/nomarkup/proto/payment/v1;paymentv1b\x06proto3"
 
 var (
 	file_payment_v1_payment_proto_rawDescOnce sync.Once
@@ -7854,7 +7973,7 @@ func file_payment_v1_payment_proto_rawDescGZIP() []byte {
 }
 
 var file_payment_v1_payment_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 109)
+var file_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 111)
 var file_payment_v1_payment_proto_goTypes = []any{
 	(PaymentStatus)(0),                       // 0: nomarkup.payment.v1.PaymentStatus
 	(AdvanceStatus)(0),                       // 1: nomarkup.payment.v1.AdvanceStatus
@@ -7967,99 +8086,101 @@ var file_payment_v1_payment_proto_goTypes = []any{
 	(*GetTaxFormHTMLResponse)(nil),           // 108: nomarkup.payment.v1.GetTaxFormHTMLResponse
 	(*GetInvoiceHTMLRequest)(nil),            // 109: nomarkup.payment.v1.GetInvoiceHTMLRequest
 	(*GetInvoiceHTMLResponse)(nil),           // 110: nomarkup.payment.v1.GetInvoiceHTMLResponse
-	(*timestamppb.Timestamp)(nil),            // 111: google.protobuf.Timestamp
-	(v1.PaymentTiming)(0),                    // 112: nomarkup.common.v1.PaymentTiming
-	(*v1.PaginationRequest)(nil),             // 113: nomarkup.common.v1.PaginationRequest
-	(*v1.PaginationResponse)(nil),            // 114: nomarkup.common.v1.PaginationResponse
-	(*v1.DateRange)(nil),                     // 115: nomarkup.common.v1.DateRange
+	(*DeleteStripeAccountsRequest)(nil),      // 111: nomarkup.payment.v1.DeleteStripeAccountsRequest
+	(*DeleteStripeAccountsResponse)(nil),     // 112: nomarkup.payment.v1.DeleteStripeAccountsResponse
+	(*timestamppb.Timestamp)(nil),            // 113: google.protobuf.Timestamp
+	(v1.PaymentTiming)(0),                    // 114: nomarkup.common.v1.PaymentTiming
+	(*v1.PaginationRequest)(nil),             // 115: nomarkup.common.v1.PaginationRequest
+	(*v1.PaginationResponse)(nil),            // 116: nomarkup.common.v1.PaginationResponse
+	(*v1.DateRange)(nil),                     // 117: nomarkup.common.v1.DateRange
 }
 var file_payment_v1_payment_proto_depIdxs = []int32{
 	0,   // 0: nomarkup.payment.v1.Payment.status:type_name -> nomarkup.payment.v1.PaymentStatus
-	111, // 1: nomarkup.payment.v1.Payment.escrow_at:type_name -> google.protobuf.Timestamp
-	111, // 2: nomarkup.payment.v1.Payment.released_at:type_name -> google.protobuf.Timestamp
-	111, // 3: nomarkup.payment.v1.Payment.completed_at:type_name -> google.protobuf.Timestamp
-	111, // 4: nomarkup.payment.v1.Payment.created_at:type_name -> google.protobuf.Timestamp
+	113, // 1: nomarkup.payment.v1.Payment.escrow_at:type_name -> google.protobuf.Timestamp
+	113, // 2: nomarkup.payment.v1.Payment.released_at:type_name -> google.protobuf.Timestamp
+	113, // 3: nomarkup.payment.v1.Payment.completed_at:type_name -> google.protobuf.Timestamp
+	113, // 4: nomarkup.payment.v1.Payment.created_at:type_name -> google.protobuf.Timestamp
 	14,  // 5: nomarkup.payment.v1.ListPaymentMethodsResponse.methods:type_name -> nomarkup.payment.v1.PaymentMethod
 	14,  // 6: nomarkup.payment.v1.AddDevPaymentMethodResponse.method:type_name -> nomarkup.payment.v1.PaymentMethod
-	112, // 7: nomarkup.payment.v1.CreatePaymentRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	114, // 7: nomarkup.payment.v1.CreatePaymentRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
 	2,   // 8: nomarkup.payment.v1.CreatePaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	2,   // 9: nomarkup.payment.v1.ProcessPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	2,   // 10: nomarkup.payment.v1.ReleaseEscrowResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	2,   // 11: nomarkup.payment.v1.GetPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	3,   // 12: nomarkup.payment.v1.GetPaymentResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	0,   // 13: nomarkup.payment.v1.ListPaymentsRequest.status_filter:type_name -> nomarkup.payment.v1.PaymentStatus
-	113, // 14: nomarkup.payment.v1.ListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	115, // 14: nomarkup.payment.v1.ListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	2,   // 15: nomarkup.payment.v1.ListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
-	114, // 16: nomarkup.payment.v1.ListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	116, // 16: nomarkup.payment.v1.ListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	2,   // 17: nomarkup.payment.v1.CreateRefundResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	3,   // 18: nomarkup.payment.v1.CalculateFeesResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	2,   // 19: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	3,   // 20: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	0,   // 21: nomarkup.payment.v1.AdminListPaymentsRequest.status_filter:type_name -> nomarkup.payment.v1.PaymentStatus
-	115, // 22: nomarkup.payment.v1.AdminListPaymentsRequest.date_range:type_name -> nomarkup.common.v1.DateRange
-	113, // 23: nomarkup.payment.v1.AdminListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	117, // 22: nomarkup.payment.v1.AdminListPaymentsRequest.date_range:type_name -> nomarkup.common.v1.DateRange
+	115, // 23: nomarkup.payment.v1.AdminListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	2,   // 24: nomarkup.payment.v1.AdminListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
-	114, // 25: nomarkup.payment.v1.AdminListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	116, // 25: nomarkup.payment.v1.AdminListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	38,  // 26: nomarkup.payment.v1.AdminUpdateFeeConfigResponse.config:type_name -> nomarkup.payment.v1.GetFeeConfigResponse
-	115, // 27: nomarkup.payment.v1.GetRevenueReportRequest.date_range:type_name -> nomarkup.common.v1.DateRange
+	117, // 27: nomarkup.payment.v1.GetRevenueReportRequest.date_range:type_name -> nomarkup.common.v1.DateRange
 	47,  // 28: nomarkup.payment.v1.GetRevenueReportResponse.data_points:type_name -> nomarkup.payment.v1.RevenueDataPoint
-	111, // 29: nomarkup.payment.v1.RevenueDataPoint.period_start:type_name -> google.protobuf.Timestamp
-	111, // 30: nomarkup.payment.v1.Expense.created_at:type_name -> google.protobuf.Timestamp
-	111, // 31: nomarkup.payment.v1.Expense.updated_at:type_name -> google.protobuf.Timestamp
+	113, // 29: nomarkup.payment.v1.RevenueDataPoint.period_start:type_name -> google.protobuf.Timestamp
+	113, // 30: nomarkup.payment.v1.Expense.created_at:type_name -> google.protobuf.Timestamp
+	113, // 31: nomarkup.payment.v1.Expense.updated_at:type_name -> google.protobuf.Timestamp
 	48,  // 32: nomarkup.payment.v1.CreateExpenseResponse.expense:type_name -> nomarkup.payment.v1.Expense
-	113, // 33: nomarkup.payment.v1.ListExpensesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	115, // 33: nomarkup.payment.v1.ListExpensesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	48,  // 34: nomarkup.payment.v1.ListExpensesResponse.expenses:type_name -> nomarkup.payment.v1.Expense
-	114, // 35: nomarkup.payment.v1.ListExpensesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	111, // 36: nomarkup.payment.v1.Advance.reviewed_at:type_name -> google.protobuf.Timestamp
-	111, // 37: nomarkup.payment.v1.Advance.disbursed_at:type_name -> google.protobuf.Timestamp
-	111, // 38: nomarkup.payment.v1.Advance.repaid_at:type_name -> google.protobuf.Timestamp
-	111, // 39: nomarkup.payment.v1.Advance.created_at:type_name -> google.protobuf.Timestamp
-	111, // 40: nomarkup.payment.v1.Advance.updated_at:type_name -> google.protobuf.Timestamp
+	116, // 35: nomarkup.payment.v1.ListExpensesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	113, // 36: nomarkup.payment.v1.Advance.reviewed_at:type_name -> google.protobuf.Timestamp
+	113, // 37: nomarkup.payment.v1.Advance.disbursed_at:type_name -> google.protobuf.Timestamp
+	113, // 38: nomarkup.payment.v1.Advance.repaid_at:type_name -> google.protobuf.Timestamp
+	113, // 39: nomarkup.payment.v1.Advance.created_at:type_name -> google.protobuf.Timestamp
+	113, // 40: nomarkup.payment.v1.Advance.updated_at:type_name -> google.protobuf.Timestamp
 	55,  // 41: nomarkup.payment.v1.RequestAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
-	113, // 42: nomarkup.payment.v1.ListAdvancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	115, // 42: nomarkup.payment.v1.ListAdvancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	55,  // 43: nomarkup.payment.v1.ListAdvancesResponse.advances:type_name -> nomarkup.payment.v1.Advance
-	114, // 44: nomarkup.payment.v1.ListAdvancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	116, // 44: nomarkup.payment.v1.ListAdvancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	55,  // 45: nomarkup.payment.v1.GetAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
 	55,  // 46: nomarkup.payment.v1.ReviewAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
 	55,  // 47: nomarkup.payment.v1.DisburseAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
-	111, // 48: nomarkup.payment.v1.GetCreditLimitResponse.last_computed_at:type_name -> google.protobuf.Timestamp
-	111, // 49: nomarkup.payment.v1.ScheduledInstallment.paid_at:type_name -> google.protobuf.Timestamp
-	111, // 50: nomarkup.payment.v1.InstallmentPlan.provider_paid_at:type_name -> google.protobuf.Timestamp
+	113, // 48: nomarkup.payment.v1.GetCreditLimitResponse.last_computed_at:type_name -> google.protobuf.Timestamp
+	113, // 49: nomarkup.payment.v1.ScheduledInstallment.paid_at:type_name -> google.protobuf.Timestamp
+	113, // 50: nomarkup.payment.v1.InstallmentPlan.provider_paid_at:type_name -> google.protobuf.Timestamp
 	68,  // 51: nomarkup.payment.v1.InstallmentPlan.installments:type_name -> nomarkup.payment.v1.ScheduledInstallment
-	111, // 52: nomarkup.payment.v1.InstallmentPlan.created_at:type_name -> google.protobuf.Timestamp
-	111, // 53: nomarkup.payment.v1.InstallmentPlan.updated_at:type_name -> google.protobuf.Timestamp
+	113, // 52: nomarkup.payment.v1.InstallmentPlan.created_at:type_name -> google.protobuf.Timestamp
+	113, // 53: nomarkup.payment.v1.InstallmentPlan.updated_at:type_name -> google.protobuf.Timestamp
 	69,  // 54: nomarkup.payment.v1.CreateInstallmentPlanResponse.plan:type_name -> nomarkup.payment.v1.InstallmentPlan
 	69,  // 55: nomarkup.payment.v1.GetInstallmentPlanResponse.plan:type_name -> nomarkup.payment.v1.InstallmentPlan
-	113, // 56: nomarkup.payment.v1.ListInstallmentPlansRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	115, // 56: nomarkup.payment.v1.ListInstallmentPlansRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	69,  // 57: nomarkup.payment.v1.ListInstallmentPlansResponse.plans:type_name -> nomarkup.payment.v1.InstallmentPlan
-	114, // 58: nomarkup.payment.v1.ListInstallmentPlansResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	111, // 59: nomarkup.payment.v1.InsuranceProduct.created_at:type_name -> google.protobuf.Timestamp
-	111, // 60: nomarkup.payment.v1.InsuranceProduct.updated_at:type_name -> google.protobuf.Timestamp
-	111, // 61: nomarkup.payment.v1.InsurancePolicy.paid_at:type_name -> google.protobuf.Timestamp
-	111, // 62: nomarkup.payment.v1.InsurancePolicy.cancelled_at:type_name -> google.protobuf.Timestamp
-	111, // 63: nomarkup.payment.v1.InsurancePolicy.created_at:type_name -> google.protobuf.Timestamp
-	111, // 64: nomarkup.payment.v1.InsurancePolicy.updated_at:type_name -> google.protobuf.Timestamp
-	111, // 65: nomarkup.payment.v1.TaxForm.delivered_at:type_name -> google.protobuf.Timestamp
-	111, // 66: nomarkup.payment.v1.TaxForm.filed_at:type_name -> google.protobuf.Timestamp
-	111, // 67: nomarkup.payment.v1.TaxForm.created_at:type_name -> google.protobuf.Timestamp
-	111, // 68: nomarkup.payment.v1.TaxForm.updated_at:type_name -> google.protobuf.Timestamp
-	111, // 69: nomarkup.payment.v1.InsuranceClaim.reviewed_at:type_name -> google.protobuf.Timestamp
-	111, // 70: nomarkup.payment.v1.InsuranceClaim.paid_at:type_name -> google.protobuf.Timestamp
-	111, // 71: nomarkup.payment.v1.InsuranceClaim.created_at:type_name -> google.protobuf.Timestamp
-	111, // 72: nomarkup.payment.v1.InsuranceClaim.updated_at:type_name -> google.protobuf.Timestamp
+	116, // 58: nomarkup.payment.v1.ListInstallmentPlansResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	113, // 59: nomarkup.payment.v1.InsuranceProduct.created_at:type_name -> google.protobuf.Timestamp
+	113, // 60: nomarkup.payment.v1.InsuranceProduct.updated_at:type_name -> google.protobuf.Timestamp
+	113, // 61: nomarkup.payment.v1.InsurancePolicy.paid_at:type_name -> google.protobuf.Timestamp
+	113, // 62: nomarkup.payment.v1.InsurancePolicy.cancelled_at:type_name -> google.protobuf.Timestamp
+	113, // 63: nomarkup.payment.v1.InsurancePolicy.created_at:type_name -> google.protobuf.Timestamp
+	113, // 64: nomarkup.payment.v1.InsurancePolicy.updated_at:type_name -> google.protobuf.Timestamp
+	113, // 65: nomarkup.payment.v1.TaxForm.delivered_at:type_name -> google.protobuf.Timestamp
+	113, // 66: nomarkup.payment.v1.TaxForm.filed_at:type_name -> google.protobuf.Timestamp
+	113, // 67: nomarkup.payment.v1.TaxForm.created_at:type_name -> google.protobuf.Timestamp
+	113, // 68: nomarkup.payment.v1.TaxForm.updated_at:type_name -> google.protobuf.Timestamp
+	113, // 69: nomarkup.payment.v1.InsuranceClaim.reviewed_at:type_name -> google.protobuf.Timestamp
+	113, // 70: nomarkup.payment.v1.InsuranceClaim.paid_at:type_name -> google.protobuf.Timestamp
+	113, // 71: nomarkup.payment.v1.InsuranceClaim.created_at:type_name -> google.protobuf.Timestamp
+	113, // 72: nomarkup.payment.v1.InsuranceClaim.updated_at:type_name -> google.protobuf.Timestamp
 	76,  // 73: nomarkup.payment.v1.ListInsuranceProductsResponse.products:type_name -> nomarkup.payment.v1.InsuranceProduct
 	80,  // 74: nomarkup.payment.v1.GetInsuranceQuoteResponse.quote:type_name -> nomarkup.payment.v1.InsuranceQuote
 	77,  // 75: nomarkup.payment.v1.PurchaseInsuranceResponse.policy:type_name -> nomarkup.payment.v1.InsurancePolicy
 	77,  // 76: nomarkup.payment.v1.GetInsurancePolicyResponse.policy:type_name -> nomarkup.payment.v1.InsurancePolicy
-	113, // 77: nomarkup.payment.v1.ListInsurancePoliciesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	115, // 77: nomarkup.payment.v1.ListInsurancePoliciesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	77,  // 78: nomarkup.payment.v1.ListInsurancePoliciesResponse.policies:type_name -> nomarkup.payment.v1.InsurancePolicy
-	114, // 79: nomarkup.payment.v1.ListInsurancePoliciesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	116, // 79: nomarkup.payment.v1.ListInsurancePoliciesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	79,  // 80: nomarkup.payment.v1.FileInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
 	79,  // 81: nomarkup.payment.v1.GetInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
 	79,  // 82: nomarkup.payment.v1.ReviewInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
-	113, // 83: nomarkup.payment.v1.AdminListInsuranceClaimsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	115, // 83: nomarkup.payment.v1.AdminListInsuranceClaimsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	79,  // 84: nomarkup.payment.v1.AdminListInsuranceClaimsResponse.claims:type_name -> nomarkup.payment.v1.InsuranceClaim
-	114, // 85: nomarkup.payment.v1.AdminListInsuranceClaimsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	116, // 85: nomarkup.payment.v1.AdminListInsuranceClaimsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	78,  // 86: nomarkup.payment.v1.GenerateTaxFormResponse.tax_form:type_name -> nomarkup.payment.v1.TaxForm
 	78,  // 87: nomarkup.payment.v1.GetTaxFormResponse.tax_form:type_name -> nomarkup.payment.v1.TaxForm
 	78,  // 88: nomarkup.payment.v1.ListTaxFormsResponse.forms:type_name -> nomarkup.payment.v1.TaxForm
@@ -8111,56 +8232,58 @@ var file_payment_v1_payment_proto_depIdxs = []int32{
 	105, // 134: nomarkup.payment.v1.PaymentService.GenerateInvoice:input_type -> nomarkup.payment.v1.GenerateInvoiceRequest
 	107, // 135: nomarkup.payment.v1.PaymentService.GetTaxFormHTML:input_type -> nomarkup.payment.v1.GetTaxFormHTMLRequest
 	109, // 136: nomarkup.payment.v1.PaymentService.GetInvoiceHTML:input_type -> nomarkup.payment.v1.GetInvoiceHTMLRequest
-	5,   // 137: nomarkup.payment.v1.PaymentService.CreateStripeAccount:output_type -> nomarkup.payment.v1.CreateStripeAccountResponse
-	7,   // 138: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:output_type -> nomarkup.payment.v1.GetStripeOnboardingLinkResponse
-	9,   // 139: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:output_type -> nomarkup.payment.v1.GetStripeAccountStatusResponse
-	11,  // 140: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:output_type -> nomarkup.payment.v1.GetStripeDashboardLinkResponse
-	13,  // 141: nomarkup.payment.v1.PaymentService.CreateSetupIntent:output_type -> nomarkup.payment.v1.CreateSetupIntentResponse
-	16,  // 142: nomarkup.payment.v1.PaymentService.ListPaymentMethods:output_type -> nomarkup.payment.v1.ListPaymentMethodsResponse
-	18,  // 143: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:output_type -> nomarkup.payment.v1.DeletePaymentMethodResponse
-	20,  // 144: nomarkup.payment.v1.PaymentService.AddDevPaymentMethod:output_type -> nomarkup.payment.v1.AddDevPaymentMethodResponse
-	22,  // 145: nomarkup.payment.v1.PaymentService.CreatePayment:output_type -> nomarkup.payment.v1.CreatePaymentResponse
-	24,  // 146: nomarkup.payment.v1.PaymentService.ProcessPayment:output_type -> nomarkup.payment.v1.ProcessPaymentResponse
-	26,  // 147: nomarkup.payment.v1.PaymentService.ReleaseEscrow:output_type -> nomarkup.payment.v1.ReleaseEscrowResponse
-	28,  // 148: nomarkup.payment.v1.PaymentService.GetPayment:output_type -> nomarkup.payment.v1.GetPaymentResponse
-	30,  // 149: nomarkup.payment.v1.PaymentService.ListPayments:output_type -> nomarkup.payment.v1.ListPaymentsResponse
-	32,  // 150: nomarkup.payment.v1.PaymentService.CreateRefund:output_type -> nomarkup.payment.v1.CreateRefundResponse
-	34,  // 151: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:output_type -> nomarkup.payment.v1.HandleStripeWebhookResponse
-	36,  // 152: nomarkup.payment.v1.PaymentService.CalculateFees:output_type -> nomarkup.payment.v1.CalculateFeesResponse
-	38,  // 153: nomarkup.payment.v1.PaymentService.GetFeeConfig:output_type -> nomarkup.payment.v1.GetFeeConfigResponse
-	40,  // 154: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:output_type -> nomarkup.payment.v1.AdminGetPaymentDetailsResponse
-	42,  // 155: nomarkup.payment.v1.PaymentService.AdminListPayments:output_type -> nomarkup.payment.v1.AdminListPaymentsResponse
-	44,  // 156: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:output_type -> nomarkup.payment.v1.AdminUpdateFeeConfigResponse
-	46,  // 157: nomarkup.payment.v1.PaymentService.GetRevenueReport:output_type -> nomarkup.payment.v1.GetRevenueReportResponse
-	50,  // 158: nomarkup.payment.v1.PaymentService.CreateExpense:output_type -> nomarkup.payment.v1.CreateExpenseResponse
-	52,  // 159: nomarkup.payment.v1.PaymentService.ListExpenses:output_type -> nomarkup.payment.v1.ListExpensesResponse
-	54,  // 160: nomarkup.payment.v1.PaymentService.DeleteExpense:output_type -> nomarkup.payment.v1.DeleteExpenseResponse
-	57,  // 161: nomarkup.payment.v1.PaymentService.RequestAdvance:output_type -> nomarkup.payment.v1.RequestAdvanceResponse
-	59,  // 162: nomarkup.payment.v1.PaymentService.ListAdvances:output_type -> nomarkup.payment.v1.ListAdvancesResponse
-	61,  // 163: nomarkup.payment.v1.PaymentService.GetAdvance:output_type -> nomarkup.payment.v1.GetAdvanceResponse
-	63,  // 164: nomarkup.payment.v1.PaymentService.ReviewAdvance:output_type -> nomarkup.payment.v1.ReviewAdvanceResponse
-	65,  // 165: nomarkup.payment.v1.PaymentService.DisburseAdvance:output_type -> nomarkup.payment.v1.DisburseAdvanceResponse
-	67,  // 166: nomarkup.payment.v1.PaymentService.GetCreditLimit:output_type -> nomarkup.payment.v1.GetCreditLimitResponse
-	71,  // 167: nomarkup.payment.v1.PaymentService.CreateInstallmentPlan:output_type -> nomarkup.payment.v1.CreateInstallmentPlanResponse
-	73,  // 168: nomarkup.payment.v1.PaymentService.GetInstallmentPlan:output_type -> nomarkup.payment.v1.GetInstallmentPlanResponse
-	75,  // 169: nomarkup.payment.v1.PaymentService.ListInstallmentPlans:output_type -> nomarkup.payment.v1.ListInstallmentPlansResponse
-	82,  // 170: nomarkup.payment.v1.PaymentService.ListInsuranceProducts:output_type -> nomarkup.payment.v1.ListInsuranceProductsResponse
-	84,  // 171: nomarkup.payment.v1.PaymentService.GetInsuranceQuote:output_type -> nomarkup.payment.v1.GetInsuranceQuoteResponse
-	86,  // 172: nomarkup.payment.v1.PaymentService.PurchaseInsurance:output_type -> nomarkup.payment.v1.PurchaseInsuranceResponse
-	88,  // 173: nomarkup.payment.v1.PaymentService.GetInsurancePolicy:output_type -> nomarkup.payment.v1.GetInsurancePolicyResponse
-	90,  // 174: nomarkup.payment.v1.PaymentService.ListInsurancePolicies:output_type -> nomarkup.payment.v1.ListInsurancePoliciesResponse
-	92,  // 175: nomarkup.payment.v1.PaymentService.FileInsuranceClaim:output_type -> nomarkup.payment.v1.FileInsuranceClaimResponse
-	94,  // 176: nomarkup.payment.v1.PaymentService.GetInsuranceClaim:output_type -> nomarkup.payment.v1.GetInsuranceClaimResponse
-	96,  // 177: nomarkup.payment.v1.PaymentService.ReviewInsuranceClaim:output_type -> nomarkup.payment.v1.ReviewInsuranceClaimResponse
-	98,  // 178: nomarkup.payment.v1.PaymentService.AdminListInsuranceClaims:output_type -> nomarkup.payment.v1.AdminListInsuranceClaimsResponse
-	100, // 179: nomarkup.payment.v1.PaymentService.GenerateTaxForm:output_type -> nomarkup.payment.v1.GenerateTaxFormResponse
-	102, // 180: nomarkup.payment.v1.PaymentService.GetTaxForm:output_type -> nomarkup.payment.v1.GetTaxFormResponse
-	104, // 181: nomarkup.payment.v1.PaymentService.ListTaxForms:output_type -> nomarkup.payment.v1.ListTaxFormsResponse
-	106, // 182: nomarkup.payment.v1.PaymentService.GenerateInvoice:output_type -> nomarkup.payment.v1.GenerateInvoiceResponse
-	108, // 183: nomarkup.payment.v1.PaymentService.GetTaxFormHTML:output_type -> nomarkup.payment.v1.GetTaxFormHTMLResponse
-	110, // 184: nomarkup.payment.v1.PaymentService.GetInvoiceHTML:output_type -> nomarkup.payment.v1.GetInvoiceHTMLResponse
-	137, // [137:185] is the sub-list for method output_type
-	89,  // [89:137] is the sub-list for method input_type
+	111, // 137: nomarkup.payment.v1.PaymentService.DeleteStripeAccounts:input_type -> nomarkup.payment.v1.DeleteStripeAccountsRequest
+	5,   // 138: nomarkup.payment.v1.PaymentService.CreateStripeAccount:output_type -> nomarkup.payment.v1.CreateStripeAccountResponse
+	7,   // 139: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:output_type -> nomarkup.payment.v1.GetStripeOnboardingLinkResponse
+	9,   // 140: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:output_type -> nomarkup.payment.v1.GetStripeAccountStatusResponse
+	11,  // 141: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:output_type -> nomarkup.payment.v1.GetStripeDashboardLinkResponse
+	13,  // 142: nomarkup.payment.v1.PaymentService.CreateSetupIntent:output_type -> nomarkup.payment.v1.CreateSetupIntentResponse
+	16,  // 143: nomarkup.payment.v1.PaymentService.ListPaymentMethods:output_type -> nomarkup.payment.v1.ListPaymentMethodsResponse
+	18,  // 144: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:output_type -> nomarkup.payment.v1.DeletePaymentMethodResponse
+	20,  // 145: nomarkup.payment.v1.PaymentService.AddDevPaymentMethod:output_type -> nomarkup.payment.v1.AddDevPaymentMethodResponse
+	22,  // 146: nomarkup.payment.v1.PaymentService.CreatePayment:output_type -> nomarkup.payment.v1.CreatePaymentResponse
+	24,  // 147: nomarkup.payment.v1.PaymentService.ProcessPayment:output_type -> nomarkup.payment.v1.ProcessPaymentResponse
+	26,  // 148: nomarkup.payment.v1.PaymentService.ReleaseEscrow:output_type -> nomarkup.payment.v1.ReleaseEscrowResponse
+	28,  // 149: nomarkup.payment.v1.PaymentService.GetPayment:output_type -> nomarkup.payment.v1.GetPaymentResponse
+	30,  // 150: nomarkup.payment.v1.PaymentService.ListPayments:output_type -> nomarkup.payment.v1.ListPaymentsResponse
+	32,  // 151: nomarkup.payment.v1.PaymentService.CreateRefund:output_type -> nomarkup.payment.v1.CreateRefundResponse
+	34,  // 152: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:output_type -> nomarkup.payment.v1.HandleStripeWebhookResponse
+	36,  // 153: nomarkup.payment.v1.PaymentService.CalculateFees:output_type -> nomarkup.payment.v1.CalculateFeesResponse
+	38,  // 154: nomarkup.payment.v1.PaymentService.GetFeeConfig:output_type -> nomarkup.payment.v1.GetFeeConfigResponse
+	40,  // 155: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:output_type -> nomarkup.payment.v1.AdminGetPaymentDetailsResponse
+	42,  // 156: nomarkup.payment.v1.PaymentService.AdminListPayments:output_type -> nomarkup.payment.v1.AdminListPaymentsResponse
+	44,  // 157: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:output_type -> nomarkup.payment.v1.AdminUpdateFeeConfigResponse
+	46,  // 158: nomarkup.payment.v1.PaymentService.GetRevenueReport:output_type -> nomarkup.payment.v1.GetRevenueReportResponse
+	50,  // 159: nomarkup.payment.v1.PaymentService.CreateExpense:output_type -> nomarkup.payment.v1.CreateExpenseResponse
+	52,  // 160: nomarkup.payment.v1.PaymentService.ListExpenses:output_type -> nomarkup.payment.v1.ListExpensesResponse
+	54,  // 161: nomarkup.payment.v1.PaymentService.DeleteExpense:output_type -> nomarkup.payment.v1.DeleteExpenseResponse
+	57,  // 162: nomarkup.payment.v1.PaymentService.RequestAdvance:output_type -> nomarkup.payment.v1.RequestAdvanceResponse
+	59,  // 163: nomarkup.payment.v1.PaymentService.ListAdvances:output_type -> nomarkup.payment.v1.ListAdvancesResponse
+	61,  // 164: nomarkup.payment.v1.PaymentService.GetAdvance:output_type -> nomarkup.payment.v1.GetAdvanceResponse
+	63,  // 165: nomarkup.payment.v1.PaymentService.ReviewAdvance:output_type -> nomarkup.payment.v1.ReviewAdvanceResponse
+	65,  // 166: nomarkup.payment.v1.PaymentService.DisburseAdvance:output_type -> nomarkup.payment.v1.DisburseAdvanceResponse
+	67,  // 167: nomarkup.payment.v1.PaymentService.GetCreditLimit:output_type -> nomarkup.payment.v1.GetCreditLimitResponse
+	71,  // 168: nomarkup.payment.v1.PaymentService.CreateInstallmentPlan:output_type -> nomarkup.payment.v1.CreateInstallmentPlanResponse
+	73,  // 169: nomarkup.payment.v1.PaymentService.GetInstallmentPlan:output_type -> nomarkup.payment.v1.GetInstallmentPlanResponse
+	75,  // 170: nomarkup.payment.v1.PaymentService.ListInstallmentPlans:output_type -> nomarkup.payment.v1.ListInstallmentPlansResponse
+	82,  // 171: nomarkup.payment.v1.PaymentService.ListInsuranceProducts:output_type -> nomarkup.payment.v1.ListInsuranceProductsResponse
+	84,  // 172: nomarkup.payment.v1.PaymentService.GetInsuranceQuote:output_type -> nomarkup.payment.v1.GetInsuranceQuoteResponse
+	86,  // 173: nomarkup.payment.v1.PaymentService.PurchaseInsurance:output_type -> nomarkup.payment.v1.PurchaseInsuranceResponse
+	88,  // 174: nomarkup.payment.v1.PaymentService.GetInsurancePolicy:output_type -> nomarkup.payment.v1.GetInsurancePolicyResponse
+	90,  // 175: nomarkup.payment.v1.PaymentService.ListInsurancePolicies:output_type -> nomarkup.payment.v1.ListInsurancePoliciesResponse
+	92,  // 176: nomarkup.payment.v1.PaymentService.FileInsuranceClaim:output_type -> nomarkup.payment.v1.FileInsuranceClaimResponse
+	94,  // 177: nomarkup.payment.v1.PaymentService.GetInsuranceClaim:output_type -> nomarkup.payment.v1.GetInsuranceClaimResponse
+	96,  // 178: nomarkup.payment.v1.PaymentService.ReviewInsuranceClaim:output_type -> nomarkup.payment.v1.ReviewInsuranceClaimResponse
+	98,  // 179: nomarkup.payment.v1.PaymentService.AdminListInsuranceClaims:output_type -> nomarkup.payment.v1.AdminListInsuranceClaimsResponse
+	100, // 180: nomarkup.payment.v1.PaymentService.GenerateTaxForm:output_type -> nomarkup.payment.v1.GenerateTaxFormResponse
+	102, // 181: nomarkup.payment.v1.PaymentService.GetTaxForm:output_type -> nomarkup.payment.v1.GetTaxFormResponse
+	104, // 182: nomarkup.payment.v1.PaymentService.ListTaxForms:output_type -> nomarkup.payment.v1.ListTaxFormsResponse
+	106, // 183: nomarkup.payment.v1.PaymentService.GenerateInvoice:output_type -> nomarkup.payment.v1.GenerateInvoiceResponse
+	108, // 184: nomarkup.payment.v1.PaymentService.GetTaxFormHTML:output_type -> nomarkup.payment.v1.GetTaxFormHTMLResponse
+	110, // 185: nomarkup.payment.v1.PaymentService.GetInvoiceHTML:output_type -> nomarkup.payment.v1.GetInvoiceHTMLResponse
+	112, // 186: nomarkup.payment.v1.PaymentService.DeleteStripeAccounts:output_type -> nomarkup.payment.v1.DeleteStripeAccountsResponse
+	138, // [138:187] is the sub-list for method output_type
+	89,  // [89:138] is the sub-list for method input_type
 	89,  // [89:89] is the sub-list for extension type_name
 	89,  // [89:89] is the sub-list for extension extendee
 	0,   // [0:89] is the sub-list for field type_name
@@ -8184,7 +8307,7 @@ func file_payment_v1_payment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_payment_v1_payment_proto_rawDesc), len(file_payment_v1_payment_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   109,
+			NumMessages:   111,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

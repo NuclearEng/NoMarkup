@@ -163,6 +163,12 @@ func main() {
 	insuranceSvc := service.NewInsuranceService(repo, stripeSvc)
 	grpcServer.SetInsuranceService(insuranceSvc)
 
+	// GDPR/CCPA Stripe deletion adapter — called by the user service's
+	// Erasure pipeline via DeleteStripeAccounts. In dev mode this short-
+	// circuits to "skipped_no_client" outcomes. See
+	// docs/operations/gdpr-delete.md.
+	grpcServer.SetStripeDeleter(service.NewStripeDeleter(stripeSvc))
+
 	// Create and register gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {

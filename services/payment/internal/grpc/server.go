@@ -30,6 +30,7 @@ type Server struct {
 	svc            *service.PaymentService
 	installmentSvc *service.InstallmentService
 	insuranceSvc   *service.InsuranceService
+	stripeDeleter  *service.StripeDeleter
 }
 
 // NewServer creates a new gRPC server for the payment service.
