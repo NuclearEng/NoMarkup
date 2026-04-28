@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight, ImagePlus, Sparkles, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus, Sparkles } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
@@ -21,8 +21,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { PhotoCropper } from '@/components/ui/PhotoCropper';
 import { Progress } from '@/components/ui/progress';
-import { ProgressiveImage } from '@/components/ui/ProgressiveImage';
 import {
   Select,
   SelectContent,
@@ -30,8 +30,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SortablePhotoGrid, type PhotoSlot } from '@/components/ui/SortablePhotoGrid';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateListing } from '@/hooks/useListings';
+import { scorePhotoQuality } from '@/lib/photo-quality';
 import { cn, formatCents } from '@/lib/utils';
 import {
   listingPostingSchema,
@@ -136,16 +138,43 @@ interface ListingPostingFormProps {
   onPublishSuccess?: (listingId: string) => void;
 }
 
+/**
+ * Internal photo state — pairs each visible slot with the underlying File
+ * (we still need it for the AI auto-fill upload) and the latest quality
+ * result. The grid component cares only about `id`, `url`, and `quality`.
+ */
+interface PhotoEditorSlot extends PhotoSlot {
+  file?: File;
+}
+
+const MIN_QUALITY_TO_PUBLISH = 30;
+
 export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps = {}) {
   const router = useRouter();
   const createListing = useCreateListing();
   const [step, setStep] = useState(0);
-  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
-  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoSlots, setPhotoSlots] = useState<PhotoEditorSlot[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const slotIdRef = useRef(0);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [aiState, setAiState] = useState<'idle' | 'analyzing' | 'applied' | 'error'>('idle');
   const [aiSummary, setAiSummary] = useState<ListingImageAnalysisResult | null>(null);
   const aiTriggeredRef = useRef(false);
+
+  function nextSlotId(): string {
+    slotIdRef.current += 1;
+    return `photo-${String(slotIdRef.current)}`;
+  }
+
+  // Mirror slots → form field. Always pass through this so the order of
+  // photo URLs in the form matches the visual order in the grid.
+  function syncSlotsToForm(slots: PhotoEditorSlot[]) {
+    form.setValue(
+      'photoUrls',
+      slots.map((s) => s.url),
+      { shouldValidate: true, shouldDirty: true },
+    );
+  }
 
   const form = useForm<ListingPostingFormValues>({
     resolver: zodResolver(listingPostingSchema),
@@ -207,26 +236,34 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
   }
 
   function appendFiles(files: FileList | File[]) {
-    const acceptedFiles: File[] = [];
-    const acceptedUrls: string[] = [];
+    const newSlots: PhotoEditorSlot[] = [];
     for (const f of Array.from(files)) {
       if (!ACCEPTED_PHOTO_TYPES.includes(f.type)) continue;
       // Stub: in production, upload via the imaging engine and use the returned URL.
       // For frontend-only build, we use object URLs as placeholder.
       const url = URL.createObjectURL(f);
-      acceptedUrls.push(url);
-      acceptedFiles.push(f);
+      newSlots.push({ id: nextSlotId(), url, file: f });
     }
-    const wasEmpty = photoUrls.length === 0;
-    const nextUrls = [...photoUrls, ...acceptedUrls].slice(0, MAX_PHOTOS);
-    const nextFiles = [...photoFiles, ...acceptedFiles].slice(0, MAX_PHOTOS);
-    setPhotoUrls(nextUrls);
-    setPhotoFiles(nextFiles);
-    form.setValue('photoUrls', nextUrls, { shouldValidate: true, shouldDirty: true });
+    if (newSlots.length === 0) return;
+
+    const wasEmpty = photoSlots.length === 0;
+    const next = [...photoSlots, ...newSlots].slice(0, MAX_PHOTOS);
+    setPhotoSlots(next);
+    syncSlotsToForm(next);
+
+    // Score newly added photos in the background.
+    for (const slot of newSlots) {
+      if (!slot.file) continue;
+      const slotId = slot.id;
+      const fileForScoring = slot.file;
+      void scorePhotoQuality(fileForScoring).then((quality) => {
+        setPhotoSlots((prev) => prev.map((s) => (s.id === slotId ? { ...s, quality } : s)));
+      });
+    }
 
     // Fire AI auto-fill on the very first photo upload (only once per session).
-    if (wasEmpty && acceptedFiles.length > 0 && !aiTriggeredRef.current) {
-      const firstFile = acceptedFiles[0];
+    if (wasEmpty && newSlots.length > 0 && !aiTriggeredRef.current) {
+      const firstFile = newSlots[0]?.file;
       if (firstFile) {
         aiTriggeredRef.current = true;
         void analyzeFirstPhoto(firstFile);
@@ -307,16 +344,65 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
   }
 
   function removePhoto(idx: number) {
-    const next = photoUrls.filter((_, i) => i !== idx);
-    const nextFiles = photoFiles.filter((_, i) => i !== idx);
-    setPhotoUrls(next);
-    setPhotoFiles(nextFiles);
-    form.setValue('photoUrls', next, { shouldValidate: true, shouldDirty: true });
+    const next = photoSlots.filter((_, i) => i !== idx);
+    setPhotoSlots(next);
+    syncSlotsToForm(next);
   }
+
+  function reorderPhotos(next: PhotoSlot[]) {
+    // Re-attach `file` references from current state so we don't lose them on reorder.
+    const merged: PhotoEditorSlot[] = next.map((slot) => {
+      const existing = photoSlots.find((s) => s.id === slot.id);
+      return { ...slot, file: existing?.file };
+    });
+    setPhotoSlots(merged);
+    syncSlotsToForm(merged);
+  }
+
+  function handleCropSave(blob: Blob) {
+    if (editingIndex === null) return;
+    const target = photoSlots[editingIndex];
+    if (!target) {
+      setEditingIndex(null);
+      return;
+    }
+    const newFile = new File([blob], `cropped-${target.id}.jpg`, { type: 'image/jpeg' });
+    const newUrl = URL.createObjectURL(blob);
+    const updated: PhotoEditorSlot = {
+      id: target.id,
+      url: newUrl,
+      file: newFile,
+      quality: undefined,
+    };
+    const next = photoSlots.map((s, i) => (i === editingIndex ? updated : s));
+    setPhotoSlots(next);
+    syncSlotsToForm(next);
+    setEditingIndex(null);
+    // Re-score the cropped result in the background.
+    void scorePhotoQuality(newFile).then((quality) => {
+      setPhotoSlots((prev) => prev.map((s) => (s.id === updated.id ? { ...s, quality } : s)));
+    });
+  }
+
+  /**
+   * Number of photos below the publish threshold. Surfaced to the seller
+   * before the final publish step so they can swap in better photos.
+   */
+  const lowQualityCount = photoSlots.filter(
+    (s) => s.quality !== undefined && s.quality.score < MIN_QUALITY_TO_PUBLISH,
+  ).length;
 
   async function handlePublish() {
     const ok = await form.trigger();
     if (!ok) return;
+    if (lowQualityCount > 0) {
+      form.setError('root', {
+        message: `Replace ${String(lowQualityCount)} low-quality photo${
+          lowQualityCount === 1 ? '' : 's'
+        } before publishing.`,
+      });
+      return;
+    }
     try {
       const values = form.getValues();
       const input: CreateListingInput = { ...buildInput(values), publish: true };
@@ -502,73 +588,72 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                         </span>
                       </div>
                     ) : null}
-                    <div
-                      onDrop={handleDrop}
-                      onDragOver={handleDragOver}
-                      role="region"
-                      aria-label="Drag and drop photos here"
-                      className="rounded-xl border-2 border-dashed border-white/10 bg-white/[0.02] p-6 text-center"
-                    >
-                      <ImagePlus
-                        className="mx-auto mb-2 h-10 w-10 text-zinc-500"
-                        aria-hidden="true"
-                      />
-                      <p className="text-sm text-zinc-300">Drag photos here, or</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="mx-auto mt-2 min-h-[44px]"
-                        onClick={() => {
+
+                    {photoSlots.length === 0 ? (
+                      <div
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        role="region"
+                        aria-label="Drag and drop photos here"
+                        className="rounded-xl border-2 border-dashed border-white/10 bg-white/[0.02] p-6 text-center"
+                      >
+                        <ImagePlus
+                          className="mx-auto mb-2 h-10 w-10 text-zinc-500"
+                          aria-hidden="true"
+                        />
+                        <p className="text-sm text-zinc-300">Drag photos here, or</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="mx-auto mt-2 min-h-[44px]"
+                          onClick={() => {
+                            fileInputRef.current?.click();
+                          }}
+                        >
+                          Browse files
+                        </Button>
+                        <p className="mt-2 text-xs text-zinc-500">
+                          JPEG, PNG, or WebP. Maximum 10 photos.
+                        </p>
+                      </div>
+                    ) : (
+                      <SortablePhotoGrid
+                        photos={photoSlots}
+                        onReorder={reorderPhotos}
+                        onCropEdit={(idx) => {
+                          setEditingIndex(idx);
+                        }}
+                        onRemove={removePhoto}
+                        onAdd={() => {
                           fileInputRef.current?.click();
                         }}
-                      >
-                        Browse files
-                      </Button>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept={ACCEPTED_PHOTO_TYPES.join(',')}
-                        className="hidden"
-                        onChange={handleFileInput}
-                        aria-label="Upload listing photos"
+                        maxPhotos={MAX_PHOTOS}
                       />
-                      <p className="mt-2 text-xs text-zinc-500">
-                        JPEG, PNG, or WebP. Maximum 10 photos.
-                      </p>
-                    </div>
+                    )}
 
-                    {photoUrls.length > 0 ? (
-                      <div className="grid grid-cols-3 gap-2 pt-3 sm:grid-cols-4">
-                        {photoUrls.map((url, i) => (
-                          <div
-                            key={`${url}-${String(i)}`}
-                            className="relative aspect-square overflow-hidden rounded-md border border-white/10 bg-zinc-900"
-                          >
-                            <ProgressiveImage
-                              src={url}
-                              alt={`Photo ${String(i + 1)}`}
-                              className="absolute inset-0"
-                            />
-                            <button
-                              type="button"
-                              aria-label={`Remove photo ${String(i + 1)}`}
-                              onClick={() => {
-                                removePhoto(i);
-                              }}
-                              className="absolute top-1 right-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black/90"
-                            >
-                              <X className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                            {i === 0 ? (
-                              <span className="absolute bottom-1 left-1 rounded-full bg-[var(--brand-gold)] px-2 py-0.5 text-[10px] font-semibold text-black">
-                                Hero
-                              </span>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept={ACCEPTED_PHOTO_TYPES.join(',')}
+                      className="hidden"
+                      onChange={handleFileInput}
+                      aria-label="Upload listing photos"
+                    />
+
+                    {lowQualityCount > 0 ? (
+                      <p
+                        role="alert"
+                        className="mt-2 text-sm text-amber-400"
+                      >
+                        Replace {String(lowQualityCount)} low-quality photo
+                        {lowQualityCount === 1 ? '' : 's'} before publishing.
+                      </p>
                     ) : null}
+
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Drag tiles to reorder. The first photo is the cover.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -758,6 +843,19 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
           </Button>
         )}
       </div>
+
+      {editingIndex !== null && photoSlots[editingIndex] ? (
+        <PhotoCropper
+          src={photoSlots[editingIndex].url}
+          aspect={4 / 3}
+          onSave={(blob) => {
+            handleCropSave(blob);
+          }}
+          onCancel={() => {
+            setEditingIndex(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
