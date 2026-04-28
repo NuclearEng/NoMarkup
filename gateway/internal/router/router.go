@@ -61,6 +61,7 @@ func New(
 	taxHandler *handler.TaxHandler,
 	auctionWSHandler *handler.AuctionWSHandler,
 	spectatorWSHandler *handler.SpectatorWSHandler,
+	marketplaceSpectatorWSHandler *handler.MarketplaceSpectatorWSHandler,
 	featureFlagHandler *handler.FeatureFlagHandler,
 	pricingHandler *handler.PricingHandler,
 	oauthHandler *handler.OAuthHandler,
@@ -74,6 +75,7 @@ func New(
 	employeesHandler *handler.EmployeesHandler,
 	adminMarketplaceHandler *handler.AdminMarketplaceHandler,
 	listingOrdersHandler *handler.ListingOrdersHandler,
+	listingsHandler *handler.ListingsHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -208,6 +210,16 @@ func New(
 	// inside the handler. The trigger on listing_reports auto-hides a
 	// listing once ≥3 open reports exist.
 	r.Post("/api/v1/listings/{id}/report", adminMarketplaceHandler.CreateReport)
+
+	// ── Public marketplace browse + spectator surface ──────────────────
+	// The whole point of the wedge: anonymous visitors land on the
+	// scoreboard at `/marketplace`, watch live auctions, and ping for
+	// watcher counts. Bid placement (POST .../bid) is auth-gated and
+	// lives inside the protected /api/v1 block below.
+	r.Get("/api/v1/listings", listingsHandler.ListListings)
+	r.Get("/api/v1/listings/{id}", listingsHandler.GetListing)
+	r.Get("/api/v1/listings/{id}/bids", listingsHandler.GetListingBids)
+	r.Post("/api/v1/listings/{id}/ping-viewer", listingsHandler.PingViewer)
 
 	// Market analytics routes (require authentication)
 	r.Route("/api/v1/analytics/market", func(r chi.Router) {
@@ -388,6 +400,14 @@ func New(
 			r.Post("/{id}/confirm-pickup", listingOrdersHandler.ConfirmPickup)
 			r.Post("/{id}/file-dispute", listingOrdersHandler.FileListingDispute)
 		})
+
+		// ── Marketplace buyer/seller write paths ────────────────────────
+		// Read paths are public and live above. These routes require
+		// authentication. Bid placement publishes a `listing:{id}` Redis
+		// event consumed by the marketplace spectator WebSocket.
+		r.Get("/listings/me", listingsHandler.MyListings)
+		r.Get("/listings/me/bids", listingsHandler.MyListingBids)
+		r.Post("/listings/{id}/bid", listingsHandler.PlaceListingBid)
 
 		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {
@@ -644,6 +664,10 @@ func New(
 
 	// Spectator WebSocket endpoint (public, no auth required — anonymous viewers)
 	r.Get("/ws/auction/{jobId}/spectate", spectatorWSHandler.SpectateAuction)
+
+	// Marketplace (goods) spectator WebSocket — anonymous live-bid stream for
+	// a single listing. PII-stripped, 3-second delayed.
+	r.Get("/ws/marketplace/{listingId}/spectate", marketplaceSpectatorWSHandler.Spectate)
 
 	return r
 }

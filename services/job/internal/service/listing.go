@@ -12,10 +12,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
@@ -23,11 +26,22 @@ import (
 // ListingService implements goods-marketplace business logic.
 type ListingService struct {
 	repo domain.ListingRepository
+	// rdb is optional. When non-nil, PlaceListingBid publishes a
+	// `listing:{id}` event consumed by the gateway marketplace
+	// spectator WebSocket. nil-safe — service still works without it.
+	rdb *redis.Client
 }
 
 // NewListingService wires a ListingService against a repository.
 func NewListingService(repo domain.ListingRepository) *ListingService {
 	return &ListingService{repo: repo}
+}
+
+// WithRedis attaches an optional Redis client used to publish bid-placed
+// events to the `listing:{id}` channel. Returns the service for chaining.
+func (s *ListingService) WithRedis(rdb *redis.Client) *ListingService {
+	s.rdb = rdb
+	return s
 }
 
 // CreateListing validates input and persists a new listing.
@@ -125,7 +139,43 @@ func (s *ListingService) PlaceListingBid(ctx context.Context, input domain.Place
 		"amount_cents", input.AmountCents,
 		"snipe_extension", res.SnipeExtensionTriggered,
 	)
+	s.publishBidPlaced(ctx, input, res)
 	return res, nil
+}
+
+// publishBidPlaced fires the `listing:{id}` Redis event consumed by the
+// marketplace spectator WebSocket. Best-effort: any failure is logged
+// at WARN and never propagated. The bid has already committed.
+//
+// Payload is intentionally minimal — bidder_id is included only because
+// the gateway spectator handler strips it before forwarding to clients
+// (defense in depth: server-only logs retain it for fraud forensics).
+func (s *ListingService) publishBidPlaced(ctx context.Context, input domain.PlaceListingBidInput, res *domain.PlaceListingBidResult) {
+	if s.rdb == nil {
+		return
+	}
+	payload := map[string]interface{}{
+		"type":            "bid_placed",
+		"listing_id":      input.ListingID,
+		"bidder_id":       input.BidderID,
+		"amount_cents":    input.AmountCents,
+		"snipe_extension":       res.SnipeExtensionTriggered,
+		"snipe_extension_count": res.SnipeExtensionCount,
+		"new_auction_ends_at":   res.NewAuctionEndsAt.UTC().Format(time.RFC3339),
+		"timestamp":       time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		slog.Warn("publish bid_placed: marshal failed", "error", err)
+		return
+	}
+	channel := fmt.Sprintf("listing:%s", input.ListingID)
+	if err := s.rdb.Publish(ctx, channel, data).Err(); err != nil {
+		slog.Warn("publish bid_placed: redis publish failed",
+			"listing_id", input.ListingID,
+			"error", err,
+		)
+	}
 }
 
 // GetListingBids returns bids for a listing, sorted highest-first.

@@ -255,6 +255,7 @@ func main() {
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
 	auctionWSHandler := handler.NewAuctionWSHandler(authMW, cfg.ChatWSAddr)
 	spectatorWSHandler := handler.NewSpectatorWSHandler(cacheClient)
+	marketplaceSpectatorWSHandler := handler.NewMarketplaceSpectatorWSHandler(cacheClient)
 	trustHandler := handler.NewTrustHandler(trustClient, cacheClient)
 	fraudHandler := handler.NewFraudHandler(fraudClient)
 	notificationHandler := handler.NewNotificationHandler(notifClient)
@@ -285,6 +286,7 @@ func main() {
 	employeesHandler := handler.NewEmployeesHandler(dbPool, piiCipher)
 	adminMarketplaceHandler := handler.NewAdminMarketplaceHandler(dbPool)
 	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
+	listingsHandler := handler.NewListingsHandler(dbPool, cacheClient)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
@@ -300,6 +302,7 @@ func main() {
 		workingCapitalHandler, expenseHandler, taxHandler,
 		auctionWSHandler,
 		spectatorWSHandler,
+		marketplaceSpectatorWSHandler,
 		featureFlagHandler,
 		pricingHandler,
 		oauthHandler,
@@ -313,6 +316,7 @@ func main() {
 		employeesHandler,
 		adminMarketplaceHandler,
 		listingOrdersHandler,
+		listingsHandler,
 	)
 
 	srv := &http.Server{

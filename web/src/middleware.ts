@@ -96,13 +96,36 @@ function generateNonce(): string {
  * api.mapbox.com and js.stripe.com listed for graceful fallback.
  */
 function buildCsp(nonce: string): string {
+  // The web app talks to the gateway as a separate origin (NEXT_PUBLIC_API_URL).
+  // In production that's a same-domain proxy or a public api.* host; in dev
+  // it's typically http://localhost:8081 + ws://localhost:8081. We allow the
+  // configured origin (and its WS counterpart) when set.
+  const apiUrl = process.env['NEXT_PUBLIC_API_URL'] ?? '';
+  const wsUrl = process.env['NEXT_PUBLIC_WS_URL'] ?? '';
+  const apiOrigins: string[] = [];
+  for (const u of [apiUrl, wsUrl]) {
+    if (!u) continue;
+    try {
+      const parsed = new URL(u);
+      apiOrigins.push(parsed.origin);
+      // ws:// or wss:// counterpart for the same host
+      if (parsed.protocol === 'http:') {
+        apiOrigins.push(`ws://${parsed.host}`);
+      } else if (parsed.protocol === 'https:') {
+        apiOrigins.push(`wss://${parsed.host}`);
+      }
+    } catch {
+      // ignore malformed
+    }
+  }
+  const extra = apiOrigins.join(' ');
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://api.mapbox.com https://js.stripe.com`,
     "style-src 'self' 'unsafe-inline' https://api.mapbox.com",
     "img-src 'self' data: blob: https: http://localhost:9000",
     "font-src 'self' data:",
-    "connect-src 'self' ws: wss: https://api.mapbox.com https://events.mapbox.com https://*.sentry.io https://api.stripe.com",
+    `connect-src 'self' ${extra} ws: wss: https://api.mapbox.com https://events.mapbox.com https://*.sentry.io https://api.stripe.com`,
     "worker-src 'self' blob:",
     "frame-src https://js.stripe.com https://hooks.stripe.com",
     "frame-ancestors 'none'",
