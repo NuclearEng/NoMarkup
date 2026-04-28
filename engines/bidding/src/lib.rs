@@ -32,5 +32,6 @@
 )]
 
 pub mod engine;
+pub mod forward;
 pub mod metrics;
 pub mod models;

@@ -95,7 +95,8 @@ proto-gen-go:
 		proto/notification/v1/notification.proto \
 		proto/imaging/v1/imaging.proto \
 		proto/subscription/v1/subscription.proto \
-		proto/analytics/v1/analytics.proto
+		proto/analytics/v1/analytics.proto \
+		proto/listing/v1/listing.proto
 	@echo "Go proto generation complete."
 
 proto-gen-rust:
