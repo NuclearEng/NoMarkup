@@ -61,6 +61,9 @@ type createListingRequest struct {
 	StartingPriceCents   int64    `json:"starting_price_cents"`
 	ReservePriceCents    *int64   `json:"reserve_price_cents"`
 	BuyNowPriceCents     *int64   `json:"buy_now_price_cents"`
+	// Condition is a StockX-style enum: new | like_new | very_good | good |
+	// acceptable | for_parts. Empty/nil persists as NULL ("seller didn't say").
+	Condition            *string  `json:"condition"`
 	AuctionDurationHours int      `json:"auction_duration_hours"`
 	Publish              bool     `json:"publish"`
 }
@@ -74,7 +77,36 @@ type updateListingRequest struct {
 	StartingPriceCents   *int64    `json:"starting_price_cents"`
 	ReservePriceCents    *int64    `json:"reserve_price_cents"`
 	BuyNowPriceCents     *int64    `json:"buy_now_price_cents"`
+	Condition            *string   `json:"condition"`
 	AuctionDurationHours *int      `json:"auction_duration_hours"`
+}
+
+// allowedListingConditions matches the CHECK constraint added in
+// migration 040 (listings_condition_check).
+var allowedListingConditions = map[string]struct{}{
+	"new":        {},
+	"like_new":   {},
+	"very_good":  {},
+	"good":       {},
+	"acceptable": {},
+	"for_parts":  {},
+}
+
+// validateCondition returns ("", false) if c is non-empty but not allowed,
+// and ("", true) if c is nil/empty (persist as NULL). Otherwise returns
+// the trimmed value and true.
+func validateCondition(c *string) (string, bool) {
+	if c == nil {
+		return "", true
+	}
+	v := strings.TrimSpace(*c)
+	if v == "" {
+		return "", true
+	}
+	if _, ok := allowedListingConditions[v]; !ok {
+		return "", false
+	}
+	return v, true
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -143,6 +175,16 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 	if _, ok := allowedListingDurations[req.AuctionDurationHours]; !ok {
 		writeError(w, http.StatusBadRequest, "auction_duration_hours must be 24, 48, or 168")
 		return
+	}
+	conditionVal, condOK := validateCondition(req.Condition)
+	if !condOK {
+		writeError(w, http.StatusBadRequest,
+			"condition must be one of: new, like_new, very_good, good, acceptable, for_parts")
+		return
+	}
+	var conditionArg interface{}
+	if conditionVal != "" {
+		conditionArg = conditionVal
 	}
 
 	// Verify category exists. Cheap lookup; gives a clean 400 instead
@@ -223,6 +265,7 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 			seller_id, title, description, category_id,
 			location, pickup_address, pickup_zip_code,
 			starting_price_cents, reserve_price_cents, buy_now_price_cents,
+			condition,
 			auction_duration_hours,
 			auction_ends_at, original_auction_ends_at, status
 		) VALUES (
@@ -230,11 +273,13 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 			ST_SetSRID(ST_MakePoint($5, $6), 4326), $7, $8,
 			$9, $10, $11,
 			$12,
-			$13, $13, $14
+			$13,
+			$14, $14, $15
 		) RETURNING id`,
 		claims.UserID, title, req.Description, req.CategoryID,
 		lng, lat, pickupAddr, strings.TrimSpace(req.PickupZip),
 		req.StartingPriceCents, req.ReservePriceCents, req.BuyNowPriceCents,
+		conditionArg,
 		req.AuctionDurationHours,
 		endsAt, status,
 	).Scan(&newID)
@@ -340,6 +385,12 @@ func (h *ListingsHandler) UpdateListing(w http.ResponseWriter, r *http.Request) 
 			"buy_now_price_cents must be ≥ reserve_price_cents")
 		return
 	}
+	conditionVal, condOK := validateCondition(req.Condition)
+	if !condOK {
+		writeError(w, http.StatusBadRequest,
+			"condition must be one of: new, like_new, very_good, good, acceptable, for_parts")
+		return
+	}
 
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
@@ -415,6 +466,14 @@ func (h *ListingsHandler) UpdateListing(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.BuyNowPriceCents != nil {
 		addSet("buy_now_price_cents", *req.BuyNowPriceCents)
+	}
+	if req.Condition != nil {
+		// An explicit empty/whitespace string clears the grade back to NULL.
+		if conditionVal == "" {
+			addSet("condition", nil)
+		} else {
+			addSet("condition", conditionVal)
+		}
 	}
 	if req.AuctionDurationHours != nil {
 		// Reset auction_ends_at relative to now() when duration changes
@@ -669,6 +728,7 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 	var pickupCity, pickupState, pickupAddress sql.NullString
 	var reserveCents, buyNowCents pgtype.Int8
 	var reserveMet pgtype.Bool
+	var condition sql.NullString
 	err := h.db.QueryRow(ctx, `
 		SELECT l.id, l.seller_id, l.category_id,
 			COALESCE(c.name, ''), COALESCE(c.slug, ''),
@@ -691,6 +751,7 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 			COALESCE(l.bid_count, 0),
 			l.auction_duration_hours, l.auction_ends_at,
 			COALESCE(l.snipe_extension_count, 0),
+			l.condition,
 			l.created_at, l.updated_at
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
@@ -709,6 +770,7 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 		&l.BidderCount, &l.BidCount,
 		&l.AuctionDurationHours, &endsAt,
 		&l.SnipeExtensionCount,
+		&condition,
 		&l.CreatedAt, &l.UpdatedAt,
 	)
 	if err != nil {
@@ -725,6 +787,10 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 	if reserveMet.Valid {
 		v := reserveMet.Bool
 		l.ReserveMet = &v
+	}
+	if condition.Valid {
+		s := condition.String
+		l.Condition = &s
 	}
 	if pickupCity.Valid {
 		s := pickupCity.String

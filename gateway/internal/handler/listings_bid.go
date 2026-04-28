@@ -659,6 +659,7 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 			COALESCE(l.bid_count,0),
 			l.auction_duration_hours, l.auction_ends_at,
 			COALESCE(l.snipe_extension_count,0),
+			l.condition,
 			l.created_at, l.updated_at
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
@@ -676,6 +677,7 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 		var l listingJSON
 		var lat, lng pgtype.Float8
 		var endsAt pgtype.Timestamptz
+		var condition sql.NullString
 		if err := rows.Scan(&l.ID, &l.SellerID, &l.CategoryID,
 			&l.CategoryName, &l.CategorySlug,
 			&l.Title, &l.Description,
@@ -686,6 +688,7 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 			&l.BidderCount, &l.BidCount,
 			&l.AuctionDurationHours, &endsAt,
 			&l.SnipeExtensionCount,
+			&condition,
 			&l.CreatedAt, &l.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "scan error")
 			return
@@ -701,6 +704,10 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 		if endsAt.Valid {
 			t := endsAt.Time
 			l.AuctionEndsAt = &t
+		}
+		if condition.Valid {
+			s := condition.String
+			l.Condition = &s
 		}
 		l.Photos = []listingPhotoJSON{}
 		results = append(results, l)
@@ -961,5 +968,273 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"order_id": orderID,
 		"listing":  listing,
+	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/v1/listings/{id}/bids/{bidId}/retract — eBay-style 60-second
+// retraction window for the leading bidder.
+// ─────────────────────────────────────────────────────────────────────────
+//
+// The retraction window is intentionally narrow:
+//
+//   - Only the CURRENT high bid (status='active') is retractable. Once a
+//     bid has been demoted to 'outbid' it is frozen.
+//   - The bid must be < 60 seconds old (now() - created_at < 60s).
+//   - The retracting user must own the bid.
+//
+// Side effects:
+//
+//   - The bid row flips to status='retracted' with retracted_at = now().
+//   - The next-highest non-retracted bid (if any) is promoted to
+//     status='active' and becomes the new current_bid_cents on the
+//     listing. If the new leader is itself an 'awarded' or 'outbid' row
+//     we promote it back to 'active'.
+//   - listings.bid_count is recomputed from non-retracted rows.
+//   - When no prior bids remain, current_bid_cents and current_bidder_id
+//     are cleared (the listing reverts to "starting price only").
+//
+// Concurrency: the listing row is locked FOR UPDATE inside the
+// transaction, serializing concurrent bids and retractions.
+//
+// Retracted bids are NOT deleted — they remain in the audit trail so
+// admin tooling and fraud heuristics can detect retraction abuse (a
+// bidder who repeatedly retracts is sniping the spread).
+//
+// The bid_count delta is non-trivial because the auto-bid cascade can
+// have inserted >1 row per visible bid placement; we recompute the
+// distinct-non-retracted count rather than tracking deltas. Cheap query
+// (single index scan on listing_id, partial index excludes retracted).
+const listingRetractWindow = 60 * time.Second
+
+func (h *ListingsHandler) RetractBid(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	listingID := chi.URLParam(r, "id")
+	bidID := chi.URLParam(r, "bidId")
+	if !isValidUUID(listingID) {
+		writeError(w, http.StatusBadRequest, "invalid listing id")
+		return
+	}
+	if !isValidUUID(bidID) {
+		writeError(w, http.StatusBadRequest, "invalid bid id")
+		return
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start tx")
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	// Lock the listing row FIRST so concurrent bids/retractions serialize.
+	var (
+		listingStatus string
+		startCents    int64
+	)
+	err = tx.QueryRow(r.Context(),
+		`SELECT status, starting_price_cents
+		   FROM listings WHERE id = $1 FOR UPDATE`, listingID,
+	).Scan(&listingStatus, &startCents)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "listing not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "retract: listing lock failed",
+			"error", err, "listing_id", listingID)
+		writeError(w, http.StatusInternalServerError, "failed to lock listing")
+		return
+	}
+
+	// Lock the bid row and verify ownership + retraction eligibility.
+	var (
+		bidListingID string
+		bidderID     string
+		bidStatus    string
+		bidAmount    int64
+		bidCreatedAt time.Time
+		bidRetracted pgtype.Timestamptz
+	)
+	err = tx.QueryRow(r.Context(), `
+		SELECT listing_id, bidder_id, status, amount_cents, created_at, retracted_at
+		  FROM listing_bids WHERE id = $1 FOR UPDATE`, bidID,
+	).Scan(&bidListingID, &bidderID, &bidStatus, &bidAmount, &bidCreatedAt, &bidRetracted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "bid not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "retract: bid lock failed",
+			"error", err, "bid_id", bidID)
+		writeError(w, http.StatusInternalServerError, "failed to lock bid")
+		return
+	}
+
+	if bidListingID != listingID {
+		writeError(w, http.StatusBadRequest, "bid does not belong to this listing")
+		return
+	}
+	if bidderID != claims.UserID {
+		writeError(w, http.StatusForbidden, "only the bidder may retract this bid")
+		return
+	}
+	if bidRetracted.Valid {
+		writeError(w, http.StatusConflict, "bid is already retracted")
+		return
+	}
+	// Only the leading 'active' bid can be retracted. Demoted bids
+	// (status='outbid') and awarded bids (status='awarded') are frozen.
+	if bidStatus != "active" {
+		writeError(w, http.StatusConflict,
+			"only the current high bid can be retracted; outbid/awarded bids are final")
+		return
+	}
+	// Sold/cancelled/expired listings can't have bids retracted.
+	if listingStatus != "active" {
+		writeError(w, http.StatusConflict,
+			"cannot retract a bid on a "+listingStatus+" listing")
+		return
+	}
+
+	// 60-second window enforced server-side. We use the database clock
+	// (now() in the UPDATE) but the comparison here uses the request
+	// wall clock; the values are within microseconds of each other.
+	age := time.Since(bidCreatedAt)
+	if age >= listingRetractWindow {
+		writeError(w, http.StatusConflict,
+			"retraction window expired (60s after the bid was placed)")
+		return
+	}
+
+	// Mark the bid retracted. The status='retracted' enum value was added
+	// in migration 040.
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE listing_bids
+		   SET status = 'retracted',
+		       retracted_at = now(),
+		       updated_at = now()
+		 WHERE id = $1`, bidID,
+	); err != nil {
+		slog.ErrorContext(r.Context(), "retract: bid update failed",
+			"error", err, "bid_id", bidID)
+		writeError(w, http.StatusInternalServerError, "failed to retract bid")
+		return
+	}
+
+	// Find the next-highest non-retracted, non-this-bid candidate to
+	// promote. Prefer 'outbid' rows (the legitimate runner-up); skip
+	// 'retracted' / 'awarded'.
+	var (
+		nextID       string
+		nextBidder   string
+		nextAmount   int64
+		hasNext      bool
+	)
+	err = tx.QueryRow(r.Context(), `
+		SELECT id, bidder_id, amount_cents
+		  FROM listing_bids
+		 WHERE listing_id = $1
+		   AND id != $2
+		   AND retracted_at IS NULL
+		   AND status IN ('active','outbid')
+		 ORDER BY amount_cents DESC, created_at ASC
+		 LIMIT 1`, listingID, bidID,
+	).Scan(&nextID, &nextBidder, &nextAmount)
+	switch {
+	case err == nil:
+		hasNext = true
+	case errors.Is(err, pgx.ErrNoRows):
+		hasNext = false
+	default:
+		slog.ErrorContext(r.Context(), "retract: lookup next bid failed",
+			"error", err, "listing_id", listingID)
+		writeError(w, http.StatusInternalServerError, "failed to find next bid")
+		return
+	}
+
+	if hasNext {
+		// Promote the runner-up to active (it may already be 'active' if
+		// it was the original leader before this bid; the UPDATE is still
+		// idempotent in that case).
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE listing_bids
+			   SET status = 'active', updated_at = now()
+			 WHERE id = $1`, nextID,
+		); err != nil {
+			slog.ErrorContext(r.Context(), "retract: promote next bid failed",
+				"error", err, "next_bid_id", nextID)
+			writeError(w, http.StatusInternalServerError, "failed to promote next bid")
+			return
+		}
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE listings
+			   SET current_bid_cents = $2,
+			       current_bidder_id = $3,
+			       bid_count = (SELECT COUNT(*) FROM listing_bids
+			                     WHERE listing_id = $1 AND retracted_at IS NULL),
+			       updated_at = now()
+			 WHERE id = $1`,
+			listingID, nextAmount, nextBidder,
+		); err != nil {
+			slog.ErrorContext(r.Context(), "retract: listing update (with next) failed",
+				"error", err, "listing_id", listingID)
+			writeError(w, http.StatusInternalServerError, "failed to update listing")
+			return
+		}
+	} else {
+		// No prior bids — revert the listing to "starting price, no bidder".
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE listings
+			   SET current_bid_cents = NULL,
+			       current_bidder_id = NULL,
+			       bid_count = 0,
+			       updated_at = now()
+			 WHERE id = $1`, listingID,
+		); err != nil {
+			slog.ErrorContext(r.Context(), "retract: listing reset failed",
+				"error", err, "listing_id", listingID)
+			writeError(w, http.StatusInternalServerError, "failed to reset listing")
+			return
+		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		slog.ErrorContext(r.Context(), "retract: commit failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+
+	slog.InfoContext(r.Context(), "listing bid retracted",
+		"listing_id", listingID,
+		"bid_id", bidID,
+		"bidder_id", claims.UserID,
+		"amount_cents", bidAmount,
+		"age_ms", age.Milliseconds(),
+		"promoted_next", hasNext,
+	)
+
+	listing, err := h.loadListingJSON(r.Context(), listingID)
+	if err != nil {
+		// Listing is already updated; the reload is best-effort.
+		slog.WarnContext(r.Context(), "retract: post-load failed",
+			"error", err, "id", listingID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"listing": nil,
+			"bid_id":  bidID,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"listing": listing,
+		"bid_id":  bidID,
 	})
 }

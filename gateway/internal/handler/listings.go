@@ -94,6 +94,9 @@ type listingJSON struct {
 	IsUserWinning        bool               `json:"is_user_winning"`
 	WasOutbid            bool               `json:"was_outbid"`
 	WatcherCount         int                `json:"watcher_count"`
+	// Condition is a StockX-style enum: new | like_new | very_good | good |
+	// acceptable | for_parts. nil/null means the seller didn't grade.
+	Condition            *string            `json:"condition"`
 	CreatedAt            time.Time          `json:"created_at"`
 	UpdatedAt            time.Time          `json:"updated_at"`
 }
@@ -263,6 +266,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			l.auction_ends_at,
 			COALESCE(l.snipe_extension_count, 0),
 			`+distanceExpr+`                      AS distance_km,
+			l.condition,
 			l.created_at, l.updated_at
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
@@ -285,6 +289,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		var endsAt pgtype.Timestamptz
 		var reserveCents, buyNowCents pgtype.Int8
 		var reserveMet pgtype.Bool
+		var condition sql.NullString
 		if err := rows.Scan(&l.ID, &l.SellerID, &l.CategoryID,
 			&l.CategoryName, &l.CategorySlug,
 			&l.Title, &l.Description,
@@ -297,6 +302,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			&l.AuctionDurationHours, &endsAt,
 			&l.SnipeExtensionCount,
 			&distanceKm,
+			&condition,
 			&l.CreatedAt, &l.UpdatedAt); err != nil {
 			slog.Error("listings scan failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "scan error")
@@ -329,6 +335,10 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		if reserveMet.Valid {
 			v := reserveMet.Bool
 			l.ReserveMet = &v
+		}
+		if condition.Valid {
+			s := condition.String
+			l.Condition = &s
 		}
 		l.Photos = []listingPhotoJSON{}
 		results = append(results, l)
@@ -387,6 +397,7 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	var trustScore sql.NullInt32
 	var reserveCents, buyNowCents pgtype.Int8
 	var reserveMet pgtype.Bool
+	var condition sql.NullString
 	err := h.db.QueryRow(r.Context(), `
 		SELECT l.id, l.seller_id, l.category_id,
 			COALESCE(c.name, ''), COALESCE(c.slug, ''),
@@ -407,6 +418,7 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 			COALESCE(l.bid_count, 0),
 			l.auction_duration_hours, l.auction_ends_at,
 			COALESCE(l.snipe_extension_count, 0),
+			l.condition,
 			l.created_at, l.updated_at,
 			COALESCE(u.display_name, ''), u.created_at,
 			(SELECT COUNT(*) FROM listings WHERE seller_id = l.seller_id AND status IN ('active','sold')),
@@ -428,6 +440,7 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		&d.BidderCount, &d.BidCount,
 		&d.AuctionDurationHours, &endsAt,
 		&d.SnipeExtensionCount,
+		&condition,
 		&d.CreatedAt, &d.UpdatedAt,
 		&d.SellerDisplayName, &memberSince, &d.SellerListingsCount,
 		&trustTier, &trustScore,
@@ -472,6 +485,10 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	if reserveMet.Valid {
 		v := reserveMet.Bool
 		d.ReserveMet = &v
+	}
+	if condition.Valid {
+		s := condition.String
+		d.Condition = &s
 	}
 	d.SellerMemberSince = memberSince.UTC().Format(time.RFC3339)
 

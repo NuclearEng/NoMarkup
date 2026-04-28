@@ -77,6 +77,8 @@ func New(
 	listingOrdersHandler *handler.ListingOrdersHandler,
 	listingsHandler *handler.ListingsHandler,
 	watchlistHandler *handler.WatchlistHandler,
+	followsHandler *handler.FollowsHandler,
+	listingsSearchHandler *handler.ListingsSearchHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -218,9 +220,20 @@ func New(
 	// watcher counts. Bid placement (POST .../bid) is auth-gated and
 	// lives inside the protected /api/v1 block below.
 	r.Get("/api/v1/listings", listingsHandler.ListListings)
+	// Search-as-you-type + similar rails (Meilisearch-backed). Registered
+	// before `/listings/{id}` so chi's literal-segment match wins over
+	// the {id} wildcard. Both are public (no auth) — typeahead UX must
+	// be reachable from the anonymous landing surface.
+	r.Get("/api/v1/listings/autocomplete", listingsSearchHandler.Autocomplete)
+	r.Get("/api/v1/listings/{id}/similar", listingsSearchHandler.Similar)
 	r.Get("/api/v1/listings/{id}", listingsHandler.GetListing)
 	r.Get("/api/v1/listings/{id}/bids", listingsHandler.GetListingBids)
 	r.Post("/api/v1/listings/{id}/ping-viewer", listingsHandler.PingViewer)
+
+	// Public followers list — anyone can see who follows a seller (mirrors
+	// Whatnot/Twitter social-proof surface). Auth-gated follow/unfollow,
+	// my-follows, and my-feed live inside the protected /api/v1 block below.
+	r.Get("/api/v1/users/{id}/followers", followsHandler.ListFollowers)
 
 	// Market analytics routes (require authentication)
 	r.Route("/api/v1/analytics/market", func(r chi.Router) {
@@ -246,6 +259,17 @@ func New(
 			r.Get("/{id}/trust-score", trustHandler.GetTrustScore)
 			r.Get("/{id}/trust-history", trustHandler.GetTrustScoreHistory)
 		})
+
+		// ── Followable seller (Whatnot retention mechanic) ──────────────
+		// Mirrors the watchlist surface in shape: per-target follow toggle
+		// + an authenticated my-follows list and an activity feed of the
+		// followed sellers' active auctions. The public followers list is
+		// mounted above the auth boundary because anyone (including
+		// anonymous visitors) can read social proof on a seller profile.
+		r.Post("/users/{id}/follow", followsHandler.Follow)
+		r.Delete("/users/{id}/follow", followsHandler.Unfollow)
+		r.Get("/me/follows", followsHandler.MyFollows)
+		r.Get("/me/feed", followsHandler.MyFeed)
 
 		r.Route("/providers", func(r chi.Router) {
 			r.Get("/me", providerHandler.GetMe)
@@ -427,6 +451,11 @@ func New(
 		// auction flips to status='sold' and a listing_orders row is
 		// created in escrow_status='held'. See listings_bid.go::BuyItNow.
 		r.Post("/listings/{id}/buy-now", listingsHandler.BuyItNow)
+
+		// 60-second eBay-style retraction window for the leading bidder.
+		// Only status='active' bids placed within the last 60s qualify;
+		// demoted bids cannot be undone. See listings_bid.go::RetractBid.
+		r.Post("/listings/{id}/bids/{bidId}/retract", listingsHandler.RetractBid)
 
 		// ── Watchlist + saved searches (retention loop) ─────────────────
 		// Buyers can favorite a listing without bidding ("watch") and

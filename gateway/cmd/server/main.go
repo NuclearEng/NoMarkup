@@ -36,6 +36,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meilisearch/meilisearch-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -288,6 +289,18 @@ func main() {
 	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
 	listingsHandler := handler.NewListingsHandler(dbPool, cacheClient)
 	watchlistHandler := handler.NewWatchlistHandler(dbPool, cacheClient)
+	followsHandler := handler.NewFollowsHandler(dbPool)
+
+	// Optional Meilisearch client for listings autocomplete + "similar"
+	// rails. Mirrors the env conventions used by services/job
+	// (MEILISEARCH_HOST / MEILISEARCH_API_KEY). When not configured, the
+	// search handler returns empty payloads — non-fatal in dev/sandbox.
+	var meiliClient meilisearch.ServiceManager
+	if host := os.Getenv("MEILISEARCH_HOST"); host != "" {
+		meiliClient = meilisearch.New(host, meilisearch.WithAPIKey(os.Getenv("MEILISEARCH_API_KEY")))
+		slog.Info("meilisearch client initialized", "host", host)
+	}
+	listingsSearchHandler := handler.NewListingsSearchHandler(dbPool, meiliClient, listingsHandler)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
@@ -319,6 +332,8 @@ func main() {
 		listingOrdersHandler,
 		listingsHandler,
 		watchlistHandler,
+		followsHandler,
+		listingsSearchHandler,
 	)
 
 	srv := &http.Server{
