@@ -28,6 +28,11 @@ chrono.workspace = true
 image = "0.25"
 aws-sdk-s3 = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
+prometheus.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+once_cell.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true

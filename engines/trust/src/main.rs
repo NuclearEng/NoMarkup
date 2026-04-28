@@ -40,6 +40,7 @@
 
 mod engine;
 mod grpc;
+mod metrics;
 mod models;
 mod scoring;
 
@@ -126,6 +127,24 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = Arc::new(TrustScorer::new(pool));
     let service = TrustServiceImpl::new(engine);
+
+    // Prometheus /metrics exposition (optional, see CLAUDE.md §11).
+    if let Ok(metrics_port) = std::env::var("TRUST_METRICS_PORT") {
+        match format!("0.0.0.0:{metrics_port}").parse() {
+            Ok(metrics_addr) => {
+                tokio::spawn(async move {
+                    if let Err(e) = crate::metrics::serve_metrics(metrics_addr).await {
+                        tracing::warn!(error = %e, "trust metrics server exited");
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, port = %metrics_port, "invalid TRUST_METRICS_PORT, metrics disabled");
+            }
+        }
+    } else {
+        tracing::info!("TRUST_METRICS_PORT not set, /metrics endpoint disabled");
+    }
 
     // gRPC health check — see bidding/src/main.rs for design notes.
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();

@@ -40,6 +40,7 @@
 
 mod engine;
 mod grpc;
+mod metrics;
 mod models;
 
 use std::sync::Arc;
@@ -135,6 +136,24 @@ async fn main() -> anyhow::Result<()> {
 
     let pipeline = Arc::new(ImagePipeline::new(s3_client, bucket, public_url));
     let service = ImagingServiceImpl::new(pipeline);
+
+    // Prometheus /metrics exposition (optional, see CLAUDE.md §11).
+    if let Ok(metrics_port) = std::env::var("IMAGING_METRICS_PORT") {
+        match format!("0.0.0.0:{metrics_port}").parse() {
+            Ok(metrics_addr) => {
+                tokio::spawn(async move {
+                    if let Err(e) = crate::metrics::serve_metrics(metrics_addr).await {
+                        tracing::warn!(error = %e, "imaging metrics server exited");
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, port = %metrics_port, "invalid IMAGING_METRICS_PORT, metrics disabled");
+            }
+        }
+    } else {
+        tracing::info!("IMAGING_METRICS_PORT not set, /metrics endpoint disabled");
+    }
 
     // gRPC health check — see bidding/src/main.rs for design notes.
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();

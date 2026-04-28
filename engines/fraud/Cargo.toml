@@ -26,6 +26,11 @@ opentelemetry-otlp.workspace = true
 tracing-opentelemetry.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+prometheus.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+once_cell.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true

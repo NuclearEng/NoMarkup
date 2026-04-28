@@ -134,6 +134,7 @@ impl TrustScorer {
         user_id: Uuid,
         trigger_reason: &str,
     ) -> Result<(TrustScoreRow, bool, String), TrustError> {
+        let _timer = crate::metrics::TRUST_SCORE_COMPUTATION_DURATION.start_timer();
         if user_id.is_nil() {
             return Err(TrustError::InvalidUserId("nil UUID".into()));
         }
@@ -270,6 +271,8 @@ impl TrustScorer {
         .await?;
 
         let tier_changed = new_tier.as_db_str() != previous_tier;
+
+        crate::metrics::TRUST_SCORES_RECOMPUTED_TOTAL.inc();
 
         tracing::info!(
             user_id = %user_id,

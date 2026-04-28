@@ -32,6 +32,7 @@ impl BiddingEngine {
         provider_id: Uuid,
         amount_cents: i64,
     ) -> Result<Bid, BidError> {
+        let _timer = crate::metrics::BID_PROCESSING_DURATION.start_timer();
         if amount_cents <= 0 {
             return Err(BidError::InvalidAmount(
                 "amount must be greater than zero".into(),
@@ -438,6 +439,7 @@ impl BiddingEngine {
         bid_id: Uuid,
         customer_id: Uuid,
     ) -> Result<Bid, BidError> {
+        let _timer = crate::metrics::BID_PROCESSING_DURATION.start_timer();
         let mut tx = self.pool.begin().await?;
 
         // Validate customer owns the job. Lock the row to prevent concurrent awards.
@@ -504,6 +506,8 @@ impl BiddingEngine {
         .await?;
 
         tx.commit().await?;
+
+        crate::metrics::BIDS_AWARDED_TOTAL.inc();
 
         tracing::info!(
             bid_id = %bid_id,

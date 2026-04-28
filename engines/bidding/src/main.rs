@@ -40,6 +40,7 @@
 
 mod engine;
 mod grpc;
+mod metrics;
 mod models;
 
 use std::sync::Arc;
@@ -143,6 +144,25 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = Arc::new(BiddingEngine::new(pool, redis_conn));
     let service = BidServiceImpl::new(engine);
+
+    // Prometheus /metrics exposition (optional, see CLAUDE.md §11).
+    // The metrics server is non-critical: spawn-and-forget.
+    if let Ok(metrics_port) = std::env::var("BIDDING_METRICS_PORT") {
+        match format!("0.0.0.0:{metrics_port}").parse() {
+            Ok(metrics_addr) => {
+                tokio::spawn(async move {
+                    if let Err(e) = crate::metrics::serve_metrics(metrics_addr).await {
+                        tracing::warn!(error = %e, "bidding metrics server exited");
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, port = %metrics_port, "invalid BIDDING_METRICS_PORT, metrics disabled");
+            }
+        }
+    } else {
+        tracing::info!("BIDDING_METRICS_PORT not set, /metrics endpoint disabled");
+    }
 
     // gRPC health check (grpc.health.v1.Health). Kubernetes can probe this
     // with grpc_health_probe, and load balancers can route to /grpc.health.v1.

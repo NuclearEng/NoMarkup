@@ -11,23 +11,23 @@
 | API Gateway         | 8080 (HTTP)            | 8080 (same listener)   | `/metrics`         |
 | User Service        | 50051 (gRPC)           | 51051                  | `/metrics`         |
 | Job Service         | 50052 (gRPC)           | 51052                  | `/metrics`         |
-| Bidding Engine      | 50053 (gRPC)           | (none — see below)     | gRPC health only   |
+| Bidding Engine      | 50053 (gRPC)           | 60053                  | `/metrics`         |
 | Payment Service     | 50054 (gRPC)           | 51054                  | `/metrics`         |
 | Chat Service        | 50055 (gRPC)           | 51055                  | `/metrics`         |
-| Fraud Engine        | 50056 (gRPC)           | (none — see below)     | gRPC health only   |
-| Trust Engine        | 50057 (gRPC)           | (none — see below)     | gRPC health only   |
-| Imaging Service     | 50058 (gRPC)           | (none — see below)     | gRPC health only   |
+| Fraud Engine        | 50056 (gRPC)           | 60056                  | `/metrics`         |
+| Trust Engine        | 50057 (gRPC)           | 60057                  | `/metrics`         |
+| Imaging Service     | 50058 (gRPC)           | 60058                  | `/metrics`         |
 | Notification Service| 50059 (gRPC)           | 51059                  | `/metrics`         |
 
-`METRICS_PORT` env var overrides the default per service.
+`METRICS_PORT` env var overrides the default per Go service. The Rust
+engines use dedicated env vars (`BIDDING_METRICS_PORT`, `FRAUD_METRICS_PORT`,
+`TRUST_METRICS_PORT`, `IMAGING_METRICS_PORT`); leaving any of them unset
+disables that engine's `/metrics` listener (gRPC health remains available).
 
-> **Rust engines:** the bidding/fraud/trust/imaging engines currently expose
-> only the gRPC health protocol (`grpc.health.v1.Health/Check`). A
-> Prometheus exposition endpoint is on the roadmap (PLAN §6.x) — adding it
-> requires `hyper` + `prometheus` crates. Until then, scrape the engine's
-> RED metrics through the gateway's `grpc_request_duration_seconds`
-> (which sees every outbound call) and rely on Jaeger spans for fine-grained
-> per-call detail.
+> **Rust engines port convention:** gRPC port + 10000 (rather than +1000
+> like the Go services) so the Rust metrics listeners cannot collide with
+> the Go services' `51xxx` band. Each Rust engine runs the Prometheus
+> exposition on a `hyper` HTTP server spawned alongside the gRPC server.
 
 ## Required Metrics (per CLAUDE.md §11)
 
@@ -37,8 +37,14 @@
 | `http_request_duration_seconds{method,path}`      | Gateway                    | Implemented |
 | `grpc_requests_total{service,method,status}`      | Gateway (outbound)         | Wired (interceptor TODO)*  |
 | `grpc_request_duration_seconds{service,method}`   | Gateway (outbound)         | Wired (interceptor TODO)*  |
-| `bid_processing_duration_seconds`                 | Bidding engine             | TODO — Rust prometheus crate not yet added |
-| `trust_score_computation_duration_seconds`        | Trust engine               | TODO — Rust prometheus crate not yet added |
+| `bid_processing_duration_seconds`                 | Bidding engine (60053)     | Implemented (place_bid + award_bid timers) |
+| `bids_awarded_total`                              | Bidding engine (60053)     | Implemented (incremented on award) |
+| `trust_score_computation_duration_seconds`        | Trust engine (60057)       | Implemented (compute_score timer) |
+| `trust_scores_recomputed_total`                   | Trust engine (60057)       | Implemented (incremented on persist) |
+| `fraud_scoring_duration_seconds`                  | Fraud engine (60056)       | Implemented (check_transaction/registration/bid) |
+| `fraud_alerts_created_total`                      | Fraud engine (60056)       | Implemented (incremented on alert threshold) |
+| `image_processing_duration_seconds`               | Imaging engine (60058)     | Implemented (process_image timer) |
+| `images_processed_total`                          | Imaging engine (60058)     | Implemented (incremented on success) |
 | `active_websocket_connections`                    | Chat service               | Implemented (gauge sampled every 10s) |
 | `stripe_webhook_processing_duration_seconds`      | Payment service            | Implemented (helper exported; observers TODO at call sites) |
 
@@ -100,7 +106,22 @@ curl -s http://localhost:51051/readyz
 
 # Rust engine:
 grpc_health_probe -addr=bidding.nomarkup.svc.cluster.local:50053
+curl -s http://localhost:60053/metrics | grep bid_processing_duration   # bidding
+curl -s http://localhost:60056/metrics | grep fraud_scoring_duration    # fraud
+curl -s http://localhost:60057/metrics | grep trust_score_computation   # trust
+curl -s http://localhost:60058/metrics | grep image_processing_duration # imaging
 ```
+
+### SLO Bucket Layout
+
+Each engine's histogram buckets are tuned to its CLAUDE.md §8 latency budget:
+
+| Engine   | p99 budget | Buckets (seconds)                                |
+|----------|-----------:|--------------------------------------------------|
+| Bidding  | < 1ms      | 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05         |
+| Trust    | < 5ms      | 0.001, 0.005, 0.01, 0.05, 0.1                    |
+| Fraud    | < 50ms     | 0.005, 0.01, 0.05, 0.1, 0.5, 1.0                 |
+| Imaging  | < 200ms    | 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0               |
 
 ## Cardinality Discipline
 

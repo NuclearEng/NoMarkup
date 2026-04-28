@@ -51,6 +51,7 @@ impl ImagePipeline {
         source_key: &str,
         opts: &ProcessingOptions,
     ) -> Result<(ImageVariant, Option<String>), ImagingError> {
+        let _timer = crate::metrics::IMAGE_PROCESSING_DURATION.start_timer();
         let raw = self.download_from_s3(source_key).await?;
         validate_image_format(&raw)?;
         let img = decode_image(&raw)?;
@@ -81,6 +82,8 @@ impl ImagePipeline {
             size_bytes: encoded.len() as u32,
             variant_name: "processed".into(),
         };
+
+        crate::metrics::IMAGES_PROCESSED_TOTAL.inc();
 
         tracing::info!(
             source = source_key,

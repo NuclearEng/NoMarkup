@@ -61,6 +61,7 @@ impl FraudDetector {
         ip_address: &str,
         device_fingerprint: &str,
     ) -> Result<CheckResult, FraudError> {
+        let _timer = crate::metrics::FRAUD_SCORING_DURATION.start_timer();
         let mut score: f64 = 0.0;
         let mut reasons = Vec::new();
 
@@ -178,6 +179,7 @@ impl FraudDetector {
         device_fingerprint: &str,
         _phone: &str,
     ) -> Result<CheckResult, FraudError> {
+        let _timer = crate::metrics::FRAUD_SCORING_DURATION.start_timer();
         let mut score: f64 = 0.0;
         let mut reasons = Vec::new();
 
@@ -298,6 +300,7 @@ impl FraudDetector {
         ip_address: &str,
         device_fingerprint: &str,
     ) -> Result<CheckResult, FraudError> {
+        let _timer = crate::metrics::FRAUD_SCORING_DURATION.start_timer();
         let mut reasons = Vec::new();
 
         // 1. Shared IP between bidder and job poster.
@@ -497,6 +500,10 @@ impl FraudDetector {
         .await?;
 
         let alert_created = pending_count.count >= 3;
+
+        if alert_created {
+            crate::metrics::FRAUD_ALERTS_CREATED_TOTAL.inc();
+        }
 
         tracing::info!(
             user_id = %user_id,
