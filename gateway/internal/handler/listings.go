@@ -82,6 +82,9 @@ type listingJSON struct {
 	StartingPriceCents   int64              `json:"starting_price_cents"`
 	CurrentBidCents      int64              `json:"current_bid_cents"`
 	MinIncrementCents    int64              `json:"min_increment_cents"`
+	ReservePriceCents    *int64             `json:"reserve_price_cents"`
+	BuyNowPriceCents     *int64             `json:"buy_now_price_cents"`
+	ReserveMet           *bool              `json:"reserve_met"`
 	BidderCount          int                `json:"bidder_count"`
 	BidCount             int                `json:"bid_count"`
 	AuctionDurationHours int                `json:"auction_duration_hours"`
@@ -246,6 +249,12 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			l.starting_price_cents,
 			COALESCE(l.current_bid_cents, l.starting_price_cents) AS current_bid_cents,
 			100::bigint                           AS min_increment_cents,
+			l.reserve_price_cents,
+			l.buy_now_price_cents,
+			CASE
+				WHEN l.reserve_price_cents IS NULL THEN NULL
+				ELSE COALESCE(l.current_bid_cents, 0) >= l.reserve_price_cents
+			END                                   AS reserve_met,
 			COALESCE(
 				(SELECT COUNT(DISTINCT bidder_id) FROM listing_bids WHERE listing_id = l.id), 0
 			) AS bidder_count,
@@ -274,6 +283,8 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		var lat, lng pgtype.Float8
 		var distanceKm pgtype.Float8
 		var endsAt pgtype.Timestamptz
+		var reserveCents, buyNowCents pgtype.Int8
+		var reserveMet pgtype.Bool
 		if err := rows.Scan(&l.ID, &l.SellerID, &l.CategoryID,
 			&l.CategoryName, &l.CategorySlug,
 			&l.Title, &l.Description,
@@ -281,6 +292,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			&l.PickupZip, &l.PickupCity, &l.PickupState, &l.PickupAddress,
 			&lat, &lng,
 			&l.StartingPriceCents, &l.CurrentBidCents, &l.MinIncrementCents,
+			&reserveCents, &buyNowCents, &reserveMet,
 			&l.BidderCount, &l.BidCount,
 			&l.AuctionDurationHours, &endsAt,
 			&l.SnipeExtensionCount,
@@ -305,6 +317,18 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		if endsAt.Valid {
 			t := endsAt.Time
 			l.AuctionEndsAt = &t
+		}
+		if reserveCents.Valid {
+			v := reserveCents.Int64
+			l.ReservePriceCents = &v
+		}
+		if buyNowCents.Valid {
+			v := buyNowCents.Int64
+			l.BuyNowPriceCents = &v
+		}
+		if reserveMet.Valid {
+			v := reserveMet.Bool
+			l.ReserveMet = &v
 		}
 		l.Photos = []listingPhotoJSON{}
 		results = append(results, l)
@@ -361,6 +385,8 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	var memberSince time.Time
 	var trustTier sql.NullString
 	var trustScore sql.NullInt32
+	var reserveCents, buyNowCents pgtype.Int8
+	var reserveMet pgtype.Bool
 	err := h.db.QueryRow(r.Context(), `
 		SELECT l.id, l.seller_id, l.category_id,
 			COALESCE(c.name, ''), COALESCE(c.slug, ''),
@@ -371,6 +397,12 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 			l.starting_price_cents,
 			COALESCE(l.current_bid_cents, l.starting_price_cents),
 			100::bigint,
+			l.reserve_price_cents,
+			l.buy_now_price_cents,
+			CASE
+				WHEN l.reserve_price_cents IS NULL THEN NULL
+				ELSE COALESCE(l.current_bid_cents, 0) >= l.reserve_price_cents
+			END,
 			COALESCE((SELECT COUNT(DISTINCT bidder_id) FROM listing_bids WHERE listing_id = l.id), 0),
 			COALESCE(l.bid_count, 0),
 			l.auction_duration_hours, l.auction_ends_at,
@@ -392,6 +424,7 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		&d.PickupCity, &d.PickupState, &d.PickupAddress,
 		&lat, &lng,
 		&d.StartingPriceCents, &d.CurrentBidCents, &d.MinIncrementCents,
+		&reserveCents, &buyNowCents, &reserveMet,
 		&d.BidderCount, &d.BidCount,
 		&d.AuctionDurationHours, &endsAt,
 		&d.SnipeExtensionCount,
@@ -427,6 +460,18 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	if trustScore.Valid {
 		v := int(trustScore.Int32)
 		d.SellerTrustScore = &v
+	}
+	if reserveCents.Valid {
+		v := reserveCents.Int64
+		d.ReservePriceCents = &v
+	}
+	if buyNowCents.Valid {
+		v := buyNowCents.Int64
+		d.BuyNowPriceCents = &v
+	}
+	if reserveMet.Valid {
+		v := reserveMet.Bool
+		d.ReserveMet = &v
 	}
 	d.SellerMemberSince = memberSince.UTC().Format(time.RFC3339)
 

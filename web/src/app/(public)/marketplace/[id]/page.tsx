@@ -8,6 +8,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+import { BuyItNowButton } from '@/components/marketplace/BuyItNowButton';
 import { ListingBidPanel } from '@/components/marketplace/ListingBidPanel';
 import { ListingPhotoCarousel } from '@/components/marketplace/ListingPhotoCarousel';
 import { SnipeExtensionBanner } from '@/components/marketplace/SnipeExtensionBanner';
@@ -274,6 +275,19 @@ export default function ListingDetailPage() {
                   Started at {formatCents(listing.starting_price_cents)}
                 </span>
               </div>
+              {/* Reserve-not-met badge — only render when the listing has
+                  a reserve set AND it has not yet been crossed. Hidden
+                  reserve price is intentional; we only surface the gate. */}
+              {listing.reserve_price_cents != null && listing.reserve_met === false ? (
+                <div className="mt-2">
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/30 bg-amber-500/10 text-amber-200"
+                  >
+                    Reserve not met
+                  </Badge>
+                </div>
+              ) : null}
             </CardHeader>
             <CardContent className="space-y-4">
               {listing.auction_ends_at ? (
@@ -316,6 +330,9 @@ export default function ListingDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Buy It Now — fixed-price closeout (only when seller set a BIN) */}
+          <BuyItNowButton listing={listing} />
 
           {/* Bid panel */}
           <ListingBidPanel

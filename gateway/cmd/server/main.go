@@ -287,6 +287,7 @@ func main() {
 	adminMarketplaceHandler := handler.NewAdminMarketplaceHandler(dbPool)
 	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
 	listingsHandler := handler.NewListingsHandler(dbPool, cacheClient)
+	watchlistHandler := handler.NewWatchlistHandler(dbPool, cacheClient)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
@@ -317,6 +318,7 @@ func main() {
 		adminMarketplaceHandler,
 		listingOrdersHandler,
 		listingsHandler,
+		watchlistHandler,
 	)
 
 	srv := &http.Server{

@@ -76,6 +76,7 @@ func New(
 	adminMarketplaceHandler *handler.AdminMarketplaceHandler,
 	listingOrdersHandler *handler.ListingOrdersHandler,
 	listingsHandler *handler.ListingsHandler,
+	watchlistHandler *handler.WatchlistHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -421,6 +422,24 @@ func New(
 		r.Patch("/listings/{id}", listingsHandler.UpdateListing)
 		r.Post("/listings/{id}/cancel", listingsHandler.CancelListing)
 		r.Delete("/listings/{id}", listingsHandler.DeleteListingDraft)
+
+		// Buy-It-Now closeout — buyer pays seller's pre-set fixed price,
+		// auction flips to status='sold' and a listing_orders row is
+		// created in escrow_status='held'. See listings_bid.go::BuyItNow.
+		r.Post("/listings/{id}/buy-now", listingsHandler.BuyItNow)
+
+		// ── Watchlist + saved searches (retention loop) ─────────────────
+		// Buyers can favorite a listing without bidding ("watch") and
+		// persist a SearchListingsParams payload as a saved search with
+		// alert cadence. The notification scheduler in services/notification
+		// reads listing_watchlist directly to fan closing-soon and outbid
+		// events out to every watcher.
+		r.Post("/listings/{id}/watch", watchlistHandler.Watch)
+		r.Delete("/listings/{id}/watch", watchlistHandler.Unwatch)
+		r.Get("/me/watchlist", watchlistHandler.MyWatchlist)
+		r.Post("/me/saved-searches", watchlistHandler.CreateSavedSearch)
+		r.Get("/me/saved-searches", watchlistHandler.ListSavedSearches)
+		r.Delete("/me/saved-searches/{id}", watchlistHandler.DeleteSavedSearch)
 
 		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {

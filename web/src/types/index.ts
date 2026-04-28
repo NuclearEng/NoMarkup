@@ -1913,6 +1913,16 @@ export interface Listing {
   starting_price_cents: number;
   current_bid_cents: number;
   min_increment_cents: number;
+  /** Hidden minimum to actually win. null = no reserve. */
+  reserve_price_cents?: number | null;
+  /** Optional fixed-price closeout. null = auction-only. */
+  buy_now_price_cents?: number | null;
+  /**
+   * Whether the current high bid meets the reserve. null when the listing
+   * has no reserve set (most demo listings); true once `current_bid_cents`
+   * crosses `reserve_price_cents`; false until then.
+   */
+  reserve_met?: boolean | null;
   bidder_count: number;
   bid_count: number;
   auction_duration_hours: number;
@@ -1965,6 +1975,10 @@ export interface CreateListingInput {
   pickup_lat?: number;
   pickup_lng?: number;
   starting_price_cents: number;
+  /** Hidden minimum to actually win. Omit for no-reserve auctions. */
+  reserve_price_cents?: number;
+  /** Optional fixed-price closeout. Omit for auction-only listings. */
+  buy_now_price_cents?: number;
   auction_duration_hours: ListingDurationHours;
   publish?: boolean;
 }
@@ -1981,6 +1995,7 @@ export interface UpdateListingInput {
 
 export interface PlaceListingBidInput {
   amount_cents: number;
+  max_bid_cents?: number;
 }
 
 export interface PlaceListingBidResponse {

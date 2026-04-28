@@ -59,6 +59,8 @@ type createListingRequest struct {
 	PickupLat            *float64 `json:"pickup_lat"`
 	PickupLng            *float64 `json:"pickup_lng"`
 	StartingPriceCents   int64    `json:"starting_price_cents"`
+	ReservePriceCents    *int64   `json:"reserve_price_cents"`
+	BuyNowPriceCents     *int64   `json:"buy_now_price_cents"`
 	AuctionDurationHours int      `json:"auction_duration_hours"`
 	Publish              bool     `json:"publish"`
 }
@@ -70,6 +72,8 @@ type updateListingRequest struct {
 	PickupZip            *string   `json:"pickup_zip"`
 	PickupAddress        *string   `json:"pickup_address"`
 	StartingPriceCents   *int64    `json:"starting_price_cents"`
+	ReservePriceCents    *int64    `json:"reserve_price_cents"`
+	BuyNowPriceCents     *int64    `json:"buy_now_price_cents"`
 	AuctionDurationHours *int      `json:"auction_duration_hours"`
 }
 
@@ -122,6 +126,20 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "starting_price_cents must be positive")
 		return
 	}
+	if req.ReservePriceCents != nil && *req.ReservePriceCents <= 0 {
+		writeError(w, http.StatusBadRequest, "reserve_price_cents must be positive")
+		return
+	}
+	if req.BuyNowPriceCents != nil && *req.BuyNowPriceCents <= 0 {
+		writeError(w, http.StatusBadRequest, "buy_now_price_cents must be positive")
+		return
+	}
+	if req.ReservePriceCents != nil && req.BuyNowPriceCents != nil &&
+		*req.BuyNowPriceCents < *req.ReservePriceCents {
+		writeError(w, http.StatusBadRequest,
+			"buy_now_price_cents must be ≥ reserve_price_cents")
+		return
+	}
 	if _, ok := allowedListingDurations[req.AuctionDurationHours]; !ok {
 		writeError(w, http.StatusBadRequest, "auction_duration_hours must be 24, 48, or 168")
 		return
@@ -154,14 +172,41 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 		pickupAddr = strings.TrimSpace(*req.PickupAddress)
 	}
 
-	// ST_MakePoint takes (lng, lat). Fall back to (0,0) if the client
-	// didn't pin a pickup point; PATCH can refine before publish.
+	// ST_MakePoint takes (lng, lat). Priority:
+	//   1. explicit pickup_lat/pickup_lng from the client (drag-pin flow)
+	//   2. zip_codes table lookup (centroid for the supplied ZIP)
+	//   3. fallback (0,0) — listing still inserts but drops out of every
+	//      radius search until the seller refines via PATCH.
+	//
+	// Without the zip_codes lookup, listings posted by sellers who didn't
+	// pin a pickup point silently failed every distance filter — this was
+	// the gap Wave 1 punted on.
 	lng, lat := 0.0, 0.0
-	if req.PickupLng != nil {
+	hasPin := req.PickupLng != nil && req.PickupLat != nil
+	if hasPin {
 		lng = *req.PickupLng
-	}
-	if req.PickupLat != nil {
 		lat = *req.PickupLat
+	} else {
+		zip := strings.TrimSpace(req.PickupZip)
+		if zip != "" {
+			var zlat, zlng float64
+			err := h.db.QueryRow(r.Context(),
+				`SELECT lat, lng FROM zip_codes WHERE zip = $1`, zip,
+			).Scan(&zlat, &zlng)
+			switch {
+			case err == nil:
+				lat = zlat
+				lng = zlng
+			case errors.Is(err, pgx.ErrNoRows):
+				slog.WarnContext(r.Context(),
+					"create listing: zip not in zip_codes lookup; falling back to (0,0)",
+					"zip", zip, "seller_id", claims.UserID)
+			default:
+				slog.WarnContext(r.Context(),
+					"create listing: zip_codes lookup failed; falling back to (0,0)",
+					"zip", zip, "error", err)
+			}
+		}
 	}
 
 	// ── Insert + photos in one transaction ──────────────────────────
@@ -177,17 +222,20 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 		INSERT INTO listings (
 			seller_id, title, description, category_id,
 			location, pickup_address, pickup_zip_code,
-			starting_price_cents, auction_duration_hours,
+			starting_price_cents, reserve_price_cents, buy_now_price_cents,
+			auction_duration_hours,
 			auction_ends_at, original_auction_ends_at, status
 		) VALUES (
 			$1, $2, $3, $4,
 			ST_SetSRID(ST_MakePoint($5, $6), 4326), $7, $8,
-			$9, $10,
-			$11, $11, $12
+			$9, $10, $11,
+			$12,
+			$13, $13, $14
 		) RETURNING id`,
 		claims.UserID, title, req.Description, req.CategoryID,
 		lng, lat, pickupAddr, strings.TrimSpace(req.PickupZip),
-		req.StartingPriceCents, req.AuctionDurationHours,
+		req.StartingPriceCents, req.ReservePriceCents, req.BuyNowPriceCents,
+		req.AuctionDurationHours,
 		endsAt, status,
 	).Scan(&newID)
 	if err != nil {
@@ -278,6 +326,20 @@ func (h *ListingsHandler) UpdateListing(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	if req.ReservePriceCents != nil && *req.ReservePriceCents <= 0 {
+		writeError(w, http.StatusBadRequest, "reserve_price_cents must be positive")
+		return
+	}
+	if req.BuyNowPriceCents != nil && *req.BuyNowPriceCents <= 0 {
+		writeError(w, http.StatusBadRequest, "buy_now_price_cents must be positive")
+		return
+	}
+	if req.ReservePriceCents != nil && req.BuyNowPriceCents != nil &&
+		*req.BuyNowPriceCents < *req.ReservePriceCents {
+		writeError(w, http.StatusBadRequest,
+			"buy_now_price_cents must be ≥ reserve_price_cents")
+		return
+	}
 
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
@@ -312,11 +374,14 @@ func (h *ListingsHandler) UpdateListing(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if bidCount > 0 {
-		// Price-and-terms fields are locked once bidding starts.
+		// Price-and-terms fields are locked once bidding starts. Reserve
+		// and buy-now are part of the auction contract bidders see; they
+		// follow the same lock.
 		if req.Title != nil || req.Description != nil ||
-			req.StartingPriceCents != nil || req.AuctionDurationHours != nil {
+			req.StartingPriceCents != nil || req.AuctionDurationHours != nil ||
+			req.ReservePriceCents != nil || req.BuyNowPriceCents != nil {
 			writeError(w, http.StatusConflict,
-				"title, description, starting_price_cents, and auction_duration_hours are locked once bids exist")
+				"title, description, pricing, and auction_duration_hours are locked once bids exist")
 			return
 		}
 	}
@@ -344,6 +409,12 @@ func (h *ListingsHandler) UpdateListing(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.StartingPriceCents != nil {
 		addSet("starting_price_cents", *req.StartingPriceCents)
+	}
+	if req.ReservePriceCents != nil {
+		addSet("reserve_price_cents", *req.ReservePriceCents)
+	}
+	if req.BuyNowPriceCents != nil {
+		addSet("buy_now_price_cents", *req.BuyNowPriceCents)
 	}
 	if req.AuctionDurationHours != nil {
 		// Reset auction_ends_at relative to now() when duration changes
@@ -596,6 +667,8 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 	var lat, lng pgtype.Float8
 	var endsAt pgtype.Timestamptz
 	var pickupCity, pickupState, pickupAddress sql.NullString
+	var reserveCents, buyNowCents pgtype.Int8
+	var reserveMet pgtype.Bool
 	err := h.db.QueryRow(ctx, `
 		SELECT l.id, l.seller_id, l.category_id,
 			COALESCE(c.name, ''), COALESCE(c.slug, ''),
@@ -608,6 +681,12 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 			l.starting_price_cents,
 			COALESCE(l.current_bid_cents, l.starting_price_cents),
 			100::bigint,
+			l.reserve_price_cents,
+			l.buy_now_price_cents,
+			CASE
+				WHEN l.reserve_price_cents IS NULL THEN NULL
+				ELSE COALESCE(l.current_bid_cents, 0) >= l.reserve_price_cents
+			END,
 			COALESCE((SELECT COUNT(DISTINCT bidder_id) FROM listing_bids WHERE listing_id = l.id), 0),
 			COALESCE(l.bid_count, 0),
 			l.auction_duration_hours, l.auction_ends_at,
@@ -626,6 +705,7 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 		&pickupCity, &pickupState, &pickupAddress,
 		&lat, &lng,
 		&l.StartingPriceCents, &l.CurrentBidCents, &l.MinIncrementCents,
+		&reserveCents, &buyNowCents, &reserveMet,
 		&l.BidderCount, &l.BidCount,
 		&l.AuctionDurationHours, &endsAt,
 		&l.SnipeExtensionCount,
@@ -633,6 +713,18 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 	)
 	if err != nil {
 		return nil, err
+	}
+	if reserveCents.Valid {
+		v := reserveCents.Int64
+		l.ReservePriceCents = &v
+	}
+	if buyNowCents.Valid {
+		v := buyNowCents.Int64
+		l.BuyNowPriceCents = &v
+	}
+	if reserveMet.Valid {
+		v := reserveMet.Bool
+		l.ReserveMet = &v
 	}
 	if pickupCity.Valid {
 		s := pickupCity.String

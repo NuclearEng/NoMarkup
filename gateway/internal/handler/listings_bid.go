@@ -44,7 +44,175 @@ const (
 )
 
 type placeListingBidRequest struct {
-	AmountCents int64 `json:"amount_cents"`
+	AmountCents    int64  `json:"amount_cents"`
+	MaxBidCents    *int64 `json:"max_bid_cents,omitempty"`
+}
+
+// autoBidStep is one rung in the proxy-bid cascade. The cascade is
+// computed in-memory by computeAutoBidCascade, then each step is
+// inserted into listing_bids by placeBidTx in order.
+type autoBidStep struct {
+	BidderID    string
+	AmountCents int64
+	// MaxBidCents is the bidder's confidential ceiling, persisted with
+	// the row so future cascades can find it. nil = no ceiling.
+	MaxBidCents *int64
+}
+
+// cascadeOutcome describes the final state after the auto-bid loop.
+type cascadeOutcome struct {
+	Steps        []autoBidStep
+	FinalAmount  int64
+	FinalBidder  string
+}
+
+// computeAutoBidCascade simulates the eBay-style proxy bidding loop in
+// a single pure function so it is straightforward to unit test.
+//
+// Invariants:
+//   - newBidder always places the first step at newBidAmount (their
+//     visible bid). newBidderMax (if non-nil) is their confidential
+//     ceiling and must be >= newBidAmount.
+//   - competingMax (if non-nil) belongs to competingBidderID, the
+//     highest standing competing max-bidder on this listing. If
+//     competingBidderID == "" or competingMax == nil, no competitor
+//     auto-bids — the cascade is just the new bid.
+//   - increment is the minimum bid step in cents.
+//   - The loop is capped at maxIterations steps to defend against
+//     pathological inputs.
+//
+// Final-state semantics match eBay: the higher max wins, at a price of
+// min(winnerMax, loserMax + increment). When the maxes tie, the earlier
+// bidder (competing) keeps the lead at their max.
+//
+// Implementation note: rather than simulate increment-by-increment
+// (which yields off-by-one results when the loser's max isn't aligned
+// to the increment grid), we compute the analytic outcome directly,
+// then materialize a small step trail (visible bid → counter → final
+// raise) so the bid history reflects what actually happened.
+func computeAutoBidCascade(
+	currentTop int64,
+	increment int64,
+	newBidderID string,
+	newBidAmount int64,
+	newBidderMax *int64,
+	competingBidderID string,
+	competingMax *int64,
+	maxIterations int,
+) cascadeOutcome {
+	if increment <= 0 {
+		increment = 1
+	}
+	if maxIterations <= 0 {
+		maxIterations = 50
+	}
+	_ = currentTop // documented invariant: newBidAmount > currentTop is enforced upstream.
+
+	steps := make([]autoBidStep, 0, 3)
+	// Step 1: the buyer's own visible bid is always inserted.
+	steps = append(steps, autoBidStep{
+		BidderID:    newBidderID,
+		AmountCents: newBidAmount,
+		MaxBidCents: newBidderMax,
+	})
+
+	// No competitor with a max → cascade ends after the visible bid.
+	if competingBidderID == "" || competingMax == nil {
+		return cascadeOutcome{
+			Steps:       steps,
+			FinalAmount: newBidAmount,
+			FinalBidder: newBidderID,
+		}
+	}
+
+	// Effective new-bidder ceiling (nil = no autobid headroom).
+	effectiveNewMax := newBidAmount
+	if newBidderMax != nil {
+		effectiveNewMax = *newBidderMax
+	}
+	competingCeiling := *competingMax
+
+	// Decide who wins.
+	//
+	// Case A — competing has higher max (or tie, where competing
+	// retains the lead): competing wins. Price = min(competingMax,
+	// effectiveNewMax + increment). If competingMax can't reach
+	// newBidAmount + increment they cannot even match the visible bid,
+	// in which case newBidder wins outright at newBidAmount.
+	//
+	// Case B — newBidder has the strictly higher max: newBidder wins.
+	// Price = min(newBidderMax, competingMax + increment).
+	if competingCeiling >= effectiveNewMax {
+		// Competing wins (ties favor incumbent).
+		needed := newBidAmount + increment
+		if competingCeiling < needed {
+			// Competing can't beat the visible bid; new bidder wins.
+			return cascadeOutcome{
+				Steps:       steps,
+				FinalAmount: newBidAmount,
+				FinalBidder: newBidderID,
+			}
+		}
+		price := effectiveNewMax + increment
+		if price > competingCeiling {
+			price = competingCeiling
+		}
+		// At minimum price must beat the visible bid by one increment.
+		if price < needed {
+			price = needed
+		}
+		steps = append(steps, autoBidStep{
+			BidderID:    competingBidderID,
+			AmountCents: price,
+			MaxBidCents: &competingCeiling,
+		})
+		// Cap step count just in case (defensive, never reached today).
+		if len(steps) > maxIterations {
+			steps = steps[:maxIterations]
+		}
+		return cascadeOutcome{
+			Steps:       steps,
+			FinalAmount: price,
+			FinalBidder: competingBidderID,
+		}
+	}
+
+	// Case B: newBidder has strictly higher max → newBidder wins.
+	// First materialize competing's defensive raise to their max so
+	// the bid history reflects the volley. Then newBidder posts the
+	// final winning bid one increment above competing's max.
+	if competingCeiling > newBidAmount {
+		steps = append(steps, autoBidStep{
+			BidderID:    competingBidderID,
+			AmountCents: competingCeiling,
+			MaxBidCents: &competingCeiling,
+		})
+	}
+	price := competingCeiling + increment
+	if price > effectiveNewMax {
+		price = effectiveNewMax
+	}
+	if price <= newBidAmount {
+		// Already covered by the visible bid — nothing more to insert.
+		return cascadeOutcome{
+			Steps:       steps,
+			FinalAmount: steps[len(steps)-1].AmountCents,
+			FinalBidder: steps[len(steps)-1].BidderID,
+		}
+	}
+	steps = append(steps, autoBidStep{
+		BidderID:    newBidderID,
+		AmountCents: price,
+		MaxBidCents: newBidderMax,
+	})
+	if len(steps) > maxIterations {
+		steps = steps[:maxIterations]
+	}
+	return cascadeOutcome{
+		Steps:       steps,
+		FinalAmount: price,
+		FinalBidder: newBidderID,
+	}
 }
 
 // PlaceListingBid handles POST /api/v1/listings/{id}/bid.
@@ -77,42 +245,82 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
 		return
 	}
+	// max_bid_cents is optional; if present it must be >= the visible bid.
+	if req.MaxBidCents != nil && *req.MaxBidCents < req.AmountCents {
+		writeError(w, http.StatusBadRequest, "max_bid_cents must be >= amount_cents")
+		return
+	}
+
+	// Capture the previous high bidder BEFORE the cascade runs so the
+	// notification scheduler can fan an outbid event out to them. This is
+	// best-effort: a missed lookup just suppresses the notify; a slightly
+	// stale value is corrected by the next bid's outbid event.
+	var prevBidderID string
+	{
+		var prev pgtype.Text
+		_ = h.db.QueryRow(r.Context(),
+			`SELECT current_bidder_id::text FROM listings WHERE id = $1`, id,
+		).Scan(&prev)
+		if prev.Valid {
+			prevBidderID = prev.String
+		}
+	}
 
 	bid, current, bidderCount, snipe, newEnds, errCode, errMsg := h.placeBidTx(
-		r.Context(), id, claims.UserID, req.AmountCents,
+		r.Context(), id, claims.UserID, req.AmountCents, req.MaxBidCents,
 	)
 	if errCode != 0 {
 		writeError(w, errCode, errMsg)
 		return
 	}
 
+	// Suppress the outbid event when the "previous" bidder ends up being
+	// the new winner anyway (e.g. raising their own max).
+	if prevBidderID == claims.UserID || prevBidderID == bid.BidderID {
+		prevBidderID = ""
+	}
+
 	// Publish to spectator stream. Best-effort — bid is already committed.
-	h.publishBidPlaced(r.Context(), id, claims.UserID, req.AmountCents, snipe, newEnds)
+	// Publish the FINAL cascade outcome so spectators see the resolved
+	// price, not the buyer's visible bid.
+	h.publishBidPlaced(r.Context(), id, bid.BidderID, current, snipe, newEnds, prevBidderID)
 
 	slog.InfoContext(r.Context(), "listing bid placed",
 		"listing_id", id,
 		"bidder_id", claims.UserID,
 		"amount_cents", req.AmountCents,
+		"final_amount_cents", current,
+		"final_bidder_id", bid.BidderID,
 		"snipe_extension", snipe,
 	)
 
 	resp := map[string]interface{}{
-		"bid": bid,
-		"current_bid_cents":      current,
-		"bidder_count":           bidderCount,
+		"bid":                     bid,
+		"current_bid_cents":       current,
+		"bidder_count":            bidderCount,
 		"snipe_extension_applied": snipe,
 		"new_auction_ends_at":     formatRFC3339OrNull(newEnds),
 	}
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-// placeBidTx runs the bid placement inside a transaction. Returns the
-// new ListingBid JSON, the new current_bid_cents, the new bidder count,
-// snipe-applied flag, and the (possibly extended) auction end time.
+// placeBidTx runs the bid placement inside a transaction. It also runs
+// the eBay-style proxy-bidding cascade: if any prior distinct bidder
+// has a confidential `max_bid_cents` that exceeds the visible bid, the
+// auction inserts auto-bids on their behalf, ping-ponging until one
+// side runs out of headroom. Loop is bounded at 50 iterations.
+//
+// Returns:
+//   - bid:        JSON for the LAST bid in the cascade (the row that
+//                 currently holds 'active' status).
+//   - currentCents: final price after the cascade (== bid.AmountCents).
+//   - bidderCount: distinct bidder count post-insert.
+//   - snipeApplied / newEnds: snipe extension based on the final bid
+//                 timestamp (which is the cascade's last step).
 //
 // On validation failure, returns errCode != 0 and an errMsg suitable for
 // the user.
-func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID string, amountCents int64) (
+func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID string, amountCents int64, maxBidCents *int64) (
 	bid listingBidJSON, currentCents int64, bidderCount int, snipeApplied bool, newEnds time.Time, errCode int, errMsg string,
 ) {
 	tx, err := h.db.Begin(ctx)
@@ -171,8 +379,119 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 			http.StatusBadRequest,
 			fmt.Sprintf("bid must be at least %d cents", required)
 	}
+	// Confidential max validation: if the buyer set a ceiling it must be
+	// strictly greater than the current top (otherwise it's pointless
+	// and would never trigger a cascade).
+	if maxBidCents != nil {
+		if *maxBidCents < amountCents {
+			return bid, prevCents, 0, false, auctionEndsAt.Time,
+				http.StatusBadRequest, "max_bid_cents must be >= amount_cents"
+		}
+		if currentBidCents.Valid && *maxBidCents <= prevCents {
+			return bid, prevCents, 0, false, auctionEndsAt.Time,
+				http.StatusBadRequest, "max_bid_cents must exceed current bid"
+		}
+	}
 
-	// Snipe extension: if we're inside the window, bump the deadline.
+	// Look up the highest standing competing max-bid (a different
+	// bidder, status='active', max_bid_cents IS NOT NULL). The active-
+	// max partial index (migration 038) keeps this fast.
+	var (
+		competingBidder string
+		competingMaxRaw pgtype.Int8
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT bidder_id, max_bid_cents
+		  FROM listing_bids
+		 WHERE listing_id=$1
+		   AND bidder_id != $2
+		   AND max_bid_cents IS NOT NULL
+		   AND status='active'
+		 ORDER BY max_bid_cents DESC, created_at ASC
+		 LIMIT 1`, listingID, bidderID,
+	).Scan(&competingBidder, &competingMaxRaw)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "place bid: lookup competing max failed", "error", err)
+		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "lookup competing max failed"
+	}
+	var competingMax *int64
+	if competingMaxRaw.Valid {
+		v := competingMaxRaw.Int64
+		competingMax = &v
+	} else {
+		competingBidder = ""
+	}
+
+	// Compute the cascade outcome before touching any rows.
+	cascade := computeAutoBidCascade(
+		prevCents,
+		listingMinIncrementCents,
+		bidderID,
+		amountCents,
+		maxBidCents,
+		competingBidder,
+		competingMax,
+		50, // hard ceiling
+	)
+
+	// Demote the previous high bid (if any). All cascade rows then
+	// insert with status='active'; we'll demote the non-final ones
+	// after insertion.
+	if currentBidCents.Valid {
+		if _, err := tx.Exec(ctx, `
+			UPDATE listing_bids SET status='outbid'
+			 WHERE listing_id=$1 AND status='active'`, listingID); err != nil {
+			slog.ErrorContext(ctx, "place bid: demote outbid failed", "error", err)
+			return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "demote failed"
+		}
+	}
+
+	// Insert each cascade step. Only the LAST one stays 'active'; all
+	// earlier steps are immediately marked 'outbid'.
+	type insertedStep struct {
+		ID          string
+		BidderID    string
+		AmountCents int64
+		CreatedAt   time.Time
+		MaxBidCents *int64
+	}
+	inserted := make([]insertedStep, 0, len(cascade.Steps))
+	for idx, step := range cascade.Steps {
+		var newID string
+		var createdAt time.Time
+		status := "active"
+		if idx < len(cascade.Steps)-1 {
+			status = "outbid"
+		}
+		var maxArg interface{}
+		if step.MaxBidCents != nil {
+			maxArg = *step.MaxBidCents
+		} else {
+			maxArg = nil
+		}
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO listing_bids (listing_id, bidder_id, amount_cents, max_bid_cents, status, created_at)
+			VALUES ($1, $2, $3, $4, $5, now())
+			RETURNING id, created_at`,
+			listingID, step.BidderID, step.AmountCents, maxArg, status,
+		).Scan(&newID, &createdAt); err != nil {
+			slog.ErrorContext(ctx, "place bid: insert cascade step failed", "error", err, "step_index", idx)
+			return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "insert bid failed"
+		}
+		inserted = append(inserted, insertedStep{
+			ID:          newID,
+			BidderID:    step.BidderID,
+			AmountCents: step.AmountCents,
+			CreatedAt:   createdAt,
+			MaxBidCents: step.MaxBidCents,
+		})
+	}
+	if len(inserted) == 0 {
+		// Defensive: cascade always inserts at least the visible bid.
+		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "cascade produced no bids"
+	}
+
+	// Snipe extension: based on the LAST cascade step's wall clock.
 	now := time.Now()
 	endsAt := auctionEndsAt.Time
 	snipeApplied = false
@@ -182,45 +501,30 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 		snipeCount++
 	}
 
-	// Demote the previous high bid (if any).
-	if currentBidCents.Valid {
-		if _, err := tx.Exec(ctx, `
-			UPDATE listing_bids SET status='outbid', updated_at=now()
-			 WHERE listing_id=$1 AND status='active'`, listingID); err != nil {
-			slog.ErrorContext(ctx, "place bid: demote outbid failed", "error", err)
-			return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "demote failed"
-		}
-	}
-
-	var newBidID string
-	var bidCreatedAt time.Time
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO listing_bids (listing_id, bidder_id, amount_cents, status, created_at, updated_at)
-		VALUES ($1, $2, $3, 'active', now(), now())
-		RETURNING id, created_at`,
-		listingID, bidderID, amountCents,
-	).Scan(&newBidID, &bidCreatedAt); err != nil {
-		slog.ErrorContext(ctx, "place bid: insert bid failed", "error", err)
-		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "insert bid failed"
-	}
+	finalStep := inserted[len(inserted)-1]
+	finalAmount := finalStep.AmountCents
+	finalBidder := finalStep.BidderID
+	cascadeDelta := len(inserted) // each insert is a real bid in the count
 
 	if _, err := tx.Exec(ctx, `
 		UPDATE listings
 		   SET current_bid_cents=$2, current_bidder_id=$3,
-		       bid_count=COALESCE(bid_count,0)+1,
+		       bid_count=COALESCE(bid_count,0)+$6,
 		       auction_ends_at=$4, snipe_extension_count=$5,
 		       updated_at=now()
 		 WHERE id=$1`,
-		listingID, amountCents, bidderID, endsAt, snipeCount,
+		listingID, finalAmount, finalBidder, endsAt, snipeCount, cascadeDelta,
 	); err != nil {
 		slog.ErrorContext(ctx, "place bid: update listing failed", "error", err)
 		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "update listing failed"
 	}
 
-	// Get bidder display name for the response.
+	// Get the FINAL bidder's display name for the response (this is
+	// who currently holds the auction — may be the original buyer or
+	// the auto-bid competitor, whichever has the highest max).
 	var displayName sql.NullString
 	if err := tx.QueryRow(ctx,
-		`SELECT display_name FROM users WHERE id=$1`, bidderID,
+		`SELECT display_name FROM users WHERE id=$1`, finalBidder,
 	).Scan(&displayName); err != nil {
 		// Non-fatal — fall back to "Bidder".
 		displayName = sql.NullString{String: "Bidder", Valid: true}
@@ -239,19 +543,23 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	}
 
 	bid = listingBidJSON{
-		ID:                newBidID,
+		ID:                finalStep.ID,
 		ListingID:         listingID,
-		BidderID:          bidderID,
+		BidderID:          finalStep.BidderID,
 		BidderDisplayName: displayName.String,
-		AmountCents:       amountCents,
+		AmountCents:       finalStep.AmountCents,
 		IsWinning:         true,
-		CreatedAt:         bidCreatedAt,
+		CreatedAt:         finalStep.CreatedAt,
 	}
-	return bid, amountCents, bidderCount, snipeApplied, endsAt, 0, ""
+	return bid, finalAmount, bidderCount, snipeApplied, endsAt, 0, ""
 }
 
 // publishBidPlaced fires the spectator-stream event. Best-effort.
-func (h *ListingsHandler) publishBidPlaced(ctx context.Context, listingID, bidderID string, amountCents int64, snipe bool, newEnds time.Time) {
+//
+// When prevBidderID is non-empty, also fires an outbid event on
+// `notify:outbid:{prevBidderID}` — the notification scheduler subscribes
+// to that channel pattern and queues a `bid_outbid` push/email.
+func (h *ListingsHandler) publishBidPlaced(ctx context.Context, listingID, bidderID string, amountCents int64, snipe bool, newEnds time.Time, prevBidderID string) {
 	rdb := h.redisClient()
 	if rdb == nil {
 		return
@@ -273,6 +581,27 @@ func (h *ListingsHandler) publishBidPlaced(ctx context.Context, listingID, bidde
 	if err := rdb.Publish(ctx, channel, data).Err(); err != nil {
 		slog.WarnContext(ctx, "publish bid_placed failed",
 			"listing_id", listingID, "error", err)
+	}
+
+	// Outbid fan-out: the notification scheduler in services/notification
+	// subscribes to `notify:outbid:*` and queues a `bid_outbid` notice.
+	if prevBidderID != "" {
+		outbidPayload := map[string]interface{}{
+			"type":                "outbid",
+			"listing_id":          listingID,
+			"prev_bidder_id":      prevBidderID,
+			"new_bidder_id":       bidderID,
+			"amount_cents":        amountCents,
+			"new_auction_ends_at": newEnds.UTC().Format(time.RFC3339),
+			"timestamp":           time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		if outbidData, oerr := json.Marshal(outbidPayload); oerr == nil {
+			outChan := fmt.Sprintf("notify:outbid:%s", prevBidderID)
+			if err := rdb.Publish(ctx, outChan, outbidData).Err(); err != nil {
+				slog.WarnContext(ctx, "publish outbid failed",
+					"prev_bidder_id", prevBidderID, "error", err)
+			}
+		}
 	}
 }
 
@@ -468,3 +797,169 @@ func (h *ListingsHandler) MyListingBids(w http.ResponseWriter, r *http.Request) 
 }
 
 func itoa(i int) string { return fmt.Sprintf("%d", i) }
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/v1/listings/{id}/buy-now — fixed-price closeout
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Skips the auction entirely. The buyer pays the seller's pre-set
+// `buy_now_price_cents`; we record a synthetic high bid at that price,
+// flip the listing to status='sold', and create a `listing_orders` row
+// in escrow_status='held' so the post-pickup confirmation flow takes
+// over from there.
+//
+// Concurrency: SELECT … FOR UPDATE on the listings row serializes against
+// concurrent regular bids and concurrent buy-now attempts, so the first
+// caller wins and the second sees status='sold' and is rejected.
+//
+// Self-contained — does NOT call placeBidTx (Agent F's extended cascade
+// is not the right path for a closeout). The synthetic bid emitted here
+// is marked status='awarded' to distinguish it from auction-active bids.
+func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if !isValidUUID(id) {
+		writeError(w, http.StatusBadRequest, "invalid listing id")
+		return
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start tx")
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var (
+		sellerID      string
+		status        string
+		buyNowCents   pgtype.Int8
+		auctionEndsAt pgtype.Timestamptz
+	)
+	err = tx.QueryRow(r.Context(), `
+		SELECT seller_id, status, buy_now_price_cents, auction_ends_at
+		  FROM listings WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&sellerID, &status, &buyNowCents, &auctionEndsAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "listing not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "buy-now: select for update failed",
+			"error", err, "listing_id", id)
+		writeError(w, http.StatusInternalServerError, "failed to lock listing")
+		return
+	}
+
+	if sellerID == claims.UserID {
+		writeError(w, http.StatusForbidden, "sellers cannot buy their own listing")
+		return
+	}
+	if !buyNowCents.Valid {
+		writeError(w, http.StatusBadRequest, "this listing does not have a buy-now price")
+		return
+	}
+	if status != "active" {
+		writeError(w, http.StatusConflict, "auction is not active")
+		return
+	}
+	if !auctionEndsAt.Valid || auctionEndsAt.Time.Before(time.Now()) {
+		writeError(w, http.StatusConflict, "auction has ended")
+		return
+	}
+
+	// Demote any prior active bid (regular auction bids) so we don't
+	// leave two "active" rows behind. The synthetic buy-now bid below
+	// inserts as status='awarded'.
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE listing_bids SET status='outbid', updated_at=now()
+		 WHERE listing_id=$1 AND status='active'`, id); err != nil {
+		slog.ErrorContext(r.Context(), "buy-now: demote outbid failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "demote failed")
+		return
+	}
+
+	// Synthetic award-bid at the buy-now price.
+	if _, err := tx.Exec(r.Context(), `
+		INSERT INTO listing_bids (listing_id, bidder_id, amount_cents, status, created_at, updated_at)
+		VALUES ($1, $2, $3, 'awarded', now(), now())`,
+		id, claims.UserID, buyNowCents.Int64,
+	); err != nil {
+		slog.ErrorContext(r.Context(), "buy-now: insert synthetic bid failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "insert bid failed")
+		return
+	}
+
+	// Close the auction.
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE listings
+		   SET status='sold',
+		       current_bid_cents=$2,
+		       current_bidder_id=$3,
+		       bid_count=COALESCE(bid_count,0)+1,
+		       updated_at=now()
+		 WHERE id=$1`,
+		id, buyNowCents.Int64, claims.UserID,
+	); err != nil {
+		slog.ErrorContext(r.Context(), "buy-now: update listing failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "update listing failed")
+		return
+	}
+
+	// Create the escrow order row. The pickup-confirmation flow at
+	// /api/v1/orders/{id}/confirm-pickup takes over from here.
+	var orderID string
+	err = tx.QueryRow(r.Context(), `
+		INSERT INTO listing_orders (
+			listing_id, seller_id, buyer_id,
+			amount_cents, fee_cents, escrow_status
+		) VALUES ($1, $2, $3, $4, 0, 'held')
+		RETURNING id`,
+		id, sellerID, claims.UserID, buyNowCents.Int64,
+	).Scan(&orderID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "buy-now: insert listing_orders failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create order failed")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		slog.ErrorContext(r.Context(), "buy-now: commit failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+
+	// Best-effort spectator stream notification so the live scoreboard
+	// closes the auction in real time. No previous bidder context to
+	// propagate — this is a closeout, not an outbid event.
+	h.publishBidPlaced(r.Context(), id, claims.UserID, buyNowCents.Int64, false, time.Time{}, "")
+
+	slog.InfoContext(r.Context(), "buy-now closeout",
+		"listing_id", id, "buyer_id", claims.UserID,
+		"order_id", orderID, "amount_cents", buyNowCents.Int64,
+	)
+
+	listing, err := h.loadListingJSON(r.Context(), id)
+	if err != nil {
+		// Listing is sold + order is held — still a success. Return what
+		// we have so the client can navigate to the order page.
+		slog.WarnContext(r.Context(), "buy-now: post-load failed", "error", err, "id", id)
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"order_id": orderID,
+			"listing":  nil,
+		})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"order_id": orderID,
+		"listing":  listing,
+	})
+}
