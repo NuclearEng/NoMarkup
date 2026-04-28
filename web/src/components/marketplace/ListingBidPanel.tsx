@@ -1,8 +1,9 @@
 'use client';
 
-import { Loader2, Zap } from 'lucide-react';
+import { Loader2, ShieldCheck, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { BidBondPrompt } from '@/components/compliance/BidBondPrompt';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +29,23 @@ interface ListingBidPanelProps {
    */
   userMaxBidCents?: number | null;
   /**
+   * Listing id, required when `bidBondRequirement` is non-null so the
+   * inline bond flow knows where to POST.
+   */
+  listingId?: string;
+  /**
+   * Set when the most recent placeBid call returned 402 with a
+   * `requires_bid_bond` envelope. The panel renders the bond prompt
+   * + Stripe Elements; once the bond is authorized, `onBidBondAuthorized`
+   * fires and the parent retries the bid.
+   */
+  bidBondRequirement?: { bond_amount_cents: number } | null;
+  /**
+   * Called after the bid bond is successfully authorized. Parents should
+   * retry the place-bid mutation with the same amount/maxBid.
+   */
+  onBidBondAuthorized?: () => void;
+  /**
    * Place a bid. `maxBidCents` is the buyer's confidential ceiling for
    * eBay-style proxy bidding; omit (undefined) when the bid is exactly
    * `amountCents` with no autobid headroom.
@@ -52,6 +70,9 @@ export function ListingBidPanel({
   lastLiveBidTimestamp,
   lastLiveBidExtended,
   userMaxBidCents,
+  listingId,
+  bidBondRequirement,
+  onBidBondAuthorized,
   onPlaceBid,
   className,
 }: ListingBidPanelProps) {
@@ -195,6 +216,39 @@ export function ListingBidPanel({
         >
           <Zap className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />
           <span className="font-semibold">+30s — auction extended</span>
+        </div>
+      ) : null}
+
+      {/* Bid bond pre-auth (first-time bidders) — renders when the parent's
+          place-bid mutation returned 402. The prompt mints a SetupIntent,
+          collects payment via Stripe Elements, and confirms the bond. On
+          success the parent retries the bid via onBidBondAuthorized. */}
+      {bidBondRequirement && listingId ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100"
+          data-testid="bid-bond-prompt-host"
+        >
+          <div className="mb-2 flex items-start gap-2">
+            <ShieldCheck className="mt-0.5 h-4 w-4 text-amber-300" aria-hidden="true" />
+            <div>
+              <p className="font-semibold text-amber-100">
+                One-time bid bond ({formatCents(bidBondRequirement.bond_amount_cents)})
+              </p>
+              <p className="mt-1 text-amber-100/80">
+                First-time bidders post a small bond to keep auctions honest.
+                Refunded the moment you complete or lose the auction.
+              </p>
+            </div>
+          </div>
+          <BidBondPrompt
+            listingId={listingId}
+            intendedBidCents={Math.round(bidDollars * 100)}
+            onAuthorized={() => {
+              if (onBidBondAuthorized) onBidBondAuthorized();
+            }}
+          />
         </div>
       ) : null}
 

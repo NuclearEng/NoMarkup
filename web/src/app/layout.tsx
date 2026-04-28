@@ -3,8 +3,13 @@ import { Syne } from 'next/font/google';
 import { headers } from 'next/headers';
 import '@/styles/globals.css';
 
+import { AgeGate } from '@/components/compliance/AgeGate';
+import { CookieConsent } from '@/components/compliance/CookieConsent';
+import { ToSReaccept } from '@/components/compliance/ToSReaccept';
 import { AuthRestorer } from '@/components/providers/AuthRestorer';
 import { QueryProvider } from '@/components/providers/QueryProvider';
+import { InstallPrompt } from '@/components/pwa/InstallPrompt';
+import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import { Toaster } from 'sonner';
 
 const syne = Syne({
@@ -17,6 +22,13 @@ const syne = Syne({
 export const metadata: Metadata = {
   title: { default: 'NoMarkup', template: '%s | NoMarkup' },
   description: 'Reverse-auction marketplace for home services. Fair prices, verified providers.',
+  manifest: '/manifest.json',
+  applicationName: 'NoMarkup',
+  appleWebApp: {
+    capable: true,
+    title: 'NoMarkup',
+    statusBarStyle: 'black-translucent',
+  },
 };
 
 export const viewport: Viewport = {
@@ -54,6 +66,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <AuthRestorer />
           <main id="main-content">{children}</main>
           <Toaster position="bottom-right" richColors closeButton />
+          <ServiceWorkerRegistrar />
+          <InstallPrompt />
+          <CookieConsent />
+          <ToSReaccept />
+          <AgeGate />
         </QueryProvider>
       </body>
     </html>

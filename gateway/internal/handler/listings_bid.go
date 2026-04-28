@@ -251,6 +251,30 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// ── Bid bond pre-auth (Wave 4 anti-fraud) ─────────────────────────
+	// First-time bidders must post a Stripe SetupIntent-based bond before
+	// their first bid is accepted. eBay/Whatnot ship this; we didn't.
+	//
+	// The check is intentionally cheap: zero history rows in 'released'
+	// status AND no 'authorized' bond covering ≥10% of the intended bid
+	// for this listing → return 402 with a `requires_bid_bond` flag and
+	// the bond amount. The web client follows up with POST /bid-bond to
+	// mint the SetupIntent + persist the row, confirms it via Stripe
+	// Elements, calls /bid-bond/confirm to flip 'pending'→'authorized',
+	// and retries the bid.
+	//
+	// Surgical: this runs BEFORE placeBidTx so we don't even open a tx
+	// when the bond gate trips. Existing auto-bid cascade logic (Agent F)
+	// is untouched.
+	if needsBond, bondCents := h.bidBondCheck(r.Context(), claims.UserID, id, req.AmountCents); needsBond {
+		writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
+			"requires_bid_bond": true,
+			"bond_amount_cents": bondCents,
+			"error":             "first-time bidders must post a bid bond",
+		})
+		return
+	}
+
 	// Capture the previous high bidder BEFORE the cascade runs so the
 	// notification scheduler can fan an outbid event out to them. This is
 	// best-effort: a missed lookup just suppresses the notify; a slightly
@@ -610,6 +634,58 @@ func formatRFC3339OrNull(t time.Time) interface{} {
 		return nil
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+// bidBondCheck returns (true, requiredBondCents) iff this user must post a
+// bond before placing the bid. The check has two short-circuits:
+//
+//  1. h.db is nil → returns false (dev/sandbox stacks without DB skip the
+//     check; placeBidTx will already 503 on its own guard).
+//  2. The user has at least one historical bid_bonds row in 'released'
+//     status → trusted; skip the gate forever.
+//
+// Otherwise we look for an 'authorized' bond on this listing covering at
+// least 10% (or $5 floor) of the intended bid; if absent, return true.
+//
+// Errors are treated as "let the bid through" rather than block — the
+// audit pipeline still records the bid, and a follow-up cron can clamp
+// abuse. We log loudly so ops notices.
+func (h *ListingsHandler) bidBondCheck(ctx context.Context, userID, listingID string, intendedBidCents int64) (needsBond bool, requiredCents int64) {
+	if h.db == nil {
+		return false, 0
+	}
+	required := requiredBondCents(intendedBidCents)
+
+	var hasReleased bool
+	if err := h.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM bid_bonds
+			 WHERE user_id = $1 AND status = 'released'
+		)`, userID).Scan(&hasReleased); err != nil {
+		slog.WarnContext(ctx, "bid bond released-history lookup failed", "error", err, "user_id", userID)
+		return false, 0
+	}
+	if hasReleased {
+		return false, 0
+	}
+
+	var amount int64
+	err := h.db.QueryRow(ctx, `
+		SELECT amount_cents FROM bid_bonds
+		 WHERE user_id = $1 AND listing_id = $2 AND status = 'authorized'
+		 ORDER BY created_at DESC
+		 LIMIT 1`, userID, listingID).Scan(&amount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, required
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "bid bond active lookup failed", "error", err, "user_id", userID, "listing_id", listingID)
+		return false, 0
+	}
+	if amount < required {
+		return true, required
+	}
+	return false, 0
 }
 
 // MyListings handles GET /api/v1/listings/me — seller's own listings.

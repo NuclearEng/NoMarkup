@@ -290,6 +290,9 @@ func main() {
 	listingsHandler := handler.NewListingsHandler(dbPool, cacheClient)
 	watchlistHandler := handler.NewWatchlistHandler(dbPool, cacheClient)
 	followsHandler := handler.NewFollowsHandler(dbPool)
+	pushSubscriptionsHandler := handler.NewPushSubscriptionsHandler(dbPool)
+	complianceHandler := handler.NewComplianceHandler(dbPool)
+	bidBondHandler := handler.NewBidBondHandler(dbPool, paymentClient)
 
 	// Optional Meilisearch client for listings autocomplete + "similar"
 	// rails. Mirrors the env conventions used by services/job
@@ -334,6 +337,9 @@ func main() {
 		watchlistHandler,
 		followsHandler,
 		listingsSearchHandler,
+		pushSubscriptionsHandler,
+		complianceHandler,
+		bidBondHandler,
 	)
 
 	srv := &http.Server{

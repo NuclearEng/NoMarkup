@@ -79,6 +79,9 @@ func New(
 	watchlistHandler *handler.WatchlistHandler,
 	followsHandler *handler.FollowsHandler,
 	listingsSearchHandler *handler.ListingsSearchHandler,
+	pushSubscriptionsHandler *handler.PushSubscriptionsHandler,
+	complianceHandler *handler.ComplianceHandler,
+	bidBondHandler *handler.BidBondHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -207,6 +210,15 @@ func New(
 	// Public auction replay (no auth required — completed auctions are public)
 	r.Get("/api/v1/auctions/{jobId}/replay", auctionReplayHandler.GetAuctionReplay)
 
+	// ── Compliance: cookie-consent log + ToS surface ──────────────────
+	// POST /api/v1/cookie-consent is public (anonymous visitors trigger
+	// the banner); GET /api/v1/tos/current is public so signup/login
+	// can render the legal link before auth. The authenticated half of
+	// this surface (POST /me/tos-acceptance, PUT /me/dob) lives inside
+	// the protected /api/v1 block below.
+	r.Post("/api/v1/cookie-consent", complianceHandler.LogCookieConsent)
+	r.Get("/api/v1/tos/current", complianceHandler.GetCurrentToS)
+
 	// Public "report this listing" endpoint — anonymous visitors can flag a
 	// listing as stolen/counterfeit/prohibited. Rate-limited by the global
 	// IP rate limiter; logged-in users get a duplicate-suppression check
@@ -259,6 +271,36 @@ func New(
 			r.Get("/{id}/trust-score", trustHandler.GetTrustScore)
 			r.Get("/{id}/trust-history", trustHandler.GetTrustScoreHistory)
 		})
+
+		// ── Web Push subscriptions (PWA / W3C Web Push) ─────────────────
+		// Closes audit Section J's "FCM-only push" gap — buyers running
+		// the installed PWA register a PushSubscription here. Coexists
+		// with /notifications/devices (FCM/APNs); the notification
+		// service iterates both lists when fanning a notification out.
+		r.Post("/me/push-subscriptions", pushSubscriptionsHandler.Subscribe)
+		r.Delete("/me/push-subscriptions/{id}", pushSubscriptionsHandler.Unsubscribe)
+
+		// ── Compliance (auth half) ─────────────────────────────────────
+		// ToS re-acceptance: the web client polls GET /api/v1/tos/current
+		// (public) and compares against the user's last-accepted version
+		// from GET /me/tos-acceptance. If they differ, render the modal
+		// and POST the new version to /me/tos-acceptance.
+		//
+		// Age gate: PUT /me/dob accepts a YYYY-MM-DD DOB and stamps
+		// users.dob_verified_at. DOB is never returned via GET; only the
+		// "verified" boolean is exposed via /me/age-status.
+		r.Get("/me/tos-acceptance", complianceHandler.GetMyToSAcceptance)
+		r.Post("/me/tos-acceptance", complianceHandler.AcceptToS)
+		r.Put("/me/dob", complianceHandler.SetDOB)
+		r.Get("/me/age-status", complianceHandler.GetMyAgeStatus)
+
+		// ── Bid bond pre-auth (anti-fraud) ─────────────────────────────
+		// First-time bidders post a Stripe SetupIntent-based bond before
+		// their first bid is accepted. The bond is released the moment
+		// they complete OR lose the auction (released → trusted forever).
+		// Captured on confirmed no-show. eBay/Whatnot ship this; we now do too.
+		r.Post("/listings/{id}/bid-bond", bidBondHandler.CreateBidBond)
+		r.Post("/listings/{id}/bid-bond/confirm", bidBondHandler.ConfirmBidBond)
 
 		// ── Followable seller (Whatnot retention mechanic) ──────────────
 		// Mirrors the watchlist surface in shape: per-target follow toggle
