@@ -293,6 +293,13 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	// Path collision: /api/v1/listings/mine is registered as an auth-protected
+	// route BUT chi matches `/listings/{id}` first (different mount points).
+	// Delegate to MyListings, which enforces the auth check itself.
+	if id == "mine" {
+		h.MyListings(w, r)
+		return
+	}
 	if !isValidUUID(id) {
 		writeError(w, http.StatusBadRequest, "invalid listing id")
 		return

@@ -405,9 +405,14 @@ func New(
 		// Read paths are public and live above. These routes require
 		// authentication. Bid placement publishes a `listing:{id}` Redis
 		// event consumed by the marketplace spectator WebSocket.
-		r.Get("/listings/me", listingsHandler.MyListings)
-		r.Get("/listings/me/bids", listingsHandler.MyListingBids)
-		r.Post("/listings/{id}/bid", listingsHandler.PlaceListingBid)
+		//
+		// Path conventions match the web client at web/src/hooks/useListings.ts:
+		//   - /listings/mine            (the requesting user's listings)
+		//   - /listings/bids/mine       (the requesting user's bid history)
+		//   - /listings/{id}/bids       (place a bid; plural matches eBay/StockX)
+		r.Get("/listings/mine", listingsHandler.MyListings)
+		r.Get("/listings/bids/mine", listingsHandler.MyListingBids)
+		r.Post("/listings/{id}/bids", listingsHandler.PlaceListingBid)
 
 		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {
