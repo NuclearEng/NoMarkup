@@ -2036,7 +2036,9 @@ export interface SearchListingsParams {
   min_price_cents?: number;
   max_price_cents?: number;
   ending_soon?: boolean;
-  sort_by?: 'ending_soon' | 'newest' | 'lowest_price' | 'highest_price';
+  sort_by?: 'ending_soon' | 'newest' | 'lowest_price' | 'highest_price' | 'distance' | 'trending';
+  lat?: number;
+  lng?: number;
   page?: number;
   page_size?: number;
 }

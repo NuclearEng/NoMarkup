@@ -11,20 +11,25 @@ import (
 
 // Service implements notification business logic.
 type Service struct {
-	repo      domain.NotificationRepository
+	repo       domain.NotificationRepository
 	deviceRepo domain.DeviceTokenRepository
-	email     *EmailDispatcher
-	push      *PushDispatcher
-	sms       *SMSDispatcher
+	email      *EmailDispatcher
+	push       *PushDispatcher
+	webPush    *WebPushDispatcher
+	sms        *SMSDispatcher
 }
 
-// New creates a new notification service.
-func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenRepository, email *EmailDispatcher, push *PushDispatcher, sms *SMSDispatcher) *Service {
+// New creates a new notification service. webPush may be nil — in that
+// case browser-side W3C Web Push delivery is skipped and only the FCM/APNs
+// path runs (matches pre-PWA behavior). Both dispatchers run on the same
+// notification — they target different subscriber sets.
+func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenRepository, email *EmailDispatcher, push *PushDispatcher, webPush *WebPushDispatcher, sms *SMSDispatcher) *Service {
 	return &Service{
 		repo:       repo,
 		deviceRepo: deviceRepo,
 		email:      email,
 		push:       push,
+		webPush:    webPush,
 		sms:        sms,
 	}
 }
@@ -152,39 +157,63 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 	return ChannelDelivery{Channel: "email", Delivered: true}
 }
 
-// dispatchPush sends push notifications to all of the user's registered devices.
+// dispatchPush sends push notifications to all of the user's registered
+// FCM/APNs devices AND every W3C Web Push subscription. The two paths
+// target disjoint subscriber sets (native app installs vs. installed
+// PWA / browser push), so we fan out to both and report success if
+// either one delivers. Audit Section J flagged FCM-only push as MISSING;
+// the WebPushDispatcher closes that gap.
 func (s *Service) dispatchPush(ctx context.Context, userID, title, body, actionURL string) ChannelDelivery {
+	totalSent := 0
+	totalErrs := 0
+	noTokens := false
+
+	// FCM/APNs path (existing, unchanged behavior).
 	tokens, err := s.deviceRepo.GetDeviceTokens(ctx, userID)
 	if err != nil {
 		slog.Warn("push dispatch: failed to get device tokens",
 			"user_id", userID,
 			"error", err,
 		)
-		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("get device tokens: %s", err.Error())}
+		totalErrs++
+	} else if len(tokens) == 0 {
+		noTokens = true
+	} else {
+		deviceTokenStrings := make([]string, 0, len(tokens))
+		for _, dt := range tokens {
+			deviceTokenStrings = append(deviceTokenStrings, dt.Token)
+		}
+		sent, errs := s.push.SendMultiple(ctx, deviceTokenStrings, title, body, actionURL)
+		totalSent += sent
+		totalErrs += len(errs)
 	}
 
-	if len(tokens) == 0 {
-		slog.Info("push dispatch skipped: no device tokens registered",
+	// W3C Web Push path. Skipped silently when the dispatcher is nil
+	// (boot-time decision when VAPID keys are unset).
+	if s.webPush != nil {
+		webSent, webErrs := s.webPush.SendToUser(ctx, userID, title, body, actionURL, "")
+		totalSent += webSent
+		totalErrs += len(webErrs)
+		if webSent > 0 {
+			noTokens = false
+		}
+	}
+
+	if totalSent == 0 && totalErrs > 0 {
+		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("all %d sends failed", totalErrs)}
+	}
+	if totalSent == 0 && noTokens {
+		slog.Info("push dispatch skipped: no device tokens or web subscriptions registered",
 			"user_id", userID,
 		)
 		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: "no device tokens registered"}
 	}
 
-	deviceTokenStrings := make([]string, 0, len(tokens))
-	for _, dt := range tokens {
-		deviceTokenStrings = append(deviceTokenStrings, dt.Token)
-	}
-
-	sent, errs := s.push.SendMultiple(ctx, deviceTokenStrings, title, body, actionURL)
-	if sent == 0 && len(errs) > 0 {
-		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("all %d sends failed", len(errs))}
-	}
-
-	if len(errs) > 0 {
+	if totalErrs > 0 {
 		slog.Warn("push dispatch: partial failure",
 			"user_id", userID,
-			"sent", sent,
-			"failed", len(errs),
+			"sent", totalSent,
+			"failed", totalErrs,
 		)
 	}
 
