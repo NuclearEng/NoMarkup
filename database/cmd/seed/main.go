@@ -600,6 +600,13 @@ func main() {
 		log.Fatalf("seed marketplace: %v", err)
 	}
 
+	// Optional: 40 additional listings distributed across closing-time
+	// buckets so the /marketplace scoreboard reads as a populated live
+	// event during demos. Gated on SEED_DEMO_MARKETPLACE=1.
+	if err := seedDemoMarketplace(ctx, tx, now); err != nil {
+		log.Fatalf("seed demo marketplace: %v", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit transaction: %v", err)
 	}
