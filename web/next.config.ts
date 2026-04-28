@@ -10,6 +10,15 @@ const API_URL = process.env['API_URL'] ?? process.env['NEXT_PUBLIC_API_URL'] ?? 
 // Content-Security-Policy header here — middleware always overrides it,
 // but listing it twice causes browsers to honor the strictest of both,
 // which would defeat the nonce.
+// HSTS is production-only. The previous note ("browsers ignore over HTTP")
+// is wrong for some browsers (Safari, in particular) — once an HSTS header
+// is observed on ANY response from a host, including http://localhost over
+// plain HTTP, Safari caches the policy for the configured max-age and
+// force-upgrades every subsequent request to HTTPS. With the dev server
+// only listening on plain HTTP, the upgraded request fails with TLS errors
+// and the page renders unstyled. Keep HSTS off in development.
+const IS_PROD = process.env.NODE_ENV === 'production';
+
 const SECURITY_HEADERS = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -18,12 +27,14 @@ const SECURITY_HEADERS = [
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=(self), payment=(self)',
   },
-  // HSTS with preload — applied to all responses; browsers ignore over HTTP
-  // so this is safe in dev and protective in production.
-  {
-    key: 'Strict-Transport-Security',
-    value: 'max-age=63072000; includeSubDomains; preload',
-  },
+  ...(IS_PROD
+    ? [
+        {
+          key: 'Strict-Transport-Security',
+          value: 'max-age=63072000; includeSubDomains; preload',
+        },
+      ]
+    : []),
   { key: 'X-DNS-Prefetch-Control', value: 'on' },
 ];
 

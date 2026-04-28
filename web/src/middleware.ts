@@ -119,7 +119,12 @@ function buildCsp(nonce: string): string {
     }
   }
   const extra = apiOrigins.join(' ');
-  return [
+  // upgrade-insecure-requests is production-only. In dev it force-upgrades
+  // http://localhost calls to https://localhost, which the dev server can't
+  // serve and causes a "TLS error" / "network connection lost" cascade in
+  // Safari. Keep it for prod where every backend is HTTPS.
+  const isProd = process.env.NODE_ENV === 'production';
+  const directives = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://api.mapbox.com https://js.stripe.com`,
     "style-src 'self' 'unsafe-inline' https://api.mapbox.com",
@@ -132,8 +137,9 @@ function buildCsp(nonce: string): string {
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    'upgrade-insecure-requests',
-  ].join('; ');
+  ];
+  if (isProd) directives.push('upgrade-insecure-requests');
+  return directives.join('; ');
 }
 
 export function middleware(req: NextRequest): NextResponse {
