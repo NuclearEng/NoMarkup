@@ -36,9 +36,16 @@ vi.mock('next/link', () => ({
     createElement('a', { href }, children),
 }));
 
-vi.mock('@/components/marketplace/ListingCard', () => ({
-  ListingCard: ({ listing }: { listing: { id: string; title: string } }) =>
+vi.mock('@/components/marketplace/ScoreboardCard', () => ({
+  ScoreboardCard: ({ listing }: { listing: { id: string; title: string } }) =>
     createElement('article', { 'data-testid': `listing-${listing.id}` }, listing.title),
+}));
+
+vi.mock('@/components/marketplace/UrgencyStrip', () => ({
+  UrgencyStrip: ({
+    closingSoonCount,
+  }: { closingSoonCount: number }) =>
+    createElement('div', { 'data-testid': 'urgency-strip' }, `closing:${String(closingSoonCount)}`),
 }));
 
 vi.mock('@/components/marketplace/ListingFilters', () => ({
@@ -87,8 +94,10 @@ describe('MarketplacePage', () => {
       pagination: { totalCount: 0, totalPages: 0, hasNext: false },
     };
     render(withQueryClient(createElement(MarketplacePage)));
-    expect(screen.getByText(/Goods/)).toBeDefined();
-    expect(screen.getByText(/Marketplace/)).toBeDefined();
+    expect(screen.getByRole('heading', { name: /The .*Live.* Marketplace/i })).toBeDefined();
+    expect(
+      screen.getByText(/Auctions are watched, not posted/i),
+    ).toBeDefined();
   });
 
   it('renders skeletons while loading', () => {
@@ -100,7 +109,7 @@ describe('MarketplacePage', () => {
   it('renders the error empty state on isError', () => {
     listingsState.isError = true;
     render(withQueryClient(createElement(MarketplacePage)));
-    expect(screen.getByText(/Failed to load listings/i)).toBeDefined();
+    expect(screen.getByText(/Failed to load auctions/i)).toBeDefined();
   });
 
   it('clicking Retry on error invokes refetch', () => {
@@ -118,7 +127,7 @@ describe('MarketplacePage', () => {
       pagination: { totalCount: 0, totalPages: 0, hasNext: false },
     };
     render(withQueryClient(createElement(MarketplacePage)));
-    expect(screen.getByText(/No listings found/i)).toBeDefined();
+    expect(screen.getByText(/No live auctions right now/i)).toBeDefined();
   });
 
   it('renders listing cards when results exist', () => {
@@ -134,14 +143,13 @@ describe('MarketplacePage', () => {
     expect(screen.getByTestId('listing-b')).toBeDefined();
   });
 
-  it('renders Previous/Next pagination when totalPages > 1', () => {
+  it('renders the urgency strip with the closing-soon count', () => {
     listingsState.data = {
       listings: [{ id: 'a', title: 'A' }],
-      pagination: { totalCount: 24, totalPages: 2, hasNext: true },
+      pagination: { totalCount: 1, totalPages: 1, hasNext: false },
     };
     render(withQueryClient(createElement(MarketplacePage)));
-    expect(screen.getByRole('button', { name: 'Previous' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDefined();
+    expect(screen.getByTestId('urgency-strip')).toBeDefined();
   });
 
   it('toggles the mobile filters panel', () => {

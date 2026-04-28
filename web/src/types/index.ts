@@ -1921,6 +1921,12 @@ export interface Listing {
   distance_km: number | null;
   is_user_winning: boolean;
   was_outbid: boolean;
+  /**
+   * Live spectator count from the gateway's Redis sorted-set aggregator.
+   * Optional because legacy responses may omit it; the scoreboard treats
+   * undefined as zero.
+   */
+  watcher_count?: number;
   created_at: string;
   updated_at: string;
 }
