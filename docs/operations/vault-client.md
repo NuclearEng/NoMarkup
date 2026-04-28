@@ -112,10 +112,31 @@ K8s Secrets remain the source of truth until each service migrates to Vault. The
 
 `Healthy(ctx)` returns nil when Vault is reachable (or when not configured — env-fallback mode is always healthy). Wire it into `/readyz` of any service that depends on Vault for first-write operations.
 
+## Token renewal
+
+The wrapper renews its auth token automatically. After successful AppRole
+login (or direct `VAULT_TOKEN` bootstrap) the initial lease duration is
+captured and a background goroutine wakes up at half-TTL, calls
+`Auth().Token().RenewSelf()`, and updates the cached lease for the next
+cycle.
+
+Behavior:
+
+- Renewal cadence is `clamp(TTL/2, 30s, 30m)`. A 1h token is renewed every
+  30 min; a 2h token every 30 min (capped); a 1m token every 30 s (floored).
+- On renewal failure the goroutine retries once after 30 s. A second
+  consecutive failure logs `ERROR vault: token renewal failed twice…` and
+  the loop continues — the service does NOT crash. Once the token finally
+  expires, subsequent reads fall through to env vars (this is the same
+  graceful-degradation path Vault outages already follow).
+- Direct `VAULT_TOKEN` auth: the wrapper calls `lookup-self` to discover the
+  TTL. Tokens with TTL=0 (root tokens, legacy non-expiring tokens) skip
+  scheduling and a `WARN` is emitted instead.
+- Graceful shutdown: call `client.Close()` to cancel the renewal context
+  and wait for the goroutine to exit before tearing down the rest of the
+  service.
+
 ## Known limitations
 
 - AppRole `secret_id` rotation requires re-issuing and updating K8s Secrets.
   Use a sidecar or `external-secrets-operator` for production.
-- The wrapper does not yet handle Vault token renewal — tokens at default
-  TTL will expire and force a fresh AppRole login. Add a renewal goroutine
-  if your TTL is shorter than your service uptime.
