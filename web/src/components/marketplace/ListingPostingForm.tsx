@@ -53,12 +53,25 @@ const ACCEPTED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 const STEP_FIELDS: Record<number, (keyof ListingPostingFormValues)[]> = {
   0: ['categoryId'],
-  1: ['title', 'description'],
+  1: ['title', 'description', 'condition'],
   2: ['photoUrls'],
   3: ['pickupZip'],
   4: ['startingPriceDollars', 'auctionDurationHours'],
   5: [],
 };
+
+// Condition options shown in the dropdown. Empty string = "Don't say"
+// (persists as NULL on the listings.condition column). Order matches
+// the StockX grade scale: new is the best, for_parts the worst.
+const CONDITION_OPTIONS: { value: '' | 'new' | 'like_new' | 'very_good' | 'good' | 'acceptable' | 'for_parts'; label: string }[] = [
+  { value: '', label: "Don't say" },
+  { value: 'new', label: 'New (sealed/in box)' },
+  { value: 'like_new', label: 'Like new (used once or twice)' },
+  { value: 'very_good', label: 'Very good (light wear)' },
+  { value: 'good', label: 'Good (visible wear, fully functional)' },
+  { value: 'acceptable', label: 'Acceptable (well-loved, works)' },
+  { value: 'for_parts', label: 'For parts (broken / not working)' },
+];
 
 const GOODS_CATEGORIES: { id: string; name: string }[] = [
   { id: 'goods-furniture', name: 'Furniture' },
@@ -145,6 +158,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
       pickupAddress: '',
       startingPriceDollars: 0,
       auctionDurationHours: 48,
+      condition: '',
     },
     mode: 'onTouched',
   });
@@ -162,6 +176,14 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
       pickup_address: values.pickupAddress || undefined,
       starting_price_cents: Math.round(values.startingPriceDollars * 100),
       auction_duration_hours: values.auctionDurationHours,
+      // Empty string in the form = "Don't say"; serialize as null so the
+      // gateway persists NULL rather than rejecting an unknown value.
+      // The zod enum permits '' as a sentinel; everything else is a
+      // valid grade we forward straight through.
+      condition:
+        values.condition && (values.condition as string) !== ''
+          ? (values.condition as Exclude<NonNullable<typeof values.condition>, ''>)
+          : null,
     }),
     [],
   );
@@ -404,6 +426,38 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                         />
                       </FormControl>
                       <FormDescription>Markdown supported. 20–5000 characters.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="condition"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Condition</FormLabel>
+                      <FormControl>
+                        <Select
+                          value={field.value ?? ''}
+                          onValueChange={(v) => {
+                            field.onChange(v);
+                          }}
+                        >
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue placeholder="Pick a condition (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CONDITION_OPTIONS.map((c) => (
+                              <SelectItem key={c.value || 'unspecified'} value={c.value}>
+                                {c.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormDescription>
+                        StockX-style grade. Leave blank to skip — buyers prefer when it&apos;s set.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

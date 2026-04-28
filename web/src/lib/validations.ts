@@ -309,6 +309,10 @@ export const listingPostingSchema = z.object({
   auctionDurationHours: z.union([z.literal(24), z.literal(48), z.literal(168)], {
     required_error: 'Pick an auction duration',
   }),
+  // Condition is optional — empty string = "seller didn't say".
+  condition: z
+    .enum(['', 'new', 'like_new', 'very_good', 'good', 'acceptable', 'for_parts'])
+    .optional(),
 });
 
 export type ListingPostingFormValues = z.infer<typeof listingPostingSchema>;

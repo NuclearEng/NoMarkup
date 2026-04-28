@@ -12,6 +12,28 @@ import { formatCents } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { Listing } from '@/types';
 
+// StockX-style condition labels + per-grade chip styling. Like-new uses
+// the brand emerald, "new" uses brand gold so it pops against the
+// scoreboard glow; the rest fall back to a neutral zinc treatment so
+// the card doesn't turn into a rainbow of badges.
+const CONDITION_LABELS: Record<NonNullable<Listing['condition']>, string> = {
+  new: 'New',
+  like_new: 'Like new',
+  very_good: 'Very good',
+  good: 'Good',
+  acceptable: 'Acceptable',
+  for_parts: 'For parts',
+};
+
+const CONDITION_CLASSES: Record<NonNullable<Listing['condition']>, string> = {
+  new: 'border-[var(--brand-gold)]/40 bg-[var(--brand-gold)]/15 text-[var(--brand-gold)]',
+  like_new: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+  very_good: 'border-zinc-600 bg-zinc-700/40 text-zinc-200',
+  good: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
+  acceptable: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
+  for_parts: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
+};
+
 interface ScoreboardCardProps {
   listing: Listing & { watcher_count?: number };
   /**
@@ -158,11 +180,24 @@ export function ScoreboardCard({ listing, urgency = 'normal', watching = false }
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-white/5 pt-3 text-xs text-zinc-400">
-          <span className="inline-flex items-center gap-1">
-            <Gavel className="h-3 w-3" aria-hidden="true" />
-            {listing.bid_count} {listing.bid_count === 1 ? 'bid' : 'bids'}
-          </span>
+        <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-3 text-xs text-zinc-400">
+          <div className="flex items-center gap-2 truncate">
+            <span className="inline-flex shrink-0 items-center gap-1">
+              <Gavel className="h-3 w-3" aria-hidden="true" />
+              {listing.bid_count} {listing.bid_count === 1 ? 'bid' : 'bids'}
+            </span>
+            {listing.condition ? (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+                  CONDITION_CLASSES[listing.condition],
+                )}
+                aria-label={`Condition: ${CONDITION_LABELS[listing.condition]}`}
+              >
+                {CONDITION_LABELS[listing.condition]}
+              </span>
+            ) : null}
+          </div>
           <span className="inline-flex items-center gap-1 truncate">
             <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{location}</span>

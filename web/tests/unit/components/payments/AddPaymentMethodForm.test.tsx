@@ -5,8 +5,24 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // Stub Stripe SDK before the component is imported.
 type ConfirmSetupResult = { error?: { message?: string } };
-const stripeStub: { confirmSetup: ReturnType<typeof vi.fn> } = {
+type PaymentRequestStub = {
+  canMakePayment: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+};
+const stripeStub: {
+  confirmSetup: ReturnType<typeof vi.fn>;
+  paymentRequest: ReturnType<typeof vi.fn>;
+} = {
   confirmSetup: vi.fn<() => Promise<ConfirmSetupResult>>(),
+  // Returns a PaymentRequest-shaped stub. By default `canMakePayment`
+  // resolves to null so the wallet button stays hidden — most tests
+  // don't care about wallet rendering and asserting against a button
+  // that may or may not appear is brittle. Tests that DO care override
+  // this in beforeEach or per-test.
+  paymentRequest: vi.fn<() => PaymentRequestStub>(() => ({
+    canMakePayment: vi.fn().mockResolvedValue(null),
+    on: vi.fn(),
+  })),
 };
 let stripeAvailable = true;
 let elementsAvailable = true;
@@ -16,6 +32,8 @@ vi.mock('@stripe/react-stripe-js', () => ({
     createElement('div', { 'data-testid': 'stripe-elements' }, children),
   PaymentElement: () =>
     createElement('div', { 'data-testid': 'stripe-payment-element' }, 'PaymentElement'),
+  PaymentRequestButtonElement: () =>
+    createElement('div', { 'data-testid': 'stripe-payment-request-button' }),
   useStripe: () => (stripeAvailable ? stripeStub : null),
   useElements: () => (elementsAvailable ? { getElement: vi.fn() } : null),
 }));
@@ -57,6 +75,13 @@ describe('AddPaymentMethodForm', () => {
     stripeAvailable = true;
     elementsAvailable = true;
     stripeStub.confirmSetup.mockReset();
+    stripeStub.paymentRequest.mockReset();
+    // Default: wallet unavailable. Tests that exercise the wallet button
+    // override this on a per-case basis.
+    stripeStub.paymentRequest.mockImplementation(() => ({
+      canMakePayment: vi.fn().mockResolvedValue(null),
+      on: vi.fn(),
+    }));
   });
 
   it('renders the initial Enter Payment Details CTA', () => {
@@ -634,6 +659,59 @@ describe('AddPaymentMethodForm', () => {
     resolveCreate?.({ client_secret: 'pi_done' });
     await waitFor(() => {
       expect(screen.queryByText('Initializing...')).toBeNull();
+    });
+  });
+
+  it('renders the Apple Pay / Google Pay button when the wallet is available', async () => {
+    const user = userEvent.setup();
+    // Override the default null-canMakePayment so the wallet renders.
+    stripeStub.paymentRequest.mockImplementation(() => ({
+      canMakePayment: vi.fn().mockResolvedValue({ applePay: true }),
+      on: vi.fn(),
+    }));
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'pi_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-request-button')).toBeDefined();
+    });
+    expect(stripeStub.paymentRequest).toHaveBeenCalled();
+  });
+
+  it('omits the wallet button when canMakePayment returns falsy', async () => {
+    const user = userEvent.setup();
+    // Default beforeEach returns null — keep it.
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'pi_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-element')).toBeDefined();
+    });
+    // Allow the canMakePayment promise to resolve before asserting absence.
+    await waitFor(() => {
+      expect(screen.queryByTestId('stripe-payment-request-button')).toBeNull();
     });
   });
 });
