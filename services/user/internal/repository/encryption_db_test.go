@@ -88,6 +88,33 @@ func TestPIICiphertextOnDisk(t *testing.T) {
 	}
 }
 
+// TestPropertyAddressOnDisk confirms the property address backfilled by 033
+// is ciphertext on disk, but plaintext through the repo.
+func TestPropertyAddressOnDisk(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	props, err := repo.ListProperties(ctx, "00000000-0000-0000-0000-000000000002")
+	if err != nil {
+		t.Fatalf("list properties: %v", err)
+	}
+	if len(props) == 0 {
+		t.Skip("no seeded property; rerun seed")
+	}
+
+	// On-disk: must NOT be plaintext.
+	var raw string
+	if err := repo.pool.QueryRow(ctx,
+		`SELECT address FROM properties WHERE id = $1`,
+		props[0].ID,
+	).Scan(&raw); err != nil {
+		t.Fatalf("raw select: %v", err)
+	}
+	if raw == props[0].Address {
+		t.Errorf("expected ciphertext on disk, got plaintext %q", raw)
+	}
+}
+
 // TestUpdatePhoneEncrypts writes a new phone via the repo, then reads the raw
 // row to confirm the column on disk is base64 ciphertext, not plaintext.
 func TestUpdatePhoneEncrypts(t *testing.T) {

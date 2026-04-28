@@ -73,6 +73,12 @@ func main() {
 	if err := backfillProviderProfiles(ctx, conn, key, *dryRun); err != nil {
 		log.Fatalf("backfill provider_profiles: %v", err)
 	}
+	if err := backfillProviderEmployees(ctx, conn, key, *dryRun); err != nil {
+		log.Fatalf("backfill provider_employees: %v", err)
+	}
+	if err := backfillProperties(ctx, conn, key, *dryRun); err != nil {
+		log.Fatalf("backfill properties: %v", err)
+	}
 	log.Printf("encrypt-pii complete")
 }
 
@@ -268,6 +274,181 @@ func backfillProviderProfiles(ctx context.Context, conn *pgx.Conn, key *[keySize
 		}
 	}
 	log.Printf("provider_profiles backfill done (encrypted %d rows)", processed)
+	return nil
+}
+
+// backfillProviderEmployees encrypts email, phone, license_number,
+// insurance_policy_number on each provider_employees row where
+// pii_encrypted_v1 is FALSE. Idempotent.
+func backfillProviderEmployees(ctx context.Context, conn *pgx.Conn, key *[keySize]byte, dryRun bool) error {
+	processed := 0
+	for {
+		rows, err := conn.Query(ctx, `
+			SELECT id, email, phone, license_number, insurance_policy_number
+			FROM provider_employees
+			WHERE pii_encrypted_v1 = FALSE
+			ORDER BY created_at ASC
+			LIMIT $1`, batchSize)
+		if err != nil {
+			return fmt.Errorf("query batch: %w", err)
+		}
+
+		type rowData struct {
+			id           string
+			email        *string
+			phone        *string
+			licenseNum   *string
+			insurancePol *string
+		}
+		var batch []rowData
+		for rows.Next() {
+			var rd rowData
+			if err := rows.Scan(&rd.id, &rd.email, &rd.phone, &rd.licenseNum, &rd.insurancePol); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan provider_employees: %w", err)
+			}
+			batch = append(batch, rd)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("rows iter: %w", err)
+		}
+		if len(batch) == 0 {
+			break
+		}
+
+		for _, rd := range batch {
+			encEmail, err := maybeEncrypt(key, rd.email)
+			if err != nil {
+				return fmt.Errorf("encrypt email %s: %w", rd.id, err)
+			}
+			encPhone, err := maybeEncrypt(key, rd.phone)
+			if err != nil {
+				return fmt.Errorf("encrypt phone %s: %w", rd.id, err)
+			}
+			encLicense, err := maybeEncrypt(key, rd.licenseNum)
+			if err != nil {
+				return fmt.Errorf("encrypt license %s: %w", rd.id, err)
+			}
+			encIns, err := maybeEncrypt(key, rd.insurancePol)
+			if err != nil {
+				return fmt.Errorf("encrypt insurance %s: %w", rd.id, err)
+			}
+
+			if dryRun {
+				log.Printf("DRY provider_employee=%s email=%v phone=%v license=%v insurance=%v",
+					rd.id, encEmail != nil, encPhone != nil, encLicense != nil, encIns != nil)
+				continue
+			}
+
+			_, err = conn.Exec(ctx, `
+				UPDATE provider_employees
+				SET email = $2,
+				    phone = $3,
+				    license_number = $4,
+				    insurance_policy_number = $5,
+				    pii_encrypted_v1 = TRUE,
+				    updated_at = now()
+				WHERE id = $1 AND pii_encrypted_v1 = FALSE`,
+				rd.id, encEmail, encPhone, encLicense, encIns)
+			if err != nil {
+				return fmt.Errorf("update provider_employee %s: %w", rd.id, err)
+			}
+			processed++
+		}
+
+		log.Printf("provider_employees batch processed (total=%d)", processed)
+		if dryRun {
+			break
+		}
+	}
+	log.Printf("provider_employees backfill done (encrypted %d rows)", processed)
+	return nil
+}
+
+// backfillProperties encrypts address and notes on each properties row.
+// city/state/zip_code/location are intentionally left plaintext (see
+// migration 033 comment).
+func backfillProperties(ctx context.Context, conn *pgx.Conn, key *[keySize]byte, dryRun bool) error {
+	processed := 0
+	for {
+		rows, err := conn.Query(ctx, `
+			SELECT id, address, notes
+			FROM properties
+			WHERE pii_encrypted_v1 = FALSE
+			  AND deleted_at IS NULL
+			ORDER BY created_at ASC
+			LIMIT $1`, batchSize)
+		if err != nil {
+			return fmt.Errorf("query batch: %w", err)
+		}
+
+		type rowData struct {
+			id      string
+			address *string
+			notes   *string
+		}
+		var batch []rowData
+		for rows.Next() {
+			var rd rowData
+			// address is NOT NULL in the schema but pgx still scans into *string fine.
+			if err := rows.Scan(&rd.id, &rd.address, &rd.notes); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan properties: %w", err)
+			}
+			batch = append(batch, rd)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("rows iter: %w", err)
+		}
+		if len(batch) == 0 {
+			break
+		}
+
+		for _, rd := range batch {
+			encAddr, err := maybeEncrypt(key, rd.address)
+			if err != nil {
+				return fmt.Errorf("encrypt address %s: %w", rd.id, err)
+			}
+			encNotes, err := maybeEncrypt(key, rd.notes)
+			if err != nil {
+				return fmt.Errorf("encrypt notes %s: %w", rd.id, err)
+			}
+
+			if dryRun {
+				log.Printf("DRY property=%s address=%v notes=%v",
+					rd.id, encAddr != nil, encNotes != nil)
+				continue
+			}
+
+			// address is NOT NULL — keep encAddr non-nil even when the source
+			// is empty (which shouldn't happen given the schema constraint).
+			if encAddr == nil {
+				empty := ""
+				encAddr = &empty
+			}
+
+			_, err = conn.Exec(ctx, `
+				UPDATE properties
+				SET address = $2,
+				    notes = $3,
+				    pii_encrypted_v1 = TRUE,
+				    updated_at = now()
+				WHERE id = $1 AND pii_encrypted_v1 = FALSE`,
+				rd.id, encAddr, encNotes)
+			if err != nil {
+				return fmt.Errorf("update property %s: %w", rd.id, err)
+			}
+			processed++
+		}
+
+		log.Printf("properties batch processed (total=%d)", processed)
+		if dryRun {
+			break
+		}
+	}
+	log.Printf("properties backfill done (encrypted %d rows)", processed)
 	return nil
 }
 

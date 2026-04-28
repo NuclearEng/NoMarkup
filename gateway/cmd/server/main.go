@@ -41,6 +41,7 @@ import (
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/config"
+	gatewaycrypto "github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/handler"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"github.com/nomarkup/nomarkup/gateway/internal/router"
@@ -276,7 +277,12 @@ func main() {
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, cacheClient)
 	disputeHandler := handler.NewDisputeHandler(cacheClient)
-	employeesHandler := handler.NewEmployeesHandler(dbPool)
+	piiCipher, err := gatewaycrypto.FromEnv()
+	if err != nil {
+		slog.Error("crypto: load encryption key", "error", err)
+		os.Exit(1)
+	}
+	employeesHandler := handler.NewEmployeesHandler(dbPool, piiCipher)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(

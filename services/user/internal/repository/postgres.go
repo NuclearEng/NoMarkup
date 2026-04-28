@@ -1611,21 +1611,38 @@ func parseIP(s string) net.IP {
 // --- Property Repository Methods ---
 
 func (r *PostgresRepository) CreateProperty(ctx context.Context, input domain.CreatePropertyInput) (*domain.Property, error) {
+	// Encrypt address + notes before write. city/state/zip/location stay
+	// plaintext for indexed search and PostGIS proximity queries (see
+	// migration 033 comment).
+	encAddress, err := r.cipher.EncryptString(input.Address)
+	if err != nil {
+		return nil, fmt.Errorf("create property: encrypt address: %w", err)
+	}
+	encNotes, err := r.cipher.EncryptString(input.Notes)
+	if err != nil {
+		return nil, fmt.Errorf("create property: encrypt notes: %w", err)
+	}
+
 	p := &domain.Property{}
-	err := r.pool.QueryRow(ctx, `
-		INSERT INTO properties (user_id, nickname, address, city, state, zip_code, location, notes, is_primary)
-		VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10)
+	var addrCol, notesCol string
+	var piiEncrypted bool
+	err = r.pool.QueryRow(ctx, `
+		INSERT INTO properties (user_id, nickname, address, city, state, zip_code, location, notes, is_primary, pii_encrypted_v1)
+		VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, TRUE)
 		RETURNING id, user_id, nickname, address, city, state, zip_code,
 		          ST_X(location) AS longitude, ST_Y(location) AS latitude,
-		          COALESCE(notes, ''), is_primary, created_at, updated_at`,
-		input.UserID, input.Nickname, input.Address, input.City, input.State, input.ZipCode,
-		input.Longitude, input.Latitude, input.Notes, input.IsPrimary,
+		          COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1`,
+		input.UserID, input.Nickname, encAddress, input.City, input.State, input.ZipCode,
+		input.Longitude, input.Latitude, encNotes, input.IsPrimary,
 	).Scan(
-		&p.ID, &p.UserID, &p.Nickname, &p.Address, &p.City, &p.State, &p.ZipCode,
+		&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
 		&p.Longitude, &p.Latitude,
-		&p.Notes, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt,
+		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
 	)
 	if err != nil {
+		return nil, fmt.Errorf("create property: %w", err)
+	}
+	if err := decryptPropertyFields(&p.Address, &p.Notes, addrCol, notesCol, piiEncrypted, r.cipher); err != nil {
 		return nil, fmt.Errorf("create property: %w", err)
 	}
 
@@ -1647,7 +1664,7 @@ func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) 
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
 		       ST_X(location) AS longitude, ST_Y(location) AS latitude,
-		       COALESCE(notes, ''), is_primary, created_at, updated_at
+		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1
 		FROM properties
 		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY is_primary DESC, created_at ASC`, userID)
@@ -1659,13 +1676,18 @@ func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) 
 	var properties []domain.Property
 	for rows.Next() {
 		var p domain.Property
+		var addrCol, notesCol string
+		var piiEncrypted bool
 		err := rows.Scan(
-			&p.ID, &p.UserID, &p.Nickname, &p.Address, &p.City, &p.State, &p.ZipCode,
+			&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
 			&p.Longitude, &p.Latitude,
-			&p.Notes, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt,
+			&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("list properties scan: %w", err)
+		}
+		if err := decryptPropertyFields(&p.Address, &p.Notes, addrCol, notesCol, piiEncrypted, r.cipher); err != nil {
+			return nil, fmt.Errorf("list properties decrypt: %w", err)
 		}
 		properties = append(properties, p)
 	}
@@ -1684,9 +1706,15 @@ func (r *PostgresRepository) UpdateProperty(ctx context.Context, propertyID stri
 		argIdx++
 	}
 	if input.Notes != nil {
+		encNotes, err := r.cipher.EncryptString(*input.Notes)
+		if err != nil {
+			return nil, fmt.Errorf("update property: encrypt notes: %w", err)
+		}
 		setClauses = append(setClauses, fmt.Sprintf("notes = $%d", argIdx))
-		args = append(args, *input.Notes)
+		args = append(args, encNotes)
 		argIdx++
+		// Mark row as encrypted so reads decrypt the new ciphertext.
+		setClauses = append(setClauses, "pii_encrypted_v1 = TRUE")
 	}
 	if input.IsPrimary != nil {
 		setClauses = append(setClauses, fmt.Sprintf("is_primary = $%d", argIdx))
@@ -1746,15 +1774,17 @@ func (r *PostgresRepository) DeleteProperty(ctx context.Context, propertyID stri
 
 func (r *PostgresRepository) getPropertyByID(ctx context.Context, propertyID string) (*domain.Property, error) {
 	p := &domain.Property{}
+	var addrCol, notesCol string
+	var piiEncrypted bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
 		       ST_X(location) AS longitude, ST_Y(location) AS latitude,
-		       COALESCE(notes, ''), is_primary, created_at, updated_at
+		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1
 		FROM properties
 		WHERE id = $1 AND deleted_at IS NULL`, propertyID).Scan(
-		&p.ID, &p.UserID, &p.Nickname, &p.Address, &p.City, &p.State, &p.ZipCode,
+		&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
 		&p.Longitude, &p.Latitude,
-		&p.Notes, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt,
+		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1762,6 +1792,35 @@ func (r *PostgresRepository) getPropertyByID(ctx context.Context, propertyID str
 		}
 		return nil, fmt.Errorf("get property: %w", err)
 	}
+	if err := decryptPropertyFields(&p.Address, &p.Notes, addrCol, notesCol, piiEncrypted, r.cipher); err != nil {
+		return nil, fmt.Errorf("get property: %w", err)
+	}
 	return p, nil
+}
+
+// decryptPropertyFields fills addressOut/notesOut from raw column values,
+// decrypting via cipher when piiEncrypted is true. Pre-033 rows pass through
+// untouched so the repository keeps working before the backfill.
+func decryptPropertyFields(addressOut, notesOut *string, addrCol, notesCol string, piiEncrypted bool, cipher *crypto.Cipher) error {
+	if !piiEncrypted {
+		*addressOut = addrCol
+		*notesOut = notesCol
+		return nil
+	}
+	if addrCol != "" {
+		dec, err := cipher.DecryptString(addrCol)
+		if err != nil {
+			return fmt.Errorf("decrypt address: %w", err)
+		}
+		*addressOut = dec
+	}
+	if notesCol != "" {
+		dec, err := cipher.DecryptString(notesCol)
+		if err != nil {
+			return fmt.Errorf("decrypt notes: %w", err)
+		}
+		*notesOut = dec
+	}
+	return nil
 }
 

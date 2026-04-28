@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -17,12 +18,19 @@ import (
 // the gateway DB pool because there is no dedicated employee microservice —
 // it's a CRUD-only resource owned by the provider, mirroring the savings
 // pattern in user.go.
+//
+// Sensitive columns (email, phone, license_number, insurance_policy_number)
+// are encrypted at rest via crypto.Cipher and the pii_encrypted_v1 flag added
+// in migration 033.
 type EmployeesHandler struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
-func NewEmployeesHandler(db *pgxpool.Pool) *EmployeesHandler {
-	return &EmployeesHandler{db: db}
+// NewEmployeesHandler constructs a handler. cipher is required; in dev it
+// can come from crypto.FromEnv() with no ENCRYPTION_KEY set (ephemeral).
+func NewEmployeesHandler(db *pgxpool.Pool, cipher *crypto.Cipher) *EmployeesHandler {
+	return &EmployeesHandler{db: db, cipher: cipher}
 }
 
 // employeeRow shapes the JSON response so the frontend's CompanyEmployee
@@ -67,7 +75,10 @@ func parseDate(s string) (*time.Time, error) {
 	return &t, nil
 }
 
-func scanEmployee(row pgx.Row) (employeeRow, error) {
+// scanEmployee scans a row and decrypts encrypted PII fields when the row's
+// pii_encrypted_v1 flag is true. Legacy rows (flag=false) pass plaintext
+// through so the gateway keeps working pre-backfill.
+func scanEmployee(row pgx.Row, cipher *crypto.Cipher) (employeeRow, error) {
 	var (
 		e             employeeRow
 		email         sql.NullString
@@ -81,21 +92,30 @@ func scanEmployee(row pgx.Row) (employeeRow, error) {
 		insPolicy     sql.NullString
 		insExpiry     sql.NullTime
 		createdAt     time.Time
+		piiEncrypted  bool
 	)
 	if err := row.Scan(
 		&e.ID, &e.ProviderID, &e.FirstName, &e.LastName,
 		&email, &phone, &dob, &e.Role, &e.Status, &hireDate,
 		&e.BackgroundCheckStatus, &bgDate,
 		&licNumber, &licState, &licExpiry,
-		&insPolicy, &insExpiry, &createdAt,
+		&insPolicy, &insExpiry, &createdAt, &piiEncrypted,
 	); err != nil {
 		return employeeRow{}, err
 	}
 	if email.Valid {
-		e.Email = &email.String
+		v, err := decryptIfEncrypted(cipher, email.String, piiEncrypted)
+		if err != nil {
+			return employeeRow{}, err
+		}
+		e.Email = &v
 	}
 	if phone.Valid {
-		e.Phone = &phone.String
+		v, err := decryptIfEncrypted(cipher, phone.String, piiEncrypted)
+		if err != nil {
+			return employeeRow{}, err
+		}
+		e.Phone = &v
 	}
 	if dob.Valid {
 		e.DateOfBirth = dateToString(&dob.Time)
@@ -107,7 +127,11 @@ func scanEmployee(row pgx.Row) (employeeRow, error) {
 		e.BackgroundCheckDate = dateToString(&bgDate.Time)
 	}
 	if licNumber.Valid {
-		e.LicenseNumber = &licNumber.String
+		v, err := decryptIfEncrypted(cipher, licNumber.String, piiEncrypted)
+		if err != nil {
+			return employeeRow{}, err
+		}
+		e.LicenseNumber = &v
 	}
 	if licState.Valid {
 		e.LicenseState = &licState.String
@@ -116,7 +140,11 @@ func scanEmployee(row pgx.Row) (employeeRow, error) {
 		e.LicenseExpiry = dateToString(&licExpiry.Time)
 	}
 	if insPolicy.Valid {
-		e.InsurancePolicyNumber = &insPolicy.String
+		v, err := decryptIfEncrypted(cipher, insPolicy.String, piiEncrypted)
+		if err != nil {
+			return employeeRow{}, err
+		}
+		e.InsurancePolicyNumber = &v
 	}
 	if insExpiry.Valid {
 		e.InsuranceExpiry = dateToString(&insExpiry.Time)
@@ -125,11 +153,30 @@ func scanEmployee(row pgx.Row) (employeeRow, error) {
 	return e, nil
 }
 
+// decryptIfEncrypted returns plaintext when piiEncrypted is true, otherwise
+// returns the value untouched so legacy rows keep working.
+func decryptIfEncrypted(cipher *crypto.Cipher, value string, piiEncrypted bool) (string, error) {
+	if !piiEncrypted || value == "" {
+		return value, nil
+	}
+	return cipher.DecryptString(value)
+}
+
+// encryptIfNonEmpty returns base64 ciphertext for non-empty s, or "" for
+// empty s. Empty strings are passed through so NULLIF($n, '') in SQL keeps
+// behaving as before.
+func encryptIfNonEmpty(cipher *crypto.Cipher, s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return cipher.EncryptString(s)
+}
+
 const employeeColumns = `id, provider_id, first_name, last_name, email, phone,
         date_of_birth, role, status, hire_date,
         background_check_status, background_check_date,
         license_number, license_state, license_expiry,
-        insurance_policy_number, insurance_expiry, created_at`
+        insurance_policy_number, insurance_expiry, created_at, pii_encrypted_v1`
 
 // List handles GET /api/v1/providers/me/employees.
 func (h *EmployeesHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +203,7 @@ func (h *EmployeesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	employees := make([]employeeRow, 0)
 	for rows.Next() {
-		emp, err := scanEmployee(rows)
+		emp, err := scanEmployee(rows, h.cipher)
 		if err != nil {
 			slog.Error("scan employee failed", "user_id", claims.UserID, "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to read employees")
@@ -217,17 +264,37 @@ func (h *EmployeesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	encEmail, err := encryptIfNonEmpty(h.cipher, body.Email)
+	if err != nil {
+		slog.Error("encrypt employee email", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create employee")
+		return
+	}
+	encPhone, err := encryptIfNonEmpty(h.cipher, body.Phone)
+	if err != nil {
+		slog.Error("encrypt employee phone", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create employee")
+		return
+	}
+	encLicense, err := encryptIfNonEmpty(h.cipher, body.LicenseNumber)
+	if err != nil {
+		slog.Error("encrypt employee license", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create employee")
+		return
+	}
+
 	row := h.db.QueryRow(r.Context(),
 		`INSERT INTO provider_employees (
             provider_id, first_name, last_name, email, phone, date_of_birth,
-            role, status, license_number, license_state, license_expiry
+            role, status, license_number, license_state, license_expiry,
+            pii_encrypted_v1
         ) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, 'active',
-                  NULLIF($8, ''), NULLIF($9, ''), $10)
+                  NULLIF($8, ''), NULLIF($9, ''), $10, TRUE)
         RETURNING `+employeeColumns,
-		claims.UserID, body.FirstName, body.LastName, body.Email, body.Phone, dob,
-		body.Role, body.LicenseNumber, body.LicenseState, licExpiry,
+		claims.UserID, body.FirstName, body.LastName, encEmail, encPhone, dob,
+		body.Role, encLicense, body.LicenseState, licExpiry,
 	)
-	emp, err := scanEmployee(row)
+	emp, err := scanEmployee(row, h.cipher)
 	if err != nil {
 		slog.Error("create employee failed", "user_id", claims.UserID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create employee")
@@ -273,7 +340,29 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// COALESCE on each column so callers can patch any subset.
+	encEmail, err := encryptOptional(h.cipher, body.Email)
+	if err != nil {
+		slog.Error("encrypt update email", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to update employee")
+		return
+	}
+	encPhone, err := encryptOptional(h.cipher, body.Phone)
+	if err != nil {
+		slog.Error("encrypt update phone", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to update employee")
+		return
+	}
+	encLicense, err := encryptOptional(h.cipher, body.LicenseNumber)
+	if err != nil {
+		slog.Error("encrypt update license", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to update employee")
+		return
+	}
+
+	// COALESCE on each column so callers can patch any subset. Whenever any
+	// PII column is touched the row is re-flagged TRUE, which is safe even
+	// if the column itself wasn't included in this patch (existing
+	// ciphertext stays valid; new plaintext PII is now ciphertext).
 	row := h.db.QueryRow(r.Context(), `
         UPDATE provider_employees SET
             first_name = COALESCE($3, first_name),
@@ -285,14 +374,15 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
             status = COALESCE($9, status),
             license_number = COALESCE(NULLIF($10, ''), license_number),
             license_state = COALESCE(NULLIF($11, ''), license_state),
-            license_expiry = COALESCE($12::date, license_expiry)
+            license_expiry = COALESCE($12::date, license_expiry),
+            pii_encrypted_v1 = TRUE
         WHERE id = $1 AND provider_id = $2
         RETURNING `+employeeColumns,
 		id, claims.UserID,
-		body.FirstName, body.LastName, body.Email, body.Phone, body.DateOfBirth,
-		body.Role, body.Status, body.LicenseNumber, body.LicenseState, body.LicenseExpiry,
+		body.FirstName, body.LastName, encEmail, encPhone, body.DateOfBirth,
+		body.Role, body.Status, encLicense, body.LicenseState, body.LicenseExpiry,
 	)
-	emp, err := scanEmployee(row)
+	emp, err := scanEmployee(row, h.cipher)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "employee not found")
@@ -304,6 +394,19 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"employee": emp})
+}
+
+// encryptOptional handles a *string from a PATCH body: nil → nil (no change
+// requested), "" → "" (clear), otherwise → ciphertext.
+func encryptOptional(cipher *crypto.Cipher, s *string) (*string, error) {
+	if s == nil {
+		return nil, nil
+	}
+	ct, err := encryptIfNonEmpty(cipher, *s)
+	if err != nil {
+		return nil, err
+	}
+	return &ct, nil
 }
 
 // Delete handles DELETE /api/v1/providers/me/employees/{id}.
