@@ -126,6 +126,10 @@ func main() {
 	svc := service.New(repo, repo, emailDispatcher, pushDispatcher, smsDispatcher)
 	srv := notificationgrpc.NewServer(svc)
 
+	// Goods-marketplace retention loop: closing-soon, closing-now, and
+	// outbid notifications. Best-effort; failures log-and-continue.
+	runListingNotificationScheduler(ctx, pool, svc, os.Getenv("REDIS_URL"))
+
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		slog.Error("failed to listen", "error", err)

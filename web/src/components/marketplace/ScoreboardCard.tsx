@@ -1,11 +1,13 @@
 'use client';
 
-import { Gavel, MapPin } from 'lucide-react';
+import { Gavel, Heart, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import type { Route } from 'next';
+import type { MouseEvent } from 'react';
 
 import { CountdownClock } from '@/components/marketplace/CountdownClock';
 import { WatcherBadge } from '@/components/marketplace/WatcherBadge';
+import { useWatchListing } from '@/hooks/useWatchlist';
 import { formatCents } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { Listing } from '@/types';
@@ -20,6 +22,12 @@ interface ScoreboardCardProps {
    * - `normal`   for the rest (zinc, no glow)
    */
   urgency?: 'critical' | 'urgent' | 'normal';
+  /**
+   * Whether the signed-in user is watching this listing. Parent hydrates
+   * from `useWatchlist().data` and passes it down so we don't trigger one
+   * mutation per card.
+   */
+  watching?: boolean;
 }
 
 /**
@@ -28,12 +36,19 @@ interface ScoreboardCardProps {
  * watcher count is visible, and the styling escalates with urgency so the
  * scoreboard reads like ESPN GameDay rather than a category catalog.
  */
-export function ScoreboardCard({ listing, urgency = 'normal' }: ScoreboardCardProps) {
+export function ScoreboardCard({ listing, urgency = 'normal', watching = false }: ScoreboardCardProps) {
   const photo = listing.photos[0]?.url ?? null;
   const location =
     listing.pickup_city && listing.pickup_state
       ? `${listing.pickup_city}, ${listing.pickup_state}`
       : listing.pickup_zip;
+
+  const watchMutation = useWatchListing(listing.id);
+  const onHeartClick = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    watchMutation.mutate({ watching: !watching });
+  };
 
   const borderClass =
     urgency === 'critical'
@@ -96,10 +111,29 @@ export function ScoreboardCard({ listing, urgency = 'normal' }: ScoreboardCardPr
 
         {/* Snipe-extension badge */}
         {listing.snipe_extension_count > 0 ? (
-          <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+          <span className="absolute top-2 right-12 inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
             +30s ×{listing.snipe_extension_count}
           </span>
         ) : null}
+
+        {/* Watch heart — top-right corner. Stops propagation so clicking the
+            heart doesn't navigate into the listing. */}
+        <button
+          type="button"
+          onClick={onHeartClick}
+          disabled={watchMutation.isPending}
+          aria-pressed={watching}
+          aria-label={watching ? 'Remove from watchlist' : 'Add to watchlist'}
+          className={cn(
+            'absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full border backdrop-blur-md transition-colors',
+            watching
+              ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
+              : 'border-white/10 bg-black/30 text-white/80 hover:border-white/30 hover:text-white',
+            watchMutation.isPending ? 'opacity-60' : '',
+          )}
+        >
+          <Heart className={cn('h-4 w-4', watching ? 'fill-current' : '')} aria-hidden="true" />
+        </button>
       </div>
 
       {/* Body */}
