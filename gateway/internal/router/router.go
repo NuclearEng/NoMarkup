@@ -72,6 +72,8 @@ func New(
 	instantMatchHandler *handler.InstantMatchHandler,
 	disputeHandler *handler.DisputeHandler,
 	employeesHandler *handler.EmployeesHandler,
+	adminMarketplaceHandler *handler.AdminMarketplaceHandler,
+	listingOrdersHandler *handler.ListingOrdersHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -199,6 +201,13 @@ func New(
 
 	// Public auction replay (no auth required — completed auctions are public)
 	r.Get("/api/v1/auctions/{jobId}/replay", auctionReplayHandler.GetAuctionReplay)
+
+	// Public "report this listing" endpoint — anonymous visitors can flag a
+	// listing as stolen/counterfeit/prohibited. Rate-limited by the global
+	// IP rate limiter; logged-in users get a duplicate-suppression check
+	// inside the handler. The trigger on listing_reports auto-hides a
+	// listing once ≥3 open reports exist.
+	r.Post("/api/v1/listings/{id}/report", adminMarketplaceHandler.CreateReport)
 
 	// Market analytics routes (require authentication)
 	r.Route("/api/v1/analytics/market", func(r chi.Router) {
@@ -369,6 +378,17 @@ func New(
 			r.Post("/{id}/revision", contractHandler.RequestRevision)
 		})
 
+		// Marketplace listing-order routes — buyer-facing pickup confirmation
+		// and dispute filing. Buyer auth is enforced by the handler (admin
+		// can override confirm-pickup). Idempotency keys are NOT required
+		// here because the underlying SQL transitions are themselves
+		// idempotent (state-machine guards the transitions).
+		// See docs/operations/marketplace-escrow.md for the lifecycle.
+		r.Route("/orders", func(r chi.Router) {
+			r.Post("/{id}/confirm-pickup", listingOrdersHandler.ConfirmPickup)
+			r.Post("/{id}/file-dispute", listingOrdersHandler.FileListingDispute)
+		})
+
 		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {
 			r.Use(middleware.RequireIdempotencyKey(cacheClient))
@@ -471,6 +491,12 @@ func New(
 			// Disputes
 			r.Route("/disputes", func(r chi.Router) {
 				r.Get("/", adminDisputesHandler.ListDisputes)
+				// Goods-specific list/resolve — reads `disputes.subject_kind='goods'`
+				// directly from the DB. The contract-service ListDisputes path
+				// only sees service disputes (it joins on contract_id, which is
+				// NULL for goods disputes after migration 035).
+				r.Get("/goods", adminMarketplaceHandler.ListGoodsDisputes)
+				r.Post("/goods/{id}/resolve", adminMarketplaceHandler.ResolveGoodsDispute)
 				r.Get("/{id}", adminDisputesHandler.GetDispute)
 				r.Post("/{id}/resolve", adminDisputesHandler.ResolveDispute)
 			})
@@ -524,6 +550,20 @@ func New(
 			r.Route("/insurance/claims", func(r chi.Router) {
 				r.Get("/", insuranceHandler.AdminListClaims)
 				r.Post("/{id}/review", insuranceHandler.AdminReviewClaim)
+			})
+
+			// Marketplace listings (goods)
+			r.Route("/listings", func(r chi.Router) {
+				r.Get("/", adminMarketplaceHandler.ListListings)
+				r.Post("/{id}/suspend", adminMarketplaceHandler.SuspendListing)
+				r.Post("/{id}/reactivate", adminMarketplaceHandler.ReactivateListing)
+				r.Post("/{id}/cancel", adminMarketplaceHandler.CancelListing)
+			})
+
+			// Marketplace prohibited-items reports
+			r.Route("/goods-reports", func(r chi.Router) {
+				r.Get("/", adminMarketplaceHandler.ListReports)
+				r.Post("/{id}/resolve", adminMarketplaceHandler.ResolveReport)
 			})
 
 			// Feature flags

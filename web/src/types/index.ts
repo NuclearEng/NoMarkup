@@ -1854,3 +1854,190 @@ export interface TaxForm {
 export interface TaxFormsResponse {
   forms: TaxForm[];
 }
+
+// ────────────────────────────────────────
+// Goods Marketplace (Forward Auction) types
+// ────────────────────────────────────────
+
+export const LISTING_STATUS = {
+  DRAFT: 'draft',
+  ACTIVE: 'active',
+  SOLD: 'sold',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+} as const;
+export type ListingStatus = (typeof LISTING_STATUS)[keyof typeof LISTING_STATUS];
+
+export const LISTING_DURATION_HOURS = {
+  DAY: 24,
+  TWO_DAYS: 48,
+  WEEK: 168,
+} as const;
+export type ListingDurationHours =
+  (typeof LISTING_DURATION_HOURS)[keyof typeof LISTING_DURATION_HOURS];
+
+export const LISTING_ORDER_STATUS = {
+  PENDING: 'pending',
+  PAID: 'paid',
+  PICKED_UP: 'picked_up',
+  COMPLETED: 'completed',
+  DISPUTED: 'disputed',
+  CANCELLED: 'cancelled',
+} as const;
+export type ListingOrderStatus =
+  (typeof LISTING_ORDER_STATUS)[keyof typeof LISTING_ORDER_STATUS];
+
+export interface ListingPhoto {
+  id: string;
+  url: string;
+  blur_hash: string | null;
+  sort_order: number;
+}
+
+export interface Listing {
+  id: string;
+  seller_id: string;
+  category_id: string;
+  category_name: string;
+  category_slug: string;
+  title: string;
+  description: string;
+  status: ListingStatus;
+  photos: ListingPhoto[];
+  pickup_zip: string;
+  pickup_city: string | null;
+  pickup_state: string | null;
+  pickup_address: string | null; // only present after winner is chosen
+  pickup_lat: number | null;
+  pickup_lng: number | null;
+  starting_price_cents: number;
+  current_bid_cents: number;
+  min_increment_cents: number;
+  bidder_count: number;
+  bid_count: number;
+  auction_duration_hours: number;
+  auction_ends_at: string | null;
+  snipe_extension_count: number;
+  distance_km: number | null;
+  is_user_winning: boolean;
+  was_outbid: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListingDetail extends Listing {
+  seller_display_name: string;
+  seller_member_since: string;
+  seller_listings_count: number;
+  seller_trust_tier: TrustTier | null;
+  seller_trust_score: number | null;
+}
+
+export interface ListingBid {
+  id: string;
+  listing_id: string;
+  bidder_id: string;
+  bidder_display_name: string;
+  amount_cents: number;
+  is_winning: boolean;
+  created_at: string;
+}
+
+export interface ListingBidHistory {
+  bids: ListingBid[];
+  current_bid_cents: number;
+  bidder_count: number;
+}
+
+export interface CreateListingInput {
+  category_id: string;
+  title: string;
+  description: string;
+  photo_urls: string[];
+  pickup_zip: string;
+  pickup_address?: string;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  starting_price_cents: number;
+  auction_duration_hours: ListingDurationHours;
+  publish?: boolean;
+}
+
+export interface UpdateListingInput {
+  title?: string;
+  description?: string;
+  photo_urls?: string[];
+  pickup_zip?: string;
+  pickup_address?: string;
+  starting_price_cents?: number;
+  auction_duration_hours?: ListingDurationHours;
+}
+
+export interface PlaceListingBidInput {
+  amount_cents: number;
+}
+
+export interface PlaceListingBidResponse {
+  bid: ListingBid;
+  current_bid_cents: number;
+  bidder_count: number;
+  /** New auction end time when a snipe extension was triggered */
+  snipe_extension_applied: boolean;
+  new_auction_ends_at: string | null;
+}
+
+export interface SearchListingsParams {
+  query?: string;
+  category_id?: string;
+  pickup_zip?: string;
+  radius_km?: number;
+  min_price_cents?: number;
+  max_price_cents?: number;
+  ending_soon?: boolean;
+  sort_by?: 'ending_soon' | 'newest' | 'lowest_price' | 'highest_price';
+  page?: number;
+  page_size?: number;
+}
+
+export interface ListingsResponse {
+  listings: Listing[];
+  pagination: PaginationResponse;
+}
+
+export interface MyListingsResponse {
+  listings: Listing[];
+  pagination: PaginationResponse;
+}
+
+export interface MyListingBid {
+  bid: ListingBid;
+  listing: Listing;
+}
+
+export interface MyListingBidsResponse {
+  bids: MyListingBid[];
+  pagination: PaginationResponse;
+}
+
+export interface ListingOrder {
+  id: string;
+  listing_id: string;
+  listing_title: string;
+  listing_photo_url: string | null;
+  buyer_id: string;
+  seller_id: string;
+  seller_display_name: string;
+  pickup_address: string;
+  pickup_zip: string;
+  pickup_city: string;
+  pickup_state: string;
+  amount_cents: number;
+  platform_fee_cents: number;
+  status: ListingOrderStatus;
+  channel_id: string | null;
+  paid_at: string | null;
+  picked_up_at: string | null;
+  completed_at: string | null;
+  dispute_window_ends_at: string | null;
+  created_at: string;
+}

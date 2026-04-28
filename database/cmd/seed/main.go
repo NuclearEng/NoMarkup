@@ -591,6 +591,15 @@ func main() {
 		log.Printf("insert market range: %v (skipping)", err)
 	}
 
+	// ── 15. Marketplace (goods) ──────────────────────────────────
+	//
+	// Seeds the goods marketplace: 8 active listings, 3 with active bids,
+	// 2 closing soon, 1 sold (with order), 1 in dispute. Idempotent —
+	// uses fixed UUIDs and ON CONFLICT DO UPDATE.
+	if err := seedMarketplace(ctx, tx, now); err != nil {
+		log.Fatalf("seed marketplace: %v", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit transaction: %v", err)
 	}
@@ -611,6 +620,9 @@ func main() {
 	log.Println("        4 bids, 2 contracts, 2 milestones, 1 review,")
 	log.Println("        1 trust score, 3 subscription tiers, 3 subscriptions,")
 	log.Println("        3 notification preferences, 1 market range")
+	log.Println("        Marketplace: 13 listings (8 active + 3 with bids + ")
+	log.Println("        2 closing-soon + 1 sold + 1 disputed), ~22 listing bids,")
+	log.Println("        1 listing order, 1 goods dispute")
 }
 
 func hashPassword(password string) (string, error) {

@@ -389,3 +389,201 @@ export function useCategoryMetrics(startDate?: string, endDate?: string) {
       api.get<CategoryMetricsResponse>(`/api/v1/admin/platform/categories${query}`),
   });
 }
+
+// ─── Marketplace listings (goods) ─────────────────────
+//
+// The marketplace admin surface is pgx-direct (no gRPC); response shapes
+// are inlined here rather than exported from /types so each consumer can
+// see the JSON contract at a glance.
+
+export interface AdminListing {
+  id: string;
+  title: string;
+  seller_id: string;
+  seller_email: string;
+  status: string;
+  is_hidden: boolean;
+  hidden_reason?: string | null;
+  starting_price_cents: number;
+  current_bid_cents?: number | null;
+  bid_count: number;
+  open_report_count: number;
+  auction_ends_at: string;
+  created_at: string;
+}
+
+export interface AdminListingsResponse {
+  listings: AdminListing[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminListings(params?: {
+  q?: string;
+  status?: string;
+  seller_id?: string;
+  hidden?: 'true' | 'false';
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    q: params?.q,
+    status: params?.status,
+    seller_id: params?.seller_id,
+    hidden: params?.hidden,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'listings', params],
+    queryFn: () => api.get<AdminListingsResponse>(`/api/v1/admin/listings${query}`),
+  });
+}
+
+export function useSuspendListing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { listingId: string; reason: string }) =>
+      api.post(`/api/v1/admin/listings/${vars.listingId}/suspend`, { reason: vars.reason }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+export function useReactivateListing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { listingId: string }) =>
+      api.post(`/api/v1/admin/listings/${vars.listingId}/reactivate`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+export function useCancelListing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { listingId: string; reason: string }) =>
+      api.post(`/api/v1/admin/listings/${vars.listingId}/cancel`, { reason: vars.reason }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+// ─── Goods reports ────────────────────────────────────
+
+export interface AdminReport {
+  id: string;
+  listing_id: string;
+  listing_title: string;
+  reporter_id?: string | null;
+  reporter_email?: string | null;
+  reason: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export interface AdminReportsResponse {
+  reports: AdminReport[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminReports(params?: {
+  status?: string;
+  listing_id?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    listing_id: params?.listing_id,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'goods-reports', params],
+    queryFn: () => api.get<AdminReportsResponse>(`/api/v1/admin/goods-reports${query}`),
+  });
+}
+
+export function useResolveReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { reportId: string; action: 'dismiss' | 'actioned' | 'review'; notes: string }) =>
+      api.post(`/api/v1/admin/goods-reports/${vars.reportId}/resolve`, {
+        action: vars.action,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'goods-reports'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+// ─── Goods disputes ───────────────────────────────────
+
+export interface AdminGoodsDispute {
+  id: string;
+  listing_order_id: string;
+  listing_id: string;
+  listing_title: string;
+  opened_by: string;
+  opened_by_email: string;
+  dispute_type: string;
+  description: string;
+  status: string;
+  amount_cents: number;
+  refund_to_buyer_cents?: number | null;
+  transfer_to_seller_cents?: number | null;
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export function useAdminGoodsDisputes(params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'goods-disputes', params],
+    queryFn: () =>
+      api.get<{
+        disputes: AdminGoodsDispute[];
+        pagination: { page: number; page_size: number; total: number };
+      }>(`/api/v1/admin/disputes/goods${query}`),
+  });
+}
+
+export function useResolveGoodsDispute() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      disputeId: string;
+      resolution: 'refund_full' | 'refund_partial' | 'release_to_seller' | 'no_action';
+      refund_to_buyer_cents?: number;
+      transfer_to_seller_cents?: number;
+      notes: string;
+    }) =>
+      api.post(`/api/v1/admin/disputes/goods/${vars.disputeId}/resolve`, {
+        resolution: vars.resolution,
+        refund_to_buyer_cents: vars.refund_to_buyer_cents ?? 0,
+        transfer_to_seller_cents: vars.transfer_to_seller_cents ?? 0,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'goods-disputes'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}

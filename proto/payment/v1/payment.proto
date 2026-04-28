@@ -93,6 +93,18 @@ service PaymentService {
   rpc GetTaxFormHTML(GetTaxFormHTMLRequest) returns (GetTaxFormHTMLResponse);
   rpc GetInvoiceHTML(GetInvoiceHTMLRequest) returns (GetInvoiceHTMLResponse);
 
+  // ============================================================
+  // Marketplace (peer-to-peer goods) — escrow + pickup + release
+  // ============================================================
+  // Lifecycle: pending_payment -> held -> pickup_confirmed -> released
+  // (with optional disputed branch). See docs/operations/marketplace-escrow.md
+  // for the state diagram and dispute timeline.
+  rpc ChargeListingWinner(ChargeListingWinnerRequest) returns (ChargeListingWinnerResponse);
+  rpc ConfirmListingPickup(ConfirmListingPickupRequest) returns (ConfirmListingPickupResponse);
+  rpc FileListingDispute(FileListingDisputeRequest) returns (FileListingDisputeResponse);
+  rpc ResolveListingDispute(ResolveListingDisputeRequest) returns (ResolveListingDisputeResponse);
+  rpc AutoReleaseListingOrders(AutoReleaseListingOrdersRequest) returns (AutoReleaseListingOrdersResponse);
+
   // GDPR — delete a customer's Stripe Customer + Connect Express account.
   // Called by the user service's Erasure pipeline after the local DB cascade
   // commits. Outcomes are recorded verbatim in the user service's audit log.
@@ -909,4 +921,78 @@ message DeleteStripeAccountsResponse {
   // bubbled up unhandled.
   string customer_outcome = 1;
   string account_outcome = 2;
+}
+
+// ============================================================
+// Marketplace (Goods) Escrow RPCs
+// ============================================================
+
+message ChargeListingWinnerRequest {
+  // listing_orders.id (NOT listings.id). The marketplace service creates
+  // the order in pending_payment status when the auction closes; this RPC
+  // creates the Stripe PaymentIntent and persists it on the order.
+  string order_id = 1;
+}
+
+message ChargeListingWinnerResponse {
+  string payment_intent_id = 1;
+  string client_secret = 2;
+  int64  amount_cents = 3;     // bid amount (subtotal)
+  int64  fee_cents = 4;        // platform fee
+  int64  tax_cents = 5;        // sales tax (state-level)
+  int64  total_cents = 6;      // total charged to buyer
+}
+
+message ConfirmListingPickupRequest {
+  string order_id = 1;
+  // The buyer is implicit from the JWT claims; admin paths set actor_role="admin".
+  string actor_user_id = 2;
+  string actor_role = 3; // "buyer" or "admin"
+}
+
+message ConfirmListingPickupResponse {
+  string status = 1;             // "released"
+  int64  seller_payout_cents = 2;
+  google.protobuf.Timestamp pickup_confirmed_at = 3;
+}
+
+message FileListingDisputeRequest {
+  string order_id = 1;
+  string buyer_id = 2;
+  // One of: item_not_as_described, item_damaged, no_show,
+  //         item_not_received, other.
+  string reason = 3;
+  string description = 4;
+}
+
+message FileListingDisputeResponse {
+  string dispute_id = 1;
+  string status = 2;
+}
+
+message ResolveListingDisputeRequest {
+  string dispute_id = 1;
+  string admin_id = 2;
+  // One of: refund_full, refund_partial, release_to_seller, no_action.
+  string resolution = 3;
+  string notes = 4;
+  // Used only when resolution == refund_partial. Cents to refund to buyer;
+  // remainder goes to seller minus platform fee.
+  int64  refund_to_buyer_cents = 5;
+}
+
+message ResolveListingDisputeResponse {
+  string status = 1;             // "resolved"
+  string resolution = 2;
+  int64  refund_to_buyer_cents = 3;
+  int64  transfer_to_seller_cents = 4;
+}
+
+message AutoReleaseListingOrdersRequest {
+  // Optional batch limit; defaults to 100 server-side.
+  int32 batch_limit = 1;
+}
+
+message AutoReleaseListingOrdersResponse {
+  int32 released_count = 1;
 }

@@ -38,6 +38,15 @@ vi.mock('@/hooks/useBids', () => ({
   useMyBids: () => bidsState,
 }));
 
+vi.mock('@/hooks/useListings', () => ({
+  useMyListingBids: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+
 import BidsPage from '@/app/(dashboard)/bids/page';
 
 beforeEach(() => {
@@ -95,9 +104,10 @@ describe('BidsPage', () => {
     render(withQueryClient(createElement(BidsPage)));
     const wonTab = screen.getByRole('tab', { name: 'Won' });
     fireEvent.click(wonTab);
-    // Just confirm tablist renders 4 tabs (All / Active / Won / Lost).
+    // Outer tabs: Services + Goods. Inner Services tabs: All / Active / Won / Lost.
+    // Total = 6.
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(6);
   });
 
   it('renders Previous/Next pagination when totalPages > 1', () => {

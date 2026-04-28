@@ -148,6 +148,20 @@ func (s *PaymentService) handlePaymentIntentSucceeded(ctx context.Context, event
 		return fmt.Errorf("parse payment_intent.succeeded: %w", err)
 	}
 
+	// Check if this payment is for the goods marketplace flow.
+	if pi.Metadata != nil {
+		if pi.Metadata["marketplace_flow"] == "goods-v1" && s.marketplaceHook != nil {
+			slog.Info("payment_intent.succeeded for marketplace listing",
+				"pi_id", pi.ID,
+				"order_id", pi.Metadata["listing_order_id"],
+			)
+			if err := s.marketplaceHook.HandleListingPaymentIntentSucceeded(ctx, pi.ID); err != nil {
+				return fmt.Errorf("handle listing payment succeeded: %w", err)
+			}
+			return nil
+		}
+	}
+
 	// Check if this payment is for a BNPL installment plan.
 	if pi.Metadata != nil {
 		planID := pi.Metadata["installment_plan_id"]

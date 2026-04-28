@@ -277,6 +277,42 @@ export const propertySchema = z.object({
 
 export type PropertyFormValues = z.infer<typeof propertySchema>;
 
+// Listing (goods marketplace) schemas
+export const listingTitleSchema = z
+  .string()
+  .min(5, 'Title must be at least 5 characters')
+  .max(120, 'Title must be at most 120 characters');
+
+export const listingDescriptionSchema = z
+  .string()
+  .min(20, 'Description must be at least 20 characters')
+  .max(5000, 'Description must be at most 5000 characters');
+
+export const listingZipSchema = z
+  .string()
+  .regex(/^\d{5}(-\d{4})?$/, 'Pickup zip must be a valid 5-digit zip code');
+
+export const listingPostingSchema = z.object({
+  categoryId: z.string().min(1, 'Category is required'),
+  title: listingTitleSchema,
+  description: listingDescriptionSchema,
+  photoUrls: z
+    .array(z.string().url('Each photo must be a valid URL'))
+    .min(1, 'At least one photo is required')
+    .max(10, 'You can upload up to 10 photos'),
+  pickupZip: listingZipSchema,
+  pickupAddress: z.string().max(200).optional().or(z.literal('')),
+  startingPriceDollars: z
+    .number()
+    .positive('Starting price must be greater than $0')
+    .max(1_000_000, 'Starting price is too large'),
+  auctionDurationHours: z.union([z.literal(24), z.literal(48), z.literal(168)], {
+    required_error: 'Pick an auction duration',
+  }),
+});
+
+export type ListingPostingFormValues = z.infer<typeof listingPostingSchema>;
+
 // Employee schemas
 export const addEmployeeSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100),

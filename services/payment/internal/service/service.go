@@ -22,12 +22,20 @@ type InstallmentPaymentHandler interface {
 	ConfirmInstallmentPaymentSucceeded(ctx context.Context, planID, installmentID, paymentIntentID string) error
 }
 
+// MarketplacePaymentHandler is the surface PaymentService uses to delegate
+// goods-marketplace webhook events. The concrete implementation is
+// *MarketplaceService.HandleListingPaymentIntentSucceeded.
+type MarketplacePaymentHandler interface {
+	HandleListingPaymentIntentSucceeded(ctx context.Context, paymentIntentID string) error
+}
+
 // PaymentService implements payment business logic.
 type PaymentService struct {
 	repo             domain.PaymentRepository
 	stripe           *StripeService
 	subHook          SubscriptionWebhookHandler
 	installmentHook  InstallmentPaymentHandler
+	marketplaceHook  MarketplacePaymentHandler
 	webhookValidator WebhookEventValidator
 }
 
@@ -45,6 +53,11 @@ func (s *PaymentService) SetSubscriptionWebhookHandler(h SubscriptionWebhookHand
 // SetInstallmentPaymentHandler sets the handler for installment payment events.
 func (s *PaymentService) SetInstallmentPaymentHandler(h InstallmentPaymentHandler) {
 	s.installmentHook = h
+}
+
+// SetMarketplaceHandler wires the goods-marketplace webhook delegate.
+func (s *PaymentService) SetMarketplaceHandler(h MarketplacePaymentHandler) {
+	s.marketplaceHook = h
 }
 
 // CalculateFees computes the fee breakdown for a given amount.

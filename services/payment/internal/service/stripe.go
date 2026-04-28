@@ -367,6 +367,141 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 	return r.ID, nil
 }
 
+// --- Marketplace (peer-to-peer goods) Stripe methods ---
+
+// CreateMarketplacePaymentIntent creates a PaymentIntent for the goods
+// marketplace flow. Unlike the services CreatePaymentIntent, this DOES NOT
+// use TransferData/destination charge — funds land in the platform's Stripe
+// account so they can be held in escrow until pickup confirms. The seller is
+// paid via a separate transfer in CreateMarketplaceTransfer.
+//
+// Auto-capture (CaptureMethod=automatic) is used because the buyer is paying
+// up front; escrow is enforced by NoMarkup's state machine + delayed transfer,
+// not by Stripe's capture mechanism.
+//
+// Idempotency key is mandatory.
+func (s *StripeService) CreateMarketplacePaymentIntent(
+	ctx context.Context,
+	totalCents int64,
+	currency string,
+	idempotencyKey string,
+	metadata map[string]string,
+) (string, string, error) {
+	if idempotencyKey == "" {
+		return "", "", fmt.Errorf("create marketplace payment intent: idempotency key required")
+	}
+	if s.devMode {
+		slog.Info("dev mode: stub CreateMarketplacePaymentIntent",
+			"total_cents", totalCents,
+			"idem", idempotencyKey,
+		)
+		return "pi_listing_dev_" + idempotencyKey, "pi_listing_dev_secret_" + idempotencyKey, nil
+	}
+
+	params := &stripe.PaymentIntentParams{
+		Amount:   stripe.Int64(totalCents),
+		Currency: stripe.String(currency),
+		// Auto-capture: funds move to platform balance. Held in escrow by
+		// the marketplace state machine (escrow_status='held').
+		CaptureMethod: stripe.String(string(stripe.PaymentIntentCaptureMethodAutomatic)),
+	}
+	for k, v := range metadata {
+		params.AddMetadata(k, v)
+	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
+
+	pi, err := paymentintent.New(params)
+	if err != nil {
+		return "", "", fmt.Errorf("create marketplace payment intent: %w", err)
+	}
+	return pi.ID, pi.ClientSecret, nil
+}
+
+// CreateMarketplaceTransfer pays the seller for a confirmed listing order.
+// Unlike services.CreateTransfer this looks up the seller's Connect account
+// indirectly via stripe-customer-id-by-platform-user. In dev mode it's a
+// stub; the production path needs a (sellerID -> stripeAccountID) lookup
+// which is wired via the PaymentService surface; here we accept the
+// stripeAccountID directly so callers can resolve it however they want.
+//
+// Idempotency key is mandatory.
+func (s *StripeService) CreateMarketplaceTransfer(
+	ctx context.Context,
+	amountCents int64,
+	currency string,
+	stripeAccountIDOrSellerID string,
+	paymentIntentID string,
+	idempotencyKey string,
+) (string, error) {
+	if idempotencyKey == "" {
+		return "", fmt.Errorf("create marketplace transfer: idempotency key required")
+	}
+	if amountCents <= 0 {
+		// Zero/negative payouts are a no-op (e.g. full-refund disputes). Return
+		// a sentinel transfer ID so callers can log it.
+		return "tr_zero_" + idempotencyKey, nil
+	}
+	if s.devMode {
+		slog.Info("dev mode: stub CreateMarketplaceTransfer",
+			"amount_cents", amountCents,
+			"destination", stripeAccountIDOrSellerID,
+			"idem", idempotencyKey,
+		)
+		return "tr_listing_dev_" + idempotencyKey, nil
+	}
+
+	params := &stripe.TransferParams{
+		Amount:      stripe.Int64(amountCents),
+		Currency:    stripe.String(currency),
+		Destination: stripe.String(stripeAccountIDOrSellerID),
+	}
+	if paymentIntentID != "" {
+		params.SourceTransaction = stripe.String(paymentIntentID)
+	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
+
+	t, err := transfer.New(params)
+	if err != nil {
+		return "", fmt.Errorf("create marketplace transfer: %w", err)
+	}
+	return t.ID, nil
+}
+
+// CreateMarketplaceRefund issues a refund (full or partial) for a listing
+// payment intent. Idempotency key required to prevent double-refund on retry.
+func (s *StripeService) CreateMarketplaceRefund(
+	ctx context.Context,
+	paymentIntentID string,
+	amountCents int64,
+	idempotencyKey string,
+) (string, error) {
+	if idempotencyKey == "" {
+		return "", fmt.Errorf("create marketplace refund: idempotency key required")
+	}
+	if s.devMode {
+		slog.Info("dev mode: stub CreateMarketplaceRefund",
+			"pi_id", paymentIntentID,
+			"amount_cents", amountCents,
+			"idem", idempotencyKey,
+		)
+		return "re_listing_dev_" + idempotencyKey, nil
+	}
+
+	params := &stripe.RefundParams{
+		PaymentIntent: stripe.String(paymentIntentID),
+	}
+	if amountCents > 0 {
+		params.Amount = stripe.Int64(amountCents)
+	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
+
+	r, err := refund.New(params)
+	if err != nil {
+		return "", fmt.Errorf("create marketplace refund: %w", err)
+	}
+	return r.ID, nil
+}
+
 // --- BNPL Stripe methods ---
 
 // CreateOffSessionPaymentIntent creates a PaymentIntent with confirm=true and off_session=true.

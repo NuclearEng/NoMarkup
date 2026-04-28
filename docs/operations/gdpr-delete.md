@@ -117,7 +117,14 @@ windows). The constant lives at
 | `trust_score_history` | DELETE. | Same. |
 | `oauth_accounts` | DELETE. Provider-side revoke handled via `OAuthRevoker` (Google/Apple revoke endpoint where supported). | Removes the link; provider revoke is best-effort. |
 | `subscriptions` | KEEP for accounting. stripe_customer_id remains so we know which Stripe customer was deleted. | Needed for accountant reconciliation. |
-| `S3 users/{userID}/` | Delete every object. | Avatar, portfolio, KYC scans, completion photos. |
+| `listings` | KEEP rows where the user was the seller. title/description → "[deleted]", pickup_address → NULL, location → (0,0), keep pickup_zip_code (needed for tax analytics). | Public marketplace history; bids tied to it must remain resolvable. |
+| `listing_photos` | DELETE rows for affected listings. | Same reasoning as job_photos / portfolio images — photos are PII. |
+| `listing_bids` | KEEP. Strip `ip_address` and `fingerprint`. | Bids back the order money trail (same reasoning as `bids`). The anti-abuse trail is PII; redact it but keep the bid amount + timestamp. |
+| `listing_orders` | KEEP, untouched. | Same legal retention as `payments` — Stripe 18mo + IRS 7yr. The columns are numeric/enum (no free-text PII). |
+| `listing_reports` (035) | reporter_id → NULL (FK is `ON DELETE SET NULL`, so cascade is automatic), description → "[deleted]" when authored by the user. KEEP the row otherwise — auto-hide trail must survive deletion. | Internal moderation state. Anonymizing the reporter prevents retaliation reverse-lookup; redacting free-text removes any PII the user typed. |
+| `marketplace_disputes` | description → "[deleted]". KEEP all numeric / status fields. | Same reasoning as contract `disputes`: ledger integrity for resolved transfers. Free-text gets redacted. |
+| `seller_tax_forms` | KEEP, untouched. | 1099-K legal retention (IRS 7yr). |
+| `S3 users/{userID}/` | Delete every object. | Avatar, portfolio, KYC scans, completion photos, listing photos. |
 | Stripe Customer | `stripe.Customer.del()`. | Outcome string recorded in audit log. |
 | Stripe Connect Account | `stripe.Account.del()`. May be rejected if open balance — see Open Edge Cases. | Outcome recorded. |
 

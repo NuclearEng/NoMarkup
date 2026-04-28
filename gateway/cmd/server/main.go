@@ -283,6 +283,8 @@ func main() {
 		os.Exit(1)
 	}
 	employeesHandler := handler.NewEmployeesHandler(dbPool, piiCipher)
+	adminMarketplaceHandler := handler.NewAdminMarketplaceHandler(dbPool)
+	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
@@ -309,6 +311,8 @@ func main() {
 		instantMatchHandler,
 		disputeHandler,
 		employeesHandler,
+		adminMarketplaceHandler,
+		listingOrdersHandler,
 	)
 
 	srv := &http.Server{

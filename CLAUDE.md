@@ -1,6 +1,13 @@
 # NoMarkup — Development Rules
 
-> Reverse-auction service marketplace. Customers post jobs, providers compete on price.
+> Two-sided marketplace platform built on the same auth + payment stack:
+>
+> - **Services** (`/jobs`, `/bids`, `/contracts`) — reverse-auction. Customers post
+>   jobs, providers compete on price (descending). The original product surface.
+> - **Goods** (`/marketplace`, `/sell`, `/orders`) — forward-auction. Sellers list
+>   physical items, buyers bid (ascending), local pickup only inside 25mi. MVP shipping
+>   in this branch. See `docs/marketplace.md` for the architecture map and trust model.
+>
 > This file is the single source of truth for all architecture, conventions, and quality standards.
 
 ---
