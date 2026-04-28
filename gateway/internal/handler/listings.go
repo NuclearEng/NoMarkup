@@ -138,10 +138,36 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		args = append(args, cat)
 		clauses = append(clauses, "l.category_id = $"+strconv.Itoa(len(args)))
 	}
-	if zip := q.Get("pickup_zip"); zip != "" {
+
+	// ── 25-mile pickup-radius filter ───────────────────────────────────────
+	// Resolve a search center from (lat,lng), or look up pickup_zip in the
+	// zip_codes table if it exists. The radius is capped at 40km (~25mi)
+	// regardless of caller input — the pitch.md guarantees local-only.
+	//
+	// Schema note: a `zip_codes` table is referenced by the audit roadmap
+	// but does not yet exist in /database/migrations. When a caller passes
+	// only `pickup_zip`, we fall back to the legacy exact-match filter and
+	// log a hint so the front-end isn't silently broken.
+	centerLat, centerLng, hasCenter := h.resolveSearchCenter(r.Context(), q)
+	radiusKm, hasRadius := resolveRadiusKm(q)
+	applyGeo := hasCenter && hasRadius
+
+	if zip := q.Get("pickup_zip"); zip != "" && !applyGeo {
+		// Legacy fallback when we couldn't geocode the ZIP.
 		args = append(args, zip)
 		clauses = append(clauses, "l.pickup_zip_code = $"+strconv.Itoa(len(args)))
 	}
+	if applyGeo {
+		args = append(args, centerLng) // ST_MakePoint takes (lng, lat)
+		lngArg := strconv.Itoa(len(args))
+		args = append(args, centerLat)
+		latArg := strconv.Itoa(len(args))
+		args = append(args, radiusKm*1000.0)
+		metersArg := strconv.Itoa(len(args))
+		clauses = append(clauses,
+			"ST_DWithin(l.location::geography, ST_MakePoint($"+lngArg+", $"+latArg+")::geography, $"+metersArg+")")
+	}
+
 	if minP := q.Get("min_price_cents"); minP != "" {
 		if n, err := strconv.ParseInt(minP, 10, 64); err == nil && n >= 0 {
 			args = append(args, n)
@@ -170,6 +196,10 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		orderBy = "COALESCE(l.current_bid_cents, l.starting_price_cents) ASC"
 	case "highest_price":
 		orderBy = "COALESCE(l.current_bid_cents, l.starting_price_cents) DESC"
+	case "distance":
+		if hasCenter {
+			orderBy = "distance_km ASC NULLS LAST"
+		}
 	case "ending_soon":
 		// default
 	}
@@ -182,6 +212,19 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		slog.Error("listings count failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to count listings")
 		return
+	}
+
+	// Distance projection: when a center is resolved, project ST_Distance/1000
+	// (km) into the SELECT and expose it as `distance_km` so callers can sort
+	// by it and we can populate the JSON field. Otherwise project NULL so the
+	// scan target is uniform.
+	distanceExpr := "NULL::float8"
+	if hasCenter {
+		args = append(args, centerLng)
+		dLngArg := strconv.Itoa(len(args))
+		args = append(args, centerLat)
+		dLatArg := strconv.Itoa(len(args))
+		distanceExpr = "ST_Distance(l.location::geography, ST_MakePoint($" + dLngArg + ", $" + dLatArg + ")::geography) / 1000.0"
 	}
 
 	args = append(args, pageSize, (page-1)*pageSize)
@@ -210,6 +253,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			l.auction_duration_hours,
 			l.auction_ends_at,
 			COALESCE(l.snipe_extension_count, 0),
+			`+distanceExpr+`                      AS distance_km,
 			l.created_at, l.updated_at
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
@@ -228,6 +272,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var l listingJSON
 		var lat, lng pgtype.Float8
+		var distanceKm pgtype.Float8
 		var endsAt pgtype.Timestamptz
 		if err := rows.Scan(&l.ID, &l.SellerID, &l.CategoryID,
 			&l.CategoryName, &l.CategorySlug,
@@ -239,6 +284,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			&l.BidderCount, &l.BidCount,
 			&l.AuctionDurationHours, &endsAt,
 			&l.SnipeExtensionCount,
+			&distanceKm,
 			&l.CreatedAt, &l.UpdatedAt); err != nil {
 			slog.Error("listings scan failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "scan error")
@@ -251,6 +297,10 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		if lng.Valid {
 			v := lng.Float64
 			l.PickupLng = &v
+		}
+		if distanceKm.Valid {
+			v := distanceKm.Float64
+			l.DistanceKm = &v
 		}
 		if endsAt.Valid {
 			t := endsAt.Time
@@ -581,6 +631,88 @@ func pageMeta(page, pageSize, total int) map[string]interface{} {
 		"totalPages":  totalPages,
 		"hasNext":     page < totalPages,
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Geo-radius helpers
+// ─────────────────────────────────────────────────────────────────────────
+
+// maxRadiusKm is the cap enforced on every radius query. The pitch.md
+// (and PRD) repeatedly promises "local pickup only inside 25 miles" —
+// 40km is the rounded ceiling that honors that promise (25mi ≈ 40.23km)
+// while letting the front-end pass a slightly higher number from URL
+// shorthand without us silently widening the search.
+const maxRadiusKm = 40.0
+
+// resolveRadiusKm picks a radius from `radius_km` or `radius_miles`,
+// caps it at maxRadiusKm, and returns whether a radius was supplied.
+// Negative or non-numeric values are treated as absent.
+func resolveRadiusKm(q map[string][]string) (float64, bool) {
+	if mi := getFirst(q, "radius_miles"); mi != "" {
+		if n, err := strconv.ParseFloat(mi, 64); err == nil && n > 0 {
+			km := n * 1.609344
+			if km > maxRadiusKm {
+				km = maxRadiusKm
+			}
+			return km, true
+		}
+	}
+	if km := getFirst(q, "radius_km"); km != "" {
+		if n, err := strconv.ParseFloat(km, 64); err == nil && n > 0 {
+			if n > maxRadiusKm {
+				n = maxRadiusKm
+			}
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// resolveSearchCenter returns (lat, lng, ok). Priority:
+//  1. explicit ?lat=&lng= query params
+//  2. ?pickup_zip= looked up via the zip_codes table (if it exists)
+//
+// The zip_codes table is referenced by the marketplace roadmap but has not
+// yet been migrated. When the lookup table is missing or the ZIP is
+// unknown we return ok=false; the caller falls back to legacy exact-match
+// ZIP filtering and the radius clause is skipped.
+func (h *ListingsHandler) resolveSearchCenter(ctx context.Context, q map[string][]string) (float64, float64, bool) {
+	latStr := getFirst(q, "lat")
+	lngStr := getFirst(q, "lng")
+	if latStr != "" && lngStr != "" {
+		lat, errLat := strconv.ParseFloat(latStr, 64)
+		lng, errLng := strconv.ParseFloat(lngStr, 64)
+		if errLat == nil && errLng == nil &&
+			lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 {
+			return lat, lng, true
+		}
+	}
+
+	zip := getFirst(q, "pickup_zip")
+	if zip == "" || h.db == nil {
+		return 0, 0, false
+	}
+	var lat, lng float64
+	err := h.db.QueryRow(ctx,
+		`SELECT lat, lng FROM zip_codes WHERE zip = $1`, zip,
+	).Scan(&lat, &lng)
+	if err != nil {
+		// Common: relation does not exist (table not migrated yet) or no row.
+		// Fall back to legacy exact-zip filter; UI still gets results.
+		slog.Warn("zip_codes lookup unavailable; radius filter skipped",
+			"zip", zip, "error", err)
+		return 0, 0, false
+	}
+	return lat, lng, true
+}
+
+// getFirst returns the first value for a query key, or "" if absent.
+// Mirrors url.Values.Get without forcing the caller to import net/url.
+func getFirst(q map[string][]string, key string) string {
+	if v, ok := q[key]; ok && len(v) > 0 {
+		return strings.TrimSpace(v[0])
+	}
+	return ""
 }
 
 // jsonRawOrNull returns a JSON-marshalled value or null if v is nil.
