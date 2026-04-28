@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FollowButton } from '@/components/users/FollowButton';
 import { usePublicProviderProfile } from '@/hooks/useProviders';
 import { useReviewsForUser } from '@/hooks/useReviews';
 
@@ -85,6 +86,11 @@ export default function ProviderProfilePage() {
             {provider.response_time_label ? (
               <div className="mt-2">
                 <ResponseTimeBadge label={provider.response_time_label} />
+              </div>
+            ) : null}
+            {provider.user_id ? (
+              <div className="mt-3">
+                <FollowButton sellerId={provider.user_id} />
               </div>
             ) : null}
           </div>

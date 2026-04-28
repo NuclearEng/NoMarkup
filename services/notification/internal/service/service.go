@@ -381,6 +381,9 @@ func defaultPreferences(userID string) *domain.NotificationPreferences {
 		"document_approved", "document_rejected", "document_expiring",
 		"change_order_proposed", "change_order_responded",
 		"recurring_upcoming", "recurring_instance_ready",
+		// Onboarding cadence + seller-follow retention loop.
+		"welcome_day_1", "welcome_day_3", "welcome_day_7",
+		"seller_new_listing",
 	}
 
 	for _, t := range allTypes {
@@ -407,7 +410,9 @@ func defaultChannelPrefs(notifType string) domain.ChannelPrefs {
 		"dispute_opened", "dispute_resolved",
 		"document_approved", "document_rejected", "document_expiring",
 		"tier_upgrade", "tier_downgrade",
-		"completion_approved", "work_completed":
+		"completion_approved", "work_completed",
+		// Welcome cadence is email-led; we still gate on user prefs.
+		"welcome_day_1", "welcome_day_3", "welcome_day_7":
 		cp.Email = true
 	}
 

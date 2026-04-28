@@ -20,6 +20,12 @@ vi.mock('@/components/providers/ResponseTimeBadge', () => ({
     createElement('span', { 'data-testid': 'response-time' }, label),
 }));
 
+// FollowButton calls into TanStack Query — mock it out to keep the
+// provider-profile suite focused on the profile presentation.
+vi.mock('@/components/users/FollowButton', () => ({
+  FollowButton: () => createElement('button', { 'data-testid': 'follow-button' }, 'Follow'),
+}));
+
 vi.mock('@/hooks/useProviders', () => ({
   usePublicProviderProfile: vi.fn(),
 }));

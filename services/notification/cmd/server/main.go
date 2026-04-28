@@ -130,6 +130,15 @@ func main() {
 	// outbid notifications. Best-effort; failures log-and-continue.
 	runListingNotificationScheduler(ctx, pool, svc, os.Getenv("REDIS_URL"))
 
+	// Welcome-email cadence (day-1 / day-3 / day-7). Idempotent via
+	// users.welcome_*_sent_at timestamps stamped on dispatch.
+	runWelcomeEmailScheduler(ctx, pool, svc)
+
+	// New-listing fan-out to seller followers. Subscribes to
+	// `notify:seller_new_listing:*` published by the job service when a
+	// listing flips to status='active'. Skipped when REDIS_URL is unset.
+	runFollowsPubsubScheduler(ctx, pool, svc, os.Getenv("REDIS_URL"))
+
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		slog.Error("failed to listen", "error", err)
