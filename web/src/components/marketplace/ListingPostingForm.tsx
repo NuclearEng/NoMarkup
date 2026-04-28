@@ -1,11 +1,13 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight, ImagePlus, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus, Sparkles, X } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
+
+import type { ListingImageAnalysisResult } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -66,14 +68,55 @@ const GOODS_CATEGORIES: { id: string; name: string }[] = [
   { id: 'goods-vehicles', name: 'Vehicles' },
   { id: 'goods-home-garden', name: 'Home & Garden' },
   { id: 'goods-baby-kids', name: 'Baby & Kids' },
+  { id: 'goods-books-media', name: 'Books & Media' },
+  { id: 'goods-clothing', name: 'Clothing' },
   { id: 'goods-collectibles', name: 'Collectibles' },
+  { id: 'goods-other', name: 'Other' },
 ];
+
+const KNOWN_GOODS_CATEGORY_IDS = new Set(GOODS_CATEGORIES.map((c) => c.id));
 
 const DURATIONS: { value: ListingDurationHours; label: string; sub: string }[] = [
   { value: 24, label: '24 hours', sub: 'Quick sell' },
   { value: 48, label: '48 hours', sub: 'Most common' },
   { value: 168, label: '7 days', sub: 'Maximum exposure' },
 ];
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Unexpected FileReader result type'));
+        return;
+      }
+      const base64 = result.split(',')[1];
+      if (!base64) {
+        reject(new Error('Could not extract base64 data'));
+        return;
+      }
+      resolve(base64);
+    };
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function isAnalysisResult(value: unknown): value is ListingImageAnalysisResult {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v['categorySlug'] === 'string' &&
+    typeof v['title'] === 'string' &&
+    typeof v['description'] === 'string' &&
+    typeof v['suggestedStartingPriceCents'] === 'number' &&
+    typeof v['condition'] === 'string' &&
+    typeof v['confidence'] === 'string'
+  );
+}
 
 interface ListingPostingFormProps {
   /** Optional callback so tests/wrappers can intercept successful publish */
@@ -85,7 +128,11 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
   const createListing = useCreateListing();
   const [step, setStep] = useState(0);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [aiState, setAiState] = useState<'idle' | 'analyzing' | 'applied' | 'error'>('idle');
+  const [aiSummary, setAiSummary] = useState<ListingImageAnalysisResult | null>(null);
+  const aiTriggeredRef = useRef(false);
 
   const form = useForm<ListingPostingFormValues>({
     resolver: zodResolver(listingPostingSchema),
@@ -138,17 +185,87 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
   }
 
   function appendFiles(files: FileList | File[]) {
-    const accepted: string[] = [];
+    const acceptedFiles: File[] = [];
+    const acceptedUrls: string[] = [];
     for (const f of Array.from(files)) {
       if (!ACCEPTED_PHOTO_TYPES.includes(f.type)) continue;
       // Stub: in production, upload via the imaging engine and use the returned URL.
       // For frontend-only build, we use object URLs as placeholder.
       const url = URL.createObjectURL(f);
-      accepted.push(url);
+      acceptedUrls.push(url);
+      acceptedFiles.push(f);
     }
-    const next = [...photoUrls, ...accepted].slice(0, MAX_PHOTOS);
-    setPhotoUrls(next);
-    form.setValue('photoUrls', next, { shouldValidate: true, shouldDirty: true });
+    const wasEmpty = photoUrls.length === 0;
+    const nextUrls = [...photoUrls, ...acceptedUrls].slice(0, MAX_PHOTOS);
+    const nextFiles = [...photoFiles, ...acceptedFiles].slice(0, MAX_PHOTOS);
+    setPhotoUrls(nextUrls);
+    setPhotoFiles(nextFiles);
+    form.setValue('photoUrls', nextUrls, { shouldValidate: true, shouldDirty: true });
+
+    // Fire AI auto-fill on the very first photo upload (only once per session).
+    if (wasEmpty && acceptedFiles.length > 0 && !aiTriggeredRef.current) {
+      const firstFile = acceptedFiles[0];
+      if (firstFile) {
+        aiTriggeredRef.current = true;
+        void analyzeFirstPhoto(firstFile);
+      }
+    }
+  }
+
+  async function analyzeFirstPhoto(file: File) {
+    setAiState('analyzing');
+    try {
+      const imageBase64 = await fileToBase64(file);
+      const res = await fetch('/api/analyze-listing-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, mimeType: file.type }),
+      });
+      if (!res.ok) {
+        setAiState('error');
+        return;
+      }
+      const data: unknown = await res.json();
+      if (!isAnalysisResult(data)) {
+        setAiState('error');
+        return;
+      }
+      applyAnalysis(data);
+      setAiSummary(data);
+      setAiState('applied');
+    } catch {
+      setAiState('error');
+    }
+  }
+
+  function applyAnalysis(result: ListingImageAnalysisResult) {
+    const current = form.getValues();
+    // Only fill empty fields — never clobber what the user has already typed.
+    if (!current.title.trim()) {
+      form.setValue('title', result.title.slice(0, 120), {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    if (!current.description.trim()) {
+      form.setValue('description', result.description, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    if (!current.categoryId && KNOWN_GOODS_CATEGORY_IDS.has(result.categorySlug)) {
+      form.setValue('categoryId', result.categorySlug, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    if (!current.startingPriceDollars || current.startingPriceDollars === 0) {
+      const dollars = Math.max(1, Math.round(result.suggestedStartingPriceCents / 100));
+      form.setValue('startingPriceDollars', dollars, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
   }
 
   function handleFileInput(e: ChangeEvent<HTMLInputElement>) {
@@ -169,7 +286,9 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
 
   function removePhoto(idx: number) {
     const next = photoUrls.filter((_, i) => i !== idx);
+    const nextFiles = photoFiles.filter((_, i) => i !== idx);
     setPhotoUrls(next);
+    setPhotoFiles(nextFiles);
     form.setValue('photoUrls', next, { shouldValidate: true, shouldDirty: true });
   }
 
@@ -300,6 +419,35 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                 render={() => (
                   <FormItem>
                     <FormLabel>Photos (1–{MAX_PHOTOS})</FormLabel>
+                    {aiState === 'analyzing' ? (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="mb-3 flex items-start gap-2 rounded-md border border-[var(--brand-gold)]/30 bg-[var(--brand-gold)]/5 p-3 text-sm text-zinc-200"
+                      >
+                        <Sparkles
+                          className="mt-0.5 h-4 w-4 shrink-0 animate-pulse text-[var(--brand-gold)]"
+                          aria-hidden="true"
+                        />
+                        <span>Analyzing your photo to suggest a title, category, and price…</span>
+                      </div>
+                    ) : null}
+                    {aiState === 'applied' && aiSummary ? (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="mb-3 flex items-start gap-2 rounded-md border border-[var(--brand-gold)]/30 bg-[var(--brand-gold)]/5 p-3 text-sm text-zinc-200"
+                      >
+                        <Sparkles
+                          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]"
+                          aria-hidden="true"
+                        />
+                        <span>
+                          AI suggested a title, category, and starting price — edit anything before
+                          publishing.
+                        </span>
+                      </div>
+                    ) : null}
                     <div
                       onDrop={handleDrop}
                       onDragOver={handleDragOver}

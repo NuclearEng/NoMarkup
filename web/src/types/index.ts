@@ -2047,3 +2047,26 @@ export interface ListingOrder {
   dispute_window_ends_at: string | null;
   created_at: string;
 }
+
+// ────────────────────────────────────────
+// AI auto-fill: listing image analysis
+// ────────────────────────────────────────
+
+export type ListingAnalysisCondition =
+  | 'new'
+  | 'like_new'
+  | 'very_good'
+  | 'good'
+  | 'acceptable'
+  | 'for_parts';
+
+export type ListingAnalysisConfidence = 'low' | 'medium' | 'high';
+
+export interface ListingImageAnalysisResult {
+  categorySlug: string;
+  title: string;
+  description: string;
+  suggestedStartingPriceCents: number;
+  condition: ListingAnalysisCondition;
+  confidence: ListingAnalysisConfidence;
+}
