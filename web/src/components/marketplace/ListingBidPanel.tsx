@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
+import { Loader2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -16,9 +16,16 @@ interface ListingBidPanelProps {
   isUserWinning: boolean;
   isSubmitting: boolean;
   isAuctionExpired: boolean;
+  /** ISO timestamp of the most recent live bid event from the spectator socket. */
+  lastLiveBidTimestamp?: string | null;
+  /** Whether the most recent live bid extended the auction (snipe extension). */
+  lastLiveBidExtended?: boolean;
   onPlaceBid: (amountCents: number) => void;
   className?: string;
 }
+
+/** Window during which a fresh live bid pulses + extension banner shows (ms). */
+const LIVE_BID_HIGHLIGHT_MS = 3_000;
 
 const QUICK_INCREMENTS = [500, 1000, 2000, 5000];
 
@@ -30,6 +37,8 @@ export function ListingBidPanel({
   isUserWinning,
   isSubmitting,
   isAuctionExpired,
+  lastLiveBidTimestamp,
+  lastLiveBidExtended,
   onPlaceBid,
   className,
 }: ListingBidPanelProps) {
@@ -40,6 +49,20 @@ export function ListingBidPanel({
 
   const [bidDollars, setBidDollars] = useState<number>(minBidCents / 100);
   const [error, setError] = useState<string | null>(null);
+
+  // Pulse highlight + snipe banner are visible for LIVE_BID_HIGHLIGHT_MS after
+  // a fresh bid_event arrives via the spectator socket.
+  const [highlightLive, setHighlightLive] = useState<boolean>(false);
+  useEffect(() => {
+    if (!lastLiveBidTimestamp) return;
+    setHighlightLive(true);
+    const t = setTimeout(() => {
+      setHighlightLive(false);
+    }, LIVE_BID_HIGHLIGHT_MS);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [lastLiveBidTimestamp]);
 
   useEffect(() => {
     setBidDollars((d) => {
@@ -114,10 +137,24 @@ export function ListingBidPanel({
   return (
     <div
       className={cn(
-        'space-y-3 rounded-xl border border-[var(--brand-gold)]/20 bg-white/[0.03] p-4',
+        'space-y-3 rounded-xl border border-[var(--brand-gold)]/20 bg-white/[0.03] p-4 transition-colors duration-500',
+        highlightLive && 'animate-pulse border-[var(--brand-gold)]/70 bg-[var(--brand-gold)]/10',
         className,
       )}
+      data-live-pulse={highlightLive ? 'true' : 'false'}
     >
+      {highlightLive && lastLiveBidExtended ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-100"
+          data-testid="snipe-extension-flash"
+        >
+          <Zap className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />
+          <span className="font-semibold">+30s — auction extended</span>
+        </div>
+      ) : null}
+
       <div className="flex items-baseline justify-between">
         <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">
           Place your bid

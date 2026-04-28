@@ -1,5 +1,6 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ChevronRight, Clock, MapPin, Radio, Tag, Users } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
@@ -23,6 +24,7 @@ import {
   useListingBids,
   usePlaceListingBid,
 } from '@/hooks/useListings';
+import { useMarketplaceSpectator } from '@/hooks/useMarketplaceSpectator';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { LISTING_STATUS } from '@/types';
@@ -38,6 +40,18 @@ export default function ListingDetailPage() {
 
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
+  // ─── Live spectator stream ───────────────────────────────────────
+  const { isConnected: liveConnected, watcherCount, lastBid } = useMarketplaceSpectator(listingId);
+  const queryClient = useQueryClient();
+
+  // When a live bid arrives, invalidate cached queries so the listing detail
+  // refetches with the new high bid + bid_count, and the bid history reloads.
+  useEffect(() => {
+    if (!lastBid || !listingId) return;
+    void queryClient.invalidateQueries({ queryKey: ['listings', listingId] });
+    void queryClient.invalidateQueries({ queryKey: ['listings', listingId, 'bids'] });
+  }, [lastBid, listingId, queryClient]);
 
   // Track previous "winning" state so we can fire an outbid toast when the
   // value flips from true → false during this session.
@@ -283,6 +297,22 @@ export default function ListingDetailPage() {
                   <span className="font-semibold">{String(listing.bid_count)}</span>
                   <span className="text-zinc-500">bid{listing.bid_count !== 1 ? 's' : ''}</span>
                 </div>
+                <div
+                  className="flex items-center gap-1.5"
+                  aria-live="polite"
+                  aria-label={`${String(watcherCount)} watching now`}
+                >
+                  <span
+                    className={
+                      liveConnected
+                        ? 'inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400'
+                        : 'inline-block h-2 w-2 rounded-full bg-zinc-600'
+                    }
+                    aria-hidden="true"
+                  />
+                  <span className="font-semibold tabular-nums">{String(watcherCount)}</span>
+                  <span className="text-zinc-500">live</span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -296,6 +326,8 @@ export default function ListingDetailPage() {
             isUserWinning={listing.is_user_winning}
             isAuctionExpired={auctionExpired}
             isSubmitting={placeBid.isPending}
+            lastLiveBidTimestamp={lastBid?.timestamp ?? null}
+            lastLiveBidExtended={lastBid?.snipe_extension ?? false}
             onPlaceBid={(amountCents) => {
               placeBid.mutate({ listingId, input: { amount_cents: amountCents } });
             }}
