@@ -104,6 +104,16 @@ func main() {
 		os.Getenv("FCM_PROJECT_ID"),
 	)
 
+	// W3C Web Push (RFC 8030) dispatcher — coexists with FCM. Closes
+	// audit Section J's "FCM-only push" gap. When VAPID_PRIVATE_KEY is
+	// empty, the dispatcher logs and skips (dev-mode parity with FCM).
+	webPushDispatcher := service.NewWebPushDispatcher(
+		pool,
+		os.Getenv("VAPID_PUBLIC_KEY"),
+		os.Getenv("VAPID_PRIVATE_KEY"),
+		os.Getenv("VAPID_SUBJECT"),
+	)
+
 	smsDispatcher := service.NewSMSDispatcher(
 		os.Getenv("TWILIO_ACCOUNT_SID"),
 		os.Getenv("TWILIO_AUTH_TOKEN"),
@@ -117,13 +127,16 @@ func main() {
 	if os.Getenv("FCM_SERVER_KEY") == "" {
 		slog.Info("push dispatcher running in dev mode (FCM_SERVER_KEY not set)")
 	}
+	if os.Getenv("VAPID_PRIVATE_KEY") == "" {
+		slog.Warn("web push dispatcher running in dev mode (VAPID_PRIVATE_KEY not set) — generate keys with: go run github.com/SherClockHolmes/webpush-go/cmd/webpush-cli@latest generate")
+	}
 	if os.Getenv("TWILIO_ACCOUNT_SID") == "" {
 		slog.Info("sms dispatcher running in dev mode (TWILIO_ACCOUNT_SID not set)")
 	}
 
 	// Wire up dependencies.
 	repo := repository.New(pool)
-	svc := service.New(repo, repo, emailDispatcher, pushDispatcher, smsDispatcher)
+	svc := service.New(repo, repo, emailDispatcher, pushDispatcher, webPushDispatcher, smsDispatcher)
 	srv := notificationgrpc.NewServer(svc)
 
 	// Goods-marketplace retention loop: closing-soon, closing-now, and
