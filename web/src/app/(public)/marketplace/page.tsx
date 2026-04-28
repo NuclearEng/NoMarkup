@@ -4,8 +4,10 @@ import { Package, SlidersHorizontal, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { ListingFilters } from '@/components/marketplace/ListingFilters';
+import { RecentlyViewed } from '@/components/marketplace/RecentlyViewed';
 import { ScoreboardCard } from '@/components/marketplace/ScoreboardCard';
 import { SearchBar } from '@/components/marketplace/SearchBar';
+import { TrendingRail } from '@/components/marketplace/TrendingRail';
 import { UrgencyStrip } from '@/components/marketplace/UrgencyStrip';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -92,6 +94,11 @@ export default function MarketplacePage() {
           liveBidsCount={liveBidsCount}
         />
       </div>
+
+      {/* Trending rail — sits between the urgency strip and the search bar.
+          Hidden when the API has nothing trending so first-load users on a
+          quiet marketplace don't see an empty header. */}
+      <TrendingRail />
 
       {/* Autocomplete search — Meilisearch-backed typeahead. Sits above
           the filters so the search is the primary find affordance,
@@ -278,6 +285,10 @@ export default function MarketplacePage() {
           )}
         </div>
       </div>
+
+      {/* Recently viewed rail — localStorage-backed, hidden for first-time
+          visitors so the page doesn't show an empty bar. */}
+      <RecentlyViewed />
     </div>
   );
 }

@@ -206,6 +206,19 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		if hasCenter {
 			orderBy = "distance_km ASC NULLS LAST"
 		}
+	case "trending":
+		// Composite trending score: bid count + unique bidders (watcher proxy)
+		// + bid velocity over the last hour. Computed inline in ORDER BY so we
+		// don't need a derived SELECT column. Tie-break by raw bid_count.
+		orderBy = `(
+			COALESCE(l.bid_count, 0) * 0.5
+			+ COALESCE((SELECT COUNT(DISTINCT bidder_id) FROM listing_bids WHERE listing_id = l.id), 0) * 1.0
+			+ COALESCE(
+				(SELECT COUNT(*) FROM listing_bids
+				   WHERE listing_id = l.id AND created_at > now() - interval '1 hour'),
+				0
+			) * 2.0
+		) DESC NULLS LAST, l.bid_count DESC`
 	case "ending_soon":
 		// default
 	}

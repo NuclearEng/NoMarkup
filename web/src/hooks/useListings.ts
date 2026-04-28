@@ -35,6 +35,8 @@ function buildSearchParams(params: SearchListingsParams): string {
   if (params.category_id) sp.set('category_id', params.category_id);
   if (params.pickup_zip) sp.set('pickup_zip', params.pickup_zip);
   if (params.radius_km !== undefined) sp.set('radius_km', String(params.radius_km));
+  if (params.lat !== undefined) sp.set('lat', String(params.lat));
+  if (params.lng !== undefined) sp.set('lng', String(params.lng));
   if (params.min_price_cents !== undefined)
     sp.set('min_price_cents', String(params.min_price_cents));
   if (params.max_price_cents !== undefined)
@@ -53,6 +55,25 @@ export function useListings(params: SearchListingsParams) {
     queryFn: () =>
       api.getPublic<ListingsResponse>(`/api/v1/listings${buildSearchParams(params)}`),
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Trending rail on the marketplace homepage.
+ *
+ * Hits /listings?sort_by=trending which orders by a composite of bid_count,
+ * unique-bidder watcher count, and bid velocity (last hour). Used by the
+ * <TrendingRail> component above the search bar. Empty arrays pass through
+ * silently so the rail can hide itself when nothing is trending.
+ */
+export function useTrendingListings(limit = 12) {
+  return useQuery({
+    queryKey: ['listings', 'trending', limit],
+    queryFn: () =>
+      api.getPublic<ListingsResponse>(
+        `/api/v1/listings?sort_by=trending&page_size=${String(limit)}`,
+      ),
+    staleTime: 30_000,
   });
 }
 

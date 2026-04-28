@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import {
   Briefcase,
   Home,
+  MapPin,
   MessageSquare,
   PlusCircle,
   Search,
@@ -57,6 +58,13 @@ export function Header() {
               Browse Jobs
             </Link>
           ) : null}
+          <Link
+            href={'/marketplace/map' as Route}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+          >
+            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+            Map
+          </Link>
           <Link
             href="/demo/auction"
             className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300"

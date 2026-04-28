@@ -75,6 +75,13 @@ vi.mock('@/hooks/useListings', () => ({
   useListings: () => listingsState,
   useListingsAutocomplete: () => ({ data: { suggestions: [] }, isLoading: false }),
   useSimilarListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
+  useTrendingListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
+}));
+
+vi.mock('@/hooks/useRecentlyViewed', () => ({
+  useRecentlyViewed: () => ({ items: [], add: vi.fn(), remove: vi.fn(), clear: vi.fn() }),
+  useRecordRecentView: () => undefined,
+  useRecentlyViewedListings: () => ({ listings: [], isLoading: false }),
 }));
 
 import MarketplacePage from '@/app/(public)/marketplace/page';

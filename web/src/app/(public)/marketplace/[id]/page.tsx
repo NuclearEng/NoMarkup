@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
 import { Sparkline } from '@/components/ui/sparkline';
+import { extractBidBondRequirement } from '@/hooks/useCompliance';
 import { useCountdown } from '@/hooks/useCountdown';
 import {
   useListing,
@@ -27,6 +28,7 @@ import {
   usePlaceListingBid,
 } from '@/hooks/useListings';
 import { useMarketplaceSpectator } from '@/hooks/useMarketplaceSpectator';
+import { useRecordRecentView } from '@/hooks/useRecentlyViewed';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { LISTING_STATUS } from '@/types';
@@ -39,6 +41,17 @@ export default function ListingDetailPage() {
   const { data: bidHistory } = useListingBids(listingId);
   const placeBid = usePlaceListingBid();
   const { isExpired } = useCountdown(listing?.auction_ends_at);
+
+  // Bid-bond pre-auth: when the gateway returns 402 with a
+  // `requires_bid_bond` envelope we capture it here so the bid panel
+  // can render the inline Stripe Elements flow. The pending-bid amount
+  // is replayed once the bond is authorized.
+  const [bidBondReq, setBidBondReq] = useState<{ bond_amount_cents: number } | null>(null);
+  const [pendingBid, setPendingBid] = useState<{ amount: number; max?: number } | null>(null);
+
+  // Track this listing in localStorage so it shows up on the marketplace
+  // homepage's "Recently viewed" rail. No-op when listingId is empty.
+  useRecordRecentView(listingId);
 
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -346,8 +359,44 @@ export default function ListingDetailPage() {
             isSubmitting={placeBid.isPending}
             lastLiveBidTimestamp={lastBid?.timestamp ?? null}
             lastLiveBidExtended={lastBid?.snipe_extension ?? false}
-            onPlaceBid={(amountCents) => {
-              placeBid.mutate({ listingId, input: { amount_cents: amountCents } });
+            listingId={listingId}
+            bidBondRequirement={bidBondReq}
+            onBidBondAuthorized={() => {
+              if (pendingBid) {
+                placeBid.mutate({
+                  listingId,
+                  input: {
+                    amount_cents: pendingBid.amount,
+                    ...(pendingBid.max ? { max_bid_cents: pendingBid.max } : {}),
+                  },
+                });
+              }
+              setBidBondReq(null);
+              setPendingBid(null);
+            }}
+            onPlaceBid={(amountCents, maxBidCents) => {
+              setPendingBid({ amount: amountCents, max: maxBidCents });
+              placeBid.mutate(
+                {
+                  listingId,
+                  input: {
+                    amount_cents: amountCents,
+                    ...(maxBidCents ? { max_bid_cents: maxBidCents } : {}),
+                  },
+                },
+                {
+                  onSuccess: () => {
+                    setBidBondReq(null);
+                    setPendingBid(null);
+                  },
+                  onError: (err) => {
+                    const req = extractBidBondRequirement(err);
+                    if (req) {
+                      setBidBondReq({ bond_amount_cents: req.bond_amount_cents });
+                    }
+                  },
+                },
+              );
             }}
           />
 
