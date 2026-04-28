@@ -20,7 +20,19 @@ interface ListingBidPanelProps {
   lastLiveBidTimestamp?: string | null;
   /** Whether the most recent live bid extended the auction (snipe extension). */
   lastLiveBidExtended?: boolean;
-  onPlaceBid: (amountCents: number) => void;
+  /**
+   * The user's standing confidential max-bid for this listing (only set
+   * when they are the current high bidder). When provided, the panel
+   * surfaces an "Auto-bidding active up to $X" badge so the bidder
+   * remembers the auction is defending them automatically.
+   */
+  userMaxBidCents?: number | null;
+  /**
+   * Place a bid. `maxBidCents` is the buyer's confidential ceiling for
+   * eBay-style proxy bidding; omit (undefined) when the bid is exactly
+   * `amountCents` with no autobid headroom.
+   */
+  onPlaceBid: (amountCents: number, maxBidCents?: number) => void;
   className?: string;
 }
 
@@ -39,6 +51,7 @@ export function ListingBidPanel({
   isAuctionExpired,
   lastLiveBidTimestamp,
   lastLiveBidExtended,
+  userMaxBidCents,
   onPlaceBid,
   className,
 }: ListingBidPanelProps) {
@@ -48,6 +61,10 @@ export function ListingBidPanel({
   );
 
   const [bidDollars, setBidDollars] = useState<number>(minBidCents / 100);
+  // Confidential max-bid (proxy ceiling). Initialized to match the
+  // visible bid; the user can raise it independently. Cannot fall below
+  // the visible bid — see the merging logic below.
+  const [maxDollars, setMaxDollars] = useState<number>(minBidCents / 100);
   const [error, setError] = useState<string | null>(null);
 
   // Pulse highlight + snipe banner are visible for LIVE_BID_HIGHLIGHT_MS after
@@ -70,7 +87,22 @@ export function ListingBidPanel({
       if (cents < minBidCents) return minBidCents / 100;
       return d;
     });
+    setMaxDollars((m) => {
+      const cents = Math.round(m * 100);
+      if (cents < minBidCents) return minBidCents / 100;
+      return m;
+    });
   }, [minBidCents]);
+
+  // The max ceiling can never sit below the visible bid amount.
+  useEffect(() => {
+    const bidCents = Math.round(bidDollars * 100);
+    setMaxDollars((m) => {
+      const maxCents = Math.round(m * 100);
+      if (maxCents < bidCents) return bidDollars;
+      return m;
+    });
+  }, [bidDollars]);
 
   function applyIncrement(deltaCents: number) {
     const nextCents = Math.max(minBidCents, Math.round(bidDollars * 100) + deltaCents);
@@ -88,8 +120,19 @@ export function ListingBidPanel({
       setError(`Bid must be at least ${formatCents(minBidCents)}`);
       return;
     }
+    const maxCents = Math.round(maxDollars * 100);
+    if (Number.isFinite(maxCents) && maxCents < cents) {
+      setError('Max bid cannot be below your bid');
+      return;
+    }
     setError(null);
-    onPlaceBid(cents);
+    // Only forward maxBidCents when it strictly exceeds the visible bid.
+    // Equal max == no autobid headroom, which is the same as omitting it.
+    if (Number.isFinite(maxCents) && maxCents > cents) {
+      onPlaceBid(cents, maxCents);
+    } else {
+      onPlaceBid(cents);
+    }
   }
 
   if (isOwnListing) {
@@ -169,6 +212,17 @@ export function ListingBidPanel({
         ) : null}
       </div>
 
+      {isUserWinning && typeof userMaxBidCents === 'number' && userMaxBidCents > currentBidCents ? (
+        <div
+          className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1.5 text-xs text-emerald-200"
+          data-testid="autobid-active-label"
+          aria-live="polite"
+        >
+          <Zap className="h-3.5 w-3.5 text-emerald-300" aria-hidden="true" />
+          <span>Auto-bidding active up to {formatCents(userMaxBidCents)}</span>
+        </div>
+      ) : null}
+
       <div className="space-y-2">
         <Label htmlFor="listing-bid-amount" className="text-xs text-zinc-400">
           Bid amount (min {formatCents(minBidCents)})
@@ -189,6 +243,30 @@ export function ListingBidPanel({
             if (error) setError(null);
           }}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="listing-max-bid" className="text-xs text-zinc-400">
+          Set max bid (optional)
+        </Label>
+        <Input
+          id="listing-max-bid"
+          type="number"
+          min={Math.max(minBidCents, Math.round(bidDollars * 100)) / 100}
+          step="0.01"
+          variant="glass"
+          inputMode="decimal"
+          value={Number.isFinite(maxDollars) ? maxDollars : ''}
+          aria-describedby="listing-max-bid-help"
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setMaxDollars(Number.isFinite(v) ? v : 0);
+            if (error) setError(null);
+          }}
+        />
+        <p id="listing-max-bid-help" className="text-[11px] text-zinc-500">
+          We&rsquo;ll auto-bid for you up to this amount, only as much as needed to keep you on top.
+        </p>
       </div>
 
       <div className="grid grid-cols-4 gap-2">

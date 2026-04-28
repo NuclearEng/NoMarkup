@@ -122,4 +122,64 @@ describe('ListingBidPanel', () => {
     expect(input.getAttribute('aria-describedby')).toBe('listing-bid-error');
     expect(input.getAttribute('aria-invalid')).toBe('true');
   });
+
+  it('renders an optional max-bid input that defaults to the current bid amount', () => {
+    render(<ListingBidPanel {...defaultProps()} />);
+    const max = screen.getByLabelText(/Set max bid/i);
+    if (!(max instanceof HTMLInputElement)) throw new Error('expected input');
+    expect(max.value).toBe('51');
+  });
+
+  it('forwards max_bid_cents on submit when set above the visible bid', () => {
+    const onPlaceBid = vi.fn();
+    render(<ListingBidPanel {...defaultProps()} onPlaceBid={onPlaceBid} />);
+    const max = screen.getByLabelText(/Set max bid/i);
+    fireEvent.change(max, { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: /Bid \$/ }));
+    expect(onPlaceBid).toHaveBeenCalledWith(5100, 10000);
+  });
+
+  it('omits max_bid_cents when it equals the visible bid', () => {
+    const onPlaceBid = vi.fn();
+    render(<ListingBidPanel {...defaultProps()} onPlaceBid={onPlaceBid} />);
+    fireEvent.click(screen.getByRole('button', { name: /Bid \$/ }));
+    expect(onPlaceBid).toHaveBeenCalledWith(5100);
+  });
+
+  it('errors when the max-bid is set below the visible bid', () => {
+    const onPlaceBid = vi.fn();
+    render(<ListingBidPanel {...defaultProps()} onPlaceBid={onPlaceBid} />);
+    const bid = screen.getByLabelText(/Bid amount/i);
+    const max = screen.getByLabelText(/Set max bid/i);
+    fireEvent.change(bid, { target: { value: '60' } });
+    fireEvent.change(max, { target: { value: '55' } });
+    fireEvent.click(screen.getByRole('button', { name: /Bid \$/ }));
+    expect(onPlaceBid).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/Max bid cannot be below/i);
+  });
+
+  it('shows the "Auto-bidding active up to $X" badge when winning with a max-bid', () => {
+    render(
+      <ListingBidPanel
+        {...defaultProps()}
+        isUserWinning
+        userMaxBidCents={20000}
+        currentBidCents={5000}
+      />,
+    );
+    expect(screen.getByTestId('autobid-active-label').textContent).toMatch(/Auto-bidding active/i);
+    expect(screen.getByTestId('autobid-active-label').textContent).toMatch(/\$200/);
+  });
+
+  it('does not show the auto-bidding badge when userMaxBidCents <= currentBidCents', () => {
+    render(
+      <ListingBidPanel
+        {...defaultProps()}
+        isUserWinning
+        userMaxBidCents={5000}
+        currentBidCents={5000}
+      />,
+    );
+    expect(screen.queryByTestId('autobid-active-label')).toBeNull();
+  });
 });
