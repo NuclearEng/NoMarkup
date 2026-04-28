@@ -46,6 +46,24 @@ seed:
 	@echo "Seeding database with dev data..."
 	cd database && go run ./cmd/seed
 
+# Demo seed: base seed + 40 marketplace listings distributed across closing-time
+# buckets so the /marketplace scoreboard reads as a populated live event for VC
+# walkthroughs. See database/cmd/seed/marketplace_demo.go.
+seed-demo:
+	@echo "Seeding database with demo marketplace fixture (40 listings, 8 critical, 12 urgent, 20 normal)..."
+	cd database && SEED_DEMO_MARKETPLACE=1 go run ./cmd/seed
+
+# Bring the local stack up, run migrations, and seed the demo marketplace.
+# Use this before a live demo to get a populated scoreboard from a clean DB.
+demo-up: dev-infra migrate-up seed-demo
+	@echo ""
+	@echo "Demo stack ready."
+	@echo "  Web:        http://localhost:3000/marketplace"
+	@echo "  Gateway:    http://localhost:8080"
+	@echo "  Login:      customer@nomarkup.com / Password123!"
+	@echo ""
+	@echo "Pre-demo checklist: docs/demo-script.md (T-30)"
+
 # Backfill / re-encrypt PII columns flagged in migration 031. Idempotent: only
 # touches rows where pii_encrypted_v1 = FALSE. Requires ENCRYPTION_KEY (and,
 # during a rotation, ENCRYPTION_KEY_PREVIOUS) to be set in the environment.
