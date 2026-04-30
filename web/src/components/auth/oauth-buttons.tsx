@@ -2,9 +2,11 @@
 
 import { Button } from '@/components/ui/button';
 import { GoogleIcon, AppleIcon } from '@/components/auth/oauth-icons';
+import { FacebookIcon } from '@/components/auth/FacebookOAuthButton';
 
 const GOOGLE_OAUTH_URL = '/api/v1/auth/oauth/google';
 const APPLE_OAUTH_URL = '/api/v1/auth/oauth/apple';
+const FACEBOOK_OAUTH_URL = '/api/v1/auth/oauth/facebook';
 
 export function OAuthButtons() {
   return (
@@ -30,6 +32,17 @@ export function OAuthButtons() {
       >
         <AppleIcon className="mr-2 h-5 w-5" />
         Continue with Apple
+      </Button>
+      <Button
+        variant="outline"
+        className="min-h-[44px] w-full border border-white/10 bg-white/5 text-white/80 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-[0.99]"
+        onClick={() => {
+          window.location.href = FACEBOOK_OAUTH_URL;
+        }}
+        type="button"
+      >
+        <FacebookIcon className="mr-2 h-5 w-5" />
+        Continue with Facebook
       </Button>
     </div>
   );

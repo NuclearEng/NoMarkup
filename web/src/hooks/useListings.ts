@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { toast } from 'sonner';
 
 import { ApiError, api } from '@/lib/api';
+import { saveDraft } from '@/lib/offline-drafts';
 import type {
   AutocompleteResponse,
   CreateListingInput,
@@ -223,6 +224,29 @@ export function usePlaceListingBid() {
   return useMutation({
     mutationFn: ({ listingId, input }: { listingId: string; input: PlaceListingBidInput }) =>
       api.post<PlaceListingBidResponse>(`/api/v1/listings/${listingId}/bids`, input),
+    // Optimistic UI: snapshot the current cache, write the optimistic
+    // bid amount immediately, and roll back if the mutation errors.
+    // Cuts perceived latency on the bid action — the new top bid renders
+    // before the round-trip completes.
+    onMutate: async ({ listingId, input }) => {
+      await qc.cancelQueries({ queryKey: ['listings', listingId] });
+      const previousListing = qc.getQueryData<ListingDetail>(['listings', listingId]);
+      if (previousListing) {
+        const optimistic: ListingDetail = {
+          ...previousListing,
+          current_bid_cents: input.amount_cents,
+          bid_count: previousListing.bid_count + 1,
+        };
+        qc.setQueryData(['listings', listingId], optimistic);
+      }
+      return { previousListing };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousListing) {
+        qc.setQueryData(['listings', variables.listingId], context.previousListing);
+      }
+      explainListingFailure('Failed to place bid')(err);
+    },
     onSuccess: (data, variables) => {
       if (data.snipe_extension_applied) {
         toast.success('Bid placed — auction extended due to last-minute bid');
@@ -233,7 +257,45 @@ export function usePlaceListingBid() {
       void qc.invalidateQueries({ queryKey: ['listings', 'search'] });
       void qc.invalidateQueries({ queryKey: ['listingBids', 'mine'] });
     },
-    onError: explainListingFailure('Failed to place bid'),
+  });
+}
+
+/**
+ * useCreateListingDraft — offline-aware listing creation.
+ *
+ * When the browser is online, posts straight to /api/v1/listings (same
+ * shape as useCreateListing). When offline, persists the input to
+ * IndexedDB via offline-drafts.ts and returns a synthetic stub so the
+ * UI can show a "draft saved offline" toast and queue navigation. The
+ * auto-sync effect (registerAutoSync) drains saved drafts on reconnect.
+ */
+export function useCreateListingDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      input: CreateListingInput,
+    ): Promise<Listing | { offline: true; key: string }> => {
+      const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
+      if (!isOnline) {
+        const key =
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `draft-${String(Date.now())}-${String(Math.floor(Math.random() * 1e6))}`;
+        await saveDraft(key, input);
+        return { offline: true, key };
+      }
+      const raw = await api.post<Record<string, unknown>>('/api/v1/listings', input);
+      return raw as unknown as Listing;
+    },
+    onSuccess: (result) => {
+      if ('offline' in result) {
+        toast.success('Saved offline — will publish when you reconnect');
+        return;
+      }
+      toast.success('Listing created');
+      void qc.invalidateQueries({ queryKey: ['listings'] });
+    },
+    onError: explainListingFailure('Failed to create listing'),
   });
 }
 

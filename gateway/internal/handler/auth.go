@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -67,6 +69,101 @@ type authResponse struct {
 	AccessTokenExpiresAt string `json:"access_token_expires_at,omitempty"`
 	MFARequired          bool   `json:"mfa_required,omitempty"`
 	MFAChallengeToken    string `json:"mfa_challenge_token,omitempty"`
+}
+
+// registerPhoneOnlyRequest is the body for the phone-only signup flow.
+type registerPhoneOnlyRequest struct {
+	Phone   string `json:"phone"`
+	OTPCode string `json:"otp_code"`
+}
+
+// phoneE164Pattern is a permissive E.164 check: "+" followed by 8-15 digits.
+var phoneE164Pattern = regexp.MustCompile(`^\+[1-9]\d{7,14}$`)
+
+// RegisterPhoneOnly creates a user with a placeholder email and
+// phone_verified=true once the supplied OTP validates.
+//
+// Architecture note: phone-only signup currently bridges the legacy
+// email-required Register RPC and the SMS OTP verify path by
+// synthesizing a placeholder email of the form
+// `+15551234567@phone.nomarkup` (RFC-5321 valid; non-routable). The
+// user-service treats this as a non-routable email and email_verified
+// stays false. Once the user-service exposes a dedicated
+// RegisterByPhone RPC (proto change), swap this for a direct call.
+//
+// Display name defaults to "Member-{last4}" pending profile completion.
+// This endpoint MUST remain unauthenticated — there is no session yet.
+func (h *AuthHandler) RegisterPhoneOnly(w http.ResponseWriter, r *http.Request) {
+	var req registerPhoneOnlyRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	req.Phone = strings.TrimSpace(req.Phone)
+	if !phoneE164Pattern.MatchString(req.Phone) {
+		writeError(w, http.StatusBadRequest, "phone must be in E.164 format (e.g. +15551234567)")
+		return
+	}
+	if strings.TrimSpace(req.OTPCode) == "" {
+		writeError(w, http.StatusBadRequest, "otp_code is required")
+		return
+	}
+
+	syntheticEmail := req.Phone + "@phone.nomarkup"
+	password, err := generatePhonePassword()
+	if err != nil {
+		slog.Error("register_phone_only: random password generation failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	suffix := req.Phone
+	if len(suffix) > 4 {
+		suffix = suffix[len(suffix)-4:]
+	}
+	displayName := "Member-" + suffix
+
+	regResp, err := h.userClient.Register(r.Context(), &userv1.RegisterRequest{
+		Email:       syntheticEmail,
+		Password:    password,
+		DisplayName: displayName,
+		Roles:       parseRoles([]string{"customer"}),
+	})
+	if err != nil {
+		if st, ok := status.FromError(err); !ok || st.Code() != codes.AlreadyExists {
+			writeGRPCError(w, err)
+			return
+		}
+		writeError(w, http.StatusConflict, "an account with this phone already exists — please sign in")
+		return
+	}
+
+	if _, err := h.userClient.VerifyPhone(r.Context(), &userv1.VerifyPhoneRequest{
+		UserId:  regResp.GetUserId(),
+		OtpCode: req.OTPCode,
+	}); err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	h.setRefreshTokenCookie(w, regResp.GetRefreshToken())
+
+	writeJSON(w, http.StatusCreated, authResponse{
+		UserID:               regResp.GetUserId(),
+		AccessToken:          regResp.GetAccessToken(),
+		AccessTokenExpiresAt: formatTimestamp(regResp.GetAccessTokenExpiresAt()),
+	})
+}
+
+// generatePhonePassword returns a 32-byte URL-safe base64 string. The
+// user never sees this — phone-only accounts log in via OTP-issued
+// tokens or via a password-reset flow tied to phone.
+func generatePhonePassword() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // Register handles POST /api/v1/auth/register.

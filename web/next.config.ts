@@ -44,6 +44,11 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   poweredByHeader: false,
   images: {
+    // Prefer AVIF over WebP when the browser sends Accept: image/avif.
+    // Next.js's image optimizer falls back to WebP, then JPEG/PNG, when
+    // AVIF isn't supported. AVIF is ~30% smaller than WebP at the same
+    // visual quality — meaningful on listing photo grids.
+    formats: ['image/avif', 'image/webp'],
     remotePatterns: [
       {
         protocol: 'http',
