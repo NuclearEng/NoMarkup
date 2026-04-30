@@ -8,6 +8,7 @@ import { useCallback, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { ImageAnalysisButton } from '@/components/forms/ImageAnalysisButton';
+import { PreQuoteQuestions } from '@/components/forms/PreQuoteQuestions';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { CategorySelector } from '@/components/providers/CategorySelector';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +41,7 @@ import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { api } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
-import { AUCTION_TYPE, type CreateJobInput, type MarketRange } from '@/types';
+import { AUCTION_TYPE, type CreateJobInput, type MarketRange, type SubmitAnswerInput } from '@/types';
 
 const STEPS = [
   { title: 'Category', description: 'What type of service do you need?' },
@@ -78,6 +79,14 @@ export function JobPostingForm() {
   const [step, setStep] = useState(0);
   const [photos, setPhotos] = useState<File[]>([]);
   const [useInstantMatch, setUseInstantMatch] = useState(false);
+  // Wave 5 services-polish state — kept outside react-hook-form because
+  // these fields aren't covered by jobPostingSchema (Zod schema lives
+  // in lib/validations.ts which isn't owned by this wave). The handler
+  // serializes them onto CreateJobInput at publish time.
+  const [isHourly, setIsHourly] = useState(false);
+  const [hourlyRateDollars, setHourlyRateDollars] = useState<number | undefined>(undefined);
+  const [sameDayRequested, setSameDayRequested] = useState(false);
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, SubmitAnswerInput>>({});
   const router = useRouter();
   const createJob = useCreateJob();
 
@@ -148,6 +157,13 @@ export function JobPostingForm() {
       auction_duration_hours: values.auctionDurationHours,
       auction_type: values.auctionType,
       photo_urls: values.photoUrls && values.photoUrls.length > 0 ? values.photoUrls : undefined,
+      // Wave 5 services-polish (Section H) — hourly billing + same-day SLA.
+      is_hourly: isHourly || undefined,
+      hourly_rate_cents:
+        isHourly && hourlyRateDollars
+          ? Math.round(hourlyRateDollars * 100)
+          : undefined,
+      same_day_requested: sameDayRequested || undefined,
     };
   }
 
@@ -167,6 +183,20 @@ export function JobPostingForm() {
           await api.post<{ status: string; expires_at: string }>(`/api/v1/jobs/${createdJob.id}/instant-match`);
         } catch {
           // Non-fatal — job was created, instant match just didn't fire.
+        }
+      }
+
+      // Best-effort post the customer's pre-quote answers. Non-fatal:
+      // the job is created; missing answers just mean providers will
+      // chat-clarify scope (which is the pre-Wave-5 status quo).
+      const answersList = Object.values(questionAnswers);
+      if (createdJob.id && answersList.length > 0) {
+        try {
+          await api.post<{ saved: number }>(`/api/v1/jobs/${createdJob.id}/answers`, {
+            answers: answersList,
+          });
+        } catch {
+          // swallow
         }
       }
 
@@ -249,11 +279,31 @@ export function JobPostingForm() {
               className="space-y-6"
             >
               {step === 0 ? <StepCategory form={form} /> : null}
-              {step === 1 ? <StepDetails form={form} /> : null}
+              {step === 1 ? (
+                <StepDetails
+                  form={form}
+                  questionAnswers={questionAnswers}
+                  onQuestionAnswersChange={setQuestionAnswers}
+                />
+              ) : null}
               {step === 2 ? <StepLocation form={form} /> : null}
-              {step === 3 ? <StepSchedule form={form} /> : null}
+              {step === 3 ? (
+                <StepSchedule
+                  form={form}
+                  sameDayRequested={sameDayRequested}
+                  onSameDayChange={setSameDayRequested}
+                />
+              ) : null}
               {step === 4 ? <StepPhotos photos={photos} onPhotosChange={setPhotos} /> : null}
-              {step === 5 ? <StepAuction form={form} /> : null}
+              {step === 5 ? (
+                <StepAuction
+                  form={form}
+                  isHourly={isHourly}
+                  onIsHourlyChange={setIsHourly}
+                  hourlyRateDollars={hourlyRateDollars}
+                  onHourlyRateChange={setHourlyRateDollars}
+                />
+              ) : null}
               {step === 6 ? (
                 <StepReview
                   form={form}
@@ -261,6 +311,10 @@ export function JobPostingForm() {
                   photoCount={photos.length}
                   useInstantMatch={useInstantMatch}
                   onInstantMatchChange={setUseInstantMatch}
+                  isHourly={isHourly}
+                  hourlyRateDollars={hourlyRateDollars}
+                  sameDayRequested={sameDayRequested}
+                  questionAnswerCount={Object.keys(questionAnswers).length}
                 />
               ) : null}
 
@@ -368,10 +422,17 @@ function getSpeechRecognitionConstructor(): (new () => SpeechRecognitionInstance
 }
 
 // -- Step 2: Details --
-function StepDetails({ form }: { form: FormType }) {
+interface StepDetailsProps {
+  form: FormType;
+  questionAnswers: Record<string, SubmitAnswerInput>;
+  onQuestionAnswersChange: (next: Record<string, SubmitAnswerInput>) => void;
+}
+
+function StepDetails({ form, questionAnswers, onQuestionAnswersChange }: StepDetailsProps) {
   const { data: categories } = useCategories();
   const [isListening, setIsListening] = useState(false);
   const hasSpeechRecognition = getSpeechRecognitionConstructor() !== null;
+  const categoryId = form.watch('categoryId');
 
   function startVoiceInput() {
     const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
@@ -471,6 +532,15 @@ function StepDetails({ form }: { form: FormType }) {
             <FormMessage />
           </FormItem>
         )}
+      />
+
+      {/* Wave 5 services-polish — Thumbtack-style pre-quote questions
+          render below the description so providers can quote off real
+          scope. Hides itself when the category has no questions. */}
+      <PreQuoteQuestions
+        categoryId={categoryId}
+        value={questionAnswers}
+        onChange={onQuestionAnswersChange}
       />
     </div>
   );
@@ -584,7 +654,13 @@ function StepLocation({ form }: { form: FormType }) {
 }
 
 // -- Step 4: Schedule --
-function StepSchedule({ form }: { form: FormType }) {
+interface StepScheduleProps {
+  form: FormType;
+  sameDayRequested: boolean;
+  onSameDayChange: (value: boolean) => void;
+}
+
+function StepSchedule({ form, sameDayRequested, onSameDayChange }: StepScheduleProps) {
   const scheduleType = form.watch('scheduleType');
   const isRecurring = form.watch('isRecurring');
 
@@ -673,6 +749,32 @@ function StepSchedule({ form }: { form: FormType }) {
           )}
         />
       ) : null}
+
+      {/* Wave 5 services-polish — Thumbtack-style "I need this today"
+          SLA flag. Downstream matcher prioritizes providers with
+          same_day_available=true on their availability profile.
+          Plain div instead of FormItem/FormControl — this checkbox
+          isn't tied to react-hook-form state, so wrapping in a
+          FormField context is unnecessary and would error. */}
+      <label
+        htmlFor="same-day-toggle"
+        className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3"
+      >
+        <Checkbox
+          id="same-day-toggle"
+          checked={sameDayRequested}
+          onCheckedChange={(c) => {
+            onSameDayChange(c === true);
+          }}
+          aria-label="I need this done today"
+        />
+        <div>
+          <span className="text-sm font-medium">I need this done today</span>
+          <p className="text-muted-foreground text-xs">
+            We&apos;ll prioritize providers who can show up the same day. Higher rates may apply.
+          </p>
+        </div>
+      </label>
     </div>
   );
 }
@@ -831,11 +933,96 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
 }
 
 // -- Step 6: Auction --
-function StepAuction({ form }: { form: FormType }) {
+interface StepAuctionProps {
+  form: FormType;
+  isHourly: boolean;
+  onIsHourlyChange: (value: boolean) => void;
+  hourlyRateDollars: number | undefined;
+  onHourlyRateChange: (value: number | undefined) => void;
+}
+
+function StepAuction({
+  form,
+  isHourly,
+  onIsHourlyChange,
+  hourlyRateDollars,
+  onHourlyRateChange,
+}: StepAuctionProps) {
   const durationHours = form.watch('auctionDurationHours');
 
   return (
     <div className="space-y-6">
+      {/* Wave 5 services-polish — flat-rate vs. hourly toggle. When
+          hourly is selected, the budget inputs become a single hourly
+          rate field; the auction still runs as usual. */}
+      <div className="space-y-2 rounded-md border p-3">
+        <p className="text-sm font-medium" id="billing-mode-label">
+          Billing
+        </p>
+        <div className="flex gap-4" role="radiogroup" aria-labelledby="billing-mode-label">
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="billingMode"
+              value="flat"
+              checked={!isHourly}
+              onChange={() => {
+                onIsHourlyChange(false);
+              }}
+              className="h-4 w-4"
+            />
+            <span className="text-sm">Flat rate</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="billingMode"
+              value="hourly"
+              checked={isHourly}
+              onChange={() => {
+                onIsHourlyChange(true);
+              }}
+              className="h-4 w-4"
+            />
+            <span className="text-sm">Hourly</span>
+          </label>
+        </div>
+        {isHourly ? (
+          <div className="pt-2">
+            <label htmlFor="hourly-rate" className="text-sm font-medium">
+              Target hourly rate (USD)
+            </label>
+            <div className="relative mt-1">
+              <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2">
+                $
+              </span>
+              <Input
+                id="hourly-rate"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={0.5}
+                placeholder="65.00"
+                value={hourlyRateDollars ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '') {
+                    onHourlyRateChange(undefined);
+                    return;
+                  }
+                  const n = Number(v);
+                  if (Number.isFinite(n)) onHourlyRateChange(n);
+                }}
+                className="min-h-[44px] pl-8"
+              />
+            </div>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Providers will quote against this rate. Actual hours are tracked on the contract.
+            </p>
+          </div>
+        ) : null}
+      </div>
+
       {ENABLE_LIVE_AUCTION ? (
         <div className="space-y-2">
           <p className="text-sm font-medium" id="auction-type-label">
@@ -981,12 +1168,20 @@ function StepReview({
   photoCount,
   useInstantMatch,
   onInstantMatchChange,
+  isHourly,
+  hourlyRateDollars,
+  sameDayRequested,
+  questionAnswerCount,
 }: {
   form: FormType;
   marketRange: MarketRange;
   photoCount: number;
   useInstantMatch: boolean;
   onInstantMatchChange: (value: boolean) => void;
+  isHourly: boolean;
+  hourlyRateDollars: number | undefined;
+  sameDayRequested: boolean;
+  questionAnswerCount: number;
 }) {
   const values = form.getValues();
 
@@ -1032,8 +1227,30 @@ function StepReview({
             {values.isRecurring && values.recurrenceFrequency ? (
               <Badge variant="secondary">Recurring: {values.recurrenceFrequency}</Badge>
             ) : null}
+            {sameDayRequested ? (
+              <Badge variant="default" className="bg-amber-500/20 text-amber-600">
+                Same-day
+              </Badge>
+            ) : null}
           </div>
         </div>
+
+        {isHourly ? (
+          <div>
+            <h3 className="text-muted-foreground text-sm font-medium">Billing</h3>
+            <p className="text-sm">
+              Hourly
+              {hourlyRateDollars !== undefined ? ` — $${hourlyRateDollars.toFixed(2)}/hr` : ''}
+            </p>
+          </div>
+        ) : null}
+
+        {questionAnswerCount > 0 ? (
+          <div>
+            <h3 className="text-muted-foreground text-sm font-medium">Project details</h3>
+            <p className="text-sm">{String(questionAnswerCount)} questions answered</p>
+          </div>
+        ) : null}
 
         <div>
           <h3 className="text-muted-foreground text-sm font-medium">Photos</h3>

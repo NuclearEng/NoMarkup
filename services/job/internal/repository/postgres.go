@@ -125,7 +125,8 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			is_recurring, recurrence_frequency,
 			starting_bid_cents, offer_accepted_cents,
 			auction_duration_hours, auction_ends_at, min_provider_rating,
-			status, auction_type
+			status, auction_type,
+			is_hourly, hourly_rate_cents, same_day_requested
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, $3, $4,
 			$5, NULLIF($6, '')::uuid, NULLIF($7, '')::uuid,
@@ -136,7 +137,8 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			$18, $19,
 			$20, $21,
 			$22, $23, $24,
-			$25, $26
+			$25, $26,
+			$27, $28, $29
 		)
 		RETURNING id, created_at, updated_at`,
 		input.CustomerID, input.PropertyID, input.Title, input.Description,
@@ -148,6 +150,7 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 		input.StartingBidCents, input.OfferAcceptedCents,
 		durationHours, auctionEndsAt, input.MinProviderRating,
 		status, auctionType,
+		input.IsHourly, input.HourlyRateCents, input.SameDayRequested,
 	).Scan(&jobID, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create job insert: %w", err)
@@ -247,6 +250,21 @@ func (r *PostgresRepository) UpdateJob(ctx context.Context, jobID string, custom
 	if input.AuctionDurationHours != nil {
 		setClauses = append(setClauses, fmt.Sprintf("auction_duration_hours = $%d", argIdx))
 		args = append(args, *input.AuctionDurationHours)
+		argIdx++
+	}
+	if input.IsHourly != nil {
+		setClauses = append(setClauses, fmt.Sprintf("is_hourly = $%d", argIdx))
+		args = append(args, *input.IsHourly)
+		argIdx++
+	}
+	if input.HourlyRateCents != nil {
+		setClauses = append(setClauses, fmt.Sprintf("hourly_rate_cents = $%d", argIdx))
+		args = append(args, *input.HourlyRateCents)
+		argIdx++
+	}
+	if input.SameDayRequested != nil {
+		setClauses = append(setClauses, fmt.Sprintf("same_day_requested = $%d", argIdx))
+		args = append(args, *input.SameDayRequested)
 		argIdx++
 	}
 
@@ -561,6 +579,7 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
@@ -765,6 +784,7 @@ func (r *PostgresRepository) ListDrafts(ctx context.Context, customerID string) 
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
@@ -1139,6 +1159,7 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
 		       COALESCE(sc.id::text, ''), COALESCE(sc.name, ''), COALESCE(sc.slug, ''), COALESCE(sc.icon, ''),
 		       COALESCE(st.id::text, ''), COALESCE(st.name, ''), COALESCE(st.slug, ''), COALESCE(st.icon, '')
@@ -1170,6 +1191,7 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		&j.AuctionType, &j.SnipeExtensionCount, &j.OriginalAuctionEndsAt,
 		&j.AwardedAt, &j.ClosedAt, &j.CompletedAt, &j.CancelledAt,
 		&j.CreatedAt, &j.UpdatedAt, &j.DeletedAt,
+		&j.IsHourly, &j.HourlyRateCents, &j.SameDayRequested,
 		&catName, &catSlug, &catIcon,
 		&subID, &subName, &subSlug, &subIcon,
 		&stID, &stName, &stSlug, &stIcon,
@@ -1274,6 +1296,7 @@ func scanJobRow(rows pgx.Rows) (*domain.Job, error) {
 		&j.AuctionType, &j.SnipeExtensionCount, &j.OriginalAuctionEndsAt,
 		&j.AwardedAt, &j.ClosedAt, &j.CompletedAt, &j.CancelledAt,
 		&j.CreatedAt, &j.UpdatedAt, &j.DeletedAt,
+		&j.IsHourly, &j.HourlyRateCents, &j.SameDayRequested,
 		&catName, &catSlug, &catIcon,
 	)
 	if err != nil {

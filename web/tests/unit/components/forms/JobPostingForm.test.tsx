@@ -83,6 +83,28 @@ vi.mock('@/hooks/useCategories', () => ({
   useCategoryTree: () => ({ data: [], isLoading: false }),
 }));
 
+// Wave 5 services-polish — the post-job form now uses useCategoryQuestions
+// to render Thumbtack-style pre-quote questions. The hook hits useQuery
+// internally, so we stub it here to avoid mounting a QueryClientProvider
+// in every test case.
+vi.mock('@/hooks/useCategoryQuestions', () => ({
+  useCategoryQuestions: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+  }),
+  useJobAnswers: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+  }),
+  useSubmitJobAnswers: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+}));
+
 // Mocked child components — they pull in their own data layer that we don't care
 // about for this form's tests. CategorySelector exposes a stub button so we can
 // drive the categoryId state without rendering real categories.

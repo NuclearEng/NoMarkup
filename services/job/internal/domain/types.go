@@ -68,6 +68,15 @@ type Job struct {
 	UpdatedAt            time.Time
 	DeletedAt            *time.Time
 
+	// Wave 5 services-polish (migration 046).
+	// IsHourly toggles flat-rate vs. hourly billing on the job posting.
+	// HourlyRateCents is set when IsHourly=true (nil otherwise).
+	// SameDayRequested is the Thumbtack-style "I need this today" SLA flag —
+	// downstream matcher prioritizes providers with same_day_available=true.
+	IsHourly         bool
+	HourlyRateCents  *int64
+	SameDayRequested bool
+
 	// Populated via JOINs
 	Photos      []JobPhoto
 	Category    *ServiceCategory
@@ -145,6 +154,11 @@ type CreateJobInput struct {
 	LocationAddress      string
 	LocationLat          *float64
 	LocationLng          *float64
+
+	// Wave 5 services-polish (migration 046).
+	IsHourly         bool
+	HourlyRateCents  *int64
+	SameDayRequested bool
 }
 
 // UpdateJobInput holds optional fields for updating a draft job.
@@ -159,6 +173,11 @@ type UpdateJobInput struct {
 	OfferAcceptedCents   *int64
 	AuctionDurationHours *int
 	PhotoURLs            []string // nil means don't change, empty means clear
+
+	// Wave 5 services-polish (migration 046).
+	IsHourly         *bool
+	HourlyRateCents  *int64
+	SameDayRequested *bool
 }
 
 // SearchJobsInput defines job search parameters.

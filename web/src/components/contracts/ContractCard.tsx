@@ -1,13 +1,17 @@
 'use client';
 
-import { Clock, FileText } from 'lucide-react';
+import { Clock, FileText, Heart } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { api } from '@/lib/api';
 import { cn, formatCents } from '@/lib/utils';
-import type { Contract } from '@/types';
+import type { Contract, ContractTipResponse } from '@/types';
 import { CONTRACT_STATUS, MILESTONE_STATUS, PAYMENT_TIMING } from '@/types';
 
 import { AcceptanceCountdown } from './AcceptanceCountdown';
@@ -199,9 +203,172 @@ export function ContractCard({ contract }: ContractCardProps) {
           <p className="truncate text-xs text-zinc-400">
             {contract.job_title || `Job: ${contract.job_id.slice(0, 8)}...`}
           </p>
+
+          {/* Wave 5 services-polish — post-completion tip widget. Only
+              renders for completed contracts that haven't been tipped
+              yet. Click bubbles are stopped so the surrounding card
+              link doesn't navigate when interacting with the widget. */}
+          {contract.status === CONTRACT_STATUS.COMPLETED &&
+          (contract.tip_amount_cents ?? 0) === 0 ? (
+            <TipWidget
+              contractId={contract.id}
+              suggestedAmountCents={contract.amount_cents}
+            />
+          ) : null}
+
+          {(contract.tip_amount_cents ?? 0) > 0 ? (
+            <p className="text-xs text-emerald-400">
+              Tip: {formatCents(contract.tip_amount_cents ?? 0)} — thanks for the love
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+interface TipWidgetProps {
+  contractId: string;
+  /** Original contract amount — used to compute 10/15/20% presets. */
+  suggestedAmountCents: number;
+}
+
+/**
+ * Inline tip composer with 10/15/20% presets + custom dollar entry.
+ *
+ * On submit POSTs to `/api/v1/contracts/{id}/tip`. The endpoint
+ * inserts the tip row only — the live Stripe charge is documented in
+ * the gateway handler comment and tracked in PLAN §6.5.
+ */
+function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
+  const [open, setOpen] = useState(false);
+  const [customDollars, setCustomDollars] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const presets = [10, 15, 20].map((pct) => ({
+    pct,
+    amount_cents: Math.round((suggestedAmountCents * pct) / 100),
+  }));
+
+  function stop(e: React.MouseEvent | React.KeyboardEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+
+  async function submit(amountCents: number) {
+    if (amountCents < 100) {
+      setError('Tip must be at least $1.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.post<ContractTipResponse>(`/api/v1/contracts/${contractId}/tip`, {
+        amount_cents: amountCents,
+      });
+      setSuccess(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to record tip');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (success) {
+    return (
+      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-300">
+        Thanks! Your tip is on its way.
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          stop(e);
+          setOpen(true);
+        }}
+        className="hover:bg-muted/50 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-zinc-600 p-2 text-xs text-zinc-300 transition-colors"
+        aria-label="Tip your provider"
+      >
+        <Heart className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+        Tip your provider?
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="space-y-2 rounded-md border border-zinc-700 bg-zinc-900/50 p-2"
+      onClickCapture={stop}
+      role="group"
+      aria-label="Tip composer"
+    >
+      <p className="text-xs font-medium text-zinc-200">Add a tip</p>
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((p) => (
+          <Button
+            key={p.pct}
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={submitting}
+            className="h-8 text-xs"
+            onClick={(e) => {
+              stop(e);
+              void submit(p.amount_cents);
+            }}
+          >
+            {String(p.pct)}% — {formatCents(p.amount_cents)}
+          </Button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <span
+            className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-xs"
+            aria-hidden="true"
+          >
+            $
+          </span>
+          <Input
+            type="number"
+            inputMode="decimal"
+            min={1}
+            step={0.5}
+            value={customDollars}
+            placeholder="Custom"
+            disabled={submitting}
+            onChange={(e) => {
+              setCustomDollars(e.target.value);
+            }}
+            onClick={stop}
+            className="h-8 pl-5 text-xs"
+            aria-label="Custom tip amount in dollars"
+          />
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 text-xs"
+          disabled={submitting || !customDollars}
+          onClick={(e) => {
+            stop(e);
+            const n = Number(customDollars);
+            if (Number.isFinite(n) && n > 0) {
+              void submit(Math.round(n * 100));
+            }
+          }}
+        >
+          {submitting ? '...' : 'Send'}
+        </Button>
+      </div>
+      {error ? <p className="text-destructive text-xs">{error}</p> : null}
+    </div>
   );
 }
 
