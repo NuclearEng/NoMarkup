@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
+import type { ListingAuctionReplay } from '@/types';
 
 interface ReplayEvent {
   id: string;
@@ -30,5 +31,22 @@ export function useAuctionReplay(jobId: string) {
     enabled: !!jobId,
     staleTime: Infinity, // Replay data never changes (completed auctions are immutable)
     gcTime: 1000 * 60 * 60, // Keep in cache for 1 hour
+  });
+}
+
+/**
+ * Goods-side auction replay. Mirrors the services-side hook above but
+ * targets /api/v1/listings/{id}/replay and surfaces the
+ * AuctionReplayEvent shape (PII-stripped bidder labels, snipe extension
+ * synthetics, auto-bid cascade detection).
+ */
+export function useListingReplay(listingId: string) {
+  return useQuery<ListingAuctionReplay>({
+    queryKey: ['listing-replay', listingId],
+    queryFn: () =>
+      api.getPublic<ListingAuctionReplay>(`/api/v1/listings/${listingId}/replay`),
+    enabled: !!listingId,
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 60,
   });
 }

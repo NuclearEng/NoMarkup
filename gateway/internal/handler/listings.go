@@ -97,6 +97,10 @@ type listingJSON struct {
 	// Condition is a StockX-style enum: new | like_new | very_good | good |
 	// acceptable | for_parts. nil/null means the seller didn't grade.
 	Condition            *string            `json:"condition"`
+	// Best-Offer surface: highest pending offer (and which buyer made it).
+	// nil when no pending offer exists. Populated by overlayCurrentOffer.
+	CurrentOfferAmountCents *int64          `json:"current_offer_amount_cents"`
+	CurrentOfferBuyerID     *string         `json:"current_offer_buyer_id"`
 	CreatedAt            time.Time          `json:"created_at"`
 	UpdatedAt            time.Time          `json:"updated_at"`
 }
@@ -372,6 +376,9 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		for i := range results {
 			results[i].WatcherCount = h.spectatorCount(r.Context(), results[i].ID)
 		}
+		// Best-Offer overlay — surfaces the highest pending offer per
+		// listing. Best-effort: leaves fields nil on any query failure.
+		h.overlayCurrentOffer(r.Context(), results, ids)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -512,6 +519,11 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		d.Photos = []listingPhotoJSON{}
 	}
 	d.WatcherCount = h.spectatorCount(r.Context(), id)
+
+	// Best-Offer overlay — single-row fast path through the same helper.
+	overlay := []listingJSON{d.listingJSON}
+	h.overlayCurrentOffer(r.Context(), overlay, []string{id})
+	d.listingJSON = overlay[0]
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"listing": d})
 }
@@ -788,6 +800,47 @@ func getFirst(q map[string][]string, key string) string {
 		return strings.TrimSpace(v[0])
 	}
 	return ""
+}
+
+// overlayCurrentOffer fills CurrentOfferAmountCents + CurrentOfferBuyerID
+// for each listing in `results` from a single round-trip. Selects the
+// highest-amount pending offer per listing (the "current offer" in the
+// Best-Offer UI). Best-effort: a query failure leaves the fields nil.
+func (h *ListingsHandler) overlayCurrentOffer(ctx context.Context, results []listingJSON, ids []string) {
+	if h.db == nil || len(ids) == 0 {
+		return
+	}
+	rows, err := h.db.Query(ctx, `
+		SELECT DISTINCT ON (listing_id)
+		       listing_id::text, amount_cents, buyer_id::text
+		  FROM listing_offers
+		 WHERE listing_id = ANY($1) AND status = 'pending'
+		 ORDER BY listing_id, amount_cents DESC, created_at DESC`, ids)
+	if err != nil {
+		slog.Warn("listings: current-offer overlay failed", "error", err)
+		return
+	}
+	defer rows.Close()
+	type offerSummary struct {
+		Amount  int64
+		BuyerID string
+	}
+	byListing := make(map[string]offerSummary)
+	for rows.Next() {
+		var lid, buyer string
+		var amount int64
+		if err := rows.Scan(&lid, &amount, &buyer); err == nil {
+			byListing[lid] = offerSummary{Amount: amount, BuyerID: buyer}
+		}
+	}
+	for i := range results {
+		if v, ok := byListing[results[i].ID]; ok {
+			amt := v.Amount
+			buyer := v.BuyerID
+			results[i].CurrentOfferAmountCents = &amt
+			results[i].CurrentOfferBuyerID = &buyer
+		}
+	}
 }
 
 // jsonRawOrNull returns a JSON-marshalled value or null if v is nil.

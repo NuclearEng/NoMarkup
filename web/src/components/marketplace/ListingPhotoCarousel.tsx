@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-react';
 import { useCallback, useState } from 'react';
 
+import { PhotoLightbox } from '@/components/marketplace/PhotoLightbox';
 import { ProgressiveImage } from '@/components/ui/ProgressiveImage';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,16 @@ interface ListingPhotoCarouselProps {
 
 export function ListingPhotoCarousel({ photos, alt, className }: ListingPhotoCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  const openLightbox = useCallback((idx: number) => {
+    setActiveIndex(idx);
+    setLightboxOpen(true);
+  }, []);
+
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false);
+  }, []);
 
   const goPrev = useCallback(() => {
     setActiveIndex((i) => (photos.length === 0 ? 0 : (i - 1 + photos.length) % photos.length));
@@ -46,12 +57,21 @@ export function ListingPhotoCarousel({ photos, alt, className }: ListingPhotoCar
   return (
     <div className={cn('relative', className)}>
       <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-zinc-900">
-        <ProgressiveImage
-          src={currentPhoto.url}
-          alt={`${alt} (photo ${String(activeIndex + 1)} of ${String(photos.length)})`}
-          blurHash={currentPhoto.blur_hash}
-          className="absolute inset-0"
-        />
+        <button
+          type="button"
+          onClick={() => {
+            openLightbox(activeIndex);
+          }}
+          className="absolute inset-0 cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]"
+          aria-label={`View photo ${String(activeIndex + 1)} full screen`}
+        >
+          <ProgressiveImage
+            src={currentPhoto.url}
+            alt={`${alt} (photo ${String(activeIndex + 1)} of ${String(photos.length)})`}
+            blurHash={currentPhoto.blur_hash}
+            className="absolute inset-0"
+          />
+        </button>
 
         {photos.length > 1 ? (
           <>
@@ -112,6 +132,14 @@ export function ListingPhotoCarousel({ photos, alt, className }: ListingPhotoCar
           ))}
         </div>
       ) : null}
+
+      <PhotoLightbox
+        photos={photos}
+        alt={alt}
+        initialIndex={activeIndex}
+        open={lightboxOpen}
+        onClose={closeLightbox}
+      />
     </div>
   );
 }
