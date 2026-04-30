@@ -17,6 +17,10 @@ type Service struct {
 	repo       domain.ChannelRepository
 	pubsub     *PubSub
 	bidChecker domain.BidChecker
+	// relay rewrites contact info in cold-open messages so the sender's
+	// real email/phone never leak before the recipient has replied. Set
+	// via SetRelay; nil means "rewrite disabled" (dev-mode default).
+	relay AliasLookup
 }
 
 // New creates a new chat service.
@@ -119,11 +123,22 @@ func (s *Service) SendMessage(ctx context.Context, channelID, senderID, messageT
 
 	flagged := DetectContactInfo(content)
 
+	// Cold-open relay rewrite: if the recipient hasn't replied yet, swap
+	// real email/phone for the alias values. No-op when s.relay is nil.
+	rewritten := content
+	if flagged && s.relay != nil {
+		recipientID := ch.CustomerID
+		if senderID == ch.CustomerID {
+			recipientID = ch.ProviderID
+		}
+		rewritten = maybeRewriteForRelay(ctx, s.relay, channelID, recipientID, content)
+	}
+
 	msg := &domain.Message{
 		ChannelID:          channelID,
 		SenderID:           senderID,
 		MessageType:        messageType,
-		Content:            content,
+		Content:            rewritten,
 		FlaggedContactInfo: flagged,
 	}
 

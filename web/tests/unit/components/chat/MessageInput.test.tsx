@@ -19,6 +19,16 @@ vi.mock('@/hooks/useWebSocket', () => ({
   useSendTypingIndicator: () => sendTypingMock,
 }));
 
+// QuickReplyTemplates pulls the user's chat templates over TanStack
+// Query. The MessageInput tests render without a QueryClientProvider,
+// so we stub the hook to return an empty/loading state — that path
+// makes QuickReplyTemplates render nothing, which is exactly what
+// these MessageInput cases need.
+vi.mock('@/hooks/useChatTemplates', () => ({
+  useChatTemplates: () => ({ data: undefined, isLoading: false }),
+  useUseChatTemplate: () => ({ mutate: vi.fn() }),
+}));
+
 import { MessageInput } from '@/components/chat/MessageInput';
 import { CHANNEL_STATUS } from '@/types';
 

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -17,18 +20,25 @@ import (
 )
 
 // ChatHandler handles HTTP endpoints for chat channels and messages.
+//
+// db is optional — when non-nil, the SendMessage path enforces user_blocks
+// (Wave 5 / Agent P) before forwarding to the chat gRPC service. With a
+// nil pool the block check is skipped (matches the rest of the gateway's
+// nil-safe DB pattern; the gRPC service still runs).
 type ChatHandler struct {
 	chatClient chatv1.ChatServiceClient
 	authMW     *middleware.AuthMiddleware
 	chatWSAddr string
+	db         *pgxpool.Pool
 }
 
 // NewChatHandler creates a new ChatHandler.
-func NewChatHandler(chatClient chatv1.ChatServiceClient, authMW *middleware.AuthMiddleware, chatWSAddr string) *ChatHandler {
+func NewChatHandler(chatClient chatv1.ChatServiceClient, authMW *middleware.AuthMiddleware, chatWSAddr string, db *pgxpool.Pool) *ChatHandler {
 	return &ChatHandler{
 		chatClient: chatClient,
 		authMW:     authMW,
 		chatWSAddr: chatWSAddr,
+		db:         db,
 	}
 }
 
@@ -190,6 +200,36 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	var req sendMessageRequest
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	// Block check (Wave 5 / Agent P): if EITHER party of this channel has
+	// blocked the sender, refuse with 403 before forwarding to the chat
+	// service. The query joins chat_channels → user_blocks via the OR over
+	// (customer_id, provider_id) so we need just one round-trip.
+	if h.db != nil {
+		var blocked bool
+		err := h.db.QueryRow(r.Context(), `
+			SELECT EXISTS(
+				SELECT 1
+				  FROM chat_channels c
+				  JOIN user_blocks ub
+				    ON (ub.blocker_id = c.customer_id OR ub.blocker_id = c.provider_id)
+				   AND ub.blocked_id = $1
+				 WHERE c.id = $2
+			)`, claims.UserID, channelID).Scan(&blocked)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			// No row impossible with EXISTS, but be defensive.
+		case err != nil:
+			slog.ErrorContext(r.Context(), "send message: block check failed",
+				"channel_id", channelID, "sender_id", claims.UserID, "error", err)
+			// Fail open here: if the block-check query is broken, prefer
+			// chat continuity over a hard block. The chat service still
+			// enforces channel membership, so a stranger can't sneak in.
+		case blocked:
+			writeError(w, http.StatusForbidden, "blocked")
+			return
+		}
 	}
 
 	msgType := stringToProtoChatMessageType(req.MessageType)

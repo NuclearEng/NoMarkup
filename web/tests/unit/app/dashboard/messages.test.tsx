@@ -54,8 +54,27 @@ vi.mock('@/components/chat/TypingIndicator', () => ({
   TypingIndicator: () => createElement('div', { 'data-testid': 'typing' }),
 }));
 
+// New (Wave 5 / Agent P) — relay banner + block button mounted by
+// ActiveThread. Stub them out so this page-level test stays focused on
+// layout and channel routing.
+vi.mock('@/components/chat/RelayBanner', () => ({
+  RelayBanner: () => createElement('div', { 'data-testid': 'relay-banner' }),
+}));
+vi.mock('@/components/chat/BlockButton', () => ({
+  BlockButton: () => createElement('div', { 'data-testid': 'block-button' }),
+}));
+
 vi.mock('@/hooks/useChannels', () => ({
   useChannel: () => channelState,
+}));
+
+vi.mock('@/hooks/useUserBlocks', () => ({
+  useMyBlocks: () => ({ data: { blocks: [], pagination: {} } }),
+}));
+
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (selector: (s: unknown) => unknown) =>
+    selector({ user: { id: 'me-1' } }),
 }));
 
 vi.mock('@/stores/chat-store', () => ({

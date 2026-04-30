@@ -2,17 +2,21 @@
 
 import { ArrowLeft } from 'lucide-react';
 
+import { BlockButton } from '@/components/chat/BlockButton';
 import { ChannelList } from '@/components/chat/ChannelList';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { MessageThread } from '@/components/chat/MessageThread';
+import { RelayBanner } from '@/components/chat/RelayBanner';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
 import { useChannel } from '@/hooks/useChannels';
+import { useMyBlocks } from '@/hooks/useUserBlocks';
 import { CONNECTION_STATUS } from '@/lib/websocket';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -43,9 +47,32 @@ function ConnectionStatusDot() {
 function ActiveThread({ channelId }: { channelId: string }) {
   const { data } = useChannel(channelId);
   const channelStatus = data?.channel.status ?? 'active';
+  const me = useAuthStore((s) => s.user);
+  const blocksQuery = useMyBlocks();
+
+  // The "other party" is whoever isn't us. With both sides redacted,
+  // the BlockButton hides itself.
+  const otherPartyId = (() => {
+    if (!data?.channel || !me) return null;
+    if (data.channel.customer_id === me.id) return data.channel.provider_id;
+    return data.channel.customer_id;
+  })();
+
+  const isBlocked = (() => {
+    if (!otherPartyId) return false;
+    return (blocksQuery.data?.blocks ?? []).some(
+      (b) => b.blocked_id === otherPartyId,
+    );
+  })();
 
   return (
     <div className="flex h-full flex-col">
+      <RelayBanner />
+      {otherPartyId ? (
+        <div className="flex items-center justify-end border-b border-white/[0.06] px-3 py-1.5">
+          <BlockButton userId={otherPartyId} isBlocked={isBlocked} />
+        </div>
+      ) : null}
       <MessageThread channelId={channelId} />
       <TypingIndicator channelId={channelId} />
       <MessageInput channelId={channelId} channelStatus={channelStatus} />

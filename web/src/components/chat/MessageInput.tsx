@@ -3,6 +3,7 @@
 import { FileText, Send, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
+import { QuickReplyTemplates } from '@/components/chat/QuickReplyTemplates';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -208,6 +209,27 @@ export function MessageInput({
     }
   }
 
+  function handleTemplateSelect(body: string) {
+    // Insert at the cursor when there is one; otherwise append. Keeps
+    // the user's in-progress text intact when they pick a quick reply.
+    const ta = textareaRef.current;
+    if (!ta) {
+      setContent((prev) => (prev ? `${prev} ${body}` : body));
+      return;
+    }
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const next = content.slice(0, start) + body + content.slice(end);
+    if (next.length <= MAX_CHAR_COUNT) {
+      setContent(next);
+      requestAnimationFrame(() => {
+        ta.focus();
+        const caret = start + body.length;
+        ta.setSelectionRange(caret, caret);
+      });
+    }
+  }
+
   function handleProposeTerms(terms: ProposedTerms) {
     const termsMessage = [
       '[Proposed Terms]',
@@ -249,6 +271,7 @@ export function MessageInput({
         />
       ) : (
         <>
+          <QuickReplyTemplates onSelect={handleTemplateSelect} className="-mx-3 -mt-3 mb-2" />
           <div className="flex items-end gap-2">
             <Button
               type="button"
