@@ -413,6 +413,9 @@ func defaultPreferences(userID string) *domain.NotificationPreferences {
 		// Onboarding cadence + seller-follow retention loop.
 		"welcome_day_1", "welcome_day_3", "welcome_day_7",
 		"seller_new_listing",
+		// Goods-marketplace retention: ≥10% drop vs. saved baseline on a
+		// watched listing. Wired by price_drop_scheduler.go.
+		"price_drop",
 	}
 
 	for _, t := range allTypes {

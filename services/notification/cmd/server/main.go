@@ -152,6 +152,23 @@ func main() {
 	// listing flips to status='active'. Skipped when REDIS_URL is unset.
 	runFollowsPubsubScheduler(ctx, pool, svc, os.Getenv("REDIS_URL"))
 
+	// Price-drop alerts on watched listings — every 5 minutes, walks
+	// listing_watchlist looking for ≥10% drops vs. baseline. See
+	// price_drop_scheduler.go.
+	runPriceDropScheduler(ctx, pool, svc)
+
+	// Re-engagement cadence (7d/14d/30d). Sweeps every 6h for users
+	// inactive past each milestone and queues a re-engagement
+	// notification. Idempotent via 24h-wide bucket queries.
+	runReengagementScheduler(ctx, pool, svc)
+
+	// Post-transaction NPS prompts. Every 1h, finds completed
+	// listing_orders and contracts ≥48h old, inserts an nps_surveys row
+	// (UNIQUE-protected against re-prompts), and queues a `nps_survey`
+	// notification. The web mounts <NPSSurvey> when /me/nps/pending
+	// returns ≥1 unanswered row.
+	runNPSScheduler(ctx, pool, svc)
+
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		slog.Error("failed to listen", "error", err)

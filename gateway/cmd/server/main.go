@@ -253,7 +253,10 @@ func main() {
 	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient)
 	expenseHandler := handler.NewExpenseHandler(paymentClient)
 	taxHandler := handler.NewTaxHandler(paymentClient)
-	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr)
+	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr, dbPool)
+	chatRelayHandler := handler.NewChatRelayHandler(dbPool)
+	userBlocksHandler := handler.NewUserBlocksHandler(dbPool)
+	chatTemplatesHandler := handler.NewChatTemplatesHandler(dbPool)
 	auctionWSHandler := handler.NewAuctionWSHandler(authMW, cfg.ChatWSAddr)
 	spectatorWSHandler := handler.NewSpectatorWSHandler(cacheClient)
 	marketplaceSpectatorWSHandler := handler.NewMarketplaceSpectatorWSHandler(cacheClient)
@@ -293,6 +296,23 @@ func main() {
 	pushSubscriptionsHandler := handler.NewPushSubscriptionsHandler(dbPool)
 	complianceHandler := handler.NewComplianceHandler(dbPool)
 	bidBondHandler := handler.NewBidBondHandler(dbPool, paymentClient)
+	offersHandler := handler.NewOffersHandler(dbPool)
+	listingReplayHandler := handler.NewListingReplayHandler(dbPool)
+	referralsHandler := handler.NewReferralsHandler(dbPool)
+	// Wave 5 power-seller surface (Agent R) — analytics dashboard, paid
+	// promotions, CSV export. All three are gateway-direct (no gRPC
+	// hop) since they're either pure SQL or thin wrappers around the
+	// existing payment service.
+	sellerAnalyticsHandler := handler.NewSellerAnalyticsHandler(dbPool)
+	promotedListingsHandler := handler.NewPromotedListingsHandler(dbPool, paymentClient)
+	csvExportHandler := handler.NewCSVExportHandler(dbPool)
+	// Wave 5 Agent Q surface — wired here since main.go is the shared
+	// composition root (router signature already references these). The
+	// handler implementations live in agent Q's owned files.
+	categoryQuestionsHandler := handler.NewCategoryQuestionsHandler(dbPool)
+	quoteTemplatesHandler := handler.NewQuoteTemplatesHandler(dbPool)
+	contractTipHandler := handler.NewContractTipHandler(dbPool)
+	calendarExportHandler := handler.NewCalendarExportHandler(dbPool, publicKey)
 
 	// Optional Meilisearch client for listings autocomplete + "similar"
 	// rails. Mirrors the env conventions used by services/job
@@ -340,6 +360,19 @@ func main() {
 		pushSubscriptionsHandler,
 		complianceHandler,
 		bidBondHandler,
+		offersHandler,
+		listingReplayHandler,
+		chatRelayHandler,
+		userBlocksHandler,
+		chatTemplatesHandler,
+		referralsHandler,
+		sellerAnalyticsHandler,
+		promotedListingsHandler,
+		csvExportHandler,
+		categoryQuestionsHandler,
+		quoteTemplatesHandler,
+		contractTipHandler,
+		calendarExportHandler,
 	)
 
 	srv := &http.Server{

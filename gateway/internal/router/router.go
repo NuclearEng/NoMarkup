@@ -82,6 +82,19 @@ func New(
 	pushSubscriptionsHandler *handler.PushSubscriptionsHandler,
 	complianceHandler *handler.ComplianceHandler,
 	bidBondHandler *handler.BidBondHandler,
+	offersHandler *handler.OffersHandler,
+	listingReplayHandler *handler.ListingReplayHandler,
+	chatRelayHandler *handler.ChatRelayHandler,
+	userBlocksHandler *handler.UserBlocksHandler,
+	chatTemplatesHandler *handler.ChatTemplatesHandler,
+	referralsHandler *handler.ReferralsHandler,
+	sellerAnalyticsHandler *handler.SellerAnalyticsHandler,
+	promotedListingsHandler *handler.PromotedListingsHandler,
+	csvExportHandler *handler.CSVExportHandler,
+	categoryQuestionsHandler *handler.CategoryQuestionsHandler,
+	quoteTemplatesHandler *handler.QuoteTemplatesHandler,
+	contractTipHandler *handler.ContractTipHandler,
+	calendarExportHandler *handler.CalendarExportHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -119,6 +132,15 @@ func New(
 		r.Get("/callback/google", oauthHandler.GoogleOAuthCallback)
 		r.Get("/oauth/apple", oauthHandler.InitAppleOAuth)
 		r.Post("/callback/apple", oauthHandler.AppleOAuthCallback)
+		r.Get("/oauth/facebook", oauthHandler.InitFacebookOAuth)
+		r.Get("/callback/facebook", oauthHandler.FacebookOAuthCallback)
+
+		// Phone-only signup. Body: { phone, otp_code }. Verifies an OTP
+		// the client requested via a separate (anonymous) phone-OTP path
+		// and returns the standard token pair. Migration note: this path
+		// synthesizes a placeholder email until user-service ships a
+		// dedicated RegisterByPhone RPC — see auth.go::RegisterPhoneOnly.
+		r.Post("/register-phone", authHandler.RegisterPhoneOnly)
 
 		// MFA verify does not require auth (uses challenge token from login).
 		r.Post("/mfa/verify", authHandler.VerifyMFA)
@@ -138,7 +160,16 @@ func New(
 	r.Route("/api/v1/categories", func(r chi.Router) {
 		r.Get("/", categoriesHandler.List)
 		r.Get("/tree", categoriesHandler.Tree)
+		// Pre-quote questions are public so the post-job form can render
+		// them before the visitor authenticates (Wave 5 audit Section H).
+		r.Get("/{id}/questions", categoryQuestionsHandler.ListByCategory)
 	})
+
+	// iCal feed — auth via cookie OR ?token= so calendar-app subscriptions
+	// (Apple Calendar, Google, Outlook) work without forwarding cookies.
+	// The handler authorises internally; mounted outside the auth-required
+	// block so the optional-token branch is reachable.
+	r.Get("/api/v1/me/calendar.ics", calendarExportHandler.ExportICS)
 
 	// All job routes in one group (mix of public and authenticated)
 	r.Route("/api/v1/jobs", func(r chi.Router) {
@@ -172,6 +203,13 @@ func New(
 		// Live auction endpoints
 		r.With(authMW.Handler).Get("/{id}/auction/state", bidHandler.GetLiveAuctionState)
 		r.With(authMW.Handler).Get("/{id}/auction/events", bidHandler.GetAuctionEvents)
+
+		// Pre-quote answers (Wave 5 audit Section H). Auth-bound:
+		// the handler enforces customer-only writes and customer +
+		// bidding-provider reads so the question payload can be quoted
+		// against accurately.
+		r.With(authMW.Handler).Post("/{id}/answers", categoryQuestionsHandler.SubmitAnswers)
+		r.With(authMW.Handler).Get("/{id}/answers", categoryQuestionsHandler.GetAnswers)
 	})
 
 	// Public trust tier requirements (no auth required)
@@ -240,6 +278,9 @@ func New(
 	r.Get("/api/v1/listings/{id}/similar", listingsSearchHandler.Similar)
 	r.Get("/api/v1/listings/{id}", listingsHandler.GetListing)
 	r.Get("/api/v1/listings/{id}/bids", listingsHandler.GetListingBids)
+	// Goods-side auction replay — public, mirrors the services-side
+	// /api/v1/auctions/{jobId}/replay surface. PII-stripped.
+	r.Get("/api/v1/listings/{id}/replay", listingReplayHandler.GetListingReplay)
 	r.Post("/api/v1/listings/{id}/ping-viewer", listingsHandler.PingViewer)
 
 	// Public followers list — anyone can see who follows a seller (mirrors
@@ -313,6 +354,23 @@ func New(
 		r.Get("/me/follows", followsHandler.MyFollows)
 		r.Get("/me/feed", followsHandler.MyFeed)
 
+		// ── Referral program (onboarding/growth) ────────────────────────
+		// Migration 048 + handler/referrals.go. Code is auto-generated on
+		// first GET; redemption is one-shot per redeemer; the credit
+		// ledger funds the $10/$10 split that activates on the redeemer's
+		// first completed transaction.
+		r.Get("/me/referrals/code", referralsHandler.GetMyReferralCode)
+		r.Post("/me/referrals/redeem", referralsHandler.RedeemReferralCode)
+		r.Get("/me/referrals", referralsHandler.ListMyReferrals)
+
+		// ── NPS surveys (post-transaction) ──────────────────────────────
+		// The notification scheduler queues a row in `nps_surveys` 48h
+		// after a contract or listing-order completes. The web mounts an
+		// <NPSSurvey> modal when /me/nps/pending returns ≥1 row; submitting
+		// the modal POSTs to /me/nps/{id}.
+		r.Get("/me/nps/pending", referralsHandler.ListPendingNPS)
+		r.Post("/me/nps/{id}", referralsHandler.SubmitNPS)
+
 		r.Route("/providers", func(r chi.Router) {
 			r.Get("/me", providerHandler.GetMe)
 			r.Patch("/me", providerHandler.UpdateMe)
@@ -362,6 +420,17 @@ func New(
 				r.Get("/{year}", taxHandler.GetTaxForm)
 				r.Post("/{year}/generate", taxHandler.GenerateTaxForm)
 				r.Get("/{year}/download", taxHandler.DownloadTaxForm)
+			})
+
+			// Reusable quote templates (Wave 5 audit Section H). Owner-bound
+			// inside the handler — every endpoint scopes to the caller's
+			// user_id so a provider can never see another's templates.
+			r.Route("/me/quote-templates", func(r chi.Router) {
+				r.Get("/", quoteTemplatesHandler.List)
+				r.Post("/", quoteTemplatesHandler.Create)
+				r.Patch("/{id}", quoteTemplatesHandler.Update)
+				r.Delete("/{id}", quoteTemplatesHandler.Delete)
+				r.Post("/{id}/use", quoteTemplatesHandler.IncrementUse)
 			})
 		})
 
@@ -432,6 +501,11 @@ func New(
 				r.Post("/{id}/checkout", workspaceHandler.CheckOut)
 				r.Get("/{id}/work-session", workspaceHandler.GetWorkSession)
 				r.Post("/{id}/completion-photos", workspaceHandler.UploadCompletionPhoto)
+
+				// Post-completion tip / gratuity (Wave 5 audit Section H).
+				// Customer-only enforcement is internal to the handler;
+				// RequirePartyAccess above already screens out non-parties.
+				r.Post("/{id}/tip", contractTipHandler.Tip)
 			})
 		})
 
@@ -466,7 +540,21 @@ func New(
 		r.Route("/orders", func(r chi.Router) {
 			r.Post("/{id}/confirm-pickup", listingOrdersHandler.ConfirmPickup)
 			r.Post("/{id}/file-dispute", listingOrdersHandler.FileListingDispute)
+			// Wave 5 polish — mutual handshake + no-show counters.
+			r.Post("/{id}/seller-confirm", listingOrdersHandler.SellerConfirm)
+			r.Post("/{id}/report-no-show", listingOrdersHandler.ReportNoShow)
 		})
+
+		// ── Power-seller surface (Wave 5) ─────────────────────────────
+		// Daily-revenue chart, sell-through pill, top categories, CSV
+		// export, and paid promotions. The CSV is served directly from
+		// the gateway (no payment service round-trip) since it's pure
+		// SQL. Promotion charges flip listings.is_promoted via the
+		// Stripe webhook on charge.success — see promoted_listings.go.
+		r.Get("/me/seller-analytics", sellerAnalyticsHandler.GetSellerAnalytics)
+		r.Get("/me/sales.csv", csvExportHandler.ExportSales)
+		r.Post("/listings/{id}/promote", promotedListingsHandler.PromoteListing)
+		r.Post("/listings/{id}/promote/confirm", promotedListingsHandler.ConfirmPromotion)
 
 		// ── Marketplace buyer/seller write paths ────────────────────────
 		// Read paths are public and live above. These routes require
@@ -498,6 +586,15 @@ func New(
 		// Only status='active' bids placed within the last 60s qualify;
 		// demoted bids cannot be undone. See listings_bid.go::RetractBid.
 		r.Post("/listings/{id}/bids/{bidId}/retract", listingsHandler.RetractBid)
+
+		// ── Best-Offer / counter-offer chain ────────────────────────────
+		// Buyers post a sub-asking offer; sellers accept, reject, or
+		// counter. Accept flips the listing to 'sold' and mints a
+		// listing_orders row in the same tx (mirrors buy-now). See
+		// handler/offers.go for the state machine.
+		r.Post("/listings/{id}/offers", offersHandler.CreateOffer)
+		r.Get("/listings/{id}/offers", offersHandler.ListOffersForListing)
+		r.Patch("/offers/{id}", offersHandler.UpdateOffer)
 
 		// ── Watchlist + saved searches (retention loop) ─────────────────
 		// Buyers can favorite a listing without bidding ("watch") and
@@ -563,6 +660,32 @@ func New(
 			r.Post("/{id}/messages", chatHandler.SendMessage)
 			r.Post("/{id}/read", chatHandler.MarkRead)
 		})
+
+		// ── Communication polish (Wave 5 / Agent P) ─────────────────────
+		// Chat relay aliases — anonymous email/phone, Craigslist-style.
+		// /me/chat/aliases POST creates (or returns the existing) per-user
+		// per-context proxy alias. GET lists aliases plus surfaces whether
+		// the Twilio Proxy service is wired up (the UI hides "call" when
+		// not). See chat_relay.go for the dev/prod contract.
+		r.Post("/me/chat/aliases", chatRelayHandler.CreateAlias)
+		r.Get("/me/chat/aliases", chatRelayHandler.ListAliases)
+
+		// Per-user quick-reply templates. The chat composer reads
+		// /me/chat/templates and merges with a built-in default list when
+		// the user has no rows yet. /use bumps use_count so most-used
+		// templates float to the top.
+		r.Get("/me/chat/templates", chatTemplatesHandler.ListMyTemplates)
+		r.Post("/me/chat/templates", chatTemplatesHandler.CreateTemplate)
+		r.Patch("/me/chat/templates/{id}", chatTemplatesHandler.UpdateTemplate)
+		r.Delete("/me/chat/templates/{id}", chatTemplatesHandler.DeleteTemplate)
+		r.Post("/me/chat/templates/{id}/use", chatTemplatesHandler.UseTemplate)
+
+		// Block / unblock + my-blocks list. The block path feeds the
+		// SendMessage handler's block check, which returns 403 with
+		// "blocked" before forwarding to the chat gRPC service.
+		r.Post("/users/{id}/block", userBlocksHandler.Block)
+		r.Delete("/users/{id}/block", userBlocksHandler.Unblock)
+		r.Get("/me/blocks", userBlocksHandler.MyBlocks)
 
 		// Image pipeline routes
 		r.Route("/images", func(r chi.Router) {
@@ -687,6 +810,16 @@ func New(
 			r.Route("/goods-reports", func(r chi.Router) {
 				r.Get("/", adminMarketplaceHandler.ListReports)
 				r.Post("/{id}/resolve", adminMarketplaceHandler.ResolveReport)
+			})
+
+			// Pre-quote category questions CRUD (Wave 5 audit Section H).
+			// Public read at /api/v1/categories/{id}/questions; admin
+			// writes here. Cascade DELETE on category_questions cleans up
+			// every job_question_answers row that referenced the question.
+			r.Route("/category-questions", func(r chi.Router) {
+				r.Post("/", categoryQuestionsHandler.AdminCreate)
+				r.Patch("/{id}", categoryQuestionsHandler.AdminUpdate)
+				r.Delete("/{id}", categoryQuestionsHandler.AdminDelete)
 			})
 
 			// Feature flags

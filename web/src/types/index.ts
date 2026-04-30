@@ -301,6 +301,12 @@ export interface Job {
   original_auction_ends_at: string | null;
   created_at: string;
   updated_at: string;
+  // Wave 5 services-polish (Section H). Optional because legacy
+  // payloads pre-migration 046 omit them; the form treats undefined as
+  // false / null.
+  is_hourly?: boolean;
+  hourly_rate_cents?: number | null;
+  same_day_requested?: boolean;
 }
 
 export interface JobDetail extends Job {
@@ -327,6 +333,13 @@ export interface CreateJobInput {
   auction_type?: AuctionType;
   photo_urls?: string[];
   publish?: boolean;
+  // Wave 5 services-polish (Section H). is_hourly toggles the form
+  // between flat-rate and hourly billing; hourly_rate_cents carries
+  // the rate when is_hourly=true. same_day_requested is the Thumbtack-
+  // style "I need this today" SLA flag.
+  is_hourly?: boolean;
+  hourly_rate_cents?: number;
+  same_day_requested?: boolean;
 }
 
 export interface UpdateJobInput {
@@ -526,6 +539,9 @@ export interface Contract {
   started_at?: string;
   completed_at?: string;
   created_at: string;
+  // Wave 5 services-polish (Section H). Post-completion gratuity. 0
+  // means "no tip yet"; once non-zero the tip widget hides.
+  tip_amount_cents?: number;
 }
 
 export interface ChangeOrder {
@@ -747,6 +763,55 @@ export interface MessagesResponse {
 export interface UnreadCountResponse {
   total_unread: number;
   channels: { channel_id: string; unread_count: number }[];
+}
+
+// Communication polish (Wave 5 / Agent P) — chat relay aliases, user
+// blocks, quick-reply templates. Mirror the JSON shapes returned by the
+// gateway handlers (chat_relay.go / user_blocks.go / chat_templates.go).
+export interface ChatAlias {
+  id: string;
+  user_id: string;
+  context_type: 'listing' | 'job';
+  context_id: string;
+  email_alias: string;
+  twilio_proxy_phone: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface ChatAliasesResponse {
+  aliases: ChatAlias[];
+  twilio_configured: boolean;
+}
+
+export interface CreateChatAliasInput {
+  context_type: 'listing' | 'job';
+  context_id: string;
+}
+
+export interface UserBlock {
+  blocked_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  reason: string | null;
+  blocked_at: string;
+}
+
+export interface UserBlocksResponse {
+  blocks: UserBlock[];
+  pagination: PaginationResponse;
+}
+
+export interface MessageTemplate {
+  id: string;
+  body: string;
+  use_count: number;
+  created_at: string;
+}
+
+export interface MessageTemplatesResponse {
+  templates: MessageTemplate[];
+  defaults: string[];
 }
 
 export interface SendMessageInput {
@@ -1949,6 +2014,21 @@ export interface Listing {
    * undefined as zero.
    */
   watcher_count?: number;
+  /**
+   * Highest pending Best-Offer + the buyer who made it. null when no
+   * pending offer exists. Surfaced inline so the marketplace card and
+   * detail page can render the offer banner without a second roundtrip.
+   */
+  current_offer_amount_cents?: number | null;
+  current_offer_buyer_id?: string | null;
+  /**
+   * Wave 5 power-seller flags. Set when the seller pays for placement
+   * via `POST /listings/{id}/promote`. The scoreboard renders a small
+   * "Promoted" pill in the corner when both fields are truthy AND
+   * `promoted_until` is still in the future.
+   */
+  is_promoted?: boolean;
+  promoted_until?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1959,6 +2039,70 @@ export interface ListingDetail extends Listing {
   seller_listings_count: number;
   seller_trust_tier: TrustTier | null;
   seller_trust_score: number | null;
+}
+
+// ────────────────────────────────────────
+// Best-Offer / counter-offer chain
+// ────────────────────────────────────────
+
+export const OFFER_STATUS = {
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected',
+  COUNTERED: 'countered',
+  WITHDRAWN: 'withdrawn',
+  EXPIRED: 'expired',
+} as const;
+export type OfferStatus = (typeof OFFER_STATUS)[keyof typeof OFFER_STATUS];
+
+/**
+ * Represents a single offer (or counter-offer) in the Best-Offer chain.
+ * Counter-offers carry parent_offer_id pointing back at the offer they
+ * respond to; the parent flips to status='countered' the moment the
+ * seller posts the counter.
+ */
+export interface Offer {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  amount_cents: number;
+  status: OfferStatus;
+  parent_offer_id: string | null;
+  expires_at: string;
+  message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OffersResponse {
+  offers: Offer[];
+}
+
+// ────────────────────────────────────────
+// Auction replay (goods side)
+// ────────────────────────────────────────
+
+export type AuctionReplayEventType =
+  | 'bid_placed'
+  | 'snipe_extension'
+  | 'auto_bid_cascade';
+
+export interface AuctionReplayEvent {
+  type: AuctionReplayEventType;
+  at: string;
+  amount_cents?: number;
+  anonymized_bidder?: string;
+  extended_to?: string;
+  from?: number;
+  to?: number;
+}
+
+export interface ListingAuctionReplay {
+  listing_id: string;
+  started_at: string;
+  ended_at: string | null;
+  winner_id: string | null;
+  events: AuctionReplayEvent[];
 }
 
 export interface ListingBid {
@@ -2138,4 +2282,202 @@ export interface ListingImageAnalysisResult {
   suggestedStartingPriceCents: number;
   condition: ListingAnalysisCondition;
   confidence: ListingAnalysisConfidence;
+}
+
+// ────────────────────────────────────────
+// Wave 5 — power-seller analytics + paid promotions
+// ────────────────────────────────────────
+
+export interface SellerAnalyticsDailyPoint {
+  date: string;
+  gross_cents: number;
+  order_count: number;
+}
+
+export interface SellerAnalyticsTopCategory {
+  category_id: string;
+  category_name: string;
+  count: number;
+}
+
+export interface SellerAnalytics {
+  range_days: number;
+  daily_revenue: SellerAnalyticsDailyPoint[];
+  sell_through_rate: number;
+  avg_sale_price_cents: number;
+  total_gross_cents: number;
+  total_sold: number;
+  total_listed: number;
+  top_categories: SellerAnalyticsTopCategory[];
+}
+
+export const PROMOTION_DURATION_HOURS = {
+  ONE_DAY: 24,
+  THREE_DAYS: 72,
+  ONE_WEEK: 168,
+} as const;
+export type PromotionDurationHours =
+  (typeof PROMOTION_DURATION_HOURS)[keyof typeof PROMOTION_DURATION_HOURS];
+
+export const PROMOTION_TIERS: ReadonlyArray<{
+  duration_hours: PromotionDurationHours;
+  amount_cents: number;
+  label: string;
+}> = [
+  { duration_hours: 24, amount_cents: 500, label: '24 hours' },
+  { duration_hours: 72, amount_cents: 1200, label: '3 days' },
+  { duration_hours: 168, amount_cents: 2500, label: '1 week' },
+];
+
+export interface PromoteListingInput {
+  duration_hours: PromotionDurationHours;
+  payment_method_id?: string;
+}
+
+export interface PromoteListingResponse {
+  charge_id: string;
+  listing_id: string;
+  duration_hours: number;
+  amount_cents: number;
+  stripe_client_secret: string;
+  promoted_until_estimate: string;
+  status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+}
+
+export interface ConfirmPromotionResponse {
+  charge_id: string;
+  listing_id: string;
+  is_promoted: boolean;
+  promoted_until: string;
+  status: 'succeeded';
+}
+
+// Wave 5 pickup polish — buyer + seller mutual handshake.
+export interface ConfirmPickupInput {
+  pickup_code?: string;
+  selfie_url?: string;
+  handoff_photo_url?: string;
+}
+
+export interface ConfirmPickupResponse {
+  order_id: string;
+  escrow_status: string;
+  seller_payout_cents: number;
+  pickup_confirmed_at: string;
+  both_confirmed: boolean;
+}
+
+export interface SellerConfirmResponse {
+  order_id: string;
+  escrow_status: string;
+  seller_confirmed_at: string;
+  both_confirmed: boolean;
+}
+
+export interface ReportNoShowResponse {
+  order_id: string;
+  reported_user_id: string;
+  new_no_show_count: number;
+  cooldown_until: string;
+  shadow_ban_triggered: boolean;
+}
+
+// ────────────────────────────────────────
+// Wave 5 services-polish (Section H)
+// ────────────────────────────────────────
+
+export const CATEGORY_QUESTION_TYPE = {
+  TEXT: 'text',
+  NUMBER: 'number',
+  SELECT: 'select',
+  MULTISELECT: 'multiselect',
+  BOOLEAN: 'boolean',
+  DATE: 'date',
+} as const;
+export type CategoryQuestionType =
+  (typeof CATEGORY_QUESTION_TYPE)[keyof typeof CATEGORY_QUESTION_TYPE];
+
+/**
+ * Pre-quote question tied to a service category. Customers answer
+ * these on the post-job form so providers can quote off real scope.
+ *
+ * `options` is the raw JSONB payload — for select/multiselect it's a
+ * string array (e.g. ["Single fixture","Whole bathroom"]); other
+ * types ignore it.
+ */
+export interface CategoryQuestion {
+  id: string;
+  category_id: string;
+  question: string;
+  question_type: CategoryQuestionType;
+  options?: string[] | null;
+  required: boolean;
+  display_order: number;
+  created_at: string;
+}
+
+export interface CategoryQuestionsResponse {
+  questions: CategoryQuestion[];
+}
+
+/**
+ * One customer-submitted answer. Exactly one of answer_text /
+ * answer_json is populated — text/select/date use answer_text;
+ * multiselect/number/boolean round-trip as answer_json.
+ */
+export interface JobQuestionAnswer {
+  id: string;
+  job_id: string;
+  question_id: string;
+  answer_text?: string | null;
+  answer_json?: unknown;
+  created_at: string;
+}
+
+export interface SubmitAnswerInput {
+  question_id: string;
+  answer_text?: string;
+  answer_json?: unknown;
+}
+
+export interface SubmitAnswersInput {
+  answers: SubmitAnswerInput[];
+}
+
+/** Provider's reusable quote boilerplate. */
+export interface QuoteTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  body: string;
+  default_amount_cents?: number | null;
+  default_duration_hours?: number | null;
+  use_count: number;
+  created_at: string;
+}
+
+export interface QuoteTemplatesResponse {
+  templates: QuoteTemplate[];
+}
+
+export interface CreateQuoteTemplateInput {
+  name: string;
+  body: string;
+  default_amount_cents?: number;
+  default_duration_hours?: number;
+}
+
+export interface UpdateQuoteTemplateInput {
+  name?: string;
+  body?: string;
+  default_amount_cents?: number;
+  default_duration_hours?: number;
+}
+
+export interface ContractTipInput {
+  amount_cents: number;
+}
+
+export interface ContractTipResponse {
+  tip_amount_cents: number;
 }
