@@ -212,19 +212,36 @@ func main() {
 	// silently leaves the old hashes in place — the bug we were called to fix
 	// (Bug 4: seed password mismatch). Other identity fields are kept stable.
 	_, err = tx.Exec(ctx, `
-		INSERT INTO users (id, email, email_verified, password_hash, display_name, roles, status, timezone)
+		INSERT INTO users (id, email, email_verified, password_hash, display_name, roles, status, timezone, dob, dob_verified_at)
 		VALUES
-			($1, 'admin@nomarkup.com',    true, $5, 'Admin User',     '{admin}',    'active', 'America/Los_Angeles'),
-			($2, 'customer@nomarkup.com', true, $5, 'Jane Customer',  '{customer}', 'active', 'America/New_York'),
-			($3, 'provider@nomarkup.com', true, $5, 'Mike Provider',  '{provider}', 'active', 'America/Chicago'),
-			($4, 'provider2@nomarkup.com', true, $5, 'Sarah Provider', '{provider}', 'active', 'America/Denver')
+			($1, 'admin@nomarkup.com',    true, $5, 'Admin User',     '{admin}',    'active', 'America/Los_Angeles', DATE '1995-01-01', now()),
+			($2, 'customer@nomarkup.com', true, $5, 'Jane Customer',  '{customer}', 'active', 'America/New_York',    DATE '1995-01-01', now()),
+			($3, 'provider@nomarkup.com', true, $5, 'Mike Provider',  '{provider}', 'active', 'America/Chicago',     DATE '1995-01-01', now()),
+			($4, 'provider2@nomarkup.com', true, $5, 'Sarah Provider', '{provider}', 'active', 'America/Denver',     DATE '1995-01-01', now())
 		ON CONFLICT (id) DO UPDATE SET
 			password_hash = EXCLUDED.password_hash,
+			dob = COALESCE(users.dob, EXCLUDED.dob),
+			dob_verified_at = COALESCE(users.dob_verified_at, EXCLUDED.dob_verified_at),
 			updated_at = now()`,
 		adminUserID, customerUserID, providerUserID, provider2UserID, passwordHash,
 	)
 	if err != nil {
 		log.Fatalf("insert users: %v", err)
+	}
+
+	// ── 1b. ToS Acceptance ────────────────────────────────────────
+	// Without this, demo users hit the ToS modal on first dashboard load
+	// (GET /api/v1/me/tos-acceptance returns null → frontend renders the
+	// blocking modal). The version is pinned to the row seeded by migration
+	// 043. Idempotent via the (user_id, tos_version) UNIQUE constraint.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO tos_acceptances (user_id, tos_version)
+		VALUES ($1, '1.0'), ($2, '1.0'), ($3, '1.0'), ($4, '1.0')
+		ON CONFLICT (user_id, tos_version) DO NOTHING`,
+		adminUserID, customerUserID, providerUserID, provider2UserID,
+	)
+	if err != nil {
+		log.Fatalf("insert tos acceptances: %v", err)
 	}
 
 	// ── 2. Property ───────────────────────────────────────────────
