@@ -694,6 +694,7 @@ start_gateway() {
         "GATEWAY_PORT=$GATEWAY_PORT" \
         "JWT_PUBLIC_KEY_PATH=$ROOT/keys/public.pem" \
         "ALLOWED_ORIGINS=http://localhost:$WEB_PORT" \
+        "WS_ALLOWED_ORIGINS=http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT" \
         "SECURE_COOKIES=false" \
         "USER_SERVICE_ADDR=localhost:$USER_PORT" \
         "JOB_SERVICE_ADDR=localhost:$JOB_PORT" \
@@ -705,7 +706,8 @@ start_gateway() {
         "TRUST_ENGINE_ADDR=localhost:$TRUST_PORT" \
         "IMAGING_SERVICE_ADDR=localhost:$IMAGING_PORT" \
         "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT" \
-        "REDIS_URL=redis://localhost:$REDIS_PORT"
+        "REDIS_URL=redis://localhost:$REDIS_PORT" \
+        "RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH:-50}"
 
     success "Gateway ready"
 }
