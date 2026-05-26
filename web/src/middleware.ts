@@ -124,9 +124,12 @@ function buildCsp(nonce: string): string {
   // serve and causes a "TLS error" / "network connection lost" cascade in
   // Safari. Keep it for prod where every backend is HTTPS.
   const isProd = process.env.NODE_ENV === 'production';
+  // Next.js dev (HMR/React Refresh) and Mapbox GL JS use eval()/new Function().
+  // Add 'unsafe-eval' ONLY in non-production builds — prod CSP stays locked down.
+  const scriptSrcEval = isProd ? '' : " 'unsafe-eval'";
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://api.mapbox.com https://js.stripe.com`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${scriptSrcEval} https://api.mapbox.com https://js.stripe.com`,
     "style-src 'self' 'unsafe-inline' https://api.mapbox.com",
     "img-src 'self' data: blob: https: http://localhost:9000",
     "font-src 'self' data:",
