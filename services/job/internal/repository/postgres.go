@@ -736,6 +736,7 @@ func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID st
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
@@ -956,6 +957,7 @@ func (r *PostgresRepository) AdminListJobs(ctx context.Context, statusFilter *st
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
