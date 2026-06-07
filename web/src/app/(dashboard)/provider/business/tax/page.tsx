@@ -20,7 +20,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useProviderEarnings } from '@/hooks/useAnalytics';
 import { useGenerateTaxForm, useTaxForms } from '@/hooks/useTaxForms';
-import { downloadAuthenticated } from '@/lib/api';
+import { downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -328,9 +328,7 @@ export default function TaxCenterPage() {
                               `/api/v1/providers/me/tax-forms/${String(form.tax_year)}/download`,
                               `1099-NEC-${String(form.tax_year)}.html`,
                             ).catch((err: unknown) => {
-                              toast.error(
-                                err instanceof Error ? err.message : 'Failed to download tax form',
-                              );
+                              toast.error(getApiErrorMessage(err, 'Failed to download tax form'));
                             });
                           }}
                           className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/[0.06]"

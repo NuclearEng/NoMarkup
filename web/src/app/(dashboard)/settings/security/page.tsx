@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { changePasswordSchema } from '@/lib/validations';
 import type { ChangePasswordFormValues } from '@/lib/validations';
 import { useProfile } from '@/hooks/useProfile';
@@ -70,9 +70,7 @@ function MFASection() {
       const data = await enableMFA.mutateAsync();
       setSetupData(data);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to start MFA setup';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to start MFA setup'));
     }
   }
 
@@ -88,9 +86,7 @@ function MFASection() {
       setVerifyCode('');
       setSuccess('Two-factor authentication has been enabled.');
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid verification code';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Invalid verification code'));
     }
   }
 
@@ -102,9 +98,7 @@ function MFASection() {
       setDisableCode('');
       setSuccess('Two-factor authentication has been disabled.');
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid verification code';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Invalid verification code'));
     }
   }
 
@@ -370,9 +364,7 @@ export default function SecuritySettingsPage() {
       setPasswordSuccess(true);
       form.reset();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to change password';
-      setPasswordError(message);
+      setPasswordError(getApiErrorMessage(error, 'Failed to change password'));
     }
   }
 

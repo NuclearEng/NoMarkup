@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { getApiErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { StripeOnboarding } from '@/components/payments/StripeOnboarding';
 import {
@@ -985,8 +986,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
       onNext();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to upload documents. Please try again.';
-      setSubmitError(message);
+      setSubmitError(getApiErrorMessage(err, 'Failed to upload documents. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }

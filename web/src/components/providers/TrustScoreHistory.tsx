@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useTrustHistory } from '@/hooks/useTrustScore';
+import { getApiErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { TrustScoreSnapshot, TrustTier } from '@/types';
 import { TRUST_TIER } from '@/types';
@@ -141,8 +142,7 @@ export function TrustScoreHistory({ userId, className }: TrustScoreHistoryProps)
   }
 
   if (isError) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Failed to load score history';
+    const errorMessage = getApiErrorMessage(error, 'Failed to load score history');
 
     return (
       <Card className={className}>

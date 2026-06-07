@@ -221,7 +221,7 @@ function DevBondConfirm({
           onAuthorized();
         },
         onError: (err) => {
-          setError(err instanceof Error ? err.message : 'Bond confirmation failed');
+          setError(getApiErrorMessage(err, 'Bond confirmation failed'));
           setSubmitting(false);
         },
       },

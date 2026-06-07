@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import type { VerifyEmailResponse } from '@/types';
 
 type VerifyState = 'loading' | 'success' | 'error';
@@ -32,7 +32,7 @@ export function VerifyEmailContent() {
       setState('success');
     } catch (error) {
       setState('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Verification failed');
+      setErrorMessage(getApiErrorMessage(error, 'Verification failed'));
     }
   }, []);
 

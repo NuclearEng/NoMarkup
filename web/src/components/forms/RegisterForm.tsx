@@ -28,6 +28,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { useEnableRole } from '@/hooks/useProfile';
+import { getApiErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { registerSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
@@ -63,8 +64,7 @@ export function RegisterForm() {
         router.push('/dashboard');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Registration failed';
-      setFormError(message);
+      setFormError(getApiErrorMessage(error, 'Registration failed'));
     }
   }
 

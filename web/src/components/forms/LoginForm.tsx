@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
+import { getApiErrorMessage } from '@/lib/api';
 import { loginSchema } from '@/lib/validations';
 import { useAuthStore, MFARequiredError } from '@/stores/auth-store';
 
@@ -64,8 +65,7 @@ export function LoginForm() {
         setTimeout(() => totpInputRef.current?.focus(), 100);
         return;
       }
-      const message = error instanceof Error ? error.message : 'Login failed';
-      setFormError(message);
+      setFormError(getApiErrorMessage(error, 'Login failed'));
     }
   }
 
@@ -77,8 +77,7 @@ export function LoginForm() {
       await completeMFALogin(mfaChallengeToken, totpCode);
       router.push('/dashboard');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Invalid verification code';
-      setFormError(message);
+      setFormError(getApiErrorMessage(error, 'Invalid verification code'));
     } finally {
       setMfaSubmitting(false);
     }

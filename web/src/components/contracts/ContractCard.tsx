@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { cn, formatCents } from '@/lib/utils';
 import type { Contract, ContractTipResponse } from '@/types';
 import { CONTRACT_STATUS, MILESTONE_STATUS, PAYMENT_TIMING } from '@/types';
@@ -272,7 +272,7 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
       setSuccess(true);
       toast.success(`Tip sent — ${formatCents(amountCents)} on its way to your provider. Thank you!`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to record tip';
+      const message = getApiErrorMessage(err, 'Failed to record tip');
       setError(message);
       toast.error(message);
     } finally {
