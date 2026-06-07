@@ -75,6 +75,11 @@ const CONDITION_OPTIONS: { value: '' | 'new' | 'like_new' | 'very_good' | 'good'
   { value: 'for_parts', label: 'For parts (broken / not working)' },
 ];
 
+// Radix <Select.Item> forbids an empty-string value, but the form stores ''
+// for "unspecified" (→ NULL condition). Render the "Don't say" option with a
+// sentinel and map it back to '' on change / display.
+const UNSPECIFIED_CONDITION = 'unspecified';
+
 const GOODS_CATEGORIES: { id: string; name: string }[] = [
   { id: 'goods-furniture', name: 'Furniture' },
   { id: 'goods-electronics', name: 'Electronics' },
@@ -524,9 +529,9 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                       <FormLabel>Condition</FormLabel>
                       <FormControl>
                         <Select
-                          value={field.value ?? ''}
+                          value={field.value ? field.value : UNSPECIFIED_CONDITION}
                           onValueChange={(v) => {
-                            field.onChange(v);
+                            field.onChange(v === UNSPECIFIED_CONDITION ? '' : v);
                           }}
                         >
                           <SelectTrigger className="min-h-[44px]">
@@ -534,7 +539,10 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                           </SelectTrigger>
                           <SelectContent>
                             {CONDITION_OPTIONS.map((c) => (
-                              <SelectItem key={c.value || 'unspecified'} value={c.value}>
+                              <SelectItem
+                                key={c.value || UNSPECIFIED_CONDITION}
+                                value={c.value === '' ? UNSPECIFIED_CONDITION : c.value}
+                              >
                                 {c.label}
                               </SelectItem>
                             ))}
