@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   useCancelSubscription,
   useChangeTier,
+  useCreateSubscription,
   useInvoices,
   useSubscription,
   useTiers,
@@ -94,6 +95,7 @@ export default function SubscriptionPage() {
   const { data: usageData } = useUsage();
   const { data: invoicesData } = useInvoices();
   const changeTier = useChangeTier();
+  const createSubscription = useCreateSubscription();
   const cancelSubscription = useCancelSubscription();
 
   const [billingInterval, setBillingInterval] = useState<BillingInterval>(BILLING_INTERVAL.MONTHLY);
@@ -107,7 +109,16 @@ export default function SubscriptionPage() {
   const invoices = invoicesData?.invoices ?? [];
 
   function handleSelectTier(tierId: string) {
-    if (!subscription) return;
+    if (!subscription) {
+      // No active subscription yet — start one. Dev seeds a default payment
+      // method; paid tiers complete via the returned client_secret/Stripe flow.
+      void createSubscription.mutateAsync({
+        tier_id: tierId,
+        billing_interval: billingInterval,
+        payment_method_id: '',
+      });
+      return;
+    }
     void changeTier.mutateAsync({
       new_tier_id: tierId,
       billing_interval: billingInterval,
