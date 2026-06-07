@@ -325,7 +325,7 @@ export function useDisputeOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
-      api.post<{ order: ListingOrder }>(`/api/v1/orders/${orderId}/dispute`, { reason }),
+      api.post<{ order: ListingOrder }>(`/api/v1/orders/${orderId}/file-dispute`, { reason }),
     onSuccess: (_data, variables) => {
       toast.success('Dispute opened — our team will review within 24h');
       void qc.invalidateQueries({ queryKey: ['listingOrders', variables.orderId] });
