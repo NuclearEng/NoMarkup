@@ -540,17 +540,22 @@ describe('useListingOrder / useConfirmPickup / useDisputeOrder', () => {
     expect(toastSuccess).toHaveBeenCalledWith('Pickup confirmed — escrow released to seller');
   });
 
-  it('useDisputeOrder posts the dispute reason', async () => {
+  it('useDisputeOrder posts the file-dispute endpoint with reason enum + description', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ order: mockOrder });
     const { result } = renderHook(() => useDisputeOrder(), {
       wrapper: createWrapper(queryClient),
     });
-    result.current.mutate({ orderId: 'o-1', reason: 'Item was damaged on arrival' });
+    result.current.mutate({
+      orderId: 'o-1',
+      reason: 'item_damaged',
+      description: 'Item was damaged on arrival and unusable.',
+    });
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
-    expect(api.post).toHaveBeenCalledWith('/api/v1/orders/o-1/dispute', {
-      reason: 'Item was damaged on arrival',
+    expect(api.post).toHaveBeenCalledWith('/api/v1/orders/o-1/file-dispute', {
+      reason: 'item_damaged',
+      description: 'Item was damaged on arrival and unusable.',
     });
     expect(toastSuccess).toHaveBeenCalledWith(
       'Dispute opened — our team will review within 24h',

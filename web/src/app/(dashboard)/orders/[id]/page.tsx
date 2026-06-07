@@ -18,10 +18,29 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useConfirmPickup, useDisputeOrder, useListingOrder } from '@/hooks/useListings';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { LISTING_ORDER_STATUS } from '@/types';
+
+// Must match the backend allow-list in
+// gateway/internal/handler/listing_orders.go (FileListingDispute).
+const DISPUTE_REASONS = [
+  { value: 'item_not_as_described', label: 'Item not as described' },
+  { value: 'item_damaged', label: 'Item arrived damaged' },
+  { value: 'no_show', label: 'Seller no-show' },
+  { value: 'item_not_received', label: 'Item not received' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+const DISPUTE_DESCRIPTION_MIN = 20;
 
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -33,6 +52,7 @@ export default function OrderDetailPage() {
 
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
+  const [disputeDescription, setDisputeDescription] = useState('');
 
   if (isLoading) {
     return (
@@ -78,11 +98,19 @@ export default function OrderDetailPage() {
     confirmPickup.mutate(orderId);
   }
 
+  const disputeValid =
+    disputeReason !== '' && disputeDescription.trim().length >= DISPUTE_DESCRIPTION_MIN;
+
   function handleDispute() {
-    if (disputeReason.trim().length < 10) return;
-    disputeOrder.mutate({ orderId, reason: disputeReason.trim() });
+    if (!disputeValid) return;
+    disputeOrder.mutate({
+      orderId,
+      reason: disputeReason,
+      description: disputeDescription.trim(),
+    });
     setDisputeOpen(false);
     setDisputeReason('');
+    setDisputeDescription('');
   }
 
   return (
@@ -244,15 +272,36 @@ export default function OrderDetailPage() {
               Describe what went wrong. Our support team reviews disputes within 24 hours.
             </DialogDescription>
           </DialogHeader>
-          <Textarea
-            value={disputeReason}
-            onChange={(e) => {
-              setDisputeReason(e.target.value);
-            }}
-            placeholder="Item arrived damaged, didn't match description, etc."
-            rows={5}
-            maxLength={2000}
-          />
+          <div className="space-y-3">
+            <Select value={disputeReason} onValueChange={setDisputeReason}>
+              <SelectTrigger aria-label="Dispute reason" className="min-h-[44px]">
+                <SelectValue placeholder="Select a reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {DISPUTE_REASONS.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Textarea
+              value={disputeDescription}
+              onChange={(e) => {
+                setDisputeDescription(e.target.value);
+              }}
+              placeholder="Describe what went wrong in detail (at least 20 characters)."
+              rows={5}
+              maxLength={2000}
+              aria-label="Dispute description"
+            />
+            {disputeDescription.length > 0 &&
+            disputeDescription.trim().length < DISPUTE_DESCRIPTION_MIN ? (
+              <p className="text-xs text-amber-400">
+                Please add at least {DISPUTE_DESCRIPTION_MIN} characters so our team can review.
+              </p>
+            ) : null}
+          </div>
           <DialogFooter>
             <Button
               variant="outline"
@@ -265,7 +314,7 @@ export default function OrderDetailPage() {
             </Button>
             <Button
               onClick={handleDispute}
-              disabled={disputeReason.trim().length < 10}
+              disabled={!disputeValid || disputeOrder.isPending}
               className="min-h-[44px]"
             >
               Submit dispute
