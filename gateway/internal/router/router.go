@@ -200,9 +200,11 @@ func New(
 		// Instant match
 		r.With(authMW.Handler).Post("/{id}/instant-match", instantMatchHandler.CreateInstantMatch)
 
-		// Live auction endpoints
-		r.With(authMW.Handler).Get("/{id}/auction/state", bidHandler.GetLiveAuctionState)
-		r.With(authMW.Handler).Get("/{id}/auction/events", bidHandler.GetAuctionEvents)
+		// Live auction endpoints — public (optional auth) so logged-out
+		// visitors can spectate live auctions (drives excitement). The
+		// handlers don't read claims; matches the public job-detail route.
+		r.Get("/{id}/auction/state", optionalAuth(authMW, bidHandler.GetLiveAuctionState))
+		r.Get("/{id}/auction/events", optionalAuth(authMW, bidHandler.GetAuctionEvents))
 
 		// Pre-quote answers (Wave 5 audit Section H). Auth-bound:
 		// the handler enforces customer-only writes and customer +
