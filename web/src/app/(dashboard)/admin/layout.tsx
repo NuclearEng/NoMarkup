@@ -3,6 +3,7 @@
 import { ShieldAlert } from 'lucide-react';
 
 import { AdminSidebar } from '@/components/admin/AdminSidebar';
+import { PaymentsReadinessBanner } from '@/components/admin/PaymentsReadinessBanner';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
@@ -32,7 +33,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <AdminSidebar />
         </div>
       </aside>
-      <div className="min-w-0 flex-1 p-6">{children}</div>
+      <div className="min-w-0 flex-1 space-y-4 p-6">
+        <PaymentsReadinessBanner />
+        {children}
+      </div>
     </div>
   );
 }
