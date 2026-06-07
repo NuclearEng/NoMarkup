@@ -19,55 +19,63 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PaymentService_CreateStripeAccount_FullMethodName      = "/nomarkup.payment.v1.PaymentService/CreateStripeAccount"
-	PaymentService_GetStripeOnboardingLink_FullMethodName  = "/nomarkup.payment.v1.PaymentService/GetStripeOnboardingLink"
-	PaymentService_GetStripeAccountStatus_FullMethodName   = "/nomarkup.payment.v1.PaymentService/GetStripeAccountStatus"
-	PaymentService_GetStripeDashboardLink_FullMethodName   = "/nomarkup.payment.v1.PaymentService/GetStripeDashboardLink"
-	PaymentService_CreateSetupIntent_FullMethodName        = "/nomarkup.payment.v1.PaymentService/CreateSetupIntent"
-	PaymentService_ListPaymentMethods_FullMethodName       = "/nomarkup.payment.v1.PaymentService/ListPaymentMethods"
-	PaymentService_DeletePaymentMethod_FullMethodName      = "/nomarkup.payment.v1.PaymentService/DeletePaymentMethod"
-	PaymentService_AddDevPaymentMethod_FullMethodName      = "/nomarkup.payment.v1.PaymentService/AddDevPaymentMethod"
-	PaymentService_CreatePayment_FullMethodName            = "/nomarkup.payment.v1.PaymentService/CreatePayment"
-	PaymentService_ProcessPayment_FullMethodName           = "/nomarkup.payment.v1.PaymentService/ProcessPayment"
-	PaymentService_ReleaseEscrow_FullMethodName            = "/nomarkup.payment.v1.PaymentService/ReleaseEscrow"
-	PaymentService_GetPayment_FullMethodName               = "/nomarkup.payment.v1.PaymentService/GetPayment"
-	PaymentService_ListPayments_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListPayments"
-	PaymentService_CreateRefund_FullMethodName             = "/nomarkup.payment.v1.PaymentService/CreateRefund"
-	PaymentService_HandleStripeWebhook_FullMethodName      = "/nomarkup.payment.v1.PaymentService/HandleStripeWebhook"
-	PaymentService_CalculateFees_FullMethodName            = "/nomarkup.payment.v1.PaymentService/CalculateFees"
-	PaymentService_GetFeeConfig_FullMethodName             = "/nomarkup.payment.v1.PaymentService/GetFeeConfig"
-	PaymentService_AdminGetPaymentDetails_FullMethodName   = "/nomarkup.payment.v1.PaymentService/AdminGetPaymentDetails"
-	PaymentService_AdminListPayments_FullMethodName        = "/nomarkup.payment.v1.PaymentService/AdminListPayments"
-	PaymentService_AdminUpdateFeeConfig_FullMethodName     = "/nomarkup.payment.v1.PaymentService/AdminUpdateFeeConfig"
-	PaymentService_GetRevenueReport_FullMethodName         = "/nomarkup.payment.v1.PaymentService/GetRevenueReport"
-	PaymentService_CreateExpense_FullMethodName            = "/nomarkup.payment.v1.PaymentService/CreateExpense"
-	PaymentService_ListExpenses_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListExpenses"
-	PaymentService_DeleteExpense_FullMethodName            = "/nomarkup.payment.v1.PaymentService/DeleteExpense"
-	PaymentService_RequestAdvance_FullMethodName           = "/nomarkup.payment.v1.PaymentService/RequestAdvance"
-	PaymentService_ListAdvances_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListAdvances"
-	PaymentService_GetAdvance_FullMethodName               = "/nomarkup.payment.v1.PaymentService/GetAdvance"
-	PaymentService_ReviewAdvance_FullMethodName            = "/nomarkup.payment.v1.PaymentService/ReviewAdvance"
-	PaymentService_DisburseAdvance_FullMethodName          = "/nomarkup.payment.v1.PaymentService/DisburseAdvance"
-	PaymentService_GetCreditLimit_FullMethodName           = "/nomarkup.payment.v1.PaymentService/GetCreditLimit"
-	PaymentService_CreateInstallmentPlan_FullMethodName    = "/nomarkup.payment.v1.PaymentService/CreateInstallmentPlan"
-	PaymentService_GetInstallmentPlan_FullMethodName       = "/nomarkup.payment.v1.PaymentService/GetInstallmentPlan"
-	PaymentService_ListInstallmentPlans_FullMethodName     = "/nomarkup.payment.v1.PaymentService/ListInstallmentPlans"
-	PaymentService_ListInsuranceProducts_FullMethodName    = "/nomarkup.payment.v1.PaymentService/ListInsuranceProducts"
-	PaymentService_GetInsuranceQuote_FullMethodName        = "/nomarkup.payment.v1.PaymentService/GetInsuranceQuote"
-	PaymentService_PurchaseInsurance_FullMethodName        = "/nomarkup.payment.v1.PaymentService/PurchaseInsurance"
-	PaymentService_GetInsurancePolicy_FullMethodName       = "/nomarkup.payment.v1.PaymentService/GetInsurancePolicy"
-	PaymentService_ListInsurancePolicies_FullMethodName    = "/nomarkup.payment.v1.PaymentService/ListInsurancePolicies"
-	PaymentService_FileInsuranceClaim_FullMethodName       = "/nomarkup.payment.v1.PaymentService/FileInsuranceClaim"
-	PaymentService_GetInsuranceClaim_FullMethodName        = "/nomarkup.payment.v1.PaymentService/GetInsuranceClaim"
-	PaymentService_ReviewInsuranceClaim_FullMethodName     = "/nomarkup.payment.v1.PaymentService/ReviewInsuranceClaim"
-	PaymentService_AdminListInsuranceClaims_FullMethodName = "/nomarkup.payment.v1.PaymentService/AdminListInsuranceClaims"
-	PaymentService_GenerateTaxForm_FullMethodName          = "/nomarkup.payment.v1.PaymentService/GenerateTaxForm"
-	PaymentService_GetTaxForm_FullMethodName               = "/nomarkup.payment.v1.PaymentService/GetTaxForm"
-	PaymentService_ListTaxForms_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListTaxForms"
-	PaymentService_GenerateInvoice_FullMethodName          = "/nomarkup.payment.v1.PaymentService/GenerateInvoice"
-	PaymentService_GetTaxFormHTML_FullMethodName           = "/nomarkup.payment.v1.PaymentService/GetTaxFormHTML"
-	PaymentService_GetInvoiceHTML_FullMethodName           = "/nomarkup.payment.v1.PaymentService/GetInvoiceHTML"
-	PaymentService_DeleteStripeAccounts_FullMethodName     = "/nomarkup.payment.v1.PaymentService/DeleteStripeAccounts"
+	PaymentService_CreateStripeAccount_FullMethodName            = "/nomarkup.payment.v1.PaymentService/CreateStripeAccount"
+	PaymentService_GetStripeOnboardingLink_FullMethodName        = "/nomarkup.payment.v1.PaymentService/GetStripeOnboardingLink"
+	PaymentService_GetStripeAccountStatus_FullMethodName         = "/nomarkup.payment.v1.PaymentService/GetStripeAccountStatus"
+	PaymentService_GetStripeDashboardLink_FullMethodName         = "/nomarkup.payment.v1.PaymentService/GetStripeDashboardLink"
+	PaymentService_CreateSetupIntent_FullMethodName              = "/nomarkup.payment.v1.PaymentService/CreateSetupIntent"
+	PaymentService_ListPaymentMethods_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListPaymentMethods"
+	PaymentService_DeletePaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/DeletePaymentMethod"
+	PaymentService_AddDevPaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/AddDevPaymentMethod"
+	PaymentService_CreatePayment_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/CreatePayment"
+	PaymentService_ProcessPayment_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/ProcessPayment"
+	PaymentService_ReleaseEscrow_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/ReleaseEscrow"
+	PaymentService_GetPayment_FullMethodName                     = "/nomarkup.payment.v1.PaymentService/GetPayment"
+	PaymentService_ListPayments_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/ListPayments"
+	PaymentService_CreateRefund_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/CreateRefund"
+	PaymentService_HandleStripeWebhook_FullMethodName            = "/nomarkup.payment.v1.PaymentService/HandleStripeWebhook"
+	PaymentService_CalculateFees_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/CalculateFees"
+	PaymentService_GetFeeConfig_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/GetFeeConfig"
+	PaymentService_AdminGetPaymentDetails_FullMethodName         = "/nomarkup.payment.v1.PaymentService/AdminGetPaymentDetails"
+	PaymentService_AdminListPayments_FullMethodName              = "/nomarkup.payment.v1.PaymentService/AdminListPayments"
+	PaymentService_AdminUpdateFeeConfig_FullMethodName           = "/nomarkup.payment.v1.PaymentService/AdminUpdateFeeConfig"
+	PaymentService_AdminGetPlatformBankAccount_FullMethodName    = "/nomarkup.payment.v1.PaymentService/AdminGetPlatformBankAccount"
+	PaymentService_AdminSetPlatformBankAccount_FullMethodName    = "/nomarkup.payment.v1.PaymentService/AdminSetPlatformBankAccount"
+	PaymentService_AdminDeletePlatformBankAccount_FullMethodName = "/nomarkup.payment.v1.PaymentService/AdminDeletePlatformBankAccount"
+	PaymentService_GetRevenueReport_FullMethodName               = "/nomarkup.payment.v1.PaymentService/GetRevenueReport"
+	PaymentService_CreateExpense_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/CreateExpense"
+	PaymentService_ListExpenses_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/ListExpenses"
+	PaymentService_DeleteExpense_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/DeleteExpense"
+	PaymentService_RequestAdvance_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/RequestAdvance"
+	PaymentService_ListAdvances_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/ListAdvances"
+	PaymentService_GetAdvance_FullMethodName                     = "/nomarkup.payment.v1.PaymentService/GetAdvance"
+	PaymentService_ReviewAdvance_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/ReviewAdvance"
+	PaymentService_DisburseAdvance_FullMethodName                = "/nomarkup.payment.v1.PaymentService/DisburseAdvance"
+	PaymentService_GetCreditLimit_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/GetCreditLimit"
+	PaymentService_CreateInstallmentPlan_FullMethodName          = "/nomarkup.payment.v1.PaymentService/CreateInstallmentPlan"
+	PaymentService_GetInstallmentPlan_FullMethodName             = "/nomarkup.payment.v1.PaymentService/GetInstallmentPlan"
+	PaymentService_ListInstallmentPlans_FullMethodName           = "/nomarkup.payment.v1.PaymentService/ListInstallmentPlans"
+	PaymentService_ListInsuranceProducts_FullMethodName          = "/nomarkup.payment.v1.PaymentService/ListInsuranceProducts"
+	PaymentService_GetInsuranceQuote_FullMethodName              = "/nomarkup.payment.v1.PaymentService/GetInsuranceQuote"
+	PaymentService_PurchaseInsurance_FullMethodName              = "/nomarkup.payment.v1.PaymentService/PurchaseInsurance"
+	PaymentService_GetInsurancePolicy_FullMethodName             = "/nomarkup.payment.v1.PaymentService/GetInsurancePolicy"
+	PaymentService_ListInsurancePolicies_FullMethodName          = "/nomarkup.payment.v1.PaymentService/ListInsurancePolicies"
+	PaymentService_FileInsuranceClaim_FullMethodName             = "/nomarkup.payment.v1.PaymentService/FileInsuranceClaim"
+	PaymentService_GetInsuranceClaim_FullMethodName              = "/nomarkup.payment.v1.PaymentService/GetInsuranceClaim"
+	PaymentService_ReviewInsuranceClaim_FullMethodName           = "/nomarkup.payment.v1.PaymentService/ReviewInsuranceClaim"
+	PaymentService_AdminListInsuranceClaims_FullMethodName       = "/nomarkup.payment.v1.PaymentService/AdminListInsuranceClaims"
+	PaymentService_GenerateTaxForm_FullMethodName                = "/nomarkup.payment.v1.PaymentService/GenerateTaxForm"
+	PaymentService_GetTaxForm_FullMethodName                     = "/nomarkup.payment.v1.PaymentService/GetTaxForm"
+	PaymentService_ListTaxForms_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/ListTaxForms"
+	PaymentService_GenerateInvoice_FullMethodName                = "/nomarkup.payment.v1.PaymentService/GenerateInvoice"
+	PaymentService_GetTaxFormHTML_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/GetTaxFormHTML"
+	PaymentService_GetInvoiceHTML_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/GetInvoiceHTML"
+	PaymentService_ChargeListingWinner_FullMethodName            = "/nomarkup.payment.v1.PaymentService/ChargeListingWinner"
+	PaymentService_ConfirmListingPickup_FullMethodName           = "/nomarkup.payment.v1.PaymentService/ConfirmListingPickup"
+	PaymentService_FileListingDispute_FullMethodName             = "/nomarkup.payment.v1.PaymentService/FileListingDispute"
+	PaymentService_ResolveListingDispute_FullMethodName          = "/nomarkup.payment.v1.PaymentService/ResolveListingDispute"
+	PaymentService_AutoReleaseListingOrders_FullMethodName       = "/nomarkup.payment.v1.PaymentService/AutoReleaseListingOrders"
+	PaymentService_DeleteStripeAccounts_FullMethodName           = "/nomarkup.payment.v1.PaymentService/DeleteStripeAccounts"
 )
 
 // PaymentServiceClient is the client API for PaymentService service.
@@ -104,6 +112,12 @@ type PaymentServiceClient interface {
 	AdminGetPaymentDetails(ctx context.Context, in *AdminGetPaymentDetailsRequest, opts ...grpc.CallOption) (*AdminGetPaymentDetailsResponse, error)
 	AdminListPayments(ctx context.Context, in *AdminListPaymentsRequest, opts ...grpc.CallOption) (*AdminListPaymentsResponse, error)
 	AdminUpdateFeeConfig(ctx context.Context, in *AdminUpdateFeeConfigRequest, opts ...grpc.CallOption) (*AdminUpdateFeeConfigResponse, error)
+	// Platform banking (admin) — the platform's own payout bank account where
+	// all collected fees route. Raw bank numbers never reach us: the client
+	// tokenizes via Stripe.js and sends a bank_account token.
+	AdminGetPlatformBankAccount(ctx context.Context, in *AdminGetPlatformBankAccountRequest, opts ...grpc.CallOption) (*AdminGetPlatformBankAccountResponse, error)
+	AdminSetPlatformBankAccount(ctx context.Context, in *AdminSetPlatformBankAccountRequest, opts ...grpc.CallOption) (*AdminSetPlatformBankAccountResponse, error)
+	AdminDeletePlatformBankAccount(ctx context.Context, in *AdminDeletePlatformBankAccountRequest, opts ...grpc.CallOption) (*AdminDeletePlatformBankAccountResponse, error)
 	// Revenue reporting
 	GetRevenueReport(ctx context.Context, in *GetRevenueReportRequest, opts ...grpc.CallOption) (*GetRevenueReportResponse, error)
 	// Expenses
@@ -140,6 +154,17 @@ type PaymentServiceClient interface {
 	// Tax form / invoice HTML retrieval
 	GetTaxFormHTML(ctx context.Context, in *GetTaxFormHTMLRequest, opts ...grpc.CallOption) (*GetTaxFormHTMLResponse, error)
 	GetInvoiceHTML(ctx context.Context, in *GetInvoiceHTMLRequest, opts ...grpc.CallOption) (*GetInvoiceHTMLResponse, error)
+	// ============================================================
+	// Marketplace (peer-to-peer goods) — escrow + pickup + release
+	// ============================================================
+	// Lifecycle: pending_payment -> held -> pickup_confirmed -> released
+	// (with optional disputed branch). See docs/operations/marketplace-escrow.md
+	// for the state diagram and dispute timeline.
+	ChargeListingWinner(ctx context.Context, in *ChargeListingWinnerRequest, opts ...grpc.CallOption) (*ChargeListingWinnerResponse, error)
+	ConfirmListingPickup(ctx context.Context, in *ConfirmListingPickupRequest, opts ...grpc.CallOption) (*ConfirmListingPickupResponse, error)
+	FileListingDispute(ctx context.Context, in *FileListingDisputeRequest, opts ...grpc.CallOption) (*FileListingDisputeResponse, error)
+	ResolveListingDispute(ctx context.Context, in *ResolveListingDisputeRequest, opts ...grpc.CallOption) (*ResolveListingDisputeResponse, error)
+	AutoReleaseListingOrders(ctx context.Context, in *AutoReleaseListingOrdersRequest, opts ...grpc.CallOption) (*AutoReleaseListingOrdersResponse, error)
 	// GDPR — delete a customer's Stripe Customer + Connect Express account.
 	// Called by the user service's Erasure pipeline after the local DB cascade
 	// commits. Outcomes are recorded verbatim in the user service's audit log.
@@ -349,6 +374,36 @@ func (c *paymentServiceClient) AdminUpdateFeeConfig(ctx context.Context, in *Adm
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AdminUpdateFeeConfigResponse)
 	err := c.cc.Invoke(ctx, PaymentService_AdminUpdateFeeConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AdminGetPlatformBankAccount(ctx context.Context, in *AdminGetPlatformBankAccountRequest, opts ...grpc.CallOption) (*AdminGetPlatformBankAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminGetPlatformBankAccountResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AdminGetPlatformBankAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AdminSetPlatformBankAccount(ctx context.Context, in *AdminSetPlatformBankAccountRequest, opts ...grpc.CallOption) (*AdminSetPlatformBankAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminSetPlatformBankAccountResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AdminSetPlatformBankAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AdminDeletePlatformBankAccount(ctx context.Context, in *AdminDeletePlatformBankAccountRequest, opts ...grpc.CallOption) (*AdminDeletePlatformBankAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminDeletePlatformBankAccountResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AdminDeletePlatformBankAccount_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -635,6 +690,56 @@ func (c *paymentServiceClient) GetInvoiceHTML(ctx context.Context, in *GetInvoic
 	return out, nil
 }
 
+func (c *paymentServiceClient) ChargeListingWinner(ctx context.Context, in *ChargeListingWinnerRequest, opts ...grpc.CallOption) (*ChargeListingWinnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChargeListingWinnerResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ChargeListingWinner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ConfirmListingPickup(ctx context.Context, in *ConfirmListingPickupRequest, opts ...grpc.CallOption) (*ConfirmListingPickupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmListingPickupResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ConfirmListingPickup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) FileListingDispute(ctx context.Context, in *FileListingDisputeRequest, opts ...grpc.CallOption) (*FileListingDisputeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileListingDisputeResponse)
+	err := c.cc.Invoke(ctx, PaymentService_FileListingDispute_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ResolveListingDispute(ctx context.Context, in *ResolveListingDisputeRequest, opts ...grpc.CallOption) (*ResolveListingDisputeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveListingDisputeResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ResolveListingDispute_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AutoReleaseListingOrders(ctx context.Context, in *AutoReleaseListingOrdersRequest, opts ...grpc.CallOption) (*AutoReleaseListingOrdersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AutoReleaseListingOrdersResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AutoReleaseListingOrders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *paymentServiceClient) DeleteStripeAccounts(ctx context.Context, in *DeleteStripeAccountsRequest, opts ...grpc.CallOption) (*DeleteStripeAccountsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteStripeAccountsResponse)
@@ -679,6 +784,12 @@ type PaymentServiceServer interface {
 	AdminGetPaymentDetails(context.Context, *AdminGetPaymentDetailsRequest) (*AdminGetPaymentDetailsResponse, error)
 	AdminListPayments(context.Context, *AdminListPaymentsRequest) (*AdminListPaymentsResponse, error)
 	AdminUpdateFeeConfig(context.Context, *AdminUpdateFeeConfigRequest) (*AdminUpdateFeeConfigResponse, error)
+	// Platform banking (admin) — the platform's own payout bank account where
+	// all collected fees route. Raw bank numbers never reach us: the client
+	// tokenizes via Stripe.js and sends a bank_account token.
+	AdminGetPlatformBankAccount(context.Context, *AdminGetPlatformBankAccountRequest) (*AdminGetPlatformBankAccountResponse, error)
+	AdminSetPlatformBankAccount(context.Context, *AdminSetPlatformBankAccountRequest) (*AdminSetPlatformBankAccountResponse, error)
+	AdminDeletePlatformBankAccount(context.Context, *AdminDeletePlatformBankAccountRequest) (*AdminDeletePlatformBankAccountResponse, error)
 	// Revenue reporting
 	GetRevenueReport(context.Context, *GetRevenueReportRequest) (*GetRevenueReportResponse, error)
 	// Expenses
@@ -715,6 +826,17 @@ type PaymentServiceServer interface {
 	// Tax form / invoice HTML retrieval
 	GetTaxFormHTML(context.Context, *GetTaxFormHTMLRequest) (*GetTaxFormHTMLResponse, error)
 	GetInvoiceHTML(context.Context, *GetInvoiceHTMLRequest) (*GetInvoiceHTMLResponse, error)
+	// ============================================================
+	// Marketplace (peer-to-peer goods) — escrow + pickup + release
+	// ============================================================
+	// Lifecycle: pending_payment -> held -> pickup_confirmed -> released
+	// (with optional disputed branch). See docs/operations/marketplace-escrow.md
+	// for the state diagram and dispute timeline.
+	ChargeListingWinner(context.Context, *ChargeListingWinnerRequest) (*ChargeListingWinnerResponse, error)
+	ConfirmListingPickup(context.Context, *ConfirmListingPickupRequest) (*ConfirmListingPickupResponse, error)
+	FileListingDispute(context.Context, *FileListingDisputeRequest) (*FileListingDisputeResponse, error)
+	ResolveListingDispute(context.Context, *ResolveListingDisputeRequest) (*ResolveListingDisputeResponse, error)
+	AutoReleaseListingOrders(context.Context, *AutoReleaseListingOrdersRequest) (*AutoReleaseListingOrdersResponse, error)
 	// GDPR — delete a customer's Stripe Customer + Connect Express account.
 	// Called by the user service's Erasure pipeline after the local DB cascade
 	// commits. Outcomes are recorded verbatim in the user service's audit log.
@@ -789,6 +911,15 @@ func (UnimplementedPaymentServiceServer) AdminListPayments(context.Context, *Adm
 }
 func (UnimplementedPaymentServiceServer) AdminUpdateFeeConfig(context.Context, *AdminUpdateFeeConfigRequest) (*AdminUpdateFeeConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdminUpdateFeeConfig not implemented")
+}
+func (UnimplementedPaymentServiceServer) AdminGetPlatformBankAccount(context.Context, *AdminGetPlatformBankAccountRequest) (*AdminGetPlatformBankAccountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminGetPlatformBankAccount not implemented")
+}
+func (UnimplementedPaymentServiceServer) AdminSetPlatformBankAccount(context.Context, *AdminSetPlatformBankAccountRequest) (*AdminSetPlatformBankAccountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminSetPlatformBankAccount not implemented")
+}
+func (UnimplementedPaymentServiceServer) AdminDeletePlatformBankAccount(context.Context, *AdminDeletePlatformBankAccountRequest) (*AdminDeletePlatformBankAccountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminDeletePlatformBankAccount not implemented")
 }
 func (UnimplementedPaymentServiceServer) GetRevenueReport(context.Context, *GetRevenueReportRequest) (*GetRevenueReportResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRevenueReport not implemented")
@@ -873,6 +1004,21 @@ func (UnimplementedPaymentServiceServer) GetTaxFormHTML(context.Context, *GetTax
 }
 func (UnimplementedPaymentServiceServer) GetInvoiceHTML(context.Context, *GetInvoiceHTMLRequest) (*GetInvoiceHTMLResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetInvoiceHTML not implemented")
+}
+func (UnimplementedPaymentServiceServer) ChargeListingWinner(context.Context, *ChargeListingWinnerRequest) (*ChargeListingWinnerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ChargeListingWinner not implemented")
+}
+func (UnimplementedPaymentServiceServer) ConfirmListingPickup(context.Context, *ConfirmListingPickupRequest) (*ConfirmListingPickupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmListingPickup not implemented")
+}
+func (UnimplementedPaymentServiceServer) FileListingDispute(context.Context, *FileListingDisputeRequest) (*FileListingDisputeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FileListingDispute not implemented")
+}
+func (UnimplementedPaymentServiceServer) ResolveListingDispute(context.Context, *ResolveListingDisputeRequest) (*ResolveListingDisputeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveListingDispute not implemented")
+}
+func (UnimplementedPaymentServiceServer) AutoReleaseListingOrders(context.Context, *AutoReleaseListingOrdersRequest) (*AutoReleaseListingOrdersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AutoReleaseListingOrders not implemented")
 }
 func (UnimplementedPaymentServiceServer) DeleteStripeAccounts(context.Context, *DeleteStripeAccountsRequest) (*DeleteStripeAccountsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteStripeAccounts not implemented")
@@ -1254,6 +1400,60 @@ func _PaymentService_AdminUpdateFeeConfig_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PaymentServiceServer).AdminUpdateFeeConfig(ctx, req.(*AdminUpdateFeeConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AdminGetPlatformBankAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminGetPlatformBankAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AdminGetPlatformBankAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AdminGetPlatformBankAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AdminGetPlatformBankAccount(ctx, req.(*AdminGetPlatformBankAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AdminSetPlatformBankAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminSetPlatformBankAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AdminSetPlatformBankAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AdminSetPlatformBankAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AdminSetPlatformBankAccount(ctx, req.(*AdminSetPlatformBankAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AdminDeletePlatformBankAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminDeletePlatformBankAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AdminDeletePlatformBankAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AdminDeletePlatformBankAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AdminDeletePlatformBankAccount(ctx, req.(*AdminDeletePlatformBankAccountRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1762,6 +1962,96 @@ func _PaymentService_GetInvoiceHTML_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PaymentService_ChargeListingWinner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChargeListingWinnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ChargeListingWinner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ChargeListingWinner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ChargeListingWinner(ctx, req.(*ChargeListingWinnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ConfirmListingPickup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmListingPickupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ConfirmListingPickup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ConfirmListingPickup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ConfirmListingPickup(ctx, req.(*ConfirmListingPickupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_FileListingDispute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FileListingDisputeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).FileListingDispute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_FileListingDispute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).FileListingDispute(ctx, req.(*FileListingDisputeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ResolveListingDispute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveListingDisputeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ResolveListingDispute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ResolveListingDispute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ResolveListingDispute(ctx, req.(*ResolveListingDisputeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AutoReleaseListingOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AutoReleaseListingOrdersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AutoReleaseListingOrders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AutoReleaseListingOrders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AutoReleaseListingOrders(ctx, req.(*AutoReleaseListingOrdersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PaymentService_DeleteStripeAccounts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteStripeAccountsRequest)
 	if err := dec(in); err != nil {
@@ -1866,6 +2156,18 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdminUpdateFeeConfig",
 			Handler:    _PaymentService_AdminUpdateFeeConfig_Handler,
+		},
+		{
+			MethodName: "AdminGetPlatformBankAccount",
+			Handler:    _PaymentService_AdminGetPlatformBankAccount_Handler,
+		},
+		{
+			MethodName: "AdminSetPlatformBankAccount",
+			Handler:    _PaymentService_AdminSetPlatformBankAccount_Handler,
+		},
+		{
+			MethodName: "AdminDeletePlatformBankAccount",
+			Handler:    _PaymentService_AdminDeletePlatformBankAccount_Handler,
 		},
 		{
 			MethodName: "GetRevenueReport",
@@ -1978,6 +2280,26 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInvoiceHTML",
 			Handler:    _PaymentService_GetInvoiceHTML_Handler,
+		},
+		{
+			MethodName: "ChargeListingWinner",
+			Handler:    _PaymentService_ChargeListingWinner_Handler,
+		},
+		{
+			MethodName: "ConfirmListingPickup",
+			Handler:    _PaymentService_ConfirmListingPickup_Handler,
+		},
+		{
+			MethodName: "FileListingDispute",
+			Handler:    _PaymentService_FileListingDispute_Handler,
+		},
+		{
+			MethodName: "ResolveListingDispute",
+			Handler:    _PaymentService_ResolveListingDispute_Handler,
+		},
+		{
+			MethodName: "AutoReleaseListingOrders",
+			Handler:    _PaymentService_AutoReleaseListingOrders_Handler,
 		},
 		{
 			MethodName: "DeleteStripeAccounts",

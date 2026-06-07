@@ -373,8 +373,12 @@ type PaymentBreakdown struct {
 	ProviderPayoutCents int64                  `protobuf:"varint,5,opt,name=provider_payout_cents,json=providerPayoutCents,proto3" json:"provider_payout_cents,omitempty"`
 	FeePercentage       float64                `protobuf:"fixed64,6,opt,name=fee_percentage,json=feePercentage,proto3" json:"fee_percentage,omitempty"`
 	GuaranteePercentage float64                `protobuf:"fixed64,7,opt,name=guarantee_percentage,json=guaranteePercentage,proto3" json:"guarantee_percentage,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Separate, additive "qualified lead" fee charged to the winning provider.
+	// Zero when lead-gen is disabled for the category. Deducted from provider payout.
+	LeadGenFeeCents   int64   `protobuf:"varint,8,opt,name=lead_gen_fee_cents,json=leadGenFeeCents,proto3" json:"lead_gen_fee_cents,omitempty"`
+	LeadGenPercentage float64 `protobuf:"fixed64,9,opt,name=lead_gen_percentage,json=leadGenPercentage,proto3" json:"lead_gen_percentage,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PaymentBreakdown) Reset() {
@@ -452,6 +456,20 @@ func (x *PaymentBreakdown) GetFeePercentage() float64 {
 func (x *PaymentBreakdown) GetGuaranteePercentage() float64 {
 	if x != nil {
 		return x.GuaranteePercentage
+	}
+	return 0
+}
+
+func (x *PaymentBreakdown) GetLeadGenFeeCents() int64 {
+	if x != nil {
+		return x.LeadGenFeeCents
+	}
+	return 0
+}
+
+func (x *PaymentBreakdown) GetLeadGenPercentage() float64 {
+	if x != nil {
+		return x.LeadGenPercentage
 	}
 	return 0
 }
@@ -2270,6 +2288,10 @@ type GetFeeConfigResponse struct {
 	GuaranteePercentage float64                `protobuf:"fixed64,2,opt,name=guarantee_percentage,json=guaranteePercentage,proto3" json:"guarantee_percentage,omitempty"`
 	MinFeeCents         int64                  `protobuf:"varint,3,opt,name=min_fee_cents,json=minFeeCents,proto3" json:"min_fee_cents,omitempty"`
 	MaxFeeCents         int64                  `protobuf:"varint,4,opt,name=max_fee_cents,json=maxFeeCents,proto3" json:"max_fee_cents,omitempty"`
+	LeadGenEnabled      bool                   `protobuf:"varint,5,opt,name=lead_gen_enabled,json=leadGenEnabled,proto3" json:"lead_gen_enabled,omitempty"`
+	LeadGenPercentage   float64                `protobuf:"fixed64,6,opt,name=lead_gen_percentage,json=leadGenPercentage,proto3" json:"lead_gen_percentage,omitempty"`
+	LeadGenMinFeeCents  int64                  `protobuf:"varint,7,opt,name=lead_gen_min_fee_cents,json=leadGenMinFeeCents,proto3" json:"lead_gen_min_fee_cents,omitempty"`
+	LeadGenMaxFeeCents  *int64                 `protobuf:"varint,8,opt,name=lead_gen_max_fee_cents,json=leadGenMaxFeeCents,proto3,oneof" json:"lead_gen_max_fee_cents,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -2328,6 +2350,34 @@ func (x *GetFeeConfigResponse) GetMinFeeCents() int64 {
 func (x *GetFeeConfigResponse) GetMaxFeeCents() int64 {
 	if x != nil {
 		return x.MaxFeeCents
+	}
+	return 0
+}
+
+func (x *GetFeeConfigResponse) GetLeadGenEnabled() bool {
+	if x != nil {
+		return x.LeadGenEnabled
+	}
+	return false
+}
+
+func (x *GetFeeConfigResponse) GetLeadGenPercentage() float64 {
+	if x != nil {
+		return x.LeadGenPercentage
+	}
+	return 0
+}
+
+func (x *GetFeeConfigResponse) GetLeadGenMinFeeCents() int64 {
+	if x != nil {
+		return x.LeadGenMinFeeCents
+	}
+	return 0
+}
+
+func (x *GetFeeConfigResponse) GetLeadGenMaxFeeCents() int64 {
+	if x != nil && x.LeadGenMaxFeeCents != nil {
+		return *x.LeadGenMaxFeeCents
 	}
 	return 0
 }
@@ -2596,6 +2646,10 @@ type AdminUpdateFeeConfigRequest struct {
 	GuaranteePercentage float64                `protobuf:"fixed64,4,opt,name=guarantee_percentage,json=guaranteePercentage,proto3" json:"guarantee_percentage,omitempty"`
 	MinFeeCents         int64                  `protobuf:"varint,5,opt,name=min_fee_cents,json=minFeeCents,proto3" json:"min_fee_cents,omitempty"`
 	MaxFeeCents         *int64                 `protobuf:"varint,6,opt,name=max_fee_cents,json=maxFeeCents,proto3,oneof" json:"max_fee_cents,omitempty"`
+	LeadGenEnabled      bool                   `protobuf:"varint,7,opt,name=lead_gen_enabled,json=leadGenEnabled,proto3" json:"lead_gen_enabled,omitempty"`
+	LeadGenPercentage   float64                `protobuf:"fixed64,8,opt,name=lead_gen_percentage,json=leadGenPercentage,proto3" json:"lead_gen_percentage,omitempty"`
+	LeadGenMinFeeCents  int64                  `protobuf:"varint,9,opt,name=lead_gen_min_fee_cents,json=leadGenMinFeeCents,proto3" json:"lead_gen_min_fee_cents,omitempty"`
+	LeadGenMaxFeeCents  *int64                 `protobuf:"varint,10,opt,name=lead_gen_max_fee_cents,json=leadGenMaxFeeCents,proto3,oneof" json:"lead_gen_max_fee_cents,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -2672,6 +2726,34 @@ func (x *AdminUpdateFeeConfigRequest) GetMaxFeeCents() int64 {
 	return 0
 }
 
+func (x *AdminUpdateFeeConfigRequest) GetLeadGenEnabled() bool {
+	if x != nil {
+		return x.LeadGenEnabled
+	}
+	return false
+}
+
+func (x *AdminUpdateFeeConfigRequest) GetLeadGenPercentage() float64 {
+	if x != nil {
+		return x.LeadGenPercentage
+	}
+	return 0
+}
+
+func (x *AdminUpdateFeeConfigRequest) GetLeadGenMinFeeCents() int64 {
+	if x != nil {
+		return x.LeadGenMinFeeCents
+	}
+	return 0
+}
+
+func (x *AdminUpdateFeeConfigRequest) GetLeadGenMaxFeeCents() int64 {
+	if x != nil && x.LeadGenMaxFeeCents != nil {
+		return *x.LeadGenMaxFeeCents
+	}
+	return 0
+}
+
 type AdminUpdateFeeConfigResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Config        *GetFeeConfigResponse  `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
@@ -2716,6 +2798,447 @@ func (x *AdminUpdateFeeConfigResponse) GetConfig() *GetFeeConfigResponse {
 	return nil
 }
 
+// Platform banking — non-sensitive metadata only. Never carries raw account
+// or routing numbers.
+type PlatformBankAccount struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Id                      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	StripeExternalAccountId string                 `protobuf:"bytes,2,opt,name=stripe_external_account_id,json=stripeExternalAccountId,proto3" json:"stripe_external_account_id,omitempty"`
+	BankName                string                 `protobuf:"bytes,3,opt,name=bank_name,json=bankName,proto3" json:"bank_name,omitempty"`
+	AccountHolderName       string                 `protobuf:"bytes,4,opt,name=account_holder_name,json=accountHolderName,proto3" json:"account_holder_name,omitempty"`
+	AccountHolderType       string                 `protobuf:"bytes,5,opt,name=account_holder_type,json=accountHolderType,proto3" json:"account_holder_type,omitempty"` // individual | company
+	Last4                   string                 `protobuf:"bytes,6,opt,name=last4,proto3" json:"last4,omitempty"`
+	RoutingLast4            string                 `protobuf:"bytes,7,opt,name=routing_last4,json=routingLast4,proto3" json:"routing_last4,omitempty"`
+	Currency                string                 `protobuf:"bytes,8,opt,name=currency,proto3" json:"currency,omitempty"`
+	Country                 string                 `protobuf:"bytes,9,opt,name=country,proto3" json:"country,omitempty"`
+	Status                  string                 `protobuf:"bytes,10,opt,name=status,proto3" json:"status,omitempty"` // new | validated | verification_failed | errored
+	IsDefault               bool                   `protobuf:"varint,11,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	CreatedAt               *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt               *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *PlatformBankAccount) Reset() {
+	*x = PlatformBankAccount{}
+	mi := &file_payment_v1_payment_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformBankAccount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformBankAccount) ProtoMessage() {}
+
+func (x *PlatformBankAccount) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformBankAccount.ProtoReflect.Descriptor instead.
+func (*PlatformBankAccount) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *PlatformBankAccount) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetStripeExternalAccountId() string {
+	if x != nil {
+		return x.StripeExternalAccountId
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetBankName() string {
+	if x != nil {
+		return x.BankName
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetAccountHolderName() string {
+	if x != nil {
+		return x.AccountHolderName
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetAccountHolderType() string {
+	if x != nil {
+		return x.AccountHolderType
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetLast4() string {
+	if x != nil {
+		return x.Last4
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetRoutingLast4() string {
+	if x != nil {
+		return x.RoutingLast4
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetCountry() string {
+	if x != nil {
+		return x.Country
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *PlatformBankAccount) GetIsDefault() bool {
+	if x != nil {
+		return x.IsDefault
+	}
+	return false
+}
+
+func (x *PlatformBankAccount) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *PlatformBankAccount) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type AdminGetPlatformBankAccountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AdminId       string                 `protobuf:"bytes,1,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminGetPlatformBankAccountRequest) Reset() {
+	*x = AdminGetPlatformBankAccountRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminGetPlatformBankAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminGetPlatformBankAccountRequest) ProtoMessage() {}
+
+func (x *AdminGetPlatformBankAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminGetPlatformBankAccountRequest.ProtoReflect.Descriptor instead.
+func (*AdminGetPlatformBankAccountRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *AdminGetPlatformBankAccountRequest) GetAdminId() string {
+	if x != nil {
+		return x.AdminId
+	}
+	return ""
+}
+
+type AdminGetPlatformBankAccountResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unset when no platform bank account has been configured yet.
+	Account       *PlatformBankAccount `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminGetPlatformBankAccountResponse) Reset() {
+	*x = AdminGetPlatformBankAccountResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminGetPlatformBankAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminGetPlatformBankAccountResponse) ProtoMessage() {}
+
+func (x *AdminGetPlatformBankAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminGetPlatformBankAccountResponse.ProtoReflect.Descriptor instead.
+func (*AdminGetPlatformBankAccountResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *AdminGetPlatformBankAccountResponse) GetAccount() *PlatformBankAccount {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+type AdminSetPlatformBankAccountRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	AdminId string                 `protobuf:"bytes,1,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	// A Stripe bank_account token (btok_...) created client-side via Stripe.js.
+	// Raw account/routing numbers are tokenized in the browser and never sent here.
+	BankAccountToken  string `protobuf:"bytes,2,opt,name=bank_account_token,json=bankAccountToken,proto3" json:"bank_account_token,omitempty"`
+	AccountHolderName string `protobuf:"bytes,3,opt,name=account_holder_name,json=accountHolderName,proto3" json:"account_holder_name,omitempty"`
+	AccountHolderType string `protobuf:"bytes,4,opt,name=account_holder_type,json=accountHolderType,proto3" json:"account_holder_type,omitempty"` // individual | company
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AdminSetPlatformBankAccountRequest) Reset() {
+	*x = AdminSetPlatformBankAccountRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminSetPlatformBankAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminSetPlatformBankAccountRequest) ProtoMessage() {}
+
+func (x *AdminSetPlatformBankAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminSetPlatformBankAccountRequest.ProtoReflect.Descriptor instead.
+func (*AdminSetPlatformBankAccountRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *AdminSetPlatformBankAccountRequest) GetAdminId() string {
+	if x != nil {
+		return x.AdminId
+	}
+	return ""
+}
+
+func (x *AdminSetPlatformBankAccountRequest) GetBankAccountToken() string {
+	if x != nil {
+		return x.BankAccountToken
+	}
+	return ""
+}
+
+func (x *AdminSetPlatformBankAccountRequest) GetAccountHolderName() string {
+	if x != nil {
+		return x.AccountHolderName
+	}
+	return ""
+}
+
+func (x *AdminSetPlatformBankAccountRequest) GetAccountHolderType() string {
+	if x != nil {
+		return x.AccountHolderType
+	}
+	return ""
+}
+
+type AdminSetPlatformBankAccountResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *PlatformBankAccount   `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminSetPlatformBankAccountResponse) Reset() {
+	*x = AdminSetPlatformBankAccountResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminSetPlatformBankAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminSetPlatformBankAccountResponse) ProtoMessage() {}
+
+func (x *AdminSetPlatformBankAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminSetPlatformBankAccountResponse.ProtoReflect.Descriptor instead.
+func (*AdminSetPlatformBankAccountResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *AdminSetPlatformBankAccountResponse) GetAccount() *PlatformBankAccount {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+type AdminDeletePlatformBankAccountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AdminId       string                 `protobuf:"bytes,1,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminDeletePlatformBankAccountRequest) Reset() {
+	*x = AdminDeletePlatformBankAccountRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminDeletePlatformBankAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminDeletePlatformBankAccountRequest) ProtoMessage() {}
+
+func (x *AdminDeletePlatformBankAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminDeletePlatformBankAccountRequest.ProtoReflect.Descriptor instead.
+func (*AdminDeletePlatformBankAccountRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *AdminDeletePlatformBankAccountRequest) GetAdminId() string {
+	if x != nil {
+		return x.AdminId
+	}
+	return ""
+}
+
+func (x *AdminDeletePlatformBankAccountRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type AdminDeletePlatformBankAccountResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminDeletePlatformBankAccountResponse) Reset() {
+	*x = AdminDeletePlatformBankAccountResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminDeletePlatformBankAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminDeletePlatformBankAccountResponse) ProtoMessage() {}
+
+func (x *AdminDeletePlatformBankAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminDeletePlatformBankAccountResponse.ProtoReflect.Descriptor instead.
+func (*AdminDeletePlatformBankAccountResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *AdminDeletePlatformBankAccountResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 type GetRevenueReportRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DateRange     *v1.DateRange          `protobuf:"bytes,1,opt,name=date_range,json=dateRange,proto3" json:"date_range,omitempty"`
@@ -2726,7 +3249,7 @@ type GetRevenueReportRequest struct {
 
 func (x *GetRevenueReportRequest) Reset() {
 	*x = GetRevenueReportRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[43]
+	mi := &file_payment_v1_payment_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2738,7 +3261,7 @@ func (x *GetRevenueReportRequest) String() string {
 func (*GetRevenueReportRequest) ProtoMessage() {}
 
 func (x *GetRevenueReportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[43]
+	mi := &file_payment_v1_payment_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2751,7 +3274,7 @@ func (x *GetRevenueReportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRevenueReportRequest.ProtoReflect.Descriptor instead.
 func (*GetRevenueReportRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{43}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *GetRevenueReportRequest) GetDateRange() *v1.DateRange {
@@ -2781,7 +3304,7 @@ type GetRevenueReportResponse struct {
 
 func (x *GetRevenueReportResponse) Reset() {
 	*x = GetRevenueReportResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[44]
+	mi := &file_payment_v1_payment_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2793,7 +3316,7 @@ func (x *GetRevenueReportResponse) String() string {
 func (*GetRevenueReportResponse) ProtoMessage() {}
 
 func (x *GetRevenueReportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[44]
+	mi := &file_payment_v1_payment_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2806,7 +3329,7 @@ func (x *GetRevenueReportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRevenueReportResponse.ProtoReflect.Descriptor instead.
 func (*GetRevenueReportResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{44}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *GetRevenueReportResponse) GetDataPoints() []*RevenueDataPoint {
@@ -2856,7 +3379,7 @@ type RevenueDataPoint struct {
 
 func (x *RevenueDataPoint) Reset() {
 	*x = RevenueDataPoint{}
-	mi := &file_payment_v1_payment_proto_msgTypes[45]
+	mi := &file_payment_v1_payment_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2868,7 +3391,7 @@ func (x *RevenueDataPoint) String() string {
 func (*RevenueDataPoint) ProtoMessage() {}
 
 func (x *RevenueDataPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[45]
+	mi := &file_payment_v1_payment_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2881,7 +3404,7 @@ func (x *RevenueDataPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevenueDataPoint.ProtoReflect.Descriptor instead.
 func (*RevenueDataPoint) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{45}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *RevenueDataPoint) GetPeriodStart() *timestamppb.Timestamp {
@@ -2929,7 +3452,7 @@ type Expense struct {
 
 func (x *Expense) Reset() {
 	*x = Expense{}
-	mi := &file_payment_v1_payment_proto_msgTypes[46]
+	mi := &file_payment_v1_payment_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2941,7 +3464,7 @@ func (x *Expense) String() string {
 func (*Expense) ProtoMessage() {}
 
 func (x *Expense) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[46]
+	mi := &file_payment_v1_payment_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2954,7 +3477,7 @@ func (x *Expense) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Expense.ProtoReflect.Descriptor instead.
 func (*Expense) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{46}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *Expense) GetId() string {
@@ -3034,7 +3557,7 @@ type CreateExpenseRequest struct {
 
 func (x *CreateExpenseRequest) Reset() {
 	*x = CreateExpenseRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[47]
+	mi := &file_payment_v1_payment_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3046,7 +3569,7 @@ func (x *CreateExpenseRequest) String() string {
 func (*CreateExpenseRequest) ProtoMessage() {}
 
 func (x *CreateExpenseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[47]
+	mi := &file_payment_v1_payment_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3059,7 +3582,7 @@ func (x *CreateExpenseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExpenseRequest.ProtoReflect.Descriptor instead.
 func (*CreateExpenseRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{47}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *CreateExpenseRequest) GetProviderId() string {
@@ -3113,7 +3636,7 @@ type CreateExpenseResponse struct {
 
 func (x *CreateExpenseResponse) Reset() {
 	*x = CreateExpenseResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[48]
+	mi := &file_payment_v1_payment_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3125,7 +3648,7 @@ func (x *CreateExpenseResponse) String() string {
 func (*CreateExpenseResponse) ProtoMessage() {}
 
 func (x *CreateExpenseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[48]
+	mi := &file_payment_v1_payment_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3138,7 +3661,7 @@ func (x *CreateExpenseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExpenseResponse.ProtoReflect.Descriptor instead.
 func (*CreateExpenseResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{48}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CreateExpenseResponse) GetExpense() *Expense {
@@ -3160,7 +3683,7 @@ type ListExpensesRequest struct {
 
 func (x *ListExpensesRequest) Reset() {
 	*x = ListExpensesRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[49]
+	mi := &file_payment_v1_payment_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3172,7 +3695,7 @@ func (x *ListExpensesRequest) String() string {
 func (*ListExpensesRequest) ProtoMessage() {}
 
 func (x *ListExpensesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[49]
+	mi := &file_payment_v1_payment_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3185,7 +3708,7 @@ func (x *ListExpensesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExpensesRequest.ProtoReflect.Descriptor instead.
 func (*ListExpensesRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{49}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ListExpensesRequest) GetProviderId() string {
@@ -3227,7 +3750,7 @@ type ListExpensesResponse struct {
 
 func (x *ListExpensesResponse) Reset() {
 	*x = ListExpensesResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[50]
+	mi := &file_payment_v1_payment_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3239,7 +3762,7 @@ func (x *ListExpensesResponse) String() string {
 func (*ListExpensesResponse) ProtoMessage() {}
 
 func (x *ListExpensesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[50]
+	mi := &file_payment_v1_payment_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3252,7 +3775,7 @@ func (x *ListExpensesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExpensesResponse.ProtoReflect.Descriptor instead.
 func (*ListExpensesResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{50}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ListExpensesResponse) GetExpenses() []*Expense {
@@ -3286,7 +3809,7 @@ type DeleteExpenseRequest struct {
 
 func (x *DeleteExpenseRequest) Reset() {
 	*x = DeleteExpenseRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[51]
+	mi := &file_payment_v1_payment_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3298,7 +3821,7 @@ func (x *DeleteExpenseRequest) String() string {
 func (*DeleteExpenseRequest) ProtoMessage() {}
 
 func (x *DeleteExpenseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[51]
+	mi := &file_payment_v1_payment_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3311,7 +3834,7 @@ func (x *DeleteExpenseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExpenseRequest.ProtoReflect.Descriptor instead.
 func (*DeleteExpenseRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{51}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *DeleteExpenseRequest) GetExpenseId() string {
@@ -3336,7 +3859,7 @@ type DeleteExpenseResponse struct {
 
 func (x *DeleteExpenseResponse) Reset() {
 	*x = DeleteExpenseResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[52]
+	mi := &file_payment_v1_payment_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3348,7 +3871,7 @@ func (x *DeleteExpenseResponse) String() string {
 func (*DeleteExpenseResponse) ProtoMessage() {}
 
 func (x *DeleteExpenseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[52]
+	mi := &file_payment_v1_payment_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3361,7 +3884,7 @@ func (x *DeleteExpenseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExpenseResponse.ProtoReflect.Descriptor instead.
 func (*DeleteExpenseResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{52}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{59}
 }
 
 type Advance struct {
@@ -3387,7 +3910,7 @@ type Advance struct {
 
 func (x *Advance) Reset() {
 	*x = Advance{}
-	mi := &file_payment_v1_payment_proto_msgTypes[53]
+	mi := &file_payment_v1_payment_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3399,7 +3922,7 @@ func (x *Advance) String() string {
 func (*Advance) ProtoMessage() {}
 
 func (x *Advance) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[53]
+	mi := &file_payment_v1_payment_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3412,7 +3935,7 @@ func (x *Advance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Advance.ProtoReflect.Descriptor instead.
 func (*Advance) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{53}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *Advance) GetId() string {
@@ -3531,7 +4054,7 @@ type RequestAdvanceRequest struct {
 
 func (x *RequestAdvanceRequest) Reset() {
 	*x = RequestAdvanceRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[54]
+	mi := &file_payment_v1_payment_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3543,7 +4066,7 @@ func (x *RequestAdvanceRequest) String() string {
 func (*RequestAdvanceRequest) ProtoMessage() {}
 
 func (x *RequestAdvanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[54]
+	mi := &file_payment_v1_payment_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3556,7 +4079,7 @@ func (x *RequestAdvanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestAdvanceRequest.ProtoReflect.Descriptor instead.
 func (*RequestAdvanceRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{54}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *RequestAdvanceRequest) GetProviderId() string {
@@ -3589,7 +4112,7 @@ type RequestAdvanceResponse struct {
 
 func (x *RequestAdvanceResponse) Reset() {
 	*x = RequestAdvanceResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[55]
+	mi := &file_payment_v1_payment_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3601,7 +4124,7 @@ func (x *RequestAdvanceResponse) String() string {
 func (*RequestAdvanceResponse) ProtoMessage() {}
 
 func (x *RequestAdvanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[55]
+	mi := &file_payment_v1_payment_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3614,7 +4137,7 @@ func (x *RequestAdvanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestAdvanceResponse.ProtoReflect.Descriptor instead.
 func (*RequestAdvanceResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{55}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *RequestAdvanceResponse) GetAdvance() *Advance {
@@ -3635,7 +4158,7 @@ type ListAdvancesRequest struct {
 
 func (x *ListAdvancesRequest) Reset() {
 	*x = ListAdvancesRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[56]
+	mi := &file_payment_v1_payment_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3647,7 +4170,7 @@ func (x *ListAdvancesRequest) String() string {
 func (*ListAdvancesRequest) ProtoMessage() {}
 
 func (x *ListAdvancesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[56]
+	mi := &file_payment_v1_payment_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3660,7 +4183,7 @@ func (x *ListAdvancesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAdvancesRequest.ProtoReflect.Descriptor instead.
 func (*ListAdvancesRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{56}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ListAdvancesRequest) GetProviderId() string {
@@ -3694,7 +4217,7 @@ type ListAdvancesResponse struct {
 
 func (x *ListAdvancesResponse) Reset() {
 	*x = ListAdvancesResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[57]
+	mi := &file_payment_v1_payment_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3706,7 +4229,7 @@ func (x *ListAdvancesResponse) String() string {
 func (*ListAdvancesResponse) ProtoMessage() {}
 
 func (x *ListAdvancesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[57]
+	mi := &file_payment_v1_payment_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3719,7 +4242,7 @@ func (x *ListAdvancesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAdvancesResponse.ProtoReflect.Descriptor instead.
 func (*ListAdvancesResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{57}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ListAdvancesResponse) GetAdvances() []*Advance {
@@ -3745,7 +4268,7 @@ type GetAdvanceRequest struct {
 
 func (x *GetAdvanceRequest) Reset() {
 	*x = GetAdvanceRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[58]
+	mi := &file_payment_v1_payment_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3757,7 +4280,7 @@ func (x *GetAdvanceRequest) String() string {
 func (*GetAdvanceRequest) ProtoMessage() {}
 
 func (x *GetAdvanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[58]
+	mi := &file_payment_v1_payment_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3770,7 +4293,7 @@ func (x *GetAdvanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAdvanceRequest.ProtoReflect.Descriptor instead.
 func (*GetAdvanceRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{58}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *GetAdvanceRequest) GetAdvanceId() string {
@@ -3789,7 +4312,7 @@ type GetAdvanceResponse struct {
 
 func (x *GetAdvanceResponse) Reset() {
 	*x = GetAdvanceResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[59]
+	mi := &file_payment_v1_payment_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3801,7 +4324,7 @@ func (x *GetAdvanceResponse) String() string {
 func (*GetAdvanceResponse) ProtoMessage() {}
 
 func (x *GetAdvanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[59]
+	mi := &file_payment_v1_payment_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3814,7 +4337,7 @@ func (x *GetAdvanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAdvanceResponse.ProtoReflect.Descriptor instead.
 func (*GetAdvanceResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{59}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *GetAdvanceResponse) GetAdvance() *Advance {
@@ -3836,7 +4359,7 @@ type ReviewAdvanceRequest struct {
 
 func (x *ReviewAdvanceRequest) Reset() {
 	*x = ReviewAdvanceRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[60]
+	mi := &file_payment_v1_payment_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3848,7 +4371,7 @@ func (x *ReviewAdvanceRequest) String() string {
 func (*ReviewAdvanceRequest) ProtoMessage() {}
 
 func (x *ReviewAdvanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[60]
+	mi := &file_payment_v1_payment_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3861,7 +4384,7 @@ func (x *ReviewAdvanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewAdvanceRequest.ProtoReflect.Descriptor instead.
 func (*ReviewAdvanceRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{60}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ReviewAdvanceRequest) GetAdvanceId() string {
@@ -3901,7 +4424,7 @@ type ReviewAdvanceResponse struct {
 
 func (x *ReviewAdvanceResponse) Reset() {
 	*x = ReviewAdvanceResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[61]
+	mi := &file_payment_v1_payment_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3913,7 +4436,7 @@ func (x *ReviewAdvanceResponse) String() string {
 func (*ReviewAdvanceResponse) ProtoMessage() {}
 
 func (x *ReviewAdvanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[61]
+	mi := &file_payment_v1_payment_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3926,7 +4449,7 @@ func (x *ReviewAdvanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewAdvanceResponse.ProtoReflect.Descriptor instead.
 func (*ReviewAdvanceResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{61}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ReviewAdvanceResponse) GetAdvance() *Advance {
@@ -3946,7 +4469,7 @@ type DisburseAdvanceRequest struct {
 
 func (x *DisburseAdvanceRequest) Reset() {
 	*x = DisburseAdvanceRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[62]
+	mi := &file_payment_v1_payment_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3958,7 +4481,7 @@ func (x *DisburseAdvanceRequest) String() string {
 func (*DisburseAdvanceRequest) ProtoMessage() {}
 
 func (x *DisburseAdvanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[62]
+	mi := &file_payment_v1_payment_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3971,7 +4494,7 @@ func (x *DisburseAdvanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisburseAdvanceRequest.ProtoReflect.Descriptor instead.
 func (*DisburseAdvanceRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{62}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *DisburseAdvanceRequest) GetAdvanceId() string {
@@ -3998,7 +4521,7 @@ type DisburseAdvanceResponse struct {
 
 func (x *DisburseAdvanceResponse) Reset() {
 	*x = DisburseAdvanceResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[63]
+	mi := &file_payment_v1_payment_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4010,7 +4533,7 @@ func (x *DisburseAdvanceResponse) String() string {
 func (*DisburseAdvanceResponse) ProtoMessage() {}
 
 func (x *DisburseAdvanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[63]
+	mi := &file_payment_v1_payment_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4023,7 +4546,7 @@ func (x *DisburseAdvanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisburseAdvanceResponse.ProtoReflect.Descriptor instead.
 func (*DisburseAdvanceResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{63}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *DisburseAdvanceResponse) GetAdvance() *Advance {
@@ -4049,7 +4572,7 @@ type GetCreditLimitRequest struct {
 
 func (x *GetCreditLimitRequest) Reset() {
 	*x = GetCreditLimitRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[64]
+	mi := &file_payment_v1_payment_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4061,7 +4584,7 @@ func (x *GetCreditLimitRequest) String() string {
 func (*GetCreditLimitRequest) ProtoMessage() {}
 
 func (x *GetCreditLimitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[64]
+	mi := &file_payment_v1_payment_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4074,7 +4597,7 @@ func (x *GetCreditLimitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCreditLimitRequest.ProtoReflect.Descriptor instead.
 func (*GetCreditLimitRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{64}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *GetCreditLimitRequest) GetProviderId() string {
@@ -4102,7 +4625,7 @@ type GetCreditLimitResponse struct {
 
 func (x *GetCreditLimitResponse) Reset() {
 	*x = GetCreditLimitResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[65]
+	mi := &file_payment_v1_payment_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4114,7 +4637,7 @@ func (x *GetCreditLimitResponse) String() string {
 func (*GetCreditLimitResponse) ProtoMessage() {}
 
 func (x *GetCreditLimitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[65]
+	mi := &file_payment_v1_payment_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4127,7 +4650,7 @@ func (x *GetCreditLimitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCreditLimitResponse.ProtoReflect.Descriptor instead.
 func (*GetCreditLimitResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{65}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *GetCreditLimitResponse) GetProviderId() string {
@@ -4215,7 +4738,7 @@ type ScheduledInstallment struct {
 
 func (x *ScheduledInstallment) Reset() {
 	*x = ScheduledInstallment{}
-	mi := &file_payment_v1_payment_proto_msgTypes[66]
+	mi := &file_payment_v1_payment_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4227,7 +4750,7 @@ func (x *ScheduledInstallment) String() string {
 func (*ScheduledInstallment) ProtoMessage() {}
 
 func (x *ScheduledInstallment) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[66]
+	mi := &file_payment_v1_payment_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4240,7 +4763,7 @@ func (x *ScheduledInstallment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduledInstallment.ProtoReflect.Descriptor instead.
 func (*ScheduledInstallment) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{66}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ScheduledInstallment) GetId() string {
@@ -4316,7 +4839,7 @@ type InstallmentPlan struct {
 
 func (x *InstallmentPlan) Reset() {
 	*x = InstallmentPlan{}
-	mi := &file_payment_v1_payment_proto_msgTypes[67]
+	mi := &file_payment_v1_payment_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4328,7 +4851,7 @@ func (x *InstallmentPlan) String() string {
 func (*InstallmentPlan) ProtoMessage() {}
 
 func (x *InstallmentPlan) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[67]
+	mi := &file_payment_v1_payment_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4341,7 +4864,7 @@ func (x *InstallmentPlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallmentPlan.ProtoReflect.Descriptor instead.
 func (*InstallmentPlan) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{67}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *InstallmentPlan) GetId() string {
@@ -4471,7 +4994,7 @@ type CreateInstallmentPlanRequest struct {
 
 func (x *CreateInstallmentPlanRequest) Reset() {
 	*x = CreateInstallmentPlanRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[68]
+	mi := &file_payment_v1_payment_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4483,7 +5006,7 @@ func (x *CreateInstallmentPlanRequest) String() string {
 func (*CreateInstallmentPlanRequest) ProtoMessage() {}
 
 func (x *CreateInstallmentPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[68]
+	mi := &file_payment_v1_payment_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4496,7 +5019,7 @@ func (x *CreateInstallmentPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInstallmentPlanRequest.ProtoReflect.Descriptor instead.
 func (*CreateInstallmentPlanRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{68}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *CreateInstallmentPlanRequest) GetContractId() string {
@@ -4558,7 +5081,7 @@ type CreateInstallmentPlanResponse struct {
 
 func (x *CreateInstallmentPlanResponse) Reset() {
 	*x = CreateInstallmentPlanResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[69]
+	mi := &file_payment_v1_payment_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4570,7 +5093,7 @@ func (x *CreateInstallmentPlanResponse) String() string {
 func (*CreateInstallmentPlanResponse) ProtoMessage() {}
 
 func (x *CreateInstallmentPlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[69]
+	mi := &file_payment_v1_payment_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4583,7 +5106,7 @@ func (x *CreateInstallmentPlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInstallmentPlanResponse.ProtoReflect.Descriptor instead.
 func (*CreateInstallmentPlanResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{69}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *CreateInstallmentPlanResponse) GetPlan() *InstallmentPlan {
@@ -4609,7 +5132,7 @@ type GetInstallmentPlanRequest struct {
 
 func (x *GetInstallmentPlanRequest) Reset() {
 	*x = GetInstallmentPlanRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[70]
+	mi := &file_payment_v1_payment_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4621,7 +5144,7 @@ func (x *GetInstallmentPlanRequest) String() string {
 func (*GetInstallmentPlanRequest) ProtoMessage() {}
 
 func (x *GetInstallmentPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[70]
+	mi := &file_payment_v1_payment_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4634,7 +5157,7 @@ func (x *GetInstallmentPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInstallmentPlanRequest.ProtoReflect.Descriptor instead.
 func (*GetInstallmentPlanRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{70}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *GetInstallmentPlanRequest) GetPlanId() string {
@@ -4653,7 +5176,7 @@ type GetInstallmentPlanResponse struct {
 
 func (x *GetInstallmentPlanResponse) Reset() {
 	*x = GetInstallmentPlanResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[71]
+	mi := &file_payment_v1_payment_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4665,7 +5188,7 @@ func (x *GetInstallmentPlanResponse) String() string {
 func (*GetInstallmentPlanResponse) ProtoMessage() {}
 
 func (x *GetInstallmentPlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[71]
+	mi := &file_payment_v1_payment_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4678,7 +5201,7 @@ func (x *GetInstallmentPlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInstallmentPlanResponse.ProtoReflect.Descriptor instead.
 func (*GetInstallmentPlanResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{71}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *GetInstallmentPlanResponse) GetPlan() *InstallmentPlan {
@@ -4699,7 +5222,7 @@ type ListInstallmentPlansRequest struct {
 
 func (x *ListInstallmentPlansRequest) Reset() {
 	*x = ListInstallmentPlansRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[72]
+	mi := &file_payment_v1_payment_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4711,7 +5234,7 @@ func (x *ListInstallmentPlansRequest) String() string {
 func (*ListInstallmentPlansRequest) ProtoMessage() {}
 
 func (x *ListInstallmentPlansRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[72]
+	mi := &file_payment_v1_payment_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4724,7 +5247,7 @@ func (x *ListInstallmentPlansRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInstallmentPlansRequest.ProtoReflect.Descriptor instead.
 func (*ListInstallmentPlansRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{72}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ListInstallmentPlansRequest) GetUserId() string {
@@ -4758,7 +5281,7 @@ type ListInstallmentPlansResponse struct {
 
 func (x *ListInstallmentPlansResponse) Reset() {
 	*x = ListInstallmentPlansResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[73]
+	mi := &file_payment_v1_payment_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4770,7 +5293,7 @@ func (x *ListInstallmentPlansResponse) String() string {
 func (*ListInstallmentPlansResponse) ProtoMessage() {}
 
 func (x *ListInstallmentPlansResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[73]
+	mi := &file_payment_v1_payment_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4783,7 +5306,7 @@ func (x *ListInstallmentPlansResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInstallmentPlansResponse.ProtoReflect.Descriptor instead.
 func (*ListInstallmentPlansResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{73}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ListInstallmentPlansResponse) GetPlans() []*InstallmentPlan {
@@ -4822,7 +5345,7 @@ type InsuranceProduct struct {
 
 func (x *InsuranceProduct) Reset() {
 	*x = InsuranceProduct{}
-	mi := &file_payment_v1_payment_proto_msgTypes[74]
+	mi := &file_payment_v1_payment_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4834,7 +5357,7 @@ func (x *InsuranceProduct) String() string {
 func (*InsuranceProduct) ProtoMessage() {}
 
 func (x *InsuranceProduct) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[74]
+	mi := &file_payment_v1_payment_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4847,7 +5370,7 @@ func (x *InsuranceProduct) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsuranceProduct.ProtoReflect.Descriptor instead.
 func (*InsuranceProduct) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{74}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *InsuranceProduct) GetId() string {
@@ -4974,7 +5497,7 @@ type InsurancePolicy struct {
 
 func (x *InsurancePolicy) Reset() {
 	*x = InsurancePolicy{}
-	mi := &file_payment_v1_payment_proto_msgTypes[75]
+	mi := &file_payment_v1_payment_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4986,7 +5509,7 @@ func (x *InsurancePolicy) String() string {
 func (*InsurancePolicy) ProtoMessage() {}
 
 func (x *InsurancePolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[75]
+	mi := &file_payment_v1_payment_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4999,7 +5522,7 @@ func (x *InsurancePolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsurancePolicy.ProtoReflect.Descriptor instead.
 func (*InsurancePolicy) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{75}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *InsurancePolicy) GetId() string {
@@ -5154,7 +5677,7 @@ type TaxForm struct {
 
 func (x *TaxForm) Reset() {
 	*x = TaxForm{}
-	mi := &file_payment_v1_payment_proto_msgTypes[76]
+	mi := &file_payment_v1_payment_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5166,7 +5689,7 @@ func (x *TaxForm) String() string {
 func (*TaxForm) ProtoMessage() {}
 
 func (x *TaxForm) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[76]
+	mi := &file_payment_v1_payment_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5179,7 +5702,7 @@ func (x *TaxForm) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaxForm.ProtoReflect.Descriptor instead.
 func (*TaxForm) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{76}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *TaxForm) GetId() string {
@@ -5336,7 +5859,7 @@ type InsuranceClaim struct {
 
 func (x *InsuranceClaim) Reset() {
 	*x = InsuranceClaim{}
-	mi := &file_payment_v1_payment_proto_msgTypes[77]
+	mi := &file_payment_v1_payment_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5348,7 +5871,7 @@ func (x *InsuranceClaim) String() string {
 func (*InsuranceClaim) ProtoMessage() {}
 
 func (x *InsuranceClaim) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[77]
+	mi := &file_payment_v1_payment_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5361,7 +5884,7 @@ func (x *InsuranceClaim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsuranceClaim.ProtoReflect.Descriptor instead.
 func (*InsuranceClaim) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{77}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *InsuranceClaim) GetId() string {
@@ -5521,7 +6044,7 @@ type InsuranceQuote struct {
 
 func (x *InsuranceQuote) Reset() {
 	*x = InsuranceQuote{}
-	mi := &file_payment_v1_payment_proto_msgTypes[78]
+	mi := &file_payment_v1_payment_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5533,7 +6056,7 @@ func (x *InsuranceQuote) String() string {
 func (*InsuranceQuote) ProtoMessage() {}
 
 func (x *InsuranceQuote) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[78]
+	mi := &file_payment_v1_payment_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5546,7 +6069,7 @@ func (x *InsuranceQuote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsuranceQuote.ProtoReflect.Descriptor instead.
 func (*InsuranceQuote) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{78}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *InsuranceQuote) GetProductId() string {
@@ -5620,7 +6143,7 @@ type ListInsuranceProductsRequest struct {
 
 func (x *ListInsuranceProductsRequest) Reset() {
 	*x = ListInsuranceProductsRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[79]
+	mi := &file_payment_v1_payment_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5632,7 +6155,7 @@ func (x *ListInsuranceProductsRequest) String() string {
 func (*ListInsuranceProductsRequest) ProtoMessage() {}
 
 func (x *ListInsuranceProductsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[79]
+	mi := &file_payment_v1_payment_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5645,7 +6168,7 @@ func (x *ListInsuranceProductsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInsuranceProductsRequest.ProtoReflect.Descriptor instead.
 func (*ListInsuranceProductsRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{79}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{86}
 }
 
 type ListInsuranceProductsResponse struct {
@@ -5657,7 +6180,7 @@ type ListInsuranceProductsResponse struct {
 
 func (x *ListInsuranceProductsResponse) Reset() {
 	*x = ListInsuranceProductsResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[80]
+	mi := &file_payment_v1_payment_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5669,7 +6192,7 @@ func (x *ListInsuranceProductsResponse) String() string {
 func (*ListInsuranceProductsResponse) ProtoMessage() {}
 
 func (x *ListInsuranceProductsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[80]
+	mi := &file_payment_v1_payment_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5682,7 +6205,7 @@ func (x *ListInsuranceProductsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInsuranceProductsResponse.ProtoReflect.Descriptor instead.
 func (*ListInsuranceProductsResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{80}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *ListInsuranceProductsResponse) GetProducts() []*InsuranceProduct {
@@ -5704,7 +6227,7 @@ type GetInsuranceQuoteRequest struct {
 
 func (x *GetInsuranceQuoteRequest) Reset() {
 	*x = GetInsuranceQuoteRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[81]
+	mi := &file_payment_v1_payment_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5716,7 +6239,7 @@ func (x *GetInsuranceQuoteRequest) String() string {
 func (*GetInsuranceQuoteRequest) ProtoMessage() {}
 
 func (x *GetInsuranceQuoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[81]
+	mi := &file_payment_v1_payment_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5729,7 +6252,7 @@ func (x *GetInsuranceQuoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInsuranceQuoteRequest.ProtoReflect.Descriptor instead.
 func (*GetInsuranceQuoteRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{81}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *GetInsuranceQuoteRequest) GetProductId() string {
@@ -5769,7 +6292,7 @@ type GetInsuranceQuoteResponse struct {
 
 func (x *GetInsuranceQuoteResponse) Reset() {
 	*x = GetInsuranceQuoteResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[82]
+	mi := &file_payment_v1_payment_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5781,7 +6304,7 @@ func (x *GetInsuranceQuoteResponse) String() string {
 func (*GetInsuranceQuoteResponse) ProtoMessage() {}
 
 func (x *GetInsuranceQuoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[82]
+	mi := &file_payment_v1_payment_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5794,7 +6317,7 @@ func (x *GetInsuranceQuoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInsuranceQuoteResponse.ProtoReflect.Descriptor instead.
 func (*GetInsuranceQuoteResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{82}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *GetInsuranceQuoteResponse) GetQuote() *InsuranceQuote {
@@ -5817,7 +6340,7 @@ type PurchaseInsuranceRequest struct {
 
 func (x *PurchaseInsuranceRequest) Reset() {
 	*x = PurchaseInsuranceRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[83]
+	mi := &file_payment_v1_payment_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5829,7 +6352,7 @@ func (x *PurchaseInsuranceRequest) String() string {
 func (*PurchaseInsuranceRequest) ProtoMessage() {}
 
 func (x *PurchaseInsuranceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[83]
+	mi := &file_payment_v1_payment_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5842,7 +6365,7 @@ func (x *PurchaseInsuranceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PurchaseInsuranceRequest.ProtoReflect.Descriptor instead.
 func (*PurchaseInsuranceRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{83}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *PurchaseInsuranceRequest) GetProductId() string {
@@ -5890,7 +6413,7 @@ type PurchaseInsuranceResponse struct {
 
 func (x *PurchaseInsuranceResponse) Reset() {
 	*x = PurchaseInsuranceResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[84]
+	mi := &file_payment_v1_payment_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5902,7 +6425,7 @@ func (x *PurchaseInsuranceResponse) String() string {
 func (*PurchaseInsuranceResponse) ProtoMessage() {}
 
 func (x *PurchaseInsuranceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[84]
+	mi := &file_payment_v1_payment_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5915,7 +6438,7 @@ func (x *PurchaseInsuranceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PurchaseInsuranceResponse.ProtoReflect.Descriptor instead.
 func (*PurchaseInsuranceResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{84}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *PurchaseInsuranceResponse) GetPolicy() *InsurancePolicy {
@@ -5941,7 +6464,7 @@ type GetInsurancePolicyRequest struct {
 
 func (x *GetInsurancePolicyRequest) Reset() {
 	*x = GetInsurancePolicyRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[85]
+	mi := &file_payment_v1_payment_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5953,7 +6476,7 @@ func (x *GetInsurancePolicyRequest) String() string {
 func (*GetInsurancePolicyRequest) ProtoMessage() {}
 
 func (x *GetInsurancePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[85]
+	mi := &file_payment_v1_payment_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5966,7 +6489,7 @@ func (x *GetInsurancePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInsurancePolicyRequest.ProtoReflect.Descriptor instead.
 func (*GetInsurancePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{85}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *GetInsurancePolicyRequest) GetPolicyId() string {
@@ -5985,7 +6508,7 @@ type GetInsurancePolicyResponse struct {
 
 func (x *GetInsurancePolicyResponse) Reset() {
 	*x = GetInsurancePolicyResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[86]
+	mi := &file_payment_v1_payment_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5997,7 +6520,7 @@ func (x *GetInsurancePolicyResponse) String() string {
 func (*GetInsurancePolicyResponse) ProtoMessage() {}
 
 func (x *GetInsurancePolicyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[86]
+	mi := &file_payment_v1_payment_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6010,7 +6533,7 @@ func (x *GetInsurancePolicyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInsurancePolicyResponse.ProtoReflect.Descriptor instead.
 func (*GetInsurancePolicyResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{86}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *GetInsurancePolicyResponse) GetPolicy() *InsurancePolicy {
@@ -6030,7 +6553,7 @@ type ListInsurancePoliciesRequest struct {
 
 func (x *ListInsurancePoliciesRequest) Reset() {
 	*x = ListInsurancePoliciesRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[87]
+	mi := &file_payment_v1_payment_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6042,7 +6565,7 @@ func (x *ListInsurancePoliciesRequest) String() string {
 func (*ListInsurancePoliciesRequest) ProtoMessage() {}
 
 func (x *ListInsurancePoliciesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[87]
+	mi := &file_payment_v1_payment_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6055,7 +6578,7 @@ func (x *ListInsurancePoliciesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInsurancePoliciesRequest.ProtoReflect.Descriptor instead.
 func (*ListInsurancePoliciesRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{87}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *ListInsurancePoliciesRequest) GetUserId() string {
@@ -6082,7 +6605,7 @@ type ListInsurancePoliciesResponse struct {
 
 func (x *ListInsurancePoliciesResponse) Reset() {
 	*x = ListInsurancePoliciesResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[88]
+	mi := &file_payment_v1_payment_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6094,7 +6617,7 @@ func (x *ListInsurancePoliciesResponse) String() string {
 func (*ListInsurancePoliciesResponse) ProtoMessage() {}
 
 func (x *ListInsurancePoliciesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[88]
+	mi := &file_payment_v1_payment_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6107,7 +6630,7 @@ func (x *ListInsurancePoliciesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInsurancePoliciesResponse.ProtoReflect.Descriptor instead.
 func (*ListInsurancePoliciesResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{88}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *ListInsurancePoliciesResponse) GetPolicies() []*InsurancePolicy {
@@ -6138,7 +6661,7 @@ type FileInsuranceClaimRequest struct {
 
 func (x *FileInsuranceClaimRequest) Reset() {
 	*x = FileInsuranceClaimRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[89]
+	mi := &file_payment_v1_payment_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6150,7 +6673,7 @@ func (x *FileInsuranceClaimRequest) String() string {
 func (*FileInsuranceClaimRequest) ProtoMessage() {}
 
 func (x *FileInsuranceClaimRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[89]
+	mi := &file_payment_v1_payment_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6163,7 +6686,7 @@ func (x *FileInsuranceClaimRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileInsuranceClaimRequest.ProtoReflect.Descriptor instead.
 func (*FileInsuranceClaimRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{89}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *FileInsuranceClaimRequest) GetPolicyId() string {
@@ -6217,7 +6740,7 @@ type FileInsuranceClaimResponse struct {
 
 func (x *FileInsuranceClaimResponse) Reset() {
 	*x = FileInsuranceClaimResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[90]
+	mi := &file_payment_v1_payment_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6229,7 +6752,7 @@ func (x *FileInsuranceClaimResponse) String() string {
 func (*FileInsuranceClaimResponse) ProtoMessage() {}
 
 func (x *FileInsuranceClaimResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[90]
+	mi := &file_payment_v1_payment_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6242,7 +6765,7 @@ func (x *FileInsuranceClaimResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileInsuranceClaimResponse.ProtoReflect.Descriptor instead.
 func (*FileInsuranceClaimResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{90}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *FileInsuranceClaimResponse) GetClaim() *InsuranceClaim {
@@ -6261,7 +6784,7 @@ type GetInsuranceClaimRequest struct {
 
 func (x *GetInsuranceClaimRequest) Reset() {
 	*x = GetInsuranceClaimRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[91]
+	mi := &file_payment_v1_payment_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6273,7 +6796,7 @@ func (x *GetInsuranceClaimRequest) String() string {
 func (*GetInsuranceClaimRequest) ProtoMessage() {}
 
 func (x *GetInsuranceClaimRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[91]
+	mi := &file_payment_v1_payment_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6286,7 +6809,7 @@ func (x *GetInsuranceClaimRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInsuranceClaimRequest.ProtoReflect.Descriptor instead.
 func (*GetInsuranceClaimRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{91}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *GetInsuranceClaimRequest) GetClaimId() string {
@@ -6305,7 +6828,7 @@ type GetInsuranceClaimResponse struct {
 
 func (x *GetInsuranceClaimResponse) Reset() {
 	*x = GetInsuranceClaimResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[92]
+	mi := &file_payment_v1_payment_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6317,7 +6840,7 @@ func (x *GetInsuranceClaimResponse) String() string {
 func (*GetInsuranceClaimResponse) ProtoMessage() {}
 
 func (x *GetInsuranceClaimResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[92]
+	mi := &file_payment_v1_payment_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6330,7 +6853,7 @@ func (x *GetInsuranceClaimResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInsuranceClaimResponse.ProtoReflect.Descriptor instead.
 func (*GetInsuranceClaimResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{92}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *GetInsuranceClaimResponse) GetClaim() *InsuranceClaim {
@@ -6354,7 +6877,7 @@ type ReviewInsuranceClaimRequest struct {
 
 func (x *ReviewInsuranceClaimRequest) Reset() {
 	*x = ReviewInsuranceClaimRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[93]
+	mi := &file_payment_v1_payment_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6366,7 +6889,7 @@ func (x *ReviewInsuranceClaimRequest) String() string {
 func (*ReviewInsuranceClaimRequest) ProtoMessage() {}
 
 func (x *ReviewInsuranceClaimRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[93]
+	mi := &file_payment_v1_payment_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6379,7 +6902,7 @@ func (x *ReviewInsuranceClaimRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewInsuranceClaimRequest.ProtoReflect.Descriptor instead.
 func (*ReviewInsuranceClaimRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{93}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *ReviewInsuranceClaimRequest) GetClaimId() string {
@@ -6433,7 +6956,7 @@ type ReviewInsuranceClaimResponse struct {
 
 func (x *ReviewInsuranceClaimResponse) Reset() {
 	*x = ReviewInsuranceClaimResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[94]
+	mi := &file_payment_v1_payment_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6445,7 +6968,7 @@ func (x *ReviewInsuranceClaimResponse) String() string {
 func (*ReviewInsuranceClaimResponse) ProtoMessage() {}
 
 func (x *ReviewInsuranceClaimResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[94]
+	mi := &file_payment_v1_payment_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6458,7 +6981,7 @@ func (x *ReviewInsuranceClaimResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewInsuranceClaimResponse.ProtoReflect.Descriptor instead.
 func (*ReviewInsuranceClaimResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{94}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *ReviewInsuranceClaimResponse) GetClaim() *InsuranceClaim {
@@ -6478,7 +7001,7 @@ type AdminListInsuranceClaimsRequest struct {
 
 func (x *AdminListInsuranceClaimsRequest) Reset() {
 	*x = AdminListInsuranceClaimsRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[95]
+	mi := &file_payment_v1_payment_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6490,7 +7013,7 @@ func (x *AdminListInsuranceClaimsRequest) String() string {
 func (*AdminListInsuranceClaimsRequest) ProtoMessage() {}
 
 func (x *AdminListInsuranceClaimsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[95]
+	mi := &file_payment_v1_payment_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6503,7 +7026,7 @@ func (x *AdminListInsuranceClaimsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminListInsuranceClaimsRequest.ProtoReflect.Descriptor instead.
 func (*AdminListInsuranceClaimsRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{95}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *AdminListInsuranceClaimsRequest) GetStatusFilter() string {
@@ -6530,7 +7053,7 @@ type AdminListInsuranceClaimsResponse struct {
 
 func (x *AdminListInsuranceClaimsResponse) Reset() {
 	*x = AdminListInsuranceClaimsResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[96]
+	mi := &file_payment_v1_payment_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6542,7 +7065,7 @@ func (x *AdminListInsuranceClaimsResponse) String() string {
 func (*AdminListInsuranceClaimsResponse) ProtoMessage() {}
 
 func (x *AdminListInsuranceClaimsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[96]
+	mi := &file_payment_v1_payment_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6555,7 +7078,7 @@ func (x *AdminListInsuranceClaimsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminListInsuranceClaimsResponse.ProtoReflect.Descriptor instead.
 func (*AdminListInsuranceClaimsResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{96}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *AdminListInsuranceClaimsResponse) GetClaims() []*InsuranceClaim {
@@ -6582,7 +7105,7 @@ type GenerateTaxFormRequest struct {
 
 func (x *GenerateTaxFormRequest) Reset() {
 	*x = GenerateTaxFormRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[97]
+	mi := &file_payment_v1_payment_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6594,7 +7117,7 @@ func (x *GenerateTaxFormRequest) String() string {
 func (*GenerateTaxFormRequest) ProtoMessage() {}
 
 func (x *GenerateTaxFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[97]
+	mi := &file_payment_v1_payment_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6607,7 +7130,7 @@ func (x *GenerateTaxFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateTaxFormRequest.ProtoReflect.Descriptor instead.
 func (*GenerateTaxFormRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{97}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *GenerateTaxFormRequest) GetProviderId() string {
@@ -6633,7 +7156,7 @@ type GenerateTaxFormResponse struct {
 
 func (x *GenerateTaxFormResponse) Reset() {
 	*x = GenerateTaxFormResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[98]
+	mi := &file_payment_v1_payment_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6645,7 +7168,7 @@ func (x *GenerateTaxFormResponse) String() string {
 func (*GenerateTaxFormResponse) ProtoMessage() {}
 
 func (x *GenerateTaxFormResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[98]
+	mi := &file_payment_v1_payment_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6658,7 +7181,7 @@ func (x *GenerateTaxFormResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateTaxFormResponse.ProtoReflect.Descriptor instead.
 func (*GenerateTaxFormResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{98}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *GenerateTaxFormResponse) GetTaxForm() *TaxForm {
@@ -6678,7 +7201,7 @@ type GetTaxFormRequest struct {
 
 func (x *GetTaxFormRequest) Reset() {
 	*x = GetTaxFormRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[99]
+	mi := &file_payment_v1_payment_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6690,7 +7213,7 @@ func (x *GetTaxFormRequest) String() string {
 func (*GetTaxFormRequest) ProtoMessage() {}
 
 func (x *GetTaxFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[99]
+	mi := &file_payment_v1_payment_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6703,7 +7226,7 @@ func (x *GetTaxFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaxFormRequest.ProtoReflect.Descriptor instead.
 func (*GetTaxFormRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{99}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *GetTaxFormRequest) GetProviderId() string {
@@ -6729,7 +7252,7 @@ type GetTaxFormResponse struct {
 
 func (x *GetTaxFormResponse) Reset() {
 	*x = GetTaxFormResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[100]
+	mi := &file_payment_v1_payment_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6741,7 +7264,7 @@ func (x *GetTaxFormResponse) String() string {
 func (*GetTaxFormResponse) ProtoMessage() {}
 
 func (x *GetTaxFormResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[100]
+	mi := &file_payment_v1_payment_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6754,7 +7277,7 @@ func (x *GetTaxFormResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaxFormResponse.ProtoReflect.Descriptor instead.
 func (*GetTaxFormResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{100}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *GetTaxFormResponse) GetTaxForm() *TaxForm {
@@ -6773,7 +7296,7 @@ type ListTaxFormsRequest struct {
 
 func (x *ListTaxFormsRequest) Reset() {
 	*x = ListTaxFormsRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[101]
+	mi := &file_payment_v1_payment_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6785,7 +7308,7 @@ func (x *ListTaxFormsRequest) String() string {
 func (*ListTaxFormsRequest) ProtoMessage() {}
 
 func (x *ListTaxFormsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[101]
+	mi := &file_payment_v1_payment_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6798,7 +7321,7 @@ func (x *ListTaxFormsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTaxFormsRequest.ProtoReflect.Descriptor instead.
 func (*ListTaxFormsRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{101}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *ListTaxFormsRequest) GetProviderId() string {
@@ -6817,7 +7340,7 @@ type ListTaxFormsResponse struct {
 
 func (x *ListTaxFormsResponse) Reset() {
 	*x = ListTaxFormsResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[102]
+	mi := &file_payment_v1_payment_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6829,7 +7352,7 @@ func (x *ListTaxFormsResponse) String() string {
 func (*ListTaxFormsResponse) ProtoMessage() {}
 
 func (x *ListTaxFormsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[102]
+	mi := &file_payment_v1_payment_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6842,7 +7365,7 @@ func (x *ListTaxFormsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTaxFormsResponse.ProtoReflect.Descriptor instead.
 func (*ListTaxFormsResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{102}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *ListTaxFormsResponse) GetForms() []*TaxForm {
@@ -6861,7 +7384,7 @@ type GenerateInvoiceRequest struct {
 
 func (x *GenerateInvoiceRequest) Reset() {
 	*x = GenerateInvoiceRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[103]
+	mi := &file_payment_v1_payment_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6873,7 +7396,7 @@ func (x *GenerateInvoiceRequest) String() string {
 func (*GenerateInvoiceRequest) ProtoMessage() {}
 
 func (x *GenerateInvoiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[103]
+	mi := &file_payment_v1_payment_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6886,7 +7409,7 @@ func (x *GenerateInvoiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateInvoiceRequest.ProtoReflect.Descriptor instead.
 func (*GenerateInvoiceRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{103}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *GenerateInvoiceRequest) GetContractId() string {
@@ -6905,7 +7428,7 @@ type GenerateInvoiceResponse struct {
 
 func (x *GenerateInvoiceResponse) Reset() {
 	*x = GenerateInvoiceResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[104]
+	mi := &file_payment_v1_payment_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6917,7 +7440,7 @@ func (x *GenerateInvoiceResponse) String() string {
 func (*GenerateInvoiceResponse) ProtoMessage() {}
 
 func (x *GenerateInvoiceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[104]
+	mi := &file_payment_v1_payment_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6930,7 +7453,7 @@ func (x *GenerateInvoiceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateInvoiceResponse.ProtoReflect.Descriptor instead.
 func (*GenerateInvoiceResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{104}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *GenerateInvoiceResponse) GetInvoiceUrl() string {
@@ -6950,7 +7473,7 @@ type GetTaxFormHTMLRequest struct {
 
 func (x *GetTaxFormHTMLRequest) Reset() {
 	*x = GetTaxFormHTMLRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[105]
+	mi := &file_payment_v1_payment_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6962,7 +7485,7 @@ func (x *GetTaxFormHTMLRequest) String() string {
 func (*GetTaxFormHTMLRequest) ProtoMessage() {}
 
 func (x *GetTaxFormHTMLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[105]
+	mi := &file_payment_v1_payment_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6975,7 +7498,7 @@ func (x *GetTaxFormHTMLRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaxFormHTMLRequest.ProtoReflect.Descriptor instead.
 func (*GetTaxFormHTMLRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{105}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *GetTaxFormHTMLRequest) GetProviderId() string {
@@ -7001,7 +7524,7 @@ type GetTaxFormHTMLResponse struct {
 
 func (x *GetTaxFormHTMLResponse) Reset() {
 	*x = GetTaxFormHTMLResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[106]
+	mi := &file_payment_v1_payment_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7013,7 +7536,7 @@ func (x *GetTaxFormHTMLResponse) String() string {
 func (*GetTaxFormHTMLResponse) ProtoMessage() {}
 
 func (x *GetTaxFormHTMLResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[106]
+	mi := &file_payment_v1_payment_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7026,7 +7549,7 @@ func (x *GetTaxFormHTMLResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaxFormHTMLResponse.ProtoReflect.Descriptor instead.
 func (*GetTaxFormHTMLResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{106}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *GetTaxFormHTMLResponse) GetHtml() string {
@@ -7045,7 +7568,7 @@ type GetInvoiceHTMLRequest struct {
 
 func (x *GetInvoiceHTMLRequest) Reset() {
 	*x = GetInvoiceHTMLRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[107]
+	mi := &file_payment_v1_payment_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7057,7 +7580,7 @@ func (x *GetInvoiceHTMLRequest) String() string {
 func (*GetInvoiceHTMLRequest) ProtoMessage() {}
 
 func (x *GetInvoiceHTMLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[107]
+	mi := &file_payment_v1_payment_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7070,7 +7593,7 @@ func (x *GetInvoiceHTMLRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInvoiceHTMLRequest.ProtoReflect.Descriptor instead.
 func (*GetInvoiceHTMLRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{107}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *GetInvoiceHTMLRequest) GetContractId() string {
@@ -7089,7 +7612,7 @@ type GetInvoiceHTMLResponse struct {
 
 func (x *GetInvoiceHTMLResponse) Reset() {
 	*x = GetInvoiceHTMLResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[108]
+	mi := &file_payment_v1_payment_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7101,7 +7624,7 @@ func (x *GetInvoiceHTMLResponse) String() string {
 func (*GetInvoiceHTMLResponse) ProtoMessage() {}
 
 func (x *GetInvoiceHTMLResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[108]
+	mi := &file_payment_v1_payment_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7114,7 +7637,7 @@ func (x *GetInvoiceHTMLResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInvoiceHTMLResponse.ProtoReflect.Descriptor instead.
 func (*GetInvoiceHTMLResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{108}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *GetInvoiceHTMLResponse) GetHtml() string {
@@ -7137,7 +7660,7 @@ type DeleteStripeAccountsRequest struct {
 
 func (x *DeleteStripeAccountsRequest) Reset() {
 	*x = DeleteStripeAccountsRequest{}
-	mi := &file_payment_v1_payment_proto_msgTypes[109]
+	mi := &file_payment_v1_payment_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7149,7 +7672,7 @@ func (x *DeleteStripeAccountsRequest) String() string {
 func (*DeleteStripeAccountsRequest) ProtoMessage() {}
 
 func (x *DeleteStripeAccountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[109]
+	mi := &file_payment_v1_payment_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7162,7 +7685,7 @@ func (x *DeleteStripeAccountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteStripeAccountsRequest.ProtoReflect.Descriptor instead.
 func (*DeleteStripeAccountsRequest) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{109}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *DeleteStripeAccountsRequest) GetStripeCustomerId() string {
@@ -7194,7 +7717,7 @@ type DeleteStripeAccountsResponse struct {
 
 func (x *DeleteStripeAccountsResponse) Reset() {
 	*x = DeleteStripeAccountsResponse{}
-	mi := &file_payment_v1_payment_proto_msgTypes[110]
+	mi := &file_payment_v1_payment_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7206,7 +7729,7 @@ func (x *DeleteStripeAccountsResponse) String() string {
 func (*DeleteStripeAccountsResponse) ProtoMessage() {}
 
 func (x *DeleteStripeAccountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_payment_v1_payment_proto_msgTypes[110]
+	mi := &file_payment_v1_payment_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7219,7 +7742,7 @@ func (x *DeleteStripeAccountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteStripeAccountsResponse.ProtoReflect.Descriptor instead.
 func (*DeleteStripeAccountsResponse) Descriptor() ([]byte, []int) {
-	return file_payment_v1_payment_proto_rawDescGZIP(), []int{110}
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *DeleteStripeAccountsResponse) GetCustomerOutcome() string {
@@ -7234,6 +7757,617 @@ func (x *DeleteStripeAccountsResponse) GetAccountOutcome() string {
 		return x.AccountOutcome
 	}
 	return ""
+}
+
+type ChargeListingWinnerRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// listing_orders.id (NOT listings.id). The marketplace service creates
+	// the order in pending_payment status when the auction closes; this RPC
+	// creates the Stripe PaymentIntent and persists it on the order.
+	OrderId       string `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChargeListingWinnerRequest) Reset() {
+	*x = ChargeListingWinnerRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[118]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChargeListingWinnerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChargeListingWinnerRequest) ProtoMessage() {}
+
+func (x *ChargeListingWinnerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[118]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChargeListingWinnerRequest.ProtoReflect.Descriptor instead.
+func (*ChargeListingWinnerRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{118}
+}
+
+func (x *ChargeListingWinnerRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+type ChargeListingWinnerResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	PaymentIntentId string                 `protobuf:"bytes,1,opt,name=payment_intent_id,json=paymentIntentId,proto3" json:"payment_intent_id,omitempty"`
+	ClientSecret    string                 `protobuf:"bytes,2,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
+	AmountCents     int64                  `protobuf:"varint,3,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"` // bid amount (subtotal)
+	FeeCents        int64                  `protobuf:"varint,4,opt,name=fee_cents,json=feeCents,proto3" json:"fee_cents,omitempty"`          // platform fee
+	TaxCents        int64                  `protobuf:"varint,5,opt,name=tax_cents,json=taxCents,proto3" json:"tax_cents,omitempty"`          // sales tax (state-level)
+	TotalCents      int64                  `protobuf:"varint,6,opt,name=total_cents,json=totalCents,proto3" json:"total_cents,omitempty"`    // total charged to buyer
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ChargeListingWinnerResponse) Reset() {
+	*x = ChargeListingWinnerResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[119]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChargeListingWinnerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChargeListingWinnerResponse) ProtoMessage() {}
+
+func (x *ChargeListingWinnerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[119]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChargeListingWinnerResponse.ProtoReflect.Descriptor instead.
+func (*ChargeListingWinnerResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{119}
+}
+
+func (x *ChargeListingWinnerResponse) GetPaymentIntentId() string {
+	if x != nil {
+		return x.PaymentIntentId
+	}
+	return ""
+}
+
+func (x *ChargeListingWinnerResponse) GetClientSecret() string {
+	if x != nil {
+		return x.ClientSecret
+	}
+	return ""
+}
+
+func (x *ChargeListingWinnerResponse) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *ChargeListingWinnerResponse) GetFeeCents() int64 {
+	if x != nil {
+		return x.FeeCents
+	}
+	return 0
+}
+
+func (x *ChargeListingWinnerResponse) GetTaxCents() int64 {
+	if x != nil {
+		return x.TaxCents
+	}
+	return 0
+}
+
+func (x *ChargeListingWinnerResponse) GetTotalCents() int64 {
+	if x != nil {
+		return x.TotalCents
+	}
+	return 0
+}
+
+type ConfirmListingPickupRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	OrderId string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	// The buyer is implicit from the JWT claims; admin paths set actor_role="admin".
+	ActorUserId   string `protobuf:"bytes,2,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	ActorRole     string `protobuf:"bytes,3,opt,name=actor_role,json=actorRole,proto3" json:"actor_role,omitempty"` // "buyer" or "admin"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmListingPickupRequest) Reset() {
+	*x = ConfirmListingPickupRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[120]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmListingPickupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmListingPickupRequest) ProtoMessage() {}
+
+func (x *ConfirmListingPickupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[120]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmListingPickupRequest.ProtoReflect.Descriptor instead.
+func (*ConfirmListingPickupRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{120}
+}
+
+func (x *ConfirmListingPickupRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *ConfirmListingPickupRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *ConfirmListingPickupRequest) GetActorRole() string {
+	if x != nil {
+		return x.ActorRole
+	}
+	return ""
+}
+
+type ConfirmListingPickupResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Status            string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // "released"
+	SellerPayoutCents int64                  `protobuf:"varint,2,opt,name=seller_payout_cents,json=sellerPayoutCents,proto3" json:"seller_payout_cents,omitempty"`
+	PickupConfirmedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=pickup_confirmed_at,json=pickupConfirmedAt,proto3" json:"pickup_confirmed_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ConfirmListingPickupResponse) Reset() {
+	*x = ConfirmListingPickupResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[121]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmListingPickupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmListingPickupResponse) ProtoMessage() {}
+
+func (x *ConfirmListingPickupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[121]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmListingPickupResponse.ProtoReflect.Descriptor instead.
+func (*ConfirmListingPickupResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{121}
+}
+
+func (x *ConfirmListingPickupResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ConfirmListingPickupResponse) GetSellerPayoutCents() int64 {
+	if x != nil {
+		return x.SellerPayoutCents
+	}
+	return 0
+}
+
+func (x *ConfirmListingPickupResponse) GetPickupConfirmedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PickupConfirmedAt
+	}
+	return nil
+}
+
+type FileListingDisputeRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	OrderId string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	BuyerId string                 `protobuf:"bytes,2,opt,name=buyer_id,json=buyerId,proto3" json:"buyer_id,omitempty"`
+	// One of: item_not_as_described, item_damaged, no_show,
+	//
+	//	item_not_received, other.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	Description   string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileListingDisputeRequest) Reset() {
+	*x = FileListingDisputeRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[122]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileListingDisputeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileListingDisputeRequest) ProtoMessage() {}
+
+func (x *FileListingDisputeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[122]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileListingDisputeRequest.ProtoReflect.Descriptor instead.
+func (*FileListingDisputeRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{122}
+}
+
+func (x *FileListingDisputeRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *FileListingDisputeRequest) GetBuyerId() string {
+	if x != nil {
+		return x.BuyerId
+	}
+	return ""
+}
+
+func (x *FileListingDisputeRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *FileListingDisputeRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type FileListingDisputeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DisputeId     string                 `protobuf:"bytes,1,opt,name=dispute_id,json=disputeId,proto3" json:"dispute_id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileListingDisputeResponse) Reset() {
+	*x = FileListingDisputeResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[123]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileListingDisputeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileListingDisputeResponse) ProtoMessage() {}
+
+func (x *FileListingDisputeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[123]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileListingDisputeResponse.ProtoReflect.Descriptor instead.
+func (*FileListingDisputeResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{123}
+}
+
+func (x *FileListingDisputeResponse) GetDisputeId() string {
+	if x != nil {
+		return x.DisputeId
+	}
+	return ""
+}
+
+func (x *FileListingDisputeResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type ResolveListingDisputeRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	DisputeId string                 `protobuf:"bytes,1,opt,name=dispute_id,json=disputeId,proto3" json:"dispute_id,omitempty"`
+	AdminId   string                 `protobuf:"bytes,2,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	// One of: refund_full, refund_partial, release_to_seller, no_action.
+	Resolution string `protobuf:"bytes,3,opt,name=resolution,proto3" json:"resolution,omitempty"`
+	Notes      string `protobuf:"bytes,4,opt,name=notes,proto3" json:"notes,omitempty"`
+	// Used only when resolution == refund_partial. Cents to refund to buyer;
+	// remainder goes to seller minus platform fee.
+	RefundToBuyerCents int64 `protobuf:"varint,5,opt,name=refund_to_buyer_cents,json=refundToBuyerCents,proto3" json:"refund_to_buyer_cents,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ResolveListingDisputeRequest) Reset() {
+	*x = ResolveListingDisputeRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[124]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveListingDisputeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveListingDisputeRequest) ProtoMessage() {}
+
+func (x *ResolveListingDisputeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[124]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveListingDisputeRequest.ProtoReflect.Descriptor instead.
+func (*ResolveListingDisputeRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{124}
+}
+
+func (x *ResolveListingDisputeRequest) GetDisputeId() string {
+	if x != nil {
+		return x.DisputeId
+	}
+	return ""
+}
+
+func (x *ResolveListingDisputeRequest) GetAdminId() string {
+	if x != nil {
+		return x.AdminId
+	}
+	return ""
+}
+
+func (x *ResolveListingDisputeRequest) GetResolution() string {
+	if x != nil {
+		return x.Resolution
+	}
+	return ""
+}
+
+func (x *ResolveListingDisputeRequest) GetNotes() string {
+	if x != nil {
+		return x.Notes
+	}
+	return ""
+}
+
+func (x *ResolveListingDisputeRequest) GetRefundToBuyerCents() int64 {
+	if x != nil {
+		return x.RefundToBuyerCents
+	}
+	return 0
+}
+
+type ResolveListingDisputeResponse struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Status                string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // "resolved"
+	Resolution            string                 `protobuf:"bytes,2,opt,name=resolution,proto3" json:"resolution,omitempty"`
+	RefundToBuyerCents    int64                  `protobuf:"varint,3,opt,name=refund_to_buyer_cents,json=refundToBuyerCents,proto3" json:"refund_to_buyer_cents,omitempty"`
+	TransferToSellerCents int64                  `protobuf:"varint,4,opt,name=transfer_to_seller_cents,json=transferToSellerCents,proto3" json:"transfer_to_seller_cents,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ResolveListingDisputeResponse) Reset() {
+	*x = ResolveListingDisputeResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[125]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveListingDisputeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveListingDisputeResponse) ProtoMessage() {}
+
+func (x *ResolveListingDisputeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[125]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveListingDisputeResponse.ProtoReflect.Descriptor instead.
+func (*ResolveListingDisputeResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{125}
+}
+
+func (x *ResolveListingDisputeResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ResolveListingDisputeResponse) GetResolution() string {
+	if x != nil {
+		return x.Resolution
+	}
+	return ""
+}
+
+func (x *ResolveListingDisputeResponse) GetRefundToBuyerCents() int64 {
+	if x != nil {
+		return x.RefundToBuyerCents
+	}
+	return 0
+}
+
+func (x *ResolveListingDisputeResponse) GetTransferToSellerCents() int64 {
+	if x != nil {
+		return x.TransferToSellerCents
+	}
+	return 0
+}
+
+type AutoReleaseListingOrdersRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional batch limit; defaults to 100 server-side.
+	BatchLimit    int32 `protobuf:"varint,1,opt,name=batch_limit,json=batchLimit,proto3" json:"batch_limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AutoReleaseListingOrdersRequest) Reset() {
+	*x = AutoReleaseListingOrdersRequest{}
+	mi := &file_payment_v1_payment_proto_msgTypes[126]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AutoReleaseListingOrdersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AutoReleaseListingOrdersRequest) ProtoMessage() {}
+
+func (x *AutoReleaseListingOrdersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[126]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AutoReleaseListingOrdersRequest.ProtoReflect.Descriptor instead.
+func (*AutoReleaseListingOrdersRequest) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{126}
+}
+
+func (x *AutoReleaseListingOrdersRequest) GetBatchLimit() int32 {
+	if x != nil {
+		return x.BatchLimit
+	}
+	return 0
+}
+
+type AutoReleaseListingOrdersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReleasedCount int32                  `protobuf:"varint,1,opt,name=released_count,json=releasedCount,proto3" json:"released_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AutoReleaseListingOrdersResponse) Reset() {
+	*x = AutoReleaseListingOrdersResponse{}
+	mi := &file_payment_v1_payment_proto_msgTypes[127]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AutoReleaseListingOrdersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AutoReleaseListingOrdersResponse) ProtoMessage() {}
+
+func (x *AutoReleaseListingOrdersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_payment_v1_payment_proto_msgTypes[127]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AutoReleaseListingOrdersResponse.ProtoReflect.Descriptor instead.
+func (*AutoReleaseListingOrdersResponse) Descriptor() ([]byte, []int) {
+	return file_payment_v1_payment_proto_rawDescGZIP(), []int{127}
+}
+
+func (x *AutoReleaseListingOrdersResponse) GetReleasedCount() int32 {
+	if x != nil {
+		return x.ReleasedCount
+	}
+	return 0
 }
 
 var File_payment_v1_payment_proto protoreflect.FileDescriptor
@@ -7269,7 +8403,7 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"releasedAt\x12=\n" +
 	"\fcompleted_at\x18\x14 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x129\n" +
 	"\n" +
-	"created_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc6\x02\n" +
+	"created_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa3\x03\n" +
 	"\x10PaymentBreakdown\x12%\n" +
 	"\x0esubtotal_cents\x18\x01 \x01(\x03R\rsubtotalCents\x12,\n" +
 	"\x12platform_fee_cents\x18\x02 \x01(\x03R\x10platformFeeCents\x12.\n" +
@@ -7278,7 +8412,9 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"totalCents\x122\n" +
 	"\x15provider_payout_cents\x18\x05 \x01(\x03R\x13providerPayoutCents\x12%\n" +
 	"\x0efee_percentage\x18\x06 \x01(\x01R\rfeePercentage\x121\n" +
-	"\x14guarantee_percentage\x18\a \x01(\x01R\x13guaranteePercentage\"p\n" +
+	"\x14guarantee_percentage\x18\a \x01(\x01R\x13guaranteePercentage\x12+\n" +
+	"\x12lead_gen_fee_cents\x18\b \x01(\x03R\x0fleadGenFeeCents\x12.\n" +
+	"\x13lead_gen_percentage\x18\t \x01(\x01R\x11leadGenPercentage\"p\n" +
 	"\x1aCreateStripeAccountRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12#\n" +
@@ -7410,12 +8546,17 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x13GetFeeConfigRequest\x12$\n" +
 	"\vcategory_id\x18\x01 \x01(\tH\x00R\n" +
 	"categoryId\x88\x01\x01B\x0e\n" +
-	"\f_category_id\"\xb8\x01\n" +
+	"\f_category_id\"\x9a\x03\n" +
 	"\x14GetFeeConfigResponse\x12%\n" +
 	"\x0efee_percentage\x18\x01 \x01(\x01R\rfeePercentage\x121\n" +
 	"\x14guarantee_percentage\x18\x02 \x01(\x01R\x13guaranteePercentage\x12\"\n" +
 	"\rmin_fee_cents\x18\x03 \x01(\x03R\vminFeeCents\x12\"\n" +
-	"\rmax_fee_cents\x18\x04 \x01(\x03R\vmaxFeeCents\">\n" +
+	"\rmax_fee_cents\x18\x04 \x01(\x03R\vmaxFeeCents\x12(\n" +
+	"\x10lead_gen_enabled\x18\x05 \x01(\bR\x0eleadGenEnabled\x12.\n" +
+	"\x13lead_gen_percentage\x18\x06 \x01(\x01R\x11leadGenPercentage\x122\n" +
+	"\x16lead_gen_min_fee_cents\x18\a \x01(\x03R\x12leadGenMinFeeCents\x127\n" +
+	"\x16lead_gen_max_fee_cents\x18\b \x01(\x03H\x00R\x12leadGenMaxFeeCents\x88\x01\x01B\x19\n" +
+	"\x17_lead_gen_max_fee_cents\">\n" +
 	"\x1dAdminGetPaymentDetailsRequest\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\"\xae\x02\n" +
@@ -7442,7 +8583,7 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"pagination\x18\x02 \x01(\v2&.nomarkup.common.v1.PaginationResponseR\n" +
 	"pagination\x12,\n" +
 	"\x12total_amount_cents\x18\x03 \x01(\x03R\x10totalAmountCents\x12(\n" +
-	"\x10total_fees_cents\x18\x04 \x01(\x03R\x0etotalFeesCents\"\xa7\x02\n" +
+	"\x10total_fees_cents\x18\x04 \x01(\x03R\x0etotalFeesCents\"\x89\x04\n" +
 	"\x1bAdminUpdateFeeConfigRequest\x12\x19\n" +
 	"\badmin_id\x18\x01 \x01(\tR\aadminId\x12$\n" +
 	"\vcategory_id\x18\x02 \x01(\tH\x00R\n" +
@@ -7450,11 +8591,51 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x0efee_percentage\x18\x03 \x01(\x01R\rfeePercentage\x121\n" +
 	"\x14guarantee_percentage\x18\x04 \x01(\x01R\x13guaranteePercentage\x12\"\n" +
 	"\rmin_fee_cents\x18\x05 \x01(\x03R\vminFeeCents\x12'\n" +
-	"\rmax_fee_cents\x18\x06 \x01(\x03H\x01R\vmaxFeeCents\x88\x01\x01B\x0e\n" +
+	"\rmax_fee_cents\x18\x06 \x01(\x03H\x01R\vmaxFeeCents\x88\x01\x01\x12(\n" +
+	"\x10lead_gen_enabled\x18\a \x01(\bR\x0eleadGenEnabled\x12.\n" +
+	"\x13lead_gen_percentage\x18\b \x01(\x01R\x11leadGenPercentage\x122\n" +
+	"\x16lead_gen_min_fee_cents\x18\t \x01(\x03R\x12leadGenMinFeeCents\x127\n" +
+	"\x16lead_gen_max_fee_cents\x18\n" +
+	" \x01(\x03H\x02R\x12leadGenMaxFeeCents\x88\x01\x01B\x0e\n" +
 	"\f_category_idB\x10\n" +
-	"\x0e_max_fee_cents\"a\n" +
+	"\x0e_max_fee_centsB\x19\n" +
+	"\x17_lead_gen_max_fee_cents\"a\n" +
 	"\x1cAdminUpdateFeeConfigResponse\x12A\n" +
-	"\x06config\x18\x01 \x01(\v2).nomarkup.payment.v1.GetFeeConfigResponseR\x06config\"r\n" +
+	"\x06config\x18\x01 \x01(\v2).nomarkup.payment.v1.GetFeeConfigResponseR\x06config\"\xfd\x03\n" +
+	"\x13PlatformBankAccount\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12;\n" +
+	"\x1astripe_external_account_id\x18\x02 \x01(\tR\x17stripeExternalAccountId\x12\x1b\n" +
+	"\tbank_name\x18\x03 \x01(\tR\bbankName\x12.\n" +
+	"\x13account_holder_name\x18\x04 \x01(\tR\x11accountHolderName\x12.\n" +
+	"\x13account_holder_type\x18\x05 \x01(\tR\x11accountHolderType\x12\x14\n" +
+	"\x05last4\x18\x06 \x01(\tR\x05last4\x12#\n" +
+	"\rrouting_last4\x18\a \x01(\tR\froutingLast4\x12\x1a\n" +
+	"\bcurrency\x18\b \x01(\tR\bcurrency\x12\x18\n" +
+	"\acountry\x18\t \x01(\tR\acountry\x12\x16\n" +
+	"\x06status\x18\n" +
+	" \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"is_default\x18\v \x01(\bR\tisDefault\x129\n" +
+	"\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"?\n" +
+	"\"AdminGetPlatformBankAccountRequest\x12\x19\n" +
+	"\badmin_id\x18\x01 \x01(\tR\aadminId\"i\n" +
+	"#AdminGetPlatformBankAccountResponse\x12B\n" +
+	"\aaccount\x18\x01 \x01(\v2(.nomarkup.payment.v1.PlatformBankAccountR\aaccount\"\xcd\x01\n" +
+	"\"AdminSetPlatformBankAccountRequest\x12\x19\n" +
+	"\badmin_id\x18\x01 \x01(\tR\aadminId\x12,\n" +
+	"\x12bank_account_token\x18\x02 \x01(\tR\x10bankAccountToken\x12.\n" +
+	"\x13account_holder_name\x18\x03 \x01(\tR\x11accountHolderName\x12.\n" +
+	"\x13account_holder_type\x18\x04 \x01(\tR\x11accountHolderType\"i\n" +
+	"#AdminSetPlatformBankAccountResponse\x12B\n" +
+	"\aaccount\x18\x01 \x01(\v2(.nomarkup.payment.v1.PlatformBankAccountR\aaccount\"R\n" +
+	"%AdminDeletePlatformBankAccountRequest\x12\x19\n" +
+	"\badmin_id\x18\x01 \x01(\tR\aadminId\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"B\n" +
+	"&AdminDeletePlatformBankAccountResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\"r\n" +
 	"\x17GetRevenueReportRequest\x12<\n" +
 	"\n" +
 	"date_range\x18\x01 \x01(\v2\x1d.nomarkup.common.v1.DateRangeR\tdateRange\x12\x19\n" +
@@ -7883,7 +9064,56 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x11stripe_account_id\x18\x02 \x01(\tR\x0fstripeAccountId\"r\n" +
 	"\x1cDeleteStripeAccountsResponse\x12)\n" +
 	"\x10customer_outcome\x18\x01 \x01(\tR\x0fcustomerOutcome\x12'\n" +
-	"\x0faccount_outcome\x18\x02 \x01(\tR\x0eaccountOutcome*\xdb\x02\n" +
+	"\x0faccount_outcome\x18\x02 \x01(\tR\x0eaccountOutcome\"7\n" +
+	"\x1aChargeListingWinnerRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\"\xec\x01\n" +
+	"\x1bChargeListingWinnerResponse\x12*\n" +
+	"\x11payment_intent_id\x18\x01 \x01(\tR\x0fpaymentIntentId\x12#\n" +
+	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12!\n" +
+	"\famount_cents\x18\x03 \x01(\x03R\vamountCents\x12\x1b\n" +
+	"\tfee_cents\x18\x04 \x01(\x03R\bfeeCents\x12\x1b\n" +
+	"\ttax_cents\x18\x05 \x01(\x03R\btaxCents\x12\x1f\n" +
+	"\vtotal_cents\x18\x06 \x01(\x03R\n" +
+	"totalCents\"{\n" +
+	"\x1bConfirmListingPickupRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\"\n" +
+	"\ractor_user_id\x18\x02 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"actor_role\x18\x03 \x01(\tR\tactorRole\"\xb2\x01\n" +
+	"\x1cConfirmListingPickupResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12.\n" +
+	"\x13seller_payout_cents\x18\x02 \x01(\x03R\x11sellerPayoutCents\x12J\n" +
+	"\x13pickup_confirmed_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x11pickupConfirmedAt\"\x8b\x01\n" +
+	"\x19FileListingDisputeRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x19\n" +
+	"\bbuyer_id\x18\x02 \x01(\tR\abuyerId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\"S\n" +
+	"\x1aFileListingDisputeResponse\x12\x1d\n" +
+	"\n" +
+	"dispute_id\x18\x01 \x01(\tR\tdisputeId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\"\xc1\x01\n" +
+	"\x1cResolveListingDisputeRequest\x12\x1d\n" +
+	"\n" +
+	"dispute_id\x18\x01 \x01(\tR\tdisputeId\x12\x19\n" +
+	"\badmin_id\x18\x02 \x01(\tR\aadminId\x12\x1e\n" +
+	"\n" +
+	"resolution\x18\x03 \x01(\tR\n" +
+	"resolution\x12\x14\n" +
+	"\x05notes\x18\x04 \x01(\tR\x05notes\x121\n" +
+	"\x15refund_to_buyer_cents\x18\x05 \x01(\x03R\x12refundToBuyerCents\"\xc3\x01\n" +
+	"\x1dResolveListingDisputeResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1e\n" +
+	"\n" +
+	"resolution\x18\x02 \x01(\tR\n" +
+	"resolution\x121\n" +
+	"\x15refund_to_buyer_cents\x18\x03 \x01(\x03R\x12refundToBuyerCents\x127\n" +
+	"\x18transfer_to_seller_cents\x18\x04 \x01(\x03R\x15transferToSellerCents\"B\n" +
+	"\x1fAutoReleaseListingOrdersRequest\x12\x1f\n" +
+	"\vbatch_limit\x18\x01 \x01(\x05R\n" +
+	"batchLimit\"I\n" +
+	" AutoReleaseListingOrdersResponse\x12%\n" +
+	"\x0ereleased_count\x18\x01 \x01(\x05R\rreleasedCount*\xdb\x02\n" +
 	"\rPaymentStatus\x12\x1e\n" +
 	"\x1aPAYMENT_STATUS_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16PAYMENT_STATUS_PENDING\x10\x01\x12\x1d\n" +
@@ -7905,7 +9135,7 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x17ADVANCE_STATUS_REPAYING\x10\x04\x12\x19\n" +
 	"\x15ADVANCE_STATUS_REPAID\x10\x05\x12\x1c\n" +
 	"\x18ADVANCE_STATUS_DEFAULTED\x10\x06\x12\x1b\n" +
-	"\x17ADVANCE_STATUS_REJECTED\x10\a2\xe6+\n" +
+	"\x17ADVANCE_STATUS_REJECTED\x10\a2\xa04\n" +
 	"\x0ePaymentService\x12x\n" +
 	"\x13CreateStripeAccount\x12/.nomarkup.payment.v1.CreateStripeAccountRequest\x1a0.nomarkup.payment.v1.CreateStripeAccountResponse\x12\x84\x01\n" +
 	"\x17GetStripeOnboardingLink\x123.nomarkup.payment.v1.GetStripeOnboardingLinkRequest\x1a4.nomarkup.payment.v1.GetStripeOnboardingLinkResponse\x12\x81\x01\n" +
@@ -7927,7 +9157,10 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\fGetFeeConfig\x12(.nomarkup.payment.v1.GetFeeConfigRequest\x1a).nomarkup.payment.v1.GetFeeConfigResponse\x12\x81\x01\n" +
 	"\x16AdminGetPaymentDetails\x122.nomarkup.payment.v1.AdminGetPaymentDetailsRequest\x1a3.nomarkup.payment.v1.AdminGetPaymentDetailsResponse\x12r\n" +
 	"\x11AdminListPayments\x12-.nomarkup.payment.v1.AdminListPaymentsRequest\x1a..nomarkup.payment.v1.AdminListPaymentsResponse\x12{\n" +
-	"\x14AdminUpdateFeeConfig\x120.nomarkup.payment.v1.AdminUpdateFeeConfigRequest\x1a1.nomarkup.payment.v1.AdminUpdateFeeConfigResponse\x12o\n" +
+	"\x14AdminUpdateFeeConfig\x120.nomarkup.payment.v1.AdminUpdateFeeConfigRequest\x1a1.nomarkup.payment.v1.AdminUpdateFeeConfigResponse\x12\x90\x01\n" +
+	"\x1bAdminGetPlatformBankAccount\x127.nomarkup.payment.v1.AdminGetPlatformBankAccountRequest\x1a8.nomarkup.payment.v1.AdminGetPlatformBankAccountResponse\x12\x90\x01\n" +
+	"\x1bAdminSetPlatformBankAccount\x127.nomarkup.payment.v1.AdminSetPlatformBankAccountRequest\x1a8.nomarkup.payment.v1.AdminSetPlatformBankAccountResponse\x12\x99\x01\n" +
+	"\x1eAdminDeletePlatformBankAccount\x12:.nomarkup.payment.v1.AdminDeletePlatformBankAccountRequest\x1a;.nomarkup.payment.v1.AdminDeletePlatformBankAccountResponse\x12o\n" +
 	"\x10GetRevenueReport\x12,.nomarkup.payment.v1.GetRevenueReportRequest\x1a-.nomarkup.payment.v1.GetRevenueReportResponse\x12f\n" +
 	"\rCreateExpense\x12).nomarkup.payment.v1.CreateExpenseRequest\x1a*.nomarkup.payment.v1.CreateExpenseResponse\x12c\n" +
 	"\fListExpenses\x12(.nomarkup.payment.v1.ListExpensesRequest\x1a).nomarkup.payment.v1.ListExpensesResponse\x12f\n" +
@@ -7957,7 +9190,12 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\fListTaxForms\x12(.nomarkup.payment.v1.ListTaxFormsRequest\x1a).nomarkup.payment.v1.ListTaxFormsResponse\x12l\n" +
 	"\x0fGenerateInvoice\x12+.nomarkup.payment.v1.GenerateInvoiceRequest\x1a,.nomarkup.payment.v1.GenerateInvoiceResponse\x12i\n" +
 	"\x0eGetTaxFormHTML\x12*.nomarkup.payment.v1.GetTaxFormHTMLRequest\x1a+.nomarkup.payment.v1.GetTaxFormHTMLResponse\x12i\n" +
-	"\x0eGetInvoiceHTML\x12*.nomarkup.payment.v1.GetInvoiceHTMLRequest\x1a+.nomarkup.payment.v1.GetInvoiceHTMLResponse\x12{\n" +
+	"\x0eGetInvoiceHTML\x12*.nomarkup.payment.v1.GetInvoiceHTMLRequest\x1a+.nomarkup.payment.v1.GetInvoiceHTMLResponse\x12x\n" +
+	"\x13ChargeListingWinner\x12/.nomarkup.payment.v1.ChargeListingWinnerRequest\x1a0.nomarkup.payment.v1.ChargeListingWinnerResponse\x12{\n" +
+	"\x14ConfirmListingPickup\x120.nomarkup.payment.v1.ConfirmListingPickupRequest\x1a1.nomarkup.payment.v1.ConfirmListingPickupResponse\x12u\n" +
+	"\x12FileListingDispute\x12..nomarkup.payment.v1.FileListingDisputeRequest\x1a/.nomarkup.payment.v1.FileListingDisputeResponse\x12~\n" +
+	"\x15ResolveListingDispute\x121.nomarkup.payment.v1.ResolveListingDisputeRequest\x1a2.nomarkup.payment.v1.ResolveListingDisputeResponse\x12\x87\x01\n" +
+	"\x18AutoReleaseListingOrders\x124.nomarkup.payment.v1.AutoReleaseListingOrdersRequest\x1a5.nomarkup.payment.v1.AutoReleaseListingOrdersResponse\x12{\n" +
 	"\x14DeleteStripeAccounts\x120.nomarkup.payment.v1.DeleteStripeAccountsRequest\x1a1.nomarkup.payment.v1.DeleteStripeAccountsResponseB9Z7github.com/nomarkup/nomarkup/proto/payment/v1;paymentv1b\x06proto3"
 
 var (
@@ -7973,320 +9211,358 @@ func file_payment_v1_payment_proto_rawDescGZIP() []byte {
 }
 
 var file_payment_v1_payment_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 111)
+var file_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 128)
 var file_payment_v1_payment_proto_goTypes = []any{
-	(PaymentStatus)(0),                       // 0: nomarkup.payment.v1.PaymentStatus
-	(AdvanceStatus)(0),                       // 1: nomarkup.payment.v1.AdvanceStatus
-	(*Payment)(nil),                          // 2: nomarkup.payment.v1.Payment
-	(*PaymentBreakdown)(nil),                 // 3: nomarkup.payment.v1.PaymentBreakdown
-	(*CreateStripeAccountRequest)(nil),       // 4: nomarkup.payment.v1.CreateStripeAccountRequest
-	(*CreateStripeAccountResponse)(nil),      // 5: nomarkup.payment.v1.CreateStripeAccountResponse
-	(*GetStripeOnboardingLinkRequest)(nil),   // 6: nomarkup.payment.v1.GetStripeOnboardingLinkRequest
-	(*GetStripeOnboardingLinkResponse)(nil),  // 7: nomarkup.payment.v1.GetStripeOnboardingLinkResponse
-	(*GetStripeAccountStatusRequest)(nil),    // 8: nomarkup.payment.v1.GetStripeAccountStatusRequest
-	(*GetStripeAccountStatusResponse)(nil),   // 9: nomarkup.payment.v1.GetStripeAccountStatusResponse
-	(*GetStripeDashboardLinkRequest)(nil),    // 10: nomarkup.payment.v1.GetStripeDashboardLinkRequest
-	(*GetStripeDashboardLinkResponse)(nil),   // 11: nomarkup.payment.v1.GetStripeDashboardLinkResponse
-	(*CreateSetupIntentRequest)(nil),         // 12: nomarkup.payment.v1.CreateSetupIntentRequest
-	(*CreateSetupIntentResponse)(nil),        // 13: nomarkup.payment.v1.CreateSetupIntentResponse
-	(*PaymentMethod)(nil),                    // 14: nomarkup.payment.v1.PaymentMethod
-	(*ListPaymentMethodsRequest)(nil),        // 15: nomarkup.payment.v1.ListPaymentMethodsRequest
-	(*ListPaymentMethodsResponse)(nil),       // 16: nomarkup.payment.v1.ListPaymentMethodsResponse
-	(*DeletePaymentMethodRequest)(nil),       // 17: nomarkup.payment.v1.DeletePaymentMethodRequest
-	(*DeletePaymentMethodResponse)(nil),      // 18: nomarkup.payment.v1.DeletePaymentMethodResponse
-	(*AddDevPaymentMethodRequest)(nil),       // 19: nomarkup.payment.v1.AddDevPaymentMethodRequest
-	(*AddDevPaymentMethodResponse)(nil),      // 20: nomarkup.payment.v1.AddDevPaymentMethodResponse
-	(*CreatePaymentRequest)(nil),             // 21: nomarkup.payment.v1.CreatePaymentRequest
-	(*CreatePaymentResponse)(nil),            // 22: nomarkup.payment.v1.CreatePaymentResponse
-	(*ProcessPaymentRequest)(nil),            // 23: nomarkup.payment.v1.ProcessPaymentRequest
-	(*ProcessPaymentResponse)(nil),           // 24: nomarkup.payment.v1.ProcessPaymentResponse
-	(*ReleaseEscrowRequest)(nil),             // 25: nomarkup.payment.v1.ReleaseEscrowRequest
-	(*ReleaseEscrowResponse)(nil),            // 26: nomarkup.payment.v1.ReleaseEscrowResponse
-	(*GetPaymentRequest)(nil),                // 27: nomarkup.payment.v1.GetPaymentRequest
-	(*GetPaymentResponse)(nil),               // 28: nomarkup.payment.v1.GetPaymentResponse
-	(*ListPaymentsRequest)(nil),              // 29: nomarkup.payment.v1.ListPaymentsRequest
-	(*ListPaymentsResponse)(nil),             // 30: nomarkup.payment.v1.ListPaymentsResponse
-	(*CreateRefundRequest)(nil),              // 31: nomarkup.payment.v1.CreateRefundRequest
-	(*CreateRefundResponse)(nil),             // 32: nomarkup.payment.v1.CreateRefundResponse
-	(*HandleStripeWebhookRequest)(nil),       // 33: nomarkup.payment.v1.HandleStripeWebhookRequest
-	(*HandleStripeWebhookResponse)(nil),      // 34: nomarkup.payment.v1.HandleStripeWebhookResponse
-	(*CalculateFeesRequest)(nil),             // 35: nomarkup.payment.v1.CalculateFeesRequest
-	(*CalculateFeesResponse)(nil),            // 36: nomarkup.payment.v1.CalculateFeesResponse
-	(*GetFeeConfigRequest)(nil),              // 37: nomarkup.payment.v1.GetFeeConfigRequest
-	(*GetFeeConfigResponse)(nil),             // 38: nomarkup.payment.v1.GetFeeConfigResponse
-	(*AdminGetPaymentDetailsRequest)(nil),    // 39: nomarkup.payment.v1.AdminGetPaymentDetailsRequest
-	(*AdminGetPaymentDetailsResponse)(nil),   // 40: nomarkup.payment.v1.AdminGetPaymentDetailsResponse
-	(*AdminListPaymentsRequest)(nil),         // 41: nomarkup.payment.v1.AdminListPaymentsRequest
-	(*AdminListPaymentsResponse)(nil),        // 42: nomarkup.payment.v1.AdminListPaymentsResponse
-	(*AdminUpdateFeeConfigRequest)(nil),      // 43: nomarkup.payment.v1.AdminUpdateFeeConfigRequest
-	(*AdminUpdateFeeConfigResponse)(nil),     // 44: nomarkup.payment.v1.AdminUpdateFeeConfigResponse
-	(*GetRevenueReportRequest)(nil),          // 45: nomarkup.payment.v1.GetRevenueReportRequest
-	(*GetRevenueReportResponse)(nil),         // 46: nomarkup.payment.v1.GetRevenueReportResponse
-	(*RevenueDataPoint)(nil),                 // 47: nomarkup.payment.v1.RevenueDataPoint
-	(*Expense)(nil),                          // 48: nomarkup.payment.v1.Expense
-	(*CreateExpenseRequest)(nil),             // 49: nomarkup.payment.v1.CreateExpenseRequest
-	(*CreateExpenseResponse)(nil),            // 50: nomarkup.payment.v1.CreateExpenseResponse
-	(*ListExpensesRequest)(nil),              // 51: nomarkup.payment.v1.ListExpensesRequest
-	(*ListExpensesResponse)(nil),             // 52: nomarkup.payment.v1.ListExpensesResponse
-	(*DeleteExpenseRequest)(nil),             // 53: nomarkup.payment.v1.DeleteExpenseRequest
-	(*DeleteExpenseResponse)(nil),            // 54: nomarkup.payment.v1.DeleteExpenseResponse
-	(*Advance)(nil),                          // 55: nomarkup.payment.v1.Advance
-	(*RequestAdvanceRequest)(nil),            // 56: nomarkup.payment.v1.RequestAdvanceRequest
-	(*RequestAdvanceResponse)(nil),           // 57: nomarkup.payment.v1.RequestAdvanceResponse
-	(*ListAdvancesRequest)(nil),              // 58: nomarkup.payment.v1.ListAdvancesRequest
-	(*ListAdvancesResponse)(nil),             // 59: nomarkup.payment.v1.ListAdvancesResponse
-	(*GetAdvanceRequest)(nil),                // 60: nomarkup.payment.v1.GetAdvanceRequest
-	(*GetAdvanceResponse)(nil),               // 61: nomarkup.payment.v1.GetAdvanceResponse
-	(*ReviewAdvanceRequest)(nil),             // 62: nomarkup.payment.v1.ReviewAdvanceRequest
-	(*ReviewAdvanceResponse)(nil),            // 63: nomarkup.payment.v1.ReviewAdvanceResponse
-	(*DisburseAdvanceRequest)(nil),           // 64: nomarkup.payment.v1.DisburseAdvanceRequest
-	(*DisburseAdvanceResponse)(nil),          // 65: nomarkup.payment.v1.DisburseAdvanceResponse
-	(*GetCreditLimitRequest)(nil),            // 66: nomarkup.payment.v1.GetCreditLimitRequest
-	(*GetCreditLimitResponse)(nil),           // 67: nomarkup.payment.v1.GetCreditLimitResponse
-	(*ScheduledInstallment)(nil),             // 68: nomarkup.payment.v1.ScheduledInstallment
-	(*InstallmentPlan)(nil),                  // 69: nomarkup.payment.v1.InstallmentPlan
-	(*CreateInstallmentPlanRequest)(nil),     // 70: nomarkup.payment.v1.CreateInstallmentPlanRequest
-	(*CreateInstallmentPlanResponse)(nil),    // 71: nomarkup.payment.v1.CreateInstallmentPlanResponse
-	(*GetInstallmentPlanRequest)(nil),        // 72: nomarkup.payment.v1.GetInstallmentPlanRequest
-	(*GetInstallmentPlanResponse)(nil),       // 73: nomarkup.payment.v1.GetInstallmentPlanResponse
-	(*ListInstallmentPlansRequest)(nil),      // 74: nomarkup.payment.v1.ListInstallmentPlansRequest
-	(*ListInstallmentPlansResponse)(nil),     // 75: nomarkup.payment.v1.ListInstallmentPlansResponse
-	(*InsuranceProduct)(nil),                 // 76: nomarkup.payment.v1.InsuranceProduct
-	(*InsurancePolicy)(nil),                  // 77: nomarkup.payment.v1.InsurancePolicy
-	(*TaxForm)(nil),                          // 78: nomarkup.payment.v1.TaxForm
-	(*InsuranceClaim)(nil),                   // 79: nomarkup.payment.v1.InsuranceClaim
-	(*InsuranceQuote)(nil),                   // 80: nomarkup.payment.v1.InsuranceQuote
-	(*ListInsuranceProductsRequest)(nil),     // 81: nomarkup.payment.v1.ListInsuranceProductsRequest
-	(*ListInsuranceProductsResponse)(nil),    // 82: nomarkup.payment.v1.ListInsuranceProductsResponse
-	(*GetInsuranceQuoteRequest)(nil),         // 83: nomarkup.payment.v1.GetInsuranceQuoteRequest
-	(*GetInsuranceQuoteResponse)(nil),        // 84: nomarkup.payment.v1.GetInsuranceQuoteResponse
-	(*PurchaseInsuranceRequest)(nil),         // 85: nomarkup.payment.v1.PurchaseInsuranceRequest
-	(*PurchaseInsuranceResponse)(nil),        // 86: nomarkup.payment.v1.PurchaseInsuranceResponse
-	(*GetInsurancePolicyRequest)(nil),        // 87: nomarkup.payment.v1.GetInsurancePolicyRequest
-	(*GetInsurancePolicyResponse)(nil),       // 88: nomarkup.payment.v1.GetInsurancePolicyResponse
-	(*ListInsurancePoliciesRequest)(nil),     // 89: nomarkup.payment.v1.ListInsurancePoliciesRequest
-	(*ListInsurancePoliciesResponse)(nil),    // 90: nomarkup.payment.v1.ListInsurancePoliciesResponse
-	(*FileInsuranceClaimRequest)(nil),        // 91: nomarkup.payment.v1.FileInsuranceClaimRequest
-	(*FileInsuranceClaimResponse)(nil),       // 92: nomarkup.payment.v1.FileInsuranceClaimResponse
-	(*GetInsuranceClaimRequest)(nil),         // 93: nomarkup.payment.v1.GetInsuranceClaimRequest
-	(*GetInsuranceClaimResponse)(nil),        // 94: nomarkup.payment.v1.GetInsuranceClaimResponse
-	(*ReviewInsuranceClaimRequest)(nil),      // 95: nomarkup.payment.v1.ReviewInsuranceClaimRequest
-	(*ReviewInsuranceClaimResponse)(nil),     // 96: nomarkup.payment.v1.ReviewInsuranceClaimResponse
-	(*AdminListInsuranceClaimsRequest)(nil),  // 97: nomarkup.payment.v1.AdminListInsuranceClaimsRequest
-	(*AdminListInsuranceClaimsResponse)(nil), // 98: nomarkup.payment.v1.AdminListInsuranceClaimsResponse
-	(*GenerateTaxFormRequest)(nil),           // 99: nomarkup.payment.v1.GenerateTaxFormRequest
-	(*GenerateTaxFormResponse)(nil),          // 100: nomarkup.payment.v1.GenerateTaxFormResponse
-	(*GetTaxFormRequest)(nil),                // 101: nomarkup.payment.v1.GetTaxFormRequest
-	(*GetTaxFormResponse)(nil),               // 102: nomarkup.payment.v1.GetTaxFormResponse
-	(*ListTaxFormsRequest)(nil),              // 103: nomarkup.payment.v1.ListTaxFormsRequest
-	(*ListTaxFormsResponse)(nil),             // 104: nomarkup.payment.v1.ListTaxFormsResponse
-	(*GenerateInvoiceRequest)(nil),           // 105: nomarkup.payment.v1.GenerateInvoiceRequest
-	(*GenerateInvoiceResponse)(nil),          // 106: nomarkup.payment.v1.GenerateInvoiceResponse
-	(*GetTaxFormHTMLRequest)(nil),            // 107: nomarkup.payment.v1.GetTaxFormHTMLRequest
-	(*GetTaxFormHTMLResponse)(nil),           // 108: nomarkup.payment.v1.GetTaxFormHTMLResponse
-	(*GetInvoiceHTMLRequest)(nil),            // 109: nomarkup.payment.v1.GetInvoiceHTMLRequest
-	(*GetInvoiceHTMLResponse)(nil),           // 110: nomarkup.payment.v1.GetInvoiceHTMLResponse
-	(*DeleteStripeAccountsRequest)(nil),      // 111: nomarkup.payment.v1.DeleteStripeAccountsRequest
-	(*DeleteStripeAccountsResponse)(nil),     // 112: nomarkup.payment.v1.DeleteStripeAccountsResponse
-	(*timestamppb.Timestamp)(nil),            // 113: google.protobuf.Timestamp
-	(v1.PaymentTiming)(0),                    // 114: nomarkup.common.v1.PaymentTiming
-	(*v1.PaginationRequest)(nil),             // 115: nomarkup.common.v1.PaginationRequest
-	(*v1.PaginationResponse)(nil),            // 116: nomarkup.common.v1.PaginationResponse
-	(*v1.DateRange)(nil),                     // 117: nomarkup.common.v1.DateRange
+	(PaymentStatus)(0),                             // 0: nomarkup.payment.v1.PaymentStatus
+	(AdvanceStatus)(0),                             // 1: nomarkup.payment.v1.AdvanceStatus
+	(*Payment)(nil),                                // 2: nomarkup.payment.v1.Payment
+	(*PaymentBreakdown)(nil),                       // 3: nomarkup.payment.v1.PaymentBreakdown
+	(*CreateStripeAccountRequest)(nil),             // 4: nomarkup.payment.v1.CreateStripeAccountRequest
+	(*CreateStripeAccountResponse)(nil),            // 5: nomarkup.payment.v1.CreateStripeAccountResponse
+	(*GetStripeOnboardingLinkRequest)(nil),         // 6: nomarkup.payment.v1.GetStripeOnboardingLinkRequest
+	(*GetStripeOnboardingLinkResponse)(nil),        // 7: nomarkup.payment.v1.GetStripeOnboardingLinkResponse
+	(*GetStripeAccountStatusRequest)(nil),          // 8: nomarkup.payment.v1.GetStripeAccountStatusRequest
+	(*GetStripeAccountStatusResponse)(nil),         // 9: nomarkup.payment.v1.GetStripeAccountStatusResponse
+	(*GetStripeDashboardLinkRequest)(nil),          // 10: nomarkup.payment.v1.GetStripeDashboardLinkRequest
+	(*GetStripeDashboardLinkResponse)(nil),         // 11: nomarkup.payment.v1.GetStripeDashboardLinkResponse
+	(*CreateSetupIntentRequest)(nil),               // 12: nomarkup.payment.v1.CreateSetupIntentRequest
+	(*CreateSetupIntentResponse)(nil),              // 13: nomarkup.payment.v1.CreateSetupIntentResponse
+	(*PaymentMethod)(nil),                          // 14: nomarkup.payment.v1.PaymentMethod
+	(*ListPaymentMethodsRequest)(nil),              // 15: nomarkup.payment.v1.ListPaymentMethodsRequest
+	(*ListPaymentMethodsResponse)(nil),             // 16: nomarkup.payment.v1.ListPaymentMethodsResponse
+	(*DeletePaymentMethodRequest)(nil),             // 17: nomarkup.payment.v1.DeletePaymentMethodRequest
+	(*DeletePaymentMethodResponse)(nil),            // 18: nomarkup.payment.v1.DeletePaymentMethodResponse
+	(*AddDevPaymentMethodRequest)(nil),             // 19: nomarkup.payment.v1.AddDevPaymentMethodRequest
+	(*AddDevPaymentMethodResponse)(nil),            // 20: nomarkup.payment.v1.AddDevPaymentMethodResponse
+	(*CreatePaymentRequest)(nil),                   // 21: nomarkup.payment.v1.CreatePaymentRequest
+	(*CreatePaymentResponse)(nil),                  // 22: nomarkup.payment.v1.CreatePaymentResponse
+	(*ProcessPaymentRequest)(nil),                  // 23: nomarkup.payment.v1.ProcessPaymentRequest
+	(*ProcessPaymentResponse)(nil),                 // 24: nomarkup.payment.v1.ProcessPaymentResponse
+	(*ReleaseEscrowRequest)(nil),                   // 25: nomarkup.payment.v1.ReleaseEscrowRequest
+	(*ReleaseEscrowResponse)(nil),                  // 26: nomarkup.payment.v1.ReleaseEscrowResponse
+	(*GetPaymentRequest)(nil),                      // 27: nomarkup.payment.v1.GetPaymentRequest
+	(*GetPaymentResponse)(nil),                     // 28: nomarkup.payment.v1.GetPaymentResponse
+	(*ListPaymentsRequest)(nil),                    // 29: nomarkup.payment.v1.ListPaymentsRequest
+	(*ListPaymentsResponse)(nil),                   // 30: nomarkup.payment.v1.ListPaymentsResponse
+	(*CreateRefundRequest)(nil),                    // 31: nomarkup.payment.v1.CreateRefundRequest
+	(*CreateRefundResponse)(nil),                   // 32: nomarkup.payment.v1.CreateRefundResponse
+	(*HandleStripeWebhookRequest)(nil),             // 33: nomarkup.payment.v1.HandleStripeWebhookRequest
+	(*HandleStripeWebhookResponse)(nil),            // 34: nomarkup.payment.v1.HandleStripeWebhookResponse
+	(*CalculateFeesRequest)(nil),                   // 35: nomarkup.payment.v1.CalculateFeesRequest
+	(*CalculateFeesResponse)(nil),                  // 36: nomarkup.payment.v1.CalculateFeesResponse
+	(*GetFeeConfigRequest)(nil),                    // 37: nomarkup.payment.v1.GetFeeConfigRequest
+	(*GetFeeConfigResponse)(nil),                   // 38: nomarkup.payment.v1.GetFeeConfigResponse
+	(*AdminGetPaymentDetailsRequest)(nil),          // 39: nomarkup.payment.v1.AdminGetPaymentDetailsRequest
+	(*AdminGetPaymentDetailsResponse)(nil),         // 40: nomarkup.payment.v1.AdminGetPaymentDetailsResponse
+	(*AdminListPaymentsRequest)(nil),               // 41: nomarkup.payment.v1.AdminListPaymentsRequest
+	(*AdminListPaymentsResponse)(nil),              // 42: nomarkup.payment.v1.AdminListPaymentsResponse
+	(*AdminUpdateFeeConfigRequest)(nil),            // 43: nomarkup.payment.v1.AdminUpdateFeeConfigRequest
+	(*AdminUpdateFeeConfigResponse)(nil),           // 44: nomarkup.payment.v1.AdminUpdateFeeConfigResponse
+	(*PlatformBankAccount)(nil),                    // 45: nomarkup.payment.v1.PlatformBankAccount
+	(*AdminGetPlatformBankAccountRequest)(nil),     // 46: nomarkup.payment.v1.AdminGetPlatformBankAccountRequest
+	(*AdminGetPlatformBankAccountResponse)(nil),    // 47: nomarkup.payment.v1.AdminGetPlatformBankAccountResponse
+	(*AdminSetPlatformBankAccountRequest)(nil),     // 48: nomarkup.payment.v1.AdminSetPlatformBankAccountRequest
+	(*AdminSetPlatformBankAccountResponse)(nil),    // 49: nomarkup.payment.v1.AdminSetPlatformBankAccountResponse
+	(*AdminDeletePlatformBankAccountRequest)(nil),  // 50: nomarkup.payment.v1.AdminDeletePlatformBankAccountRequest
+	(*AdminDeletePlatformBankAccountResponse)(nil), // 51: nomarkup.payment.v1.AdminDeletePlatformBankAccountResponse
+	(*GetRevenueReportRequest)(nil),                // 52: nomarkup.payment.v1.GetRevenueReportRequest
+	(*GetRevenueReportResponse)(nil),               // 53: nomarkup.payment.v1.GetRevenueReportResponse
+	(*RevenueDataPoint)(nil),                       // 54: nomarkup.payment.v1.RevenueDataPoint
+	(*Expense)(nil),                                // 55: nomarkup.payment.v1.Expense
+	(*CreateExpenseRequest)(nil),                   // 56: nomarkup.payment.v1.CreateExpenseRequest
+	(*CreateExpenseResponse)(nil),                  // 57: nomarkup.payment.v1.CreateExpenseResponse
+	(*ListExpensesRequest)(nil),                    // 58: nomarkup.payment.v1.ListExpensesRequest
+	(*ListExpensesResponse)(nil),                   // 59: nomarkup.payment.v1.ListExpensesResponse
+	(*DeleteExpenseRequest)(nil),                   // 60: nomarkup.payment.v1.DeleteExpenseRequest
+	(*DeleteExpenseResponse)(nil),                  // 61: nomarkup.payment.v1.DeleteExpenseResponse
+	(*Advance)(nil),                                // 62: nomarkup.payment.v1.Advance
+	(*RequestAdvanceRequest)(nil),                  // 63: nomarkup.payment.v1.RequestAdvanceRequest
+	(*RequestAdvanceResponse)(nil),                 // 64: nomarkup.payment.v1.RequestAdvanceResponse
+	(*ListAdvancesRequest)(nil),                    // 65: nomarkup.payment.v1.ListAdvancesRequest
+	(*ListAdvancesResponse)(nil),                   // 66: nomarkup.payment.v1.ListAdvancesResponse
+	(*GetAdvanceRequest)(nil),                      // 67: nomarkup.payment.v1.GetAdvanceRequest
+	(*GetAdvanceResponse)(nil),                     // 68: nomarkup.payment.v1.GetAdvanceResponse
+	(*ReviewAdvanceRequest)(nil),                   // 69: nomarkup.payment.v1.ReviewAdvanceRequest
+	(*ReviewAdvanceResponse)(nil),                  // 70: nomarkup.payment.v1.ReviewAdvanceResponse
+	(*DisburseAdvanceRequest)(nil),                 // 71: nomarkup.payment.v1.DisburseAdvanceRequest
+	(*DisburseAdvanceResponse)(nil),                // 72: nomarkup.payment.v1.DisburseAdvanceResponse
+	(*GetCreditLimitRequest)(nil),                  // 73: nomarkup.payment.v1.GetCreditLimitRequest
+	(*GetCreditLimitResponse)(nil),                 // 74: nomarkup.payment.v1.GetCreditLimitResponse
+	(*ScheduledInstallment)(nil),                   // 75: nomarkup.payment.v1.ScheduledInstallment
+	(*InstallmentPlan)(nil),                        // 76: nomarkup.payment.v1.InstallmentPlan
+	(*CreateInstallmentPlanRequest)(nil),           // 77: nomarkup.payment.v1.CreateInstallmentPlanRequest
+	(*CreateInstallmentPlanResponse)(nil),          // 78: nomarkup.payment.v1.CreateInstallmentPlanResponse
+	(*GetInstallmentPlanRequest)(nil),              // 79: nomarkup.payment.v1.GetInstallmentPlanRequest
+	(*GetInstallmentPlanResponse)(nil),             // 80: nomarkup.payment.v1.GetInstallmentPlanResponse
+	(*ListInstallmentPlansRequest)(nil),            // 81: nomarkup.payment.v1.ListInstallmentPlansRequest
+	(*ListInstallmentPlansResponse)(nil),           // 82: nomarkup.payment.v1.ListInstallmentPlansResponse
+	(*InsuranceProduct)(nil),                       // 83: nomarkup.payment.v1.InsuranceProduct
+	(*InsurancePolicy)(nil),                        // 84: nomarkup.payment.v1.InsurancePolicy
+	(*TaxForm)(nil),                                // 85: nomarkup.payment.v1.TaxForm
+	(*InsuranceClaim)(nil),                         // 86: nomarkup.payment.v1.InsuranceClaim
+	(*InsuranceQuote)(nil),                         // 87: nomarkup.payment.v1.InsuranceQuote
+	(*ListInsuranceProductsRequest)(nil),           // 88: nomarkup.payment.v1.ListInsuranceProductsRequest
+	(*ListInsuranceProductsResponse)(nil),          // 89: nomarkup.payment.v1.ListInsuranceProductsResponse
+	(*GetInsuranceQuoteRequest)(nil),               // 90: nomarkup.payment.v1.GetInsuranceQuoteRequest
+	(*GetInsuranceQuoteResponse)(nil),              // 91: nomarkup.payment.v1.GetInsuranceQuoteResponse
+	(*PurchaseInsuranceRequest)(nil),               // 92: nomarkup.payment.v1.PurchaseInsuranceRequest
+	(*PurchaseInsuranceResponse)(nil),              // 93: nomarkup.payment.v1.PurchaseInsuranceResponse
+	(*GetInsurancePolicyRequest)(nil),              // 94: nomarkup.payment.v1.GetInsurancePolicyRequest
+	(*GetInsurancePolicyResponse)(nil),             // 95: nomarkup.payment.v1.GetInsurancePolicyResponse
+	(*ListInsurancePoliciesRequest)(nil),           // 96: nomarkup.payment.v1.ListInsurancePoliciesRequest
+	(*ListInsurancePoliciesResponse)(nil),          // 97: nomarkup.payment.v1.ListInsurancePoliciesResponse
+	(*FileInsuranceClaimRequest)(nil),              // 98: nomarkup.payment.v1.FileInsuranceClaimRequest
+	(*FileInsuranceClaimResponse)(nil),             // 99: nomarkup.payment.v1.FileInsuranceClaimResponse
+	(*GetInsuranceClaimRequest)(nil),               // 100: nomarkup.payment.v1.GetInsuranceClaimRequest
+	(*GetInsuranceClaimResponse)(nil),              // 101: nomarkup.payment.v1.GetInsuranceClaimResponse
+	(*ReviewInsuranceClaimRequest)(nil),            // 102: nomarkup.payment.v1.ReviewInsuranceClaimRequest
+	(*ReviewInsuranceClaimResponse)(nil),           // 103: nomarkup.payment.v1.ReviewInsuranceClaimResponse
+	(*AdminListInsuranceClaimsRequest)(nil),        // 104: nomarkup.payment.v1.AdminListInsuranceClaimsRequest
+	(*AdminListInsuranceClaimsResponse)(nil),       // 105: nomarkup.payment.v1.AdminListInsuranceClaimsResponse
+	(*GenerateTaxFormRequest)(nil),                 // 106: nomarkup.payment.v1.GenerateTaxFormRequest
+	(*GenerateTaxFormResponse)(nil),                // 107: nomarkup.payment.v1.GenerateTaxFormResponse
+	(*GetTaxFormRequest)(nil),                      // 108: nomarkup.payment.v1.GetTaxFormRequest
+	(*GetTaxFormResponse)(nil),                     // 109: nomarkup.payment.v1.GetTaxFormResponse
+	(*ListTaxFormsRequest)(nil),                    // 110: nomarkup.payment.v1.ListTaxFormsRequest
+	(*ListTaxFormsResponse)(nil),                   // 111: nomarkup.payment.v1.ListTaxFormsResponse
+	(*GenerateInvoiceRequest)(nil),                 // 112: nomarkup.payment.v1.GenerateInvoiceRequest
+	(*GenerateInvoiceResponse)(nil),                // 113: nomarkup.payment.v1.GenerateInvoiceResponse
+	(*GetTaxFormHTMLRequest)(nil),                  // 114: nomarkup.payment.v1.GetTaxFormHTMLRequest
+	(*GetTaxFormHTMLResponse)(nil),                 // 115: nomarkup.payment.v1.GetTaxFormHTMLResponse
+	(*GetInvoiceHTMLRequest)(nil),                  // 116: nomarkup.payment.v1.GetInvoiceHTMLRequest
+	(*GetInvoiceHTMLResponse)(nil),                 // 117: nomarkup.payment.v1.GetInvoiceHTMLResponse
+	(*DeleteStripeAccountsRequest)(nil),            // 118: nomarkup.payment.v1.DeleteStripeAccountsRequest
+	(*DeleteStripeAccountsResponse)(nil),           // 119: nomarkup.payment.v1.DeleteStripeAccountsResponse
+	(*ChargeListingWinnerRequest)(nil),             // 120: nomarkup.payment.v1.ChargeListingWinnerRequest
+	(*ChargeListingWinnerResponse)(nil),            // 121: nomarkup.payment.v1.ChargeListingWinnerResponse
+	(*ConfirmListingPickupRequest)(nil),            // 122: nomarkup.payment.v1.ConfirmListingPickupRequest
+	(*ConfirmListingPickupResponse)(nil),           // 123: nomarkup.payment.v1.ConfirmListingPickupResponse
+	(*FileListingDisputeRequest)(nil),              // 124: nomarkup.payment.v1.FileListingDisputeRequest
+	(*FileListingDisputeResponse)(nil),             // 125: nomarkup.payment.v1.FileListingDisputeResponse
+	(*ResolveListingDisputeRequest)(nil),           // 126: nomarkup.payment.v1.ResolveListingDisputeRequest
+	(*ResolveListingDisputeResponse)(nil),          // 127: nomarkup.payment.v1.ResolveListingDisputeResponse
+	(*AutoReleaseListingOrdersRequest)(nil),        // 128: nomarkup.payment.v1.AutoReleaseListingOrdersRequest
+	(*AutoReleaseListingOrdersResponse)(nil),       // 129: nomarkup.payment.v1.AutoReleaseListingOrdersResponse
+	(*timestamppb.Timestamp)(nil),                  // 130: google.protobuf.Timestamp
+	(v1.PaymentTiming)(0),                          // 131: nomarkup.common.v1.PaymentTiming
+	(*v1.PaginationRequest)(nil),                   // 132: nomarkup.common.v1.PaginationRequest
+	(*v1.PaginationResponse)(nil),                  // 133: nomarkup.common.v1.PaginationResponse
+	(*v1.DateRange)(nil),                           // 134: nomarkup.common.v1.DateRange
 }
 var file_payment_v1_payment_proto_depIdxs = []int32{
 	0,   // 0: nomarkup.payment.v1.Payment.status:type_name -> nomarkup.payment.v1.PaymentStatus
-	113, // 1: nomarkup.payment.v1.Payment.escrow_at:type_name -> google.protobuf.Timestamp
-	113, // 2: nomarkup.payment.v1.Payment.released_at:type_name -> google.protobuf.Timestamp
-	113, // 3: nomarkup.payment.v1.Payment.completed_at:type_name -> google.protobuf.Timestamp
-	113, // 4: nomarkup.payment.v1.Payment.created_at:type_name -> google.protobuf.Timestamp
+	130, // 1: nomarkup.payment.v1.Payment.escrow_at:type_name -> google.protobuf.Timestamp
+	130, // 2: nomarkup.payment.v1.Payment.released_at:type_name -> google.protobuf.Timestamp
+	130, // 3: nomarkup.payment.v1.Payment.completed_at:type_name -> google.protobuf.Timestamp
+	130, // 4: nomarkup.payment.v1.Payment.created_at:type_name -> google.protobuf.Timestamp
 	14,  // 5: nomarkup.payment.v1.ListPaymentMethodsResponse.methods:type_name -> nomarkup.payment.v1.PaymentMethod
 	14,  // 6: nomarkup.payment.v1.AddDevPaymentMethodResponse.method:type_name -> nomarkup.payment.v1.PaymentMethod
-	114, // 7: nomarkup.payment.v1.CreatePaymentRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	131, // 7: nomarkup.payment.v1.CreatePaymentRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
 	2,   // 8: nomarkup.payment.v1.CreatePaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	2,   // 9: nomarkup.payment.v1.ProcessPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	2,   // 10: nomarkup.payment.v1.ReleaseEscrowResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	2,   // 11: nomarkup.payment.v1.GetPaymentResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	3,   // 12: nomarkup.payment.v1.GetPaymentResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	0,   // 13: nomarkup.payment.v1.ListPaymentsRequest.status_filter:type_name -> nomarkup.payment.v1.PaymentStatus
-	115, // 14: nomarkup.payment.v1.ListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	132, // 14: nomarkup.payment.v1.ListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	2,   // 15: nomarkup.payment.v1.ListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
-	116, // 16: nomarkup.payment.v1.ListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	133, // 16: nomarkup.payment.v1.ListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	2,   // 17: nomarkup.payment.v1.CreateRefundResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	3,   // 18: nomarkup.payment.v1.CalculateFeesResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	2,   // 19: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.payment:type_name -> nomarkup.payment.v1.Payment
 	3,   // 20: nomarkup.payment.v1.AdminGetPaymentDetailsResponse.breakdown:type_name -> nomarkup.payment.v1.PaymentBreakdown
 	0,   // 21: nomarkup.payment.v1.AdminListPaymentsRequest.status_filter:type_name -> nomarkup.payment.v1.PaymentStatus
-	117, // 22: nomarkup.payment.v1.AdminListPaymentsRequest.date_range:type_name -> nomarkup.common.v1.DateRange
-	115, // 23: nomarkup.payment.v1.AdminListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	134, // 22: nomarkup.payment.v1.AdminListPaymentsRequest.date_range:type_name -> nomarkup.common.v1.DateRange
+	132, // 23: nomarkup.payment.v1.AdminListPaymentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	2,   // 24: nomarkup.payment.v1.AdminListPaymentsResponse.payments:type_name -> nomarkup.payment.v1.Payment
-	116, // 25: nomarkup.payment.v1.AdminListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	133, // 25: nomarkup.payment.v1.AdminListPaymentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	38,  // 26: nomarkup.payment.v1.AdminUpdateFeeConfigResponse.config:type_name -> nomarkup.payment.v1.GetFeeConfigResponse
-	117, // 27: nomarkup.payment.v1.GetRevenueReportRequest.date_range:type_name -> nomarkup.common.v1.DateRange
-	47,  // 28: nomarkup.payment.v1.GetRevenueReportResponse.data_points:type_name -> nomarkup.payment.v1.RevenueDataPoint
-	113, // 29: nomarkup.payment.v1.RevenueDataPoint.period_start:type_name -> google.protobuf.Timestamp
-	113, // 30: nomarkup.payment.v1.Expense.created_at:type_name -> google.protobuf.Timestamp
-	113, // 31: nomarkup.payment.v1.Expense.updated_at:type_name -> google.protobuf.Timestamp
-	48,  // 32: nomarkup.payment.v1.CreateExpenseResponse.expense:type_name -> nomarkup.payment.v1.Expense
-	115, // 33: nomarkup.payment.v1.ListExpensesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	48,  // 34: nomarkup.payment.v1.ListExpensesResponse.expenses:type_name -> nomarkup.payment.v1.Expense
-	116, // 35: nomarkup.payment.v1.ListExpensesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	113, // 36: nomarkup.payment.v1.Advance.reviewed_at:type_name -> google.protobuf.Timestamp
-	113, // 37: nomarkup.payment.v1.Advance.disbursed_at:type_name -> google.protobuf.Timestamp
-	113, // 38: nomarkup.payment.v1.Advance.repaid_at:type_name -> google.protobuf.Timestamp
-	113, // 39: nomarkup.payment.v1.Advance.created_at:type_name -> google.protobuf.Timestamp
-	113, // 40: nomarkup.payment.v1.Advance.updated_at:type_name -> google.protobuf.Timestamp
-	55,  // 41: nomarkup.payment.v1.RequestAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
-	115, // 42: nomarkup.payment.v1.ListAdvancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	55,  // 43: nomarkup.payment.v1.ListAdvancesResponse.advances:type_name -> nomarkup.payment.v1.Advance
-	116, // 44: nomarkup.payment.v1.ListAdvancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	55,  // 45: nomarkup.payment.v1.GetAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
-	55,  // 46: nomarkup.payment.v1.ReviewAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
-	55,  // 47: nomarkup.payment.v1.DisburseAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
-	113, // 48: nomarkup.payment.v1.GetCreditLimitResponse.last_computed_at:type_name -> google.protobuf.Timestamp
-	113, // 49: nomarkup.payment.v1.ScheduledInstallment.paid_at:type_name -> google.protobuf.Timestamp
-	113, // 50: nomarkup.payment.v1.InstallmentPlan.provider_paid_at:type_name -> google.protobuf.Timestamp
-	68,  // 51: nomarkup.payment.v1.InstallmentPlan.installments:type_name -> nomarkup.payment.v1.ScheduledInstallment
-	113, // 52: nomarkup.payment.v1.InstallmentPlan.created_at:type_name -> google.protobuf.Timestamp
-	113, // 53: nomarkup.payment.v1.InstallmentPlan.updated_at:type_name -> google.protobuf.Timestamp
-	69,  // 54: nomarkup.payment.v1.CreateInstallmentPlanResponse.plan:type_name -> nomarkup.payment.v1.InstallmentPlan
-	69,  // 55: nomarkup.payment.v1.GetInstallmentPlanResponse.plan:type_name -> nomarkup.payment.v1.InstallmentPlan
-	115, // 56: nomarkup.payment.v1.ListInstallmentPlansRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	69,  // 57: nomarkup.payment.v1.ListInstallmentPlansResponse.plans:type_name -> nomarkup.payment.v1.InstallmentPlan
-	116, // 58: nomarkup.payment.v1.ListInstallmentPlansResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	113, // 59: nomarkup.payment.v1.InsuranceProduct.created_at:type_name -> google.protobuf.Timestamp
-	113, // 60: nomarkup.payment.v1.InsuranceProduct.updated_at:type_name -> google.protobuf.Timestamp
-	113, // 61: nomarkup.payment.v1.InsurancePolicy.paid_at:type_name -> google.protobuf.Timestamp
-	113, // 62: nomarkup.payment.v1.InsurancePolicy.cancelled_at:type_name -> google.protobuf.Timestamp
-	113, // 63: nomarkup.payment.v1.InsurancePolicy.created_at:type_name -> google.protobuf.Timestamp
-	113, // 64: nomarkup.payment.v1.InsurancePolicy.updated_at:type_name -> google.protobuf.Timestamp
-	113, // 65: nomarkup.payment.v1.TaxForm.delivered_at:type_name -> google.protobuf.Timestamp
-	113, // 66: nomarkup.payment.v1.TaxForm.filed_at:type_name -> google.protobuf.Timestamp
-	113, // 67: nomarkup.payment.v1.TaxForm.created_at:type_name -> google.protobuf.Timestamp
-	113, // 68: nomarkup.payment.v1.TaxForm.updated_at:type_name -> google.protobuf.Timestamp
-	113, // 69: nomarkup.payment.v1.InsuranceClaim.reviewed_at:type_name -> google.protobuf.Timestamp
-	113, // 70: nomarkup.payment.v1.InsuranceClaim.paid_at:type_name -> google.protobuf.Timestamp
-	113, // 71: nomarkup.payment.v1.InsuranceClaim.created_at:type_name -> google.protobuf.Timestamp
-	113, // 72: nomarkup.payment.v1.InsuranceClaim.updated_at:type_name -> google.protobuf.Timestamp
-	76,  // 73: nomarkup.payment.v1.ListInsuranceProductsResponse.products:type_name -> nomarkup.payment.v1.InsuranceProduct
-	80,  // 74: nomarkup.payment.v1.GetInsuranceQuoteResponse.quote:type_name -> nomarkup.payment.v1.InsuranceQuote
-	77,  // 75: nomarkup.payment.v1.PurchaseInsuranceResponse.policy:type_name -> nomarkup.payment.v1.InsurancePolicy
-	77,  // 76: nomarkup.payment.v1.GetInsurancePolicyResponse.policy:type_name -> nomarkup.payment.v1.InsurancePolicy
-	115, // 77: nomarkup.payment.v1.ListInsurancePoliciesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	77,  // 78: nomarkup.payment.v1.ListInsurancePoliciesResponse.policies:type_name -> nomarkup.payment.v1.InsurancePolicy
-	116, // 79: nomarkup.payment.v1.ListInsurancePoliciesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	79,  // 80: nomarkup.payment.v1.FileInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
-	79,  // 81: nomarkup.payment.v1.GetInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
-	79,  // 82: nomarkup.payment.v1.ReviewInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
-	115, // 83: nomarkup.payment.v1.AdminListInsuranceClaimsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	79,  // 84: nomarkup.payment.v1.AdminListInsuranceClaimsResponse.claims:type_name -> nomarkup.payment.v1.InsuranceClaim
-	116, // 85: nomarkup.payment.v1.AdminListInsuranceClaimsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	78,  // 86: nomarkup.payment.v1.GenerateTaxFormResponse.tax_form:type_name -> nomarkup.payment.v1.TaxForm
-	78,  // 87: nomarkup.payment.v1.GetTaxFormResponse.tax_form:type_name -> nomarkup.payment.v1.TaxForm
-	78,  // 88: nomarkup.payment.v1.ListTaxFormsResponse.forms:type_name -> nomarkup.payment.v1.TaxForm
-	4,   // 89: nomarkup.payment.v1.PaymentService.CreateStripeAccount:input_type -> nomarkup.payment.v1.CreateStripeAccountRequest
-	6,   // 90: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:input_type -> nomarkup.payment.v1.GetStripeOnboardingLinkRequest
-	8,   // 91: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:input_type -> nomarkup.payment.v1.GetStripeAccountStatusRequest
-	10,  // 92: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:input_type -> nomarkup.payment.v1.GetStripeDashboardLinkRequest
-	12,  // 93: nomarkup.payment.v1.PaymentService.CreateSetupIntent:input_type -> nomarkup.payment.v1.CreateSetupIntentRequest
-	15,  // 94: nomarkup.payment.v1.PaymentService.ListPaymentMethods:input_type -> nomarkup.payment.v1.ListPaymentMethodsRequest
-	17,  // 95: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:input_type -> nomarkup.payment.v1.DeletePaymentMethodRequest
-	19,  // 96: nomarkup.payment.v1.PaymentService.AddDevPaymentMethod:input_type -> nomarkup.payment.v1.AddDevPaymentMethodRequest
-	21,  // 97: nomarkup.payment.v1.PaymentService.CreatePayment:input_type -> nomarkup.payment.v1.CreatePaymentRequest
-	23,  // 98: nomarkup.payment.v1.PaymentService.ProcessPayment:input_type -> nomarkup.payment.v1.ProcessPaymentRequest
-	25,  // 99: nomarkup.payment.v1.PaymentService.ReleaseEscrow:input_type -> nomarkup.payment.v1.ReleaseEscrowRequest
-	27,  // 100: nomarkup.payment.v1.PaymentService.GetPayment:input_type -> nomarkup.payment.v1.GetPaymentRequest
-	29,  // 101: nomarkup.payment.v1.PaymentService.ListPayments:input_type -> nomarkup.payment.v1.ListPaymentsRequest
-	31,  // 102: nomarkup.payment.v1.PaymentService.CreateRefund:input_type -> nomarkup.payment.v1.CreateRefundRequest
-	33,  // 103: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:input_type -> nomarkup.payment.v1.HandleStripeWebhookRequest
-	35,  // 104: nomarkup.payment.v1.PaymentService.CalculateFees:input_type -> nomarkup.payment.v1.CalculateFeesRequest
-	37,  // 105: nomarkup.payment.v1.PaymentService.GetFeeConfig:input_type -> nomarkup.payment.v1.GetFeeConfigRequest
-	39,  // 106: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:input_type -> nomarkup.payment.v1.AdminGetPaymentDetailsRequest
-	41,  // 107: nomarkup.payment.v1.PaymentService.AdminListPayments:input_type -> nomarkup.payment.v1.AdminListPaymentsRequest
-	43,  // 108: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:input_type -> nomarkup.payment.v1.AdminUpdateFeeConfigRequest
-	45,  // 109: nomarkup.payment.v1.PaymentService.GetRevenueReport:input_type -> nomarkup.payment.v1.GetRevenueReportRequest
-	49,  // 110: nomarkup.payment.v1.PaymentService.CreateExpense:input_type -> nomarkup.payment.v1.CreateExpenseRequest
-	51,  // 111: nomarkup.payment.v1.PaymentService.ListExpenses:input_type -> nomarkup.payment.v1.ListExpensesRequest
-	53,  // 112: nomarkup.payment.v1.PaymentService.DeleteExpense:input_type -> nomarkup.payment.v1.DeleteExpenseRequest
-	56,  // 113: nomarkup.payment.v1.PaymentService.RequestAdvance:input_type -> nomarkup.payment.v1.RequestAdvanceRequest
-	58,  // 114: nomarkup.payment.v1.PaymentService.ListAdvances:input_type -> nomarkup.payment.v1.ListAdvancesRequest
-	60,  // 115: nomarkup.payment.v1.PaymentService.GetAdvance:input_type -> nomarkup.payment.v1.GetAdvanceRequest
-	62,  // 116: nomarkup.payment.v1.PaymentService.ReviewAdvance:input_type -> nomarkup.payment.v1.ReviewAdvanceRequest
-	64,  // 117: nomarkup.payment.v1.PaymentService.DisburseAdvance:input_type -> nomarkup.payment.v1.DisburseAdvanceRequest
-	66,  // 118: nomarkup.payment.v1.PaymentService.GetCreditLimit:input_type -> nomarkup.payment.v1.GetCreditLimitRequest
-	70,  // 119: nomarkup.payment.v1.PaymentService.CreateInstallmentPlan:input_type -> nomarkup.payment.v1.CreateInstallmentPlanRequest
-	72,  // 120: nomarkup.payment.v1.PaymentService.GetInstallmentPlan:input_type -> nomarkup.payment.v1.GetInstallmentPlanRequest
-	74,  // 121: nomarkup.payment.v1.PaymentService.ListInstallmentPlans:input_type -> nomarkup.payment.v1.ListInstallmentPlansRequest
-	81,  // 122: nomarkup.payment.v1.PaymentService.ListInsuranceProducts:input_type -> nomarkup.payment.v1.ListInsuranceProductsRequest
-	83,  // 123: nomarkup.payment.v1.PaymentService.GetInsuranceQuote:input_type -> nomarkup.payment.v1.GetInsuranceQuoteRequest
-	85,  // 124: nomarkup.payment.v1.PaymentService.PurchaseInsurance:input_type -> nomarkup.payment.v1.PurchaseInsuranceRequest
-	87,  // 125: nomarkup.payment.v1.PaymentService.GetInsurancePolicy:input_type -> nomarkup.payment.v1.GetInsurancePolicyRequest
-	89,  // 126: nomarkup.payment.v1.PaymentService.ListInsurancePolicies:input_type -> nomarkup.payment.v1.ListInsurancePoliciesRequest
-	91,  // 127: nomarkup.payment.v1.PaymentService.FileInsuranceClaim:input_type -> nomarkup.payment.v1.FileInsuranceClaimRequest
-	93,  // 128: nomarkup.payment.v1.PaymentService.GetInsuranceClaim:input_type -> nomarkup.payment.v1.GetInsuranceClaimRequest
-	95,  // 129: nomarkup.payment.v1.PaymentService.ReviewInsuranceClaim:input_type -> nomarkup.payment.v1.ReviewInsuranceClaimRequest
-	97,  // 130: nomarkup.payment.v1.PaymentService.AdminListInsuranceClaims:input_type -> nomarkup.payment.v1.AdminListInsuranceClaimsRequest
-	99,  // 131: nomarkup.payment.v1.PaymentService.GenerateTaxForm:input_type -> nomarkup.payment.v1.GenerateTaxFormRequest
-	101, // 132: nomarkup.payment.v1.PaymentService.GetTaxForm:input_type -> nomarkup.payment.v1.GetTaxFormRequest
-	103, // 133: nomarkup.payment.v1.PaymentService.ListTaxForms:input_type -> nomarkup.payment.v1.ListTaxFormsRequest
-	105, // 134: nomarkup.payment.v1.PaymentService.GenerateInvoice:input_type -> nomarkup.payment.v1.GenerateInvoiceRequest
-	107, // 135: nomarkup.payment.v1.PaymentService.GetTaxFormHTML:input_type -> nomarkup.payment.v1.GetTaxFormHTMLRequest
-	109, // 136: nomarkup.payment.v1.PaymentService.GetInvoiceHTML:input_type -> nomarkup.payment.v1.GetInvoiceHTMLRequest
-	111, // 137: nomarkup.payment.v1.PaymentService.DeleteStripeAccounts:input_type -> nomarkup.payment.v1.DeleteStripeAccountsRequest
-	5,   // 138: nomarkup.payment.v1.PaymentService.CreateStripeAccount:output_type -> nomarkup.payment.v1.CreateStripeAccountResponse
-	7,   // 139: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:output_type -> nomarkup.payment.v1.GetStripeOnboardingLinkResponse
-	9,   // 140: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:output_type -> nomarkup.payment.v1.GetStripeAccountStatusResponse
-	11,  // 141: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:output_type -> nomarkup.payment.v1.GetStripeDashboardLinkResponse
-	13,  // 142: nomarkup.payment.v1.PaymentService.CreateSetupIntent:output_type -> nomarkup.payment.v1.CreateSetupIntentResponse
-	16,  // 143: nomarkup.payment.v1.PaymentService.ListPaymentMethods:output_type -> nomarkup.payment.v1.ListPaymentMethodsResponse
-	18,  // 144: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:output_type -> nomarkup.payment.v1.DeletePaymentMethodResponse
-	20,  // 145: nomarkup.payment.v1.PaymentService.AddDevPaymentMethod:output_type -> nomarkup.payment.v1.AddDevPaymentMethodResponse
-	22,  // 146: nomarkup.payment.v1.PaymentService.CreatePayment:output_type -> nomarkup.payment.v1.CreatePaymentResponse
-	24,  // 147: nomarkup.payment.v1.PaymentService.ProcessPayment:output_type -> nomarkup.payment.v1.ProcessPaymentResponse
-	26,  // 148: nomarkup.payment.v1.PaymentService.ReleaseEscrow:output_type -> nomarkup.payment.v1.ReleaseEscrowResponse
-	28,  // 149: nomarkup.payment.v1.PaymentService.GetPayment:output_type -> nomarkup.payment.v1.GetPaymentResponse
-	30,  // 150: nomarkup.payment.v1.PaymentService.ListPayments:output_type -> nomarkup.payment.v1.ListPaymentsResponse
-	32,  // 151: nomarkup.payment.v1.PaymentService.CreateRefund:output_type -> nomarkup.payment.v1.CreateRefundResponse
-	34,  // 152: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:output_type -> nomarkup.payment.v1.HandleStripeWebhookResponse
-	36,  // 153: nomarkup.payment.v1.PaymentService.CalculateFees:output_type -> nomarkup.payment.v1.CalculateFeesResponse
-	38,  // 154: nomarkup.payment.v1.PaymentService.GetFeeConfig:output_type -> nomarkup.payment.v1.GetFeeConfigResponse
-	40,  // 155: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:output_type -> nomarkup.payment.v1.AdminGetPaymentDetailsResponse
-	42,  // 156: nomarkup.payment.v1.PaymentService.AdminListPayments:output_type -> nomarkup.payment.v1.AdminListPaymentsResponse
-	44,  // 157: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:output_type -> nomarkup.payment.v1.AdminUpdateFeeConfigResponse
-	46,  // 158: nomarkup.payment.v1.PaymentService.GetRevenueReport:output_type -> nomarkup.payment.v1.GetRevenueReportResponse
-	50,  // 159: nomarkup.payment.v1.PaymentService.CreateExpense:output_type -> nomarkup.payment.v1.CreateExpenseResponse
-	52,  // 160: nomarkup.payment.v1.PaymentService.ListExpenses:output_type -> nomarkup.payment.v1.ListExpensesResponse
-	54,  // 161: nomarkup.payment.v1.PaymentService.DeleteExpense:output_type -> nomarkup.payment.v1.DeleteExpenseResponse
-	57,  // 162: nomarkup.payment.v1.PaymentService.RequestAdvance:output_type -> nomarkup.payment.v1.RequestAdvanceResponse
-	59,  // 163: nomarkup.payment.v1.PaymentService.ListAdvances:output_type -> nomarkup.payment.v1.ListAdvancesResponse
-	61,  // 164: nomarkup.payment.v1.PaymentService.GetAdvance:output_type -> nomarkup.payment.v1.GetAdvanceResponse
-	63,  // 165: nomarkup.payment.v1.PaymentService.ReviewAdvance:output_type -> nomarkup.payment.v1.ReviewAdvanceResponse
-	65,  // 166: nomarkup.payment.v1.PaymentService.DisburseAdvance:output_type -> nomarkup.payment.v1.DisburseAdvanceResponse
-	67,  // 167: nomarkup.payment.v1.PaymentService.GetCreditLimit:output_type -> nomarkup.payment.v1.GetCreditLimitResponse
-	71,  // 168: nomarkup.payment.v1.PaymentService.CreateInstallmentPlan:output_type -> nomarkup.payment.v1.CreateInstallmentPlanResponse
-	73,  // 169: nomarkup.payment.v1.PaymentService.GetInstallmentPlan:output_type -> nomarkup.payment.v1.GetInstallmentPlanResponse
-	75,  // 170: nomarkup.payment.v1.PaymentService.ListInstallmentPlans:output_type -> nomarkup.payment.v1.ListInstallmentPlansResponse
-	82,  // 171: nomarkup.payment.v1.PaymentService.ListInsuranceProducts:output_type -> nomarkup.payment.v1.ListInsuranceProductsResponse
-	84,  // 172: nomarkup.payment.v1.PaymentService.GetInsuranceQuote:output_type -> nomarkup.payment.v1.GetInsuranceQuoteResponse
-	86,  // 173: nomarkup.payment.v1.PaymentService.PurchaseInsurance:output_type -> nomarkup.payment.v1.PurchaseInsuranceResponse
-	88,  // 174: nomarkup.payment.v1.PaymentService.GetInsurancePolicy:output_type -> nomarkup.payment.v1.GetInsurancePolicyResponse
-	90,  // 175: nomarkup.payment.v1.PaymentService.ListInsurancePolicies:output_type -> nomarkup.payment.v1.ListInsurancePoliciesResponse
-	92,  // 176: nomarkup.payment.v1.PaymentService.FileInsuranceClaim:output_type -> nomarkup.payment.v1.FileInsuranceClaimResponse
-	94,  // 177: nomarkup.payment.v1.PaymentService.GetInsuranceClaim:output_type -> nomarkup.payment.v1.GetInsuranceClaimResponse
-	96,  // 178: nomarkup.payment.v1.PaymentService.ReviewInsuranceClaim:output_type -> nomarkup.payment.v1.ReviewInsuranceClaimResponse
-	98,  // 179: nomarkup.payment.v1.PaymentService.AdminListInsuranceClaims:output_type -> nomarkup.payment.v1.AdminListInsuranceClaimsResponse
-	100, // 180: nomarkup.payment.v1.PaymentService.GenerateTaxForm:output_type -> nomarkup.payment.v1.GenerateTaxFormResponse
-	102, // 181: nomarkup.payment.v1.PaymentService.GetTaxForm:output_type -> nomarkup.payment.v1.GetTaxFormResponse
-	104, // 182: nomarkup.payment.v1.PaymentService.ListTaxForms:output_type -> nomarkup.payment.v1.ListTaxFormsResponse
-	106, // 183: nomarkup.payment.v1.PaymentService.GenerateInvoice:output_type -> nomarkup.payment.v1.GenerateInvoiceResponse
-	108, // 184: nomarkup.payment.v1.PaymentService.GetTaxFormHTML:output_type -> nomarkup.payment.v1.GetTaxFormHTMLResponse
-	110, // 185: nomarkup.payment.v1.PaymentService.GetInvoiceHTML:output_type -> nomarkup.payment.v1.GetInvoiceHTMLResponse
-	112, // 186: nomarkup.payment.v1.PaymentService.DeleteStripeAccounts:output_type -> nomarkup.payment.v1.DeleteStripeAccountsResponse
-	138, // [138:187] is the sub-list for method output_type
-	89,  // [89:138] is the sub-list for method input_type
-	89,  // [89:89] is the sub-list for extension type_name
-	89,  // [89:89] is the sub-list for extension extendee
-	0,   // [0:89] is the sub-list for field type_name
+	130, // 27: nomarkup.payment.v1.PlatformBankAccount.created_at:type_name -> google.protobuf.Timestamp
+	130, // 28: nomarkup.payment.v1.PlatformBankAccount.updated_at:type_name -> google.protobuf.Timestamp
+	45,  // 29: nomarkup.payment.v1.AdminGetPlatformBankAccountResponse.account:type_name -> nomarkup.payment.v1.PlatformBankAccount
+	45,  // 30: nomarkup.payment.v1.AdminSetPlatformBankAccountResponse.account:type_name -> nomarkup.payment.v1.PlatformBankAccount
+	134, // 31: nomarkup.payment.v1.GetRevenueReportRequest.date_range:type_name -> nomarkup.common.v1.DateRange
+	54,  // 32: nomarkup.payment.v1.GetRevenueReportResponse.data_points:type_name -> nomarkup.payment.v1.RevenueDataPoint
+	130, // 33: nomarkup.payment.v1.RevenueDataPoint.period_start:type_name -> google.protobuf.Timestamp
+	130, // 34: nomarkup.payment.v1.Expense.created_at:type_name -> google.protobuf.Timestamp
+	130, // 35: nomarkup.payment.v1.Expense.updated_at:type_name -> google.protobuf.Timestamp
+	55,  // 36: nomarkup.payment.v1.CreateExpenseResponse.expense:type_name -> nomarkup.payment.v1.Expense
+	132, // 37: nomarkup.payment.v1.ListExpensesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	55,  // 38: nomarkup.payment.v1.ListExpensesResponse.expenses:type_name -> nomarkup.payment.v1.Expense
+	133, // 39: nomarkup.payment.v1.ListExpensesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	130, // 40: nomarkup.payment.v1.Advance.reviewed_at:type_name -> google.protobuf.Timestamp
+	130, // 41: nomarkup.payment.v1.Advance.disbursed_at:type_name -> google.protobuf.Timestamp
+	130, // 42: nomarkup.payment.v1.Advance.repaid_at:type_name -> google.protobuf.Timestamp
+	130, // 43: nomarkup.payment.v1.Advance.created_at:type_name -> google.protobuf.Timestamp
+	130, // 44: nomarkup.payment.v1.Advance.updated_at:type_name -> google.protobuf.Timestamp
+	62,  // 45: nomarkup.payment.v1.RequestAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
+	132, // 46: nomarkup.payment.v1.ListAdvancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	62,  // 47: nomarkup.payment.v1.ListAdvancesResponse.advances:type_name -> nomarkup.payment.v1.Advance
+	133, // 48: nomarkup.payment.v1.ListAdvancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	62,  // 49: nomarkup.payment.v1.GetAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
+	62,  // 50: nomarkup.payment.v1.ReviewAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
+	62,  // 51: nomarkup.payment.v1.DisburseAdvanceResponse.advance:type_name -> nomarkup.payment.v1.Advance
+	130, // 52: nomarkup.payment.v1.GetCreditLimitResponse.last_computed_at:type_name -> google.protobuf.Timestamp
+	130, // 53: nomarkup.payment.v1.ScheduledInstallment.paid_at:type_name -> google.protobuf.Timestamp
+	130, // 54: nomarkup.payment.v1.InstallmentPlan.provider_paid_at:type_name -> google.protobuf.Timestamp
+	75,  // 55: nomarkup.payment.v1.InstallmentPlan.installments:type_name -> nomarkup.payment.v1.ScheduledInstallment
+	130, // 56: nomarkup.payment.v1.InstallmentPlan.created_at:type_name -> google.protobuf.Timestamp
+	130, // 57: nomarkup.payment.v1.InstallmentPlan.updated_at:type_name -> google.protobuf.Timestamp
+	76,  // 58: nomarkup.payment.v1.CreateInstallmentPlanResponse.plan:type_name -> nomarkup.payment.v1.InstallmentPlan
+	76,  // 59: nomarkup.payment.v1.GetInstallmentPlanResponse.plan:type_name -> nomarkup.payment.v1.InstallmentPlan
+	132, // 60: nomarkup.payment.v1.ListInstallmentPlansRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	76,  // 61: nomarkup.payment.v1.ListInstallmentPlansResponse.plans:type_name -> nomarkup.payment.v1.InstallmentPlan
+	133, // 62: nomarkup.payment.v1.ListInstallmentPlansResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	130, // 63: nomarkup.payment.v1.InsuranceProduct.created_at:type_name -> google.protobuf.Timestamp
+	130, // 64: nomarkup.payment.v1.InsuranceProduct.updated_at:type_name -> google.protobuf.Timestamp
+	130, // 65: nomarkup.payment.v1.InsurancePolicy.paid_at:type_name -> google.protobuf.Timestamp
+	130, // 66: nomarkup.payment.v1.InsurancePolicy.cancelled_at:type_name -> google.protobuf.Timestamp
+	130, // 67: nomarkup.payment.v1.InsurancePolicy.created_at:type_name -> google.protobuf.Timestamp
+	130, // 68: nomarkup.payment.v1.InsurancePolicy.updated_at:type_name -> google.protobuf.Timestamp
+	130, // 69: nomarkup.payment.v1.TaxForm.delivered_at:type_name -> google.protobuf.Timestamp
+	130, // 70: nomarkup.payment.v1.TaxForm.filed_at:type_name -> google.protobuf.Timestamp
+	130, // 71: nomarkup.payment.v1.TaxForm.created_at:type_name -> google.protobuf.Timestamp
+	130, // 72: nomarkup.payment.v1.TaxForm.updated_at:type_name -> google.protobuf.Timestamp
+	130, // 73: nomarkup.payment.v1.InsuranceClaim.reviewed_at:type_name -> google.protobuf.Timestamp
+	130, // 74: nomarkup.payment.v1.InsuranceClaim.paid_at:type_name -> google.protobuf.Timestamp
+	130, // 75: nomarkup.payment.v1.InsuranceClaim.created_at:type_name -> google.protobuf.Timestamp
+	130, // 76: nomarkup.payment.v1.InsuranceClaim.updated_at:type_name -> google.protobuf.Timestamp
+	83,  // 77: nomarkup.payment.v1.ListInsuranceProductsResponse.products:type_name -> nomarkup.payment.v1.InsuranceProduct
+	87,  // 78: nomarkup.payment.v1.GetInsuranceQuoteResponse.quote:type_name -> nomarkup.payment.v1.InsuranceQuote
+	84,  // 79: nomarkup.payment.v1.PurchaseInsuranceResponse.policy:type_name -> nomarkup.payment.v1.InsurancePolicy
+	84,  // 80: nomarkup.payment.v1.GetInsurancePolicyResponse.policy:type_name -> nomarkup.payment.v1.InsurancePolicy
+	132, // 81: nomarkup.payment.v1.ListInsurancePoliciesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	84,  // 82: nomarkup.payment.v1.ListInsurancePoliciesResponse.policies:type_name -> nomarkup.payment.v1.InsurancePolicy
+	133, // 83: nomarkup.payment.v1.ListInsurancePoliciesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	86,  // 84: nomarkup.payment.v1.FileInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
+	86,  // 85: nomarkup.payment.v1.GetInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
+	86,  // 86: nomarkup.payment.v1.ReviewInsuranceClaimResponse.claim:type_name -> nomarkup.payment.v1.InsuranceClaim
+	132, // 87: nomarkup.payment.v1.AdminListInsuranceClaimsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	86,  // 88: nomarkup.payment.v1.AdminListInsuranceClaimsResponse.claims:type_name -> nomarkup.payment.v1.InsuranceClaim
+	133, // 89: nomarkup.payment.v1.AdminListInsuranceClaimsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	85,  // 90: nomarkup.payment.v1.GenerateTaxFormResponse.tax_form:type_name -> nomarkup.payment.v1.TaxForm
+	85,  // 91: nomarkup.payment.v1.GetTaxFormResponse.tax_form:type_name -> nomarkup.payment.v1.TaxForm
+	85,  // 92: nomarkup.payment.v1.ListTaxFormsResponse.forms:type_name -> nomarkup.payment.v1.TaxForm
+	130, // 93: nomarkup.payment.v1.ConfirmListingPickupResponse.pickup_confirmed_at:type_name -> google.protobuf.Timestamp
+	4,   // 94: nomarkup.payment.v1.PaymentService.CreateStripeAccount:input_type -> nomarkup.payment.v1.CreateStripeAccountRequest
+	6,   // 95: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:input_type -> nomarkup.payment.v1.GetStripeOnboardingLinkRequest
+	8,   // 96: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:input_type -> nomarkup.payment.v1.GetStripeAccountStatusRequest
+	10,  // 97: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:input_type -> nomarkup.payment.v1.GetStripeDashboardLinkRequest
+	12,  // 98: nomarkup.payment.v1.PaymentService.CreateSetupIntent:input_type -> nomarkup.payment.v1.CreateSetupIntentRequest
+	15,  // 99: nomarkup.payment.v1.PaymentService.ListPaymentMethods:input_type -> nomarkup.payment.v1.ListPaymentMethodsRequest
+	17,  // 100: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:input_type -> nomarkup.payment.v1.DeletePaymentMethodRequest
+	19,  // 101: nomarkup.payment.v1.PaymentService.AddDevPaymentMethod:input_type -> nomarkup.payment.v1.AddDevPaymentMethodRequest
+	21,  // 102: nomarkup.payment.v1.PaymentService.CreatePayment:input_type -> nomarkup.payment.v1.CreatePaymentRequest
+	23,  // 103: nomarkup.payment.v1.PaymentService.ProcessPayment:input_type -> nomarkup.payment.v1.ProcessPaymentRequest
+	25,  // 104: nomarkup.payment.v1.PaymentService.ReleaseEscrow:input_type -> nomarkup.payment.v1.ReleaseEscrowRequest
+	27,  // 105: nomarkup.payment.v1.PaymentService.GetPayment:input_type -> nomarkup.payment.v1.GetPaymentRequest
+	29,  // 106: nomarkup.payment.v1.PaymentService.ListPayments:input_type -> nomarkup.payment.v1.ListPaymentsRequest
+	31,  // 107: nomarkup.payment.v1.PaymentService.CreateRefund:input_type -> nomarkup.payment.v1.CreateRefundRequest
+	33,  // 108: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:input_type -> nomarkup.payment.v1.HandleStripeWebhookRequest
+	35,  // 109: nomarkup.payment.v1.PaymentService.CalculateFees:input_type -> nomarkup.payment.v1.CalculateFeesRequest
+	37,  // 110: nomarkup.payment.v1.PaymentService.GetFeeConfig:input_type -> nomarkup.payment.v1.GetFeeConfigRequest
+	39,  // 111: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:input_type -> nomarkup.payment.v1.AdminGetPaymentDetailsRequest
+	41,  // 112: nomarkup.payment.v1.PaymentService.AdminListPayments:input_type -> nomarkup.payment.v1.AdminListPaymentsRequest
+	43,  // 113: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:input_type -> nomarkup.payment.v1.AdminUpdateFeeConfigRequest
+	46,  // 114: nomarkup.payment.v1.PaymentService.AdminGetPlatformBankAccount:input_type -> nomarkup.payment.v1.AdminGetPlatformBankAccountRequest
+	48,  // 115: nomarkup.payment.v1.PaymentService.AdminSetPlatformBankAccount:input_type -> nomarkup.payment.v1.AdminSetPlatformBankAccountRequest
+	50,  // 116: nomarkup.payment.v1.PaymentService.AdminDeletePlatformBankAccount:input_type -> nomarkup.payment.v1.AdminDeletePlatformBankAccountRequest
+	52,  // 117: nomarkup.payment.v1.PaymentService.GetRevenueReport:input_type -> nomarkup.payment.v1.GetRevenueReportRequest
+	56,  // 118: nomarkup.payment.v1.PaymentService.CreateExpense:input_type -> nomarkup.payment.v1.CreateExpenseRequest
+	58,  // 119: nomarkup.payment.v1.PaymentService.ListExpenses:input_type -> nomarkup.payment.v1.ListExpensesRequest
+	60,  // 120: nomarkup.payment.v1.PaymentService.DeleteExpense:input_type -> nomarkup.payment.v1.DeleteExpenseRequest
+	63,  // 121: nomarkup.payment.v1.PaymentService.RequestAdvance:input_type -> nomarkup.payment.v1.RequestAdvanceRequest
+	65,  // 122: nomarkup.payment.v1.PaymentService.ListAdvances:input_type -> nomarkup.payment.v1.ListAdvancesRequest
+	67,  // 123: nomarkup.payment.v1.PaymentService.GetAdvance:input_type -> nomarkup.payment.v1.GetAdvanceRequest
+	69,  // 124: nomarkup.payment.v1.PaymentService.ReviewAdvance:input_type -> nomarkup.payment.v1.ReviewAdvanceRequest
+	71,  // 125: nomarkup.payment.v1.PaymentService.DisburseAdvance:input_type -> nomarkup.payment.v1.DisburseAdvanceRequest
+	73,  // 126: nomarkup.payment.v1.PaymentService.GetCreditLimit:input_type -> nomarkup.payment.v1.GetCreditLimitRequest
+	77,  // 127: nomarkup.payment.v1.PaymentService.CreateInstallmentPlan:input_type -> nomarkup.payment.v1.CreateInstallmentPlanRequest
+	79,  // 128: nomarkup.payment.v1.PaymentService.GetInstallmentPlan:input_type -> nomarkup.payment.v1.GetInstallmentPlanRequest
+	81,  // 129: nomarkup.payment.v1.PaymentService.ListInstallmentPlans:input_type -> nomarkup.payment.v1.ListInstallmentPlansRequest
+	88,  // 130: nomarkup.payment.v1.PaymentService.ListInsuranceProducts:input_type -> nomarkup.payment.v1.ListInsuranceProductsRequest
+	90,  // 131: nomarkup.payment.v1.PaymentService.GetInsuranceQuote:input_type -> nomarkup.payment.v1.GetInsuranceQuoteRequest
+	92,  // 132: nomarkup.payment.v1.PaymentService.PurchaseInsurance:input_type -> nomarkup.payment.v1.PurchaseInsuranceRequest
+	94,  // 133: nomarkup.payment.v1.PaymentService.GetInsurancePolicy:input_type -> nomarkup.payment.v1.GetInsurancePolicyRequest
+	96,  // 134: nomarkup.payment.v1.PaymentService.ListInsurancePolicies:input_type -> nomarkup.payment.v1.ListInsurancePoliciesRequest
+	98,  // 135: nomarkup.payment.v1.PaymentService.FileInsuranceClaim:input_type -> nomarkup.payment.v1.FileInsuranceClaimRequest
+	100, // 136: nomarkup.payment.v1.PaymentService.GetInsuranceClaim:input_type -> nomarkup.payment.v1.GetInsuranceClaimRequest
+	102, // 137: nomarkup.payment.v1.PaymentService.ReviewInsuranceClaim:input_type -> nomarkup.payment.v1.ReviewInsuranceClaimRequest
+	104, // 138: nomarkup.payment.v1.PaymentService.AdminListInsuranceClaims:input_type -> nomarkup.payment.v1.AdminListInsuranceClaimsRequest
+	106, // 139: nomarkup.payment.v1.PaymentService.GenerateTaxForm:input_type -> nomarkup.payment.v1.GenerateTaxFormRequest
+	108, // 140: nomarkup.payment.v1.PaymentService.GetTaxForm:input_type -> nomarkup.payment.v1.GetTaxFormRequest
+	110, // 141: nomarkup.payment.v1.PaymentService.ListTaxForms:input_type -> nomarkup.payment.v1.ListTaxFormsRequest
+	112, // 142: nomarkup.payment.v1.PaymentService.GenerateInvoice:input_type -> nomarkup.payment.v1.GenerateInvoiceRequest
+	114, // 143: nomarkup.payment.v1.PaymentService.GetTaxFormHTML:input_type -> nomarkup.payment.v1.GetTaxFormHTMLRequest
+	116, // 144: nomarkup.payment.v1.PaymentService.GetInvoiceHTML:input_type -> nomarkup.payment.v1.GetInvoiceHTMLRequest
+	120, // 145: nomarkup.payment.v1.PaymentService.ChargeListingWinner:input_type -> nomarkup.payment.v1.ChargeListingWinnerRequest
+	122, // 146: nomarkup.payment.v1.PaymentService.ConfirmListingPickup:input_type -> nomarkup.payment.v1.ConfirmListingPickupRequest
+	124, // 147: nomarkup.payment.v1.PaymentService.FileListingDispute:input_type -> nomarkup.payment.v1.FileListingDisputeRequest
+	126, // 148: nomarkup.payment.v1.PaymentService.ResolveListingDispute:input_type -> nomarkup.payment.v1.ResolveListingDisputeRequest
+	128, // 149: nomarkup.payment.v1.PaymentService.AutoReleaseListingOrders:input_type -> nomarkup.payment.v1.AutoReleaseListingOrdersRequest
+	118, // 150: nomarkup.payment.v1.PaymentService.DeleteStripeAccounts:input_type -> nomarkup.payment.v1.DeleteStripeAccountsRequest
+	5,   // 151: nomarkup.payment.v1.PaymentService.CreateStripeAccount:output_type -> nomarkup.payment.v1.CreateStripeAccountResponse
+	7,   // 152: nomarkup.payment.v1.PaymentService.GetStripeOnboardingLink:output_type -> nomarkup.payment.v1.GetStripeOnboardingLinkResponse
+	9,   // 153: nomarkup.payment.v1.PaymentService.GetStripeAccountStatus:output_type -> nomarkup.payment.v1.GetStripeAccountStatusResponse
+	11,  // 154: nomarkup.payment.v1.PaymentService.GetStripeDashboardLink:output_type -> nomarkup.payment.v1.GetStripeDashboardLinkResponse
+	13,  // 155: nomarkup.payment.v1.PaymentService.CreateSetupIntent:output_type -> nomarkup.payment.v1.CreateSetupIntentResponse
+	16,  // 156: nomarkup.payment.v1.PaymentService.ListPaymentMethods:output_type -> nomarkup.payment.v1.ListPaymentMethodsResponse
+	18,  // 157: nomarkup.payment.v1.PaymentService.DeletePaymentMethod:output_type -> nomarkup.payment.v1.DeletePaymentMethodResponse
+	20,  // 158: nomarkup.payment.v1.PaymentService.AddDevPaymentMethod:output_type -> nomarkup.payment.v1.AddDevPaymentMethodResponse
+	22,  // 159: nomarkup.payment.v1.PaymentService.CreatePayment:output_type -> nomarkup.payment.v1.CreatePaymentResponse
+	24,  // 160: nomarkup.payment.v1.PaymentService.ProcessPayment:output_type -> nomarkup.payment.v1.ProcessPaymentResponse
+	26,  // 161: nomarkup.payment.v1.PaymentService.ReleaseEscrow:output_type -> nomarkup.payment.v1.ReleaseEscrowResponse
+	28,  // 162: nomarkup.payment.v1.PaymentService.GetPayment:output_type -> nomarkup.payment.v1.GetPaymentResponse
+	30,  // 163: nomarkup.payment.v1.PaymentService.ListPayments:output_type -> nomarkup.payment.v1.ListPaymentsResponse
+	32,  // 164: nomarkup.payment.v1.PaymentService.CreateRefund:output_type -> nomarkup.payment.v1.CreateRefundResponse
+	34,  // 165: nomarkup.payment.v1.PaymentService.HandleStripeWebhook:output_type -> nomarkup.payment.v1.HandleStripeWebhookResponse
+	36,  // 166: nomarkup.payment.v1.PaymentService.CalculateFees:output_type -> nomarkup.payment.v1.CalculateFeesResponse
+	38,  // 167: nomarkup.payment.v1.PaymentService.GetFeeConfig:output_type -> nomarkup.payment.v1.GetFeeConfigResponse
+	40,  // 168: nomarkup.payment.v1.PaymentService.AdminGetPaymentDetails:output_type -> nomarkup.payment.v1.AdminGetPaymentDetailsResponse
+	42,  // 169: nomarkup.payment.v1.PaymentService.AdminListPayments:output_type -> nomarkup.payment.v1.AdminListPaymentsResponse
+	44,  // 170: nomarkup.payment.v1.PaymentService.AdminUpdateFeeConfig:output_type -> nomarkup.payment.v1.AdminUpdateFeeConfigResponse
+	47,  // 171: nomarkup.payment.v1.PaymentService.AdminGetPlatformBankAccount:output_type -> nomarkup.payment.v1.AdminGetPlatformBankAccountResponse
+	49,  // 172: nomarkup.payment.v1.PaymentService.AdminSetPlatformBankAccount:output_type -> nomarkup.payment.v1.AdminSetPlatformBankAccountResponse
+	51,  // 173: nomarkup.payment.v1.PaymentService.AdminDeletePlatformBankAccount:output_type -> nomarkup.payment.v1.AdminDeletePlatformBankAccountResponse
+	53,  // 174: nomarkup.payment.v1.PaymentService.GetRevenueReport:output_type -> nomarkup.payment.v1.GetRevenueReportResponse
+	57,  // 175: nomarkup.payment.v1.PaymentService.CreateExpense:output_type -> nomarkup.payment.v1.CreateExpenseResponse
+	59,  // 176: nomarkup.payment.v1.PaymentService.ListExpenses:output_type -> nomarkup.payment.v1.ListExpensesResponse
+	61,  // 177: nomarkup.payment.v1.PaymentService.DeleteExpense:output_type -> nomarkup.payment.v1.DeleteExpenseResponse
+	64,  // 178: nomarkup.payment.v1.PaymentService.RequestAdvance:output_type -> nomarkup.payment.v1.RequestAdvanceResponse
+	66,  // 179: nomarkup.payment.v1.PaymentService.ListAdvances:output_type -> nomarkup.payment.v1.ListAdvancesResponse
+	68,  // 180: nomarkup.payment.v1.PaymentService.GetAdvance:output_type -> nomarkup.payment.v1.GetAdvanceResponse
+	70,  // 181: nomarkup.payment.v1.PaymentService.ReviewAdvance:output_type -> nomarkup.payment.v1.ReviewAdvanceResponse
+	72,  // 182: nomarkup.payment.v1.PaymentService.DisburseAdvance:output_type -> nomarkup.payment.v1.DisburseAdvanceResponse
+	74,  // 183: nomarkup.payment.v1.PaymentService.GetCreditLimit:output_type -> nomarkup.payment.v1.GetCreditLimitResponse
+	78,  // 184: nomarkup.payment.v1.PaymentService.CreateInstallmentPlan:output_type -> nomarkup.payment.v1.CreateInstallmentPlanResponse
+	80,  // 185: nomarkup.payment.v1.PaymentService.GetInstallmentPlan:output_type -> nomarkup.payment.v1.GetInstallmentPlanResponse
+	82,  // 186: nomarkup.payment.v1.PaymentService.ListInstallmentPlans:output_type -> nomarkup.payment.v1.ListInstallmentPlansResponse
+	89,  // 187: nomarkup.payment.v1.PaymentService.ListInsuranceProducts:output_type -> nomarkup.payment.v1.ListInsuranceProductsResponse
+	91,  // 188: nomarkup.payment.v1.PaymentService.GetInsuranceQuote:output_type -> nomarkup.payment.v1.GetInsuranceQuoteResponse
+	93,  // 189: nomarkup.payment.v1.PaymentService.PurchaseInsurance:output_type -> nomarkup.payment.v1.PurchaseInsuranceResponse
+	95,  // 190: nomarkup.payment.v1.PaymentService.GetInsurancePolicy:output_type -> nomarkup.payment.v1.GetInsurancePolicyResponse
+	97,  // 191: nomarkup.payment.v1.PaymentService.ListInsurancePolicies:output_type -> nomarkup.payment.v1.ListInsurancePoliciesResponse
+	99,  // 192: nomarkup.payment.v1.PaymentService.FileInsuranceClaim:output_type -> nomarkup.payment.v1.FileInsuranceClaimResponse
+	101, // 193: nomarkup.payment.v1.PaymentService.GetInsuranceClaim:output_type -> nomarkup.payment.v1.GetInsuranceClaimResponse
+	103, // 194: nomarkup.payment.v1.PaymentService.ReviewInsuranceClaim:output_type -> nomarkup.payment.v1.ReviewInsuranceClaimResponse
+	105, // 195: nomarkup.payment.v1.PaymentService.AdminListInsuranceClaims:output_type -> nomarkup.payment.v1.AdminListInsuranceClaimsResponse
+	107, // 196: nomarkup.payment.v1.PaymentService.GenerateTaxForm:output_type -> nomarkup.payment.v1.GenerateTaxFormResponse
+	109, // 197: nomarkup.payment.v1.PaymentService.GetTaxForm:output_type -> nomarkup.payment.v1.GetTaxFormResponse
+	111, // 198: nomarkup.payment.v1.PaymentService.ListTaxForms:output_type -> nomarkup.payment.v1.ListTaxFormsResponse
+	113, // 199: nomarkup.payment.v1.PaymentService.GenerateInvoice:output_type -> nomarkup.payment.v1.GenerateInvoiceResponse
+	115, // 200: nomarkup.payment.v1.PaymentService.GetTaxFormHTML:output_type -> nomarkup.payment.v1.GetTaxFormHTMLResponse
+	117, // 201: nomarkup.payment.v1.PaymentService.GetInvoiceHTML:output_type -> nomarkup.payment.v1.GetInvoiceHTMLResponse
+	121, // 202: nomarkup.payment.v1.PaymentService.ChargeListingWinner:output_type -> nomarkup.payment.v1.ChargeListingWinnerResponse
+	123, // 203: nomarkup.payment.v1.PaymentService.ConfirmListingPickup:output_type -> nomarkup.payment.v1.ConfirmListingPickupResponse
+	125, // 204: nomarkup.payment.v1.PaymentService.FileListingDispute:output_type -> nomarkup.payment.v1.FileListingDisputeResponse
+	127, // 205: nomarkup.payment.v1.PaymentService.ResolveListingDispute:output_type -> nomarkup.payment.v1.ResolveListingDisputeResponse
+	129, // 206: nomarkup.payment.v1.PaymentService.AutoReleaseListingOrders:output_type -> nomarkup.payment.v1.AutoReleaseListingOrdersResponse
+	119, // 207: nomarkup.payment.v1.PaymentService.DeleteStripeAccounts:output_type -> nomarkup.payment.v1.DeleteStripeAccountsResponse
+	151, // [151:208] is the sub-list for method output_type
+	94,  // [94:151] is the sub-list for method input_type
+	94,  // [94:94] is the sub-list for extension type_name
+	94,  // [94:94] is the sub-list for extension extendee
+	0,   // [0:94] is the sub-list for field type_name
 }
 
 func init() { file_payment_v1_payment_proto_init() }
@@ -8296,18 +9572,19 @@ func file_payment_v1_payment_proto_init() {
 	}
 	file_payment_v1_payment_proto_msgTypes[27].OneofWrappers = []any{}
 	file_payment_v1_payment_proto_msgTypes[35].OneofWrappers = []any{}
+	file_payment_v1_payment_proto_msgTypes[36].OneofWrappers = []any{}
 	file_payment_v1_payment_proto_msgTypes[39].OneofWrappers = []any{}
 	file_payment_v1_payment_proto_msgTypes[41].OneofWrappers = []any{}
-	file_payment_v1_payment_proto_msgTypes[56].OneofWrappers = []any{}
-	file_payment_v1_payment_proto_msgTypes[72].OneofWrappers = []any{}
-	file_payment_v1_payment_proto_msgTypes[95].OneofWrappers = []any{}
+	file_payment_v1_payment_proto_msgTypes[63].OneofWrappers = []any{}
+	file_payment_v1_payment_proto_msgTypes[79].OneofWrappers = []any{}
+	file_payment_v1_payment_proto_msgTypes[102].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_payment_v1_payment_proto_rawDesc), len(file_payment_v1_payment_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   111,
+			NumMessages:   128,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

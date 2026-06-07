@@ -49,6 +49,13 @@ service PaymentService {
   rpc AdminListPayments(AdminListPaymentsRequest) returns (AdminListPaymentsResponse);
   rpc AdminUpdateFeeConfig(AdminUpdateFeeConfigRequest) returns (AdminUpdateFeeConfigResponse);
 
+  // Platform banking (admin) — the platform's own payout bank account where
+  // all collected fees route. Raw bank numbers never reach us: the client
+  // tokenizes via Stripe.js and sends a bank_account token.
+  rpc AdminGetPlatformBankAccount(AdminGetPlatformBankAccountRequest) returns (AdminGetPlatformBankAccountResponse);
+  rpc AdminSetPlatformBankAccount(AdminSetPlatformBankAccountRequest) returns (AdminSetPlatformBankAccountResponse);
+  rpc AdminDeletePlatformBankAccount(AdminDeletePlatformBankAccountRequest) returns (AdminDeletePlatformBankAccountResponse);
+
   // Revenue reporting
   rpc GetRevenueReport(GetRevenueReportRequest) returns (GetRevenueReportResponse);
 
@@ -162,6 +169,10 @@ message PaymentBreakdown {
   int64 provider_payout_cents = 5;
   double fee_percentage = 6;
   double guarantee_percentage = 7;
+  // Separate, additive "qualified lead" fee charged to the winning provider.
+  // Zero when lead-gen is disabled for the category. Deducted from provider payout.
+  int64 lead_gen_fee_cents = 8;
+  double lead_gen_percentage = 9;
 }
 
 // ============================================================
@@ -367,6 +378,10 @@ message GetFeeConfigResponse {
   double guarantee_percentage = 2;
   int64 min_fee_cents = 3;
   int64 max_fee_cents = 4;
+  bool lead_gen_enabled = 5;
+  double lead_gen_percentage = 6;
+  int64 lead_gen_min_fee_cents = 7;
+  optional int64 lead_gen_max_fee_cents = 8;
 }
 
 // ============================================================
@@ -406,10 +421,63 @@ message AdminUpdateFeeConfigRequest {
   double guarantee_percentage = 4;
   int64 min_fee_cents = 5;
   optional int64 max_fee_cents = 6;
+  bool lead_gen_enabled = 7;
+  double lead_gen_percentage = 8;
+  int64 lead_gen_min_fee_cents = 9;
+  optional int64 lead_gen_max_fee_cents = 10;
 }
 
 message AdminUpdateFeeConfigResponse {
   GetFeeConfigResponse config = 1;
+}
+
+// Platform banking — non-sensitive metadata only. Never carries raw account
+// or routing numbers.
+message PlatformBankAccount {
+  string id = 1;
+  string stripe_external_account_id = 2;
+  string bank_name = 3;
+  string account_holder_name = 4;
+  string account_holder_type = 5;  // individual | company
+  string last4 = 6;
+  string routing_last4 = 7;
+  string currency = 8;
+  string country = 9;
+  string status = 10;              // new | validated | verification_failed | errored
+  bool is_default = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message AdminGetPlatformBankAccountRequest {
+  string admin_id = 1;
+}
+
+message AdminGetPlatformBankAccountResponse {
+  // Unset when no platform bank account has been configured yet.
+  PlatformBankAccount account = 1;
+}
+
+message AdminSetPlatformBankAccountRequest {
+  string admin_id = 1;
+  // A Stripe bank_account token (btok_...) created client-side via Stripe.js.
+  // Raw account/routing numbers are tokenized in the browser and never sent here.
+  string bank_account_token = 2;
+  string account_holder_name = 3;
+  string account_holder_type = 4;  // individual | company
+}
+
+message AdminSetPlatformBankAccountResponse {
+  PlatformBankAccount account = 1;
+}
+
+message AdminDeletePlatformBankAccountRequest {
+  string admin_id = 1;
+  string id = 2;
+}
+
+message AdminDeletePlatformBankAccountResponse {
+  bool deleted = 1;
 }
 
 // ============================================================
