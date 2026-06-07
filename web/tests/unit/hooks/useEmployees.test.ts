@@ -26,6 +26,8 @@ vi.mock('@/lib/api', () => {
   return {
     api: { get: vi.fn(), getPublic: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
     ApiError,
+    getApiErrorMessage: (err: unknown, fallback: string): string =>
+      err instanceof Error && err.message ? err.message : fallback,
   };
 });
 
@@ -131,7 +133,8 @@ describe('useAddEmployee', () => {
     const { result } = renderHook(() => useAddEmployee(), { wrapper: wrap(client) });
     result.current.mutate(addEmployeeInput);
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add employee');
+    // getApiErrorMessage surfaces the Error/server reason; literal remains the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 
@@ -163,7 +166,7 @@ describe('useUpdateEmployee', () => {
     const { result } = renderHook(() => useUpdateEmployee(), { wrapper: wrap(client) });
     result.current.mutate({ id: 'emp-1', data: { status: 'suspended' } });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to update employee');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 
@@ -189,6 +192,6 @@ describe('useRemoveEmployee', () => {
     const { result } = renderHook(() => useRemoveEmployee(), { wrapper: wrap(client) });
     result.current.mutate('emp-1');
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to remove employee');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });

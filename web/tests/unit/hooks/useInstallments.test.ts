@@ -25,6 +25,8 @@ vi.mock('@/lib/api', () => ({
     code = 'ERR';
     userMessage(fallback: string) { return this.message || fallback; }
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 // Mock the dependent hooks so useInstallmentSchedule can be tested in isolation.
@@ -117,7 +119,8 @@ describe('useCreateInstallmentPlan', () => {
     result.current.mutate(input);
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create payment plan');
+    // getApiErrorMessage surfaces the Error reason; the literal stays as the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('insufficient funds');
   });
 });
 

@@ -58,6 +58,8 @@ vi.mock('@/hooks/useTaxForms', () => ({
 vi.mock('@/lib/api', () => ({
   downloadAuthenticated: (...args: unknown[]) => downloadAuth(...args),
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 vi.mock('sonner', () => ({

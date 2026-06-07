@@ -48,6 +48,8 @@ vi.mock('@/lib/api', () => ({
       return this.message || fallback;
     }
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 const { api } = await import('@/lib/api');
@@ -442,9 +444,8 @@ describe('useInstantPayout', () => {
     result.current.mutate(500);
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      'Instant payout failed — please try again',
-    );
+    // getApiErrorMessage surfaces the Error reason; the literal stays as the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 
@@ -470,7 +471,7 @@ describe('error toasts on mutation failures', () => {
     });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create payment');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');
   });
 
   it('useProcessPayment fires the failure toast on error', async () => {
@@ -482,9 +483,7 @@ describe('error toasts on mutation failures', () => {
     result.current.mutate({ paymentId: 'pmt-1', payment_method_id: 'pm-1' });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      'Payment failed — please try again',
-    );
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');
   });
 
   it('useDeletePaymentMethod fires the failure toast on error', async () => {
@@ -496,9 +495,7 @@ describe('error toasts on mutation failures', () => {
     result.current.mutate('pm-1');
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      'Failed to remove payment method',
-    );
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');
   });
 
   it('useCreateSetupIntent fires the failure toast on error', async () => {
@@ -510,9 +507,7 @@ describe('error toasts on mutation failures', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      'Failed to initialize payment setup',
-    );
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');
   });
 
   it('useAddDevPaymentMethod fires the failure toast on error', async () => {
@@ -524,7 +519,7 @@ describe('error toasts on mutation failures', () => {
     result.current.mutate({ brand: 'visa', last_four: '4242', exp_month: 12, exp_year: 2030 });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add payment method');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');
   });
 
   it('useCreateStripeAccount fires the failure toast on error', async () => {
@@ -536,7 +531,7 @@ describe('error toasts on mutation failures', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create Stripe account');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');
   });
 });
 

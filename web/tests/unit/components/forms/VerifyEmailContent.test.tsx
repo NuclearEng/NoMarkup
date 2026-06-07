@@ -10,6 +10,8 @@ vi.mock('@/lib/api', () => ({
   api: {
     postUnauthed: vi.fn(),
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 const { useSearchParams } = await import('next/navigation');

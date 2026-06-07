@@ -34,6 +34,8 @@ vi.mock('@/lib/api', () => {
     },
     idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
     ApiError,
+    getApiErrorMessage: (err: unknown, fallback: string): string =>
+      err instanceof Error && err.message ? err.message : fallback,
   };
 });
 
@@ -137,7 +139,8 @@ describe('useRequestAdvance', () => {
     result.current.mutate({ contract_id: 'c-1', advance_amount_cents: 999_999_999 });
 
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(toast.error).toHaveBeenCalledWith('Failed to request advance');
+    // getApiErrorMessage surfaces the ApiError reason; the literal stays as the fallback.
+    expect(toast.error).toHaveBeenCalledWith('API 400: limit exceeded');
   });
 });
 
@@ -194,7 +197,7 @@ describe('useReviewAdvance', () => {
     result.current.mutate({ advanceId: 'adv-1', action: 'reject' });
 
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(toast.error).toHaveBeenCalledWith('Failed to review advance');
+    expect(toast.error).toHaveBeenCalledWith('API 500: boom');
   });
 });
 
@@ -225,6 +228,6 @@ describe('useDisburseAdvance', () => {
     result.current.mutate('adv-1');
 
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(toast.error).toHaveBeenCalledWith('Failed to disburse advance');
+    expect(toast.error).toHaveBeenCalledWith('API 500: down');
   });
 });

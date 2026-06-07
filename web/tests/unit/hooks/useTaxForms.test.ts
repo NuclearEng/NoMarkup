@@ -30,6 +30,8 @@ vi.mock('@/lib/api', () => ({
       return this.message || fallback;
     }
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 const { api, downloadAuthenticated } = await import('@/lib/api');
@@ -88,7 +90,8 @@ describe('useGenerateTaxForm', () => {
     const { result } = renderHook(() => useGenerateTaxForm(), { wrapper: wrap(client) });
     result.current.mutate(2025);
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to generate tax form');
+    // getApiErrorMessage surfaces the Error reason; the literal stays as the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 

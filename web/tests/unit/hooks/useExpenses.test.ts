@@ -21,6 +21,8 @@ vi.mock('@/lib/api', () => {
   return {
     api: { get: vi.fn(), getPublic: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
     ApiError,
+    getApiErrorMessage: (err: unknown, fallback: string): string =>
+      err instanceof Error && err.message ? err.message : fallback,
   };
 });
 
@@ -133,7 +135,8 @@ describe('useCreateExpense', () => {
       expense_date: '2026-04-01',
     });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add expense');
+    // getApiErrorMessage surfaces the server/Error reason; the literal stays as the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 
@@ -159,6 +162,6 @@ describe('useDeleteExpense', () => {
     const { result } = renderHook(() => useDeleteExpense(), { wrapper: wrap(client) });
     result.current.mutate('exp-1');
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to delete expense');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });

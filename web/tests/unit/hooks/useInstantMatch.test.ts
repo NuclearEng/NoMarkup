@@ -28,6 +28,8 @@ vi.mock('@/lib/api', () => ({
     code = 'ERR';
     userMessage(fallback: string) { return this.message || fallback; }
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 const { api } = await import('@/lib/api');
@@ -91,9 +93,8 @@ describe('useAcceptOffer', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      'Failed to accept offer. It may have already expired.',
-    );
+    // getApiErrorMessage surfaces the Error reason; the literal stays as the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('expired');
   });
 });
 
@@ -121,7 +122,7 @@ describe('useDeclineOffer', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to decline offer.');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 
@@ -151,6 +152,6 @@ describe('useCreateInstantMatch', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to start instant match.');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('no providers');
   });
 });

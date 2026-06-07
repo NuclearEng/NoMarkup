@@ -25,6 +25,8 @@ vi.mock('@/lib/api', () => ({
     postUnauthed: vi.fn(),
   },
   ApiError: class ApiError extends Error {},
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 const registerMock = vi.fn();

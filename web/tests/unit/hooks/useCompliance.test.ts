@@ -57,6 +57,17 @@ vi.mock('@/lib/api', () => ({
       return fallback;
     }
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string => {
+    if (
+      err instanceof Error &&
+      'userMessage' in err &&
+      typeof (err as { userMessage: unknown }).userMessage === 'function'
+    ) {
+      return (err as { userMessage: (f: string) => string }).userMessage(fallback);
+    }
+    if (err instanceof Error && err.message) return err.message;
+    return fallback;
+  },
 }));
 
 const { api, ApiError } = (await import('@/lib/api')) as unknown as {

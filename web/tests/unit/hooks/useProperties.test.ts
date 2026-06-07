@@ -19,6 +19,8 @@ vi.mock('@/lib/api', () => ({
     code = 'ERR';
     userMessage(fallback: string) { return this.message || fallback; }
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 const { api } = await import('@/lib/api');
 
@@ -90,7 +92,8 @@ describe('useCreateProperty', () => {
       zip_code: '98101',
     });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to add property');
+    // getApiErrorMessage surfaces the Error/server reason; literal remains the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 
@@ -118,7 +121,7 @@ describe('useUpdateProperty', () => {
     const { result } = renderHook(() => useUpdateProperty(), { wrapper: wrap(client) });
     result.current.mutate({ id: 'p-1', input: { nickname: 'Renamed' } });
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to update property');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });
 
@@ -144,6 +147,6 @@ describe('useDeleteProperty', () => {
     const { result } = renderHook(() => useDeleteProperty(), { wrapper: wrap(client) });
     result.current.mutate('p-1');
     await waitFor(() => { expect(result.current.isError).toBe(true); });
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to remove property');
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
   });
 });

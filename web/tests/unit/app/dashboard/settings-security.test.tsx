@@ -22,6 +22,8 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 // Provide a clipboard API so handleCopyBackupCodes does not throw in jsdom.

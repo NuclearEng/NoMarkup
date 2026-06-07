@@ -29,6 +29,8 @@ vi.mock('@/lib/api', () => ({
     code = 'ERR';
     userMessage(fallback: string) { return this.message || fallback; }
   },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 vi.mock('@/lib/auth', () => ({
