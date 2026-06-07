@@ -178,7 +178,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
           id="dev-brand"
           value={brand}
           onChange={(e) => { setBrand(e.target.value); }}
-          className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 text-sm focus:ring-2 focus:outline-none"
+          className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 text-sm focus:ring-2 focus:outline-none [&>option]:bg-[#0c0f18] [&>option]:text-white"
         >
           {CARD_BRANDS.map((b) => (
             <option key={b} value={b}>

@@ -54,7 +54,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   void headerStore.get('x-nonce');
 
   return (
-    <html lang="en" className={syne.variable} suppressHydrationWarning>
+    <html lang="en" className={`dark ${syne.variable}`} suppressHydrationWarning>
       <body className="bg-background min-h-screen font-sans antialiased">
         <a
           href="#main-content"

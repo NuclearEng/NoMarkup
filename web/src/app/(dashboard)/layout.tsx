@@ -178,7 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
-      <div className="dark flex min-h-screen flex-col bg-[#070b14]">
+      <div className="flex min-h-screen flex-col bg-[#070b14]">
         <Header />
         <EmailVerificationBanner />
 
