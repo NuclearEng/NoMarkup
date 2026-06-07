@@ -81,7 +81,14 @@ export function BidBondPrompt({
   }
 
   // Dev fallback: no Stripe keys configured → skip Elements entirely.
-  if (bondState.clientSecret.startsWith('dev_bond_seti_')) {
+  // The backend emits two dev sentinels: "dev_bond_seti_" (payment service not
+  // wired) and "dev_seti_" (payment service in dev mode via the SetupIntent
+  // devstore). Recognize BOTH so the bond works keyless in dev instead of
+  // falling through to Stripe Elements (which then needs a publishable key).
+  if (
+    bondState.clientSecret.startsWith('dev_bond_seti_') ||
+    bondState.clientSecret.startsWith('dev_seti_')
+  ) {
     return (
       <DevBondConfirm
         listingId={listingId}
