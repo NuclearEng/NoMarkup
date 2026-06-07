@@ -18,6 +18,7 @@ import {
   useAddDevPaymentMethod,
   useCreateSetupIntent,
 } from '@/hooks/usePayments';
+import { getApiErrorMessage } from '@/lib/api';
 import { getStripe, isStripeConfigured } from '@/lib/stripe';
 
 const CARD_BRANDS = ['visa', 'mastercard', 'amex', 'discover'] as const;
@@ -162,7 +163,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
       });
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add card.');
+      setError(getApiErrorMessage(err, 'Failed to add card.'));
     }
   }
 
@@ -271,12 +272,18 @@ export function AddPaymentMethodForm({
   const createSetupIntent = useCreateSetupIntent();
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   async function initialize() {
     setIsInitializing(true);
+    setInitError(null);
     try {
       const result = await createSetupIntent.mutateAsync();
       setClientSecret(result.client_secret);
+    } catch (err) {
+      setInitError(
+        getApiErrorMessage(err, 'Could not start payment setup. Please try again.'),
+      );
     } finally {
       setIsInitializing(false);
     }
@@ -285,9 +292,9 @@ export function AddPaymentMethodForm({
   if (!clientSecret) {
     return (
       <div className="space-y-4">
-        {createSetupIntent.isError ? (
+        {initError ? (
           <p className="text-sm text-destructive" role="alert">
-            Failed to initialize payment setup. Please try again.
+            {initError}
           </p>
         ) : null}
         <Button

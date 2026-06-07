@@ -28,7 +28,7 @@ function makeFile(
 describe('ImageUpload', () => {
   beforeEach(() => {
     uploadMock.mockReset();
-    uploadMock.mockResolvedValue(null);
+    uploadMock.mockResolvedValue({ ok: false, error: 'Upload failed' });
   });
 
   afterEach(() => {
@@ -196,7 +196,8 @@ describe('ImageUpload', () => {
 
   it('starts an upload and notifies parent on success', async () => {
     const onComplete = vi.fn();
-    uploadMock.mockResolvedValue({ confirmedUrl: 'https://cdn/1.png', publicId: 'p1' });
+    const result = { confirmedUrl: 'https://cdn/1.png', objectKey: 'p1' };
+    uploadMock.mockResolvedValue({ ok: true, result });
     render(<ImageUpload context="job_photo" onUploadComplete={onComplete} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
@@ -206,12 +207,12 @@ describe('ImageUpload', () => {
       expect(uploadMock).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(onComplete).toHaveBeenCalledWith({ confirmedUrl: 'https://cdn/1.png', publicId: 'p1' });
+      expect(onComplete).toHaveBeenCalledWith(result);
     });
   });
 
-  it('shows a failed-upload card with dismiss button when upload returns null', async () => {
-    uploadMock.mockResolvedValue(null);
+  it('shows the actual failure reason (not a bare "Upload failed") and a dismiss button', async () => {
+    uploadMock.mockResolvedValue({ ok: false, error: 'Use JPEG, PNG, or WEBP.' });
     render(<ImageUpload context="job_photo" onUploadComplete={vi.fn()} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const input = dropZone.querySelector('input[type=file]');
@@ -219,6 +220,8 @@ describe('ImageUpload', () => {
     fireEvent.change(input, { target: { files: [makeFile('boom.png')] } });
     const dismissBtn = await screen.findByLabelText(/Dismiss error for boom\.png/);
     expect(dismissBtn).toBeDefined();
+    // The specific reason surfaces, not a generic placeholder.
+    expect(screen.getByText('Use JPEG, PNG, or WEBP.')).toBeDefined();
     fireEvent.click(dismissBtn);
     await waitFor(() => {
       expect(screen.queryByLabelText(/Dismiss error for boom\.png/)).toBeNull();
@@ -227,7 +230,10 @@ describe('ImageUpload', () => {
 
   it('handles file drop via drag and drop', async () => {
     const onComplete = vi.fn();
-    uploadMock.mockResolvedValue({ confirmedUrl: 'https://cdn/d.png', publicId: 'd' });
+    uploadMock.mockResolvedValue({
+      ok: true,
+      result: { confirmedUrl: 'https://cdn/d.png', objectKey: 'd' },
+    });
     render(<ImageUpload context="job_photo" onUploadComplete={onComplete} />);
     const dropZone = screen.getByRole('button', { name: /Drop an image/ });
     const file = makeFile('drop.png');
@@ -241,7 +247,10 @@ describe('ImageUpload', () => {
 
   it('removes a completed upload thumbnail when remove is clicked', async () => {
     const onRemove = vi.fn();
-    uploadMock.mockResolvedValue({ confirmedUrl: 'https://cdn/c.png', publicId: 'c' });
+    uploadMock.mockResolvedValue({
+      ok: true,
+      result: { confirmedUrl: 'https://cdn/c.png', objectKey: 'c' },
+    });
     render(
       <ImageUpload
         context="job_photo"

@@ -963,11 +963,11 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       const entries = Object.entries(documents);
       for (const [docKey, docFile] of entries) {
         // Step 1: Upload to the image pipeline to get a confirmed URL
-        const uploadResult = await uploadImage.upload(docFile.file);
-        if (!uploadResult) {
+        const uploadOutcome = await uploadImage.upload(docFile.file);
+        if (!uploadOutcome.ok) {
           setErrors((prev) => ({
             ...prev,
-            [docKey]: `Failed to upload ${docFile.name}. Please try again.`,
+            [docKey]: `Could not upload ${docFile.name}: ${uploadOutcome.error}`,
           }));
           setIsSubmitting(false);
           return;
@@ -976,7 +976,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
         // Step 2: Register the uploaded document with the verification endpoint
         await uploadDocument.mutateAsync({
           document_type: docKey,
-          file_url: uploadResult.confirmedUrl,
+          file_url: uploadOutcome.result.confirmedUrl,
           file_name: docFile.name,
           mime_type: docFile.file.type,
           size_bytes: docFile.file.size,

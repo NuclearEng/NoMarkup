@@ -26,6 +26,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { StripeNotConfigured } from '@/components/payments/StripeNotConfigured';
 import { useConfirmBidBond, useCreateBidBond } from '@/hooks/useCompliance';
+import { getApiErrorMessage } from '@/lib/api';
 import { getStripe, isStripeConfigured } from '@/lib/stripe';
 
 interface BidBondPromptProps {
@@ -60,7 +61,7 @@ export function BidBondPrompt({
           setBondState({ bondId: data.bond_id, clientSecret: data.setup_intent_client_secret });
         },
         onError: (err) => {
-          setError(err instanceof Error ? err.message : 'Failed to start bond');
+          setError(getApiErrorMessage(err, 'Failed to start bond'));
         },
       },
     );
@@ -162,7 +163,7 @@ function BondConfirm({ listingId, bondId, onAuthorized, confirmMutation }: BondC
           onAuthorized();
         },
         onError: (err) => {
-          setError(err instanceof Error ? err.message : 'Bond confirmation failed');
+          setError(getApiErrorMessage(err, 'Bond confirmation failed'));
           setSubmitting(false);
         },
       },

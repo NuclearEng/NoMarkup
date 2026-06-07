@@ -17,6 +17,8 @@ vi.mock('@/lib/api', () => ({
       return this.message || fallback;
     }
   },
+  getApiErrorMessage: (err: unknown, fallback: string) =>
+    err instanceof Error && err.message ? err.message : fallback,
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -143,14 +145,15 @@ describe('useImageUpload', () => {
 
     const bad = makeFile({ type: 'application/pdf' });
 
-    let returned: unknown;
+    let returned: { ok: boolean; error?: string } | undefined;
     await act(async () => {
-      returned = await result.current.upload(bad);
+      returned = (await result.current.upload(bad)) as typeof returned;
     });
 
-    expect(returned).toBeNull();
+    expect(returned?.ok).toBe(false);
+    expect(returned?.error).toContain('Use ');
     expect(result.current.status).toBe('error');
-    expect(result.current.error).toContain('not accepted');
+    expect(result.current.error).toContain('JPEG');
     expect(onError).toHaveBeenCalled();
     expect(vi.mocked(api.post)).not.toHaveBeenCalled();
   });
@@ -163,14 +166,15 @@ describe('useImageUpload', () => {
 
     const big = makeFile({ size: 2048 });
 
-    let returned: unknown;
+    let returned: { ok: boolean; error?: string } | undefined;
     await act(async () => {
-      returned = await result.current.upload(big);
+      returned = (await result.current.upload(big)) as typeof returned;
     });
 
-    expect(returned).toBeNull();
+    expect(returned?.ok).toBe(false);
+    expect(returned?.error).toContain('Max ');
     expect(result.current.status).toBe('error');
-    expect(result.current.error).toContain('exceeds');
+    expect(result.current.error).toContain('Max');
     expect(onError).toHaveBeenCalled();
     expect(vi.mocked(api.post)).not.toHaveBeenCalled();
   });
@@ -421,12 +425,13 @@ describe('useImageUpload', () => {
 
     const huge = makeFile({ size: 3 * 1024 * 1024 });
 
-    let returned: unknown;
+    let returned: { ok: boolean; error?: string } | undefined;
     await act(async () => {
-      returned = await result.current.upload(huge);
+      returned = (await result.current.upload(huge)) as typeof returned;
     });
 
-    expect(returned).toBeNull();
+    expect(returned?.ok).toBe(false);
+    expect(typeof returned?.error).toBe('string');
     expect(result.current.status).toBe('error');
     // Both numbers should be formatted as MB (>= 1024 KB).
     expect(result.current.error).toContain('3.0 MB');
