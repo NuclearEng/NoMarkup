@@ -41,7 +41,7 @@ export function ForgotPasswordForm() {
   async function onSubmit(values: ForgotPasswordFormValues) {
     setFormError(null);
     try {
-      await api.postUnauthed('/api/v1/auth/forgot-password', {
+      await api.postUnauthed('/api/v1/auth/request-password-reset', {
         email: values.email,
       });
       setSubmitted(true);
