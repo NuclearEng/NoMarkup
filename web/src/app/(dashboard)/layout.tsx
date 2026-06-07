@@ -46,9 +46,10 @@ function EmailVerificationBanner() {
   if (dismissed || !profile || profile.emailVerified) return null;
 
   async function handleResend() {
+    if (!profile) return;
     setResending(true);
     try {
-      await api.post('/api/v1/auth/resend-verification');
+      await api.post('/api/v1/auth/resend-verification', { email: profile.email });
       setResent(true);
     } catch {
       // silently ignore — the email may already be sent
