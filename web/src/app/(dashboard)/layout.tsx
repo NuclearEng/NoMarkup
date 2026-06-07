@@ -48,7 +48,7 @@ function EmailVerificationBanner() {
   async function handleResend() {
     setResending(true);
     try {
-      await api.post('/api/v1/auth/verify-email/resend');
+      await api.post('/api/v1/auth/resend-verification');
       setResent(true);
     } catch {
       // silently ignore — the email may already be sent
