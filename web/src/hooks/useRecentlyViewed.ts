@@ -23,7 +23,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '@/lib/api';
-import type { ListingDetail } from '@/types';
+import type { ListingDetail, ListingPhoto } from '@/types';
 
 const STORAGE_KEY = 'nm:recently-viewed';
 const MAX_ENTRIES = 12;
@@ -77,9 +77,14 @@ export function useRecentlyViewed(): {
   entries: RecentlyViewedEntry[];
   clear: () => void;
 } {
-  const [entries, setEntries] = useState<RecentlyViewedEntry[]>(() => readStorage());
+  // Initialize EMPTY (not from storage) so the server render and the first
+  // client render match — reading localStorage in the useState initializer
+  // makes the first client render differ from SSR and triggers a hydration
+  // mismatch. Populate from storage in an effect after mount instead.
+  const [entries, setEntries] = useState<RecentlyViewedEntry[]>([]);
 
   useEffect(() => {
+    setEntries(readStorage());
     function handleStorage(e: StorageEvent) {
       if (e.key !== STORAGE_KEY) return;
       setEntries(readStorage());
@@ -143,8 +148,13 @@ export function useRecentlyViewedListings(limit = 6): {
       queryKey: ['listings', id],
       queryFn: () =>
         api
-          .getPublic<{ listing: ListingDetail }>(`/api/v1/listings/${id}`)
-          .then((res) => res.listing),
+          // The API can return `photos: null` for listings with no images, so
+          // type the raw response as nullable and normalize to [] — cards read
+          // photos[0] and would otherwise crash ("undefined is not an object").
+          .getPublic<{ listing: Omit<ListingDetail, 'photos'> & { photos?: ListingPhoto[] | null } }>(
+            `/api/v1/listings/${id}`,
+          )
+          .then((res): ListingDetail => ({ ...res.listing, photos: res.listing.photos ?? [] })),
       enabled: !!id,
       staleTime: 60_000,
       retry: false,
