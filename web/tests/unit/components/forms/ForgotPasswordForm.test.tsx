@@ -34,7 +34,7 @@ describe('ForgotPasswordForm', () => {
     expect(api.postUnauthed).not.toHaveBeenCalled();
   });
 
-  it('submits to /forgot-password and shows success state', async () => {
+  it('submits to /request-password-reset and shows success state', async () => {
     const user = userEvent.setup();
     vi.mocked(api.postUnauthed).mockResolvedValue({});
 
@@ -43,7 +43,7 @@ describe('ForgotPasswordForm', () => {
     await user.click(screen.getByRole('button', { name: /Send reset link/ }));
 
     await waitFor(() => {
-      expect(api.postUnauthed).toHaveBeenCalledWith('/api/v1/auth/forgot-password', {
+      expect(api.postUnauthed).toHaveBeenCalledWith('/api/v1/auth/request-password-reset', {
         email: 'user@example.com',
       });
     });

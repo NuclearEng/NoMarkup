@@ -22,6 +22,7 @@ const invoicesState: { data: unknown } = { data: undefined };
 
 const changeTierMutate = vi.fn(() => Promise.resolve({}));
 const cancelMutate = vi.fn(() => Promise.resolve({}));
+const createMutate = vi.fn(() => Promise.resolve({}));
 const changeTierState = { isPending: false, isError: false, isSuccess: false };
 const cancelState = { isPending: false, isError: false };
 
@@ -69,6 +70,11 @@ vi.mock('@/hooks/useSubscription', () => ({
     isError: changeTierState.isError,
     isSuccess: changeTierState.isSuccess,
   }),
+  useCreateSubscription: () => ({
+    mutateAsync: createMutate,
+    isPending: false,
+    isError: false,
+  }),
   useInvoices: () => invoicesState,
   useSubscription: () => subState,
   useTiers: () => tiersState,
@@ -107,6 +113,7 @@ beforeEach(() => {
   cancelState.isError = false;
   changeTierMutate.mockClear();
   cancelMutate.mockClear();
+  createMutate.mockClear();
 });
 
 afterEach(() => {
@@ -358,15 +365,18 @@ describe('SubscriptionPage', () => {
     expect(screen.queryByRole('link', { name: /download invoice/i })).toBeNull();
   });
 
-  it('does nothing when a tier is selected but there is no current subscription', () => {
+  it('starts a new subscription when a tier is selected and there is no current subscription', () => {
     subState.data = { subscription: null };
     tiersState.data = {
       tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }],
     };
     render(withQueryClient(createElement(SubscriptionPage)));
     fireEvent.click(screen.getByTestId('tier-card-tier_basic'));
-    // Without a subscription, handleSelectTier should bail out early
+    // No active subscription → create one, don't change tier.
     expect(changeTierMutate).not.toHaveBeenCalled();
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ tier_id: 'tier_basic' }),
+    );
   });
 
   it('switches the billing interval to annual when the Annual tab is clicked', async () => {

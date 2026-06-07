@@ -10,10 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withQueryClient } from './_helpers';
 
 const profileState: {
-  data: { emailVerified: boolean } | undefined;
+  data: { emailVerified: boolean; email?: string } | undefined;
   isLoading: boolean;
 } = {
-  data: { emailVerified: true },
+  data: { emailVerified: true, email: 'user@example.com' },
   isLoading: false,
 };
 
@@ -76,7 +76,7 @@ vi.mock('@/stores/auth-store', () => ({
 const { default: DashboardLayout } = await import('@/app/(dashboard)/layout');
 
 beforeEach(() => {
-  profileState.data = { emailVerified: true };
+  profileState.data = { emailVerified: true, email: 'user@example.com' };
   profileState.isLoading = false;
   authStoreState.user = { id: 'u1', roles: ['customer'] };
   authStoreState.isHydrating = false;
@@ -127,7 +127,7 @@ describe('DashboardLayout', () => {
   });
 
   it('renders the email verification banner when email not verified', () => {
-    profileState.data = { emailVerified: false };
+    profileState.data = { emailVerified: false, email: 'user@example.com' };
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
     expect(screen.getByRole('alert')).toBeDefined();
     expect(
@@ -143,7 +143,7 @@ describe('DashboardLayout', () => {
   });
 
   it('clicking Resend email calls api.post and shows the success message', async () => {
-    profileState.data = { emailVerified: false };
+    profileState.data = { emailVerified: false, email: 'user@example.com' };
     const { api } = await import('@/lib/api');
     vi.mocked(api.post).mockResolvedValueOnce({} as never);
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
@@ -154,7 +154,8 @@ describe('DashboardLayout', () => {
     });
     await waitFor(() => {
       expect(vi.mocked(api.post)).toHaveBeenCalledWith(
-        '/api/v1/auth/verify-email/resend',
+        '/api/v1/auth/resend-verification',
+        { email: 'user@example.com' },
       );
     });
     expect(
@@ -163,7 +164,7 @@ describe('DashboardLayout', () => {
   });
 
   it('clicking Resend email handles api errors silently', async () => {
-    profileState.data = { emailVerified: false };
+    profileState.data = { emailVerified: false, email: 'user@example.com' };
     const { api } = await import('@/lib/api');
     vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
@@ -179,7 +180,7 @@ describe('DashboardLayout', () => {
   });
 
   it('clicking Dismiss removes the verification banner', () => {
-    profileState.data = { emailVerified: false };
+    profileState.data = { emailVerified: false, email: 'user@example.com' };
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
     fireEvent.click(screen.getByRole('button', { name: /Dismiss verification notice/i }));
     expect(screen.queryByRole('alert')).toBeNull();

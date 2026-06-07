@@ -137,7 +137,11 @@ describe('Header', () => {
     const hamburger = screen.getByLabelText('Toggle navigation menu');
     await user.click(hamburger);
     expect(hamburger.getAttribute('aria-expanded')).toBe('true');
-    const dashboardLink = screen.getAllByText('Dashboard')[0];
+    // Two "Dashboard" links now exist (desktop nav + mobile quick-nav). The
+    // mobile-menu one is rendered last in the DOM; click that to verify the
+    // menu closes on quick-nav selection.
+    const dashboardLinks = screen.getAllByText('Dashboard');
+    const dashboardLink = dashboardLinks[dashboardLinks.length - 1];
     if (dashboardLink) {
       await user.click(dashboardLink);
     }
