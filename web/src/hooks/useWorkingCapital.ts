@@ -22,7 +22,15 @@ export function useMyAdvances() {
 export function useCreditLimit() {
   return useQuery({
     queryKey: ['credit-limit'],
-    queryFn: () => api.get<CreditLimit>('/api/v1/providers/me/credit-limit'),
+    // The gateway wraps the payload in { credit_limit: {...} } — unwrap it so
+    // consumers read the fields directly (previously everything fell through
+    // to client-side fallbacks because the wrapper had no matching keys).
+    queryFn: async () => {
+      const res = await api.get<{ credit_limit: CreditLimit }>(
+        '/api/v1/providers/me/credit-limit',
+      );
+      return res.credit_limit;
+    },
   });
 }
 
