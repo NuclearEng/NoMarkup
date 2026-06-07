@@ -584,6 +584,9 @@ message Advance {
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp updated_at = 14;
   string stripe_transfer_id = 15;
+  // Flat origination/service fee portion of fee_cents (the rest is APR
+  // interest). Surfaced for a transparent, itemized breakdown.
+  int64 service_fee_cents = 16;
 }
 
 message RequestAdvanceRequest {

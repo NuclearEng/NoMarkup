@@ -208,7 +208,12 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 		return nil, fmt.Errorf("request advance declined: credit score %d (grade %s) is below the minimum to qualify", score, grade)
 	}
 	aprBps := dynamicAPRBps(score)
-	feeCents := computeAdvanceFeeCentsAPR(amountCents, aprBps, defaultAdvanceTermDays)
+	// Total fee = prorated APR interest + flat origination/service fee. Both
+	// are disclosed to the provider as separate line items; FeeCents stores the
+	// total so repayment/outstanding math stays in one place.
+	interestCents := computeAdvanceFeeCentsAPR(amountCents, aprBps, defaultAdvanceTermDays)
+	serviceFeeCents := domain.AdvanceServiceFeeCents(amountCents)
+	feeCents := interestCents + serviceFeeCents
 
 	advance := &domain.Advance{
 		ID:                 uuid.New().String(),
@@ -230,6 +235,8 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 		"contract_id", contractID,
 		"amount_cents", amountCents,
 		"fee_cents", feeCents,
+		"interest_cents", interestCents,
+		"service_fee_cents", serviceFeeCents,
 		"credit_score", score,
 		"credit_grade", grade,
 		"apr_bps", aprBps,

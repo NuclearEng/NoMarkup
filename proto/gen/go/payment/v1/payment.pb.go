@@ -3904,8 +3904,11 @@ type Advance struct {
 	CreatedAt          *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt          *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	StripeTransferId   string                 `protobuf:"bytes,15,opt,name=stripe_transfer_id,json=stripeTransferId,proto3" json:"stripe_transfer_id,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Flat origination/service fee portion of fee_cents (the rest is APR
+	// interest). Surfaced for a transparent, itemized breakdown.
+	ServiceFeeCents int64 `protobuf:"varint,16,opt,name=service_fee_cents,json=serviceFeeCents,proto3" json:"service_fee_cents,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Advance) Reset() {
@@ -4041,6 +4044,13 @@ func (x *Advance) GetStripeTransferId() string {
 		return x.StripeTransferId
 	}
 	return ""
+}
+
+func (x *Advance) GetServiceFeeCents() int64 {
+	if x != nil {
+		return x.ServiceFeeCents
+	}
+	return 0
 }
 
 type RequestAdvanceRequest struct {
@@ -8698,7 +8708,7 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"expense_id\x18\x01 \x01(\tR\texpenseId\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
 	"providerId\"\x17\n" +
-	"\x15DeleteExpenseResponse\"\x8a\x05\n" +
+	"\x15DeleteExpenseResponse\"\xb6\x05\n" +
 	"\aAdvance\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -8721,7 +8731,8 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12,\n" +
-	"\x12stripe_transfer_id\x18\x0f \x01(\tR\x10stripeTransferId\"|\n" +
+	"\x12stripe_transfer_id\x18\x0f \x01(\tR\x10stripeTransferId\x12*\n" +
+	"\x11service_fee_cents\x18\x10 \x01(\x03R\x0fserviceFeeCents\"|\n" +
 	"\x15RequestAdvanceRequest\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x1f\n" +

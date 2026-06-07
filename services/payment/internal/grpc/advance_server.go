@@ -180,6 +180,9 @@ func domainAdvanceToProto(a *domain.Advance) *paymentv1.Advance {
 		ContractId:         a.ContractID,
 		AdvanceAmountCents: a.AdvanceAmountCents,
 		FeeCents:           a.FeeCents,
+		// Itemized for transparency: the flat origination/service portion of
+		// FeeCents (the remainder is APR interest). Derived from the principal.
+		ServiceFeeCents:    domain.AdvanceServiceFeeCents(a.AdvanceAmountCents),
 		RepaidCents:        a.RepaidCents,
 		Status:             a.Status,
 		StripeTransferId:   a.StripeTransferID,
