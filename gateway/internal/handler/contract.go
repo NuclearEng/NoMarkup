@@ -328,8 +328,12 @@ func (h *ContractHandler) CancelContract(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// The reason is optional — the decline action in the UI sends no body, and
+	// requiring one made an empty request fail with 400 ("invalid request body:
+	// EOF"). Tolerate an absent/empty body; only surface malformed JSON.
 	var req cancelContractRequest
-	if !decodeJSON(w, r, &req) {
+	if err := decodeJSONOptional(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
