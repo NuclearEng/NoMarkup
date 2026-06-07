@@ -55,6 +55,13 @@ vi.mock('@/hooks/useTaxForms', () => ({
   }),
 }));
 
+const { printDocSpy } = vi.hoisted(() => ({
+  printDocSpy: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('@/lib/print', () => ({
+  printAuthenticatedDocument: printDocSpy,
+}));
+
 const { default: ProviderInvoicesPage } = await import(
   '@/app/(dashboard)/provider/business/invoices/page'
 );
@@ -176,13 +183,12 @@ describe('ProviderInvoicesPage', () => {
     expect((genBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('calls window.print when print button clicked', () => {
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+  it('prints the server-generated invoice document when print button clicked', () => {
+    printDocSpy.mockClear();
     contractsState.data = { contracts: [makeContract()] };
     render(withQueryClient(createElement(ProviderInvoicesPage)));
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     fireEvent.click(screen.getByRole('button', { name: /Print Invoice/ }));
-    expect(printSpy).toHaveBeenCalled();
-    printSpy.mockRestore();
+    expect(printDocSpy).toHaveBeenCalledWith('/api/v1/contracts/c-1/invoice/download');
   });
 });

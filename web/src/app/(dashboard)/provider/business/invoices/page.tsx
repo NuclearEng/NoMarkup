@@ -3,6 +3,7 @@
 import { ArrowLeft, ChevronDown, ChevronUp, Download, Loader2, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { InvoiceTemplate } from '@/components/providers/InvoiceTemplate';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
 import { useGenerateInvoice } from '@/hooks/useTaxForms';
+import { printAuthenticatedDocument } from '@/lib/print';
 import { formatCents } from '@/lib/utils';
 import type { Contract } from '@/types';
 
@@ -29,10 +31,20 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
   providerAddress?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const generateInvoice = useGenerateInvoice();
 
-  function handlePrint() {
-    window.print();
+  async function handlePrint() {
+    setPrinting(true);
+    try {
+      // Print the server-generated invoice document (full data + its own
+      // institutional print stylesheet), not the live dashboard page.
+      await printAuthenticatedDocument(`/api/v1/contracts/${contract.id}/invoice/download`);
+    } catch {
+      toast.error('Could not open the invoice for printing. Please try again.');
+    } finally {
+      setPrinting(false);
+    }
   }
 
   function handleGenerateInvoice() {
@@ -94,9 +106,14 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
               variant="outline"
               size="sm"
               className="min-h-[44px] gap-2"
-              onClick={handlePrint}
+              disabled={printing}
+              onClick={() => void handlePrint()}
             >
-              <Printer className="h-4 w-4" aria-hidden="true" />
+              {printing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Printer className="h-4 w-4" aria-hidden="true" />
+              )}
               Print Invoice
             </Button>
           </div>
