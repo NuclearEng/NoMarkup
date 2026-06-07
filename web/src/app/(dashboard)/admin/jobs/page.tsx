@@ -21,10 +21,20 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAdminJobs, useRemoveJob, useSuspendJob } from '@/hooks/useAdmin';
 import { JOB_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import type { Job } from '@/types';
+import type { Job, JobStatus } from '@/types';
 import { JOB_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
+
+// A job can only be suspended while it is still live/visible to providers.
+// Terminal or post-award states (completed, cancelled, awarded, in_progress,
+// expired, already-suspended, etc.) reject the transition with a 422.
+const SUSPENDABLE_STATUSES: ReadonlySet<JobStatus> = new Set([
+  JOB_STATUS.DRAFT,
+  JOB_STATUS.ACTIVE,
+  JOB_STATUS.CLOSED,
+  JOB_STATUS.REPOSTED,
+]);
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -117,7 +127,7 @@ export default function AdminJobsPage() {
             variant="outline"
             size="sm"
             className="min-h-[44px]"
-            disabled={job.status === JOB_STATUS.SUSPENDED}
+            disabled={!SUSPENDABLE_STATUSES.has(job.status)}
             onClick={(e) => {
               e.stopPropagation();
               setActionTarget({ job, action: 'suspend' });
