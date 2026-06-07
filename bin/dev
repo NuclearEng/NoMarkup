@@ -707,7 +707,8 @@ start_gateway() {
         "IMAGING_SERVICE_ADDR=localhost:$IMAGING_PORT" \
         "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT" \
         "REDIS_URL=redis://localhost:$REDIS_PORT" \
-        "RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH:-50}"
+        "RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH:-50}" \
+        "ENABLE_LIVE_AUCTION=${ENABLE_LIVE_AUCTION:-true}"
 
     success "Gateway ready"
 }
