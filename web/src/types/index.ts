@@ -596,6 +596,9 @@ export interface PaymentBreakdown {
   provider_payout_cents: number;
   fee_percentage: number;
   guarantee_percentage: number;
+  // Lead-gen fee — additive fee on won contracts. Zero when not applicable.
+  lead_gen_fee_cents: number;
+  lead_gen_percentage: number;
 }
 
 export interface PaymentMethod {
@@ -1468,10 +1471,56 @@ export interface FeeConfig {
   guarantee_percentage: number;
   min_fee_cents: number;
   max_fee_cents: number;
+  // Lead-gen fee — an ADDITIVE fee charged on won contracts, on top of the
+  // platform + guarantee fees. Sent/returned in the same units as the sibling
+  // fields above: whole-number percentage (e.g. 10.0 means 10%) and integer
+  // cents. `lead_gen_max_fee_cents` is null when there is no cap.
+  lead_gen_enabled: boolean;
+  lead_gen_percentage: number;
+  lead_gen_min_fee_cents: number;
+  lead_gen_max_fee_cents: number | null;
 }
 
 export interface CategoryMetricsResponse {
   categories: CategoryMetric[];
+}
+
+// ────────────────────────────────────────
+// Platform banking (admin) — where all platform fees route
+// ────────────────────────────────────────
+
+export const BANK_ACCOUNT_HOLDER_TYPE = {
+  INDIVIDUAL: 'individual',
+  COMPANY: 'company',
+} as const;
+export type BankAccountHolderType =
+  (typeof BANK_ACCOUNT_HOLDER_TYPE)[keyof typeof BANK_ACCOUNT_HOLDER_TYPE];
+
+export interface PlatformBankAccount {
+  id: string;
+  bank_name: string;
+  account_holder_name: string;
+  account_holder_type: BankAccountHolderType;
+  last4: string;
+  routing_last4: string;
+  currency: string;
+  country: string;
+  status: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlatformBankingResponse {
+  account: PlatformBankAccount | null;
+}
+
+// Sent to our backend AFTER tokenizing with Stripe.js. Raw account/routing
+// numbers MUST NOT appear here — only the Stripe bank-account token (btok_...).
+export interface CreatePlatformBankAccountInput {
+  bank_account_token: string;
+  account_holder_name: string;
+  account_holder_type: BankAccountHolderType;
 }
 
 // ────────────────────────────────────────

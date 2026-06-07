@@ -47,10 +47,38 @@ function hasAuth(request: NextRequest): boolean {
   return false;
 }
 
+// isSameOrigin guards this expensive LLM endpoint against cross-site callers
+// (CSRF-style cost amplification). Browsers always attach an Origin header on
+// cross-site fetch POSTs, so a *present* Origin that doesn't match this app's
+// own host is rejected. We compare against the request's own host (derived
+// from the Host header or, failing that, the request URL). When neither an
+// Origin nor a Referer is present, we allow the request — non-browser callers
+// that already passed the Bearer/cookie auth check above land here, and a
+// malicious cross-site page can never suppress the Origin header.
+function isSameOrigin(request: NextRequest): boolean {
+  const expectedHost = request.headers.get('host') ?? request.nextUrl.host;
+
+  const sourceHeader = request.headers.get('origin') ?? request.headers.get('referer');
+  if (!sourceHeader) return true;
+
+  if (!expectedHost) return false;
+
+  try {
+    return new URL(sourceHeader).host === expectedHost;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // 1. Auth (belt-and-suspenders — middleware also blocks this path).
   if (!hasAuth(request)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  // 1b. Origin check — reject cross-site callers outright.
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
   // 2. Content-Type must be JSON.

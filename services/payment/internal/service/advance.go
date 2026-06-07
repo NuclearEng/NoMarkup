@@ -10,10 +10,11 @@ import (
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
-// advanceFeeAPY is the annualized percentage rate charged on working capital
-// advances (3% APY). The actual fee is prorated over the expected term:
-//   fee = amount × APY × (termDays / 365)
-const advanceFeeAPY = 0.03
+// advanceFeeAPR is the annual percentage rate charged on working capital
+// advances (3% APR). Simple interest, prorated over the expected term (not
+// compounded):
+//   fee = amount × APR × (termDays / 365)
+const advanceFeeAPR = 0.03
 
 // defaultAdvanceTermDays is the assumed time-to-repayment when the contract
 // itself doesn't expose a maturity date. 30 days matches typical short-term
@@ -21,12 +22,13 @@ const advanceFeeAPY = 0.03
 const defaultAdvanceTermDays = 30
 
 // computeAdvanceFeeCents returns the prorated fee for an advance held for
-// termDays at advanceFeeAPY.
+// termDays at advanceFeeAPR. Rounds to the nearest cent so the charged fee
+// matches the estimate shown to the provider (and never under-charges).
 func computeAdvanceFeeCents(amountCents int64, termDays int) int64 {
 	if termDays <= 0 {
 		termDays = defaultAdvanceTermDays
 	}
-	return int64(float64(amountCents) * advanceFeeAPY * float64(termDays) / 365.0)
+	return int64(math.Round(float64(amountCents) * advanceFeeAPR * float64(termDays) / 365.0))
 }
 
 // RequestAdvance creates a new working capital advance request.

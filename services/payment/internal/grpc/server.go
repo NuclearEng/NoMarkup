@@ -315,6 +315,8 @@ func (s *Server) CalculateFees(ctx context.Context, req *paymentv1.CalculateFees
 			ProviderPayoutCents: breakdown.ProviderPayoutCents,
 			FeePercentage:       breakdown.FeePercentage,
 			GuaranteePercentage: breakdown.GuaranteePercentage,
+			LeadGenFeeCents:     breakdown.LeadGenFeeCents,
+			LeadGenPercentage:   breakdown.LeadGenPercentage,
 		},
 	}, nil
 }
@@ -330,16 +332,7 @@ func (s *Server) GetFeeConfig(ctx context.Context, req *paymentv1.GetFeeConfigRe
 		return nil, mapDomainError(err)
 	}
 
-	resp := &paymentv1.GetFeeConfigResponse{
-		FeePercentage:       fc.FeePercentage,
-		GuaranteePercentage: fc.GuaranteePercentage,
-		MinFeeCents:         fc.MinFeeCents,
-	}
-	if fc.MaxFeeCents != nil {
-		resp.MaxFeeCents = *fc.MaxFeeCents
-	}
-
-	return resp, nil
+	return feeConfigToProto(fc), nil
 }
 
 // --- Admin RPCs ---
@@ -417,16 +410,25 @@ func (s *Server) AdminGetPaymentDetails(ctx context.Context, req *paymentv1.Admi
 		return nil, mapDomainError(err)
 	}
 
+	// Lead-gen fee is the residual deduction beyond platform + guarantee fees
+	// (the payments table does not carry a dedicated lead_gen column; the fee was
+	// folded into the provider-payout reduction at creation time).
+	leadGenFee := payment.AmountCents - payment.PlatformFeeCents - payment.GuaranteeFeeCents - payment.ProviderPayoutCents
+	if leadGenFee < 0 {
+		leadGenFee = 0
+	}
 	breakdown := &paymentv1.PaymentBreakdown{
 		SubtotalCents:       payment.AmountCents,
 		PlatformFeeCents:    payment.PlatformFeeCents,
 		GuaranteeFeeCents:   payment.GuaranteeFeeCents,
 		TotalCents:          payment.AmountCents,
 		ProviderPayoutCents: payment.ProviderPayoutCents,
+		LeadGenFeeCents:     leadGenFee,
 	}
 	if payment.AmountCents > 0 {
 		breakdown.FeePercentage = float64(payment.PlatformFeeCents) / float64(payment.AmountCents)
 		breakdown.GuaranteePercentage = float64(payment.GuaranteeFeeCents) / float64(payment.AmountCents)
+		breakdown.LeadGenPercentage = float64(leadGenFee) / float64(payment.AmountCents)
 	}
 
 	return &paymentv1.AdminGetPaymentDetailsResponse{
@@ -453,23 +455,40 @@ func (s *Server) AdminUpdateFeeConfig(ctx context.Context, req *paymentv1.AdminU
 		maxFeeCents = req.MaxFeeCents
 	}
 
-	fc, err := s.svc.AdminUpdateFeeConfig(ctx, categoryID, req.GetFeePercentage(), req.GetGuaranteePercentage(), req.GetMinFeeCents(), maxFeeCents)
+	var leadGenMaxFeeCents *int64
+	if req.LeadGenMaxFeeCents != nil {
+		leadGenMaxFeeCents = req.LeadGenMaxFeeCents
+	}
+
+	fc, err := s.svc.AdminUpdateFeeConfig(ctx, categoryID, req.GetFeePercentage(), req.GetGuaranteePercentage(), req.GetMinFeeCents(), maxFeeCents,
+		req.GetLeadGenEnabled(), req.GetLeadGenPercentage(), req.GetLeadGenMinFeeCents(), leadGenMaxFeeCents)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
 
+	return &paymentv1.AdminUpdateFeeConfigResponse{
+		Config: feeConfigToProto(fc),
+	}, nil
+}
+
+// feeConfigToProto maps a domain FeeConfig onto the GetFeeConfigResponse proto,
+// including the lead-gen fields.
+func feeConfigToProto(fc *domain.FeeConfig) *paymentv1.GetFeeConfigResponse {
 	resp := &paymentv1.GetFeeConfigResponse{
-		FeePercentage:       fc.FeePercentage,
+		FeePercentage:      fc.FeePercentage,
 		GuaranteePercentage: fc.GuaranteePercentage,
-		MinFeeCents:         fc.MinFeeCents,
+		MinFeeCents:        fc.MinFeeCents,
+		LeadGenEnabled:     fc.LeadGenEnabled,
+		LeadGenPercentage:  fc.LeadGenPercentage,
+		LeadGenMinFeeCents: fc.LeadGenMinFeeCents,
 	}
 	if fc.MaxFeeCents != nil {
 		resp.MaxFeeCents = *fc.MaxFeeCents
 	}
-
-	return &paymentv1.AdminUpdateFeeConfigResponse{
-		Config: resp,
-	}, nil
+	if fc.LeadGenMaxFeeCents != nil {
+		resp.LeadGenMaxFeeCents = fc.LeadGenMaxFeeCents
+	}
+	return resp
 }
 
 func (s *Server) GetRevenueReport(ctx context.Context, req *paymentv1.GetRevenueReportRequest) (*paymentv1.GetRevenueReportResponse, error) {
@@ -609,7 +628,90 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "fee configuration not found")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):
 		return status.Error(codes.NotFound, "stripe account not found")
+	case errors.Is(err, domain.ErrPlatformBankAccountNotFound):
+		return status.Error(codes.NotFound, "platform bank account not found")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+// --- Platform bank account RPCs ---
+
+// platformBankAccountToProto maps a domain PlatformBankAccount onto its proto.
+func platformBankAccountToProto(a *domain.PlatformBankAccount) *paymentv1.PlatformBankAccount {
+	if a == nil {
+		return nil
+	}
+	pb := &paymentv1.PlatformBankAccount{
+		Id:                      a.ID,
+		StripeExternalAccountId: a.StripeExternalAccountID,
+		AccountHolderType:       a.AccountHolderType,
+		Last4:                   a.Last4,
+		Currency:                a.Currency,
+		Country:                 a.Country,
+		Status:                  a.Status,
+		IsDefault:               a.IsDefault,
+		CreatedAt:               timestamppb.New(a.CreatedAt),
+		UpdatedAt:               timestamppb.New(a.UpdatedAt),
+	}
+	if a.BankName != nil {
+		pb.BankName = *a.BankName
+	}
+	if a.AccountHolderName != nil {
+		pb.AccountHolderName = *a.AccountHolderName
+	}
+	if a.RoutingLast4 != nil {
+		pb.RoutingLast4 = *a.RoutingLast4
+	}
+	return pb
+}
+
+func (s *Server) AdminGetPlatformBankAccount(ctx context.Context, req *paymentv1.AdminGetPlatformBankAccountRequest) (*paymentv1.AdminGetPlatformBankAccountResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	acct, err := s.svc.GetPlatformBankAccount(ctx)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	resp := &paymentv1.AdminGetPlatformBankAccountResponse{}
+	if acct != nil {
+		resp.Account = platformBankAccountToProto(acct)
+	}
+	return resp, nil
+}
+
+func (s *Server) AdminSetPlatformBankAccount(ctx context.Context, req *paymentv1.AdminSetPlatformBankAccountRequest) (*paymentv1.AdminSetPlatformBankAccountResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetBankAccountToken() == "" {
+		return nil, status.Error(codes.InvalidArgument, "bank_account_token is required")
+	}
+
+	acct, err := s.svc.SetPlatformBankAccount(ctx, req.GetBankAccountToken(), req.GetAccountHolderName(), req.GetAccountHolderType(), req.GetAdminId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &paymentv1.AdminSetPlatformBankAccountResponse{
+		Account: platformBankAccountToProto(acct),
+	}, nil
+}
+
+func (s *Server) AdminDeletePlatformBankAccount(ctx context.Context, req *paymentv1.AdminDeletePlatformBankAccountRequest) (*paymentv1.AdminDeletePlatformBankAccountResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+
+	if err := s.svc.DeletePlatformBankAccount(ctx, req.GetId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &paymentv1.AdminDeletePlatformBankAccountResponse{Deleted: true}, nil
 }

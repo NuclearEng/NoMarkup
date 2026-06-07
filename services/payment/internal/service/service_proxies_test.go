@@ -346,7 +346,7 @@ func TestPaymentService_AdminUpdateFeeConfig(t *testing.T) {
 			t.Parallel()
 			repo := &mockPaymentRepo{}
 			svc := newTestPaymentService(repo, nil)
-			_, err := svc.AdminUpdateFeeConfig(context.Background(), nil, tt.feePct, tt.guaranteePct, tt.minFee, tt.maxFee)
+			_, err := svc.AdminUpdateFeeConfig(context.Background(), nil, tt.feePct, tt.guaranteePct, tt.minFee, tt.maxFee, false, 0, 0, nil)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.True(t, strings.Contains(err.Error(), tt.errContains),

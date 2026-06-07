@@ -40,12 +40,12 @@ import { ADVANCE_STATUS } from '@/types';
 // ────────────────────────────────────────
 
 /**
- * Annual percentage yield charged on working capital advances (3% APY).
- * The actual fee is prorated by term length:
- *   fee = amount × APY × (termDays / 365)
+ * Annual percentage rate charged on working capital advances (3% APR).
+ * Simple interest, prorated by term length (not compounded):
+ *   fee = amount × APR × (termDays / 365)
  * Backend default term matches DEFAULT_TERM_DAYS below; keep them in sync.
  */
-const FEE_APY = 0.03;
+const FEE_APR = 0.03;
 const DEFAULT_TERM_DAYS = 30;
 
 /** Maximum credit utilization — providers can borrow up to 50% of active contract value */
@@ -84,7 +84,7 @@ function formatDate(dateStr: string): string {
 }
 
 function computeFeeCents(amountCents: number, termDays = DEFAULT_TERM_DAYS): number {
-  return Math.round((amountCents * FEE_APY * termDays) / 365);
+  return Math.round((amountCents * FEE_APR * termDays) / 365);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -148,7 +148,7 @@ function StatCard({
 function FeePreview({ amountCents }: { amountCents: number }) {
   const feeCents = computeFeeCents(amountCents);
   const totalCents = amountCents + feeCents;
-  const apyPercent = (FEE_APY * 100).toFixed(0);
+  const aprPercent = (FEE_APR * 100).toFixed(0);
 
   if (amountCents <= 0) return null;
 
@@ -165,7 +165,7 @@ function FeePreview({ amountCents }: { amountCents: number }) {
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-white/50">
-            Fee ({apyPercent}% APY · ~{DEFAULT_TERM_DAYS}-day term)
+            Fee ({aprPercent}% APR · ~{DEFAULT_TERM_DAYS}-day term)
           </span>
           <span className="text-white/80 tabular-nums">{formatCents(feeCents)}</span>
         </div>
@@ -179,7 +179,7 @@ function FeePreview({ amountCents }: { amountCents: number }) {
           </div>
         </div>
         <p className="mt-2 text-xs text-white/40">
-          Charged at {apyPercent}% APY, prorated by days outstanding.
+          Charged at {aprPercent}% APR, prorated by days outstanding.
         </p>
       </div>
     </div>

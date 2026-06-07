@@ -201,14 +201,18 @@ func (r *PostgresRepository) GetFeeConfig(ctx context.Context, categoryID string
 	fc := &domain.FeeConfig{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, category_id, fee_percentage, guarantee_percentage,
-		       min_fee_cents, max_fee_cents, active, effective_from,
+		       min_fee_cents, max_fee_cents,
+		       lead_gen_enabled, lead_gen_percentage, lead_gen_min_fee_cents, lead_gen_max_fee_cents,
+		       active, effective_from,
 		       created_at, updated_at
 		FROM platform_fee_config
 		WHERE category_id = $1 AND active = true
 		ORDER BY effective_from DESC
 		LIMIT 1`, categoryID).Scan(
 		&fc.ID, &fc.CategoryID, &fc.FeePercentage, &fc.GuaranteePercentage,
-		&fc.MinFeeCents, &fc.MaxFeeCents, &fc.Active, &fc.EffectiveFrom,
+		&fc.MinFeeCents, &fc.MaxFeeCents,
+		&fc.LeadGenEnabled, &fc.LeadGenPercentage, &fc.LeadGenMinFeeCents, &fc.LeadGenMaxFeeCents,
+		&fc.Active, &fc.EffectiveFrom,
 		&fc.CreatedAt, &fc.UpdatedAt,
 	)
 	if err != nil {
@@ -224,14 +228,18 @@ func (r *PostgresRepository) GetDefaultFeeConfig(ctx context.Context) (*domain.F
 	fc := &domain.FeeConfig{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, category_id, fee_percentage, guarantee_percentage,
-		       min_fee_cents, max_fee_cents, active, effective_from,
+		       min_fee_cents, max_fee_cents,
+		       lead_gen_enabled, lead_gen_percentage, lead_gen_min_fee_cents, lead_gen_max_fee_cents,
+		       active, effective_from,
 		       created_at, updated_at
 		FROM platform_fee_config
 		WHERE category_id IS NULL AND active = true
 		ORDER BY effective_from DESC
 		LIMIT 1`).Scan(
 		&fc.ID, &fc.CategoryID, &fc.FeePercentage, &fc.GuaranteePercentage,
-		&fc.MinFeeCents, &fc.MaxFeeCents, &fc.Active, &fc.EffectiveFrom,
+		&fc.MinFeeCents, &fc.MaxFeeCents,
+		&fc.LeadGenEnabled, &fc.LeadGenPercentage, &fc.LeadGenMinFeeCents, &fc.LeadGenMaxFeeCents,
+		&fc.Active, &fc.EffectiveFrom,
 		&fc.CreatedAt, &fc.UpdatedAt,
 	)
 	if err != nil {
@@ -492,7 +500,7 @@ func (r *PostgresRepository) AdminGetPaymentDetails(ctx context.Context, payment
 
 // UpdateFeeConfig deactivates the current active config (for the given category or default)
 // and inserts a new active config row.
-func (r *PostgresRepository) UpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64) (*domain.FeeConfig, error) {
+func (r *PostgresRepository) UpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64, leadGenEnabled bool, leadGenPercentage float64, leadGenMinFeeCents int64, leadGenMaxFeeCents *int64) (*domain.FeeConfig, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("update fee config begin: %w", err)
@@ -516,12 +524,18 @@ func (r *PostgresRepository) UpdateFeeConfig(ctx context.Context, categoryID *st
 	// Insert new active config.
 	fc := &domain.FeeConfig{}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO platform_fee_config (category_id, fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active, effective_from)
-		VALUES ($1, $2, $3, $4, $5, true, now())
-		RETURNING id, category_id, fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active, effective_from, created_at, updated_at`,
-		categoryID, feePercentage, guaranteePercentage, minFeeCents, maxFeeCents).Scan(
+		INSERT INTO platform_fee_config (category_id, fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents,
+			lead_gen_enabled, lead_gen_percentage, lead_gen_min_fee_cents, lead_gen_max_fee_cents, active, effective_from)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, now())
+		RETURNING id, category_id, fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents,
+			lead_gen_enabled, lead_gen_percentage, lead_gen_min_fee_cents, lead_gen_max_fee_cents,
+			active, effective_from, created_at, updated_at`,
+		categoryID, feePercentage, guaranteePercentage, minFeeCents, maxFeeCents,
+		leadGenEnabled, leadGenPercentage, leadGenMinFeeCents, leadGenMaxFeeCents).Scan(
 		&fc.ID, &fc.CategoryID, &fc.FeePercentage, &fc.GuaranteePercentage,
-		&fc.MinFeeCents, &fc.MaxFeeCents, &fc.Active, &fc.EffectiveFrom,
+		&fc.MinFeeCents, &fc.MaxFeeCents,
+		&fc.LeadGenEnabled, &fc.LeadGenPercentage, &fc.LeadGenMinFeeCents, &fc.LeadGenMaxFeeCents,
+		&fc.Active, &fc.EffectiveFrom,
 		&fc.CreatedAt, &fc.UpdatedAt,
 	)
 	if err != nil {

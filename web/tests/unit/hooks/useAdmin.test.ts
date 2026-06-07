@@ -26,6 +26,9 @@ import {
   useUpdateFeeConfig,
   useGrowthMetrics,
   useCategoryMetrics,
+  usePlatformBanking,
+  useSetPlatformBankAccount,
+  useDeletePlatformBankAccount,
 } from '@/hooks/useAdmin';
 import type {
   AdminUsersResponse,
@@ -37,6 +40,7 @@ import type {
   CategoryMetricsResponse,
   FeeConfig,
   GrowthMetrics,
+  PlatformBankingResponse,
   PlatformMetrics,
   RevenueReport,
 } from '@/types';
@@ -51,6 +55,13 @@ vi.mock('@/lib/api', () => ({
     put: vi.fn(),
     delete: vi.fn(),
   },
+  // Banking mutations send a fresh Idempotency-Key; stub it deterministically.
+  idempotencyHeader: () => ({ 'Idempotency-Key': 'test-key' }),
+}));
+
+// Banking hooks fire toasts; stub sonner so they're no-ops in tests.
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 const { api } = await import('@/lib/api');
@@ -1054,6 +1065,10 @@ describe('useUpdateFeeConfig', () => {
       guarantee_percentage: 2,
       min_fee_cents: 100,
       max_fee_cents: 5000,
+      lead_gen_enabled: true,
+      lead_gen_percentage: 10,
+      lead_gen_min_fee_cents: 500,
+      lead_gen_max_fee_cents: 5000,
     };
     vi.mocked(api.put).mockResolvedValueOnce(config);
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -1163,5 +1178,159 @@ describe('useCategoryMetrics', () => {
     });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/platform/categories');
+  });
+});
+
+describe('usePlatformBanking', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches the platform bank account', async () => {
+    const response: PlatformBankingResponse = {
+      account: {
+        id: 'ba-1',
+        bank_name: 'Test Bank',
+        account_holder_name: 'NoMarkup Inc.',
+        account_holder_type: 'company',
+        last4: '6789',
+        routing_last4: '0000',
+        currency: 'usd',
+        country: 'US',
+        status: 'new',
+        is_default: true,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(response);
+
+    const { result } = renderHook(() => usePlatformBanking(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data?.account?.last4).toBe('6789');
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/banking');
+  });
+
+  it('returns null when no account is set', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ account: null });
+
+    const { result } = renderHook(() => usePlatformBanking(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data?.account).toBeNull();
+  });
+});
+
+describe('useSetPlatformBankAccount', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('posts the token with an idempotency key and invalidates banking', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ account: { id: 'ba-1' } });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSetPlatformBankAccount(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      bank_account_token: 'btok_test',
+      account_holder_name: 'NoMarkup Inc.',
+      account_holder_type: 'company',
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/admin/banking',
+      {
+        bank_account_token: 'btok_test',
+        account_holder_name: 'NoMarkup Inc.',
+        account_holder_type: 'company',
+      },
+      { 'Idempotency-Key': 'test-key' },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin', 'banking'] });
+  });
+
+  it('does not send raw account/routing numbers', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ account: { id: 'ba-1' } });
+
+    const { result } = renderHook(() => useSetPlatformBankAccount(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      bank_account_token: 'btok_test',
+      account_holder_name: 'NoMarkup Inc.',
+      account_holder_type: 'company',
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const body = vi.mocked(api.post).mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('account_number');
+    expect(body).not.toHaveProperty('routing_number');
+  });
+});
+
+describe('useDeletePlatformBankAccount', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('deletes the account and invalidates banking', async () => {
+    vi.mocked(api.delete).mockResolvedValueOnce({ deleted: true });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useDeletePlatformBankAccount(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate('ba-1');
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/api/v1/admin/banking/ba-1');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin', 'banking'] });
   });
 });

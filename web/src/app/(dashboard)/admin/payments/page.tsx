@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { z } from 'zod';
 
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   useAdminPayments,
   useRevenueReport,
@@ -31,6 +33,63 @@ import type { Payment } from '@/types';
 import { PAYMENT_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
+
+// Validation for the fee form. Fields are kept as the raw string inputs the
+// user types; we coerce + validate here so we can surface inline field errors
+// before sending. Percentages are entered as whole numbers (e.g. "10.0") and
+// dollar fields are entered in USD (converted to cents on submit).
+const percentString = z
+  .string()
+  .refine((v) => v === '' || (!Number.isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 100), {
+    message: 'Must be between 0 and 100',
+  });
+
+const usdString = z
+  .string()
+  .refine((v) => v === '' || (!Number.isNaN(Number(v)) && Number(v) >= 0), {
+    message: 'Must be 0 or greater',
+  });
+
+const feeFormSchema = z
+  .object({
+    feePercentage: percentString,
+    guaranteePercentage: percentString,
+    minFee: usdString,
+    maxFee: usdString,
+    leadGenEnabled: z.boolean(),
+    leadGenPercentage: percentString,
+    leadGenMinFee: usdString,
+    leadGenMaxFee: usdString,
+  })
+  .superRefine((val, ctx) => {
+    // max >= min (when both provided) for the platform fee bounds.
+    if (val.minFee !== '' && val.maxFee !== '' && Number(val.maxFee) < Number(val.minFee)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['maxFee'],
+        message: 'Max fee must be ≥ min fee',
+      });
+    }
+    // lead-gen max >= min (max is optional/empty = no cap).
+    if (
+      val.leadGenMinFee !== '' &&
+      val.leadGenMaxFee !== '' &&
+      Number(val.leadGenMaxFee) < Number(val.leadGenMinFee)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['leadGenMaxFee'],
+        message: 'Max fee must be ≥ min fee',
+      });
+    }
+  });
+
+type FeeFormErrors = Partial<Record<keyof z.infer<typeof feeFormSchema>, string>>;
+
+// usdToCents matches the existing min/max fee conversion: USD → integer cents.
+function usdToCents(value: string): number {
+  return Math.round((parseFloat(value) || 0) * 100);
+}
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -50,6 +109,12 @@ export default function AdminPaymentsPage() {
   const [minFeeCents, setMinFeeCents] = useState('');
   const [maxFeeCents, setMaxFeeCents] = useState('');
   const [feeCategoryId, setFeeCategoryId] = useState('');
+  // Lead-gen fee form state.
+  const [leadGenEnabled, setLeadGenEnabled] = useState(false);
+  const [leadGenPercentage, setLeadGenPercentage] = useState('');
+  const [leadGenMinFee, setLeadGenMinFee] = useState('');
+  const [leadGenMaxFee, setLeadGenMaxFee] = useState('');
+  const [feeErrors, setFeeErrors] = useState<FeeFormErrors>({});
 
   const { data: paymentsData, isLoading: paymentsLoading, isError: paymentsError } =
     useAdminPayments({
@@ -62,12 +127,41 @@ export default function AdminPaymentsPage() {
   const feeConfigMutation = useUpdateFeeConfig();
 
   async function handleSaveFees() {
+    const parsed = feeFormSchema.safeParse({
+      feePercentage,
+      guaranteePercentage,
+      minFee: minFeeCents,
+      maxFee: maxFeeCents,
+      leadGenEnabled,
+      leadGenPercentage,
+      leadGenMinFee,
+      leadGenMaxFee,
+    });
+
+    if (!parsed.success) {
+      const nextErrors: FeeFormErrors = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === 'string' && !(field in nextErrors)) {
+          nextErrors[field as keyof FeeFormErrors] = issue.message;
+        }
+      }
+      setFeeErrors(nextErrors);
+      return;
+    }
+
+    setFeeErrors({});
     await feeConfigMutation.mutateAsync({
       category_id: feeCategoryId,
       fee_percentage: parseFloat(feePercentage) || 0,
       guarantee_percentage: parseFloat(guaranteePercentage) || 0,
-      min_fee_cents: Math.round((parseFloat(minFeeCents) || 0) * 100),
-      max_fee_cents: Math.round((parseFloat(maxFeeCents) || 0) * 100),
+      min_fee_cents: usdToCents(minFeeCents),
+      max_fee_cents: usdToCents(maxFeeCents),
+      lead_gen_enabled: leadGenEnabled,
+      lead_gen_percentage: parseFloat(leadGenPercentage) || 0,
+      lead_gen_min_fee_cents: usdToCents(leadGenMinFee),
+      // Optional cap — null (no cap) when the field is left blank.
+      lead_gen_max_fee_cents: leadGenMaxFee === '' ? null : usdToCents(leadGenMaxFee),
     });
   }
 
@@ -240,7 +334,14 @@ export default function AdminPaymentsPage() {
                 value={feePercentage}
                 onChange={(e) => { setFeePercentage(e.target.value); }}
                 className="min-h-[44px]"
+                aria-invalid={feeErrors.feePercentage ? true : undefined}
+                aria-describedby={feeErrors.feePercentage ? 'fee-percentage-error' : undefined}
               />
+              {feeErrors.feePercentage ? (
+                <p id="fee-percentage-error" className="text-sm text-destructive">
+                  {feeErrors.feePercentage}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="guarantee-percentage">Guarantee Percentage</Label>
@@ -254,7 +355,16 @@ export default function AdminPaymentsPage() {
                 value={guaranteePercentage}
                 onChange={(e) => { setGuaranteePercentage(e.target.value); }}
                 className="min-h-[44px]"
+                aria-invalid={feeErrors.guaranteePercentage ? true : undefined}
+                aria-describedby={
+                  feeErrors.guaranteePercentage ? 'guarantee-percentage-error' : undefined
+                }
               />
+              {feeErrors.guaranteePercentage ? (
+                <p id="guarantee-percentage-error" className="text-sm text-destructive">
+                  {feeErrors.guaranteePercentage}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="min-fee">Min Fee (USD)</Label>
@@ -267,7 +377,14 @@ export default function AdminPaymentsPage() {
                 value={minFeeCents}
                 onChange={(e) => { setMinFeeCents(e.target.value); }}
                 className="min-h-[44px]"
+                aria-invalid={feeErrors.minFee ? true : undefined}
+                aria-describedby={feeErrors.minFee ? 'min-fee-error' : undefined}
               />
+              {feeErrors.minFee ? (
+                <p id="min-fee-error" className="text-sm text-destructive">
+                  {feeErrors.minFee}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="max-fee">Max Fee (USD)</Label>
@@ -280,8 +397,109 @@ export default function AdminPaymentsPage() {
                 value={maxFeeCents}
                 onChange={(e) => { setMaxFeeCents(e.target.value); }}
                 className="min-h-[44px]"
+                aria-invalid={feeErrors.maxFee ? true : undefined}
+                aria-describedby={feeErrors.maxFee ? 'max-fee-error' : undefined}
+              />
+              {feeErrors.maxFee ? (
+                <p id="max-fee-error" className="text-sm text-destructive">
+                  {feeErrors.maxFee}
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Lead-gen fee — additive fee on won contracts */}
+          <div className="space-y-4 rounded-md border border-[var(--brand-gold)]/10 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="lead-gen-enabled" className="text-base">
+                  Lead-gen fee
+                </Label>
+                <p className="text-sm text-zinc-300">
+                  An <span className="font-medium">additive</span> fee charged on won
+                  contracts, on top of the platform and guarantee fees. It covers the cost
+                  of sourcing the lead.
+                </p>
+              </div>
+              <Switch
+                id="lead-gen-enabled"
+                checked={leadGenEnabled}
+                onCheckedChange={setLeadGenEnabled}
+                aria-label="Enable lead-gen fee"
               />
             </div>
+
+            {leadGenEnabled ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="lead-gen-percentage">Lead-gen Percentage</Label>
+                  <Input
+                    id="lead-gen-percentage"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="e.g. 10.0"
+                    value={leadGenPercentage}
+                    onChange={(e) => { setLeadGenPercentage(e.target.value); }}
+                    className="min-h-[44px]"
+                    aria-invalid={feeErrors.leadGenPercentage ? true : undefined}
+                    aria-describedby={
+                      feeErrors.leadGenPercentage ? 'lead-gen-percentage-error' : undefined
+                    }
+                  />
+                  {feeErrors.leadGenPercentage ? (
+                    <p id="lead-gen-percentage-error" className="text-sm text-destructive">
+                      {feeErrors.leadGenPercentage}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lead-gen-min-fee">Lead-gen Min Fee (USD)</Label>
+                  <Input
+                    id="lead-gen-min-fee"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="e.g. 5.00"
+                    value={leadGenMinFee}
+                    onChange={(e) => { setLeadGenMinFee(e.target.value); }}
+                    className="min-h-[44px]"
+                    aria-invalid={feeErrors.leadGenMinFee ? true : undefined}
+                    aria-describedby={
+                      feeErrors.leadGenMinFee ? 'lead-gen-min-fee-error' : undefined
+                    }
+                  />
+                  {feeErrors.leadGenMinFee ? (
+                    <p id="lead-gen-min-fee-error" className="text-sm text-destructive">
+                      {feeErrors.leadGenMinFee}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lead-gen-max-fee">Lead-gen Max Fee (USD, optional)</Label>
+                  <Input
+                    id="lead-gen-max-fee"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Leave blank for no cap"
+                    value={leadGenMaxFee}
+                    onChange={(e) => { setLeadGenMaxFee(e.target.value); }}
+                    className="min-h-[44px]"
+                    aria-invalid={feeErrors.leadGenMaxFee ? true : undefined}
+                    aria-describedby={
+                      feeErrors.leadGenMaxFee ? 'lead-gen-max-fee-error' : undefined
+                    }
+                  />
+                  {feeErrors.leadGenMaxFee ? (
+                    <p id="lead-gen-max-fee-error" className="text-sm text-destructive">
+                      {feeErrors.leadGenMaxFee}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <Button

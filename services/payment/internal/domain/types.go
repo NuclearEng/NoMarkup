@@ -15,6 +15,7 @@ var (
 	ErrPaymentAlreadyProcessed = errors.New("payment already processed")
 	ErrFeeConfigNotFound     = errors.New("fee config not found")
 	ErrStripeAccountNotFound = errors.New("stripe account not found")
+	ErrPlatformBankAccountNotFound = errors.New("platform bank account not found")
 )
 
 // Payment represents a platform payment.
@@ -58,6 +59,13 @@ type FeeConfig struct {
 	GuaranteePercentage float64 // e.g. 0.02 = 2%
 	MinFeeCents         int64
 	MaxFeeCents         *int64 // nil = no cap
+	// Lead-gen fee: an additive, provider-side "qualified lead" fee charged on
+	// top of the platform take rate. Disabled by default (LeadGenEnabled=false)
+	// so existing pricing is unchanged.
+	LeadGenEnabled      bool
+	LeadGenPercentage   float64 // e.g. 0.10 = 10%
+	LeadGenMinFeeCents  int64
+	LeadGenMaxFeeCents  *int64 // nil = no cap
 	Active              bool
 	EffectiveFrom       time.Time
 	CreatedAt           time.Time
@@ -73,6 +81,30 @@ type PaymentBreakdown struct {
 	ProviderPayoutCents int64
 	FeePercentage       float64
 	GuaranteePercentage float64
+	LeadGenFeeCents     int64
+	LeadGenPercentage   float64
+}
+
+// PlatformBankAccount records the platform's own payout bank account, modeled
+// as a Stripe External Account on the PLATFORM Stripe account. Raw account and
+// routing numbers are NEVER stored — only the Stripe reference and the
+// non-sensitive metadata Stripe returns.
+type PlatformBankAccount struct {
+	ID                      string
+	StripeExternalAccountID string
+	BankName                *string
+	AccountHolderName       *string
+	AccountHolderType       string // individual | company
+	Last4                   string
+	RoutingLast4            *string
+	Currency                string
+	Country                 string
+	Status                  string // new | validated | verification_failed | errored
+	IsDefault               bool
+	SetByAdminID            *string
+	DeletedAt               *time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 // PaymentMethod represents a customer's saved payment method.
@@ -309,8 +341,13 @@ type PaymentRepository interface {
 	// Admin operations
 	AdminListPayments(ctx context.Context, userID string, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*Payment, int, int64, int64, error)
 	AdminGetPaymentDetails(ctx context.Context, paymentID string) (*Payment, error)
-	UpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64) (*FeeConfig, error)
+	UpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64, leadGenEnabled bool, leadGenPercentage float64, leadGenMinFeeCents int64, leadGenMaxFeeCents *int64) (*FeeConfig, error)
 	GetRevenueReport(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*RevenueReport, error)
+
+	// Platform bank account operations
+	GetDefaultPlatformBankAccount(ctx context.Context) (*PlatformBankAccount, error)
+	InsertPlatformBankAccount(ctx context.Context, acct *PlatformBankAccount) error
+	SoftDeletePlatformBankAccount(ctx context.Context, id string) error
 
 	// Expense operations
 	CreateExpense(ctx context.Context, expense *Expense) error

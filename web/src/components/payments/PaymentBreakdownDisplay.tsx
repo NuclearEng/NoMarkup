@@ -30,6 +30,15 @@ export function PaymentBreakdownDisplay({ breakdown }: PaymentBreakdownDisplayPr
         <span>{formatCents(breakdown.guarantee_fee_cents)}</span>
       </div>
 
+      {breakdown.lead_gen_fee_cents > 0 ? (
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">
+            Lead-gen fee ({String(breakdown.lead_gen_percentage)}%)
+          </span>
+          <span>{formatCents(breakdown.lead_gen_fee_cents)}</span>
+        </div>
+      ) : null}
+
       <Separator />
 
       <div className="flex items-center justify-between font-bold">

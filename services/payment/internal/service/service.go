@@ -97,8 +97,25 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 	// Calculate guarantee fee.
 	guaranteeFee := int64(float64(amountCents) * feeConfig.GuaranteePercentage)
 
-	// Provider payout = amount - platformFee - guaranteeFee.
-	providerPayout := amountCents - platformFee - guaranteeFee
+	// Calculate lead-gen fee: an ADDITIONAL provider-side deduction, clamped the
+	// same way as the platform fee. Disabled => zero, leaving payout unchanged.
+	var leadGenFee int64
+	var leadGenPercentage float64
+	if feeConfig.LeadGenEnabled {
+		leadGenPercentage = feeConfig.LeadGenPercentage
+		leadGenFee = int64(float64(amountCents) * feeConfig.LeadGenPercentage)
+		if leadGenFee < feeConfig.LeadGenMinFeeCents {
+			leadGenFee = feeConfig.LeadGenMinFeeCents
+		}
+		if feeConfig.LeadGenMaxFeeCents != nil && leadGenFee > *feeConfig.LeadGenMaxFeeCents {
+			leadGenFee = *feeConfig.LeadGenMaxFeeCents
+		}
+	}
+
+	// Provider payout = amount - platformFee - guaranteeFee - leadGenFee.
+	// The customer still pays exactly amountCents (TotalCents); the lead-gen fee
+	// only reduces the provider's payout, exactly like the platform fee.
+	providerPayout := amountCents - platformFee - guaranteeFee - leadGenFee
 
 	return &domain.PaymentBreakdown{
 		SubtotalCents:       amountCents,
@@ -108,6 +125,8 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 		ProviderPayoutCents: providerPayout,
 		FeePercentage:       feeConfig.FeePercentage,
 		GuaranteePercentage: feeConfig.GuaranteePercentage,
+		LeadGenFeeCents:     leadGenFee,
+		LeadGenPercentage:   leadGenPercentage,
 	}, nil
 }
 
@@ -157,8 +176,13 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 		return nil, "", err
 	}
 
-	// Create Stripe PaymentIntent.
-	totalFee := breakdown.PlatformFeeCents + breakdown.GuaranteeFeeCents
+	// Create Stripe PaymentIntent. The Stripe application_fee_amount is the
+	// amount the platform retains from the destination charge; the remainder is
+	// transferred to the provider. The lead-gen fee is an additional platform-
+	// retained amount, so it is added here alongside the platform + guarantee
+	// fees. This keeps the lead-gen fee with the platform and reduces the
+	// provider transfer by the same amount (mirrors breakdown.ProviderPayoutCents).
+	totalFee := breakdown.PlatformFeeCents + breakdown.GuaranteeFeeCents + breakdown.LeadGenFeeCents
 	piID, clientSecret, err := s.stripe.CreatePaymentIntent(ctx, input.AmountCents, "usd", providerAccountID, totalFee, idempotencyKey)
 	if err != nil {
 		return nil, "", fmt.Errorf("create payment stripe: %w", err)
@@ -501,7 +525,7 @@ func (s *PaymentService) AdminGetPaymentDetails(ctx context.Context, paymentID s
 }
 
 // AdminUpdateFeeConfig updates the fee configuration for a category or the default.
-func (s *PaymentService) AdminUpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64) (*domain.FeeConfig, error) {
+func (s *PaymentService) AdminUpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64, leadGenEnabled bool, leadGenPercentage float64, leadGenMinFeeCents int64, leadGenMaxFeeCents *int64) (*domain.FeeConfig, error) {
 	if feePercentage < 0 || feePercentage > 1 {
 		return nil, fmt.Errorf("admin update fee config: fee_percentage must be between 0 and 1: %w", domain.ErrInvalidAmount)
 	}
@@ -514,8 +538,17 @@ func (s *PaymentService) AdminUpdateFeeConfig(ctx context.Context, categoryID *s
 	if maxFeeCents != nil && *maxFeeCents < minFeeCents {
 		return nil, fmt.Errorf("admin update fee config: max_fee_cents must be >= min_fee_cents: %w", domain.ErrInvalidAmount)
 	}
+	if leadGenPercentage < 0 || leadGenPercentage > 1 {
+		return nil, fmt.Errorf("admin update fee config: lead_gen_percentage must be between 0 and 1: %w", domain.ErrInvalidAmount)
+	}
+	if leadGenMinFeeCents < 0 {
+		return nil, fmt.Errorf("admin update fee config: lead_gen_min_fee_cents must be non-negative: %w", domain.ErrInvalidAmount)
+	}
+	if leadGenMaxFeeCents != nil && *leadGenMaxFeeCents < leadGenMinFeeCents {
+		return nil, fmt.Errorf("admin update fee config: lead_gen_max_fee_cents must be >= lead_gen_min_fee_cents: %w", domain.ErrInvalidAmount)
+	}
 
-	return s.repo.UpdateFeeConfig(ctx, categoryID, feePercentage, guaranteePercentage, minFeeCents, maxFeeCents)
+	return s.repo.UpdateFeeConfig(ctx, categoryID, feePercentage, guaranteePercentage, minFeeCents, maxFeeCents, leadGenEnabled, leadGenPercentage, leadGenMinFeeCents, leadGenMaxFeeCents)
 }
 
 // GetRevenueReport returns aggregated revenue data for a date range.

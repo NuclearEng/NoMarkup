@@ -168,8 +168,17 @@ func (m *mockPaymentRepo) AdminGetPaymentDetails(ctx context.Context, paymentID 
 	}
 	return nil, domain.ErrPaymentNotFound
 }
-func (m *mockPaymentRepo) UpdateFeeConfig(_ context.Context, _ *string, _, _ float64, _ int64, _ *int64) (*domain.FeeConfig, error) {
+func (m *mockPaymentRepo) UpdateFeeConfig(_ context.Context, _ *string, _, _ float64, _ int64, _ *int64, _ bool, _ float64, _ int64, _ *int64) (*domain.FeeConfig, error) {
 	return nil, nil
+}
+func (m *mockPaymentRepo) GetDefaultPlatformBankAccount(_ context.Context) (*domain.PlatformBankAccount, error) {
+	return nil, nil
+}
+func (m *mockPaymentRepo) InsertPlatformBankAccount(_ context.Context, _ *domain.PlatformBankAccount) error {
+	return nil
+}
+func (m *mockPaymentRepo) SoftDeletePlatformBankAccount(_ context.Context, _ string) error {
+	return nil
 }
 func (m *mockPaymentRepo) GetRevenueReport(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*domain.RevenueReport, error) {
 	if m.getRevenueReportFn != nil {
@@ -377,6 +386,7 @@ func TestPaymentService_CalculateFees(t *testing.T) {
 		wantPlatformFee    int64
 		wantGuaranteeFee   int64
 		wantProviderPayout int64
+		wantLeadGenFee     int64
 	}{
 		{
 			name:        "standard_5_percent_fee",
@@ -419,6 +429,71 @@ func TestPaymentService_CalculateFees(t *testing.T) {
 			wantProviderPayout: 975000, // 1000000 - 5000 - 20000
 		},
 		{
+			name:        "lead_gen_disabled_no_extra_deduction",
+			amountCents: 10000,
+			feeConfig: &domain.FeeConfig{
+				FeePercentage:       0.05,
+				GuaranteePercentage: 0.02,
+				MinFeeCents:         100,
+				LeadGenEnabled:      false,
+				LeadGenPercentage:   0.10,
+			},
+			wantPlatformFee:    500,
+			wantGuaranteeFee:   200,
+			wantLeadGenFee:     0,
+			wantProviderPayout: 9300, // unchanged when lead-gen disabled
+		},
+		{
+			name:        "lead_gen_enabled_percentage",
+			amountCents: 10000,
+			feeConfig: &domain.FeeConfig{
+				FeePercentage:       0.05,
+				GuaranteePercentage: 0.02,
+				MinFeeCents:         100,
+				LeadGenEnabled:      true,
+				LeadGenPercentage:   0.10, // 10% = 1000
+			},
+			wantPlatformFee:    500,
+			wantGuaranteeFee:   200,
+			wantLeadGenFee:     1000,
+			wantProviderPayout: 8300, // 10000 - 500 - 200 - 1000
+		},
+		{
+			name:        "lead_gen_min_enforced",
+			amountCents: 1000, // 10% = 100, below min 250
+			feeConfig: &domain.FeeConfig{
+				FeePercentage:       0.05,
+				GuaranteePercentage: 0.02,
+				MinFeeCents:         0,
+				LeadGenEnabled:      true,
+				LeadGenPercentage:   0.10,
+				LeadGenMinFeeCents:  250,
+			},
+			wantPlatformFee:    50,
+			wantGuaranteeFee:   20,
+			wantLeadGenFee:     250, // min enforced
+			wantProviderPayout: 680, // 1000 - 50 - 20 - 250
+		},
+		{
+			name:        "lead_gen_max_capped",
+			amountCents: 100000, // 10% = 10000, capped at 3000
+			feeConfig: func() *domain.FeeConfig {
+				cap := int64(3000)
+				return &domain.FeeConfig{
+					FeePercentage:       0.05,
+					GuaranteePercentage: 0.02,
+					MinFeeCents:         0,
+					LeadGenEnabled:      true,
+					LeadGenPercentage:   0.10,
+					LeadGenMaxFeeCents:  &cap,
+				}
+			}(),
+			wantPlatformFee:    5000,
+			wantGuaranteeFee:   2000,
+			wantLeadGenFee:     3000, // capped
+			wantProviderPayout: 90000, // 100000 - 5000 - 2000 - 3000
+		},
+		{
 			name:        "zero_amount_returns_error",
 			amountCents: 0,
 			wantErr:     domain.ErrInvalidAmount,
@@ -459,6 +534,7 @@ func TestPaymentService_CalculateFees(t *testing.T) {
 			require.NotNil(t, breakdown)
 			assert.Equal(t, tt.wantPlatformFee, breakdown.PlatformFeeCents)
 			assert.Equal(t, tt.wantGuaranteeFee, breakdown.GuaranteeFeeCents)
+			assert.Equal(t, tt.wantLeadGenFee, breakdown.LeadGenFeeCents)
 			assert.Equal(t, tt.wantProviderPayout, breakdown.ProviderPayoutCents)
 			assert.Equal(t, tt.amountCents, breakdown.TotalCents)
 		})

@@ -155,7 +155,44 @@ describe('AdminPaymentsPage', () => {
       guarantee_percentage: 2,
       min_fee_cents: 100,
       max_fee_cents: 50000,
+      // Lead-gen is off by default → disabled with zeroed fields and no cap.
+      lead_gen_enabled: false,
+      lead_gen_percentage: 0,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
     });
+  });
+
+  it('saves lead-gen fee fields when enabled', () => {
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    fireEvent.change(screen.getByLabelText(/^Fee Percentage$/i), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText(/Guarantee Percentage/i), { target: { value: '2' } });
+    // Enable the lead-gen toggle to reveal its fields.
+    fireEvent.click(screen.getByLabelText(/Enable lead-gen fee/i));
+    fireEvent.change(screen.getByLabelText(/Lead-gen Percentage/i), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText(/Lead-gen Min Fee \(USD\)/i), {
+      target: { value: '5' },
+    });
+    fireEvent.change(screen.getByLabelText(/Lead-gen Max Fee \(USD, optional\)/i), {
+      target: { value: '50' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
+    expect(feeMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lead_gen_enabled: true,
+        lead_gen_percentage: 10,
+        lead_gen_min_fee_cents: 500,
+        lead_gen_max_fee_cents: 5000,
+      }),
+    );
+  });
+
+  it('blocks save and shows an error when fee percentage is out of range', () => {
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    fireEvent.change(screen.getByLabelText(/^Fee Percentage$/i), { target: { value: '150' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
+    expect(feeMutate).not.toHaveBeenCalled();
+    expect(screen.getByText(/Must be between 0 and 100/i)).toBeDefined();
   });
 
   it('shows pending label and disables save when mutation pending', () => {

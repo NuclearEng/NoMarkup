@@ -118,6 +118,8 @@ func (h *AdminPaymentsHandler) GetPaymentDetails(w http.ResponseWriter, r *http.
 			"provider_payout_cents": resp.GetBreakdown().GetProviderPayoutCents(),
 			"fee_percentage":        resp.GetBreakdown().GetFeePercentage(),
 			"guarantee_percentage":  resp.GetBreakdown().GetGuaranteePercentage(),
+			"lead_gen_fee_cents":    resp.GetBreakdown().GetLeadGenFeeCents(),
+			"lead_gen_percentage":   resp.GetBreakdown().GetLeadGenPercentage(),
 		}
 	}
 	if resp.GetStripePaymentIntentId() != "" {
@@ -142,28 +144,22 @@ func (h *AdminPaymentsHandler) UpdateFeeConfig(w http.ResponseWriter, r *http.Re
 	}
 
 	var body struct {
-		CategoryID          *string  `json:"category_id"`
-		FeePercentage       float64  `json:"fee_percentage"`
-		GuaranteePercentage float64  `json:"guarantee_percentage"`
-		MinFeeCents         int64    `json:"min_fee_cents"`
-		MaxFeeCents         *int64   `json:"max_fee_cents"`
+		CategoryID          *string `json:"category_id"`
+		FeePercentage       float64 `json:"fee_percentage"`
+		GuaranteePercentage float64 `json:"guarantee_percentage"`
+		MinFeeCents         int64   `json:"min_fee_cents"`
+		MaxFeeCents         *int64  `json:"max_fee_cents"`
+		LeadGenEnabled      bool    `json:"lead_gen_enabled"`
+		LeadGenPercentage   float64 `json:"lead_gen_percentage"`
+		LeadGenMinFeeCents  int64   `json:"lead_gen_min_fee_cents"`
+		LeadGenMaxFeeCents  *int64  `json:"lead_gen_max_fee_cents"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 
-	grpcReq := &paymentv1.AdminUpdateFeeConfigRequest{
-		AdminId:             claims.UserID,
-		FeePercentage:       body.FeePercentage,
-		GuaranteePercentage: body.GuaranteePercentage,
-		MinFeeCents:         body.MinFeeCents,
-	}
-	if body.CategoryID != nil {
-		grpcReq.CategoryId = body.CategoryID
-	}
-	if body.MaxFeeCents != nil {
-		grpcReq.MaxFeeCents = body.MaxFeeCents
-	}
+	grpcReq := buildFeeConfigUpdateReq(claims.UserID, body.CategoryID, body.FeePercentage, body.GuaranteePercentage, body.MinFeeCents, body.MaxFeeCents,
+		body.LeadGenEnabled, body.LeadGenPercentage, body.LeadGenMinFeeCents, body.LeadGenMaxFeeCents)
 
 	resp, err := h.paymentClient.AdminUpdateFeeConfig(r.Context(), grpcReq)
 	if err != nil {
@@ -171,17 +167,9 @@ func (h *AdminPaymentsHandler) UpdateFeeConfig(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	result := map[string]interface{}{}
-	if cfg := resp.GetConfig(); cfg != nil {
-		result["config"] = map[string]interface{}{
-			"fee_percentage":       cfg.GetFeePercentage(),
-			"guarantee_percentage": cfg.GetGuaranteePercentage(),
-			"min_fee_cents":        cfg.GetMinFeeCents(),
-			"max_fee_cents":        cfg.GetMaxFeeCents(),
-		}
-	}
-
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": feeConfigToJSON(resp.GetConfig()),
+	})
 }
 
 // GetFeeConfig handles GET /api/v1/admin/payments/fee-config.
@@ -200,10 +188,14 @@ func (h *AdminPaymentsHandler) GetFeeConfig(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"fee_percentage":       resp.GetFeePercentage(),
-		"guarantee_percentage": resp.GetGuaranteePercentage(),
-		"min_fee_cents":        resp.GetMinFeeCents(),
-		"max_fee_cents":        resp.GetMaxFeeCents(),
+		"fee_percentage":          resp.GetFeePercentage(),
+		"guarantee_percentage":    resp.GetGuaranteePercentage(),
+		"min_fee_cents":           resp.GetMinFeeCents(),
+		"max_fee_cents":           resp.GetMaxFeeCents(),
+		"lead_gen_enabled":        resp.GetLeadGenEnabled(),
+		"lead_gen_percentage":     resp.GetLeadGenPercentage(),
+		"lead_gen_min_fee_cents":  resp.GetLeadGenMinFeeCents(),
+		"lead_gen_max_fee_cents":  resp.GetLeadGenMaxFeeCents(),
 	})
 }
 
@@ -221,23 +213,17 @@ func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *h
 		GuaranteePercentage float64 `json:"guarantee_percentage"`
 		MinFeeCents         int64   `json:"min_fee_cents"`
 		MaxFeeCents         *int64  `json:"max_fee_cents"`
+		LeadGenEnabled      bool    `json:"lead_gen_enabled"`
+		LeadGenPercentage   float64 `json:"lead_gen_percentage"`
+		LeadGenMinFeeCents  int64   `json:"lead_gen_min_fee_cents"`
+		LeadGenMaxFeeCents  *int64  `json:"lead_gen_max_fee_cents"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 
-	grpcReq := &paymentv1.AdminUpdateFeeConfigRequest{
-		AdminId:             claims.UserID,
-		FeePercentage:       body.FeePercentage,
-		GuaranteePercentage: body.GuaranteePercentage,
-		MinFeeCents:         body.MinFeeCents,
-	}
-	if body.CategoryID != nil {
-		grpcReq.CategoryId = body.CategoryID
-	}
-	if body.MaxFeeCents != nil {
-		grpcReq.MaxFeeCents = body.MaxFeeCents
-	}
+	grpcReq := buildFeeConfigUpdateReq(claims.UserID, body.CategoryID, body.FeePercentage, body.GuaranteePercentage, body.MinFeeCents, body.MaxFeeCents,
+		body.LeadGenEnabled, body.LeadGenPercentage, body.LeadGenMinFeeCents, body.LeadGenMaxFeeCents)
 
 	resp, err := h.paymentClient.AdminUpdateFeeConfig(r.Context(), grpcReq)
 	if err != nil {
@@ -245,17 +231,50 @@ func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *h
 		return
 	}
 
-	result := map[string]interface{}{}
-	if cfg := resp.GetConfig(); cfg != nil {
-		result["config"] = map[string]interface{}{
-			"fee_percentage":       cfg.GetFeePercentage(),
-			"guarantee_percentage": cfg.GetGuaranteePercentage(),
-			"min_fee_cents":        cfg.GetMinFeeCents(),
-			"max_fee_cents":        cfg.GetMaxFeeCents(),
-		}
-	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": feeConfigToJSON(resp.GetConfig()),
+	})
+}
 
-	writeJSON(w, http.StatusOK, result)
+// buildFeeConfigUpdateReq assembles the gRPC AdminUpdateFeeConfigRequest from
+// decoded JSON fields, including the additive lead-gen fee fields.
+func buildFeeConfigUpdateReq(adminID string, categoryID *string, feePct, guaranteePct float64, minFee int64, maxFee *int64, leadGenEnabled bool, leadGenPct float64, leadGenMin int64, leadGenMax *int64) *paymentv1.AdminUpdateFeeConfigRequest {
+	grpcReq := &paymentv1.AdminUpdateFeeConfigRequest{
+		AdminId:             adminID,
+		FeePercentage:       feePct,
+		GuaranteePercentage: guaranteePct,
+		MinFeeCents:         minFee,
+		LeadGenEnabled:      leadGenEnabled,
+		LeadGenPercentage:   leadGenPct,
+		LeadGenMinFeeCents:  leadGenMin,
+	}
+	if categoryID != nil {
+		grpcReq.CategoryId = categoryID
+	}
+	if maxFee != nil {
+		grpcReq.MaxFeeCents = maxFee
+	}
+	if leadGenMax != nil {
+		grpcReq.LeadGenMaxFeeCents = leadGenMax
+	}
+	return grpcReq
+}
+
+// feeConfigToJSON maps a GetFeeConfigResponse onto a JSON map including lead-gen.
+func feeConfigToJSON(cfg *paymentv1.GetFeeConfigResponse) map[string]interface{} {
+	if cfg == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"fee_percentage":         cfg.GetFeePercentage(),
+		"guarantee_percentage":   cfg.GetGuaranteePercentage(),
+		"min_fee_cents":          cfg.GetMinFeeCents(),
+		"max_fee_cents":          cfg.GetMaxFeeCents(),
+		"lead_gen_enabled":       cfg.GetLeadGenEnabled(),
+		"lead_gen_percentage":    cfg.GetLeadGenPercentage(),
+		"lead_gen_min_fee_cents": cfg.GetLeadGenMinFeeCents(),
+		"lead_gen_max_fee_cents": cfg.GetLeadGenMaxFeeCents(),
+	}
 }
 
 // GetRevenueReport handles GET /api/v1/admin/revenue.

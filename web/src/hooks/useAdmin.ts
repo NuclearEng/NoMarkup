@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, idempotencyHeader } from '@/lib/api';
 import type {
   AdminDisputesResponse,
   AdminFlaggedReviewsResponse,
@@ -12,11 +13,14 @@ import type {
   AdminUser,
   AdminUsersResponse,
   CategoryMetricsResponse,
+  CreatePlatformBankAccountInput,
   Dispute,
   FeeConfig,
   GrowthMetrics,
   Payment,
   PaginationResponse,
+  PlatformBankAccount,
+  PlatformBankingResponse,
   PlatformMetrics,
   RevenueReport,
   VerificationDocument,
@@ -47,6 +51,7 @@ const adminKeys = {
     [...adminKeys.all, 'platform', 'growth', startDate, endDate, groupBy] as const,
   categoryMetrics: (startDate?: string, endDate?: string) =>
     [...adminKeys.all, 'platform', 'categories', startDate, endDate] as const,
+  banking: () => [...adminKeys.all, 'banking'] as const,
 };
 
 // ─── Helper to build query strings ───────────────────
@@ -348,6 +353,54 @@ export function useUpdateFeeConfig() {
     mutationFn: (config: FeeConfig) => api.put<FeeConfig>('/api/v1/admin/fees', config),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminKeys.all });
+    },
+  });
+}
+
+// ─── Platform Banking ─────────────────────────────────
+//
+// The platform payout bank account — where all collected fees route. Admin
+// only. Raw account/routing numbers are tokenized client-side with Stripe.js;
+// only the resulting bank-account token (btok_...) ever reaches our backend.
+
+export function usePlatformBanking() {
+  return useQuery({
+    queryKey: adminKeys.banking(),
+    queryFn: () => api.get<PlatformBankingResponse>('/api/v1/admin/banking'),
+  });
+}
+
+export function useSetPlatformBankAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreatePlatformBankAccountInput) =>
+      // Idempotent — guards against double-submits creating duplicate accounts.
+      api.post<{ account: PlatformBankAccount }>(
+        '/api/v1/admin/banking',
+        input,
+        idempotencyHeader(),
+      ),
+    onSuccess: () => {
+      toast.success('Platform bank account saved');
+      void queryClient.invalidateQueries({ queryKey: adminKeys.banking() });
+    },
+    onError: () => {
+      toast.error('Failed to save bank account');
+    },
+  });
+}
+
+export function useDeletePlatformBankAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.delete<{ deleted: boolean }>(`/api/v1/admin/banking/${accountId}`),
+    onSuccess: () => {
+      toast.success('Platform bank account removed');
+      void queryClient.invalidateQueries({ queryKey: adminKeys.banking() });
+    },
+    onError: () => {
+      toast.error('Failed to remove bank account');
     },
   });
 }

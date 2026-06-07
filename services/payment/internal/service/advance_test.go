@@ -23,36 +23,36 @@ func TestComputeAdvanceFeeCents(t *testing.T) {
 		wantCents   int64
 	}{
 		{
-			// $1,000 × 3% APY × (30/365) ≈ $2.46 → 246 cents
+			// $1,000 × 3% APR × (30/365) = $2.4658 → 247 cents (rounded)
 			name:        "standard_30_day_term",
 			amountCents: 100000,
 			termDays:    30,
-			wantCents:   246,
+			wantCents:   247,
 		},
 		{
-			// $10,000 × 3% × (30/365) ≈ $24.65 → 2465 cents
+			// $10,000 × 3% APR × (30/365) = $24.6575 → 2466 cents (rounded)
 			name:        "ten_thousand_30_day",
 			amountCents: 1000000,
 			termDays:    30,
-			wantCents:   2465,
+			wantCents:   2466,
 		},
 		{
 			// Zero term defaults to 30 days, same as above.
 			name:        "zero_term_uses_default_30",
 			amountCents: 100000,
 			termDays:    0,
-			wantCents:   246,
+			wantCents:   247,
 		},
 		{
 			// Negative term defaults to 30 days.
 			name:        "negative_term_uses_default_30",
 			amountCents: 100000,
 			termDays:    -5,
-			wantCents:   246,
+			wantCents:   247,
 		},
 		{
-			// Full year at 3% APY → exactly 3% of principal.
-			name:        "365_day_term_yields_full_apy",
+			// Full year at 3% APR → exactly 3% of principal.
+			name:        "365_day_term_yields_full_apr",
 			amountCents: 100000,
 			termDays:    365,
 			wantCents:   3000,

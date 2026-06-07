@@ -13,6 +13,8 @@ const breakdown: PaymentBreakdown = {
   provider_payout_cents: 90_00,
   fee_percentage: 10,
   guarantee_percentage: 5,
+  lead_gen_fee_cents: 0,
+  lead_gen_percentage: 0,
 };
 
 describe('PaymentBreakdownDisplay', () => {
@@ -35,5 +37,21 @@ describe('PaymentBreakdownDisplay', () => {
   it('renders provider payout label', () => {
     render(createElement(PaymentBreakdownDisplay, { breakdown }));
     expect(screen.getByText('Provider receives')).toBeDefined();
+  });
+
+  it('hides the lead-gen fee row when it is zero', () => {
+    render(createElement(PaymentBreakdownDisplay, { breakdown }));
+    expect(screen.queryByText(/Lead-gen fee/)).toBeNull();
+  });
+
+  it('renders the lead-gen fee row when greater than zero', () => {
+    const withLeadGen: PaymentBreakdown = {
+      ...breakdown,
+      lead_gen_fee_cents: 12_00,
+      lead_gen_percentage: 12,
+    };
+    render(createElement(PaymentBreakdownDisplay, { breakdown: withLeadGen }));
+    expect(screen.getByText('Lead-gen fee (12%)')).toBeDefined();
+    expect(screen.getByText('$12.00')).toBeDefined();
   });
 });

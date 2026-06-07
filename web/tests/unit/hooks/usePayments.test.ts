@@ -41,6 +41,7 @@ vi.mock('@/lib/api', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+  idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
   ApiError: class ApiError extends Error {
     code = 'ERR';
     userMessage(fallback: string) {
@@ -211,6 +212,7 @@ describe('useProcessPayment', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/payments/pmt-1/process',
       { payment_method_id: 'pm-1' },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['payments'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['payment', 'pmt-1'] });
@@ -323,6 +325,8 @@ describe('useCalculateFees', () => {
       provider_payout_cents: 46500,
       fee_percentage: 5,
       guarantee_percentage: 2,
+      lead_gen_fee_cents: 0,
+      lead_gen_percentage: 0,
     };
     vi.mocked(api.post).mockResolvedValueOnce(breakdown);
 
@@ -402,6 +406,7 @@ describe('useInstantPayout', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/payments/instant-payout',
       { amount_cents: 25000 },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(result.current.data?.payout_id).toBe('po_1');
   });

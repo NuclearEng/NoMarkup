@@ -141,6 +141,41 @@ describe('POST /api/analyze-job-image — auth', () => {
   });
 });
 
+// ── Origin guard ──────────────────────────────────────────────────────
+describe('POST /api/analyze-job-image — origin', () => {
+  it('returns 403 for a cross-origin Origin header', async () => {
+    const req = buildRequest({
+      body: VALID_BODY,
+      cookies: AUTH_COOKIES,
+      headers: { origin: 'https://evil.example.com' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'forbidden' });
+  });
+
+  it('accepts a same-origin Origin header', async () => {
+    mockSuccessResponse(VALID_AI_JSON);
+    const req = buildRequest({
+      body: VALID_BODY,
+      cookies: AUTH_COOKIES,
+      headers: { origin: 'http://localhost' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a cross-origin Referer when no Origin is present', async () => {
+    const req = buildRequest({
+      body: VALID_BODY,
+      cookies: AUTH_COOKIES,
+      headers: { referer: 'https://evil.example.com/page' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+  });
+});
+
 // ── Content-Type / body-size guards ───────────────────────────────────
 describe('POST /api/analyze-job-image — request guards', () => {
   it('returns 415 when Content-Type is missing', async () => {

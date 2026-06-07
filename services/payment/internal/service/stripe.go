@@ -12,6 +12,7 @@ import (
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/account"
 	"github.com/stripe/stripe-go/v82/accountlink"
+	"github.com/stripe/stripe-go/v82/bankaccount"
 	"github.com/stripe/stripe-go/v82/invoice"
 	"github.com/stripe/stripe-go/v82/loginlink"
 	"github.com/stripe/stripe-go/v82/paymentintent"
@@ -365,6 +366,104 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 		return "", fmt.Errorf("create refund: %w", err)
 	}
 	return r.ID, nil
+}
+
+// StripeExternalBankAccount holds the non-sensitive metadata Stripe returns
+// after attaching an external bank account to the platform account. Raw
+// account/routing numbers are never present.
+type StripeExternalBankAccount struct {
+	ID            string // ba_...
+	BankName      string
+	Last4         string
+	RoutingLast4  string
+	Currency      string
+	Country       string
+	Status        string
+}
+
+// CreatePlatformExternalBankAccount attaches an external bank account to the
+// platform's OWN Stripe account from a client-tokenized bank_account token
+// (btok_...). Returns the non-sensitive metadata Stripe echoes back. In dev
+// mode it returns a fake ba_... id and last4 so the flow works without real
+// Stripe credentials.
+func (s *StripeService) CreatePlatformExternalBankAccount(ctx context.Context, bankAccountToken, holderName, holderType string) (*StripeExternalBankAccount, error) {
+	if bankAccountToken == "" {
+		return nil, fmt.Errorf("create platform external bank account: bank_account token required")
+	}
+	if s.devMode {
+		slog.Info("dev mode: stub CreatePlatformExternalBankAccount", "holder", holderName, "holder_type", holderType)
+		return &StripeExternalBankAccount{
+			ID:           "ba_dev_" + bankAccountToken,
+			BankName:     "Dev Bank",
+			Last4:        "6789",
+			RoutingLast4: "4321",
+			Currency:     "usd",
+			Country:      "US",
+			Status:       "new",
+		}, nil
+	}
+
+	// Resolve the platform's own account (the account tied to the secret key).
+	platformAcct, err := account.Get()
+	if err != nil {
+		return nil, fmt.Errorf("create platform external bank account: resolve platform account: %w", err)
+	}
+
+	params := &stripe.BankAccountParams{
+		Account: stripe.String(platformAcct.ID),
+		Token:   stripe.String(bankAccountToken),
+	}
+	if holderName != "" {
+		params.AccountHolderName = stripe.String(holderName)
+	}
+	if holderType != "" {
+		params.AccountHolderType = stripe.String(holderType)
+	}
+
+	ba, err := bankaccount.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("create platform external bank account: %w", err)
+	}
+
+	routingLast4 := ba.RoutingNumber
+	if len(routingLast4) > 4 {
+		routingLast4 = routingLast4[len(routingLast4)-4:]
+	}
+
+	return &StripeExternalBankAccount{
+		ID:           ba.ID,
+		BankName:     ba.BankName,
+		Last4:        ba.Last4,
+		RoutingLast4: routingLast4,
+		Currency:     string(ba.Currency),
+		Country:      ba.Country,
+		Status:       string(ba.Status),
+	}, nil
+}
+
+// DeletePlatformExternalBankAccount detaches an external bank account from the
+// platform's own Stripe account. In dev mode it is a no-op.
+func (s *StripeService) DeletePlatformExternalBankAccount(ctx context.Context, externalAccountID string) error {
+	if externalAccountID == "" {
+		return fmt.Errorf("delete platform external bank account: external account id required")
+	}
+	if s.devMode {
+		slog.Info("dev mode: stub DeletePlatformExternalBankAccount", "external_account_id", externalAccountID)
+		return nil
+	}
+
+	platformAcct, err := account.Get()
+	if err != nil {
+		return fmt.Errorf("delete platform external bank account: resolve platform account: %w", err)
+	}
+
+	params := &stripe.BankAccountParams{
+		Account: stripe.String(platformAcct.ID),
+	}
+	if _, err := bankaccount.Del(externalAccountID, params); err != nil {
+		return fmt.Errorf("delete platform external bank account: %w", err)
+	}
+	return nil
 }
 
 // --- Marketplace (peer-to-peer goods) Stripe methods ---
