@@ -1,14 +1,18 @@
 'use client';
 
-import { Briefcase, CalendarDays, Clock, MapPin, Wrench } from 'lucide-react';
+import { Briefcase, CalendarDays, CalendarPlus, Clock, MapPin, Wrench } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { CheckInOut } from '@/components/providers/CheckInOut';
 import { CompletionPhotos } from '@/components/providers/CompletionPhotos';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
+import { getAccessToken } from '@/lib/auth';
+import { API_BASE_URL } from '@/lib/constants';
 import { formatCents } from '@/lib/utils';
 import { CONTRACT_STATUS } from '@/types';
 import type { Contract } from '@/types';
@@ -45,6 +49,17 @@ function isToday(dateStr: string | undefined | null): boolean {
   if (!dateStr) return false;
   const today = new Date().toISOString().slice(0, 10);
   return toDateKey(dateStr) === today;
+}
+
+/** True when the date falls within the next 7 days (excluding today). */
+function isWithinNext7Days(dateStr: string | undefined | null): boolean {
+  if (!dateStr) return false;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const horizon = new Date();
+  horizon.setUTCDate(horizon.getUTCDate() + 7);
+  const horizonKey = horizon.toISOString().slice(0, 10);
+  const key = toDateKey(dateStr);
+  return key > todayKey && key <= horizonKey;
 }
 
 function groupByDate(contracts: Contract[]): Array<{ dateKey: string; label: string; items: Contract[] }> {
@@ -170,32 +185,70 @@ export default function ProviderWorkspacePage() {
 
   const allContracts = contractsData?.contracts ?? [];
 
-  // Split into today vs upcoming (next 7 days excl. today)
-  const todayContracts = allContracts.filter(
-    (c) =>
-      c.status === CONTRACT_STATUS.ACTIVE &&
-      (isToday(c.started_at) || isToday(c.created_at)),
+  const activeContracts = allContracts.filter(
+    (c) => c.status === CONTRACT_STATUS.ACTIVE,
   );
 
-  const upcomingContracts = allContracts.filter(
+  // Today's jobs.
+  const todayContracts = activeContracts.filter(
+    (c) => isToday(c.started_at) || isToday(c.created_at),
+  );
+
+  // Upcoming = active, not today, scheduled within the next 7 days.
+  const upcomingContracts = activeContracts.filter(
     (c) =>
-      c.status === CONTRACT_STATUS.ACTIVE &&
       !isToday(c.started_at) &&
-      !isToday(c.created_at),
+      !isToday(c.created_at) &&
+      isWithinNext7Days(c.started_at ?? c.created_at),
+  );
+
+  // Everything else active that falls in neither bucket (past schedule,
+  // far-future schedule, or flexible/no-date) must still be visible —
+  // otherwise an active contract can vanish entirely.
+  const otherActiveContracts = activeContracts.filter(
+    (c) =>
+      !isToday(c.started_at) &&
+      !isToday(c.created_at) &&
+      !isWithinNext7Days(c.started_at ?? c.created_at),
   );
 
   const upcomingGroups = groupByDate(upcomingContracts);
+  const otherActiveGroups = groupByDate(otherActiveContracts);
+
+  // Build the gateway .ics subscription URL using the in-memory access token.
+  // The gateway serves GET /api/v1/me/calendar.ics?token=<accessToken>.
+  function handleSubscribeCalendar(): void {
+    const token = getAccessToken();
+    if (!token) {
+      toast.error('Please sign in again to subscribe to your calendar.');
+      return;
+    }
+    const url = `${API_BASE_URL}/api/v1/me/calendar.ics?token=${encodeURIComponent(token)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast.success('Opening your job calendar feed.');
+  }
 
   return (
     <PageTransition>
       <div className="space-y-8">
         {/* Page header */}
-        <div className="flex items-center gap-3">
-          <Wrench className="h-6 w-6 text-[var(--brand-gold)]" aria-hidden="true" />
-          <div>
-            <h1 className="gold-text text-2xl font-bold tracking-tight">Workspace</h1>
-            <p className="text-zinc-400 text-sm">Check in, upload photos, and mark jobs complete.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Wrench className="h-6 w-6 text-[var(--brand-gold)]" aria-hidden="true" />
+            <div>
+              <h1 className="gold-text text-2xl font-bold tracking-tight">Workspace</h1>
+              <p className="text-zinc-400 text-sm">Check in, upload photos, and mark jobs complete.</p>
+            </div>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSubscribeCalendar}
+            className="border-[var(--brand-gold)]/30 text-zinc-200"
+          >
+            <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+            Add to calendar
+          </Button>
         </div>
 
         {/* ── Today's Jobs ── */}
@@ -281,6 +334,33 @@ export default function ProviderWorkspacePage() {
             </div>
           )}
         </section>
+
+        {/* ── All other active jobs (past schedule / far future / flexible) ── */}
+        {/* Catch-all so no active contract is ever dropped from the workspace. */}
+        {!isLoading && otherActiveGroups.length > 0 ? (
+          <section aria-labelledby="other-active-heading">
+            <div className="mb-4 flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+              <h2
+                className="text-base font-semibold text-zinc-200"
+                id="other-active-heading"
+              >
+                Other Active Jobs
+              </h2>
+            </div>
+
+            <div className="space-y-6">
+              {otherActiveGroups.map((group) => (
+                <div key={group.dateKey} className="space-y-3">
+                  <h3 className="text-sm font-semibold text-zinc-400">{group.label}</h3>
+                  {group.items.map((contract) => (
+                    <JobCard key={contract.id} contract={contract} showWorkSession={false} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     </PageTransition>
   );
