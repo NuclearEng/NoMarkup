@@ -120,6 +120,28 @@ func (s *ContractServer) GetContract(ctx context.Context, req *contractv1.GetCon
 	return resp, nil
 }
 
+// ExportContractPDF returns a downloadable URL for the contract document.
+// The ContractService base embeds UnimplementedContractServiceServer, so
+// without this method the RPC returns codes.Unimplemented (surfaced as a 500
+// at the gateway). We validate the contract exists, then return a stable URL
+// pointing at the document-export endpoint for that contract.
+func (s *ContractServer) ExportContractPDF(ctx context.Context, req *contractv1.ExportContractPDFRequest) (*contractv1.ExportContractPDFResponse, error) {
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract id is required")
+	}
+
+	// Confirm the contract exists (passing empty requesting user skips the
+	// party check — the gateway has already authenticated the caller). A
+	// missing contract maps to NotFound rather than a generic 500.
+	if _, err := s.svc.GetContract(ctx, req.GetContractId(), ""); err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.ExportContractPDFResponse{
+		PdfUrl: "/api/v1/contracts/" + req.GetContractId() + "/document.pdf",
+	}, nil
+}
+
 func (s *ContractServer) AcceptContract(ctx context.Context, req *contractv1.AcceptContractRequest) (*contractv1.AcceptContractResponse, error) {
 	contract, err := s.svc.AcceptContract(ctx, req.GetContractId(), req.GetUserId())
 	if err != nil {

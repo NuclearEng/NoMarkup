@@ -420,7 +420,7 @@ func (r *PostgresRepository) GetUsage(ctx context.Context, userID string) (activ
 
 	// Count service categories.
 	err = r.pool.QueryRow(ctx, `
-		SELECT COUNT(DISTINCT category_id) FROM provider_categories
+		SELECT COUNT(DISTINCT category_id) FROM provider_service_categories
 		WHERE provider_id = $1`, userID).Scan(&serviceCategories)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("get usage service categories: %w", err)
@@ -428,7 +428,7 @@ func (r *PostgresRepository) GetUsage(ctx context.Context, userID string) (activ
 
 	// Count portfolio images.
 	err = r.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM portfolio_images
+		SELECT COUNT(*) FROM provider_portfolio_images
 		WHERE provider_id = $1`, userID).Scan(&portfolioImages)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("get usage portfolio images: %w", err)

@@ -608,6 +608,27 @@ func main() {
 		log.Printf("insert market range: %v (skipping)", err)
 	}
 
+	// ── 14b. Platform Fee Config (default) ───────────────────────
+	//
+	// The admin fee-config endpoint (GET /api/v1/admin/payments/fee-config)
+	// and every payment fee calculation fall back to the default config row
+	// (category_id IS NULL, active = true). Without it the endpoint 404s and
+	// fee math has no source of truth. Seed a sensible default: 10% platform
+	// fee, 2% guarantee fund — matching the in-code defaults. Idempotent via
+	// WHERE NOT EXISTS so re-runs don't stack duplicate active defaults.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO platform_fee_config
+			(fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active)
+		SELECT 0.1000, 0.0200, 0, NULL, true
+		WHERE NOT EXISTS (
+			SELECT 1 FROM platform_fee_config
+			WHERE category_id IS NULL AND active = true
+		)`,
+	)
+	if err != nil {
+		log.Fatalf("insert default platform fee config: %v", err)
+	}
+
 	// ── 15. Marketplace (goods) ──────────────────────────────────
 	//
 	// Seeds the goods marketplace: 8 active listings, 3 with active bids,
