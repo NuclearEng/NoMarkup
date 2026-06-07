@@ -5,10 +5,164 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
+
+// ── Risk-based advance pricing ──────────────────────────────────────────
+// The APR a provider pays = a base ("market") rate + a credit-risk premium
+// derived from their business credit score. This auto-adjusts pricing to BOTH
+// market conditions (ops moves the base rate) and creditworthiness (per
+// borrower, recomputed every request). The same functions price the charge
+// here and the quote shown in the gateway credit-limit response — keep the
+// two formulas in sync (gateway/internal/handler/working_capital.go).
+
+// baseAdvanceRateBps is the lender's base rate in basis points. Adjustable via
+// ADVANCE_BASE_RATE_BPS so the rate can track market/funding-cost changes
+// without a code change. Defaults to 300 bps (3.00%).
+func baseAdvanceRateBps() int {
+	if v := os.Getenv("ADVANCE_BASE_RATE_BPS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 300
+}
+
+const (
+	advanceRateFloorBps   = 300  // never price below the base/floor (3%)
+	advanceRateCeilingBps = 1500 // hard cap (15%)
+	minLendingScore       = 35   // below this (grade F) advances are declined
+)
+
+// businessCreditScore returns a 0-100 creditworthiness score from internal
+// signals: repayment history (strongest), completed-job volume, and earnings.
+// onTimeRate nil means "no advance history yet" → a neutral baseline.
+func businessCreditScore(onTimeRate *float64, jobsCompleted int, totalEarningsCents int64) int {
+	// Thin-file (no advance history) starts eligible-but-high-rate (lands at
+	// grade D), so new providers can borrow small and build history. Proven
+	// on-time repayment scores higher; defaulters score lower (→ declined).
+	repayment := 35.0
+	if onTimeRate != nil {
+		repayment = *onTimeRate * 50.0
+	}
+	vol := float64(jobsCompleted)
+	if vol > 20 {
+		vol = 20
+	}
+	volume := vol / 20.0 * 30.0
+	earnings := 0.0
+	switch {
+	case totalEarningsCents >= 1_000_000:
+		earnings = 20
+	case totalEarningsCents >= 250_000:
+		earnings = 12
+	case totalEarningsCents >= 50_000:
+		earnings = 6
+	}
+	score := int(math.Round(repayment + volume + earnings))
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+	return score
+}
+
+// creditGrade maps a 0-100 score to a letter grade.
+func creditGrade(score int) string {
+	switch {
+	case score >= 80:
+		return "A"
+	case score >= 65:
+		return "B"
+	case score >= 50:
+		return "C"
+	case score >= minLendingScore:
+		return "D"
+	default:
+		return "F"
+	}
+}
+
+// riskPremiumBps is the credit-risk markup added to the base rate, by grade.
+func riskPremiumBps(grade string) int {
+	switch grade {
+	case "A":
+		return 0
+	case "B":
+		return 200
+	case "C":
+		return 500
+	case "D":
+		return 900
+	default:
+		return 1200
+	}
+}
+
+// dynamicAPRBps = clamp(baseRate + riskPremium, floor, ceiling).
+func dynamicAPRBps(score int) int {
+	apr := baseAdvanceRateBps() + riskPremiumBps(creditGrade(score))
+	if apr < advanceRateFloorBps {
+		apr = advanceRateFloorBps
+	}
+	if apr > advanceRateCeilingBps {
+		apr = advanceRateCeilingBps
+	}
+	return apr
+}
+
+// computeAdvanceFeeCentsAPR prices a fee at an explicit APR (bps), prorated by
+// term, rounded to the nearest cent.
+func computeAdvanceFeeCentsAPR(amountCents int64, aprBps, termDays int) int64 {
+	if termDays <= 0 {
+		termDays = defaultAdvanceTermDays
+	}
+	return int64(math.Round(float64(amountCents) * float64(aprBps) / 10000.0 * float64(termDays) / 365.0))
+}
+
+// onTimeRateFromAdvances derives the share of resolved advances repaid on time.
+// Returns nil when the provider has no resolved (repaid/defaulted) advances.
+func onTimeRateFromAdvances(advances []*domain.Advance) *float64 {
+	var resolved, onTime int
+	for _, a := range advances {
+		switch a.Status {
+		case "repaid":
+			resolved++
+			onTime++
+		case "defaulted":
+			resolved++
+		}
+	}
+	if resolved == 0 {
+		return nil
+	}
+	r := float64(onTime) / float64(resolved)
+	return &r
+}
+
+// providerCreditScore computes a provider's live business credit score from
+// their released payments (volume/earnings) and advance repayment history.
+func (s *PaymentService) providerCreditScore(ctx context.Context, providerID string) (int, error) {
+	payments, _, err := s.repo.ListPayments(ctx, providerID, "released", 1, 1000)
+	if err != nil {
+		return 0, fmt.Errorf("credit score: list payments: %w", err)
+	}
+	var earnings int64
+	for _, p := range payments {
+		earnings += p.ProviderPayoutCents
+	}
+	advances, _, err := s.repo.ListAdvances(ctx, providerID, "", 1, 1000)
+	if err != nil {
+		return 0, fmt.Errorf("credit score: list advances: %w", err)
+	}
+	return businessCreditScore(onTimeRateFromAdvances(advances), len(payments), earnings), nil
+}
 
 // advanceFeeAPR is the annual percentage rate charged on working capital
 // advances (3% APR). Simple interest, prorated over the expected term (not
@@ -43,7 +197,18 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 		return nil, fmt.Errorf("request advance: %w", domain.ErrInvalidAmount)
 	}
 
-	feeCents := computeAdvanceFeeCents(amountCents, defaultAdvanceTermDays)
+	// Risk-based pricing: APR = base rate + credit-risk premium, by the
+	// provider's live business credit score. Decline below the floor.
+	score, err := s.providerCreditScore(ctx, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("request advance: %w", err)
+	}
+	grade := creditGrade(score)
+	if score < minLendingScore {
+		return nil, fmt.Errorf("request advance declined: credit score %d (grade %s) is below the minimum to qualify", score, grade)
+	}
+	aprBps := dynamicAPRBps(score)
+	feeCents := computeAdvanceFeeCentsAPR(amountCents, aprBps, defaultAdvanceTermDays)
 
 	advance := &domain.Advance{
 		ID:                 uuid.New().String(),
@@ -65,6 +230,9 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 		"contract_id", contractID,
 		"amount_cents", amountCents,
 		"fee_cents", feeCents,
+		"credit_score", score,
+		"credit_grade", grade,
+		"apr_bps", aprBps,
 	)
 
 	return advance, nil
@@ -233,6 +401,14 @@ func (s *PaymentService) ComputeCreditLimit(ctx context.Context, providerID stri
 		riskScore = 0
 	}
 
+	// Repayment history → on-time rate, a key input to the business credit
+	// score surfaced on the credit-limit response (and used for pricing).
+	allAdvances, _, err := s.repo.ListAdvances(ctx, providerID, "", 1, 1000)
+	if err != nil {
+		return nil, fmt.Errorf("compute credit limit list advances: %w", err)
+	}
+	onTimeRate := onTimeRateFromAdvances(allAdvances)
+
 	limit := &domain.CreditLimit{
 		ProviderID:            providerID,
 		MaxAdvanceCents:       maxAdvance,
@@ -241,6 +417,7 @@ func (s *PaymentService) ComputeCreditLimit(ctx context.Context, providerID stri
 		JobsCompleted:         jobsCompleted,
 		TotalEarningsCents:    totalEarningsCents,
 		AvgJobValueCents:      avgJobValueCents,
+		OnTimeRate:            onTimeRate,
 	}
 
 	if err := s.repo.UpsertCreditLimit(ctx, limit); err != nil {

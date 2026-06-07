@@ -32,7 +32,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
 import { useCreditLimit, useMyAdvances, useRequestAdvance } from '@/hooks/useWorkingCapital';
 import { cn, formatCents } from '@/lib/utils';
-import type { AdvanceStatus, WorkingCapitalAdvance } from '@/types';
+import type { AdvanceStatus, CreditLimit, WorkingCapitalAdvance } from '@/types';
 import { ADVANCE_STATUS } from '@/types';
 
 // ────────────────────────────────────────
@@ -47,6 +47,19 @@ import { ADVANCE_STATUS } from '@/types';
  */
 const FEE_APR = 0.03;
 const DEFAULT_TERM_DAYS = 30;
+
+/**
+ * Credit-limit response with the risk-based pricing fields the gateway adds
+ * (business credit score → grade → dynamic APR). Kept local so the shared
+ * CreditLimit type stays minimal; fields are optional for older responses.
+ */
+type PricedCreditLimit = CreditLimit & {
+  business_credit_score?: number;
+  credit_grade?: string;
+  base_rate_bps?: number;
+  apr_bps?: number;
+  eligible?: boolean;
+};
 
 /** Maximum credit utilization — providers can borrow up to 50% of active contract value */
 const MAX_CREDIT_UTILIZATION = 0.5;
@@ -81,10 +94,6 @@ function formatDate(dateStr: string): string {
     day: 'numeric',
     year: 'numeric',
   });
-}
-
-function computeFeeCents(amountCents: number, termDays = DEFAULT_TERM_DAYS): number {
-  return Math.round((amountCents * FEE_APR * termDays) / 365);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -145,18 +154,33 @@ function StatCard({
 // FeePreview — shows estimated fees before request
 // ────────────────────────────────────────
 
-function FeePreview({ amountCents }: { amountCents: number }) {
-  const feeCents = computeFeeCents(amountCents);
+function FeePreview({ amountCents, creditLimit }: { amountCents: number; creditLimit?: PricedCreditLimit }) {
+  // Use the borrower's risk-based APR when the backend provides it; otherwise
+  // fall back to the base rate. Pricing auto-adjusts to creditworthiness.
+  const aprBps = creditLimit?.apr_bps ?? FEE_APR * 10000;
+  const feeCents = Math.round((amountCents * aprBps * DEFAULT_TERM_DAYS) / 365 / 10000);
   const totalCents = amountCents + feeCents;
-  const aprPercent = (FEE_APR * 100).toFixed(0);
+  const aprPercent = (aprBps / 100).toFixed(2);
+  const score = creditLimit?.business_credit_score;
+  const grade = creditLimit?.credit_grade;
 
   if (amountCents <= 0) return null;
 
   return (
     <div className="rounded-lg border border-[var(--brand-gold)]/10 p-4">
-      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white/70">
-        <Info className="h-4 w-4 text-[var(--brand-gold)]" aria-hidden="true" />
-        Fee Estimate
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-white/70">
+          <Info className="h-4 w-4 text-[var(--brand-gold)]" aria-hidden="true" />
+          Fee Estimate
+        </div>
+        {score !== undefined && grade ? (
+          <span
+            className="rounded-md border border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--brand-gold)]"
+            title="Your business credit score sets your rate"
+          >
+            Credit {grade} · {score}/100
+          </span>
+        ) : null}
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-sm">
@@ -179,7 +203,8 @@ function FeePreview({ amountCents }: { amountCents: number }) {
           </div>
         </div>
         <p className="mt-2 text-xs text-white/40">
-          Charged at {aprPercent}% APR, prorated by days outstanding.
+          Charged at {aprPercent}% APR, set by your business credit score and prorated by days
+          outstanding.
         </p>
       </div>
     </div>
@@ -591,7 +616,12 @@ export default function ProviderAdvancesPage() {
             </div>
 
             {/* Fee preview */}
-            {requestAmountCents > 0 ? <FeePreview amountCents={requestAmountCents} /> : null}
+            {requestAmountCents > 0 ? (
+              <FeePreview
+                amountCents={requestAmountCents}
+                creditLimit={creditLimitData as PricedCreditLimit | undefined}
+              />
+            ) : null}
 
             <div className="flex items-center gap-3">
               <Button

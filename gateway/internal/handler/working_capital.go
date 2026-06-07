@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -54,6 +55,11 @@ func (h *WorkingCapitalHandler) RequestAdvance(w http.ResponseWriter, r *http.Re
 		AmountCents: req.AmountCents,
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "declined") {
+			writeError(w, http.StatusUnprocessableEntity,
+				"Advance declined: your business credit score is below the minimum to qualify right now. Complete and repay more jobs on time to build it up.")
+			return
+		}
 		slog.Error("request advance gRPC call failed", "error", err, "provider_id", claims.UserID)
 		writeGRPCError(w, err)
 		return
@@ -329,6 +335,21 @@ func (h *WorkingCapitalHandler) GetCreditLimit(w http.ResponseWriter, r *http.Re
 	if resp.GetLastComputedAt() != nil {
 		result["last_computed_at"] = formatTimestamp(resp.GetLastComputedAt())
 	}
+
+	// Risk-based pricing quote: business credit score → grade → dynamic APR.
+	// A zero on-time rate is treated as "no advance history" (neutral); the
+	// payment service is authoritative at charge time.
+	var onTimeRate *float64
+	if v := resp.GetOnTimeRate(); v > 0 {
+		onTimeRate = &v
+	}
+	score := businessCreditScore(onTimeRate, int(resp.GetJobsCompleted()), resp.GetTotalEarningsCents())
+	grade := creditGrade(score)
+	result["business_credit_score"] = score
+	result["credit_grade"] = grade
+	result["base_rate_bps"] = baseAdvanceRateBps()
+	result["apr_bps"] = dynamicAPRBps(score)
+	result["eligible"] = score >= minLendingScore
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"credit_limit": result,
