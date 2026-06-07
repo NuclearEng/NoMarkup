@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, idempotencyHeader } from '@/lib/api';
 import type { AdvancesResponse, CreditLimit, WorkingCapitalAdvance } from '@/types';
 
 export function useMyAdvances() {
@@ -32,10 +32,14 @@ export function useRequestAdvance() {
   return useMutation({
     mutationFn: (variables: { contract_id: string; advance_amount_cents: number }) =>
       api
-        .post<{ advance: WorkingCapitalAdvance }>('/api/v1/providers/me/advances', {
-          contract_id: variables.contract_id,
-          amount_cents: variables.advance_amount_cents,
-        })
+        .post<{ advance: WorkingCapitalAdvance }>(
+          '/api/v1/providers/me/advances',
+          {
+            contract_id: variables.contract_id,
+            amount_cents: variables.advance_amount_cents,
+          },
+          idempotencyHeader(),
+        )
         .then((res) => res.advance),
     onSuccess: () => {
       toast.success('Advance request submitted');

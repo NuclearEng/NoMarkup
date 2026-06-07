@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, idempotencyHeader } from '@/lib/api';
 import type {
   CreatePaymentInput,
   FeeCalculationInput,
@@ -49,7 +49,11 @@ export function useCreatePayment() {
 
   return useMutation({
     mutationFn: async (input: CreatePaymentInput) => {
-      const raw = await api.post<Record<string, unknown>>('/api/v1/payments', input);
+      const raw = await api.post<Record<string, unknown>>(
+        '/api/v1/payments',
+        input,
+        idempotencyHeader(),
+      );
       return raw as unknown as Payment;
     },
     onSuccess: () => {
@@ -70,6 +74,7 @@ export function useProcessPayment() {
       const raw = await api.post<Record<string, unknown>>(
         `/api/v1/payments/${variables.paymentId}/process`,
         { payment_method_id: variables.payment_method_id },
+        idempotencyHeader(),
       );
       return raw as unknown as Payment;
     },
@@ -112,7 +117,11 @@ export function useDeletePaymentMethod() {
 export function useCreateSetupIntent() {
   return useMutation({
     mutationFn: () =>
-      api.post<{ client_secret: string }>('/api/v1/payments/setup-intent'),
+      api.post<{ client_secret: string }>(
+        '/api/v1/payments/setup-intent',
+        undefined,
+        idempotencyHeader(),
+      ),
     onError: () => {
       toast.error('Failed to initialize payment setup');
     },
@@ -131,7 +140,7 @@ export function useAddDevPaymentMethod() {
 
   return useMutation({
     mutationFn: (input: DevPaymentMethodInput) =>
-      api.post<PaymentMethod>('/api/v1/payments/dev/methods', input),
+      api.post<PaymentMethod>('/api/v1/payments/dev/methods', input, idempotencyHeader()),
     onSuccess: () => {
       toast.success('Payment method added (dev mode)');
       void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
@@ -145,7 +154,7 @@ export function useAddDevPaymentMethod() {
 export function useCalculateFees() {
   return useMutation({
     mutationFn: (input: FeeCalculationInput) =>
-      api.post<PaymentBreakdown>('/api/v1/payments/calculate-fees', input),
+      api.post<PaymentBreakdown>('/api/v1/payments/calculate-fees', input, idempotencyHeader()),
   });
 }
 
@@ -194,9 +203,11 @@ export function useInstantPayout() {
 
   return useMutation({
     mutationFn: (amountCents: number) =>
-      api.post<InstantPayoutResponse>('/api/v1/payments/instant-payout', {
-        amount_cents: amountCents,
-      }),
+      api.post<InstantPayoutResponse>(
+        '/api/v1/payments/instant-payout',
+        { amount_cents: amountCents },
+        idempotencyHeader(),
+      ),
     onSuccess: () => {
       toast.success('Payout initiated — funds arriving within minutes');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });

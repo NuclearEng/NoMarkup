@@ -61,9 +61,11 @@ async function request<T>(
   path: string,
   body?: unknown,
   skipAuth = false,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...extraHeaders,
   };
 
   const token = getAccessToken();
@@ -89,6 +91,7 @@ async function request<T>(
     if (refreshed) {
       const retryHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
+        ...extraHeaders,
       };
       const newToken = getAccessToken();
       if (newToken) {
@@ -119,7 +122,8 @@ async function request<T>(
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  post: <T>(path: string, body?: unknown, extraHeaders?: Record<string, string>) =>
+    request<T>('POST', path, body, false, extraHeaders),
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   delete: <T>(path: string, body?: unknown) => request<T>('DELETE', path, body),
@@ -129,6 +133,16 @@ export const api = {
   /** GET without auth header or 401 retry (for public endpoints like job search) */
   getPublic: <T>(path: string) => request<T>('GET', path, undefined, true),
 };
+
+/**
+ * Fresh Idempotency-Key header for payment/subscription mutations. The gateway
+ * requires this header on all POSTs under the payment + subscription route
+ * groups (middleware.RequireIdempotencyKey) and 400s without it. A per-call
+ * UUID matches the gateway's "dedupe identical retries" contract.
+ */
+export function idempotencyHeader(): Record<string, string> {
+  return { 'Idempotency-Key': crypto.randomUUID() };
+}
 
 // downloadAuthenticated fetches a protected file endpoint with the current
 // bearer token and triggers a browser download. Required because a plain
