@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Download, FileText, Loader2, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Loader2, Printer, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -57,14 +57,24 @@ export default function TaxCenterPage() {
   const quarterlyTotal = quarterlySETax + quarterlyIncomeTax;
 
   function handlePrint() {
+    // Scope the printout to the tax summary (.print-region) on a clean light
+    // theme instead of dumping the whole dark dashboard.
+    document.body.classList.add('printing-region');
+    const cleanup = () => {
+      document.body.classList.remove('printing-region');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
     window.print();
+    // Fallback in case afterprint never fires (some browsers/headless).
+    window.setTimeout(cleanup, 2000);
   }
 
   const yearOptions = Array.from({ length: 3 }, (_, i) => currentYear - i);
 
   return (
     <PageTransition>
-    <div className="space-y-6">
+    <div className="space-y-6 print-region">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
@@ -80,8 +90,8 @@ export default function TaxCenterPage() {
           className="no-print min-h-[44px] gap-2"
           onClick={handlePrint}
         >
-          <Download className="h-4 w-4" aria-hidden="true" />
-          Download Summary
+          <Printer className="h-4 w-4" aria-hidden="true" />
+          Print Summary
         </Button>
       </div>
 

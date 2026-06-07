@@ -2283,3 +2283,42 @@ body {
     transform: none !important;
   }
 }
+
+/* ── Print: scoped document printing ──────────────────────────────
+   Add `printing-region` to <body> and `print-region` to the element you
+   want to print. Everything else is hidden, the region is forced to a
+   clean light theme, and app chrome / .no-print is removed. Used for the
+   tax summary; the invoice prints its own standalone server document. */
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+
+  body.printing-region * {
+    visibility: hidden !important;
+  }
+
+  body.printing-region .print-region,
+  body.printing-region .print-region * {
+    visibility: visible !important;
+    color: #1a1a1a !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-color: #e5e5e5 !important;
+    -webkit-text-fill-color: #1a1a1a !important;
+  }
+
+  body.printing-region .print-region {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #fff !important;
+    padding: 0;
+  }
+
+  body.printing-region .no-print {
+    display: none !important;
+  }
+}

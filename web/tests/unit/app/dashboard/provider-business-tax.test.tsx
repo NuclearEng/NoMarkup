@@ -171,13 +171,16 @@ describe('ProviderTaxPage', () => {
     expect(screen.getByText(/Failed to generate tax form/i)).toBeDefined();
   });
 
-  it('clicking Download Summary triggers window.print', () => {
+  it('clicking Print Summary triggers a scoped window.print', () => {
     earningsState.data = { net_earnings_cents: 0, total_jobs: 0, total_fees_cents: 0 };
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     render(withQueryClient(createElement(ProviderTaxPage)));
-    fireEvent.click(screen.getByRole('button', { name: /Download Summary/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Print Summary/i }));
     expect(printSpy).toHaveBeenCalled();
+    // The print is scoped via the body class so only .print-region prints.
+    expect(document.body.classList.contains('printing-region')).toBe(true);
     printSpy.mockRestore();
+    document.body.classList.remove('printing-region');
   });
 
   it('renders the no-tax-forms placeholder when forms list is empty', () => {
