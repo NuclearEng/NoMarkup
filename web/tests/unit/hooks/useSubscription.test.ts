@@ -27,6 +27,7 @@ vi.mock('@/lib/api', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+  idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
   ApiError: class ApiError extends Error {
     code = 'ERR';
     userMessage(fallback: string) {
@@ -238,6 +239,7 @@ describe('useCreateSubscription', () => {
         billing_interval: 'monthly',
         payment_method_id: 'pm_test123',
       },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['subscription'],
@@ -303,6 +305,7 @@ describe('useCancelSubscription', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/subscriptions/cancel',
       { reason: 'No longer needed', cancel_immediately: false },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['subscription'],
@@ -364,6 +367,7 @@ describe('useChangeTier', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/subscriptions/change-tier',
       { new_tier_id: 'tier-2', billing_interval: 'annual' },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['subscription'],

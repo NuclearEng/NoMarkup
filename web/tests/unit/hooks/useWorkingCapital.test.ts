@@ -32,6 +32,7 @@ vi.mock('@/lib/api', () => {
       patch: vi.fn(),
       delete: vi.fn(),
     },
+    idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
     ApiError,
   };
 });
@@ -120,6 +121,7 @@ describe('useRequestAdvance', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/providers/me/advances',
       { contract_id: 'c-1', amount_cents: 50_000 },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(result.current.data).toEqual(advance);
     expect(spy).toHaveBeenCalledWith({ queryKey: ['my-advances'] });

@@ -119,7 +119,7 @@ describe('useMarketRange', () => {
     expect(result.current.data?.low_cents).toBe(5000);
     expect(result.current.data?.median_cents).toBe(12500);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/analytics/market-range?category_id=cat-1'),
+      expect.stringContaining('/api/v1/analytics/market/range?category_id=cat-1'),
     );
   });
 
