@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { api, ApiError } from '@/lib/api';
 import { clearTokens, parseJwtPayload, setAccessToken } from '@/lib/auth';
+import { queryClient } from '@/lib/query-client';
 import type {
   AuthResponse,
   LoginInput,
@@ -167,6 +168,11 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       }
     }
     clearTokens();
+    // Drop all cached per-user server state so the next account that logs in
+    // in this tab doesn't inherit the previous user's notifications, etc.
+    // (Root cause of the notification mark-read 404: stale notification ids
+    // from a prior user were sent under the new user's token.)
+    queryClient.clear();
     set({ ...initialState, isHydrating: false });
   },
 
