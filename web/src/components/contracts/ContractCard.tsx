@@ -4,6 +4,7 @@ import { Clock, FileText, Heart } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -269,8 +270,11 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
         amount_cents: amountCents,
       });
       setSuccess(true);
+      toast.success(`Tip sent — ${formatCents(amountCents)} on its way to your provider. Thank you!`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to record tip');
+      const message = err instanceof Error ? err.message : 'Failed to record tip';
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
