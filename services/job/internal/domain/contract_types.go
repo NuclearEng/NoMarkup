@@ -13,6 +13,7 @@ var (
 	ErrAlreadyAccepted         = errors.New("contract already accepted by this party")
 	ErrDeadlineExpired         = errors.New("acceptance deadline has expired")
 	ErrContractNotActive       = errors.New("contract is not active")
+	ErrMilestonesNotApproved   = errors.New("all milestones must be approved before completing")
 	ErrMilestoneNotFound       = errors.New("milestone not found")
 	ErrMaxRevisions            = errors.New("maximum revision count reached")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")

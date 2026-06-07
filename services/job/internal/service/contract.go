@@ -258,7 +258,7 @@ func (s *ContractService) MarkComplete(ctx context.Context, contractID, provider
 	if contract.PaymentTiming == "milestone" {
 		for _, m := range contract.Milestones {
 			if m.Status != "approved" {
-				return nil, fmt.Errorf("mark complete: all milestones must be approved")
+				return nil, fmt.Errorf("mark complete: %w", domain.ErrMilestonesNotApproved)
 			}
 		}
 	}

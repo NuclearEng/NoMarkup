@@ -650,6 +650,8 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "acceptance deadline has expired")
 	case errors.Is(err, domain.ErrContractNotActive):
 		return status.Error(codes.FailedPrecondition, "contract is not active")
+	case errors.Is(err, domain.ErrMilestonesNotApproved):
+		return status.Error(codes.FailedPrecondition, "all milestones must be approved before completing the contract")
 	case errors.Is(err, domain.ErrMilestoneNotFound):
 		return status.Error(codes.NotFound, "milestone not found")
 	case errors.Is(err, domain.ErrMaxRevisions):
