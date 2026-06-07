@@ -236,12 +236,17 @@ describe('POST /api/analyze-job-image — request guards', () => {
 
 // ── Env-var guard ─────────────────────────────────────────────────────
 describe('POST /api/analyze-job-image — env config', () => {
-  it('returns 500 when ANTHROPIC_API_KEY is missing', async () => {
+  it('degrades to 503 + aiUnavailable when ANTHROPIC_API_KEY is missing', async () => {
+    // AI photo analysis is an enhancement: a missing key must NOT 500. It
+    // returns a clean 503 so the job-posting flow keeps working without AI.
     delete process.env['ANTHROPIC_API_KEY'];
     const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
     const res = await POST(req);
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'ANTHROPIC_API_KEY not configured' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      aiUnavailable: true,
+      error: 'AI photo analysis is not configured.',
+    });
   });
 });
 
@@ -377,29 +382,37 @@ describe('POST /api/analyze-job-image — AI call', () => {
     expect(res.status).toBe(200);
   });
 
-  it('returns 502 when the SDK call throws', async () => {
+  it('degrades to 503 + aiUnavailable when the SDK call throws', async () => {
+    // A provider outage / rate limit is a predictable failure for an optional
+    // enhancement — degrade gracefully rather than surfacing a hard error.
     messagesCreate.mockRejectedValueOnce(new Error('upstream 500'));
     const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
     const res = await POST(req);
-    expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: 'Failed to analyze image' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      aiUnavailable: true,
+      error: 'AI photo analysis is temporarily unavailable.',
+    });
   });
 
-  it('returns 502 when response.content is empty', async () => {
+  it('degrades to 503 + aiUnavailable when response.content is empty', async () => {
     messagesCreate.mockResolvedValueOnce({ content: [] });
     const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
     const res = await POST(req);
-    expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: 'Unexpected response format from AI' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      aiUnavailable: true,
+      error: 'AI photo analysis is temporarily unavailable.',
+    });
   });
 
-  it('returns 502 when the first content block is not text', async () => {
+  it('degrades to 503 + aiUnavailable when the first content block is not text', async () => {
     messagesCreate.mockResolvedValueOnce({
       content: [{ type: 'tool_use', id: 't', name: 'x', input: {} }],
     });
     const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
     const res = await POST(req);
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(503);
   });
 
   it('returns 400 when the AI returns non-JSON text', async () => {

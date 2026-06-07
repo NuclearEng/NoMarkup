@@ -6,8 +6,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ImageAnalysisButton } from '@/components/forms/ImageAnalysisButton';
 
 vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
+
+const SOFT_NOTICE =
+  "Couldn't auto-analyze the photo — you can still fill in the details manually.";
 
 const { toast } = await import('sonner');
 
@@ -99,6 +102,37 @@ describe('ImageAnalysisButton', () => {
     });
   });
 
+  it('shows a soft non-blocking notice on a 503 / aiUnavailable response', async () => {
+    // AI auto-fill is optional. A 503 (or aiUnavailable flag) must degrade to a
+    // soft info notice — never a hard error — and never block job posting.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () =>
+        Promise.resolve({
+          aiUnavailable: true,
+          error: 'AI photo analysis is not configured.',
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    const onResult = vi.fn();
+    render(createElement(ImageAnalysisButton, { onResult }));
+
+    const input = screen
+      .getByRole('button', { name: /Analyze a photo/ })
+      .parentElement?.querySelector('input[type="file"]');
+    const goodFile = new File(['x'], 'p.jpg', { type: 'image/jpeg' });
+    await user.upload(input as HTMLInputElement, goodFile);
+
+    await waitFor(() => {
+      expect(toast.info).toHaveBeenCalledWith(SOFT_NOTICE);
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
   it('falls back to a generic error when error JSON has no string error field', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
@@ -124,7 +158,8 @@ describe('ImageAnalysisButton', () => {
   it('falls back to a generic error when error JSON parsing rejects', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
-      // Body parsing fails — the .catch in the source returns the default sentinel.
+      // Body parsing fails — errorBody becomes null, so the message extraction
+      // falls through to the generic default.
       json: () => Promise.reject(new Error('bad body')),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -139,7 +174,7 @@ describe('ImageAnalysisButton', () => {
     await user.upload(input as HTMLInputElement, goodFile);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Unknown error');
+      expect(toast.error).toHaveBeenCalledWith('Failed to analyze image');
     });
   });
 
@@ -173,7 +208,7 @@ describe('ImageAnalysisButton', () => {
     expect(onResult).not.toHaveBeenCalled();
   });
 
-  it('shows a connection-error toast when fetch rejects', async () => {
+  it('shows a soft non-blocking notice when fetch rejects (network failure)', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -188,10 +223,9 @@ describe('ImageAnalysisButton', () => {
     await user.upload(input as HTMLInputElement, goodFile);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        'Could not analyze image. Check your connection and try again.',
-      );
+      expect(toast.info).toHaveBeenCalledWith(SOFT_NOTICE);
     });
+    expect(toast.error).not.toHaveBeenCalled();
     expect(onResult).not.toHaveBeenCalled();
   });
 
@@ -209,7 +243,7 @@ describe('ImageAnalysisButton', () => {
     expect(clickSpy).toHaveBeenCalled();
   });
 
-  it('shows a connection-error toast when FileReader yields a non-string result', async () => {
+  it('shows a soft non-blocking notice when FileReader yields a non-string result', async () => {
     const OriginalFileReader = globalThis.FileReader;
     class FakeReader {
       public result: ArrayBuffer | null = new ArrayBuffer(4);
@@ -234,14 +268,12 @@ describe('ImageAnalysisButton', () => {
     await user.upload(input as HTMLInputElement, goodFile);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        'Could not analyze image. Check your connection and try again.',
-      );
+      expect(toast.info).toHaveBeenCalledWith(SOFT_NOTICE);
     });
     vi.stubGlobal('FileReader', OriginalFileReader);
   });
 
-  it('shows a connection-error toast when FileReader returns a result without base64 payload', async () => {
+  it('shows a soft non-blocking notice when FileReader returns a result without base64 payload', async () => {
     const OriginalFileReader = globalThis.FileReader;
     class FakeReader {
       public result: string = 'data:image/jpeg;base64'; // no comma → split[1] undefined
@@ -265,14 +297,12 @@ describe('ImageAnalysisButton', () => {
     await user.upload(input as HTMLInputElement, goodFile);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        'Could not analyze image. Check your connection and try again.',
-      );
+      expect(toast.info).toHaveBeenCalledWith(SOFT_NOTICE);
     });
     vi.stubGlobal('FileReader', OriginalFileReader);
   });
 
-  it('shows a connection-error toast when FileReader fires an error event', async () => {
+  it('shows a soft non-blocking notice when FileReader fires an error event', async () => {
     const OriginalFileReader = globalThis.FileReader;
     class FakeReader {
       public result: string | null = null;
@@ -296,9 +326,7 @@ describe('ImageAnalysisButton', () => {
     await user.upload(input as HTMLInputElement, goodFile);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        'Could not analyze image. Check your connection and try again.',
-      );
+      expect(toast.info).toHaveBeenCalledWith(SOFT_NOTICE);
     });
     vi.stubGlobal('FileReader', OriginalFileReader);
   });
