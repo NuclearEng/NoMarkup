@@ -150,8 +150,8 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
 	}
-	if !isValidUUID(req.CategoryID) {
-		writeError(w, http.StatusBadRequest, "invalid category_id")
+	if strings.TrimSpace(req.CategoryID) == "" {
+		writeError(w, http.StatusBadRequest, "category_id is required")
 		return
 	}
 	if req.StartingPriceCents <= 0 {
@@ -187,18 +187,27 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 		conditionArg = conditionVal
 	}
 
-	// Verify category exists. Cheap lookup; gives a clean 400 instead
-	// of a foreign-key violation surfaced as a 500.
-	var catExists bool
-	if err := h.db.QueryRow(r.Context(),
-		`SELECT EXISTS(SELECT 1 FROM service_categories WHERE id = $1)`, req.CategoryID,
-	).Scan(&catExists); err != nil {
-		slog.ErrorContext(r.Context(), "create listing: category lookup failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "category lookup failed")
+	// Resolve the category. The web client sends a stable slug (e.g.
+	// "goods-furniture"), but the column is a UUID — accept either and map to
+	// the canonical UUID. A clean 400 beats a foreign-key violation as a 500.
+	var resolvedCategoryID string
+	var catErr error
+	if isValidUUID(req.CategoryID) {
+		catErr = h.db.QueryRow(r.Context(),
+			`SELECT id::text FROM service_categories WHERE id = $1`, req.CategoryID,
+		).Scan(&resolvedCategoryID)
+	} else {
+		catErr = h.db.QueryRow(r.Context(),
+			`SELECT id::text FROM service_categories WHERE slug = $1`, req.CategoryID,
+		).Scan(&resolvedCategoryID)
+	}
+	if errors.Is(catErr, pgx.ErrNoRows) {
+		writeError(w, http.StatusBadRequest, "unknown category_id")
 		return
 	}
-	if !catExists {
-		writeError(w, http.StatusBadRequest, "unknown category_id")
+	if catErr != nil {
+		slog.ErrorContext(r.Context(), "create listing: category lookup failed", "error", catErr)
+		writeError(w, http.StatusInternalServerError, "category lookup failed")
 		return
 	}
 
@@ -276,7 +285,7 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 			$13,
 			$14, $14, $15
 		) RETURNING id`,
-		claims.UserID, title, req.Description, req.CategoryID,
+		claims.UserID, title, req.Description, resolvedCategoryID,
 		lng, lat, pickupAddr, strings.TrimSpace(req.PickupZip),
 		req.StartingPriceCents, req.ReservePriceCents, req.BuyNowPriceCents,
 		conditionArg,
