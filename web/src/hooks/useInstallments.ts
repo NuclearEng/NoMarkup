@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { useContract } from '@/hooks/useContracts';
 import { usePayments } from '@/hooks/usePayments';
 import type {
@@ -71,8 +71,8 @@ export function useCreateInstallmentPlan() {
       void queryClient.invalidateQueries({ queryKey: ['installment-plans'] });
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
     },
-    onError: () => {
-      toast.error('Failed to create payment plan');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to create payment plan'));
     },
   });
 }

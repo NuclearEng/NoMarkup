@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 
 export interface PropertyAddress {
   street: string;
@@ -55,8 +55,8 @@ export function useCreateProperty() {
       toast.success('Property added');
       void queryClient.invalidateQueries({ queryKey: ['properties'] });
     },
-    onError: () => {
-      toast.error('Failed to add property');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to add property'));
     },
   });
 }
@@ -79,8 +79,8 @@ export function useUpdateProperty() {
       toast.success('Property updated');
       void queryClient.invalidateQueries({ queryKey: ['properties'] });
     },
-    onError: () => {
-      toast.error('Failed to update property');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to update property'));
     },
   });
 }
@@ -95,8 +95,8 @@ export function useDeleteProperty() {
       toast.success('Property removed');
       void queryClient.invalidateQueries({ queryKey: ['properties'] });
     },
-    onError: () => {
-      toast.error('Failed to remove property');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to remove property'));
     },
   });
 }

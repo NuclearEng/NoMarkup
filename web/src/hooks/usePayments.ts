@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, idempotencyHeader } from '@/lib/api';
+import { api, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type {
   CreatePaymentInput,
   FeeCalculationInput,
@@ -60,8 +60,8 @@ export function useCreatePayment() {
       toast.success('Payment created');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
     },
-    onError: () => {
-      toast.error('Failed to create payment');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to create payment'));
     },
   });
 }
@@ -83,8 +83,8 @@ export function useProcessPayment() {
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
       void queryClient.invalidateQueries({ queryKey: ['payment', variables.paymentId] });
     },
-    onError: () => {
-      toast.error('Payment failed — please try again');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Payment failed — please try again'));
     },
   });
 }
@@ -108,8 +108,8 @@ export function useDeletePaymentMethod() {
       toast.success('Payment method removed');
       void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
     },
-    onError: () => {
-      toast.error('Failed to remove payment method');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to remove payment method'));
     },
   });
 }
@@ -122,8 +122,8 @@ export function useCreateSetupIntent() {
         undefined,
         idempotencyHeader(),
       ),
-    onError: () => {
-      toast.error('Failed to initialize payment setup');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to initialize payment setup'));
     },
   });
 }
@@ -145,8 +145,8 @@ export function useAddDevPaymentMethod() {
       toast.success('Payment method added (dev mode)');
       void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
     },
-    onError: () => {
-      toast.error('Failed to add payment method');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to add payment method'));
     },
   });
 }
@@ -181,8 +181,8 @@ export function useCreateStripeAccount() {
       toast.success('Stripe account created');
       void queryClient.invalidateQueries({ queryKey: ['stripe-account-status'] });
     },
-    onError: () => {
-      toast.error('Failed to create Stripe account');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to create Stripe account'));
     },
   });
 }
@@ -214,8 +214,8 @@ export function useInstantPayout() {
       void queryClient.invalidateQueries({ queryKey: ['provider-analytics'] });
       void queryClient.invalidateQueries({ queryKey: ['provider-earnings'] });
     },
-    onError: () => {
-      toast.error('Instant payout failed — please try again');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Instant payout failed — please try again'));
     },
   });
 }

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/constants';
 
@@ -92,9 +92,7 @@ export function useCheckIn(contractId: string) {
       void queryClient.invalidateQueries({ queryKey: ['work-session', contractId] });
     },
     onError: (err: unknown) => {
-      const message =
-        err instanceof Error ? err.message : 'Failed to check in. Please try again.';
-      toast.error(message);
+      toast.error(getApiErrorMessage(err, 'Failed to check in. Please try again.'));
     },
   });
 }
@@ -142,9 +140,7 @@ export function useCheckOut(contractId: string) {
       void queryClient.invalidateQueries({ queryKey: ['work-session', contractId] });
     },
     onError: (err: unknown) => {
-      const message =
-        err instanceof Error ? err.message : 'Failed to check out. Please try again.';
-      toast.error(message);
+      toast.error(getApiErrorMessage(err, 'Failed to check out. Please try again.'));
     },
   });
 }
@@ -193,9 +189,7 @@ export function useUploadCompletionPhoto(contractId: string) {
       toast.success(`${data.phase === 'before' ? 'Before' : 'After'} photo uploaded`);
     },
     onError: (err: unknown) => {
-      const message =
-        err instanceof Error ? err.message : 'Failed to upload photo. Please try again.';
-      toast.error(message);
+      toast.error(getApiErrorMessage(err, 'Failed to upload photo. Please try again.'));
     },
   });
 }

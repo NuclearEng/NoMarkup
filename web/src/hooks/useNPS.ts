@@ -10,7 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 
 export interface PendingNPS {
   id: string;
@@ -45,11 +45,7 @@ export function useSubmitNPS() {
       void qc.invalidateQueries({ queryKey: ['nps', 'pending'] });
     },
     onError: (err) => {
-      if (err instanceof ApiError) {
-        toast.error(err.userMessage('Failed to submit'));
-        return;
-      }
-      toast.error('Failed to submit');
+      toast.error(getApiErrorMessage(err, 'Failed to submit'));
     },
   });
 }

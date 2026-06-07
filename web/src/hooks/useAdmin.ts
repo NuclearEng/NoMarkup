@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, idempotencyHeader } from '@/lib/api';
+import { api, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type {
   AdminDisputesResponse,
   AdminFlaggedReviewsResponse,
@@ -384,8 +384,8 @@ export function useSetPlatformBankAccount() {
       toast.success('Platform bank account saved');
       void queryClient.invalidateQueries({ queryKey: adminKeys.banking() });
     },
-    onError: () => {
-      toast.error('Failed to save bank account');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to save bank account'));
     },
   });
 }
@@ -399,8 +399,8 @@ export function useDeletePlatformBankAccount() {
       toast.success('Platform bank account removed');
       void queryClient.invalidateQueries({ queryKey: adminKeys.banking() });
     },
-    onError: () => {
-      toast.error('Failed to remove bank account');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to remove bank account'));
     },
   });
 }

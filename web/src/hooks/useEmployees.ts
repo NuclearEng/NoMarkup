@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, getApiErrorMessage } from '@/lib/api';
 import type { AddEmployeeInput, CompanyEmployee } from '@/types';
 
 interface EmployeesResponse {
@@ -37,8 +37,8 @@ export function useAddEmployee() {
       toast.success('Employee added');
       void queryClient.invalidateQueries({ queryKey: ['employees'] });
     },
-    onError: () => {
-      toast.error('Failed to add employee');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to add employee'));
     },
   });
 }
@@ -58,8 +58,8 @@ export function useUpdateEmployee() {
       toast.success('Employee updated');
       void queryClient.invalidateQueries({ queryKey: ['employees'] });
     },
-    onError: () => {
-      toast.error('Failed to update employee');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to update employee'));
     },
   });
 }
@@ -74,8 +74,8 @@ export function useRemoveEmployee() {
       toast.success('Employee removed');
       void queryClient.invalidateQueries({ queryKey: ['employees'] });
     },
-    onError: () => {
-      toast.error('Failed to remove employee');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to remove employee'));
     },
   });
 }

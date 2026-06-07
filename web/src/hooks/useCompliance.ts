@@ -21,7 +21,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, getApiErrorMessage } from '@/lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types
@@ -138,11 +138,7 @@ export function useAcceptToS() {
       void qc.invalidateQueries({ queryKey: ['tos', 'mine'] });
     },
     onError: (err: unknown) => {
-      if (err instanceof ApiError) {
-        toast.error(err.userMessage('Failed to record acceptance'));
-        return;
-      }
-      toast.error('Failed to record acceptance');
+      toast.error(getApiErrorMessage(err, 'Failed to record acceptance'));
     },
   });
 }
@@ -170,11 +166,7 @@ export function useSetDOB() {
       toast.success('Age verified');
     },
     onError: (err: unknown) => {
-      if (err instanceof ApiError) {
-        toast.error(err.userMessage('Failed to verify age'));
-        return;
-      }
-      toast.error('Failed to verify age');
+      toast.error(getApiErrorMessage(err, 'Failed to verify age'));
     },
   });
 }
@@ -188,11 +180,7 @@ export function useCreateBidBond() {
     mutationFn: ({ listingId, input }: { listingId: string; input: CreateBidBondInput }) =>
       api.post<CreateBidBondResponse>(`/api/v1/listings/${listingId}/bid-bond`, input),
     onError: (err: unknown) => {
-      if (err instanceof ApiError) {
-        toast.error(err.userMessage('Failed to create bid bond'));
-        return;
-      }
-      toast.error('Failed to create bid bond');
+      toast.error(getApiErrorMessage(err, 'Failed to create bid bond'));
     },
   });
 }
@@ -204,11 +192,7 @@ export function useConfirmBidBond() {
         bond_id: bondId,
       }),
     onError: (err: unknown) => {
-      if (err instanceof ApiError) {
-        toast.error(err.userMessage('Failed to confirm bid bond'));
-        return;
-      }
-      toast.error('Failed to confirm bid bond');
+      toast.error(getApiErrorMessage(err, 'Failed to confirm bid bond'));
     },
   });
 }

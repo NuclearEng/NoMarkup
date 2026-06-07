@@ -129,9 +129,7 @@ export function useDeleteDraft() {
       toast.success('Draft deleted');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
-    onError: () => {
-      toast.error('Failed to delete draft');
-    },
+    onError: explainFailure('Failed to delete draft'),
   });
 }
 

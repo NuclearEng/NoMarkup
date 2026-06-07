@@ -10,7 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 
 export interface ReferralCode {
   code: string;
@@ -63,11 +63,7 @@ export function useRedeemReferral() {
       void qc.invalidateQueries({ queryKey: ['referrals'] });
     },
     onError: (err) => {
-      if (err instanceof ApiError) {
-        toast.error(err.userMessage('Failed to redeem code'));
-        return;
-      }
-      toast.error('Failed to redeem code');
+      toast.error(getApiErrorMessage(err, 'Failed to redeem code'));
     },
   });
 }

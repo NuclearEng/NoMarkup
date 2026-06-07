@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, downloadAuthenticated } from '@/lib/api';
+import { api, downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
 import type { TaxForm, TaxFormsResponse } from '@/types';
 
 export function useTaxForms() {
@@ -23,8 +23,8 @@ export function useGenerateTaxForm() {
       toast.success('Tax form generated');
       void queryClient.invalidateQueries({ queryKey: ['tax-forms'] });
     },
-    onError: () => {
-      toast.error('Failed to generate tax form');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to generate tax form'));
     },
   });
 }
@@ -48,7 +48,7 @@ export function useGenerateInvoice() {
       void queryClient.invalidateQueries({ queryKey: ['invoices'] });
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate invoice');
+      toast.error(getApiErrorMessage(err, 'Failed to generate invoice'));
     },
   });
 }

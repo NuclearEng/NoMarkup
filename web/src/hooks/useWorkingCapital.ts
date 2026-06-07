@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, ApiError, idempotencyHeader } from '@/lib/api';
+import { api, ApiError, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type { AdvancesResponse, CreditLimit, WorkingCapitalAdvance } from '@/types';
 
 export function useMyAdvances() {
@@ -54,8 +54,8 @@ export function useRequestAdvance() {
       void queryClient.invalidateQueries({ queryKey: ['my-advances'] });
       void queryClient.invalidateQueries({ queryKey: ['credit-limit'] });
     },
-    onError: () => {
-      toast.error('Failed to request advance');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to request advance'));
     },
   });
 }
@@ -94,8 +94,8 @@ export function useReviewAdvance() {
       toast.success('Advance reviewed');
       void queryClient.invalidateQueries({ queryKey: ['admin-advances'] });
     },
-    onError: () => {
-      toast.error('Failed to review advance');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to review advance'));
     },
   });
 }
@@ -114,8 +114,8 @@ export function useDisburseAdvance() {
       toast.success('Advance disbursed successfully');
       void queryClient.invalidateQueries({ queryKey: ['admin-advances'] });
     },
-    onError: () => {
-      toast.error('Failed to disburse advance');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to disburse advance'));
     },
   });
 }

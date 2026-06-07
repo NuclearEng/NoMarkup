@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 
 interface ProviderOffer {
   job_id: string;
@@ -38,8 +38,8 @@ export function useAcceptOffer(jobId: string) {
       toast.success('Offer accepted! The customer will be notified.');
       void queryClient.invalidateQueries({ queryKey: ['provider-offers'] });
     },
-    onError: () => {
-      toast.error('Failed to accept offer. It may have already expired.');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to accept offer. It may have already expired.'));
     },
   });
 }
@@ -54,8 +54,8 @@ export function useDeclineOffer(jobId: string) {
       toast.success('Offer declined.');
       void queryClient.invalidateQueries({ queryKey: ['provider-offers'] });
     },
-    onError: () => {
-      toast.error('Failed to decline offer.');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to decline offer.'));
     },
   });
 }
@@ -64,8 +64,8 @@ export function useCreateInstantMatch(jobId: string) {
   return useMutation({
     mutationFn: () =>
       api.post<InstantMatchResponse>(`/api/v1/jobs/${jobId}/instant-match`),
-    onError: () => {
-      toast.error('Failed to start instant match.');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to start instant match.'));
     },
   });
 }

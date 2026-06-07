@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import type { Listing } from '@/types';
 
 /**
@@ -34,11 +34,7 @@ export function useBuyNow(listingId: string) {
       void qc.invalidateQueries({ queryKey: ['listingBids', 'mine'] });
     },
     onError: (err) => {
-      if (err instanceof ApiError) {
-        toast.error(err.userMessage('Failed to complete purchase'));
-        return;
-      }
-      toast.error('Failed to complete purchase');
+      toast.error(getApiErrorMessage(err, 'Failed to complete purchase'));
     },
   });
 }

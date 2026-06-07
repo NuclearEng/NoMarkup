@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import type {
   FileInsuranceClaimInput,
   InsuranceClaim,
@@ -56,8 +56,8 @@ export function usePurchaseInsurance() {
       toast.success('Insurance purchased successfully');
       void queryClient.invalidateQueries({ queryKey: ['my-policies'] });
     },
-    onError: () => {
-      toast.error('Failed to purchase insurance');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to purchase insurance'));
     },
   });
 }
@@ -93,8 +93,8 @@ export function useFileInsuranceClaim() {
       void queryClient.invalidateQueries({ queryKey: ['my-policies'] });
       void queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
     },
-    onError: () => {
-      toast.error('Failed to file claim');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to file claim'));
     },
   });
 }
@@ -148,8 +148,8 @@ export function useReviewInsuranceClaim() {
       toast.success('Claim reviewed');
       void queryClient.invalidateQueries({ queryKey: ['admin-insurance-claims'] });
     },
-    onError: () => {
-      toast.error('Failed to review claim');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to review claim'));
     },
   });
 }
