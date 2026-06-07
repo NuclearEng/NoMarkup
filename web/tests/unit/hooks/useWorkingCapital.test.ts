@@ -93,13 +93,14 @@ describe('useCreditLimit', () => {
   afterEach(() => { client.clear(); });
 
   it('fetches the provider credit limit', async () => {
-    const response = { limit_cents: 500_000, available_cents: 250_000 };
-    vi.mocked(api.get).mockResolvedValueOnce(response);
+    const creditLimit = { limit_cents: 500_000, available_cents: 250_000 };
+    // The gateway wraps the payload in { credit_limit: {...} }; the hook unwraps it.
+    vi.mocked(api.get).mockResolvedValueOnce({ credit_limit: creditLimit });
 
     const { result } = renderHook(() => useCreditLimit(), { wrapper: wrap(client) });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(result.current.data).toEqual(response);
+    expect(result.current.data).toEqual(creditLimit);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/providers/me/credit-limit');
   });
 });

@@ -143,6 +143,16 @@ func TestPaymentService_RequestAdvance(t *testing.T) {
 
 			var captured *domain.Advance
 			repo := &mockPaymentRepo{
+				// RequestAdvance computes the borrower's business credit score
+				// first (reads payments + advance history); stub both so the
+				// thin-file path scores grade D (eligible) and the create path
+				// is reached.
+				listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
+					return nil, 0, nil
+				},
+				listAdvancesFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Advance, int, error) {
+					return nil, 0, nil
+				},
 				createAdvanceFn: func(_ context.Context, advance *domain.Advance) error {
 					if tt.repoErr != nil {
 						return tt.repoErr
