@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useAcceptContract, useCancelContract } from '@/hooks/useContracts';
+import { ApiError } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import type { Contract } from '@/types';
@@ -27,6 +28,13 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
 
   const isCustomer = user?.id === contract.customer_id;
   const isProvider = user?.id === contract.provider_id;
+
+  // Surface the backend's specific reason (e.g. "acceptance deadline has
+  // expired", "contract already accepted by this party") rather than a generic
+  // "Please try again." that hides why the action failed.
+  function errorMessage(err: unknown, fallback: string): string {
+    return err instanceof ApiError ? err.userMessage(fallback) : fallback;
+  }
 
   const currentUserAccepted =
     (isCustomer && contract.customer_accepted) || (isProvider && contract.provider_accepted);
@@ -158,7 +166,7 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
                 </div>
                 {cancelContract.isError ? (
                   <p className="text-destructive text-sm">
-                    Failed to decline contract. Please try again.
+                    {errorMessage(cancelContract.error, 'Failed to decline contract. Please try again.')}
                   </p>
                 ) : null}
               </div>
@@ -192,7 +200,7 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
             )}
             {acceptContract.isError ? (
               <p className="text-destructive text-sm">
-                Failed to accept contract. Please try again.
+                {errorMessage(acceptContract.error, 'Failed to accept contract. Please try again.')}
               </p>
             ) : null}
           </div>

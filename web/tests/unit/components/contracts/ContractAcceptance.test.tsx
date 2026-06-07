@@ -4,13 +4,20 @@ import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
+import { ApiError } from '@/lib/api';
 import type { Contract } from '@/types';
 
 const mockAcceptMutate = vi.fn();
 const mockCancelMutate = vi.fn();
 
-let acceptState = { isPending: false, isError: false };
-let cancelState = { isPending: false, isError: false };
+interface MutState {
+  isPending: boolean;
+  isError: boolean;
+  error?: unknown;
+}
+
+let acceptState: MutState = { isPending: false, isError: false };
+let cancelState: MutState = { isPending: false, isError: false };
 
 vi.mock('@/hooks/useContracts', () => ({
   useAcceptContract: () => ({
@@ -21,6 +28,9 @@ vi.mock('@/hooks/useContracts', () => ({
     get isError() {
       return acceptState.isError;
     },
+    get error() {
+      return acceptState.error;
+    },
   }),
   useCancelContract: () => ({
     mutate: mockCancelMutate,
@@ -29,6 +39,9 @@ vi.mock('@/hooks/useContracts', () => ({
     },
     get isError() {
       return cancelState.isError;
+    },
+    get error() {
+      return cancelState.error;
     },
   }),
 }));
@@ -152,6 +165,21 @@ describe('ContractAcceptance', () => {
     setUser({ id: 'cust-1' });
     render(createElement(ContractAcceptance, { contract: makeContract() }));
     expect(screen.getByText(/Failed to accept contract/i)).toBeDefined();
+  });
+
+  it('surfaces the backend reason (e.g. expired deadline) instead of the generic message', () => {
+    acceptState = {
+      isPending: false,
+      isError: true,
+      error: new ApiError(
+        422,
+        JSON.stringify({ error: "This contract's acceptance deadline has passed" }),
+      ),
+    };
+    setUser({ id: 'cust-1' });
+    render(createElement(ContractAcceptance, { contract: makeContract() }));
+    expect(screen.getByText(/acceptance deadline has passed/i)).toBeDefined();
+    expect(screen.queryByText(/Failed to accept contract/i)).toBeNull();
   });
 
   it('confirms decline and calls cancel mutate with onSuccess clearing confirm view', async () => {
