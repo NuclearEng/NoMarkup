@@ -141,7 +141,11 @@ export const api = {
  * UUID matches the gateway's "dedupe identical retries" contract.
  */
 export function idempotencyHeader(): Record<string, string> {
-  return { 'Idempotency-Key': crypto.randomUUID() };
+  const key =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${String(Date.now())}-${Math.random().toString(36).slice(2)}`;
+  return { 'Idempotency-Key': key };
 }
 
 // downloadAuthenticated fetches a protected file endpoint with the current
