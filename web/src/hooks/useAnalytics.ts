@@ -19,7 +19,7 @@ export function useMarketRange(
   if (subcategoryId) searchParams.set('subcategory_id', subcategoryId);
   if (serviceTypeId) searchParams.set('service_type_id', serviceTypeId);
   const query = searchParams.toString();
-  const path = `/api/v1/analytics/market-range?${query}`;
+  const path = `/api/v1/analytics/market/range?${query}`;
 
   return useQuery({
     queryKey: ['market-range', categoryId, subcategoryId, serviceTypeId],
