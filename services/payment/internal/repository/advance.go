@@ -72,7 +72,7 @@ func (r *PostgresRepository) ListAdvances(ctx context.Context, providerID string
 		SELECT id, provider_id, contract_id, advance_amount_cents,
 		       fee_cents, repaid_cents, status,
 		       reviewed_by, reviewed_at, rejection_reason,
-		       disbursed_at, repaid_at, stripe_transfer_id,
+		       disbursed_at, repaid_at, COALESCE(stripe_transfer_id, ''),
 		       created_at, updated_at
 		FROM working_capital_advances
 		WHERE %s
@@ -112,7 +112,7 @@ func (r *PostgresRepository) GetAdvance(ctx context.Context, advanceID string) (
 		SELECT id, provider_id, contract_id, advance_amount_cents,
 		       fee_cents, repaid_cents, status,
 		       reviewed_by, reviewed_at, rejection_reason,
-		       disbursed_at, repaid_at, stripe_transfer_id,
+		       disbursed_at, repaid_at, COALESCE(stripe_transfer_id, ''),
 		       created_at, updated_at
 		FROM working_capital_advances
 		WHERE id = $1`, advanceID).Scan(
@@ -144,7 +144,7 @@ func (r *PostgresRepository) UpdateAdvanceReview(ctx context.Context, advanceID 
 		RETURNING id, provider_id, contract_id, advance_amount_cents,
 		          fee_cents, repaid_cents, status,
 		          reviewed_by, reviewed_at, rejection_reason,
-		          disbursed_at, repaid_at, stripe_transfer_id,
+		          disbursed_at, repaid_at, COALESCE(stripe_transfer_id, ''),
 		          created_at, updated_at`,
 		advanceID, status, reviewerID, rejectionReason,
 	).Scan(
@@ -175,7 +175,7 @@ func (r *PostgresRepository) UpdateAdvanceDisbursement(ctx context.Context, adva
 		RETURNING id, provider_id, contract_id, advance_amount_cents,
 		          fee_cents, repaid_cents, status,
 		          reviewed_by, reviewed_at, rejection_reason,
-		          disbursed_at, repaid_at, stripe_transfer_id,
+		          disbursed_at, repaid_at, COALESCE(stripe_transfer_id, ''),
 		          created_at, updated_at`,
 		advanceID, stripeTransferID,
 	).Scan(
@@ -230,7 +230,7 @@ func (r *PostgresRepository) UpdateAdvanceRepayment(ctx context.Context, advance
 		RETURNING id, provider_id, contract_id, advance_amount_cents,
 		          fee_cents, repaid_cents, status,
 		          reviewed_by, reviewed_at, rejection_reason,
-		          disbursed_at, repaid_at, stripe_transfer_id,
+		          disbursed_at, repaid_at, COALESCE(stripe_transfer_id, ''),
 		          created_at, updated_at`,
 		advanceID, amountCents,
 	).Scan(
@@ -256,7 +256,7 @@ func (r *PostgresRepository) GetActiveAdvancesForProvider(ctx context.Context, p
 		SELECT id, provider_id, contract_id, advance_amount_cents,
 		       fee_cents, repaid_cents, status,
 		       reviewed_by, reviewed_at, rejection_reason,
-		       disbursed_at, repaid_at, stripe_transfer_id,
+		       disbursed_at, repaid_at, COALESCE(stripe_transfer_id, ''),
 		       created_at, updated_at
 		FROM working_capital_advances
 		WHERE provider_id = $1 AND status IN ('disbursed', 'repaying')
