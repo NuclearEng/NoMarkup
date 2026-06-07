@@ -27,8 +27,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { StripeNotConfigured } from '@/components/payments/StripeNotConfigured';
 import { useConfirmPromotion, useCreatePromotion } from '@/hooks/usePromoteListing';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, isStripeConfigured } from '@/lib/stripe';
 import { cn } from '@/lib/utils';
 import { formatCents } from '@/lib/utils';
 import {
@@ -172,7 +173,11 @@ export function PromoteListingButton({
           </div>
         ) : null}
 
-        {stage === 'paying' && chargeState ? (
+        {stage === 'paying' && chargeState && !isStripeConfigured() ? (
+          <StripeNotConfigured message="Promoting a listing needs payment processing, which isn't set up yet. A Stripe account must be connected first." />
+        ) : null}
+
+        {stage === 'paying' && chargeState && isStripeConfigured() ? (
           <Elements
             stripe={getStripe()}
             options={{ clientSecret: chargeState.clientSecret }}

@@ -24,8 +24,9 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { StripeNotConfigured } from '@/components/payments/StripeNotConfigured';
 import { useConfirmBidBond, useCreateBidBond } from '@/hooks/useCompliance';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, isStripeConfigured } from '@/lib/stripe';
 
 interface BidBondPromptProps {
   listingId: string;
@@ -88,6 +89,15 @@ export function BidBondPrompt({
         onAuthorized={onAuthorized}
         confirmMutation={confirm}
       />
+    );
+  }
+
+  // The backend issued a real Stripe SetupIntent but the browser has no
+  // publishable key, so Elements can't render. Show an intuitive message
+  // instead of crashing with "IntegrationError: empty string".
+  if (!isStripeConfigured()) {
+    return (
+      <StripeNotConfigured message="Bid bonds need payment processing, which isn't set up yet. A Stripe account must be connected before you can post a bond. If you're the operator, set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY." />
     );
   }
 

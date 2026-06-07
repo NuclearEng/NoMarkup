@@ -44,6 +44,9 @@ vi.mock('@stripe/stripe-js', () => ({
 
 vi.mock('@/lib/stripe', () => ({
   getStripe: () => Promise.resolve(null),
+  // These tests exercise the configured-Stripe path (real client_secret →
+  // Elements), so report Stripe as configured.
+  isStripeConfigured: () => true,
 }));
 
 vi.mock('@/hooks/usePayments', () => ({

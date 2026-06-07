@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { type SyntheticEvent, useCallback, useState } from 'react';
 
 import { PaymentRequestButton } from '@/components/payments/PaymentRequestButton';
+import { StripeNotConfigured } from '@/components/payments/StripeNotConfigured';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,7 +18,7 @@ import {
   useAddDevPaymentMethod,
   useCreateSetupIntent,
 } from '@/hooks/usePayments';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, isStripeConfigured } from '@/lib/stripe';
 
 const CARD_BRANDS = ['visa', 'mastercard', 'amex', 'discover'] as const;
 
@@ -319,6 +320,13 @@ export function AddPaymentMethodForm({
   // configured. Fall back to a manual card form backed by the dev store.
   if (clientSecret.startsWith('dev_seti_')) {
     return <DevCardForm onSuccess={onSuccess} onCancel={onCancel} />;
+  }
+
+  // Real SetupIntent but no browser publishable key → Elements can't render.
+  if (!isStripeConfigured()) {
+    return (
+      <StripeNotConfigured message="Saving a card needs payment processing, which isn't set up yet. A Stripe account must be connected first." />
+    );
   }
 
   return (

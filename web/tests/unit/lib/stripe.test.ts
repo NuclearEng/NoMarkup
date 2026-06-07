@@ -46,15 +46,33 @@ describe('lib/stripe', () => {
     expect(loadStripe).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to empty string when the env var is missing', async () => {
+  it('does NOT call loadStripe when the key is empty (degrades gracefully)', async () => {
     vi.stubEnv('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY', '');
     const { loadStripe } = await import('@stripe/stripe-js');
     vi.mocked(loadStripe).mockReturnValue(Promise.resolve(null));
 
     const { getStripe } = await import('@/lib/stripe');
-    void getStripe();
+    // Must not call loadStripe('') (which throws "IntegrationError: empty
+    // string"); instead resolve to null so callers show a "not set up" state.
+    await expect(getStripe()).resolves.toBeNull();
+    expect(loadStripe).not.toHaveBeenCalled();
+  });
 
-    expect(loadStripe).toHaveBeenCalledWith('');
+  it('does NOT call loadStripe for the docs placeholder key', async () => {
+    vi.stubEnv('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY', 'pk_test_...');
+    const { loadStripe } = await import('@stripe/stripe-js');
+    vi.mocked(loadStripe).mockReturnValue(Promise.resolve(null));
+
+    const { getStripe, isStripeConfigured } = await import('@/lib/stripe');
+    await expect(getStripe()).resolves.toBeNull();
+    expect(loadStripe).not.toHaveBeenCalled();
+    expect(isStripeConfigured()).toBe(false);
+  });
+
+  it('isStripeConfigured reflects whether a usable key is present', async () => {
+    vi.stubEnv('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY', 'pk_test_abc123');
+    const { isStripeConfigured } = await import('@/lib/stripe');
+    expect(isStripeConfigured()).toBe(true);
   });
 
   it('returns a Promise (so consumers can await it)', async () => {
@@ -68,10 +86,9 @@ describe('lib/stripe', () => {
     await expect(result).resolves.toBeNull();
   });
 
-  it('uses the nullish-coalescing fallback when the env var is undefined', async () => {
-    // Stash and delete to make process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-    // truly undefined (rather than an empty string), forcing the `?? ''`
-    // branch in stripe.ts to evaluate its right-hand side.
+  it('degrades gracefully (no loadStripe, resolves null) when the env var is undefined', async () => {
+    // Stash and delete to make the key truly undefined (rather than empty),
+    // exercising the `?? ''` branch in stripe.ts.
     const previous = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     try {
@@ -79,9 +96,8 @@ describe('lib/stripe', () => {
       vi.mocked(loadStripe).mockReturnValue(Promise.resolve(null));
 
       const { getStripe } = await import('@/lib/stripe');
-      void getStripe();
-
-      expect(loadStripe).toHaveBeenCalledWith('');
+      await expect(getStripe()).resolves.toBeNull();
+      expect(loadStripe).not.toHaveBeenCalled();
     } finally {
       if (previous !== undefined) {
         process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = previous;

@@ -26,7 +26,8 @@ import {
   usePlatformBanking,
   useSetPlatformBankAccount,
 } from '@/hooks/useAdmin';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, isStripeConfigured } from '@/lib/stripe';
+import { StripeNotConfigured } from '@/components/payments/StripeNotConfigured';
 import type { BankAccountHolderType, PlatformBankAccount } from '@/types';
 import { BANK_ACCOUNT_HOLDER_TYPE } from '@/types';
 
@@ -211,6 +212,10 @@ function BankAccountForm() {
         <CardTitle className="gold-text text-base">Set Payout Bank Account</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {!isStripeConfigured() ? (
+          <StripeNotConfigured message="Connect a Stripe account before adding a payout bank account. Set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY (and the server's STRIPE_SECRET_KEY) to enable this." />
+        ) : null}
+
         <div className="flex items-start gap-2 rounded-md border border-[var(--brand-gold)]/10 bg-white/[0.02] p-3 text-sm text-zinc-300">
           <ShieldCheck
             className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]"
@@ -318,7 +323,7 @@ function BankAccountForm() {
 
         <Button
           className="min-h-[44px]"
-          disabled={submitting}
+          disabled={submitting || !isStripeConfigured()}
           onClick={() => {
             void handleSubmit();
           }}
