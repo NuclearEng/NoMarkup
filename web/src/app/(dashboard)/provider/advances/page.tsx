@@ -47,6 +47,9 @@ import { ADVANCE_STATUS } from '@/types';
  */
 const FEE_APR = 0.03;
 const DEFAULT_TERM_DAYS = 30;
+// Flat origination/service fee on the principal, on top of APR interest.
+// Mirrors domain.AdvanceServiceFeeRate in the payment service — keep in sync.
+const SERVICE_FEE_RATE = 0.03;
 
 /**
  * Credit-limit response with the risk-based pricing fields the gateway adds
@@ -158,9 +161,11 @@ function FeePreview({ amountCents, creditLimit }: { amountCents: number; creditL
   // Use the borrower's risk-based APR when the backend provides it; otherwise
   // fall back to the base rate. Pricing auto-adjusts to creditworthiness.
   const aprBps = creditLimit?.apr_bps ?? FEE_APR * 10000;
-  const feeCents = Math.round((amountCents * aprBps * DEFAULT_TERM_DAYS) / 365 / 10000);
-  const totalCents = amountCents + feeCents;
+  const interestCents = Math.round((amountCents * aprBps * DEFAULT_TERM_DAYS) / 365 / 10000);
+  const serviceFeeCents = Math.round(amountCents * SERVICE_FEE_RATE);
+  const totalCents = amountCents + interestCents + serviceFeeCents;
   const aprPercent = (aprBps / 100).toFixed(2);
+  const serviceFeePercent = (SERVICE_FEE_RATE * 100).toFixed(0);
   const score = creditLimit?.business_credit_score;
   const grade = creditLimit?.credit_grade;
 
@@ -189,9 +194,13 @@ function FeePreview({ amountCents, creditLimit }: { amountCents: number; creditL
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-white/50">
-            Fee ({aprPercent}% APR · ~{DEFAULT_TERM_DAYS}-day term)
+            Interest ({aprPercent}% APR · ~{DEFAULT_TERM_DAYS}-day term)
           </span>
-          <span className="text-white/80 tabular-nums">{formatCents(feeCents)}</span>
+          <span className="text-white/80 tabular-nums">{formatCents(interestCents)}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-white/50">Service fee ({serviceFeePercent}%)</span>
+          <span className="text-white/80 tabular-nums">{formatCents(serviceFeeCents)}</span>
         </div>
         <div
           className="mt-1 border-t border-white/10 pt-2"
@@ -203,8 +212,9 @@ function FeePreview({ amountCents, creditLimit }: { amountCents: number; creditL
           </div>
         </div>
         <p className="mt-2 text-xs text-white/40">
-          Charged at {aprPercent}% APR, set by your business credit score and prorated by days
-          outstanding.
+          Interest is charged at {aprPercent}% APR (set by your business credit score, prorated by
+          days outstanding) plus a flat {serviceFeePercent}% service fee on the advance amount. No
+          other fees.
         </p>
       </div>
     </div>
