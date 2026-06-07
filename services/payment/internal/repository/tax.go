@@ -145,8 +145,8 @@ func (r *PostgresRepository) GetContractDetail(ctx context.Context, contractID s
 	err := r.pool.QueryRow(ctx, `
 		SELECT c.id, c.contract_number,
 		       COALESCE(j.title, 'Untitled Job'),
-		       COALESCE(cu.first_name || ' ' || cu.last_name, cu.email),
-		       COALESCE(pu.first_name || ' ' || pu.last_name, pu.email),
+		       COALESCE(NULLIF(cu.display_name, ''), cu.email),
+		       COALESCE(NULLIF(pu.display_name, ''), pu.email),
 		       c.amount_cents, c.payment_timing, c.status,
 		       c.accepted_at, c.completed_at, c.created_at
 		FROM contracts c
@@ -250,21 +250,15 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Fall back to the users table for the provider name.
-			var firstName, lastName *string
+			var displayName *string
 			err2 := r.pool.QueryRow(ctx, `
-				SELECT first_name, last_name FROM users WHERE id = $1`, providerID).Scan(&firstName, &lastName)
+				SELECT display_name FROM users WHERE id = $1`, providerID).Scan(&displayName)
 			if err2 != nil {
 				return "", "", fmt.Errorf("get provider profile fallback: %w", err2)
 			}
 			name := ""
-			if firstName != nil {
-				name = *firstName
-			}
-			if lastName != nil {
-				if name != "" {
-					name += " "
-				}
-				name += *lastName
+			if displayName != nil {
+				name = *displayName
 			}
 			if name == "" {
 				name = "Provider"
@@ -285,19 +279,11 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID 
 
 	// If no business name, fall back to user name.
 	if name == "" {
-		var firstName, lastName *string
+		var displayName *string
 		err2 := r.pool.QueryRow(ctx, `
-			SELECT first_name, last_name FROM users WHERE id = $1`, providerID).Scan(&firstName, &lastName)
-		if err2 == nil {
-			if firstName != nil {
-				name = *firstName
-			}
-			if lastName != nil {
-				if name != "" {
-					name += " "
-				}
-				name += *lastName
-			}
+			SELECT display_name FROM users WHERE id = $1`, providerID).Scan(&displayName)
+		if err2 == nil && displayName != nil {
+			name = *displayName
 		}
 		if name == "" {
 			name = "Provider"
