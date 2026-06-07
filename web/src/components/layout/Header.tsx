@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 
 import {
   Briefcase,
+  Gavel,
   Home,
   MapPin,
   MessageSquare,
@@ -49,7 +50,7 @@ export function Header() {
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
-          {isAuthenticated ? (
+          {!isHydrating && isAuthenticated ? (
             <>
               <Link
                 href={'/dashboard' as Route}
@@ -67,6 +68,15 @@ export function Header() {
               </Link>
             </>
           ) : null}
+          {/* Marketplace (live goods auctions) — public so anyone, including
+              logged-out visitors, can find and watch live auctions. */}
+          <Link
+            href={'/marketplace' as Route}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+          >
+            <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
+            Marketplace
+          </Link>
           <Link
             href={'/marketplace/map' as Route}
             className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
@@ -178,6 +188,14 @@ export function Header() {
                   >
                     <Search className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
                     Browse Jobs
+                  </Link>
+                  <Link
+                    href={'/marketplace' as Route}
+                    className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                    onClick={() => { setMobileMenuOpen(false); }}
+                  >
+                    <Gavel className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
+                    Marketplace
                   </Link>
                   <Link
                     href={'/messages' as Route}

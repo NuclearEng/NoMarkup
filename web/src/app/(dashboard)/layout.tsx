@@ -16,6 +16,7 @@ import {
   PlusCircle,
   Settings,
   Shield,
+  Tag,
   Trophy,
   User,
   Users,
@@ -118,6 +119,8 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
 ];
 
 const COMMON_NAV_ITEMS: NavItem[] = [
+  { href: '/marketplace' as Route, label: 'Marketplace', icon: Gavel },
+  { href: '/sell/new' as Route, label: 'Sell an Item', icon: Tag },
   { href: '/contracts' as Route, label: 'Contracts', icon: FileText },
   { href: '/payments' as Route, label: 'Payments', icon: CreditCard },
   { href: '/messages' as Route, label: 'Messages', icon: MessageSquare },
