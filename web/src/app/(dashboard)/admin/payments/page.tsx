@@ -91,6 +91,13 @@ function usdToCents(value: string): number {
   return Math.round((parseFloat(value) || 0) * 100);
 }
 
+// pctToFraction converts a whole-number percent the admin types ("10" = 10%)
+// into the 0..1 fraction the API/service expect (0.10). Rounded to 4 decimals
+// to match the NUMERIC(5,4) precision of platform_fee_config.
+function pctToFraction(value: string): number {
+  return Math.round(((parseFloat(value) || 0) / 100) * 10000) / 10000;
+}
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
     month: 'short',
@@ -153,12 +160,14 @@ export default function AdminPaymentsPage() {
     setFeeErrors({});
     await feeConfigMutation.mutateAsync({
       category_id: feeCategoryId,
-      fee_percentage: parseFloat(feePercentage) || 0,
-      guarantee_percentage: parseFloat(guaranteePercentage) || 0,
+      // Admins enter whole-number percents (e.g. "10" = 10%); the API/service
+      // store fractions in 0..1, so convert here. pctToFraction("10") -> 0.10.
+      fee_percentage: pctToFraction(feePercentage),
+      guarantee_percentage: pctToFraction(guaranteePercentage),
       min_fee_cents: usdToCents(minFeeCents),
       max_fee_cents: usdToCents(maxFeeCents),
       lead_gen_enabled: leadGenEnabled,
-      lead_gen_percentage: parseFloat(leadGenPercentage) || 0,
+      lead_gen_percentage: pctToFraction(leadGenPercentage),
       lead_gen_min_fee_cents: usdToCents(leadGenMinFee),
       // Optional cap — null (no cap) when the field is left blank.
       lead_gen_max_fee_cents: leadGenMaxFee === '' ? null : usdToCents(leadGenMaxFee),

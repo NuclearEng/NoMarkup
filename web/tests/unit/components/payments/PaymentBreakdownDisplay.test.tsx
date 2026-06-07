@@ -11,8 +11,10 @@ const breakdown: PaymentBreakdown = {
   guarantee_fee_cents: 5_00,
   total_cents: 115_00,
   provider_payout_cents: 90_00,
-  fee_percentage: 10,
-  guarantee_percentage: 5,
+  // Percentages travel the wire as 0..1 fractions; the component renders them
+  // as whole percents.
+  fee_percentage: 0.1,
+  guarantee_percentage: 0.05,
   lead_gen_fee_cents: 0,
   lead_gen_percentage: 0,
 };
@@ -48,7 +50,7 @@ describe('PaymentBreakdownDisplay', () => {
     const withLeadGen: PaymentBreakdown = {
       ...breakdown,
       lead_gen_fee_cents: 12_00,
-      lead_gen_percentage: 12,
+      lead_gen_percentage: 0.12,
     };
     render(createElement(PaymentBreakdownDisplay, { breakdown: withLeadGen }));
     expect(screen.getByText('Lead-gen fee (12%)')).toBeDefined();

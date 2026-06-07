@@ -151,8 +151,9 @@ describe('AdminPaymentsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
     expect(feeMutate).toHaveBeenCalledWith({
       category_id: 'cat-1',
-      fee_percentage: 10,
-      guarantee_percentage: 2,
+      // Whole-number percents entered in the UI are sent as 0..1 fractions.
+      fee_percentage: 0.1,
+      guarantee_percentage: 0.02,
       min_fee_cents: 100,
       max_fee_cents: 50000,
       // Lead-gen is off by default → disabled with zeroed fields and no cap.
@@ -180,7 +181,7 @@ describe('AdminPaymentsPage', () => {
     expect(feeMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         lead_gen_enabled: true,
-        lead_gen_percentage: 10,
+        lead_gen_percentage: 0.1,
         lead_gen_min_fee_cents: 500,
         lead_gen_max_fee_cents: 5000,
       }),
