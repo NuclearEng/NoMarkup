@@ -53,6 +53,7 @@ func New(
 	adminDisputesHandler *handler.AdminDisputesHandler,
 	adminReviewsHandler *handler.AdminReviewsHandler,
 	adminPaymentsHandler *handler.AdminPaymentsHandler,
+	adminBankingHandler *handler.AdminBankingHandler,
 	adminPlatformHandler *handler.AdminPlatformHandler,
 	propertyHandler *handler.PropertyHandler,
 	verificationHandler *handler.VerificationHandler,
@@ -784,6 +785,16 @@ func New(
 			})
 			r.Get("/revenue", adminPaymentsHandler.GetRevenueReport)
 			r.Put("/fees", adminPaymentsHandler.UpdateFeeConfig)
+
+			// Platform payout bank account — where all collected fees route.
+			// The mutation calls Stripe, so guard the POST with an idempotency
+			// key to avoid creating duplicate external accounts on retry.
+			r.Route("/banking", func(r chi.Router) {
+				r.Get("/", adminBankingHandler.GetPlatformBankAccount)
+				r.With(middleware.RequireIdempotencyKey(cacheClient)).
+					Post("/", adminBankingHandler.SetPlatformBankAccount)
+				r.Delete("/{id}", adminBankingHandler.DeletePlatformBankAccount)
+			})
 
 			// Working Capital advances (admin review + disburse)
 			r.Route("/advances", func(r chi.Router) {

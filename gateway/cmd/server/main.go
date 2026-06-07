@@ -272,6 +272,7 @@ func main() {
 	adminDisputesHandler := handler.NewAdminDisputesHandler(contractClient)
 	adminReviewsHandler := handler.NewAdminReviewsHandler(reviewClient)
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
+	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
 	featureFlagHandler := handler.NewFeatureFlagHandler(dbPool)
 	pricingHandler := handler.NewPricingHandler(dbPool)
@@ -335,6 +336,7 @@ func main() {
 		subscriptionHandler, analyticsHandler,
 		adminUsersHandler, adminVerificationHandler, adminJobsHandler,
 		adminDisputesHandler, adminReviewsHandler, adminPaymentsHandler,
+		adminBankingHandler,
 		adminPlatformHandler, propertyHandler, verificationHandler,
 		workingCapitalHandler, expenseHandler, taxHandler,
 		auctionWSHandler,
