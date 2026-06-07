@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight, ImagePlus, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus, Info, Sparkles } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
@@ -162,7 +162,9 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const slotIdRef = useRef(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [aiState, setAiState] = useState<'idle' | 'analyzing' | 'applied' | 'error'>('idle');
+  const [aiState, setAiState] = useState<
+    'idle' | 'analyzing' | 'applied' | 'unavailable' | 'error'
+  >('idle');
   const [aiSummary, setAiSummary] = useState<ListingImageAnalysisResult | null>(null);
   const aiTriggeredRef = useRef(false);
 
@@ -277,6 +279,8 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
   }
 
   async function analyzeFirstPhoto(file: File) {
+    // AI auto-fill is an optional enhancement. Any failure here is non-blocking:
+    // the seller can always fill the listing details manually.
     setAiState('analyzing');
     try {
       const imageBase64 = await fileToBase64(file);
@@ -286,7 +290,16 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
         body: JSON.stringify({ imageBase64, mimeType: file.type }),
       });
       if (!res.ok) {
-        setAiState('error');
+        // 503 (or a body flagged `aiUnavailable`) means the AI feature is not
+        // configured / temporarily down — show a soft notice, not an error.
+        const payload: unknown = await res.json().catch(() => null);
+        const unavailable =
+          res.status === 503 ||
+          (typeof payload === 'object' &&
+            payload !== null &&
+            'aiUnavailable' in payload &&
+            (payload as { aiUnavailable: unknown }).aiUnavailable === true);
+        setAiState(unavailable ? 'unavailable' : 'error');
         return;
       }
       const data: unknown = await res.json();
@@ -298,7 +311,8 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
       setAiSummary(data);
       setAiState('applied');
     } catch {
-      setAiState('error');
+      // Network failure — treat as a soft unavailable notice, never block.
+      setAiState('unavailable');
     }
   }
 
@@ -593,6 +607,22 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                         <span>
                           AI suggested a title, category, and starting price — edit anything before
                           publishing.
+                        </span>
+                      </div>
+                    ) : null}
+                    {aiState === 'unavailable' || aiState === 'error' ? (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="mb-3 flex items-start gap-2 rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-zinc-300"
+                      >
+                        <Info
+                          className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400"
+                          aria-hidden="true"
+                        />
+                        <span>
+                          Couldn&apos;t auto-analyze the photo — no problem, just fill in the title,
+                          category, and starting price yourself below.
                         </span>
                       </div>
                     ) : null}

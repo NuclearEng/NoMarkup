@@ -101,9 +101,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // AI photo analysis is an enhancement, not a requirement. When the provider
+  // key is unset (common in dev), degrade gracefully with a clean 503 +
+  // `aiUnavailable` flag instead of a 500 — the client treats this as a soft,
+  // non-blocking notice so the seller can still fill the listing manually.
   const apiKey = process.env['ANTHROPIC_API_KEY'];
   if (!apiKey) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 });
+    return NextResponse.json(
+      { aiUnavailable: true, error: 'AI photo analysis is not configured.' },
+      { status: 503 },
+    );
   }
 
   let body: unknown;
@@ -179,11 +186,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const block = response.content[0];
     if (!block || block.type !== 'text') {
-      return NextResponse.json({ error: 'Unexpected response format from AI' }, { status: 502 });
+      return NextResponse.json(
+        { aiUnavailable: true, error: 'AI photo analysis is temporarily unavailable.' },
+        { status: 503 },
+      );
     }
     messageContent = block.text;
   } catch {
-    return NextResponse.json({ error: 'Failed to analyze image' }, { status: 502 });
+    // LLM call failed (network, rate limit, auth, provider outage). This is a
+    // predictable condition for an optional enhancement — degrade to a clean
+    // 503 rather than a 500 so the sell flow keeps working.
+    return NextResponse.json(
+      { aiUnavailable: true, error: 'AI photo analysis is temporarily unavailable.' },
+      { status: 503 },
+    );
   }
 
   // Strip markdown code fences if present
