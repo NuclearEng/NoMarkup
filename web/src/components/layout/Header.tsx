@@ -50,13 +50,22 @@ export function Header() {
         {/* Desktop nav */}
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
           {isAuthenticated ? (
-            <Link
-              href={'/jobs' as Route}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-            >
-              <Search className="h-3.5 w-3.5" aria-hidden="true" />
-              Browse Jobs
-            </Link>
+            <>
+              <Link
+                href={'/dashboard' as Route}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+              >
+                <Home className="h-3.5 w-3.5" aria-hidden="true" />
+                Dashboard
+              </Link>
+              <Link
+                href={'/jobs' as Route}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+              >
+                <Search className="h-3.5 w-3.5" aria-hidden="true" />
+                Browse Jobs
+              </Link>
+            </>
           ) : null}
           <Link
             href={'/marketplace/map' as Route}
