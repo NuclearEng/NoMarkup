@@ -920,6 +920,95 @@ WEB_PORT=3000
 - Commit to main directly
 - Use `React.FC` (use plain function declarations with typed props)
 
+---
+
+## 14. Performance Playbook — McMaster-Carr-class speed (project rule)
+
+**North star:** NoMarkup must feel *instantly responsive*, on par with or faster than
+mcmaster.com (one of the fastest catalog sites on the internet). Speed is a feature and
+a first-class acceptance criterion, not an afterthought.
+
+### Performance budgets (hard targets — treat as gates)
+| Metric | Target |
+|--------|--------|
+| LCP (first load, P75 field) | < 1.5s; **stretch < 300ms** on edge-cached HTML |
+| INP / interaction | < 100ms |
+| Navigation (cached/CDN hit) | < 100ms perceived |
+| CLS | < 0.05 (target perfect 0) |
+| TTFB (edge hit) | < 100ms |
+| Initial client JS (gzipped) | < 35KB; **stretch < 20KB** incl. any WASM |
+| Per-route JS (gzipped) | < 50KB |
+
+### Stack reality (do not pretend otherwise)
+Frontend is **Next.js 15 App Router + React 19** (81 pages). Backend is **Go** (gateway +
+gRPC services). Performance-critical compute is **Rust** in `engines/` (backend gRPC, not
+browser WASM today). There is currently **no Go `templ`/`html/template` app rendering** and
+**no Rust WASM in the UI**. The McMaster *goals* below are mandatory; the *mechanism* is
+whatever provably hits them on THIS stack. Do not invent a Go-SSR or WASM layer unless it
+measurably beats the Next.js equivalent.
+
+### Principles (apply to every page/feature)
+1. **Server-render the HTML.** Default to React Server Components / SSR so first paint is
+   complete HTML, not a client render. Push `'use client'` to the leaf. Stream where it helps.
+2. **Hover-prefetch + instant navigation.** Use `<Link>` with prefetch (and `router.prefetch`
+   on hover for off-screen/long links) so the next page is in cache before click; client nav
+   swaps content without a full reload. (This is Next's built-in equivalent of the McMaster
+   hover-prefetch + History-API swap — use it before hand-rolling vanilla TS.)
+3. **Aggressive caching everywhere.** Go sets `Cache-Control`, `ETag`, and
+   `stale-while-revalidate`. Cache full HTML/JSON at the CDN edge (Cloudflare). Ship a minimal
+   service worker for instant repeat visits + background refresh.
+4. **Minimal, lightweight everything.** Stay inside the JS budgets above. Inline critical CSS;
+   async/defer the rest. Code-split per route. No trackers/bloat.
+5. **Zero layout shift.** Fixed-size images (Next `<Image>` with width/height), reserved space
+   for async content, sprites/icons sized. Perfect CLS is the goal.
+6. **Rust for hot paths only, lazy + measured.** Rust may power a narrow, compute-heavy UI
+   module via lazily-loaded WASM **only when it beats the JS version on a real metric** and
+   does not grow the initial bundle or slow prefetch/nav. TypeScript always owns navigation
+   and DOM. Rust is never the UI framework. Keep all existing backend Rust/Go.
+
+### Preservation + proof rules (non-negotiable)
+- **Preserve all existing Go, Rust, and the Next.js/React frontend.** Do NOT remove, rewrite,
+  or re-architect them unless the change delivers a **measured** win (smaller bundle, faster
+  LCP/INP/nav, lower TTFB) shown with before/after numbers.
+- **Measure or it didn't happen.** Every perf change reports before/after for the relevant
+  budget metric (Lighthouse/field data, bundle analyzer, `curl -w` TTFB, etc.). No
+  unverified "this should be faster" claims.
+- A change that misses a budget without a written, accepted reason is a regression.
+
+---
+
+## 15. Security & Future-Proofing (project rule)
+
+Security and longevity are first-class acceptance criteria, **equal to performance**. A
+feature that is fast but insecure or a dead end is not done.
+
+### Secure by default (the standing posture — see §6 for the detailed rules)
+- Every endpoint is authenticated AND authorized (`withAuth` / `RequireAdmin` / ownership
+  checks). Every input is validated server-side — never trust the client. Parameterized SQL
+  only. No secrets in code.
+- Money and PII paths get extra scrutiny: idempotency keys, Stripe webhook signature
+  verification, escrow invariants, AES-256-GCM at rest. **Fail closed**, never open.
+- Treat the security audit as a **release gate**: run `/security-review` (or `/cso`) before
+  shipping anything touching auth, payments, or a data boundary. A 500 is never an acceptable
+  answer to a predictable condition — map it to the right 4xx with an intuitive message.
+- Surface errors to the right audience without leaking internals: customers get actionable
+  self-serve guidance; platform-config failures alert the **admin**, not the end user.
+
+### Future-proofing (build so it survives growth and maintainers)
+- **Versioned contracts.** gRPC/REST live under the `v1` namespace; evolve additively, never
+  break a deployed contract. Accept slug-or-id style flexible inputs where it reduces coupling.
+- **Migrations are forward-only in prod, reversible in dev; never edit a shipped migration.**
+- **Avoid lock-in where it's cheap.** Keep business logic out of framework-specific glue so
+  the Go/Rust services and core logic outlive any one frontend or library choice.
+- **Supply-chain hygiene.** Pin dependencies, SHA-pin CI actions, keep deps minimal, scrutinize
+  new/trendy libraries before adopting (prefer proven Layer-1 tech).
+- **Observability is not optional.** Structured logs + OpenTelemetry traces + Prometheus
+  metrics on every new service/hot path, so regressions (perf or security) are *visible*.
+- **Graceful degradation + feature flags.** Features fail soft (payments/AI/maps unavailable →
+  a clear notice, never a crash) and ship behind flags when risky.
+- **Document the non-obvious.** Record meaningful architecture decisions (ADR-style) so future
+  maintainers — human or AI — inherit the *why*, not just the *what*.
+
 ## Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
