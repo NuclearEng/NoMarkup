@@ -104,7 +104,8 @@ describe('AddPaymentMethodForm', () => {
     expect(screen.getByRole('button', { name: /Cancel/ })).toBeDefined();
   });
 
-  it('shows an error message when setup intent creation fails', () => {
+  it('shows an error message when setup intent creation fails', async () => {
+    const user = userEvent.setup();
     useCreateSetupMock.mockReturnValue({
       mutateAsync: vi.fn().mockRejectedValue(new Error('boom')),
       isError: true,
@@ -117,7 +118,12 @@ describe('AddPaymentMethodForm', () => {
       }),
     );
 
-    expect(screen.getByText(/Failed to initialize payment setup/)).toBeDefined();
+    // Initialize is click-driven; on failure the form surfaces the real reason
+    // via getApiErrorMessage (the rejected Error('boom') message).
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/boom/)).toBeDefined();
+    });
   });
 
   it('calls onCancel when the Cancel button is clicked', async () => {

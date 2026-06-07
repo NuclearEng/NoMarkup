@@ -685,7 +685,7 @@ describe('ProviderOnboardingPage', () => {
   });
 
   it('Verification step finishes successfully when all required docs upload OK', async () => {
-    uploadImageMock.mockResolvedValue({ confirmedUrl: 'https://cdn.example/doc-1.pdf' });
+    uploadImageMock.mockResolvedValue({ ok: true, result: { confirmedUrl: 'https://cdn.example/doc-1.pdf' } });
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
     const govIdLabel = screen.getByText('Government-Issued ID');
@@ -715,7 +715,7 @@ describe('ProviderOnboardingPage', () => {
   });
 
   it('Verification step surfaces submitError when uploadDocument rejects', async () => {
-    uploadImageMock.mockResolvedValue({ confirmedUrl: 'https://cdn.example/doc.pdf' });
+    uploadImageMock.mockResolvedValue({ ok: true, result: { confirmedUrl: 'https://cdn.example/doc.pdf' } });
     uploadVerifDocMutate.mockRejectedValueOnce(new Error('network kaput'));
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
@@ -733,7 +733,7 @@ describe('ProviderOnboardingPage', () => {
   });
 
   it('Verification step surfaces a generic submit error on non-Error throws', async () => {
-    uploadImageMock.mockResolvedValue({ confirmedUrl: 'https://cdn.example/doc.pdf' });
+    uploadImageMock.mockResolvedValue({ ok: true, result: { confirmedUrl: 'https://cdn.example/doc.pdf' } });
     uploadVerifDocMutate.mockRejectedValueOnce('boom');
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
@@ -750,7 +750,7 @@ describe('ProviderOnboardingPage', () => {
   });
 
   it('Verification step shows per-document upload failure error', async () => {
-    uploadImageMock.mockResolvedValue(undefined);
+    uploadImageMock.mockResolvedValue({ ok: false, error: 'Use JPEG, PNG, or WEBP.' });
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
     const govIdLabel = screen.getByText('Government-Issued ID');
@@ -761,7 +761,7 @@ describe('ProviderOnboardingPage', () => {
     const finishBtn = screen.getByRole('button', { name: /Finish/i });
     fireEvent.click(finishBtn);
     await waitFor(() => {
-      expect(screen.getByText(/Failed to upload id.png/i)).toBeDefined();
+      expect(screen.getByText(/Could not upload id.png/i)).toBeDefined();
     });
   });
 
