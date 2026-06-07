@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError, api, downloadAuthenticated } from '@/lib/api';
+import { ApiError, api, downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
 
 // Mock auth helpers so we control the token state without touching localStorage.
 vi.mock('@/lib/auth', () => ({
@@ -46,6 +46,28 @@ describe('ApiError', () => {
       const err = new ApiError(500, '');
       expect(err.userMessage('fallback')).toBe('fallback');
     });
+  });
+});
+
+describe('getApiErrorMessage', () => {
+  it('extracts the {error} JSON message from an ApiError', () => {
+    const err = new ApiError(402, JSON.stringify({ error: 'Add a payment method to bid' }));
+    expect(getApiErrorMessage(err, 'fallback')).toBe('Add a payment method to bid');
+  });
+
+  it('returns .message for a plain Error', () => {
+    expect(getApiErrorMessage(new Error('Network error during upload'), 'fallback')).toBe(
+      'Network error during upload',
+    );
+  });
+
+  it('returns the fallback for non-Error values', () => {
+    expect(getApiErrorMessage('weird', 'use this')).toBe('use this');
+    expect(getApiErrorMessage(undefined, 'use this')).toBe('use this');
+  });
+
+  it('returns the fallback for an Error with an empty message', () => {
+    expect(getApiErrorMessage(new Error(''), 'use this')).toBe('use this');
   });
 });
 

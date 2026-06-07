@@ -28,6 +28,26 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * getApiErrorMessage extracts a human-readable, user-facing message from any
+ * thrown value. Use this in catch blocks / mutation onError handlers instead of
+ * a hard-coded generic string so users see the server's actual reason
+ * (gateway errors are JSON of the form {"error": "..."}).
+ *
+ *   catch (err) {
+ *     toast.error(getApiErrorMessage(err, 'Could not place bid'));
+ *   }
+ *
+ * - ApiError → delegates to .userMessage() (parses {error}/{message} JSON).
+ * - Error    → returns .message.
+ * - anything → returns the fallback.
+ */
+export function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return err.userMessage(fallback);
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
 async function attemptRefresh(): Promise<boolean> {
