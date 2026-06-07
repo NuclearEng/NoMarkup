@@ -276,6 +276,15 @@ func New(
 	// be reachable from the anonymous landing surface.
 	r.Get("/api/v1/listings/autocomplete", listingsSearchHandler.Autocomplete)
 	r.Get("/api/v1/listings/{id}/similar", listingsSearchHandler.Similar)
+	// Authenticated static-segment reads must be registered with their inline
+	// auth middleware BEFORE the public `/listings/{id}` wildcard. chi merges
+	// the /listings subtree across route blocks, so if these lived only inside
+	// the protected /api/v1 block below, the literal `mine` / `bids/mine` nodes
+	// would resolve without the auth middleware and the handler would see empty
+	// claims → 401. Mirrors the /jobs/{id} (public) vs /jobs/mine (protected)
+	// convention above.
+	r.With(authMW.Handler).Get("/api/v1/listings/mine", listingsHandler.MyListings)
+	r.With(authMW.Handler).Get("/api/v1/listings/bids/mine", listingsHandler.MyListingBids)
 	r.Get("/api/v1/listings/{id}", listingsHandler.GetListing)
 	r.Get("/api/v1/listings/{id}/bids", listingsHandler.GetListingBids)
 	// Goods-side auction replay — public, mirrors the services-side
@@ -565,8 +574,12 @@ func New(
 		//   - /listings/mine            (the requesting user's listings)
 		//   - /listings/bids/mine       (the requesting user's bid history)
 		//   - /listings/{id}/bids       (place a bid; plural matches eBay/StockX)
-		r.Get("/listings/mine", listingsHandler.MyListings)
-		r.Get("/listings/bids/mine", listingsHandler.MyListingBids)
+		//
+		// NOTE: The two GET reads (/listings/mine, /listings/bids/mine) are
+		// registered above in the public block via r.With(authMW.Handler),
+		// before the public /listings/{id} wildcard. Registering them here
+		// instead let chi's merged /listings subtree resolve the literal
+		// `mine` node without auth middleware → empty claims → 401.
 		r.Post("/listings/{id}/bids", listingsHandler.PlaceListingBid)
 
 		// Seller write paths — create, edit, cancel, delete-draft.
