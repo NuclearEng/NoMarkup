@@ -89,8 +89,8 @@ func DefaultFeeConfig() *FeeConfig {
 		GuaranteePercentage: 0.02, // 2% buyer-protection guarantee
 		MinFeeCents:         0,
 		MaxFeeCents:         nil,
-		LeadGenEnabled:      false,
-		LeadGenPercentage:   0,
+		LeadGenEnabled:      false, // opt-in: admin toggles on to charge for qualified leads
+		LeadGenPercentage:   0.10,  // 10% qualified-lead referral fee (applies only when enabled)
 		LeadGenMinFeeCents:  0,
 		LeadGenMaxFeeCents:  nil,
 		Active:              true,

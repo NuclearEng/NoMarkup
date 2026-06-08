@@ -627,7 +627,7 @@ func main() {
 			(fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active,
 			 lead_gen_enabled, lead_gen_percentage, lead_gen_min_fee_cents, lead_gen_max_fee_cents)
 		SELECT 0.0800, 0.0200, 0, NULL, true,
-		       false, 0.0000, 0, NULL
+		       false, 0.1000, 0, NULL
 		WHERE NOT EXISTS (
 			SELECT 1 FROM platform_fee_config
 			WHERE category_id IS NULL AND active = true
