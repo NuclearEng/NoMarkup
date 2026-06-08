@@ -143,18 +143,22 @@ func (h *Hub) CloseAll() {
 
 // Handler manages WebSocket connections for real-time chat messaging.
 type Handler struct {
-	hub        *Hub
-	pubsub     *service.PubSub
-	authorizer ChannelAuthorizer
+	hub            *Hub
+	pubsub         *service.PubSub
+	authorizer     ChannelAuthorizer
+	internalSecret string // shared secret the gateway must present; "" disables the check
 }
 
 // NewHandler creates a new WebSocket handler with a connection hub, pub/sub
 // service, and a channel authorizer used to enforce membership on subscribe.
+// The shared internal secret (INTERNAL_WS_SECRET / GATEWAY_CHAT_SECRET) is read
+// from the environment to authenticate the gateway -> chat dial.
 func NewHandler(hub *Hub, pubsub *service.PubSub, authorizer ChannelAuthorizer) *Handler {
 	return &Handler{
-		hub:        hub,
-		pubsub:     pubsub,
-		authorizer: authorizer,
+		hub:            hub,
+		pubsub:         pubsub,
+		authorizer:     authorizer,
+		internalSecret: InternalWSSecret(),
 	}
 }
 
@@ -162,6 +166,15 @@ func NewHandler(hub *Hub, pubsub *service.PubSub, authorizer ChannelAuthorizer) 
 // The user ID is expected as a query parameter ?user_id= set by the gateway
 // after it validates the JWT token.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Defense-in-depth: verify the gateway's shared secret before trusting the
+	// query-string user_id. If the chat WS port is reachable directly, this
+	// stops impersonation of arbitrary users. Fail closed.
+	if !verifyInternalSecret(r, h.internalSecret) {
+		slog.Warn("ws connection rejected: invalid internal secret", "remote_addr", r.RemoteAddr)
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
 	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
 		slog.Warn("ws connection attempt without user_id", "remote_addr", r.RemoteAddr)
@@ -480,10 +493,14 @@ func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Messa
 	select {
 	case c.sendCh <- data:
 	default:
-		slog.Warn("ws send buffer full, dropping message",
+		// Buffer full: the client has fallen behind. Silently dropping would
+		// lose messages without the client knowing. Instead close the
+		// connection so the client reconnects and refetches missed history.
+		slog.Warn("ws send buffer full, closing connection so client reconnects",
 			"user_id", c.userID,
 			"channel_id", channelID,
 		)
+		c.Close(websocket.StatusTryAgainLater, "fell behind, reconnect")
 	}
 }
 
@@ -501,7 +518,10 @@ func (c *Connection) sendError(msg string) {
 	select {
 	case c.sendCh <- data:
 	default:
-		slog.Warn("ws send buffer full, dropping error message", "user_id", c.userID)
+		// Buffer full: drop the error frame too and close so the client
+		// reconnects rather than silently losing frames.
+		slog.Warn("ws send buffer full, closing connection so client reconnects", "user_id", c.userID)
+		c.Close(websocket.StatusTryAgainLater, "fell behind, reconnect")
 	}
 }
 

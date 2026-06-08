@@ -13,6 +13,16 @@ import (
 	"nhooyr.io/websocket"
 )
 
+const (
+	// auctionSendBuffer is the per-connection outbound buffer depth. A connection
+	// that falls this far behind is closed so the client reconnects + refetches,
+	// rather than head-of-line-blocking fan-out for the whole job.
+	auctionSendBuffer = 64
+
+	// auctionWriteTimeout bounds a single write to one auction connection.
+	auctionWriteTimeout = 10 * time.Second
+)
+
 // JobAuthorizer verifies that a user is a party to a job (owner or bidder) and
 // is therefore allowed to receive that job's privileged, real-time auction
 // feed. Implemented by the chat service.
@@ -20,13 +30,43 @@ type JobAuthorizer interface {
 	IsJobParticipant(ctx context.Context, jobID, userID string) (bool, error)
 }
 
+// auctionConn is a single subscriber connection with its own bounded send
+// channel and writer goroutine. Fan-out enqueues onto sendCh and never blocks
+// on a slow client.
+type auctionConn struct {
+	conn      *websocket.Conn
+	cancel    context.CancelFunc
+	sendCh    chan []byte
+	closeOnce sync.Once
+}
+
+// enqueue attempts to buffer data for delivery. It reports false if the buffer
+// is full, signalling the caller that this slow connection should be dropped.
+func (ac *auctionConn) enqueue(data []byte) bool {
+	select {
+	case ac.sendCh <- data:
+		return true
+	default:
+		return false
+	}
+}
+
+// auctionJob tracks the set of subscribers for a single job plus the cancel
+// func for its single long-lived Redis listener. The listener runs as long as
+// there is at least one subscriber (explicit refcounting via len(conns)).
+type auctionJob struct {
+	conns        map[*websocket.Conn]*auctionConn
+	listenCancel context.CancelFunc
+}
+
 // AuctionHandler manages WebSocket connections for live auction streaming.
 type AuctionHandler struct {
-	rdb        *redis.Client
-	authorizer JobAuthorizer
+	rdb            *redis.Client
+	authorizer     JobAuthorizer
+	internalSecret string
 
-	mu          sync.RWMutex
-	subscribers map[string]map[*websocket.Conn]context.CancelFunc // jobID -> set of connections
+	mu   sync.RWMutex
+	jobs map[string]*auctionJob // jobID -> subscribers + listener
 }
 
 // NewAuctionHandler creates a new auction WebSocket handler. The authorizer is
@@ -35,9 +75,10 @@ type AuctionHandler struct {
 // gateway's public spectator endpoint, which delays and PII-strips events.
 func NewAuctionHandler(rdb *redis.Client, authorizer JobAuthorizer) *AuctionHandler {
 	return &AuctionHandler{
-		rdb:         rdb,
-		authorizer:  authorizer,
-		subscribers: make(map[string]map[*websocket.Conn]context.CancelFunc),
+		rdb:            rdb,
+		authorizer:     authorizer,
+		internalSecret: InternalWSSecret(),
+		jobs:           make(map[string]*auctionJob),
 	}
 }
 
@@ -57,6 +98,14 @@ type auctionServerMsg struct {
 
 // HandleWebSocket handles an incoming auction WebSocket connection.
 func (h *AuctionHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Defense-in-depth: verify the gateway's shared secret before trusting the
+	// query-string user_id. Fail closed.
+	if !verifyInternalSecret(r, h.internalSecret) {
+		slog.Warn("auction ws rejected: invalid internal secret", "remote_addr", r.RemoteAddr)
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
 	userID := r.URL.Query().Get("user_id")
 	jobID := r.URL.Query().Get("job_id")
 
@@ -84,8 +133,17 @@ func (h *AuctionHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Each connection gets its own buffered send channel + writer goroutine so a
+	// slow client never blocks Redis fan-out for the whole job.
+	ac := &auctionConn{
+		conn:   conn,
+		cancel: cancel,
+		sendCh: make(chan []byte, auctionSendBuffer),
+	}
+	go ac.writePump(ctx)
+
 	if jobID != "" {
-		if h.subscribe(ctx, userID, jobID, conn, cancel) {
+		if h.subscribe(ctx, userID, jobID, ac) {
 			defer h.unsubscribe(jobID, conn)
 		}
 	}
@@ -109,7 +167,7 @@ func (h *AuctionHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 		switch msg.Type {
 		case "subscribe_auction":
 			if msg.JobID != "" {
-				h.subscribe(ctx, userID, msg.JobID, conn, cancel)
+				h.subscribe(ctx, userID, msg.JobID, ac)
 			}
 		case "unsubscribe_auction":
 			if msg.JobID != "" {
@@ -119,15 +177,38 @@ func (h *AuctionHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// writePump drains the connection's send channel to the socket. A write error
+// or context cancellation tears down the connection.
+func (ac *auctionConn) writePump(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data, ok := <-ac.sendCh:
+			if !ok {
+				return
+			}
+			writeCtx, writeCancel := context.WithTimeout(ctx, auctionWriteTimeout)
+			err := ac.conn.Write(writeCtx, websocket.MessageText, data)
+			writeCancel()
+			if err != nil {
+				slog.Warn("auction ws write error", "error", err)
+				ac.cancel()
+				return
+			}
+		}
+	}
+}
+
 // subscribe authorizes the user for the job's real-time feed and, on success,
 // registers the connection. Returns true if the subscription was established.
 // Authorization is effectively cached per (connection, job): an already-
 // subscribed connection short-circuits before re-querying.
-func (h *AuctionHandler) subscribe(ctx context.Context, userID, jobID string, conn *websocket.Conn, cancel context.CancelFunc) bool {
+func (h *AuctionHandler) subscribe(ctx context.Context, userID, jobID string, ac *auctionConn) bool {
 	// Fast path: already subscribed (and therefore already authorized).
 	h.mu.RLock()
-	if subs, ok := h.subscribers[jobID]; ok {
-		if _, already := subs[conn]; already {
+	if job, ok := h.jobs[jobID]; ok {
+		if _, already := job.conns[ac.conn]; already {
 			h.mu.RUnlock()
 			return true
 		}
@@ -140,31 +221,37 @@ func (h *AuctionHandler) subscribe(ctx context.Context, userID, jobID string, co
 	if h.authorizer == nil {
 		slog.Error("auction ws subscribe denied: no authorizer configured",
 			"user_id", userID, "job_id", jobID)
-		h.sendError(ctx, conn, "subscription unavailable")
+		h.sendError(ctx, ac.conn, "subscription unavailable")
 		return false
 	}
 	allowed, err := h.authorizer.IsJobParticipant(ctx, jobID, userID)
 	if err != nil {
 		slog.Error("auction ws participant check failed",
 			"user_id", userID, "job_id", jobID, "error", err)
-		h.sendError(ctx, conn, "subscription unavailable")
+		h.sendError(ctx, ac.conn, "subscription unavailable")
 		return false
 	}
 	if !allowed {
 		slog.Warn("auction ws subscribe denied: not a job participant",
 			"user_id", userID, "job_id", jobID)
-		h.sendError(ctx, conn, "not authorized for this auction")
+		h.sendError(ctx, ac.conn, "not authorized for this auction")
 		return false
 	}
 
 	h.mu.Lock()
-	if h.subscribers[jobID] == nil {
-		h.subscribers[jobID] = make(map[*websocket.Conn]context.CancelFunc)
-
-		// Start Redis subscription for this job
-		go h.listenRedis(jobID)
+	job, ok := h.jobs[jobID]
+	if !ok {
+		// First subscriber: start the single long-lived Redis listener. It runs
+		// until the last subscriber leaves (refcount via len(job.conns)).
+		listenCtx, listenCancel := context.WithCancel(context.Background())
+		job = &auctionJob{
+			conns:        make(map[*websocket.Conn]*auctionConn),
+			listenCancel: listenCancel,
+		}
+		h.jobs[jobID] = job
+		go h.listenRedis(listenCtx, jobID)
 	}
-	h.subscribers[jobID][conn] = cancel
+	job.conns[ac.conn] = ac
 	h.mu.Unlock()
 
 	slog.Info("auction ws subscribed", "user_id", userID, "job_id", jobID)
@@ -186,44 +273,75 @@ func (h *AuctionHandler) unsubscribe(jobID string, conn *websocket.Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if subs, ok := h.subscribers[jobID]; ok {
-		delete(subs, conn)
-		if len(subs) == 0 {
-			delete(h.subscribers, jobID)
-		}
+	job, ok := h.jobs[jobID]
+	if !ok {
+		return
+	}
+	delete(job.conns, conn)
+	if len(job.conns) == 0 {
+		// Last subscriber gone: stop the long-lived listener and drop the job.
+		job.listenCancel()
+		delete(h.jobs, jobID)
 	}
 }
 
-func (h *AuctionHandler) listenRedis(jobID string) {
+// listenRedis is a single long-lived subscriber for a job's auction topic. It
+// runs from the first subscribe until the last unsubscribe (ctx cancelled),
+// eliminating the start/stop race where a message arriving during a
+// teardown/rebuild gap was dropped. Fan-out enqueues onto each connection's
+// bounded buffer; a connection that has fallen behind is closed (it will
+// reconnect and refetch) rather than blocking the others.
+func (h *AuctionHandler) listenRedis(ctx context.Context, jobID string) {
 	topic := fmt.Sprintf("auction:%s", jobID)
-	sub := h.rdb.Subscribe(context.Background(), topic)
+	sub := h.rdb.Subscribe(ctx, topic)
 	defer sub.Close()
 
 	ch := sub.Channel()
-	for msg := range ch {
-		h.mu.RLock()
-		subs, ok := h.subscribers[jobID]
-		if !ok || len(subs) == 0 {
-			h.mu.RUnlock()
-			return // No more subscribers, stop listening
-		}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
 
-		serverMsg := auctionServerMsg{
-			Type:  "bid_event",
-			JobID: jobID,
-			Data:  json.RawMessage(msg.Payload),
-		}
-		data, err := json.Marshal(serverMsg)
-		if err != nil {
-			h.mu.RUnlock()
-			continue
-		}
+			serverMsg := auctionServerMsg{
+				Type:  "bid_event",
+				JobID: jobID,
+				Data:  json.RawMessage(msg.Payload),
+			}
+			data, err := json.Marshal(serverMsg)
+			if err != nil {
+				continue
+			}
 
-		for conn := range subs {
-			if err := conn.Write(context.Background(), websocket.MessageText, data); err != nil {
-				slog.Warn("auction ws write error", "job_id", jobID, "error", err)
+			// Snapshot subscribers under the lock, then enqueue without holding
+			// it so a slow client's buffer can't stall the fan-out.
+			h.mu.RLock()
+			job, ok := h.jobs[jobID]
+			if !ok {
+				h.mu.RUnlock()
+				return
+			}
+			targets := make([]*auctionConn, 0, len(job.conns))
+			for _, ac := range job.conns {
+				targets = append(targets, ac)
+			}
+			h.mu.RUnlock()
+
+			for _, ac := range targets {
+				if !ac.enqueue(data) {
+					// Buffer full: client fell behind. Close so it reconnects
+					// and refetches the current auction state.
+					slog.Warn("auction ws send buffer full, dropping connection",
+						"job_id", jobID)
+					ac.closeOnce.Do(func() {
+						ac.conn.Close(websocket.StatusTryAgainLater, "fell behind, reconnect")
+						ac.cancel()
+					})
+				}
 			}
 		}
-		h.mu.RUnlock()
 	}
 }
