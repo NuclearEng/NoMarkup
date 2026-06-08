@@ -42,6 +42,18 @@ function formatDate(dateStr: string): string {
   });
 }
 
+// The contract service identifies the filer as `opened_by`; older responses
+// aliased it as `initiated_by`. Read whichever is present, null-safe.
+function disputeInitiator(claim: Dispute): string {
+  return claim.opened_by ?? claim.initiated_by ?? '';
+}
+
+// The contract service describes a dispute via `description` (with `dispute_type`
+// as a fallback); `reason` is the legacy alias.
+function disputeReason(claim: Dispute): string {
+  return claim.reason ?? claim.description ?? claim.dispute_type ?? '';
+}
+
 export default function AdminGuaranteePage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
@@ -83,13 +95,13 @@ export default function AdminGuaranteePage() {
       key: 'customer',
       header: 'Customer',
       render: (claim) => (
-        <span className="text-sm">{claim.initiator_name ?? claim.initiated_by.slice(0, 8)}</span>
+        <span className="text-sm">{claim.initiator_name ?? disputeInitiator(claim).slice(0, 8)}</span>
       ),
     },
     {
       key: 'reason',
       header: 'Claim Type',
-      render: (claim) => <span className="line-clamp-2 text-sm">{claim.reason}</span>,
+      render: (claim) => <span className="line-clamp-2 text-sm">{disputeReason(claim)}</span>,
     },
     {
       key: 'status',

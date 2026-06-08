@@ -15,13 +15,18 @@ interface FileDisputeResponse {
   status: string;
 }
 
+// Mirrors the gateway's standalone GET /api/v1/disputes/{id} response, which
+// marshals the contract-service Dispute (id, opened_by, dispute_type,
+// description) plus the legacy aliases (initiated_by, reason) the UI reads.
 interface DisputeRecord {
-  dispute_id: string;
+  id: string;
   contract_id: string;
+  opened_by: string;
+  initiated_by: string;
+  dispute_type: string;
   reason: string;
   description: string;
   evidence_urls: string[];
-  created_by: string;
   status: string;
   created_at: string;
 }

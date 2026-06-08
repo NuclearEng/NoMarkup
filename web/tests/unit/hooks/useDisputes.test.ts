@@ -81,12 +81,14 @@ describe('useDispute', () => {
 
   it('fetches a single dispute by id', async () => {
     const dispute = {
-      dispute_id: 'd-1',
+      id: 'd-1',
       contract_id: 'c-1',
-      reason: 'incomplete',
+      opened_by: 'u-1',
+      initiated_by: 'u-1',
+      dispute_type: 'incomplete_work',
+      reason: 'unfinished',
       description: 'unfinished',
       evidence_urls: [] as string[],
-      created_by: 'u-1',
       status: 'open',
       created_at: '2026-04-25T00:00:00Z',
     };
@@ -95,7 +97,7 @@ describe('useDispute', () => {
     const { result } = renderHook(() => useDispute('d-1'), { wrapper: wrap(client) });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(result.current.data?.dispute.dispute_id).toBe('d-1');
+    expect(result.current.data?.dispute.id).toBe('d-1');
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/disputes/d-1');
   });
 

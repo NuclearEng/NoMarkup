@@ -56,6 +56,12 @@ interface GuaranteeClaimReviewProps {
   className?: string;
 }
 
+// The contract service identifies the filer as `opened_by`; older responses
+// aliased it as `initiated_by`. Read whichever is present, null-safe.
+function claimInitiator(claim: Dispute): string {
+  return claim.opened_by ?? claim.initiated_by ?? '';
+}
+
 export function GuaranteeClaimReview({
   claim,
   contractAmountCents,
@@ -163,7 +169,7 @@ export function GuaranteeClaimReview({
             </div>
             <div>
               <span className="text-muted-foreground">Customer</span>
-              <p className="mt-1">{claim.initiator_name ?? claim.initiated_by.slice(0, 12)}</p>
+              <p className="mt-1">{claim.initiator_name ?? claimInitiator(claim).slice(0, 12)}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Filed</span>
@@ -185,12 +191,12 @@ export function GuaranteeClaimReview({
 
           <div className="mt-4">
             <span className="text-muted-foreground text-sm">Claim Type</span>
-            <p className="mt-1 text-sm font-medium">{claim.reason}</p>
+            <p className="mt-1 text-sm font-medium">{claim.dispute_type ?? claim.reason ?? ''}</p>
           </div>
 
           <div className="mt-4">
             <span className="text-muted-foreground text-sm">Description</span>
-            <p className="mt-1 text-sm whitespace-pre-wrap">{claim.reason}</p>
+            <p className="mt-1 text-sm whitespace-pre-wrap">{claim.description ?? claim.reason ?? ''}</p>
           </div>
 
           {claim.guarantee_outcome ? (

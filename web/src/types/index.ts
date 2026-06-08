@@ -1325,10 +1325,18 @@ export interface VerificationDocument {
 export interface Dispute {
   id: string;
   contract_id: string;
-  initiated_by: string;
+  // The contract service identifies the filer as `opened_by`. Older gateway
+  // responses (and the standalone dispute endpoint) also alias it as
+  // `initiated_by`; both are optional so a missing value never crashes the UI.
+  opened_by?: string;
+  initiated_by?: string;
   initiator_name?: string;
   respondent_name?: string;
-  reason: string;
+  // The contract service describes the dispute via `dispute_type` + `description`.
+  // `reason` is the legacy alias some gateway responses still emit.
+  dispute_type?: string;
+  description?: string;
+  reason?: string;
   status: DisputeStatus;
   resolution_type?: DisputeResolutionType;
   resolution_notes?: string;

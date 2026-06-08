@@ -26,7 +26,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAdminDispute, useResolveDispute } from '@/hooks/useAdmin';
 import { DISPUTE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import type { DisputeResolutionType } from '@/types';
+import type { Dispute, DisputeResolutionType } from '@/types';
 import { DISPUTE_RESOLUTION_TYPE, DISPUTE_STATUS } from '@/types';
 
 const RESOLUTION_LABELS: Record<DisputeResolutionType, string> = {
@@ -44,6 +44,18 @@ function formatDate(dateStr: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+// The contract service identifies the filer as `opened_by`; older responses
+// aliased it as `initiated_by`. Read whichever is present, null-safe.
+function disputeInitiator(dispute: Dispute): string {
+  return dispute.opened_by ?? dispute.initiated_by ?? '';
+}
+
+// The contract service describes a dispute via `description` (with `dispute_type`
+// as a fallback); `reason` is the legacy alias.
+function disputeReason(dispute: Dispute): string {
+  return dispute.reason ?? dispute.description ?? dispute.dispute_type ?? '';
 }
 
 export default function AdminDisputeDetailPage() {
@@ -168,7 +180,7 @@ export default function AdminDisputeDetailPage() {
             </div>
             <div>
               <span className="text-zinc-300">Initiated By</span>
-              <p className="mt-1">{dispute.initiator_name ?? dispute.initiated_by.slice(0, 12)}</p>
+              <p className="mt-1">{dispute.initiator_name ?? disputeInitiator(dispute).slice(0, 12)}</p>
             </div>
             <div>
               <span className="text-zinc-300">Respondent</span>
@@ -196,7 +208,7 @@ export default function AdminDisputeDetailPage() {
 
           <div className="mt-4">
             <span className="text-zinc-300 text-sm">Reason</span>
-            <p className="mt-1 text-sm">{dispute.reason}</p>
+            <p className="mt-1 text-sm">{disputeReason(dispute)}</p>
           </div>
 
           {dispute.resolution_notes ? (

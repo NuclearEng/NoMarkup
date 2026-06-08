@@ -139,6 +139,27 @@ func (h *DisputeHandler) GetDispute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"dispute": protoDisputeToJSON(resp.GetDispute()),
+		"dispute": disputeJSONWithLegacyAliases(resp.GetDispute()),
 	})
+}
+
+// disputeJSONWithLegacyAliases marshals a contract-service Dispute and adds the
+// legacy field names the web client still reads. The contract service renamed
+// the initiator field to `opened_by` and replaced the free-text `reason` with
+// `dispute_type` + `description`; the disputes UI slices `initiated_by` and
+// renders `reason`, so we alias them here to keep the existing client contract
+// intact (and avoid a `undefined.slice` crash) without changing the shared
+// protoDisputeToJSON used elsewhere.
+func disputeJSONWithLegacyAliases(d *contractv1.Dispute) map[string]interface{} {
+	out := protoDisputeToJSON(d)
+	if d == nil {
+		return out
+	}
+	out["initiated_by"] = d.GetOpenedBy()
+	if d.GetDescription() != "" {
+		out["reason"] = d.GetDescription()
+	} else {
+		out["reason"] = disputeTypeToString(d.GetDisputeType())
+	}
+	return out
 }
