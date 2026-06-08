@@ -167,6 +167,14 @@ func (h *InsuranceCompetitionHandler) CreateQuoteRequest(w http.ResponseWriter, 
 		writeError(w, http.StatusBadRequest, "coverage_cents must be greater than zero")
 		return
 	}
+	// Cap coverage at $1B (in cents) so the premium/deductible int64 multiplies
+	// below (coverage × bps) can't overflow into negative/garbage values — which
+	// would mis-price quotes and violate the positive-premium CHECK (→ 500).
+	const maxCoverageCents = int64(100_000_000_000) // $1,000,000,000.00
+	if req.CoverageCents > maxCoverageCents {
+		writeError(w, http.StatusBadRequest, "coverage_cents exceeds the maximum supported coverage ($1B)")
+		return
+	}
 	// contract_id is optional, but if supplied it must be a valid UUID so a
 	// malformed value returns a clear 400 rather than a 500 at insert time.
 	var contractID *string

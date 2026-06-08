@@ -181,6 +181,10 @@ func (h *ProviderLicenseHandler) ListProviderVerifiedLicenses(w http.ResponseWri
 		writeError(w, http.StatusBadRequest, "provider id is required")
 		return
 	}
+	if !isValidUUID(providerID) {
+		writeError(w, http.StatusBadRequest, "invalid provider id")
+		return
+	}
 	if h.db == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"licenses": []interface{}{}})
 		return
@@ -278,6 +282,10 @@ func (h *ProviderLicenseHandler) ReviewLicense(w http.ResponseWriter, r *http.Re
 	licenseID := chi.URLParam(r, "id")
 	if licenseID == "" {
 		writeError(w, http.StatusBadRequest, "license id is required")
+		return
+	}
+	if !isValidUUID(licenseID) {
+		writeError(w, http.StatusBadRequest, "invalid license id")
 		return
 	}
 
