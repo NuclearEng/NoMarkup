@@ -229,6 +229,13 @@ func mapAdvanceError(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
+	case errors.Is(err, domain.ErrAdvanceDeclined):
+		// Predictable underwriting decline (credit score too low) — 422, not 500.
+		return status.Error(codes.FailedPrecondition, "your business credit score is below the minimum to qualify for an advance")
+	case errors.Is(err, domain.ErrStripeAccountNotFound):
+		// Provider hasn't completed payout (Stripe Connect) onboarding — a
+		// precondition for disbursement, not a server fault. 422, not 500.
+		return status.Error(codes.FailedPrecondition, "provider has not completed Stripe payout onboarding")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

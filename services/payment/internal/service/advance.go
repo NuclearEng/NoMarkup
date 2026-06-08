@@ -212,7 +212,10 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 	}
 	grade := creditGrade(score)
 	if score < minLendingScore {
-		return nil, fmt.Errorf("request advance declined: credit score %d (grade %s) is below the minimum to qualify", score, grade)
+		// Routine "you don't qualify" outcome — wrap the sentinel so the gRPC
+		// layer maps it to 422 (FailedPrecondition), not a 500. The score/grade
+		// detail stays in the server log; the client gets the sentinel message.
+		return nil, fmt.Errorf("request advance declined: credit score %d (grade %s): %w", score, grade, domain.ErrAdvanceDeclined)
 	}
 
 	// Over-lending guard: enforce the provider's available credit BEFORE booking
