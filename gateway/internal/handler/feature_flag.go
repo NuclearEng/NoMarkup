@@ -55,7 +55,8 @@ func (h *FeatureFlagHandler) GetFeatureFlags(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusOK, flags)
+	// Cacheable at the CDN edge: public flag map, identical for every caller (no per-user data).
+	writeCachedJSON(w, r, http.StatusOK, flags, 60, 300)
 }
 
 // ListFeatureFlags handles GET /api/v1/admin/flags (admin).

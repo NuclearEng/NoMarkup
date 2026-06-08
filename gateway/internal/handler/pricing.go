@@ -107,7 +107,8 @@ func (h *PricingHandler) GetPricingByCategory(w http.ResponseWriter, r *http.Req
 		prices = []pricingRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"prices": prices})
+	// Cacheable at the CDN edge: public Fair Price Index data, no per-user content.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"prices": prices}, 300, 3600)
 }
 
 // GetPricingOverview handles GET /api/v1/pricing.
@@ -165,5 +166,6 @@ func (h *PricingHandler) GetPricingOverview(w http.ResponseWriter, r *http.Reque
 		categories = []overviewRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"categories": categories})
+	// Cacheable at the CDN edge: public pricing overview, no per-user content.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"categories": categories}, 300, 3600)
 }
