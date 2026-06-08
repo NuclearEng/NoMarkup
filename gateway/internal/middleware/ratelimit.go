@@ -24,6 +24,12 @@ const (
 	TierStrict
 	// TierAuth is for unauthenticated auth endpoints (20 req/min).
 	TierAuth
+	// TierPublicRead is for expensive UNAUTHENTICATED public reads — the
+	// Meilisearch-backed catalog autocomplete + search. These take no auth, so
+	// the per-IP limit is the only abuse defense; they're throttled below the
+	// standard tier so they can't be hammered freely, but kept generous enough
+	// for legitimate anonymous browse / search-as-you-type (30 req/min).
+	TierPublicRead
 )
 
 const (
@@ -31,6 +37,10 @@ const (
 	defaultStrictLimit   = 10
 	// CLAUDE.md §6: 5 attempts / 15 min on auth endpoints.
 	defaultAuthLimit = 5
+	// defaultPublicReadLimit caps expensive unauthenticated Meili-backed reads
+	// (autocomplete + catalog search) per IP. Below standard (60) so they can't
+	// be hammered freely, above strict (10) so anonymous browse still feels open.
+	defaultPublicReadLimit = 30
 
 	// Development multiplier for STANDARD/STRICT tiers only — auth is never
 	// inflated in dev so brute-force-style tests behave like prod.
@@ -156,6 +166,16 @@ var routeTiers = []struct {
 	{"/api/v1/auth/reset-password", TierAuth},
 	{"/api/v1/auth/mfa/verify", TierAuth},
 
+	// Public-read tier — expensive UNAUTHENTICATED Meilisearch-backed catalog
+	// reads. These must precede any broader "/api/v1/listings" handling and the
+	// default standard tier so they can't be hammered for free. The bare
+	// "/api/v1/listings" SEARCH is matched exactly in tierForPath (a prefix here
+	// would wrongly catch the cheap "/api/v1/listings/{id}" detail read + bid
+	// POSTs). The cheap cached reads (markets, legal/categories) intentionally
+	// stay on the standard tier — they're DATA-layer cached (CLAUDE.md §14) and
+	// not worth over-throttling.
+	{"/api/v1/listings/autocomplete", TierPublicRead},
+
 	// Strict tier — expensive operations.
 	{"/api/v1/auth/send-phone-otp", TierStrict},
 	{"/api/v1/auth/request-password-reset", TierStrict},
@@ -175,6 +195,13 @@ var routeTiers = []struct {
 
 // tierForPath returns the rate limit tier for a given request path.
 func tierForPath(path string) RateLimitTier {
+	// Exact-path tiers come first: the bare "/api/v1/listings" catalog SEARCH is
+	// Meilisearch-backed and unauthenticated, but it shares its prefix with the
+	// cheap "/api/v1/listings/{id}" detail read and the bid/offer POSTs — so it
+	// must be matched exactly, not by prefix, to avoid over-throttling those.
+	if path == "/api/v1/listings" {
+		return TierPublicRead
+	}
 	for _, rt := range routeTiers {
 		if strings.HasPrefix(path, rt.prefix) {
 			return rt.tier
@@ -193,9 +220,10 @@ type RateLimiter struct {
 	cache    *cache.Client
 	fallback *memoryLimiter
 
-	standardLimit int
-	strictLimit   int
-	authLimit     int
+	standardLimit   int
+	strictLimit     int
+	authLimit       int
+	publicReadLimit int
 }
 
 // NewRateLimiter creates a RateLimiter. Pass nil for cacheClient to use in-memory only.
@@ -206,10 +234,12 @@ func NewRateLimiter(cacheClient *cache.Client, production bool, authLimitOverrid
 	stdLimit := defaultStandardLimit
 	strictLimit := defaultStrictLimit
 	authLimit := defaultAuthLimit
+	publicReadLimit := defaultPublicReadLimit
 
 	if !production {
 		stdLimit *= devMultiplier
 		strictLimit *= devMultiplier
+		publicReadLimit *= devMultiplier
 		// Auth tier does NOT get the dev multiplier — abuse-defense tests
 		// (CLAUDE.md: 5 attempts/15 min) need to behave like prod even in dev.
 	}
@@ -223,15 +253,17 @@ func NewRateLimiter(cacheClient *cache.Client, production bool, authLimitOverrid
 		"standard_limit", stdLimit,
 		"strict_limit", strictLimit,
 		"auth_limit", authLimit,
+		"public_read_limit", publicReadLimit,
 		"window", rateLimitWindow,
 	)
 
 	return &RateLimiter{
-		cache:         cacheClient,
-		fallback:      newMemoryLimiter(),
-		standardLimit: stdLimit,
-		strictLimit:   strictLimit,
-		authLimit:     authLimit,
+		cache:           cacheClient,
+		fallback:        newMemoryLimiter(),
+		standardLimit:   stdLimit,
+		strictLimit:     strictLimit,
+		authLimit:       authLimit,
+		publicReadLimit: publicReadLimit,
 	}
 }
 
@@ -243,6 +275,8 @@ func (rl *RateLimiter) limitForTier(tier RateLimitTier) int {
 		return rl.strictLimit
 	case TierAuth:
 		return rl.authLimit
+	case TierPublicRead:
+		return rl.publicReadLimit
 	default:
 		return 0 // TierNone — no limiting
 	}
@@ -332,6 +366,8 @@ func tierString(tier RateLimitTier) string {
 		return "strict"
 	case TierAuth:
 		return "auth"
+	case TierPublicRead:
+		return "public_read"
 	default:
 		return "none"
 	}

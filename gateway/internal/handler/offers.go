@@ -230,7 +230,8 @@ func (h *OffersHandler) ListOffersForListing(w http.ResponseWriter, r *http.Requ
 			       expires_at, message, created_at, updated_at
 			  FROM listing_offers
 			 WHERE listing_id = $1
-			 ORDER BY created_at DESC`, listingID)
+			 ORDER BY created_at DESC
+			 LIMIT 500`, listingID)
 	} else {
 		rows, err = h.db.Query(r.Context(), `
 			SELECT id::text, listing_id::text, buyer_id::text,
@@ -238,7 +239,8 @@ func (h *OffersHandler) ListOffersForListing(w http.ResponseWriter, r *http.Requ
 			       expires_at, message, created_at, updated_at
 			  FROM listing_offers
 			 WHERE listing_id = $1 AND buyer_id = $2
-			 ORDER BY created_at DESC`, listingID, claims.UserID)
+			 ORDER BY created_at DESC
+			 LIMIT 500`, listingID, claims.UserID)
 	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "list offers: query failed", "error", err)

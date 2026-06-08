@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
@@ -20,6 +21,16 @@ import (
 
 // viewerWindowSeconds is how long a viewer ping is considered "active".
 const viewerWindowSeconds = 120
+
+// Field-length caps for jobs, mirrored from the frontend Zod schemas in
+// web/src/lib/validations.ts (jobTitleSchema .max(200),
+// jobDescriptionSchema .max(5000)). Enforced server-side so an oversized
+// title/description is rejected with a clean 400 rather than persisting an
+// unbounded TEXT value (DoS via storage/render). Measured in runes, not bytes.
+const (
+	maxJobTitleLen       = 200
+	maxJobDescriptionLen = 5000
+)
 
 // JobHandler handles HTTP endpoints for jobs.
 type JobHandler struct {
@@ -117,6 +128,17 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req createJobRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if utf8.RuneCountInString(req.Title) > maxJobTitleLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("title must be at most %d characters", maxJobTitleLen))
+		return
+	}
+	if utf8.RuneCountInString(req.Description) > maxJobDescriptionLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("description must be at most %d characters", maxJobDescriptionLen))
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -225,29 +226,41 @@ func (h *ProviderLicenseHandler) ListPendingLicenses(w http.ResponseWriter, r *h
 	if status == "" {
 		status = licenseStatusPending
 	}
-
-	var (
-		rows pgx.Rows
-		err  error
-	)
-	if status == "all" {
-		rows, err = h.db.Query(r.Context(),
-			`SELECT id, provider_id, license_type, license_number, jurisdiction, status,
-			        verified_by, verified_at, created_at, updated_at
-			   FROM provider_licenses
-			  ORDER BY created_at ASC`)
-	} else {
-		if status != licenseStatusPending && status != licenseStatusVerified && status != licenseStatusRejected {
-			writeError(w, http.StatusBadRequest, "status must be one of: pending, verified, rejected, all")
-			return
-		}
-		rows, err = h.db.Query(r.Context(),
-			`SELECT id, provider_id, license_type, license_number, jurisdiction, status,
-			        verified_by, verified_at, created_at, updated_at
-			   FROM provider_licenses
-			  WHERE status = $1
-			  ORDER BY created_at ASC`, status)
+	if status != "all" && status != licenseStatusPending && status != licenseStatusVerified && status != licenseStatusRejected {
+		writeError(w, http.StatusBadRequest, "status must be one of: pending, verified, rejected, all")
+		return
 	}
+
+	page, pageSize := parseDirectPagination(r.URL.Query(), 1, 50, 100)
+
+	// Build the WHERE clause + arg list shared by the count and page queries so a
+	// large (or `status=all`) review queue can't fan out an unbounded scan.
+	where := "1=1"
+	args := []interface{}{}
+	if status != "all" {
+		args = append(args, status)
+		where += " AND status = $1"
+	}
+
+	var total int
+	if err := h.db.QueryRow(r.Context(),
+		"SELECT COUNT(*) FROM provider_licenses WHERE "+where, args...).Scan(&total); err != nil {
+		slog.Error("failed to count licenses for admin", "error", err, "status", status)
+		writeError(w, http.StatusInternalServerError, "failed to list licenses")
+		return
+	}
+
+	args = append(args, pageSize, (page-1)*pageSize)
+	limitArg := strconv.Itoa(len(args) - 1)
+	offsetArg := strconv.Itoa(len(args))
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT id, provider_id, license_type, license_number, jurisdiction, status,
+		        verified_by, verified_at, created_at, updated_at
+		   FROM provider_licenses
+		  WHERE `+where+`
+		  ORDER BY created_at ASC
+		  LIMIT $`+limitArg+` OFFSET $`+offsetArg, args...)
 	if err != nil {
 		slog.Error("failed to list licenses for admin", "error", err, "status", status)
 		writeError(w, http.StatusInternalServerError, "failed to list licenses")
@@ -261,7 +274,14 @@ func (h *ProviderLicenseHandler) ListPendingLicenses(w http.ResponseWriter, r *h
 		writeError(w, http.StatusInternalServerError, "failed to list licenses")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"licenses": licenses})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"licenses": licenses,
+		"pagination": map[string]interface{}{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
+	})
 }
 
 // ReviewLicense handles PUT /api/v1/admin/licenses/{id} (admin).

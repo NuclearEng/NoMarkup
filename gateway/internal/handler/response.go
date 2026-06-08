@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -105,8 +106,29 @@ func etagMatches(ifNoneMatch, etag string) bool {
 	return false
 }
 
+// maxJSONBodyBytes caps the size of a JSON request body the gateway will read.
+// 1 MiB is far more than any legitimate JSON payload here (the largest text
+// fields — listing/job description, chat content — top out in the low KB), but
+// is bounded so a malicious client can't stream an unbounded body and exhaust
+// memory (DoS). This applies ONLY to JSON bodies decoded via decodeJSON; binary
+// file uploads (completion photos, etc.) use multipart with their own, larger
+// cap (maxUploadSize) and never pass through here.
+const maxJSONBodyBytes = 1 << 20 // 1 MiB
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
+	// Bound the body BEFORE decoding so an oversized payload is rejected
+	// without being fully buffered into memory.
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		// MaxBytesReader surfaces an *http.MaxBytesError once the cap is
+		// exceeded — map that to 413 with an intuitive message rather than a
+		// generic 400, so the client knows the body was simply too large.
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("request body too large: max %d bytes", maxJSONBodyBytes))
+			return false
+		}
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return false
 	}

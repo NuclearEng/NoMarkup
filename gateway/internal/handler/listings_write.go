@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -43,6 +44,16 @@ var allowedListingDurations = map[int]struct{}{
 	48:  {},
 	168: {},
 }
+
+// Field-length caps for listings, mirrored from the frontend Zod schemas in
+// web/src/lib/validations.ts (listingTitleSchema .max(120),
+// listingDescriptionSchema .max(5000)). Enforced server-side so an oversized
+// title/description is rejected with a clean 400 instead of persisting an
+// unbounded TEXT value (DoS via storage/render). Measured in runes, not bytes.
+const (
+	maxListingTitleLen       = 120
+	maxListingDescriptionLen = 5000
+)
 
 // ─────────────────────────────────────────────────────────────────────────
 // Request shapes — keep field names aligned with web/src/types/index.ts
@@ -148,6 +159,16 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	if utf8.RuneCountInString(title) > maxListingTitleLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("title must be at most %d characters", maxListingTitleLen))
+		return
+	}
+	if utf8.RuneCountInString(req.Description) > maxListingDescriptionLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("description must be at most %d characters", maxListingDescriptionLen))
 		return
 	}
 	if strings.TrimSpace(req.CategoryID) == "" {

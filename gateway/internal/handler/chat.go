@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -18,6 +19,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"nhooyr.io/websocket"
 )
+
+// maxMessageContentLen caps chat message length, mirrored from the frontend
+// Zod schema in web/src/lib/validations.ts (chatMessageSchema .max(2000)).
+// Enforced server-side so an oversized message is rejected with a clean 400
+// rather than persisting an unbounded TEXT value (DoS via storage/render).
+// Measured in runes, not bytes.
+const maxMessageContentLen = 2000
 
 // ChatHandler handles HTTP endpoints for chat channels and messages.
 //
@@ -222,6 +230,12 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	var req sendMessageRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if utf8.RuneCountInString(req.Content) > maxMessageContentLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("message must be at most %d characters", maxMessageContentLen))
 		return
 	}
 

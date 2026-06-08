@@ -34,6 +34,8 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -51,6 +53,14 @@ const quoteExpiryDuration = 7 * 24 * time.Hour
 // transparent sample so the marketplace is demoable; carriers would set this
 // per rate card in a fuller build. Kept all-integer (money-in-cents rule).
 const sampleDeductibleBps = 200
+
+// maxCarriersPerRequest bounds the fan-out: a single quote request quotes at
+// most this many approved carriers. Without it the carrier SELECT (and the
+// resulting per-carrier quote inserts) scale with the total approved-insurer
+// population, turning one customer POST into an unbounded write fan-out. 50 is
+// far beyond any realistic per-product carrier panel while keeping the request
+// O(1) in carrier count.
+const maxCarriersPerRequest = 50
 
 // InsuranceCompetitionHandler exposes the competitive insurance marketplace.
 type InsuranceCompetitionHandler struct {
@@ -206,7 +216,8 @@ func (h *InsuranceCompetitionHandler) CreateQuoteRequest(w http.ResponseWriter, 
 		   AND ip.active = true
 		   AND i.status = 'approved'
 		 ORDER BY i.name
-	`, req.ProductType)
+		 LIMIT $2
+	`, req.ProductType, maxCarriersPerRequest)
 	if err != nil {
 		slog.Error("insurance competition: fan-out query failed", "error", err, "product_type", req.ProductType)
 		writeError(w, http.StatusInternalServerError, "failed to gather insurer offerings")
@@ -256,34 +267,66 @@ func (h *InsuranceCompetitionHandler) CreateQuoteRequest(w http.ResponseWriter, 
 	expiresAt := time.Now().Add(quoteExpiryDuration).UTC()
 	deductibleCents := computeSampleDeductibleCents(req.CoverageCents)
 
+	// Build the per-carrier quotes once, then INSERT them all in a SINGLE
+	// multi-row statement (one round-trip) instead of N serial INSERTs inside
+	// the tx. RETURNING also yields insurer_id so we can map each generated
+	// quote id back to its offering regardless of row order.
 	quotes := make([]quoteJSON, 0, len(offerings))
-	for _, o := range offerings {
-		premium := computeCompetitivePremiumCents(req.CoverageCents, o.baseRateBps, o.minPremiumCents)
-		terms := o.insurerName + " — covers " + req.ProductType +
-			"; quote valid 7 days; deductible applies per claim."
+	if len(offerings) > 0 {
+		// premium/terms per offering, indexed by insurer_id for the RETURNING map.
+		byInsurer := make(map[string]quoteJSON, len(offerings))
+		valueClauses := make([]string, 0, len(offerings))
+		args := make([]interface{}, 0, len(offerings)*6)
+		for _, o := range offerings {
+			premium := computeCompetitivePremiumCents(req.CoverageCents, o.baseRateBps, o.minPremiumCents)
+			terms := o.insurerName + " — covers " + req.ProductType +
+				"; quote valid 7 days; deductible applies per claim."
 
-		var quoteID string
-		err = tx.QueryRow(ctx, `
-			INSERT INTO insurance_quotes
-				(request_id, insurer_id, premium_cents, deductible_cents, terms, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			RETURNING id::text
-		`, requestID, o.insurerID, premium, deductibleCents, terms, expiresAt).Scan(&quoteID)
-		if err != nil {
-			slog.Error("insurance competition: insert quote failed", "error", err, "insurer_id", o.insurerID)
-			writeError(w, http.StatusInternalServerError, "failed to generate insurer quote")
-			return
+			base := len(args)
+			valueClauses = append(valueClauses, "($"+strconv.Itoa(base+1)+", $"+strconv.Itoa(base+2)+
+				", $"+strconv.Itoa(base+3)+", $"+strconv.Itoa(base+4)+", $"+strconv.Itoa(base+5)+
+				", $"+strconv.Itoa(base+6)+")")
+			args = append(args, requestID, o.insurerID, premium, deductibleCents, terms, expiresAt)
+
+			byInsurer[o.insurerID] = quoteJSON{
+				InsurerID:       o.insurerID,
+				InsurerName:     o.insurerName,
+				PremiumCents:    premium,
+				DeductibleCents: deductibleCents,
+				Terms:           terms,
+				ExpiresAt:       expiresAt,
+			}
 		}
 
-		quotes = append(quotes, quoteJSON{
-			QuoteID:         quoteID,
-			InsurerID:       o.insurerID,
-			InsurerName:     o.insurerName,
-			PremiumCents:    premium,
-			DeductibleCents: deductibleCents,
-			Terms:           terms,
-			ExpiresAt:       expiresAt,
-		})
+		quoteRows, qerr := tx.Query(ctx, `
+			INSERT INTO insurance_quotes
+				(request_id, insurer_id, premium_cents, deductible_cents, terms, expires_at)
+			VALUES `+strings.Join(valueClauses, ", ")+`
+			RETURNING id::text, insurer_id::text
+		`, args...)
+		if qerr != nil {
+			slog.Error("insurance competition: batch insert quotes failed", "error", qerr)
+			writeError(w, http.StatusInternalServerError, "failed to generate insurer quotes")
+			return
+		}
+		for quoteRows.Next() {
+			var quoteID, insurerID string
+			if err := quoteRows.Scan(&quoteID, &insurerID); err != nil {
+				quoteRows.Close()
+				slog.Error("insurance competition: scan inserted quote failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "failed to generate insurer quotes")
+				return
+			}
+			q := byInsurer[insurerID]
+			q.QuoteID = quoteID
+			quotes = append(quotes, q)
+		}
+		quoteRows.Close()
+		if err := quoteRows.Err(); err != nil {
+			slog.Error("insurance competition: inserted quote rows error", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to generate insurer quotes")
+			return
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

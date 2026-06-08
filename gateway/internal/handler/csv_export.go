@@ -31,6 +31,11 @@ import (
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
+// csvExportMaxRows caps a single sales export so a power-seller with a very
+// large order history can't trigger an unbounded full-table scan + stream.
+// We query maxRows+1 to detect truncation and emit a trailing note row.
+const csvExportMaxRows = 10000
+
 // CSVExportHandler streams completed orders as CSV.
 type CSVExportHandler struct {
 	db *pgxpool.Pool
@@ -67,8 +72,9 @@ func (h *CSVExportHandler) ExportSales(w http.ResponseWriter, r *http.Request) {
 		  LEFT JOIN users u      ON u.id = lo.buyer_id
 		 WHERE lo.seller_id = $1
 		   AND lo.escrow_status IN ('held', 'pickup_confirmed', 'released')
-		 ORDER BY lo.created_at DESC`,
-		claims.UserID,
+		 ORDER BY lo.created_at DESC
+		 LIMIT $2`,
+		claims.UserID, csvExportMaxRows+1,
 	)
 	if err != nil {
 		slog.Error("csv export: query", "user_id", claims.UserID, "error", err)
@@ -102,7 +108,15 @@ func (h *CSVExportHandler) ExportSales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	written := 0
+	truncated := false
 	for rows.Next() {
+		// We fetched one extra row beyond the cap purely as a truncation
+		// sentinel — don't emit it, just flag the export as partial.
+		if written >= csvExportMaxRows {
+			truncated = true
+			break
+		}
 		var (
 			orderID, title, buyerName, status string
 			soldAt                             time.Time
@@ -124,6 +138,18 @@ func (h *CSVExportHandler) ExportSales(w http.ResponseWriter, r *http.Request) {
 		}); err != nil {
 			slog.Warn("csv export: write row", "error", err)
 			return
+		}
+		written++
+	}
+
+	// If the result hit the cap, append a note row so the seller knows the
+	// export is partial and can narrow it (rather than silently losing rows).
+	if truncated {
+		if err := cw.Write([]string{
+			fmt.Sprintf("# export truncated at %d rows — contact support for a full archive", csvExportMaxRows),
+			"", "", "", "", "", "", "",
+		}); err != nil {
+			slog.Warn("csv export: write truncation note", "error", err)
 		}
 	}
 }
