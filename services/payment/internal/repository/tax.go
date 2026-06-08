@@ -4,10 +4,39 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
+
+// decryptTaxFormAddress returns the plaintext provider address for a tax-form
+// row read from storage. provider_address is written as plaintext by
+// GenerateTaxForm (which decrypts provider_profiles.service_address via
+// GetProviderProfile before persisting), but rows generated before that decrypt
+// step shipped — and any row copied straight from the still-encrypted profile
+// column — hold nacl/secretbox ciphertext. To guarantee every read path
+// (single GET, LIST, generate, HTML/download) returns plaintext consistently,
+// this helper decrypts on read *only when the value authenticates as
+// ciphertext*: a genuine plaintext street address fails secretbox auth (or
+// base64 decode) and is returned unchanged, so the helper is idempotent and
+// safe to apply unconditionally. Without a configured cipher the value is
+// passed through as-is (dev fallback, mirrors GetProviderProfile).
+func (r *PostgresRepository) decryptTaxFormAddress(addr string) string {
+	if addr == "" || r.cipher == nil {
+		return addr
+	}
+	plain, err := r.cipher.DecryptString(addr)
+	if err != nil {
+		// Not authenticable ciphertext under the current/previous key — treat
+		// as already-plaintext (the common case for freshly generated rows).
+		slog.Debug("tax form provider_address not decryptable; treating as plaintext",
+			"error", err,
+		)
+		return addr
+	}
+	return plain
+}
 
 // CreateTaxForm inserts a new tax form record.
 func (r *PostgresRepository) CreateTaxForm(ctx context.Context, tf *domain.TaxForm) error {
@@ -67,6 +96,7 @@ func (r *PostgresRepository) GetTaxForm(ctx context.Context, providerID string, 
 		}
 		return nil, fmt.Errorf("get tax form: %w", err)
 	}
+	tf.ProviderAddress = r.decryptTaxFormAddress(tf.ProviderAddress)
 	return tf, nil
 }
 
@@ -99,6 +129,10 @@ func (r *PostgresRepository) ListTaxForms(ctx context.Context, providerID string
 		if err != nil {
 			return nil, fmt.Errorf("list tax forms scan: %w", err)
 		}
+		// Decrypt provider_address on read so the LIST projection returns the
+		// same plaintext address as the single-form / generate / download paths.
+		// Previously the LIST leaked raw secretbox ciphertext for encrypted rows.
+		tf.ProviderAddress = r.decryptTaxFormAddress(tf.ProviderAddress)
 		forms = append(forms, tf)
 	}
 

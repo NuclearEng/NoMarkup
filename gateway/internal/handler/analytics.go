@@ -142,7 +142,10 @@ func (h *AnalyticsHandler) GetProviderAnalytics(w http.ResponseWriter, r *http.R
 	}
 
 	providerID := chi.URLParam(r, "id")
-	if providerID == "" {
+	// Resolve the "me" alias to the authenticated caller, matching the
+	// /providers/me/* routes. Without this, the literal "me" is compared as a
+	// UUID against claims.UserID below and always 403s for the owner.
+	if providerID == "" || providerID == "me" {
 		providerID = claims.UserID
 	}
 
@@ -203,7 +206,10 @@ func (h *AnalyticsHandler) GetProviderEarnings(w http.ResponseWriter, r *http.Re
 	}
 
 	providerID := chi.URLParam(r, "id")
-	if providerID == "" {
+	// Resolve the "me" alias to the authenticated caller, matching the
+	// /providers/me/* routes. Without this, the literal "me" is compared as a
+	// UUID against claims.UserID below and always 403s for the owner.
+	if providerID == "" || providerID == "me" {
 		providerID = claims.UserID
 	}
 
