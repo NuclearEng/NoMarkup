@@ -9,34 +9,34 @@ import (
 
 // Sentinel errors for the user domain.
 var (
-	ErrUserNotFound            = errors.New("user not found")
-	ErrEmailTaken              = errors.New("email already taken")
-	ErrInvalidCredentials      = errors.New("invalid credentials")
-	ErrTokenExpired            = errors.New("token expired")
-	ErrTokenRevoked            = errors.New("token revoked")
-	ErrAccountSuspended        = errors.New("account suspended")
-	ErrAccountBanned           = errors.New("account banned")
-	ErrAccountDeactivated      = errors.New("account deactivated")
-	ErrProviderProfileNotFound = errors.New("provider profile not found")
-	ErrInvalidRole             = errors.New("invalid role")
-	ErrCategoryNotFound        = errors.New("category not found")
-	ErrInvalidToken            = errors.New("invalid or expired verification token")
-	ErrInvalidOTP              = errors.New("invalid OTP code")
-	ErrOTPExpired              = errors.New("OTP code expired")
-	ErrDocumentNotFound        = errors.New("document not found")
-	ErrInvalidMFACode          = errors.New("invalid MFA code")
-	ErrMFANotSetup             = errors.New("MFA not set up")
-	ErrMFAAlreadyEnabled       = errors.New("MFA already enabled")
+	ErrUserNotFound             = errors.New("user not found")
+	ErrEmailTaken               = errors.New("email already taken")
+	ErrInvalidCredentials       = errors.New("invalid credentials")
+	ErrTokenExpired             = errors.New("token expired")
+	ErrTokenRevoked             = errors.New("token revoked")
+	ErrAccountSuspended         = errors.New("account suspended")
+	ErrAccountBanned            = errors.New("account banned")
+	ErrAccountDeactivated       = errors.New("account deactivated")
+	ErrProviderProfileNotFound  = errors.New("provider profile not found")
+	ErrInvalidRole              = errors.New("invalid role")
+	ErrCategoryNotFound         = errors.New("category not found")
+	ErrInvalidToken             = errors.New("invalid or expired verification token")
+	ErrInvalidOTP               = errors.New("invalid OTP code")
+	ErrOTPExpired               = errors.New("OTP code expired")
+	ErrDocumentNotFound         = errors.New("document not found")
+	ErrInvalidMFACode           = errors.New("invalid MFA code")
+	ErrMFANotSetup              = errors.New("MFA not set up")
+	ErrMFAAlreadyEnabled        = errors.New("MFA already enabled")
 	ErrInvalidMFAChallengeToken = errors.New("invalid or expired MFA challenge token")
 	ErrEmailNotVerified         = errors.New("email not verified")
 	ErrPropertyNotFound         = errors.New("property not found")
 
 	// GDPR / CCPA erasure pipeline.
-	ErrDeletionAlreadyRequested = errors.New("account deletion already requested")
-	ErrDeletionNotRequested     = errors.New("account deletion not requested")
-	ErrDeletionAlreadyFinalized = errors.New("account deletion already finalized")
+	ErrDeletionAlreadyRequested  = errors.New("account deletion already requested")
+	ErrDeletionNotRequested      = errors.New("account deletion not requested")
+	ErrDeletionAlreadyFinalized  = errors.New("account deletion already finalized")
 	ErrDeletionGracePeriodActive = errors.New("account deletion grace period still active")
-	ErrDeletionConfirmation     = errors.New("deletion confirmation phrase invalid")
+	ErrDeletionConfirmation      = errors.New("deletion confirmation phrase invalid")
 )
 
 // DeletionGracePeriod is the window between a user requesting account
@@ -334,6 +334,14 @@ type Document struct {
 	UpdatedAt       time.Time
 }
 
+// PendingDocument is a verification document awaiting admin review, joined with
+// the owning user's identity so the admin queue is actionable.
+type PendingDocument struct {
+	Document
+	UserEmail       string
+	UserDisplayName string
+}
+
 // Property represents a customer's physical property (e.g., home address).
 type Property struct {
 	ID        string
@@ -411,6 +419,7 @@ type UserRepository interface {
 	GetDocumentByUserAndType(ctx context.Context, userID string, docType DocumentType) (*Document, error)
 	ListDocuments(ctx context.Context, userID string) ([]Document, error)
 	UpdateDocumentStatus(ctx context.Context, documentID string, status DocumentStatus, rejectionReason string) error
+	ListPendingDocuments(ctx context.Context, page, pageSize int) ([]PendingDocument, int, error)
 
 	// OAuth
 	FindUserByOAuth(ctx context.Context, provider, providerID string) (*User, error)
@@ -438,7 +447,7 @@ type UserRepository interface {
 	// active and clears the suspension reason. No-op if already active.
 	ReactivateUser(ctx context.Context, userID, adminID string) error
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
-	AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]User, int, error)
+	AdminSearchUsers(ctx context.Context, query, status, role string, page, pageSize int) ([]User, int, error)
 
 	// Provider search
 	SearchProviders(ctx context.Context, input ProviderSearchInput) ([]ProviderSearchResult, int, error)

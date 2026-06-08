@@ -45,7 +45,7 @@ type mockUserRepo struct {
 	suspendUserFn           func(ctx context.Context, userID, reason, adminID string) error
 	banUserFn               func(ctx context.Context, userID, reason, adminID string) error
 	insertAuditLogFn        func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
-	adminSearchUsersFn      func(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error)
+	adminSearchUsersFn      func(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error)
 }
 
 func (m *mockUserRepo) CreateUser(ctx context.Context, user *domain.User) error {
@@ -175,9 +175,9 @@ func (m *mockUserRepo) InsertAuditLog(ctx context.Context, adminID, action, targ
 	}
 	return nil
 }
-func (m *mockUserRepo) AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error) {
+func (m *mockUserRepo) AdminSearchUsers(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error) {
 	if m.adminSearchUsersFn != nil {
-		return m.adminSearchUsersFn(ctx, query, status, page, pageSize)
+		return m.adminSearchUsersFn(ctx, query, status, role, page, pageSize)
 	}
 	return nil, 0, nil
 }
@@ -198,6 +198,9 @@ func (m *mockUserRepo) ListDocuments(_ context.Context, _ string) ([]domain.Docu
 }
 func (m *mockUserRepo) UpdateDocumentStatus(_ context.Context, _ string, _ domain.DocumentStatus, _ string) error {
 	return nil
+}
+func (m *mockUserRepo) ListPendingDocuments(_ context.Context, _, _ int) ([]domain.PendingDocument, int, error) {
+	return nil, 0, nil
 }
 func (m *mockUserRepo) FindUserByOAuth(_ context.Context, _, _ string) (*domain.User, error) {
 	return nil, domain.ErrUserNotFound
@@ -520,12 +523,12 @@ func TestAuth_RefreshToken(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		getRefreshToken  func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
-		revokeRefreshFn  func(ctx context.Context, tokenHash string) error
-		getUserByIDFn    func(ctx context.Context, id string) (*domain.User, error)
-		wantErr          bool
-		errContain       string
+		name            string
+		getRefreshToken func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
+		revokeRefreshFn func(ctx context.Context, tokenHash string) error
+		getUserByIDFn   func(ctx context.Context, id string) (*domain.User, error)
+		wantErr         bool
+		errContain      string
 	}{
 		{
 			name: "successful_refresh_rotates_token",
@@ -611,9 +614,9 @@ func TestAuth_Logout(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		revokeFn  func(ctx context.Context, tokenHash string) error
-		wantErr   bool
+		name     string
+		revokeFn func(ctx context.Context, tokenHash string) error
+		wantErr  bool
 	}{
 		{
 			name:     "successful_logout",

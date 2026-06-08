@@ -80,13 +80,23 @@ func (a *Admin) ReactivateUser(ctx context.Context, userID, adminID string) erro
 	return nil
 }
 
-// AdminSearchUsers searches for users with optional query and status filters.
-func (a *Admin) AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error) {
-	users, total, err := a.repo.AdminSearchUsers(ctx, query, status, page, pageSize)
+// AdminSearchUsers searches for users with optional query, status, and role filters.
+func (a *Admin) AdminSearchUsers(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error) {
+	users, total, err := a.repo.AdminSearchUsers(ctx, query, status, role, page, pageSize)
 	if err != nil {
 		return nil, 0, fmt.Errorf("admin search users: %w", err)
 	}
 	return users, total, nil
+}
+
+// AdminListPendingDocuments returns verification documents awaiting review,
+// oldest first, paginated.
+func (a *Admin) AdminListPendingDocuments(ctx context.Context, page, pageSize int) ([]domain.PendingDocument, int, error) {
+	docs, total, err := a.repo.ListPendingDocuments(ctx, page, pageSize)
+	if err != nil {
+		return nil, 0, fmt.Errorf("admin list pending documents: %w", err)
+	}
+	return docs, total, nil
 }
 
 // AdminGetUser retrieves a user by ID for admin viewing.

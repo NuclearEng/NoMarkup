@@ -20,19 +20,15 @@ func NewAdminVerificationHandler(userClient userv1.UserServiceClient) *AdminVeri
 }
 
 // ListPendingDocuments handles GET /api/v1/admin/verification/queue.
-// This searches for users with pending verification documents using AdminSearchUsers.
-// Query params: page, page_size.
+// It returns verification documents in the 'pending' state across all users,
+// oldest first, each enriched with the owning user's identity so the admin
+// review queue is actionable. Query params: page, page_size.
 func (h *AdminVerificationHandler) ListPendingDocuments(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	pagination := parsePagination(q)
 
-	// Use AdminSearchUsers with no query to list users, and the caller
-	// filters by pending verification status on the client side.
-	// Alternatively, we call AdminReviewDocument with a listing approach.
-	// Since the proto defines AdminReviewDocument for individual reviews,
-	// we use AdminSearchUsers to find users and return their documents.
-	resp, err := h.userClient.AdminSearchUsers(r.Context(), &userv1.AdminSearchUsersRequest{
+	resp, err := h.userClient.AdminListPendingDocuments(r.Context(), &userv1.AdminListPendingDocumentsRequest{
 		Pagination: pagination,
 	})
 	if err != nil {
@@ -40,14 +36,26 @@ func (h *AdminVerificationHandler) ListPendingDocuments(w http.ResponseWriter, r
 		return
 	}
 
-	// Build the response: list users with their basic info.
-	users := make([]map[string]interface{}, 0, len(resp.GetUsers()))
-	for _, u := range resp.GetUsers() {
-		users = append(users, adminUserToJSON(u))
+	documents := make([]map[string]interface{}, 0, len(resp.GetDocuments()))
+	for _, d := range resp.GetDocuments() {
+		doc := map[string]interface{}{
+			"id":                d.GetId(),
+			"user_id":           d.GetUserId(),
+			"user_email":        d.GetUserEmail(),
+			"user_display_name": d.GetUserDisplayName(),
+			"document_type":     d.GetDocumentType(),
+			"status":            protoEnumToString(d.GetStatus().String(), "VERIFICATION_STATUS_"),
+			"file_name":         d.GetFileName(),
+			"file_url":          d.GetFileUrl(),
+		}
+		if ts := d.GetCreatedAt(); ts != nil {
+			doc["created_at"] = ts.AsTime()
+		}
+		documents = append(documents, doc)
 	}
 
 	result := map[string]interface{}{
-		"users": users,
+		"documents": documents,
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = paginationToJSON(pg)

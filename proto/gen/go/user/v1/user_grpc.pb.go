@@ -19,50 +19,51 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UserService_Register_FullMethodName                = "/nomarkup.user.v1.UserService/Register"
-	UserService_Login_FullMethodName                   = "/nomarkup.user.v1.UserService/Login"
-	UserService_RefreshToken_FullMethodName            = "/nomarkup.user.v1.UserService/RefreshToken"
-	UserService_Logout_FullMethodName                  = "/nomarkup.user.v1.UserService/Logout"
-	UserService_VerifyEmail_FullMethodName             = "/nomarkup.user.v1.UserService/VerifyEmail"
-	UserService_ResendVerification_FullMethodName      = "/nomarkup.user.v1.UserService/ResendVerification"
-	UserService_VerifyPhone_FullMethodName             = "/nomarkup.user.v1.UserService/VerifyPhone"
-	UserService_SendPhoneOTP_FullMethodName            = "/nomarkup.user.v1.UserService/SendPhoneOTP"
-	UserService_RequestPasswordReset_FullMethodName    = "/nomarkup.user.v1.UserService/RequestPasswordReset"
-	UserService_ResetPassword_FullMethodName           = "/nomarkup.user.v1.UserService/ResetPassword"
-	UserService_FindOrCreateByOAuth_FullMethodName     = "/nomarkup.user.v1.UserService/FindOrCreateByOAuth"
-	UserService_EnableMFA_FullMethodName               = "/nomarkup.user.v1.UserService/EnableMFA"
-	UserService_ConfirmMFASetup_FullMethodName         = "/nomarkup.user.v1.UserService/ConfirmMFASetup"
-	UserService_VerifyMFA_FullMethodName               = "/nomarkup.user.v1.UserService/VerifyMFA"
-	UserService_DisableMFA_FullMethodName              = "/nomarkup.user.v1.UserService/DisableMFA"
-	UserService_GetUser_FullMethodName                 = "/nomarkup.user.v1.UserService/GetUser"
-	UserService_UpdateUser_FullMethodName              = "/nomarkup.user.v1.UserService/UpdateUser"
-	UserService_EnableRole_FullMethodName              = "/nomarkup.user.v1.UserService/EnableRole"
-	UserService_DeactivateAccount_FullMethodName       = "/nomarkup.user.v1.UserService/DeactivateAccount"
-	UserService_RequestAccountDeletion_FullMethodName  = "/nomarkup.user.v1.UserService/RequestAccountDeletion"
-	UserService_CancelAccountDeletion_FullMethodName   = "/nomarkup.user.v1.UserService/CancelAccountDeletion"
-	UserService_FinalizeAccountDeletion_FullMethodName = "/nomarkup.user.v1.UserService/FinalizeAccountDeletion"
-	UserService_GetProviderProfile_FullMethodName      = "/nomarkup.user.v1.UserService/GetProviderProfile"
-	UserService_UpdateProviderProfile_FullMethodName   = "/nomarkup.user.v1.UserService/UpdateProviderProfile"
-	UserService_SetGlobalTerms_FullMethodName          = "/nomarkup.user.v1.UserService/SetGlobalTerms"
-	UserService_UpdateServiceCategories_FullMethodName = "/nomarkup.user.v1.UserService/UpdateServiceCategories"
-	UserService_UpdatePortfolio_FullMethodName         = "/nomarkup.user.v1.UserService/UpdatePortfolio"
-	UserService_SetInstantAvailability_FullMethodName  = "/nomarkup.user.v1.UserService/SetInstantAvailability"
-	UserService_GetServiceCategories_FullMethodName    = "/nomarkup.user.v1.UserService/GetServiceCategories"
-	UserService_GetCategoryTree_FullMethodName         = "/nomarkup.user.v1.UserService/GetCategoryTree"
-	UserService_CreateProperty_FullMethodName          = "/nomarkup.user.v1.UserService/CreateProperty"
-	UserService_UpdateProperty_FullMethodName          = "/nomarkup.user.v1.UserService/UpdateProperty"
-	UserService_DeleteProperty_FullMethodName          = "/nomarkup.user.v1.UserService/DeleteProperty"
-	UserService_ListProperties_FullMethodName          = "/nomarkup.user.v1.UserService/ListProperties"
-	UserService_UploadDocument_FullMethodName          = "/nomarkup.user.v1.UserService/UploadDocument"
-	UserService_GetDocumentStatus_FullMethodName       = "/nomarkup.user.v1.UserService/GetDocumentStatus"
-	UserService_ListDocuments_FullMethodName           = "/nomarkup.user.v1.UserService/ListDocuments"
-	UserService_AdminGetUser_FullMethodName            = "/nomarkup.user.v1.UserService/AdminGetUser"
-	UserService_AdminSearchUsers_FullMethodName        = "/nomarkup.user.v1.UserService/AdminSearchUsers"
-	UserService_AdminSuspendUser_FullMethodName        = "/nomarkup.user.v1.UserService/AdminSuspendUser"
-	UserService_AdminBanUser_FullMethodName            = "/nomarkup.user.v1.UserService/AdminBanUser"
-	UserService_AdminReactivateUser_FullMethodName     = "/nomarkup.user.v1.UserService/AdminReactivateUser"
-	UserService_AdminReviewDocument_FullMethodName     = "/nomarkup.user.v1.UserService/AdminReviewDocument"
-	UserService_SearchProviders_FullMethodName         = "/nomarkup.user.v1.UserService/SearchProviders"
+	UserService_Register_FullMethodName                  = "/nomarkup.user.v1.UserService/Register"
+	UserService_Login_FullMethodName                     = "/nomarkup.user.v1.UserService/Login"
+	UserService_RefreshToken_FullMethodName              = "/nomarkup.user.v1.UserService/RefreshToken"
+	UserService_Logout_FullMethodName                    = "/nomarkup.user.v1.UserService/Logout"
+	UserService_VerifyEmail_FullMethodName               = "/nomarkup.user.v1.UserService/VerifyEmail"
+	UserService_ResendVerification_FullMethodName        = "/nomarkup.user.v1.UserService/ResendVerification"
+	UserService_VerifyPhone_FullMethodName               = "/nomarkup.user.v1.UserService/VerifyPhone"
+	UserService_SendPhoneOTP_FullMethodName              = "/nomarkup.user.v1.UserService/SendPhoneOTP"
+	UserService_RequestPasswordReset_FullMethodName      = "/nomarkup.user.v1.UserService/RequestPasswordReset"
+	UserService_ResetPassword_FullMethodName             = "/nomarkup.user.v1.UserService/ResetPassword"
+	UserService_FindOrCreateByOAuth_FullMethodName       = "/nomarkup.user.v1.UserService/FindOrCreateByOAuth"
+	UserService_EnableMFA_FullMethodName                 = "/nomarkup.user.v1.UserService/EnableMFA"
+	UserService_ConfirmMFASetup_FullMethodName           = "/nomarkup.user.v1.UserService/ConfirmMFASetup"
+	UserService_VerifyMFA_FullMethodName                 = "/nomarkup.user.v1.UserService/VerifyMFA"
+	UserService_DisableMFA_FullMethodName                = "/nomarkup.user.v1.UserService/DisableMFA"
+	UserService_GetUser_FullMethodName                   = "/nomarkup.user.v1.UserService/GetUser"
+	UserService_UpdateUser_FullMethodName                = "/nomarkup.user.v1.UserService/UpdateUser"
+	UserService_EnableRole_FullMethodName                = "/nomarkup.user.v1.UserService/EnableRole"
+	UserService_DeactivateAccount_FullMethodName         = "/nomarkup.user.v1.UserService/DeactivateAccount"
+	UserService_RequestAccountDeletion_FullMethodName    = "/nomarkup.user.v1.UserService/RequestAccountDeletion"
+	UserService_CancelAccountDeletion_FullMethodName     = "/nomarkup.user.v1.UserService/CancelAccountDeletion"
+	UserService_FinalizeAccountDeletion_FullMethodName   = "/nomarkup.user.v1.UserService/FinalizeAccountDeletion"
+	UserService_GetProviderProfile_FullMethodName        = "/nomarkup.user.v1.UserService/GetProviderProfile"
+	UserService_UpdateProviderProfile_FullMethodName     = "/nomarkup.user.v1.UserService/UpdateProviderProfile"
+	UserService_SetGlobalTerms_FullMethodName            = "/nomarkup.user.v1.UserService/SetGlobalTerms"
+	UserService_UpdateServiceCategories_FullMethodName   = "/nomarkup.user.v1.UserService/UpdateServiceCategories"
+	UserService_UpdatePortfolio_FullMethodName           = "/nomarkup.user.v1.UserService/UpdatePortfolio"
+	UserService_SetInstantAvailability_FullMethodName    = "/nomarkup.user.v1.UserService/SetInstantAvailability"
+	UserService_GetServiceCategories_FullMethodName      = "/nomarkup.user.v1.UserService/GetServiceCategories"
+	UserService_GetCategoryTree_FullMethodName           = "/nomarkup.user.v1.UserService/GetCategoryTree"
+	UserService_CreateProperty_FullMethodName            = "/nomarkup.user.v1.UserService/CreateProperty"
+	UserService_UpdateProperty_FullMethodName            = "/nomarkup.user.v1.UserService/UpdateProperty"
+	UserService_DeleteProperty_FullMethodName            = "/nomarkup.user.v1.UserService/DeleteProperty"
+	UserService_ListProperties_FullMethodName            = "/nomarkup.user.v1.UserService/ListProperties"
+	UserService_UploadDocument_FullMethodName            = "/nomarkup.user.v1.UserService/UploadDocument"
+	UserService_GetDocumentStatus_FullMethodName         = "/nomarkup.user.v1.UserService/GetDocumentStatus"
+	UserService_ListDocuments_FullMethodName             = "/nomarkup.user.v1.UserService/ListDocuments"
+	UserService_AdminGetUser_FullMethodName              = "/nomarkup.user.v1.UserService/AdminGetUser"
+	UserService_AdminSearchUsers_FullMethodName          = "/nomarkup.user.v1.UserService/AdminSearchUsers"
+	UserService_AdminSuspendUser_FullMethodName          = "/nomarkup.user.v1.UserService/AdminSuspendUser"
+	UserService_AdminBanUser_FullMethodName              = "/nomarkup.user.v1.UserService/AdminBanUser"
+	UserService_AdminReactivateUser_FullMethodName       = "/nomarkup.user.v1.UserService/AdminReactivateUser"
+	UserService_AdminReviewDocument_FullMethodName       = "/nomarkup.user.v1.UserService/AdminReviewDocument"
+	UserService_AdminListPendingDocuments_FullMethodName = "/nomarkup.user.v1.UserService/AdminListPendingDocuments"
+	UserService_SearchProviders_FullMethodName           = "/nomarkup.user.v1.UserService/SearchProviders"
 )
 
 // UserServiceClient is the client API for UserService service.
@@ -127,6 +128,7 @@ type UserServiceClient interface {
 	AdminBanUser(ctx context.Context, in *AdminBanUserRequest, opts ...grpc.CallOption) (*AdminBanUserResponse, error)
 	AdminReactivateUser(ctx context.Context, in *AdminReactivateUserRequest, opts ...grpc.CallOption) (*AdminReactivateUserResponse, error)
 	AdminReviewDocument(ctx context.Context, in *AdminReviewDocumentRequest, opts ...grpc.CallOption) (*AdminReviewDocumentResponse, error)
+	AdminListPendingDocuments(ctx context.Context, in *AdminListPendingDocumentsRequest, opts ...grpc.CallOption) (*AdminListPendingDocumentsResponse, error)
 	// Search
 	SearchProviders(ctx context.Context, in *SearchProvidersRequest, opts ...grpc.CallOption) (*SearchProvidersResponse, error)
 }
@@ -569,6 +571,16 @@ func (c *userServiceClient) AdminReviewDocument(ctx context.Context, in *AdminRe
 	return out, nil
 }
 
+func (c *userServiceClient) AdminListPendingDocuments(ctx context.Context, in *AdminListPendingDocumentsRequest, opts ...grpc.CallOption) (*AdminListPendingDocumentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminListPendingDocumentsResponse)
+	err := c.cc.Invoke(ctx, UserService_AdminListPendingDocuments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *userServiceClient) SearchProviders(ctx context.Context, in *SearchProvidersRequest, opts ...grpc.CallOption) (*SearchProvidersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SearchProvidersResponse)
@@ -641,6 +653,7 @@ type UserServiceServer interface {
 	AdminBanUser(context.Context, *AdminBanUserRequest) (*AdminBanUserResponse, error)
 	AdminReactivateUser(context.Context, *AdminReactivateUserRequest) (*AdminReactivateUserResponse, error)
 	AdminReviewDocument(context.Context, *AdminReviewDocumentRequest) (*AdminReviewDocumentResponse, error)
+	AdminListPendingDocuments(context.Context, *AdminListPendingDocumentsRequest) (*AdminListPendingDocumentsResponse, error)
 	// Search
 	SearchProviders(context.Context, *SearchProvidersRequest) (*SearchProvidersResponse, error)
 	mustEmbedUnimplementedUserServiceServer()
@@ -781,6 +794,9 @@ func (UnimplementedUserServiceServer) AdminReactivateUser(context.Context, *Admi
 }
 func (UnimplementedUserServiceServer) AdminReviewDocument(context.Context, *AdminReviewDocumentRequest) (*AdminReviewDocumentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdminReviewDocument not implemented")
+}
+func (UnimplementedUserServiceServer) AdminListPendingDocuments(context.Context, *AdminListPendingDocumentsRequest) (*AdminListPendingDocumentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminListPendingDocuments not implemented")
 }
 func (UnimplementedUserServiceServer) SearchProviders(context.Context, *SearchProvidersRequest) (*SearchProvidersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchProviders not implemented")
@@ -1580,6 +1596,24 @@ func _UserService_AdminReviewDocument_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_AdminListPendingDocuments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminListPendingDocumentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).AdminListPendingDocuments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_AdminListPendingDocuments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).AdminListPendingDocuments(ctx, req.(*AdminListPendingDocumentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UserService_SearchProviders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SearchProvidersRequest)
 	if err := dec(in); err != nil {
@@ -1776,6 +1810,10 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdminReviewDocument",
 			Handler:    _UserService_AdminReviewDocument_Handler,
+		},
+		{
+			MethodName: "AdminListPendingDocuments",
+			Handler:    _UserService_AdminListPendingDocuments_Handler,
 		},
 		{
 			MethodName: "SearchProviders",

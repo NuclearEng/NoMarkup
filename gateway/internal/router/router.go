@@ -666,7 +666,12 @@ func New(
 			r.Post("/dev/methods", paymentHandler.AddDevPaymentMethod)
 			r.Delete("/methods/{id}", paymentHandler.DeletePaymentMethod)
 			r.Post("/calculate-fees", paymentHandler.CalculateFees)
-			r.With(middleware.RequireFlag(dbPool, cacheClient, "instant_payout")).
+			// Instant payout is a provider-only capability (funds settle to the
+			// provider's Stripe Connect account). Gate on the provider role in
+			// addition to the feature flag so a customer token gets 403, not a
+			// downstream "payouts not enabled" error.
+			r.With(middleware.RequireProvider).
+				With(middleware.RequireFlag(dbPool, cacheClient, "instant_payout")).
 				Post("/instant-payout", paymentHandler.InstantPayout)
 
 			// /{id}/* mutations: only the payment's customer or provider may access.

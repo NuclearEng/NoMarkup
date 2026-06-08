@@ -79,6 +79,7 @@ service UserService {
   rpc AdminBanUser(AdminBanUserRequest) returns (AdminBanUserResponse);
   rpc AdminReactivateUser(AdminReactivateUserRequest) returns (AdminReactivateUserResponse);
   rpc AdminReviewDocument(AdminReviewDocumentRequest) returns (AdminReviewDocumentResponse);
+  rpc AdminListPendingDocuments(AdminListPendingDocumentsRequest) returns (AdminListPendingDocumentsResponse);
 
   // Search
   rpc SearchProviders(SearchProvidersRequest) returns (SearchProvidersResponse);
@@ -687,6 +688,29 @@ message AdminReviewDocumentRequest {
 
 message AdminReviewDocumentResponse {
   nomarkup.common.v1.VerificationStatus status = 1;
+}
+
+message AdminListPendingDocumentsRequest {
+  nomarkup.common.v1.PaginationRequest pagination = 1;
+}
+
+// PendingDocument is a verification document awaiting admin review, enriched
+// with the owning user's identity so the admin queue is actionable.
+message PendingDocument {
+  string id = 1;
+  string user_id = 2;
+  string user_email = 3;
+  string user_display_name = 4;
+  string document_type = 5;
+  nomarkup.common.v1.VerificationStatus status = 6;
+  string file_name = 7;
+  string file_url = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message AdminListPendingDocumentsResponse {
+  repeated PendingDocument documents = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
 }
 
 // ============================================================

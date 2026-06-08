@@ -946,7 +946,12 @@ func (s *Server) AdminSearchUsers(ctx context.Context, req *userv1.AdminSearchUs
 		statusFilter = protoUserStatusToString(*req.StatusFilter)
 	}
 
-	users, total, err := s.admin.AdminSearchUsers(ctx, req.GetQuery(), statusFilter, page, pageSize)
+	roleFilter := ""
+	if req.RoleFilter != nil && *req.RoleFilter != commonv1.UserRole_USER_ROLE_UNSPECIFIED {
+		roleFilter = protoRoleToString(*req.RoleFilter)
+	}
+
+	users, total, err := s.admin.AdminSearchUsers(ctx, req.GetQuery(), statusFilter, roleFilter, page, pageSize)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -963,6 +968,57 @@ func (s *Server) AdminSearchUsers(ctx context.Context, req *userv1.AdminSearchUs
 
 	return &userv1.AdminSearchUsersResponse{
 		Users: protoUsers,
+		Pagination: &commonv1.PaginationResponse{
+			TotalCount: int32(total),
+			Page:       int32(page),
+			PageSize:   int32(pageSize),
+			TotalPages: totalPages,
+			HasNext:    int32(page) < totalPages,
+		},
+	}, nil
+}
+
+func (s *Server) AdminListPendingDocuments(ctx context.Context, req *userv1.AdminListPendingDocumentsRequest) (*userv1.AdminListPendingDocumentsResponse, error) {
+	page := int(req.GetPagination().GetPage())
+	pageSize := int(req.GetPagination().GetPageSize())
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	docs, total, err := s.admin.AdminListPendingDocuments(ctx, page, pageSize)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoDocs := make([]*userv1.PendingDocument, 0, len(docs))
+	for i := range docs {
+		d := &docs[i]
+		protoDocs = append(protoDocs, &userv1.PendingDocument{
+			Id:              d.ID,
+			UserId:          d.UserID,
+			UserEmail:       d.UserEmail,
+			UserDisplayName: d.UserDisplayName,
+			DocumentType:    string(d.Type),
+			Status:          stringToProtoVerificationStatus(string(d.Status)),
+			FileName:        d.FileName,
+			FileUrl:         d.StorageURL,
+			CreatedAt:       timestamppb.New(d.CreatedAt),
+		})
+	}
+
+	totalPages := int32(total) / int32(pageSize)
+	if int32(total)%int32(pageSize) > 0 {
+		totalPages++
+	}
+
+	return &userv1.AdminListPendingDocumentsResponse{
+		Documents: protoDocs,
 		Pagination: &commonv1.PaginationResponse{
 			TotalCount: int32(total),
 			Page:       int32(page),

@@ -864,7 +864,7 @@ func (r *PostgresRepository) InsertAuditLog(ctx context.Context, adminID, action
 	return nil
 }
 
-func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error) {
+func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error) {
 	whereClauses := []string{"deleted_at IS NULL"}
 	args := []interface{}{}
 	argIdx := 1
@@ -882,6 +882,13 @@ func (r *PostgresRepository) AdminSearchUsers(ctx context.Context, query, status
 	if status != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, status)
+		argIdx++
+	}
+	if role != "" {
+		// roles is a text[] column; membership test mirrors the provider
+		// search ('provider' = ANY(u.roles)).
+		whereClauses = append(whereClauses, fmt.Sprintf("$%d = ANY(roles)", argIdx))
+		args = append(args, role)
 		argIdx++
 	}
 
@@ -1290,6 +1297,70 @@ func (r *PostgresRepository) UpdateDocumentStatus(ctx context.Context, documentI
 		return fmt.Errorf("update document status: %w", domain.ErrDocumentNotFound)
 	}
 	return nil
+}
+
+// ListPendingDocuments returns verification documents in the 'pending' state
+// across all users, joined with the owning user's identity, ordered oldest
+// first (FIFO review queue). Soft-deleted users are excluded.
+func (r *PostgresRepository) ListPendingDocuments(ctx context.Context, page, pageSize int) ([]domain.PendingDocument, int, error) {
+	const countQuery = `
+		SELECT COUNT(*)
+		FROM verification_documents vd
+		JOIN users u ON u.id = vd.user_id
+		WHERE vd.status = 'pending' AND u.deleted_at IS NULL`
+
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("list pending documents count: %w", err)
+	}
+
+	offset := (page - 1) * pageSize
+	const dataQuery = `
+		SELECT vd.id, vd.user_id, vd.document_type, vd.status,
+		       vd.file_name, vd.file_url, vd.rejection_reason,
+		       vd.expires_at, vd.created_at, vd.updated_at,
+		       u.email, u.display_name
+		FROM verification_documents vd
+		JOIN users u ON u.id = vd.user_id
+		WHERE vd.status = 'pending' AND u.deleted_at IS NULL
+		ORDER BY vd.created_at ASC
+		LIMIT $1 OFFSET $2`
+
+	rows, err := r.pool.Query(ctx, dataQuery, pageSize, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list pending documents query: %w", err)
+	}
+	defer rows.Close()
+
+	var docs []domain.PendingDocument
+	for rows.Next() {
+		var pd domain.PendingDocument
+		var fileName, rejectionReason, storageURL *string
+		var expiresAt *time.Time
+		if err := rows.Scan(
+			&pd.ID, &pd.UserID, &pd.Type, &pd.Status,
+			&fileName, &storageURL, &rejectionReason,
+			&expiresAt, &pd.CreatedAt, &pd.UpdatedAt,
+			&pd.UserEmail, &pd.UserDisplayName,
+		); err != nil {
+			return nil, 0, fmt.Errorf("list pending documents scan: %w", err)
+		}
+		if fileName != nil {
+			pd.FileName = *fileName
+		}
+		if rejectionReason != nil {
+			pd.RejectionReason = *rejectionReason
+		}
+		if storageURL != nil {
+			pd.StorageURL = *storageURL
+		}
+		pd.ExpiresAt = expiresAt
+		docs = append(docs, pd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list pending documents rows: %w", err)
+	}
+	return docs, total, nil
 }
 
 // --- MFA ---
@@ -1851,4 +1922,3 @@ func decryptPropertyFields(addressOut, notesOut *string, addrCol, notesCol strin
 	}
 	return nil
 }
-
