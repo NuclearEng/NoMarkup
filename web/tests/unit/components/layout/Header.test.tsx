@@ -1,7 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
+import { type ReactElement, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { withQueryClient } from '../../app/dashboard/_helpers';
 
 vi.mock('next/link', () => ({
   default: ({ children, href, ...rest }: { children: React.ReactNode; href: string }) =>
@@ -23,9 +25,42 @@ vi.mock('@/stores/auth-store', () => ({
   useAuthStore: vi.fn(),
 }));
 
+// The header now renders a MarketSelector (city chip) that calls useMarkets,
+// which uses TanStack Query. Stub it with a deterministic catalog so the city
+// chip renders without a network round-trip; the QueryClientProvider wrapper
+// (withQueryClient) supplies the query context the hook needs regardless.
+vi.mock('@/hooks/useMarkets', () => ({
+  useMarkets: () => ({
+    data: [
+      {
+        id: 'mkt-1',
+        slug: 'sfbay',
+        name: 'SF bay area',
+        region: 'California',
+        region_code: 'CA',
+        country: 'US',
+        is_active: true,
+        lat: 37.77,
+        lng: -122.42,
+      },
+    ],
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
+import { render as rtlRender } from '@testing-library/react';
+
 import { Header } from '@/components/layout/Header';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE, USER_STATUS, type UserRole } from '@/types';
+
+// Header (via its MarketSelector city chip) consumes TanStack Query, so every
+// render must be wrapped in a QueryClientProvider. Use the shared test helper so
+// behaviour matches the rest of the suite.
+function render(node: ReactElement) {
+  return rtlRender(withQueryClient(node));
+}
 
 const baseUser = {
   id: 'user-1',

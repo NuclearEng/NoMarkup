@@ -27,6 +27,31 @@ vi.mock('@/hooks/useListings', () => ({
   }),
 }));
 
+// The category step now uses the DB-driven GoodsCategorySelector
+// (useGoodsCategoryTree → useCategoryTree → useQuery). Stub it with a small
+// deterministic tree so the picker renders its category buttons instead of the
+// "Loading categories…" placeholder.
+vi.mock('@/hooks/useCategories', () => ({
+  useCategoryTree: () => ({ data: [], isLoading: false, isError: false }),
+  useGoodsCategoryTree: () => ({
+    data: [
+      {
+        id: 'goods-furniture',
+        parentId: 'goods',
+        name: 'Furniture',
+        slug: 'furniture',
+        level: 2,
+        description: null,
+        icon: null,
+        sortOrder: 0,
+        children: [],
+      },
+    ],
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -109,8 +134,14 @@ describe('ListingPostingForm', () => {
     expect(screen.getByText(/Step 1 of 6/)).toBeDefined();
   });
 
-  it('exposes the category selector with combobox role', () => {
+  it('exposes the DB-driven goods category selector on step 1', () => {
+    // The category step was replaced (commit 9f0bdce) with the search-first,
+    // DB-driven GoodsCategorySelector. It is intentionally NOT a Radix <Select>
+    // anymore, so it no longer exposes role="combobox" — that was an
+    // implementation detail of the old picker. Assert the new picker's accessible
+    // surface instead: the labelled category search box plus a rendered category.
     render(withClient(createElement(ListingPostingForm)));
-    expect(screen.getByRole('combobox')).toBeDefined();
+    expect(screen.getByLabelText(/Search goods categories/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Furniture' })).toBeDefined();
   });
 });

@@ -1,8 +1,29 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render as rtlRender, screen } from '@testing-library/react';
+import { type ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+
+import { withQueryClient } from '../../app/dashboard/_helpers';
+
+// ListingFilters now renders a DB-driven GoodsCategorySelector (useGoodsCategoryTree,
+// which wraps useCategoryTree → useQuery) and a MarketSelector (useMarkets → useQuery).
+// Stub both hooks so the filter UI is deterministic and no network fires; the
+// QueryClientProvider wrapper supplies the query context they require.
+vi.mock('@/hooks/useCategories', () => ({
+  useCategoryTree: () => ({ data: [], isLoading: false, isError: false }),
+  useGoodsCategoryTree: () => ({ data: [], isLoading: false, isError: false }),
+}));
+
+vi.mock('@/hooks/useMarkets', () => ({
+  useMarkets: () => ({ data: [], isLoading: false, isError: false }),
+}));
 
 import { ListingFilters } from '@/components/marketplace/ListingFilters';
 import type { SearchListingsParams } from '@/types';
+
+// Every render needs a QueryClientProvider for the market/category hooks above.
+function render(node: ReactElement) {
+  return rtlRender(withQueryClient(node));
+}
 
 describe('ListingFilters', () => {
   it('renders the search, zip, radius, price inputs', () => {
