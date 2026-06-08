@@ -129,7 +129,7 @@ func main() {
 
 	// Create WebSocket hub and handler.
 	hub := ws.NewHub()
-	wsHandler := ws.NewHandler(hub, pubsub)
+	wsHandler := ws.NewHandler(hub, pubsub, svc)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
@@ -157,7 +157,7 @@ func main() {
 	}()
 
 	// Auction WebSocket handler
-	auctionHandler := ws.NewAuctionHandler(rdb)
+	auctionHandler := ws.NewAuctionHandler(rdb, svc)
 
 	// Start HTTP server for WebSocket connections.
 	mux := http.NewServeMux()

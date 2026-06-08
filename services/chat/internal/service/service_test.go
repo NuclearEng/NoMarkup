@@ -44,6 +44,29 @@ func (m *mockRepo) GetChannel(_ context.Context, channelID string, _ string) (*d
 	return ch, nil
 }
 
+func (m *mockRepo) IsChannelMember(_ context.Context, channelID, userID string) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	ch, ok := m.channels[channelID]
+	if !ok {
+		return false, nil
+	}
+	return ch.CustomerID == userID || ch.ProviderID == userID, nil
+}
+
+func (m *mockRepo) IsJobParticipant(_ context.Context, jobID, userID string) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	for _, ch := range m.channels {
+		if ch.JobID == jobID && (ch.CustomerID == userID || ch.ProviderID == userID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (m *mockRepo) ListChannels(_ context.Context, _ string, _ int, _ int) ([]*domain.Channel, int, error) {
 	if m.err != nil {
 		return nil, 0, m.err
@@ -220,6 +243,68 @@ func TestGetChannel(t *testing.T) {
 				require.NoError(t, err)
 				assert.NotNil(t, ch)
 			}
+		})
+	}
+}
+
+func TestIsChannelMember(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepo()
+	repo.channels["ch-1"] = &domain.Channel{
+		ID: "ch-1", JobID: "job-1", CustomerID: "user-1", ProviderID: "user-2", Status: "active",
+	}
+	svc := New(repo, nil)
+
+	tests := []struct {
+		name      string
+		channelID string
+		userID    string
+		want      bool
+	}{
+		{"customer is member", "ch-1", "user-1", true},
+		{"provider is member", "ch-1", "user-2", true},
+		{"outsider is not a member", "ch-1", "user-3", false},
+		{"nonexistent channel", "ch-nope", "user-1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := svc.IsChannelMember(context.Background(), tt.channelID, tt.userID)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsJobParticipant(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepo()
+	repo.channels["ch-1"] = &domain.Channel{
+		ID: "ch-1", JobID: "job-1", CustomerID: "owner-1", ProviderID: "bidder-1", Status: "active",
+	}
+	svc := New(repo, nil)
+
+	tests := []struct {
+		name   string
+		jobID  string
+		userID string
+		want   bool
+	}{
+		{"job owner is participant", "job-1", "owner-1", true},
+		{"bidder is participant", "job-1", "bidder-1", true},
+		{"outsider is not a participant", "job-1", "stranger", false},
+		{"unrelated job", "job-2", "owner-1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := svc.IsJobParticipant(context.Background(), tt.jobID, tt.userID)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

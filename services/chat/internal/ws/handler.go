@@ -51,12 +51,19 @@ type channelSub struct {
 	cancel   context.CancelFunc
 }
 
+// ChannelAuthorizer verifies that a user is permitted to subscribe to a
+// channel's live feed. Implemented by the chat service.
+type ChannelAuthorizer interface {
+	IsChannelMember(ctx context.Context, channelID, userID string) (bool, error)
+}
+
 // Connection represents a single WebSocket connection for a user.
 type Connection struct {
 	conn       *websocket.Conn
 	userID     string
 	hub        *Hub
 	pubsub     *service.PubSub
+	authorizer ChannelAuthorizer
 	subs       map[string]*channelSub // channelID -> subscription
 	subsMu     sync.Mutex
 	sendCh     chan []byte
@@ -136,15 +143,18 @@ func (h *Hub) CloseAll() {
 
 // Handler manages WebSocket connections for real-time chat messaging.
 type Handler struct {
-	hub    *Hub
-	pubsub *service.PubSub
+	hub        *Hub
+	pubsub     *service.PubSub
+	authorizer ChannelAuthorizer
 }
 
-// NewHandler creates a new WebSocket handler with a connection hub and pub/sub service.
-func NewHandler(hub *Hub, pubsub *service.PubSub) *Handler {
+// NewHandler creates a new WebSocket handler with a connection hub, pub/sub
+// service, and a channel authorizer used to enforce membership on subscribe.
+func NewHandler(hub *Hub, pubsub *service.PubSub, authorizer ChannelAuthorizer) *Handler {
 	return &Handler{
-		hub:    hub,
-		pubsub: pubsub,
+		hub:        hub,
+		pubsub:     pubsub,
+		authorizer: authorizer,
 	}
 }
 
@@ -171,13 +181,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wsConn.SetReadLimit(maxMessageSize)
 
 	conn := &Connection{
-		conn:    wsConn,
-		userID:  userID,
-		hub:     h.hub,
-		pubsub:  h.pubsub,
-		subs:    make(map[string]*channelSub),
-		sendCh:  make(chan []byte, 64),
-		closeCh: make(chan struct{}),
+		conn:       wsConn,
+		userID:     userID,
+		hub:        h.hub,
+		pubsub:     h.pubsub,
+		authorizer: h.authorizer,
+		subs:       make(map[string]*channelSub),
+		sendCh:     make(chan []byte, 64),
+		closeCh:    make(chan struct{}),
 	}
 
 	h.hub.Register(conn)
@@ -296,8 +307,40 @@ func (c *Connection) handleSubscribe(ctx context.Context, channelID string) {
 	c.subsMu.Lock()
 	defer c.subsMu.Unlock()
 
-	// Already subscribed.
+	// Already subscribed. An existing subscription means membership was already
+	// verified for this (connection, channel), so we don't re-query.
 	if _, exists := c.subs[channelID]; exists {
+		return
+	}
+
+	// Authorize: the connecting user must be a participant of the channel.
+	// This mirrors the HTTP/gRPC paths (GetChannel/ListMessages/SendMessage)
+	// which all reject non-members; without this check the socket would stream
+	// messages from conversations the user is not part of (IDOR). Fail closed.
+	if c.authorizer == nil {
+		c.sendError("subscription unavailable")
+		slog.Error("ws subscribe denied: no authorizer configured",
+			"user_id", c.userID,
+			"channel_id", channelID,
+		)
+		return
+	}
+	allowed, err := c.authorizer.IsChannelMember(ctx, channelID, c.userID)
+	if err != nil {
+		c.sendError("subscription unavailable")
+		slog.Error("ws subscribe membership check failed",
+			"user_id", c.userID,
+			"channel_id", channelID,
+			"error", err,
+		)
+		return
+	}
+	if !allowed {
+		c.sendError("not a member of this channel")
+		slog.Warn("ws subscribe denied: not a channel member",
+			"user_id", c.userID,
+			"channel_id", channelID,
+		)
 		return
 	}
 

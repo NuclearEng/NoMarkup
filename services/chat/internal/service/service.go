@@ -91,6 +91,20 @@ func (s *Service) GetChannel(ctx context.Context, channelID string, userID strin
 	return ch, nil
 }
 
+// IsChannelMember reports whether the user is a participant (customer or
+// provider) of the channel. Used by the WebSocket subscribe path to authorize
+// a live subscription before streaming any messages.
+func (s *Service) IsChannelMember(ctx context.Context, channelID, userID string) (bool, error) {
+	return s.repo.IsChannelMember(ctx, channelID, userID)
+}
+
+// IsJobParticipant reports whether the user is a party to the job (owner or
+// bidder). Used by the live-auction WebSocket subscribe path to authorize
+// access to the privileged real-time bid feed.
+func (s *Service) IsJobParticipant(ctx context.Context, jobID, userID string) (bool, error) {
+	return s.repo.IsJobParticipant(ctx, jobID, userID)
+}
+
 // ListChannels returns paginated channels for a user.
 func (s *Service) ListChannels(ctx context.Context, userID string, page, pageSize int) ([]*domain.Channel, int, error) {
 	return s.repo.ListChannels(ctx, userID, page, pageSize)

@@ -90,6 +90,8 @@ type BidChecker interface {
 type ChannelRepository interface {
 	CreateChannel(ctx context.Context, channel *Channel) (*Channel, error)
 	GetChannel(ctx context.Context, channelID string, userID string) (*Channel, error)
+	IsChannelMember(ctx context.Context, channelID string, userID string) (bool, error)
+	IsJobParticipant(ctx context.Context, jobID string, userID string) (bool, error)
 	ListChannels(ctx context.Context, userID string, page, pageSize int) ([]*Channel, int, error)
 	SendMessage(ctx context.Context, msg *Message) (*Message, error)
 	ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int) ([]*Message, error)

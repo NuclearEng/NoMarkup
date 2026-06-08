@@ -103,6 +103,46 @@ func (r *PostgresRepository) GetChannel(ctx context.Context, channelID string, u
 	return &ch, nil
 }
 
+// IsChannelMember reports whether userID is the customer or provider on the
+// given channel. Used by the WebSocket subscribe path to authorize a live
+// subscription without loading the full channel. Returns false (not an error)
+// when the channel does not exist.
+func (r *PostgresRepository) IsChannelMember(ctx context.Context, channelID, userID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM chat_channels
+			WHERE id = $1 AND (customer_id = $2 OR provider_id = $2)
+		)`,
+		channelID, userID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("is channel member: %w", err)
+	}
+	return exists, nil
+}
+
+// IsJobParticipant reports whether userID is a party to the given job — i.e.
+// the job owner (customer) or a provider who has placed a bid on it. Used by
+// the live-auction WebSocket subscribe path to authorize access to the
+// privileged real-time bid feed. Returns false (not an error) when the user
+// is unrelated to the job.
+func (r *PostgresRepository) IsJobParticipant(ctx context.Context, jobID, userID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM jobs WHERE id = $1 AND customer_id = $2
+			UNION ALL
+			SELECT 1 FROM bids WHERE job_id = $1 AND provider_id = $2
+		)`,
+		jobID, userID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("is job participant: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *PostgresRepository) ListChannels(ctx context.Context, userID string, page, pageSize int) ([]*domain.Channel, int, error) {
 	if page < 1 {
 		page = 1
