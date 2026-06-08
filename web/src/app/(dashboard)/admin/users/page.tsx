@@ -92,7 +92,14 @@ export default function AdminUsersPage() {
     {
       key: 'email',
       header: 'Email',
-      render: (user) => <span className="text-zinc-300">{user.email}</span>,
+      render: (user) => (
+        <span
+          className="block max-w-[16rem] truncate text-zinc-300"
+          title={user.email}
+        >
+          {user.email}
+        </span>
+      ),
     },
     {
       key: 'roles',
@@ -126,7 +133,7 @@ export default function AdminUsersPage() {
     {
       key: 'actions',
       header: 'Actions',
-      className: 'text-right',
+      className: 'text-right whitespace-nowrap',
       render: (user) => (
         <div className="flex justify-end gap-2">
           <Button
