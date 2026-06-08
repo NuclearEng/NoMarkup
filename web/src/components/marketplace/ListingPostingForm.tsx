@@ -7,8 +7,9 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
-import type { ListingImageAnalysisResult } from '@/types';
+import type { ListingImageAnalysisResult, ServiceCategory } from '@/types';
 
+import { GoodsCategorySelector } from '@/components/marketplace/GoodsCategorySelector';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -83,22 +84,6 @@ const CONDITION_OPTIONS: { value: '' | 'new' | 'like_new' | 'very_good' | 'good'
 // sentinel and map it back to '' on change / display.
 const UNSPECIFIED_CONDITION = 'unspecified';
 
-const GOODS_CATEGORIES: { id: string; name: string }[] = [
-  { id: 'goods-furniture', name: 'Furniture' },
-  { id: 'goods-electronics', name: 'Electronics' },
-  { id: 'goods-tools', name: 'Tools' },
-  { id: 'goods-sporting', name: 'Sporting Goods' },
-  { id: 'goods-vehicles', name: 'Vehicles' },
-  { id: 'goods-home-garden', name: 'Home & Garden' },
-  { id: 'goods-baby-kids', name: 'Baby & Kids' },
-  { id: 'goods-books-media', name: 'Books & Media' },
-  { id: 'goods-clothing', name: 'Clothing' },
-  { id: 'goods-collectibles', name: 'Collectibles' },
-  { id: 'goods-other', name: 'Other' },
-];
-
-const KNOWN_GOODS_CATEGORY_IDS = new Set(GOODS_CATEGORIES.map((c) => c.id));
-
 const DURATIONS: { value: ListingDurationHours; label: string; sub: string }[] = [
   { value: 24, label: '24 hours', sub: 'Quick sell' },
   { value: 48, label: '48 hours', sub: 'Most common' },
@@ -171,6 +156,10 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
     'idle' | 'analyzing' | 'applied' | 'unavailable' | 'error'
   >('idle');
   const [aiSummary, setAiSummary] = useState<ListingImageAnalysisResult | null>(null);
+  // Display name of the chosen category, captured from the picker's onChange so
+  // the Review step can show it without a hardcoded id→name map (categories are
+  // DB-driven now). May be empty if the value came from AI (id only).
+  const [categoryName, setCategoryName] = useState('');
   const aiTriggeredRef = useRef(false);
 
   function nextSlotId(): string {
@@ -336,7 +325,11 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
         shouldDirty: true,
       });
     }
-    if (!current.categoryId && KNOWN_GOODS_CATEGORY_IDS.has(result.categorySlug)) {
+    // Categories are DB-driven now, so we no longer validate the suggestion
+    // against a hardcoded allowlist. Accept any non-empty suggested id/slug as a
+    // best-effort prefill — the picker shows it as the current value so the
+    // seller can confirm or override, and the gateway validates it server-side.
+    if (!current.categoryId && result.categorySlug.trim()) {
       form.setValue('categoryId', result.categorySlug, {
         shouldValidate: true,
         shouldDirty: true,
@@ -501,26 +494,20 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                 name="categoryId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category</FormLabel>
+                    <FormLabel htmlFor="listing-category">Category</FormLabel>
                     <FormControl>
-                      <Select
+                      <GoodsCategorySelector
+                        id="listing-category"
                         value={field.value}
-                        onValueChange={(v) => {
-                          field.onChange(v);
+                        onChange={(id: string, category: ServiceCategory) => {
+                          field.onChange(id);
+                          setCategoryName(category.name);
                         }}
-                      >
-                        <SelectTrigger className="min-h-[44px]">
-                          <SelectValue placeholder="Pick a category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {GOODS_CATEGORIES.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </FormControl>
+                    <FormDescription>
+                      Search or browse all categories. Pick the closest match.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -844,7 +831,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
             {step === 5 ? (
               <div className="space-y-4">
                 <ReviewRow label="Category">
-                  {GOODS_CATEGORIES.find((c) => c.id === values.categoryId)?.name ?? '—'}
+                  {categoryName || values.categoryId || '—'}
                 </ReviewRow>
                 <ReviewRow label="Title">{values.title || '—'}</ReviewRow>
                 <ReviewRow label="Description">

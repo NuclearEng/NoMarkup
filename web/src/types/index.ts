@@ -235,6 +235,22 @@ export interface ServiceCategory {
   children?: ServiceCategory[];
 }
 
+// Market = one city/region NoMarkup can operate in (craigslist-style coverage).
+// Served by GET /api/v1/markets (gateway markets handler, table from migration
+// 051). Field names are snake_case to match the raw JSON — the API client does
+// NOT case-transform responses.
+export interface Market {
+  id: string;
+  slug: string; // craigslist subdomain, e.g. 'sfbay'
+  name: string; // display name, e.g. 'SF bay area'
+  region: string | null; // US state name / 'Territories'; null for MX
+  region_code: string | null; // 2-letter US state code; null otherwise
+  country: 'US' | 'MX';
+  is_active: boolean; // launched here yet? (catalog markets default false)
+  lat: number | null;
+  lng: number | null;
+}
+
 export interface UpdateUserInput {
   display_name?: string;
   phone?: string;

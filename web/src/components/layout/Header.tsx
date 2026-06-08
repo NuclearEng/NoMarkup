@@ -20,6 +20,8 @@ import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
+import { MarketChip } from '@/components/location/MarketChip';
+
 import { Logo } from './Logo';
 import { NotificationBell } from './NotificationBell';
 
@@ -50,6 +52,8 @@ export function Header() {
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
+          {/* Current-city switcher — reflects/updates the shared market context. */}
+          <MarketChip className="max-w-[11rem]" />
           {!isHydrating && isAuthenticated ? (
             <>
               <Link
@@ -154,6 +158,8 @@ export function Header() {
       {mobileMenuOpen && (
         <nav id="mobile-menu" className="glass-elevated animate-fade-in max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-none border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
           <div className="flex flex-col gap-3">
+            {/* Current-city switcher — full width so it's easy to reach on mobile. */}
+            <MarketChip className="w-full" />
             {isHydrating ? null : isAuthenticated ? (
               <>
                 <div className="flex items-center justify-between">
