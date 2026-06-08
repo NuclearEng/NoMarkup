@@ -204,7 +204,7 @@ function CurrentFeesSummary({
             ))}
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <caption className="sr-only">
               Currently active platform fees
             </caption>
@@ -269,7 +269,7 @@ function CurrentFeesSummary({
                     <div className="text-xs text-zinc-400">{row.note}</div>
                   </td>
                   <td className="py-3 text-right align-top">
-                    <span className="font-semibold tabular-nums text-zinc-100">
+                    <span className="font-semibold tabular-nums text-zinc-100 break-words">
                       {row.value}
                     </span>
                   </td>
