@@ -74,6 +74,18 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 		Status:              "active",
 	}
 
+	// Validate the provider can actually receive the immediate payout BEFORE
+	// persisting anything. A provider without Stripe onboarding (ErrStripeAccountNotFound)
+	// would otherwise fail AFTER the plan + installments are written, leaving an
+	// orphaned 'active' plan that hides the BNPL selector and shows no schedule —
+	// the customer gets stuck. Fail fast here so no rows are written on that path.
+	providerAccountID, err := s.repo.GetStripeAccountID(ctx, input.ProviderID)
+	if err != nil {
+		slog.Error("failed to get provider stripe account for BNPL transfer",
+			"provider_id", input.ProviderID, "error", err)
+		return nil, "", fmt.Errorf("create installment plan provider account: %w", err)
+	}
+
 	// Create the installment plan record.
 	if err := s.repo.CreateInstallmentPlan(ctx, plan); err != nil {
 		return nil, "", fmt.Errorf("create installment plan db: %w", err)
@@ -107,17 +119,8 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 		return nil, "", fmt.Errorf("create scheduled installments: %w", err)
 	}
 
-	// Pay provider in full immediately via platform transfer.
-	providerAccountID, err := s.repo.GetStripeAccountID(ctx, input.ProviderID)
-	if err != nil {
-		slog.Error("failed to get provider stripe account for BNPL transfer",
-			"provider_id", input.ProviderID,
-			"plan_id", planID,
-			"error", err,
-		)
-		return nil, "", fmt.Errorf("create installment plan provider account: %w", err)
-	}
-
+	// Pay provider in full immediately via platform transfer (account validated
+	// up front, before any rows were written).
 	transferID, err := s.stripe.CreatePlatformTransfer(ctx, input.TotalAmountCents, "usd", providerAccountID)
 	if err != nil {
 		slog.Error("failed to create platform transfer for BNPL",

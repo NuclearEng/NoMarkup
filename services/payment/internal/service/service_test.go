@@ -97,6 +97,12 @@ func (m *mockPaymentRepo) UpdateRefund(ctx context.Context, id string, refundAmo
 	return m.updateRefundFn(ctx, id, refundAmountCents, refundReason, refundedAt, stripeRefundID, status)
 }
 func (m *mockPaymentRepo) GetStripeAccountID(ctx context.Context, userID string) (string, error) {
+	if m.getStripeAccountIDFn == nil {
+		// Default to a connected account so tests that don't exercise the
+		// payout-account path aren't forced to stub it (the BNPL create now
+		// validates the account up front, before persisting the plan).
+		return "acct_dev", nil
+	}
 	return m.getStripeAccountIDFn(ctx, userID)
 }
 func (m *mockPaymentRepo) SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error {
