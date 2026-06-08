@@ -965,16 +965,28 @@ measurably beats the Next.js equivalent.
   not in any First Load; `recharts` is confined to `/sell/analytics`. **Dependency-carving is
   exhausted — no headroom there.**
 - **Validated:** the RSC pilot (`/marketplace` + `/marketplace/[id]`) left First Load JS flat
-  (interactivity is irreducible) but delivered server-rendered first paint + SEO + cacheable
-  HTML. On interactive pages, **RSC wins LCP/SEO/cache, not bundle size.** Set expectations
-  accordingly — don't promise a JS cut from RSC on an interactive surface.
+  (interactivity is irreducible) but delivered server-rendered first paint + SEO. On
+  interactive pages, **RSC wins LCP/SEO, not bundle size.** Set expectations accordingly —
+  don't promise a JS cut from RSC on an interactive surface.
+- **Validated (don't re-chase): the app HTML cannot be edge-cached.** `layout.tsx` calls
+  `await headers()` to read the per-request CSP nonce (lets us drop `'unsafe-inline'`, §6),
+  which forces EVERY page into dynamic rendering. `export const revalidate` / ISR on app pages
+  is a **no-op** while the nonce stands — verified: routes build `ƒ` and serve
+  `Cache-Control: private, no-store`. Edge-caching the HTML would require dropping the nonce
+  (a CSP downgrade) — not worth it. **Cache the DATA layer instead.**
+- **Shipped: edge-cache the public DATA, not the HTML.** The Go gateway's public catalog reads
+  use `writeCachedJSON` (`gateway/internal/handler/response.go`): `Cache-Control: public,
+  s-maxage + stale-while-revalidate + stale-if-error` + strong `ETag`/`304`. `/api/v1/listings`
+  (30s) and `/listings/{id}` (15s) are CDN-cacheable; authed/user-specific reads stay uncached.
+  This is the security-preserving way to absorb catalog load (keeps the strong CSP).
 
 ### Default pattern for new pages: RSC-first + seeded client island (proven)
 This is the standard, shipped on the marketplace pages — copy it:
 1. `page.tsx` is a **Server Component**: `async`, server-fetches its data
    (`GET ${API_URL}/api/v1/...`, public reads need no auth), normalizes nullable fields,
-   `notFound()` on miss, sets `next: { revalidate: N }` for edge cache (short for live data),
-   and exports `metadata`/`generateMetadata` for SEO.
+   `notFound()` on miss, sets `next: { revalidate: N }` (Next data-fetch cache only — the HTML
+   itself stays dynamic due to the CSP nonce; see baseline), and exports
+   `metadata`/`generateMetadata` for SEO.
 2. The interactive UI lives in a `*Client.tsx` **island** (`'use client'`) seeded with the
    server data via TanStack Query `initialData` — so first paint is real content, no skeleton,
    and all interactivity (live bidding, WS, countdowns) is preserved unchanged.
