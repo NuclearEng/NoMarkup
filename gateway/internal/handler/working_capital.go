@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // WorkingCapitalHandler handles HTTP endpoints for working capital advances.
@@ -50,8 +50,8 @@ func (h *WorkingCapitalHandler) RequestAdvance(w http.ResponseWriter, r *http.Re
 	}
 
 	resp, err := h.paymentClient.RequestAdvance(r.Context(), &paymentv1.RequestAdvanceRequest{
-		ProviderId: claims.UserID,
-		ContractId: req.ContractID,
+		ProviderId:  claims.UserID,
+		ContractId:  req.ContractID,
 		AmountCents: req.AmountCents,
 	})
 	if err != nil {
@@ -65,8 +65,37 @@ func (h *WorkingCapitalHandler) RequestAdvance(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	advanceJSON := protoAdvanceToJSON(resp.GetAdvance())
+
+	// Surface WHY the fee is what it is on the creation response so the borrower
+	// sees the pricing rationale inline (APR, base rate, risk grade) instead of
+	// having to cross-reference the separate /credit-limit quote. We recompute
+	// the score via the same authoritative gRPC path the credit-limit uses; the
+	// payment service is the authority that actually charged the fee, and the
+	// per-advance fee_breakdown above is the source of truth for the amounts.
+	if cl, clErr := h.paymentClient.GetCreditLimit(r.Context(), &paymentv1.GetCreditLimitRequest{
+		ProviderId: claims.UserID,
+	}); clErr == nil {
+		var onTimeRate *float64
+		if v := cl.GetOnTimeRate(); v > 0 {
+			onTimeRate = &v
+		}
+		score := businessCreditScore(onTimeRate, int(cl.GetJobsCompleted()), cl.GetTotalEarningsCents())
+		aprBps := dynamicAPRBps(score)
+		advanceJSON["pricing"] = map[string]interface{}{
+			"business_credit_score": score,
+			"credit_grade":          creditGrade(score),
+			"base_rate_bps":         baseAdvanceRateBps(),
+			"apr_bps":               aprBps,
+			"term_days":             defaultAdvanceTermDays,
+		}
+	} else {
+		slog.Warn("could not attach advance pricing rationale; fee breakdown still present",
+			"error", clErr, "provider_id", claims.UserID)
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"advance": protoAdvanceToJSON(resp.GetAdvance()),
+		"advance": advanceJSON,
 	})
 }
 
@@ -321,16 +350,16 @@ func (h *WorkingCapitalHandler) GetCreditLimit(w http.ResponseWriter, r *http.Re
 	}
 
 	result := map[string]interface{}{
-		"provider_id":            resp.GetProviderId(),
-		"max_advance_cents":      resp.GetMaxAdvanceCents(),
+		"provider_id":             resp.GetProviderId(),
+		"max_advance_cents":       resp.GetMaxAdvanceCents(),
 		"total_outstanding_cents": resp.GetTotalOutstandingCents(),
 		"available_advance_cents": resp.GetAvailableAdvanceCents(),
-		"risk_score":             resp.GetRiskScore(),
-		"jobs_completed":         resp.GetJobsCompleted(),
-		"total_earnings_cents":   resp.GetTotalEarningsCents(),
-		"avg_job_value_cents":    resp.GetAvgJobValueCents(),
-		"on_time_rate":           resp.GetOnTimeRate(),
-		"last_computed_at":       nil,
+		"risk_score":              resp.GetRiskScore(),
+		"jobs_completed":          resp.GetJobsCompleted(),
+		"total_earnings_cents":    resp.GetTotalEarningsCents(),
+		"avg_job_value_cents":     resp.GetAvgJobValueCents(),
+		"on_time_rate":            resp.GetOnTimeRate(),
+		"last_computed_at":        nil,
 	}
 	if resp.GetLastComputedAt() != nil {
 		result["last_computed_at"] = formatTimestamp(resp.GetLastComputedAt())
@@ -363,22 +392,44 @@ func protoAdvanceToJSON(a *paymentv1.Advance) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 
+	// Transparent, itemized fee breakdown (founder rule: "be very transparent
+	// on all fees, hide nothing"). All values below are derived directly from
+	// the stored advance — no recomputation, so they can never drift from what
+	// the provider was actually charged:
+	//   fee_cents          = service_fee_cents + interest_cents
+	//   total_repayable    = principal + fee_cents
+	principal := a.GetAdvanceAmountCents()
+	serviceFee := a.GetServiceFeeCents()
+	interest := a.GetFeeCents() - serviceFee
+	if interest < 0 {
+		interest = 0
+	}
+
 	result := map[string]interface{}{
 		"id":                   a.GetId(),
 		"provider_id":          a.GetProviderId(),
 		"contract_id":          a.GetContractId(),
-		"advance_amount_cents": a.GetAdvanceAmountCents(),
+		"advance_amount_cents": principal,
 		"fee_cents":            a.GetFeeCents(),
-		"repaid_cents":         a.GetRepaidCents(),
-		"status":               a.GetStatus(),
-		"reviewed_by":          nil,
-		"reviewed_at":          nil,
-		"rejection_reason":     nil,
-		"disbursed_at":         nil,
-		"repaid_at":            nil,
-		"stripe_transfer_id":   nil,
-		"created_at":           formatTimestamp(a.GetCreatedAt()),
-		"updated_at":           formatTimestamp(a.GetUpdatedAt()),
+		// Itemized fee breakdown — what makes up fee_cents.
+		"fee_breakdown": map[string]interface{}{
+			"service_fee_cents": serviceFee, // flat 3% origination on principal
+			"service_fee_rate":  advanceServiceFeeRate,
+			"interest_cents":    interest, // prorated APR interest over the term
+			"term_days":         defaultAdvanceTermDays,
+			"total_fee_cents":   a.GetFeeCents(),
+		},
+		"total_repayable_cents": principal + a.GetFeeCents(),
+		"repaid_cents":          a.GetRepaidCents(),
+		"status":                a.GetStatus(),
+		"reviewed_by":           nil,
+		"reviewed_at":           nil,
+		"rejection_reason":      nil,
+		"disbursed_at":          nil,
+		"repaid_at":             nil,
+		"stripe_transfer_id":    nil,
+		"created_at":            formatTimestamp(a.GetCreatedAt()),
+		"updated_at":            formatTimestamp(a.GetUpdatedAt()),
 	}
 
 	if a.GetReviewedBy() != "" {

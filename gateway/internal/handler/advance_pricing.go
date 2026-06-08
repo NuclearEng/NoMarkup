@@ -25,6 +25,17 @@ const (
 	advanceRateFloorBps   = 300
 	advanceRateCeilingBps = 1500
 	minLendingScore       = 35
+
+	// defaultAdvanceTermDays mirrors the payment service's assumed
+	// time-to-repayment used to prorate APR interest. Kept in sync with
+	// services/payment/internal/service/advance.go so the term shown to the
+	// provider matches the term used to charge them.
+	defaultAdvanceTermDays = 30
+
+	// advanceServiceFeeRate mirrors domain.AdvanceServiceFeeRate (3% flat
+	// origination/service fee on principal). Kept here so the gateway can show
+	// an itemized quote without an extra round-trip.
+	advanceServiceFeeRate = 0.03
 )
 
 // businessCreditScore: 0-100 from repayment history, completed-job volume, and
@@ -99,4 +110,19 @@ func dynamicAPRBps(score int) int {
 		apr = advanceRateCeilingBps
 	}
 	return apr
+}
+
+// advanceServiceFeeCents mirrors domain.AdvanceServiceFeeCents — the flat 3%
+// origination/service fee on principal, rounded to the nearest cent.
+func advanceServiceFeeCents(amountCents int64) int64 {
+	return int64(math.Round(float64(amountCents) * advanceServiceFeeRate))
+}
+
+// advanceInterestCents mirrors computeAdvanceFeeCentsAPR in the payment service:
+// simple interest = principal × APR × (termDays / 365), to the nearest cent.
+func advanceInterestCents(amountCents int64, aprBps, termDays int) int64 {
+	if termDays <= 0 {
+		termDays = defaultAdvanceTermDays
+	}
+	return int64(math.Round(float64(amountCents) * float64(aprBps) / 10000.0 * float64(termDays) / 365.0))
 }
