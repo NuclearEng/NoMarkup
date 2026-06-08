@@ -30,7 +30,12 @@ func CORS(allowedOrigins []string, production bool) func(http.Handler) http.Hand
 	return cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
+		// Idempotency-Key is required on payment/advance/insurance mutations
+		// (RequireIdempotencyKey). The browser sends it, which triggers a CORS
+		// preflight requesting the header — it MUST be allow-listed or the
+		// preflight fails (no Access-Control-Allow-Origin) and every idempotent
+		// mutation is blocked from the browser (curl/tests bypass preflight).
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "Idempotency-Key"},
 		ExposedHeaders:   []string{"X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
