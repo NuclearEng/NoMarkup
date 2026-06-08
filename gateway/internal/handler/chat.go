@@ -26,20 +26,35 @@ import (
 // nil pool the block check is skipped (matches the rest of the gateway's
 // nil-safe DB pattern; the gRPC service still runs).
 type ChatHandler struct {
-	chatClient chatv1.ChatServiceClient
-	authMW     *middleware.AuthMiddleware
-	chatWSAddr string
-	db         *pgxpool.Pool
+	chatClient     chatv1.ChatServiceClient
+	authMW         *middleware.AuthMiddleware
+	chatWSAddr     string
+	internalSecret string // shared secret presented to the chat WS backend
+	db             *pgxpool.Pool
 }
 
-// NewChatHandler creates a new ChatHandler.
-func NewChatHandler(chatClient chatv1.ChatServiceClient, authMW *middleware.AuthMiddleware, chatWSAddr string, db *pgxpool.Pool) *ChatHandler {
+// NewChatHandler creates a new ChatHandler. internalSecret is the shared secret
+// presented to the chat WS backend on dial (defense-in-depth so the backend can
+// reject connections that did not transit the gateway).
+func NewChatHandler(chatClient chatv1.ChatServiceClient, authMW *middleware.AuthMiddleware, chatWSAddr, internalSecret string, db *pgxpool.Pool) *ChatHandler {
 	return &ChatHandler{
-		chatClient: chatClient,
-		authMW:     authMW,
-		chatWSAddr: chatWSAddr,
-		db:         db,
+		chatClient:     chatClient,
+		authMW:         authMW,
+		chatWSAddr:     chatWSAddr,
+		internalSecret: internalSecret,
+		db:             db,
 	}
+}
+
+// internalWSDialHeader builds the dial header carrying the gateway->chat shared
+// secret. Returns nil when no secret is configured.
+func internalWSDialHeader(secret string) http.Header {
+	if secret == "" {
+		return nil
+	}
+	h := http.Header{}
+	h.Set("X-Internal-WS-Secret", secret)
+	return h
 }
 
 // ListChannels handles GET /api/v1/channels.
@@ -354,7 +369,9 @@ func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	backendURL := fmt.Sprintf("ws://%s/ws?user_id=%s", h.chatWSAddr, claims.UserID)
 
 	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	backendConn, _, err := websocket.Dial(backendCtx, backendURL, nil)
+	backendConn, _, err := websocket.Dial(backendCtx, backendURL, &websocket.DialOptions{
+		HTTPHeader: internalWSDialHeader(h.internalSecret),
+	})
 	backendCancel()
 	if err != nil {
 		slog.Error("failed to connect to chat service websocket",

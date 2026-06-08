@@ -20,6 +20,7 @@ type Config struct {
 	PaymentServiceAddr string
 	ChatServiceAddr    string
 	ChatWSAddr         string
+	InternalWSSecret   string // shared secret presented to the chat WS backend
 	FraudEngineAddr    string
 	TrustEngineAddr    string
 	ImagingServiceAddr      string
@@ -54,6 +55,7 @@ func Load() (*Config, error) {
 		PaymentServiceAddr: getEnv("PAYMENT_SERVICE_ADDR", "localhost:50054"),
 		ChatServiceAddr:    getEnv("CHAT_SERVICE_ADDR", "localhost:50055"),
 		ChatWSAddr:         getEnv("CHAT_WS_ADDR", "localhost:50065"),
+		InternalWSSecret:   getEnvFirst("", "INTERNAL_WS_SECRET", "GATEWAY_CHAT_SECRET"),
 		FraudEngineAddr:    getEnv("FRAUD_ENGINE_ADDR", "localhost:50056"),
 		TrustEngineAddr:    getEnv("TRUST_ENGINE_ADDR", "localhost:50057"),
 		ImagingServiceAddr:      getEnv("IMAGING_SERVICE_ADDR", "localhost:50058"),
@@ -67,6 +69,17 @@ func Load() (*Config, error) {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+// getEnvFirst returns the first non-empty value among the given env keys, or the
+// fallback if none are set. Used for vars with backwards-compatible aliases.
+func getEnvFirst(fallback string, keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
 	}
 	return fallback
 }

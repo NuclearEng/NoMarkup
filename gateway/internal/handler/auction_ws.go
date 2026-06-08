@@ -18,13 +18,16 @@ import (
 type AuctionWSHandler struct {
 	chatServiceURL string
 	authMW         *middleware.AuthMiddleware
+	internalSecret string // shared secret presented to the chat WS backend
 }
 
-// NewAuctionWSHandler creates a new AuctionWSHandler.
-func NewAuctionWSHandler(authMW *middleware.AuthMiddleware, chatWSAddr string) *AuctionWSHandler {
+// NewAuctionWSHandler creates a new AuctionWSHandler. internalSecret is the
+// shared secret presented to the chat WS backend on dial.
+func NewAuctionWSHandler(authMW *middleware.AuthMiddleware, chatWSAddr, internalSecret string) *AuctionWSHandler {
 	return &AuctionWSHandler{
 		chatServiceURL: fmt.Sprintf("ws://%s", chatWSAddr),
 		authMW:         authMW,
+		internalSecret: internalSecret,
 	}
 }
 
@@ -88,7 +91,9 @@ func (h *AuctionWSHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	backendURL := fmt.Sprintf("%s/ws/auction?user_id=%s&job_id=%s", h.chatServiceURL, claims.UserID, jobID)
 
 	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	backendConn, _, err := websocket.Dial(backendCtx, backendURL, nil)
+	backendConn, _, err := websocket.Dial(backendCtx, backendURL, &websocket.DialOptions{
+		HTTPHeader: internalWSDialHeader(h.internalSecret),
+	})
 	backendCancel()
 	if err != nil {
 		slog.Error("auction ws backend dial failed",
