@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
@@ -15,11 +18,15 @@ import (
 // WorkingCapitalHandler handles HTTP endpoints for working capital advances.
 type WorkingCapitalHandler struct {
 	paymentClient paymentv1.PaymentServiceClient
+	// db is used for the provider-facing repayment path. The payment service
+	// exposes no RepayAdvance gRPC, so the gateway pays down the outstanding
+	// balance directly with a parameterized, ownership-scoped UPDATE.
+	db *pgxpool.Pool
 }
 
 // NewWorkingCapitalHandler creates a new WorkingCapitalHandler.
-func NewWorkingCapitalHandler(paymentClient paymentv1.PaymentServiceClient) *WorkingCapitalHandler {
-	return &WorkingCapitalHandler{paymentClient: paymentClient}
+func NewWorkingCapitalHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool.Pool) *WorkingCapitalHandler {
+	return &WorkingCapitalHandler{paymentClient: paymentClient, db: db}
 }
 
 type requestAdvanceRequest struct {
@@ -208,6 +215,140 @@ func (h *WorkingCapitalHandler) GetAdvance(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"advance": protoAdvanceToJSON(advance),
+	})
+}
+
+type repayAdvanceRequest struct {
+	AmountCents int64 `json:"amount_cents"`
+}
+
+// RepayAdvance handles POST /api/v1/providers/me/advances/{id}/repay.
+//
+// Providers pay down the outstanding balance on a working-capital advance.
+// The payment service exposes no RepayAdvance gRPC, so we apply the paydown
+// directly against the gateway dbPool with a parameterized, ownership-scoped
+// UPDATE (provider_id == claims.UserID), mirroring the status-transition logic
+// the payment repository uses. All amounts are integer cents.
+//
+// Idempotency: the route is mounted behind middleware.RequireIdempotencyKey,
+// so a retried request with the same Idempotency-Key is short-circuited before
+// it reaches this handler — the UPDATE never double-applies.
+func (h *WorkingCapitalHandler) RepayAdvance(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	advanceID := chi.URLParam(r, "id")
+	if advanceID == "" {
+		writeError(w, http.StatusBadRequest, "advance id required")
+		return
+	}
+	if !isValidUUID(advanceID) {
+		writeError(w, http.StatusBadRequest, "invalid advance id")
+		return
+	}
+
+	var req repayAdvanceRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.AmountCents <= 0 {
+		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
+		return
+	}
+
+	// Ownership + outstanding check (IDOR guard): fetch the advance scoped to the
+	// calling provider. A non-owner (or non-existent id) gets 404 so the id can't
+	// be probed. We read principal/fee/repaid to validate the amount server-side
+	// (never trust the client) against the true outstanding balance.
+	var principal, fee, repaid int64
+	var status string
+	err := h.db.QueryRow(r.Context(), `
+		SELECT advance_amount_cents, fee_cents, repaid_cents, status
+		FROM working_capital_advances
+		WHERE id = $1 AND provider_id = $2`,
+		advanceID, claims.UserID,
+	).Scan(&principal, &fee, &repaid, &status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("repay advance ownership check failed",
+				"advance_id", advanceID, "caller_provider_id", claims.UserID)
+			writeError(w, http.StatusNotFound, "advance not found")
+			return
+		}
+		slog.Error("repay advance fetch failed", "error", err, "advance_id", advanceID)
+		writeError(w, http.StatusInternalServerError, "could not load advance")
+		return
+	}
+
+	// An advance is only repayable once funds are out (disbursed/repaying).
+	if status != "disbursed" && status != "repaying" {
+		writeError(w, http.StatusUnprocessableEntity,
+			"This advance is not currently repayable. Only disbursed advances with an outstanding balance can be repaid.")
+		return
+	}
+
+	outstanding := principal + fee - repaid
+	if outstanding <= 0 {
+		writeError(w, http.StatusUnprocessableEntity, "This advance is already fully repaid.")
+		return
+	}
+	if req.AmountCents > outstanding {
+		writeError(w, http.StatusUnprocessableEntity,
+			"Repayment amount exceeds the outstanding balance on this advance.")
+		return
+	}
+
+	// Apply the paydown: increment repaid_cents and transition status, mirroring
+	// the payment repository (repaid → fully paid, otherwise mark 'repaying').
+	// Ownership is re-asserted in the WHERE so a concurrent change can't let a
+	// non-owner write. Parameterized; integer cents only.
+	var (
+		newPrincipal, newFee, newRepaid int64
+		newStatus                       string
+	)
+	err = h.db.QueryRow(r.Context(), `
+		UPDATE working_capital_advances SET
+			repaid_cents = repaid_cents + $3,
+			status = CASE
+				WHEN repaid_cents + $3 >= advance_amount_cents + fee_cents THEN 'repaid'
+				WHEN status = 'disbursed' THEN 'repaying'
+				ELSE status
+			END,
+			repaid_at = CASE
+				WHEN repaid_cents + $3 >= advance_amount_cents + fee_cents THEN now()
+				ELSE repaid_at
+			END,
+			updated_at = now()
+		WHERE id = $1 AND provider_id = $2
+		RETURNING advance_amount_cents, fee_cents, repaid_cents, status`,
+		advanceID, claims.UserID, req.AmountCents,
+	).Scan(&newPrincipal, &newFee, &newRepaid, &newStatus)
+	if err != nil {
+		slog.Error("repay advance update failed", "error", err,
+			"advance_id", advanceID, "provider_id", claims.UserID)
+		writeError(w, http.StatusInternalServerError, "could not record repayment")
+		return
+	}
+
+	newOutstanding := newPrincipal + newFee - newRepaid
+	if newOutstanding < 0 {
+		newOutstanding = 0
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"advance": map[string]interface{}{
+			"id":                    advanceID,
+			"provider_id":           claims.UserID,
+			"advance_amount_cents":  newPrincipal,
+			"fee_cents":             newFee,
+			"total_repayable_cents": newPrincipal + newFee,
+			"repaid_cents":          newRepaid,
+			"outstanding_cents":     newOutstanding,
+			"status":                newStatus,
+		},
 	})
 }
 

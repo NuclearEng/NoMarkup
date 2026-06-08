@@ -382,7 +382,13 @@ impl FraudService for FraudServiceImpl {
         let alerts: Vec<fraud_proto::FraudAlert> = rows
             .iter()
             .map(|row| {
-                let signal = signal_row_to_proto(row);
+                // Alerts are synthesized 1:1 from fraud_signal rows (there is no
+                // separate alert entity). Keep `FraudAlert.id == row.id` so the
+                // review-by-id path (`admin_review_fraud_alert` → `WHERE id = $4`)
+                // resolves unchanged, but give the nested signal its own stable,
+                // distinct sub-id so the UI no longer sees `signal.id == alert.id`.
+                let mut signal = signal_row_to_proto(row);
+                signal.id = format!("signal-{}", row.id);
                 let risk_level = RiskLevel::from_db_severity(&row.severity);
                 let alert_status = match row.status.as_str() {
                     "pending" => 1,    // OPEN
@@ -463,7 +469,11 @@ impl FraudService for FraudServiceImpl {
             .await
             .map_err(fraud_error_to_status)?;
 
-        let signal = signal_row_to_proto(&row);
+        // Same id model as the list path: alert.id stays the row UUID (so the
+        // caller can re-review by the same id), the nested signal gets a stable
+        // distinct sub-id so `signal.id != alert.id`.
+        let mut signal = signal_row_to_proto(&row);
+        signal.id = format!("signal-{}", row.id);
         let risk_level = RiskLevel::from_db_severity(&row.severity);
         let alert_status = match row.status.as_str() {
             "pending" => 1,

@@ -250,7 +250,7 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(paymentClient, subscriptionClient)
 	propertyHandler := handler.NewPropertyHandler(userClient)
 	verificationHandler := handler.NewVerificationHandler(userClient)
-	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient)
+	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient, dbPool)
 	expenseHandler := handler.NewExpenseHandler(paymentClient)
 	taxHandler := handler.NewTaxHandler(paymentClient)
 	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr, cfg.InternalWSSecret, dbPool)
@@ -275,6 +275,8 @@ func main() {
 	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
 	featureFlagHandler := handler.NewFeatureFlagHandler(dbPool, cacheClient)
+	insuranceCompetitionHandler := handler.NewInsuranceCompetitionHandler(dbPool)
+	providerLicenseHandler := handler.NewProviderLicenseHandler(dbPool)
 	pricingHandler := handler.NewPricingHandler(dbPool)
 	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
 	challengeHandler := handler.NewChallengeHandler(dbPool)
@@ -379,6 +381,8 @@ func main() {
 		calendarExportHandler,
 		marketsHandler,
 		adminMarketsHandler,
+		insuranceCompetitionHandler,
+		providerLicenseHandler,
 	)
 
 	srv := &http.Server{

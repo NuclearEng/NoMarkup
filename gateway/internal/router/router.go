@@ -98,6 +98,8 @@ func New(
 	calendarExportHandler *handler.CalendarExportHandler,
 	marketsHandler *handler.MarketsHandler,
 	adminMarketsHandler *handler.AdminMarketsHandler,
+	insuranceCompetitionHandler *handler.InsuranceCompetitionHandler,
+	providerLicenseHandler *handler.ProviderLicenseHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -250,6 +252,15 @@ func New(
 	// (/providers/me, /providers/search). GetProvider returns a PUBLIC projection
 	// — exact service_address + lat/lng are stripped for this endpoint (PII, §6).
 	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}", providerHandler.GetProvider)
+
+	// A provider's VERIFIED licenses only (verified-lawyer badge); PII-masked.
+	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}/licenses", providerLicenseHandler.ListProviderVerifiedLicenses)
+
+	// Legal vertical browse surface — public data, gated behind legal_services.
+	r.Route("/api/v1/legal", func(r chi.Router) {
+		r.Use(middleware.RequireFlag(dbPool, cacheClient, "legal_services"))
+		r.Get("/categories", providerLicenseHandler.ListLegalCategories)
+	})
 
 	// Public feature flags (no auth required). Returns a flat { key: enabled }
 	// map, CDN-cacheable. /api/v1/feature-flags is an alias for the same map.
@@ -417,6 +428,10 @@ func New(
 				r.Put("/me/availability", providerHandler.SetAvailability)
 				r.Get("/me/streaks", providerHandler.GetStreaks)
 
+				// Professional licenses (bar/etc.) — legal vertical verification.
+				r.Post("/me/licenses", providerLicenseHandler.SubmitLicense)
+				r.Get("/me/licenses", providerLicenseHandler.ListMyLicenses)
+
 				// Provider verification documents
 				r.Post("/me/documents", verificationHandler.UploadDocument)
 				r.Get("/me/documents", verificationHandler.ListDocuments)
@@ -439,6 +454,7 @@ func New(
 					r.Post("/", workingCapitalHandler.RequestAdvance)
 					r.Get("/", workingCapitalHandler.ListMyAdvances)
 					r.Get("/{id}", workingCapitalHandler.GetAdvance)
+					r.With(middleware.RequireIdempotencyKey(cacheClient)).Post("/{id}/repay", workingCapitalHandler.RepayAdvance)
 				})
 
 				// Credit limit
@@ -695,6 +711,16 @@ func New(
 			})
 		})
 
+		// Competitive insurance marketplace — insurers compete on quotes.
+		// Gated behind the insurance_competition flag (separate from per-job).
+		r.Route("/insurance/quote-requests", func(r chi.Router) {
+			r.Use(middleware.RequireFlag(dbPool, cacheClient, "insurance_competition"))
+			r.Post("/", insuranceCompetitionHandler.CreateQuoteRequest)
+			r.Get("/", insuranceCompetitionHandler.ListQuoteRequests)
+			r.Get("/{id}", insuranceCompetitionHandler.GetQuoteRequest)
+			r.Post("/{id}/select", insuranceCompetitionHandler.SelectQuote)
+		})
+
 		// Insurance routes — gated behind the per_job_insurance flag.
 		r.Route("/insurance", func(r chi.Router) {
 			r.Use(middleware.RequireFlag(dbPool, cacheClient, "per_job_insurance"))
@@ -780,6 +806,19 @@ func New(
 			r.Route("/verification", func(r chi.Router) {
 				r.Get("/queue", adminVerificationHandler.ListPendingDocuments)
 				r.Post("/{id}/review", adminVerificationHandler.ReviewDocument)
+			})
+
+			// Professional license review queue (legal vertical).
+			r.Route("/licenses", func(r chi.Router) {
+				r.Get("/", providerLicenseHandler.ListPendingLicenses)
+				r.Put("/{id}", providerLicenseHandler.ReviewLicense)
+			})
+
+			// Insurer onboarding + approval (competitive insurance marketplace).
+			r.Route("/insurers", func(r chi.Router) {
+				r.Get("/", insuranceCompetitionHandler.AdminListInsurers)
+				r.Post("/", insuranceCompetitionHandler.AdminCreateInsurer)
+				r.Put("/{id}", insuranceCompetitionHandler.AdminUpdateInsurer)
 			})
 
 			// Jobs
