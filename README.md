@@ -141,11 +141,14 @@ Backend services fail closed on missing or invalid configuration. Copy `.env.exa
 | `APPLE_CLIENT_ID` | if Apple login | Audience claim on Apple ID tokens verified via Apple JWKS. |
 
 Other security posture:
-- RS256 JWT with explicit signing-method pinning + `iss`/`aud` enforcement; argon2id password hashing (m=65536, t=3, p=4)
-- Every endpoint authenticated **and** authorized; all mutations scope writes by owner/party; PII projected out of public reads
-- WebSocket subscribes (chat & auction) enforce channel-membership / job-participant access — no IDOR
-- Parameterized SQL only; idempotency keys on `/payments` and `/subscriptions`; Stripe event dedup prevents replay
-- All containers run as non-root; Next.js edge middleware gates `(dashboard)` and protected `/api/*` routes; strict CSP via per-request nonce
+- RS256 JWT with explicit signing-method pinning (alg-confusion blocked) + `iss`/`aud` enforcement; argon2id password hashing (m=65536, t=3, p=4)
+- **Sessions:** 15-min access tokens; **single-use refresh tokens** (atomic rotation — concurrent refresh yields exactly one winner); **role-based idle timeouts** (customer 60m / provider 120m / admin 30m, sliding, reset by requests + WS heartbeat); password-reset tokens are single-use (hash-bound, self-invalidating)
+- Every endpoint authenticated **and** authorized; all get-by-id reads owner/party-scoped (no cross-tenant IDOR); all mutations scope writes by owner; PII projected out of public reads (license numbers masked)
+- WebSocket: channel-membership / job-participant authz on subscribe, CSWSH origin allowlist, spectator anonymization + 3s delay, and **socket lifetime bounded to the token `exp`** (no streaming on an expired/revoked session)
+- **Concurrency-safe** money paths (`FOR UPDATE` / advisory locks / WHERE-guards): no lost bids, double-binds, over-repays, or daily-cap breaches under load
+- **Abuse limits:** tiered per-IP rate limiting (auth / public-read / standard), 1 MB request-body cap, field-length limits, and paginated/clamped list reads
+- Parameterized SQL only; idempotency keys on payment/bid mutations; Stripe event dedup prevents replay
+- Feature-flag kill-switches (`/admin/flags`) fail-closed at the gateway; all containers run as non-root; Next.js edge middleware gates `(dashboard)` and protected `/api/*`; strict CSP via per-request nonce
 
 ## License
 
