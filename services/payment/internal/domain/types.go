@@ -72,6 +72,27 @@ type FeeConfig struct {
 	UpdatedAt           time.Time
 }
 
+// DefaultFeeConfig returns the platform's standard fee configuration used when
+// no fee config row has been persisted yet (e.g. a fresh platform). These match
+// the documented platform defaults: a 5% platform take rate and a 2% guarantee
+// fund contribution, with the additive lead-gen fee disabled. Returning these
+// instead of an error lets the admin fee-config form render with sensible
+// starting values that the admin can review and persist, rather than surfacing
+// a "not configured" error for a predictable empty-state.
+func DefaultFeeConfig() *FeeConfig {
+	return &FeeConfig{
+		FeePercentage:       0.05, // 5%
+		GuaranteePercentage: 0.02, // 2%
+		MinFeeCents:         0,
+		MaxFeeCents:         nil,
+		LeadGenEnabled:      false,
+		LeadGenPercentage:   0,
+		LeadGenMinFeeCents:  0,
+		LeadGenMaxFeeCents:  nil,
+		Active:              true,
+	}
+}
+
 // PaymentBreakdown holds the fee breakdown for a payment.
 type PaymentBreakdown struct {
 	SubtotalCents       int64

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -393,14 +394,35 @@ func (s *PaymentService) ListPayments(ctx context.Context, userID string, status
 }
 
 // GetFeeConfig retrieves the active fee config for a category or default.
+//
+// When no fee config row exists yet (a fresh platform), this returns the
+// platform's standard default config rather than an error, so the admin
+// fee-config UI can render and edit sensible starting values instead of seeing
+// a 404/500 for a predictable empty-state. Real lookup failures (DB down, etc.)
+// are still propagated.
 func (s *PaymentService) GetFeeConfig(ctx context.Context, categoryID *string) (*domain.FeeConfig, error) {
 	if categoryID != nil && *categoryID != "" {
 		fc, err := s.repo.GetFeeConfig(ctx, *categoryID)
 		if err == nil {
 			return fc, nil
 		}
+		// Fall through to the default config below only for the missing-row case;
+		// surface any other (real) error.
+		if !errors.Is(err, domain.ErrFeeConfigNotFound) {
+			return nil, err
+		}
 	}
-	return s.repo.GetDefaultFeeConfig(ctx)
+
+	fc, err := s.repo.GetDefaultFeeConfig(ctx)
+	if err == nil {
+		return fc, nil
+	}
+	if errors.Is(err, domain.ErrFeeConfigNotFound) {
+		// No config persisted yet — return the standard defaults so the admin
+		// can review and save them.
+		return domain.DefaultFeeConfig(), nil
+	}
+	return nil, err
 }
 
 // GetStripeAccountID retrieves the Stripe account ID for a user.

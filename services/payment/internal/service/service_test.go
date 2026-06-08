@@ -1032,6 +1032,7 @@ func TestPaymentService_GetFeeConfig(t *testing.T) {
 		catFeeConfig   *domain.FeeConfig
 		catErr         error
 		defaultConfig  *domain.FeeConfig
+		defaultErr     error
 		wantPercentage float64
 	}{
 		{
@@ -1065,6 +1066,26 @@ func TestPaymentService_GetFeeConfig(t *testing.T) {
 			},
 			wantPercentage: 0.05,
 		},
+		{
+			// Fresh platform: no category config AND no default row persisted.
+			// Must succeed with the standard default config (5%), not error —
+			// otherwise the admin fee-config read 500s on a predictable
+			// empty-state.
+			name:          "nil_category_no_default_row_returns_standard_default",
+			categoryID:    nil,
+			defaultErr:    domain.ErrFeeConfigNotFound,
+			wantPercentage: domain.DefaultFeeConfig().FeePercentage,
+		},
+		{
+			name: "category_and_default_both_missing_returns_standard_default",
+			categoryID: func() *string {
+				s := "cat-unknown"
+				return &s
+			}(),
+			catErr:         domain.ErrFeeConfigNotFound,
+			defaultErr:     domain.ErrFeeConfigNotFound,
+			wantPercentage: domain.DefaultFeeConfig().FeePercentage,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1082,6 +1103,9 @@ func TestPaymentService_GetFeeConfig(t *testing.T) {
 					return nil, domain.ErrFeeConfigNotFound
 				},
 				getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+					if tt.defaultErr != nil {
+						return nil, tt.defaultErr
+					}
 					if tt.defaultConfig != nil {
 						return tt.defaultConfig, nil
 					}
@@ -1096,4 +1120,24 @@ func TestPaymentService_GetFeeConfig(t *testing.T) {
 			assert.InDelta(t, tt.wantPercentage, fc.FeePercentage, 0.001)
 		})
 	}
+}
+
+// A real (non-missing-row) error from the default fee-config lookup must still
+// propagate as an error — only the missing-row case falls back to defaults.
+func TestPaymentService_GetFeeConfig_RealErrorPropagates(t *testing.T) {
+	t.Parallel()
+
+	dbErr := errors.New("connection refused")
+	repo := &mockPaymentRepo{
+		getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+			return nil, dbErr
+		},
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	fc, err := svc.GetFeeConfig(context.Background(), nil)
+
+	require.Error(t, err)
+	assert.Nil(t, fc)
+	assert.ErrorIs(t, err, dbErr)
 }
