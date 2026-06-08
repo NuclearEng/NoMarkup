@@ -65,15 +65,21 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Daily Workspace** — today's jobs + 7-day calendar, GPS check-in/out with duration, before/after completion photos
 - **Working Capital Advances** — risk-based APR (3–15% by credit grade) + a flat 3% origination fee, shown as a transparent line-item breakdown; auto-deducted from payouts
 - **BNPL** — 3/6-installment plans; provider paid immediately, platform collects installments
-- **Instant Payout** — 1% fee, real-time preview
-- **Business Suite** — expense tracking, invoice generation, and an institution-grade 1099-NEC tax center with a printable summary
+- **Instant Payout** — ledger-backed + idempotent, with eligibility (cleared funds only), verified-provider gate, and per-txn/daily caps; configurable fee (default 1.5%, $1 min)
+- **Repayment** — providers pay down advances directly (ownership-scoped, idempotent) in addition to auto-offset from payouts
+- **Business Suite** — expense tracking, invoice generation, and an institution-grade 1099-NEC tax center (decrypted PII) with a printable summary
 - **Dispute Resolution** — evidence-collected disputes backed by the contract service, party-access enforced, admin queue + resolution
 
-### Per-Job Insurance
-- **4 products** — property damage (150 bps), workmanship warranty (200 bps), completion guarantee (100 bps), liability (250 bps), risk-adjusted by category, with a full claims lifecycle
+### Insurance
+- **Per-job products** — property damage, workmanship warranty, completion guarantee, liability — risk-adjusted by category, with a full claims lifecycle
+- **Competitive marketplace** — a customer requests coverage and **insurers compete**: the request fans out to all approved carriers, returns side-by-side quotes (premium / deductible / terms, cheapest highlighted), and binds the chosen one to a policy. Admin onboards/approves insurers + their rate cards. Gated by the `insurance_competition` flag.
+
+### Professional Services (Legal)
+- **Lawyers compete** — legal-services categories ride the reverse auction (post a case → attorneys bid on price). Bar-license capture + admin verification, a public **Verified Bar Member** badge (license number masked), and a `/legal` landing surface. Gated by the `legal_services` flag.
 
 ### Platform & Design
-- **Geographic rollout control** — markets launch by city / state / country via an admin Markets tool (flips `markets.is_active`); the public catalog is active-gated so coverage expands market-by-market for liquidity density. Washington is the first live market. Catalog (~432 US + MX cities) crawled from craigslist + geocoded; see `docs/operations/provisioning-checklist.md`
+- **Feature flags** — optional/financial features (BNPL, instant payout, insurance, advances, lead-gen, insurance-competition, legal) are admin-togglable from `/admin/flags`. Enforced fail-closed at the gateway (`RequireFlag` → 503 when off, cache-invalidated for instant propagation) **and** hidden in the UI
+- **Geographic rollout control** — markets launch by city / state / country via an admin Markets tool (flips `markets.is_active`); the public catalog is active-gated so coverage expands market-by-market for liquidity density. King County, WA is the live launch market. Catalog (~432 US + MX cities) crawled from craigslist + geocoded; see `docs/operations/provisioning-checklist.md`
 - **Trust Scoring** — multi-dimensional provider trust with tier badges
 - **Brand Gold + Full Dark Mode** — glass-morphism design system, cinematic `#070b14` theme across 60+ pages
 - **Best-in-Class Mobile** — fixed bottom tab bar, `100dvh`, notch-safe, 44px targets, works at 320px
@@ -90,7 +96,7 @@ NoMarkup's take comes out of the **seller/provider payout** — the buyer/custom
 | Guarantee (buyer protection) | **2%** | Seller-side; funds the completion/escrow guarantee |
 | Lead-gen referral | **10%** | Opt-in, off by default; charged only for qualified leads when enabled |
 | Working-capital advance | **3% origination + 3–15% APR** | APR is risk-based by business credit grade |
-| Instant payout | **1%** | Optional fast payout |
+| Instant payout | **1.5% ($1 min)** | Optional fast payout; configurable, priced to clear Stripe's instant-payout cost |
 
 All fee rates are admin-configurable (with seeded defaults) and shown transparently to the user.
 
