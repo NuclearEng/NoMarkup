@@ -1,4 +1,8 @@
-// Listing detail page — covers loading, error, and key UI elements.
+// Listing detail — the page is now an async Server Component (server fetch +
+// notFound) and all interactivity lives in ListingDetailClient. These tests
+// render the client island directly with a seeded `initialListing`, mirroring
+// what the server passes in. The seed means there is no first-paint loading
+// state; the error path is exercised by forcing the query into an error state.
 import { render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,8 +38,18 @@ vi.mock('next/link', () => ({
     createElement('a', { href }, children),
 }));
 
+// useListing returns the seeded initialData by default (success path). Tests
+// that need the loading/error branches override listingState before rendering.
 vi.mock('@/hooks/useListings', () => ({
-  useListing: () => listingState,
+  useListing: (_id: string, options?: { initialData?: ListingDetail }) => ({
+    ...listingState,
+    // Mirror TanStack: while loading or errored there is no resolved data; on
+    // the success path the seeded initialData is what first paint renders.
+    data:
+      listingState.isLoading || listingState.isError
+        ? undefined
+        : (listingState.data ?? options?.initialData),
+  }),
   useListingBids: () => bidsState,
   usePlaceListingBid: () => placeBidState,
   useSimilarListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
@@ -73,7 +87,7 @@ vi.mock('@/components/ui/sparkline', () => ({
   Sparkline: () => createElement('div', { 'data-testid': 'sparkline' }),
 }));
 
-import ListingDetailPage from '@/app/(public)/marketplace/[id]/page';
+import { ListingDetailClient } from '@/components/marketplace/ListingDetailClient';
 
 const detail: ListingDetail = {
   id: 'l-1',
@@ -111,6 +125,14 @@ const detail: ListingDetail = {
   seller_trust_score: 0.9,
 };
 
+function renderClient(seed: ListingDetail = detail) {
+  return render(
+    withQueryClient(
+      createElement(ListingDetailClient, { listingId: 'l-1', initialListing: seed }),
+    ),
+  );
+}
+
 beforeEach(() => {
   listingState.data = undefined;
   listingState.isLoading = false;
@@ -121,64 +143,57 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('ListingDetailPage', () => {
-  it('renders the loading skeleton when loading', () => {
+describe('ListingDetailClient', () => {
+  it('renders the loading skeleton when the query reports loading', () => {
     listingState.isLoading = true;
-    const { container } = render(withQueryClient(createElement(ListingDetailPage)));
+    const { container } = renderClient();
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
   it('renders the not-found empty state on error', () => {
     listingState.isError = true;
-    render(withQueryClient(createElement(ListingDetailPage)));
+    renderClient();
     expect(screen.getByText(/Listing not found/i)).toBeDefined();
   });
 
-  it('renders title, description, and current bid', () => {
-    listingState.data = detail;
-    render(withQueryClient(createElement(ListingDetailPage)));
+  it('renders real content on first paint from the seeded initialListing', () => {
+    renderClient();
     expect(screen.getAllByText('Test sofa').length).toBeGreaterThan(0);
     expect(screen.getByText('Test description')).toBeDefined();
     expect(screen.getByText('$75.00')).toBeDefined();
   });
 
   it('renders the seller card with display name and trust tier', () => {
-    listingState.data = detail;
-    render(withQueryClient(createElement(ListingDetailPage)));
+    renderClient();
     expect(screen.getByText('Jane')).toBeDefined();
     expect(screen.getByText(/trusted seller/i)).toBeDefined();
   });
 
   it('renders the bid panel and timer', () => {
-    listingState.data = detail;
-    render(withQueryClient(createElement(ListingDetailPage)));
+    renderClient();
     expect(screen.getByTestId('bid-panel')).toBeDefined();
     expect(screen.getAllByTestId('timer').length).toBeGreaterThan(0);
   });
 
   it('renders the snipe banner when extensions > 0', () => {
-    listingState.data = { ...detail, snipe_extension_count: 1 };
-    render(withQueryClient(createElement(ListingDetailPage)));
+    renderClient({ ...detail, snipe_extension_count: 1 });
     expect(screen.getByTestId('snipe-banner')).toBeDefined();
   });
 
   it('hides the snipe banner when extensions = 0', () => {
-    listingState.data = detail;
-    render(withQueryClient(createElement(ListingDetailPage)));
+    renderClient();
     expect(screen.queryByTestId('snipe-banner')).toBeNull();
   });
 
   it('renders the privacy notice when pickup_address is null', () => {
-    listingState.data = detail;
-    render(withQueryClient(createElement(ListingDetailPage)));
+    renderClient();
     expect(
       screen.getByText(/Full pickup address is shared with the winning bidder/i),
     ).toBeDefined();
   });
 
   it('renders the spectate link', () => {
-    listingState.data = detail;
-    render(withQueryClient(createElement(ListingDetailPage)));
+    renderClient();
     const link = screen.getByText(/Watch live/i).closest('a');
     expect(link?.getAttribute('href')).toBe('/marketplace/l-1/spectate');
   });

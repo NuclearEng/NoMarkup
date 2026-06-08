@@ -78,7 +78,16 @@ export function useTrendingListings(limit = 12) {
   });
 }
 
-export function useListing(id: string) {
+/**
+ * Listing detail query.
+ *
+ * Accepts an optional `initialData` so a Server Component can seed the cache
+ * with server-fetched listing content — the page then renders real data on
+ * first paint instead of the loading skeleton (RSC-first detail page). The
+ * query still refetches in the background (invalidated by live bids / the
+ * spectator stream), so the seeded value is only the first-paint snapshot.
+ */
+export function useListing(id: string, options?: { initialData?: ListingDetail }) {
   return useQuery({
     queryKey: ['listings', id],
     queryFn: () =>
@@ -86,6 +95,7 @@ export function useListing(id: string) {
         .getPublic<{ listing: ListingDetail }>(`/api/v1/listings/${id}`)
         .then((res) => res.listing),
     enabled: !!id,
+    ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
 }
 
