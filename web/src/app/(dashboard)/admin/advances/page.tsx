@@ -134,6 +134,7 @@ export default function AdminAdvancesPage() {
     {
       key: 'amount',
       header: 'Amount',
+      className: 'whitespace-nowrap',
       render: (advance) => (
         <span className="text-sm font-medium tabular-nums">
           {formatCents(advance.advance_amount_cents)}
@@ -143,6 +144,7 @@ export default function AdminAdvancesPage() {
     {
       key: 'fee',
       header: 'Fee',
+      className: 'whitespace-nowrap',
       render: (advance) => (
         <span className="text-sm tabular-nums">
           {formatCents(advance.fee_cents)}
@@ -152,6 +154,7 @@ export default function AdminAdvancesPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (advance) => (
         <Badge
           variant="outline"
@@ -173,6 +176,7 @@ export default function AdminAdvancesPage() {
     {
       key: 'created_at',
       header: 'Date',
+      className: 'whitespace-nowrap',
       render: (advance) => (
         <span className="text-sm text-zinc-300">{formatDate(advance.created_at)}</span>
       ),
@@ -180,6 +184,7 @@ export default function AdminAdvancesPage() {
     {
       key: 'actions',
       header: 'Actions',
+      className: 'whitespace-nowrap',
       render: (advance) => <AdvanceActions advance={advance} />,
     },
   ];

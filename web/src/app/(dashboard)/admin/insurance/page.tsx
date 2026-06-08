@@ -218,6 +218,7 @@ export default function AdminInsuranceClaimsPage() {
     {
       key: 'type',
       header: 'Type',
+      className: 'whitespace-nowrap',
       render: (claim) => (
         <span className="text-sm">
           {claim.claim_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
@@ -227,6 +228,7 @@ export default function AdminInsuranceClaimsPage() {
     {
       key: 'claimed',
       header: 'Claimed',
+      className: 'whitespace-nowrap',
       render: (claim) => (
         <span className="text-sm font-medium tabular-nums">
           {formatCents(claim.claimed_amount_cents)}
@@ -236,6 +238,7 @@ export default function AdminInsuranceClaimsPage() {
     {
       key: 'approved',
       header: 'Approved',
+      className: 'whitespace-nowrap',
       render: (claim) => (
         <span className="text-sm tabular-nums">
           {claim.approved_amount_cents !== null
@@ -247,6 +250,7 @@ export default function AdminInsuranceClaimsPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (claim) => {
         const status = claim.status as InsuranceClaimStatus;
         return (
@@ -262,6 +266,7 @@ export default function AdminInsuranceClaimsPage() {
     {
       key: 'created_at',
       header: 'Filed',
+      className: 'whitespace-nowrap',
       render: (claim) => (
         <span className="text-sm text-zinc-300">{formatDate(claim.created_at)}</span>
       ),
@@ -269,6 +274,7 @@ export default function AdminInsuranceClaimsPage() {
     {
       key: 'actions',
       header: 'Actions',
+      className: 'whitespace-nowrap',
       render: (claim) => <ClaimActions claim={claim} />,
     },
   ];

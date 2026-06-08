@@ -34,6 +34,28 @@ import { PAYMENT_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
 
+// Sentinel option that switches a preset dropdown into free-text mode so admins
+// can enter a value outside the preset ladder (and aren't locked out of a value
+// already configured that isn't on the list).
+const CUSTOM_OPTION = '__custom__';
+
+// Preset percentage ladders for the fee dropdowns. These are whole-number
+// percents (matching what the admin types) and are reconciled with the Go
+// DefaultFeeConfig() (services/payment/internal/domain/types.go): platform 5%,
+// guarantee 2%, lead-gen 10% when enabled. The ladders bracket those defaults
+// with the documented ranges (PRD: 5-8% take rate, 2-3% guarantee fund).
+const PLATFORM_FEE_PRESETS = ['5', '8', '10', '12', '15'] as const;
+const GUARANTEE_FEE_PRESETS = ['1', '2', '3'] as const;
+const LEAD_GEN_FEE_PRESETS = ['0', '3', '5', '10'] as const;
+
+// presetSelectValue maps the current raw string value to either a matching
+// preset (so it shows selected) or the CUSTOM_OPTION sentinel. Empty stays
+// empty so the placeholder renders.
+function presetSelectValue(value: string, presets: readonly string[]): string {
+  if (value === '') return '';
+  return presets.includes(value) ? value : CUSTOM_OPTION;
+}
+
 // Validation for the fee form. Fields are kept as the raw string inputs the
 // user types; we coerce + validate here so we can surface inline field errors
 // before sending. Percentages are entered as whole numbers (e.g. "10.0") and
@@ -104,6 +126,102 @@ function formatDate(dateStr: string): string {
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+interface PercentPresetFieldProps {
+  id: string;
+  label: string;
+  presets: readonly string[];
+  /** Raw whole-number percent string (e.g. "10"). Empty = unset. */
+  value: string;
+  onValueChange: (next: string) => void;
+  error?: string;
+  /** Placeholder for the custom numeric input. */
+  customPlaceholder: string;
+}
+
+// PercentPresetField renders a percentage fee as a dropdown of preset values
+// plus a "Custom…" escape hatch that reveals a numeric input — so the standard
+// rates are one click away, but admins are never locked out of an off-ladder
+// value (including one already configured). The selected option reflects the
+// current value: a matching preset shows selected, anything else shows
+// "Custom…" with the numeric input pre-filled.
+function PercentPresetField({
+  id,
+  label,
+  presets,
+  value,
+  onValueChange,
+  error,
+  customPlaceholder,
+}: PercentPresetFieldProps) {
+  // customMode is sticky: once the admin picks "Custom…", the numeric input
+  // stays visible even while empty (so they can type). It also auto-engages
+  // when the incoming value is a non-empty off-ladder rate.
+  const [customMode, setCustomMode] = useState(
+    () => presetSelectValue(value, presets) === CUSTOM_OPTION,
+  );
+  const isCustom = customMode || presetSelectValue(value, presets) === CUSTOM_OPTION;
+  const selectValue = isCustom ? CUSTOM_OPTION : value;
+  const errorId = `${id}-error`;
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Select
+        value={selectValue}
+        onValueChange={(next) => {
+          if (next === CUSTOM_OPTION) {
+            // Reveal the free-text input; clear so the admin types a fresh value.
+            setCustomMode(true);
+            onValueChange('');
+            return;
+          }
+          // Picking a preset exits custom mode and sets the value directly.
+          setCustomMode(false);
+          onValueChange(next);
+        }}
+      >
+        <SelectTrigger
+          id={id}
+          className="min-h-[44px]"
+          aria-label={label}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        >
+          <SelectValue placeholder="Select a rate" />
+        </SelectTrigger>
+        <SelectContent>
+          {presets.map((preset) => (
+            <SelectItem key={preset} value={preset}>
+              {preset}%
+            </SelectItem>
+          ))}
+          <SelectItem value={CUSTOM_OPTION}>Custom…</SelectItem>
+        </SelectContent>
+      </Select>
+      {isCustom ? (
+        <Input
+          aria-label={`${label} custom value`}
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          placeholder={customPlaceholder}
+          value={value}
+          onChange={(e) => { onValueChange(e.target.value); }}
+          className="min-h-[44px]"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        />
+      ) : null}
+      {error ? (
+        <p id={errorId} className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export default function AdminPaymentsPage() {
@@ -185,6 +303,7 @@ export default function AdminPaymentsPage() {
     {
       key: 'amount',
       header: 'Amount',
+      className: 'whitespace-nowrap',
       render: (payment) => (
         <span className="font-medium tabular-nums">
           {formatCents(payment.amount_cents)}
@@ -194,6 +313,7 @@ export default function AdminPaymentsPage() {
     {
       key: 'fee',
       header: 'Platform Fee',
+      className: 'whitespace-nowrap',
       render: (payment) => (
         <span className="tabular-nums text-zinc-300">
           {formatCents(payment.platform_fee_cents)}
@@ -203,6 +323,7 @@ export default function AdminPaymentsPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (payment) => (
         <Badge
           variant="outline"
@@ -215,6 +336,7 @@ export default function AdminPaymentsPage() {
     {
       key: 'created_at',
       header: 'Date',
+      className: 'whitespace-nowrap',
       render: (payment) => (
         <span className="text-zinc-300">{formatDate(payment.created_at)}</span>
       ),
@@ -331,50 +453,24 @@ export default function AdminPaymentsPage() {
                 className="min-h-[44px]"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="fee-percentage">Fee Percentage</Label>
-              <Input
-                id="fee-percentage"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                placeholder="e.g. 10.0"
-                value={feePercentage}
-                onChange={(e) => { setFeePercentage(e.target.value); }}
-                className="min-h-[44px]"
-                aria-invalid={feeErrors.feePercentage ? true : undefined}
-                aria-describedby={feeErrors.feePercentage ? 'fee-percentage-error' : undefined}
-              />
-              {feeErrors.feePercentage ? (
-                <p id="fee-percentage-error" className="text-sm text-destructive">
-                  {feeErrors.feePercentage}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="guarantee-percentage">Guarantee Percentage</Label>
-              <Input
-                id="guarantee-percentage"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                placeholder="e.g. 2.0"
-                value={guaranteePercentage}
-                onChange={(e) => { setGuaranteePercentage(e.target.value); }}
-                className="min-h-[44px]"
-                aria-invalid={feeErrors.guaranteePercentage ? true : undefined}
-                aria-describedby={
-                  feeErrors.guaranteePercentage ? 'guarantee-percentage-error' : undefined
-                }
-              />
-              {feeErrors.guaranteePercentage ? (
-                <p id="guarantee-percentage-error" className="text-sm text-destructive">
-                  {feeErrors.guaranteePercentage}
-                </p>
-              ) : null}
-            </div>
+            <PercentPresetField
+              id="fee-percentage"
+              label="Fee Percentage"
+              presets={PLATFORM_FEE_PRESETS}
+              value={feePercentage}
+              onValueChange={setFeePercentage}
+              error={feeErrors.feePercentage}
+              customPlaceholder="e.g. 10.0"
+            />
+            <PercentPresetField
+              id="guarantee-percentage"
+              label="Guarantee Percentage"
+              presets={GUARANTEE_FEE_PRESETS}
+              value={guaranteePercentage}
+              onValueChange={setGuaranteePercentage}
+              error={feeErrors.guaranteePercentage}
+              customPlaceholder="e.g. 2.0"
+            />
             <div className="space-y-2">
               <Label htmlFor="min-fee">Min Fee (USD)</Label>
               <Input
@@ -440,29 +536,15 @@ export default function AdminPaymentsPage() {
 
             {leadGenEnabled ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="lead-gen-percentage">Lead-gen Percentage</Label>
-                  <Input
-                    id="lead-gen-percentage"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    placeholder="e.g. 10.0"
-                    value={leadGenPercentage}
-                    onChange={(e) => { setLeadGenPercentage(e.target.value); }}
-                    className="min-h-[44px]"
-                    aria-invalid={feeErrors.leadGenPercentage ? true : undefined}
-                    aria-describedby={
-                      feeErrors.leadGenPercentage ? 'lead-gen-percentage-error' : undefined
-                    }
-                  />
-                  {feeErrors.leadGenPercentage ? (
-                    <p id="lead-gen-percentage-error" className="text-sm text-destructive">
-                      {feeErrors.leadGenPercentage}
-                    </p>
-                  ) : null}
-                </div>
+                <PercentPresetField
+                  id="lead-gen-percentage"
+                  label="Lead-gen Percentage"
+                  presets={LEAD_GEN_FEE_PRESETS}
+                  value={leadGenPercentage}
+                  onValueChange={setLeadGenPercentage}
+                  error={feeErrors.leadGenPercentage}
+                  customPlaceholder="e.g. 10.0"
+                />
                 <div className="space-y-2">
                   <Label htmlFor="lead-gen-min-fee">Lead-gen Min Fee (USD)</Label>
                   <Input

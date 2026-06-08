@@ -87,6 +87,7 @@ export default function AdminJobsPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (job) => (
         <Badge
           variant="outline"
@@ -99,11 +100,13 @@ export default function AdminJobsPage() {
     {
       key: 'bids',
       header: 'Bids',
+      className: 'whitespace-nowrap',
       render: (job) => <span className="tabular-nums">{String(job.bid_count)}</span>,
     },
     {
       key: 'lowest_bid',
       header: 'Lowest Bid',
+      className: 'whitespace-nowrap',
       render: (job) => (
         <span className="tabular-nums">
           {job.lowest_bid_cents != null && job.lowest_bid_cents > 0
@@ -115,6 +118,7 @@ export default function AdminJobsPage() {
     {
       key: 'created_at',
       header: 'Created',
+      className: 'whitespace-nowrap',
       render: (job) => <span className="text-zinc-300">{formatDate(job.created_at)}</span>,
     },
     {

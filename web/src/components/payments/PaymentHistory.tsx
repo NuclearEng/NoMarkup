@@ -43,7 +43,7 @@ function PaymentRow({ payment }: { payment: Payment }) {
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span className="text-sm text-muted-foreground">{createdDate}</span>
+              <span className="whitespace-nowrap text-sm text-muted-foreground">{createdDate}</span>
               <span className="text-xs text-muted-foreground">
                 Contract: {payment.contract_id.slice(0, 8)}...
               </span>

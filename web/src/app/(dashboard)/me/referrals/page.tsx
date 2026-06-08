@@ -161,9 +161,9 @@ export default function ReferralsPage() {
                 <tbody>
                   {(listQ.data?.referrals ?? []).map((r) => (
                     <tr key={r.id} className="border-b border-white/5 last:border-0">
-                      <td className="px-3 py-2">{r.status}</td>
-                      <td className="px-3 py-2">{formatDollars(r.credit_cents)}</td>
-                      <td className="px-3 py-2 text-white/60">
+                      <td className="px-3 py-2 whitespace-nowrap">{r.status}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{formatDollars(r.credit_cents)}</td>
+                      <td className="px-3 py-2 text-white/60 whitespace-nowrap">
                         {new Date(r.created_at).toLocaleDateString()}
                       </td>
                     </tr>

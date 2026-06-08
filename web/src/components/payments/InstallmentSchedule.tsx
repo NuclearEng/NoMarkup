@@ -88,11 +88,11 @@ export function InstallmentSchedule({ installments, className }: InstallmentSche
                         {String(installment.total_installments)}
                       </p>
                       {installment.paid_at ? (
-                        <p className="text-xs text-green-600 dark:text-green-400">
+                        <p className="whitespace-nowrap text-xs text-green-600 dark:text-green-400">
                           Paid {formatDate(installment.paid_at)}
                         </p>
                       ) : installment.due_date ? (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="whitespace-nowrap text-xs text-muted-foreground">
                           Due {formatDate(installment.due_date)}
                         </p>
                       ) : (

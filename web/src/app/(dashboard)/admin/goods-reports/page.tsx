@@ -97,6 +97,7 @@ export default function AdminGoodsReportsPage() {
     {
       key: 'reason',
       header: 'Reason',
+      className: 'whitespace-nowrap',
       render: (r) => (
         <Badge variant="outline" className="capitalize">
           {REASON_LABEL[r.reason] ?? r.reason}
@@ -115,6 +116,7 @@ export default function AdminGoodsReportsPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (r) => (
         <Badge variant="outline" className="text-xs capitalize">
           {r.status}
@@ -124,6 +126,7 @@ export default function AdminGoodsReportsPage() {
     {
       key: 'created_at',
       header: 'Reported',
+      className: 'whitespace-nowrap',
       render: (r) => <span className="text-zinc-300">{formatDate(r.created_at)}</span>,
     },
     {

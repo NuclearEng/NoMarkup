@@ -68,6 +68,7 @@ export default function AdminVerificationPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (doc) => (
         <Badge variant="outline" className={VERIFICATION_STATUS_CLASSES[doc.status] ?? ''}>
           {doc.status}
@@ -77,6 +78,7 @@ export default function AdminVerificationPage() {
     {
       key: 'submitted',
       header: 'Submitted',
+      className: 'whitespace-nowrap',
       render: (doc) => (
         <span className="text-zinc-300">{formatDate(doc.submitted_at)}</span>
       ),

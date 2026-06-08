@@ -106,6 +106,7 @@ export default function AdminGuaranteePage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (claim) => (
         <Badge variant="outline" className={cn('text-xs', GUARANTEE_STATUS_CLASSES[claim.status])}>
           {STATUS_LABELS[claim.status]}
@@ -115,6 +116,7 @@ export default function AdminGuaranteePage() {
     {
       key: 'refund',
       header: 'Payout',
+      className: 'whitespace-nowrap',
       render: (claim) => (
         <span className="tabular-nums">
           {claim.refund_amount_cents !== undefined && claim.refund_amount_cents > 0
@@ -126,6 +128,7 @@ export default function AdminGuaranteePage() {
     {
       key: 'created_at',
       header: 'Filed',
+      className: 'whitespace-nowrap',
       render: (claim) => (
         <span className="text-zinc-300">{formatDate(claim.created_at)}</span>
       ),

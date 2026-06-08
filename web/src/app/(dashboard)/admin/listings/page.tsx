@@ -126,11 +126,13 @@ export default function AdminListingsPage() {
     {
       key: 'bids',
       header: 'Bids',
+      className: 'whitespace-nowrap',
       render: (l) => <span className="tabular-nums">{l.bid_count}</span>,
     },
     {
       key: 'ends',
       header: 'Auction Ends',
+      className: 'whitespace-nowrap',
       render: (l) => <span className="text-zinc-300">{formatDate(l.auction_ends_at)}</span>,
     },
     {

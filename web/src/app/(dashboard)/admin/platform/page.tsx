@@ -177,7 +177,7 @@ export default function AdminPlatformPage() {
                     );
                     return (
                       <div key={dp.period_start} className="flex items-center gap-3">
-                        <span className="w-20 text-right text-xs text-zinc-300">
+                        <span className="w-20 whitespace-nowrap text-right text-xs text-zinc-300">
                           {periodLabel}
                         </span>
                         <div className="flex-1">
