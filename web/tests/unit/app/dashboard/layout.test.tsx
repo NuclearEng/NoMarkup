@@ -228,6 +228,19 @@ describe('DashboardLayout', () => {
     ).toBe(true);
   });
 
+  it('does not keep the /provider parent active on a child tab (regression)', () => {
+    // Found by dogfooding: visiting /provider/team highlighted BOTH "Team" and
+    // "Provider Dashboard" (/provider is a prefix). Most-specific match wins.
+    authStoreState.user = { id: 'u2', roles: ['provider'] };
+    pathnameRef.current = '/provider/team';
+    render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
+    const activeHrefs = Array.from(
+      document.querySelectorAll('a[aria-current="page"]'),
+    ).map((a) => a.getAttribute('href'));
+    expect(activeHrefs).toContain('/provider/team');
+    expect(activeHrefs).not.toContain('/provider');
+  });
+
   it('renders Live Demo CTA in both desktop sidebar and mobile drawer', () => {
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
     // One in sidebar, then a second appears once the More drawer opens.

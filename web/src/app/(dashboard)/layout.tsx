@@ -129,20 +129,18 @@ const COMMON_NAV_ITEMS: NavItem[] = [
   { href: '/settings/security' as Route, label: 'Settings', icon: Settings },
 ];
 
-function isActive(pathname: string, href: string): boolean {
-  if (
-    href === '/dashboard' ||
-    href === '/bids' ||
-    href === '/jobs/mine' ||
-    href === '/jobs/new' ||
-    href === '/provider/advances' ||
-    href === '/provider/business' ||
-    href === '/provider/team' ||
-    href === '/provider/workspace'
-  ) {
-    return pathname === href || pathname.startsWith(href + '/');
+// The single active nav href = the MOST-SPECIFIC (longest) item whose path the
+// current URL matches exactly or as a sub-path. This prevents a parent like
+// "/provider" (Provider Dashboard) from staying highlighted when you're on a
+// child tab like "/provider/team" — the child wins.
+function activeNavHref(pathname: string, hrefs: readonly string[]): string | null {
+  let best: string | null = null;
+  for (const href of hrefs) {
+    if (pathname === href || pathname.startsWith(href + '/')) {
+      if (best === null || href.length > best.length) best = href;
+    }
   }
-  return pathname.startsWith(href);
+  return best;
 }
 
 /** Four primary destinations shown in the mobile bottom tab bar (plus "More"). */
@@ -179,6 +177,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const primaryTabItems = getPrimaryTabItems(isProvider);
 
+  // Resolve the active item once per nav list (most-specific match wins).
+  const activeSidebarHref = activeNavHref(pathname, allNavItems.map((i) => i.href));
+  const activeTabHref = activeNavHref(pathname, primaryTabItems.map((i) => i.href));
+
   return (
     <AuthGuard>
       <div className="flex min-h-screen flex-col bg-[#070b14]">
@@ -190,7 +192,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <aside className="glass-sidebar hidden w-64 lg:block">
             <nav className="space-y-1 p-4" aria-label="Dashboard navigation">
               {allNavItems.map((item) => {
-                const active = isActive(pathname, item.href);
+                const active = item.href === activeSidebarHref;
                 return (
                   <Link
                     key={item.href}
@@ -238,7 +240,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           aria-label="Main navigation"
         >
           {primaryTabItems.map((item) => {
-            const active = isActive(pathname, item.href);
+            const active = item.href === activeTabHref;
             return (
               <Link
                 key={item.href}
@@ -310,7 +312,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               <div className="grid grid-cols-3 gap-2">
                 {allNavItems.map((item) => {
-                  const active = isActive(pathname, item.href);
+                  const active = item.href === activeSidebarHref;
                   return (
                     <Link
                       key={item.href}
