@@ -275,8 +275,12 @@ func (r *PostgresRepository) SaveDeviceToken(ctx context.Context, userID, token,
 }
 
 func (r *PostgresRepository) DeleteDeviceToken(ctx context.Context, userID, deviceID string) error {
+	// The gateway DELETE /notifications/devices/{token} route carries the token
+	// string (the natural per-user unique key), while native clients may instead
+	// supply an opaque device_id. Match on either so register-by-token can be
+	// undone with the same token value.
 	tag, err := r.pool.Exec(ctx, `
-		DELETE FROM device_tokens WHERE user_id = $1 AND device_id = $2`,
+		DELETE FROM device_tokens WHERE user_id = $1 AND (token = $2 OR device_id = $2)`,
 		userID, deviceID,
 	)
 	if err != nil {

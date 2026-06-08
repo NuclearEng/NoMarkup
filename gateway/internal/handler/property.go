@@ -3,6 +3,7 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -78,6 +79,27 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req createPropertyRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if strings.TrimSpace(req.Nickname) == "" {
+		writeError(w, http.StatusBadRequest, "nickname is required")
+		return
+	}
+	if strings.TrimSpace(req.Address.Street) == "" {
+		writeError(w, http.StatusBadRequest, "address.street is required")
+		return
+	}
+	if strings.TrimSpace(req.Address.City) == "" {
+		writeError(w, http.StatusBadRequest, "address.city is required")
+		return
+	}
+	if strings.TrimSpace(req.Address.State) == "" {
+		writeError(w, http.StatusBadRequest, "address.state is required")
+		return
+	}
+	if strings.TrimSpace(req.Address.ZipCode) == "" {
+		writeError(w, http.StatusBadRequest, "address.zip_code is required")
 		return
 	}
 
