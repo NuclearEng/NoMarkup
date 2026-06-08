@@ -3,6 +3,7 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -16,11 +17,21 @@ const categoryTreeCacheTTL = 1 * time.Hour
 type CategoriesHandler struct {
 	userClient userv1.UserServiceClient
 	cache      *cache.Client
+	// cacheVersion namespaces the Redis tree cache key by release. The category
+	// taxonomy only changes via data migrations (no runtime write path), so
+	// there is no event to invalidate on. Keying the cache by APP_VERSION means
+	// every deploy starts a fresh key — a migration that adds categories is
+	// reflected immediately instead of serving stale data for up to the 1h TTL.
+	cacheVersion string
 }
 
 // NewCategoriesHandler creates a new CategoriesHandler.
 func NewCategoriesHandler(userClient userv1.UserServiceClient, cacheClient *cache.Client) *CategoriesHandler {
-	return &CategoriesHandler{userClient: userClient, cache: cacheClient}
+	version := os.Getenv("APP_VERSION")
+	if version == "" {
+		version = "dev"
+	}
+	return &CategoriesHandler{userClient: userClient, cache: cacheClient, cacheVersion: version}
 }
 
 // List handles GET /api/v1/categories.
@@ -58,7 +69,7 @@ func (h *CategoriesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Tree handles GET /api/v1/categories/tree.
 func (h *CategoriesHandler) Tree(w http.ResponseWriter, r *http.Request) {
-	cacheKey := cache.Key("categories", "tree")
+	cacheKey := cache.Key("categories", "tree", h.cacheVersion)
 
 	// Try cache first.
 	var cached map[string]interface{}
