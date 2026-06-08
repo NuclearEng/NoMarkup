@@ -75,13 +75,14 @@ vi.mock('@/hooks/useWorkingCapital', () => ({
   useCreditLimit: vi.fn(),
   useMyAdvances: vi.fn(),
   useRequestAdvance: vi.fn(),
+  useRepayAdvance: vi.fn(),
 }));
 
 const { useContracts } = await import('@/hooks/useContracts');
-const { useCreditLimit, useMyAdvances, useRequestAdvance } = await import(
+const { useCreditLimit, useMyAdvances, useRepayAdvance, useRequestAdvance } = await import(
   '@/hooks/useWorkingCapital'
 );
-const { default: ProviderAdvancesPage } = await import(
+const { default: ProviderAdvancesPage, outstandingCents } = await import(
   '@/app/(dashboard)/provider/advances/page'
 );
 
@@ -95,6 +96,8 @@ function setHooks(opts: {
   mutate?: ReturnType<typeof vi.fn>;
   isPending?: boolean;
   isMutateError?: boolean;
+  repayMutate?: ReturnType<typeof vi.fn>;
+  repayPending?: boolean;
 } = {}) {
   vi.mocked(useMyAdvances).mockReturnValue({
     data: opts.advances ? { advances: opts.advances } : undefined,
@@ -117,6 +120,13 @@ function setHooks(opts: {
     isError: opts.isMutateError ?? false,
     error: opts.isMutateError ? new Error('Network failure') : null,
   } as unknown as ReturnType<typeof useRequestAdvance>);
+  vi.mocked(useRepayAdvance).mockReturnValue({
+    mutate: opts.repayMutate ?? vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: opts.repayPending ?? false,
+    isError: false,
+    error: null,
+  } as unknown as ReturnType<typeof useRepayAdvance>);
 }
 
 describe('ProviderAdvancesPage', () => {
@@ -586,6 +596,100 @@ describe('ProviderAdvancesPage', () => {
     // popover and may not be in the DOM until the trigger is clicked. Just
     // ensure the page rendered without throwing.
     expect(screen.getByLabelText('Select contract')).toBeDefined();
+  });
+
+  // ── outstandingCents helper (integer-cents math) ──
+  describe('outstandingCents', () => {
+    it('returns principal + fee - repaid', () => {
+      expect(
+        outstandingCents({
+          advance_amount_cents: 100000,
+          fee_cents: 2500,
+          repaid_cents: 40000,
+        } as never),
+      ).toBe(62500);
+    });
+
+    it('floors at 0 when over-collected / fully repaid', () => {
+      expect(
+        outstandingCents({
+          advance_amount_cents: 100000,
+          fee_cents: 2500,
+          repaid_cents: 110000,
+        } as never),
+      ).toBe(0);
+    });
+  });
+
+  // ── Manual repay flow ──
+  const repayingAdvance = {
+    id: 'adv_repay',
+    contract_id: 'contract-id-repay',
+    contract_number: 'CN-RP',
+    advance_amount_cents: 100000,
+    fee_cents: 2500,
+    repaid_cents: 50000,
+    status: 'repaying',
+    created_at: '2026-01-01T00:00:00Z',
+    rejection_reason: null,
+  };
+
+  it('shows a Repay button on outstanding (repaying) advances', () => {
+    setHooks({ advances: [repayingAdvance] });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    expect(screen.getByRole('button', { name: /Repay advance CN-RP/ })).toBeDefined();
+  });
+
+  it('does NOT show a Repay button on fully-repaid advances', () => {
+    setHooks({
+      advances: [
+        {
+          ...repayingAdvance,
+          id: 'adv_done',
+          repaid_cents: 102500,
+          status: 'repaid',
+        },
+      ],
+    });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    expect(screen.queryByRole('button', { name: /^Repay advance/ })).toBeNull();
+  });
+
+  it('opens the repay dialog pre-filled with the outstanding balance', () => {
+    setHooks({ advances: [repayingAdvance] });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Repay advance CN-RP/ }));
+    const input = screen.getByLabelText(/Repayment amount/);
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input');
+    // outstanding = 100000 + 2500 - 50000 = 52500 cents => "525.00"
+    expect(input.value).toBe('525.00');
+  });
+
+  it('submits the parsed cents to useRepayAdvance', () => {
+    const repayMutate = vi.fn();
+    setHooks({ advances: [repayingAdvance], repayMutate });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Repay advance CN-RP/ }));
+    fireEvent.change(screen.getByLabelText(/Repayment amount/), { target: { value: '200' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Repay \$200/ }));
+    expect(repayMutate).toHaveBeenCalledWith(
+      { advanceId: 'adv_repay', amount_cents: 20000 },
+      expect.objectContaining({ onSuccess: expect.any(Function) as unknown }),
+    );
+  });
+
+  it('blocks over-repayment with an inline message and disabled submit', () => {
+    const repayMutate = vi.fn();
+    setHooks({ advances: [repayingAdvance], repayMutate });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Repay advance CN-RP/ }));
+    // Outstanding is $525; entering $600 exceeds it.
+    fireEvent.change(screen.getByLabelText(/Repayment amount/), { target: { value: '600' } });
+    expect(screen.getByText(/exceeds the outstanding balance/)).toBeDefined();
+    const submit = screen.getByRole('button', { name: /^Repay$/ });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(submit);
+    expect(repayMutate).not.toHaveBeenCalled();
   });
 
   it('uses contract_id slice fallback when contract_number is missing', () => {

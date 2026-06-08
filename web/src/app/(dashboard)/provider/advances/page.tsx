@@ -13,12 +13,20 @@ import {
   RefreshCw,
   TrendingUp,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 // Card imports removed (unused)
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -30,7 +38,12 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
-import { useCreditLimit, useMyAdvances, useRequestAdvance } from '@/hooks/useWorkingCapital';
+import {
+  useCreditLimit,
+  useMyAdvances,
+  useRepayAdvance,
+  useRequestAdvance,
+} from '@/hooks/useWorkingCapital';
 import { cn, formatCents } from '@/lib/utils';
 import type { AdvanceStatus, CreditLimit, WorkingCapitalAdvance } from '@/types';
 import { ADVANCE_STATUS } from '@/types';
@@ -384,6 +397,148 @@ function AdvancesEmptyState() {
 }
 
 // ────────────────────────────────────────
+// Outstanding-balance math (integer cents)
+// ────────────────────────────────────────
+
+/**
+ * Outstanding balance on an advance = total owed (principal + fee) minus what
+ * has already been repaid, in integer cents. Floored at 0 so a fully-repaid or
+ * over-collected advance never reports a negative balance. This is the maximum
+ * a manual repayment can be — the gateway 422s anything larger
+ * ("Repayment amount exceeds the outstanding balance").
+ */
+export function outstandingCents(advance: WorkingCapitalAdvance): number {
+  return Math.max(0, advance.advance_amount_cents + advance.fee_cents - advance.repaid_cents);
+}
+
+/** Statuses where a manual early repayment is allowed (still has a balance). */
+function isRepayable(status: AdvanceStatus): boolean {
+  return status === ADVANCE_STATUS.DISBURSED || status === ADVANCE_STATUS.REPAYING;
+}
+
+// ────────────────────────────────────────
+// RepayDialog — manual early repayment
+// ────────────────────────────────────────
+
+function RepayDialog({
+  advance,
+  open,
+  onOpenChange,
+}: {
+  advance: WorkingCapitalAdvance;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const repayAdvance = useRepayAdvance();
+  const outstanding = outstandingCents(advance);
+  const [amountDollars, setAmountDollars] = useState('');
+
+  // Reset the field whenever the dialog (re)opens so a prior attempt doesn't
+  // leak into the next one.
+  useEffect(() => {
+    if (open) setAmountDollars((outstanding / 100).toFixed(2));
+  }, [open, outstanding]);
+
+  const amountCents = useMemo(() => {
+    const parsed = parseFloat(amountDollars);
+    if (Number.isNaN(parsed) || parsed <= 0) return 0;
+    return Math.round(parsed * 100);
+  }, [amountDollars]);
+
+  const overBalance = amountCents > outstanding;
+  const invalid = amountCents <= 0 || overBalance;
+
+  function handleSubmit(e: React.SyntheticEvent) {
+    e.preventDefault();
+    if (invalid || repayAdvance.isPending) return;
+
+    repayAdvance.mutate(
+      { advanceId: advance.id, amount_cents: amountCents },
+      {
+        onSuccess: () => {
+          setAmountDollars('');
+          onOpenChange(false);
+        },
+      },
+    );
+  }
+
+  const ref = advance.contract_number ?? advance.contract_id.slice(0, 8);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="glass max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-white/90">Repay advance</DialogTitle>
+          <DialogDescription className="text-white/50">
+            Pay down {ref} early to free up available credit. Enter any amount up to your outstanding
+            balance.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Outstanding summary — value is text + tabular, never color-only */}
+          <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] p-3 text-sm">
+            <span className="text-white/50">Outstanding balance</span>
+            <span className="gold-text font-semibold tabular-nums">{formatCents(outstanding)}</span>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="repay-amount" className="text-white/60">
+              Repayment amount ($)
+            </Label>
+            <Input
+              id="repay-amount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              max={(outstanding / 100).toFixed(2)}
+              placeholder="0.00"
+              value={amountDollars}
+              onChange={(e) => {
+                setAmountDollars(e.target.value);
+              }}
+              className="min-h-[44px]"
+              aria-describedby="repay-amount-hint"
+              aria-invalid={overBalance || undefined}
+            />
+            {overBalance ? (
+              <p id="repay-amount-hint" className="text-xs text-red-300" role="alert">
+                Repayment amount exceeds the outstanding balance of {formatCents(outstanding)}.
+              </p>
+            ) : (
+              <p id="repay-amount-hint" className="text-xs text-white/30">
+                Up to {formatCents(outstanding)} can be repaid.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[44px]"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+              disabled={repayAdvance.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-[44px]" disabled={invalid || repayAdvance.isPending}>
+              {repayAdvance.isPending ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : null}
+              {amountCents > 0 && !overBalance ? `Repay ${formatCents(amountCents)}` : 'Repay'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ────────────────────────────────────────
 // Main page
 // ────────────────────────────────────────
 
@@ -395,6 +550,8 @@ export default function ProviderAdvancesPage() {
 
   const [selectedContract, setSelectedContract] = useState('');
   const [amountDollars, setAmountDollars] = useState('');
+  // Id of the advance whose Repay dialog is open (null = closed).
+  const [repayAdvanceId, setRepayAdvanceId] = useState<string | null>(null);
 
   const advances = advancesData?.advances ?? [];
 
@@ -750,12 +907,50 @@ export default function ProviderAdvancesPage() {
                       </div>
                     ) : null}
                   </div>
+
+                  {/* Manual early-repayment action for outstanding advances */}
+                  {isRepayable(advance.status) && outstandingCents(advance) > 0 ? (
+                    <div className="ml-3 shrink-0 self-start">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="min-h-[44px]"
+                        onClick={() => {
+                          setRepayAdvanceId(advance.id);
+                        }}
+                        aria-label={`Repay advance ${
+                          advance.contract_number ?? advance.contract_id.slice(0, 8)
+                        } (${formatCents(outstandingCents(advance))} outstanding)`}
+                      >
+                        Repay
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Repay dialog — mounted per open advance; key resets internal state */}
+      {repayAdvanceId
+        ? (() => {
+            const target = advances.find((a) => a.id === repayAdvanceId);
+            if (!target) return null;
+            return (
+              <RepayDialog
+                key={target.id}
+                advance={target}
+                open
+                onOpenChange={(next) => {
+                  if (!next) setRepayAdvanceId(null);
+                }}
+              />
+            );
+          })()
+        : null}
     </div>
   );
 }

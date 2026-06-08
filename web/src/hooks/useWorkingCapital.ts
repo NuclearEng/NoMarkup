@@ -60,6 +60,34 @@ export function useRequestAdvance() {
   });
 }
 
+export function useRepayAdvance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    // POST /api/v1/providers/me/advances/{id}/repay with { amount_cents }.
+    // The gateway requires an Idempotency-Key on this payment mutation — the
+    // api client attaches it via idempotencyHeader() (do NOT also add one).
+    mutationFn: (variables: { advanceId: string; amount_cents: number }) =>
+      api
+        .post<{ advance: WorkingCapitalAdvance }>(
+          `/api/v1/providers/me/advances/${variables.advanceId}/repay`,
+          { amount_cents: variables.amount_cents },
+          idempotencyHeader(),
+        )
+        .then((res) => res.advance),
+    onSuccess: () => {
+      toast.success('Repayment applied');
+      void queryClient.invalidateQueries({ queryKey: ['my-advances'] });
+      void queryClient.invalidateQueries({ queryKey: ['credit-limit'] });
+    },
+    onError: (err) => {
+      // Surfaces the gateway's real reason, e.g. the 422
+      // "Repayment amount exceeds the outstanding balance".
+      toast.error(getApiErrorMessage(err, 'Failed to apply repayment'));
+    },
+  });
+}
+
 export function useAdminAdvances(params?: { status?: string; page?: number; page_size?: number }) {
   const searchParams = new URLSearchParams();
   if (params?.status) searchParams.set('status', params.status);
