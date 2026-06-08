@@ -217,6 +217,11 @@ func (h *CategoryQuestionsHandler) AdminCreate(w http.ResponseWriter, r *http.Re
 	).Scan(&q.ID, &q.CategoryID, &q.Question, &q.QuestionType,
 		&opts, &q.Required, &q.DisplayOrder, &q.CreatedAt)
 	if err != nil {
+		if isForeignKeyViolation(err) {
+			// Predictable: category_id is a valid UUID but no such category.
+			writeError(w, http.StatusBadRequest, "category_id does not reference an existing category")
+			return
+		}
 		slog.ErrorContext(r.Context(), "insert category question failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create question")
 		return

@@ -497,6 +497,18 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(msg, "23505") || strings.Contains(strings.ToLower(msg), "unique constraint")
 }
 
+// isForeignKeyViolation returns true for Postgres SQLSTATE 23503 — an insert/
+// update referencing a row that doesn't exist (e.g. a client-supplied
+// category_id with no matching category). Same string-compare approach as
+// isUniqueViolation so a predictable bad reference maps to 4xx, not a 500.
+func isForeignKeyViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "23503") || strings.Contains(strings.ToLower(msg), "foreign key constraint")
+}
+
 // isUndefinedTable returns true for Postgres SQLSTATE 42P01.
 func isUndefinedTable(err error) bool {
 	if err == nil {
