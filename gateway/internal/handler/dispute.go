@@ -1,43 +1,55 @@
 package handler
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-	"github.com/nomarkup/nomarkup/gateway/internal/cache"
+	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
-const disputeTTL = 30 * 24 * time.Hour
-
-// disputeRecord is stored in Redis under dispute:{id}.
-type disputeRecord struct {
-	ID           string   `json:"dispute_id"`
-	ContractID   string   `json:"contract_id"`
-	Reason       string   `json:"reason"`
-	Description  string   `json:"description"`
-	EvidenceURLs []string `json:"evidence_urls"`
-	CreatedBy    string   `json:"created_by"`
-	Status       string   `json:"status"`
-	CreatedAt    string   `json:"created_at"`
-}
-
-// DisputeHandler handles dispute filing endpoints.
+// DisputeHandler handles the standalone, contract-agnostic dispute endpoints
+// (POST /api/v1/disputes, GET /api/v1/disputes/{id}). These are a thin wrapper
+// over the contract service's dispute RPCs so that disputes filed here land in
+// the same Postgres-backed store the admin queue and the contract-scoped
+// endpoints read from.
 type DisputeHandler struct {
-	cache *cache.Client
+	contractClient contractv1.ContractServiceClient
 }
 
 // NewDisputeHandler creates a new DisputeHandler.
-func NewDisputeHandler(cacheClient *cache.Client) *DisputeHandler {
-	return &DisputeHandler{cache: cacheClient}
+func NewDisputeHandler(contractClient contractv1.ContractServiceClient) *DisputeHandler {
+	return &DisputeHandler{contractClient: contractClient}
+}
+
+// disputeReasonToType maps the reason values the dispute-filing form sends to
+// the canonical contract-service dispute type strings (see stringToDisputeType).
+func disputeReasonToType(reason string) string {
+	switch reason {
+	case "quality_issue":
+		return "quality"
+	case "incomplete_work":
+		return "incomplete_work"
+	case "no_show":
+		return "no_show"
+	case "property_damage":
+		return "other"
+	case "other":
+		return "other"
+	default:
+		return ""
+	}
 }
 
 // FileDispute handles POST /api/v1/disputes.
-// Requires auth. Stores dispute in Redis with a 30-day TTL.
+//
+// It delegates to the contract service's OpenDispute RPC, which (a) validates
+// the referenced contract exists (404 if not), (b) verifies the caller is the
+// customer or provider on that contract (403 otherwise), and (c) persists the
+// dispute to the Postgres `disputes` table so it is readable by its creator via
+// GET /disputes/{id} and visible in the admin dispute queue.
 func (h *DisputeHandler) FileDispute(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -68,58 +80,46 @@ func (h *DisputeHandler) FileDispute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate reason is one of the allowed values.
-	allowed := map[string]bool{
-		"quality_issue":    true,
-		"incomplete_work":  true,
-		"no_show":          true,
-		"property_damage":  true,
-		"other":            true,
-	}
-	if !allowed[body.Reason] {
+	disputeType := disputeReasonToType(body.Reason)
+	if disputeType == "" {
 		writeError(w, http.StatusBadRequest, "invalid reason; must be one of: quality_issue, incomplete_work, no_show, property_damage, other")
 		return
 	}
 
-	disputeID := uuid.New().String()
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	evidenceURLs := body.EvidenceURLs
-	if evidenceURLs == nil {
-		evidenceURLs = []string{}
+	resp, err := h.contractClient.OpenDispute(r.Context(), &contractv1.OpenDisputeRequest{
+		ContractId:       body.ContractID,
+		UserId:           claims.UserID,
+		DisputeType:      stringToDisputeType(disputeType),
+		Description:      body.Description,
+		EvidenceUrls:     body.EvidenceURLs,
+		IsGuaranteeClaim: false,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
 	}
 
-	rec := disputeRecord{
-		ID:           disputeID,
-		ContractID:   body.ContractID,
-		Reason:       body.Reason,
-		Description:  body.Description,
-		EvidenceURLs: evidenceURLs,
-		CreatedBy:    claims.UserID,
-		Status:       "filed",
-		CreatedAt:    now,
-	}
-
-	redisKey := fmt.Sprintf("dispute:%s", disputeID)
-	h.cache.SetJSON(r.Context(), redisKey, rec, disputeTTL)
+	dispute := resp.GetDispute()
 
 	slog.Info("dispute filed",
-		"dispute_id", disputeID,
+		"dispute_id", dispute.GetId(),
 		"contract_id", body.ContractID,
 		"user_id", claims.UserID,
 	)
 
 	writeJSON(w, http.StatusCreated, map[string]string{
-		"dispute_id": disputeID,
-		"status":     "filed",
+		"dispute_id": dispute.GetId(),
+		"status":     disputeStatusToString(dispute.GetStatus()),
 	})
 }
 
 // GetDispute handles GET /api/v1/disputes/{id}.
-// Requires auth. Returns dispute from Redis.
+//
+// Party access is enforced by the RequireJoinedPartyAccess middleware on the
+// route (it joins the dispute to its contract and checks customer_id/provider_id).
+// The dispute itself is read from the Postgres-backed contract service.
 func (h *DisputeHandler) GetDispute(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
+	if _, ok := middleware.GetClaims(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
@@ -130,21 +130,15 @@ func (h *DisputeHandler) GetDispute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redisKey := fmt.Sprintf("dispute:%s", disputeID)
-
-	var rec disputeRecord
-	if !h.cache.GetJSON(r.Context(), redisKey, &rec) {
-		writeError(w, http.StatusNotFound, "dispute not found")
-		return
-	}
-
-	// Only the creator may view the dispute (admins handled via admin endpoints).
-	if rec.CreatedBy != claims.UserID {
-		writeError(w, http.StatusForbidden, "access denied")
+	resp, err := h.contractClient.GetDispute(r.Context(), &contractv1.GetDisputeRequest{
+		DisputeId: disputeID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"dispute": rec,
+		"dispute": protoDisputeToJSON(resp.GetDispute()),
 	})
 }

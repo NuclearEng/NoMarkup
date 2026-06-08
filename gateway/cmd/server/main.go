@@ -282,7 +282,7 @@ func main() {
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, cacheClient)
-	disputeHandler := handler.NewDisputeHandler(cacheClient)
+	disputeHandler := handler.NewDisputeHandler(contractClient)
 	piiCipher, err := gatewaycrypto.FromEnv()
 	if err != nil {
 		slog.Error("crypto: load encryption key", "error", err)
