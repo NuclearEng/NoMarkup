@@ -468,7 +468,9 @@ func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	// Public provider directory, keyed by query at the edge. 60s CDN TTL +
+	// 5m SWR. No auth, no per-user data.
+	writeCachedJSON(w, r, http.StatusOK, result, 60, 300)
 }
 
 // getResponseTimeLabel calculates the average first-response time for a

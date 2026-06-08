@@ -222,10 +222,12 @@ func (h *FollowsHandler) ListFollowers(w http.ResponseWriter, r *http.Request) {
 		out = append(out, f)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	// Public social-proof list on a seller profile. Changes as people follow,
+	// so a short 30s CDN TTL + 2m SWR. No auth, no per-user data.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{
 		"followers":  out,
 		"pagination": pageMeta(page, pageSize, total),
-	})
+	}, 30, 120)
 }
 
 // ─────────────────────────────────────────────────────────────────────────

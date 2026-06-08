@@ -51,7 +51,9 @@ func (h *CategoriesHandler) List(w http.ResponseWriter, r *http.Request) {
 	for _, c := range resp.GetCategories() {
 		cats = append(cats, protoCategoryToJSON(c))
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"categories": cats})
+	// Category taxonomy is admin-managed and near-static → long edge TTL
+	// (5m CDN + 1h stale-while-revalidate). Public, no per-user data.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"categories": cats}, 300, 3600)
 }
 
 // Tree handles GET /api/v1/categories/tree.
@@ -62,7 +64,7 @@ func (h *CategoriesHandler) Tree(w http.ResponseWriter, r *http.Request) {
 	var cached map[string]interface{}
 	if h.cache.GetJSON(r.Context(), cacheKey, &cached) {
 		slog.Debug("cache hit", "key", cacheKey)
-		writeJSON(w, http.StatusOK, cached)
+		writeCachedJSON(w, r, http.StatusOK, cached, 300, 3600)
 		return
 	}
 
@@ -82,7 +84,7 @@ func (h *CategoriesHandler) Tree(w http.ResponseWriter, r *http.Request) {
 	h.cache.SetJSON(r.Context(), cacheKey, result, categoryTreeCacheTTL)
 	slog.Debug("cache miss, stored", "key", cacheKey, "ttl", categoryTreeCacheTTL)
 
-	writeJSON(w, http.StatusOK, result)
+	writeCachedJSON(w, r, http.StatusOK, result, 300, 3600)
 }
 
 func protoCategoryToJSON(c *userv1.ServiceCategory) map[string]interface{} {

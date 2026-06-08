@@ -168,7 +168,9 @@ func (h *CategoryQuestionsHandler) ListByCategory(w http.ResponseWriter, r *http
 		}
 		out = append(out, q)
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"questions": out})
+	// Pre-quote questions are admin-managed per category and near-static →
+	// long edge TTL (5m CDN + 1h SWR). Public, no per-user data.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"questions": out}, 300, 3600)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
