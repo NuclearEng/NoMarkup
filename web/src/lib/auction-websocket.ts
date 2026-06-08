@@ -19,10 +19,20 @@ type AuctionMessageListener = (message: AuctionMessage) => void;
 export type AuctionConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 type StatusListener = (status: AuctionConnectionStatus) => void;
 
+/** Refreshes the access token; resolves true if a fresh token is now available. */
+type TokenRefresher = () => Promise<boolean>;
+
 class AuctionWebSocketManager {
   private ws: WebSocket | null = null;
   private jobId: string | null = null;
   private tokenGetter: (() => string | null) | null = null;
+  /**
+   * Refreshes the access token before a reconnect. The 15-min token can expire
+   * while a user idles on an auction page with no HTTP activity; re-dialing
+   * with the stale token would 401 and loop on backoff. We refresh first so
+   * tokenGetter() then returns a fresh token (BUG 2).
+   */
+  private tokenRefresher: TokenRefresher | null = null;
   private messageListeners: Set<AuctionMessageListener> = new Set();
   private statusListeners: Set<StatusListener> = new Set();
   private reconnectAttempts = 0;
@@ -32,18 +42,28 @@ class AuctionWebSocketManager {
   private connectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private auctionEnded = false;
 
-  connect(jobId: string, token: string, tokenGetter?: () => string | null): void {
+  connect(
+    jobId: string,
+    token: string,
+    tokenGetter?: () => string | null,
+    tokenRefresher?: TokenRefresher,
+  ): void {
     // Debounce for React StrictMode
     if (this.connectDebounceTimer) {
       clearTimeout(this.connectDebounceTimer);
     }
 
     this.connectDebounceTimer = setTimeout(() => {
-      this.doConnect(jobId, token, tokenGetter);
+      this.doConnect(jobId, token, tokenGetter, tokenRefresher);
     }, 100);
   }
 
-  private doConnect(jobId: string, token: string, tokenGetter?: () => string | null): void {
+  private doConnect(
+    jobId: string,
+    token: string,
+    tokenGetter?: () => string | null,
+    tokenRefresher?: TokenRefresher,
+  ): void {
     if (this.ws && this.jobId === jobId) return;
 
     this.disconnect();
@@ -51,6 +71,9 @@ class AuctionWebSocketManager {
     this.auctionEnded = false;
     if (tokenGetter) {
       this.tokenGetter = tokenGetter;
+    }
+    if (tokenRefresher) {
+      this.tokenRefresher = tokenRefresher;
     }
 
     const wsBase = API_BASE_URL.replace(/^http/, 'ws');
@@ -82,6 +105,11 @@ class AuctionWebSocketManager {
     };
 
     this.ws.onclose = () => {
+      // Drop the reference to the dead socket. doConnect() guards on
+      // `this.ws && this.jobId === jobId` and would otherwise short-circuit the
+      // reconnect (the closed socket would look like a live one for the same
+      // job), so a dropped auction socket would never actually re-dial.
+      this.ws = null;
       this.updateStatus('disconnected');
       if (!this.auctionEnded) {
         this.attemptReconnect();
@@ -109,6 +137,7 @@ class AuctionWebSocketManager {
     }
     this.jobId = null;
     this.tokenGetter = null;
+    this.tokenRefresher = null;
     this.reconnectAttempts = 0;
     this.updateStatus('disconnected');
   }
@@ -122,11 +151,27 @@ class AuctionWebSocketManager {
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
 
+    // Capture the hooks now: doConnect() calls disconnect() first, which nulls
+    // them, so we must re-pass them through to keep getter/refresher alive
+    // across successive reconnects.
+    const tokenGetter = this.tokenGetter;
+    const tokenRefresher = this.tokenRefresher;
+
     this.reconnectTimer = setTimeout(() => {
-      const token = this.tokenGetter ? this.tokenGetter() : null;
-      if (this.jobId && token) {
-        this.doConnect(this.jobId, token);
-      }
+      // Refresh the (possibly expired) token before re-dialing so reconnect
+      // uses a fresh token instead of looping on 401 (BUG 2). Reconnect even
+      // if the refresh fails — tokenGetter may still yield a usable token, and
+      // a hard auth failure should surface through the normal close/retry path.
+      const refresh = tokenRefresher
+        ? tokenRefresher()
+        : Promise.resolve(false);
+      void refresh.finally(() => {
+        const jobId = this.jobId;
+        const token = tokenGetter ? tokenGetter() : null;
+        if (jobId && token) {
+          this.doConnect(jobId, token, tokenGetter ?? undefined, tokenRefresher ?? undefined);
+        }
+      });
     }, delay);
   }
 

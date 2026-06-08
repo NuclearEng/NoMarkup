@@ -178,7 +178,7 @@ describe('auctionWsManager', () => {
     expect(tokenGetter).not.toHaveBeenCalled();
   });
 
-  it('schedules a reconnect attempt with ~1s backoff after an unexpected close', () => {
+  it('schedules a reconnect attempt with ~1s backoff after an unexpected close', async () => {
     const tokenGetter = vi.fn(() => 'fresh-tok');
     auctionWsManager.connect('job-1', 'tok', tokenGetter);
     vi.advanceTimersByTime(100);
@@ -190,10 +190,48 @@ describe('auctionWsManager', () => {
     // inside the close handler) before scheduling the backoff timer.
     expect(tokenGetter).toHaveBeenCalledTimes(1);
 
-    // After the 1s backoff, the timer fires and tokenGetter is called again
-    // for the actual reconnect attempt.
-    vi.advanceTimersByTime(1000);
+    // After the 1s backoff, the timer fires; the reconnect path awaits the
+    // (no-op here, no refresher) refresh microtask, then calls tokenGetter
+    // again for the actual reconnect attempt. advanceTimersByTimeAsync flushes
+    // that microtask.
+    await vi.advanceTimersByTimeAsync(1000);
     expect(tokenGetter.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('refreshes the token before re-dialing on reconnect (BUG 2)', async () => {
+    const tokenGetter = vi.fn(() => 'fresh-tok');
+    const tokenRefresher = vi.fn(() => Promise.resolve(true));
+    auctionWsManager.connect('job-1', 'tok', tokenGetter, tokenRefresher);
+    vi.advanceTimersByTime(100);
+    FakeWebSocket.last().emitOpen();
+
+    FakeWebSocket.last().emitClose(1006);
+
+    // The backoff timer fires → refresher runs → then a new socket is dialed.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(tokenRefresher).toHaveBeenCalledTimes(1);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it('keeps the token getter/refresher alive across successive reconnects', async () => {
+    const tokenGetter = vi.fn(() => 'fresh-tok');
+    const tokenRefresher = vi.fn(() => Promise.resolve(true));
+    auctionWsManager.connect('job-1', 'tok', tokenGetter, tokenRefresher);
+    vi.advanceTimersByTime(100);
+    FakeWebSocket.last().emitOpen();
+
+    // First drop → reconnect.
+    FakeWebSocket.last().emitClose(1006);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    FakeWebSocket.last().emitOpen();
+
+    // Second drop → reconnect must still work (hooks weren't lost when
+    // doConnect() called disconnect() internally).
+    FakeWebSocket.last().emitClose(1006);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(tokenRefresher.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(FakeWebSocket.instances).toHaveLength(3);
   });
 
   it('skips reconnect when no tokenGetter is registered', () => {

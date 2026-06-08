@@ -5,6 +5,13 @@ vi.mock('@/lib/auth', () => ({
   getAccessToken: vi.fn(),
 }));
 
+// Mock the token refresh the reconnect path calls before re-dialing, so tests
+// don't make a real network request. Resolves true (token still valid).
+vi.mock('@/lib/api', () => ({
+  attemptRefresh: vi.fn(() => Promise.resolve(true)),
+}));
+
+import { attemptRefresh } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import {
   CONNECTION_STATUS,
@@ -213,7 +220,7 @@ describe('wsManager (chat WebSocket client)', () => {
     expect(flushed[1]).toEqual({ type: 'subscribe', channel_id: 'chan-Q2' });
   });
 
-  it('reconnects with exponential backoff after an unexpected close', () => {
+  it('reconnects with exponential backoff after an unexpected close', async () => {
     wsManager.connect();
     vi.advanceTimersByTime(100);
     const ws1 = FakeWebSocket.last();
@@ -223,11 +230,75 @@ describe('wsManager (chat WebSocket client)', () => {
     ws1.emitClose(1006);
     expect(wsManager.connectionStatus).toBe(CONNECTION_STATUS.DISCONNECTED);
 
-    // Reconnect timer fires after 1000ms (initial backoff), then we still
-    // need to wait the 100ms debounce for the new socket to actually open.
-    vi.advanceTimersByTime(1000);
-    vi.advanceTimersByTime(100);
+    // Reconnect timer fires after 1000ms (initial backoff). The reconnect path
+    // first awaits attemptRefresh() (a resolved promise here), then calls
+    // connect(), which schedules the 100ms debounce before the socket opens.
+    // advanceTimersByTimeAsync flushes the refresh microtask between ticks.
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(100);
     expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it('refreshes the access token before re-dialing after an unexpected close', async () => {
+    vi.mocked(attemptRefresh).mockClear();
+    wsManager.connect();
+    vi.advanceTimersByTime(100);
+    const ws1 = FakeWebSocket.last();
+    ws1.emitOpen();
+
+    ws1.emitClose(1006);
+
+    // The reconnect must call attemptRefresh() so an expired idle token is
+    // renewed before the new socket is dialed (BUG 2).
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(attemptRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-subscribes to tracked channels on a reconnected socket (BUG 1)', async () => {
+    wsManager.connect();
+    vi.advanceTimersByTime(100);
+    const ws1 = FakeWebSocket.last();
+    ws1.emitOpen();
+
+    // App subscribes to the active channel on the first socket.
+    wsManager.subscribe('chan-live');
+    expect(ws1.send).toHaveBeenCalledTimes(1);
+
+    // Drop the connection (network blip / server restart).
+    ws1.emitClose(1006);
+
+    // Reconnect (token refresh microtask + backoff + debounce).
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+
+    const ws2 = FakeWebSocket.last();
+    ws2.emitOpen();
+
+    // The new socket must be re-subscribed WITHOUT the app re-issuing
+    // subscribe() — otherwise it would silently receive no messages.
+    expect(ws2.send).toHaveBeenCalledTimes(1);
+    const frame = JSON.parse(ws2.send.mock.calls[0]?.[0] as string) as Record<string, unknown>;
+    expect(frame).toEqual({ type: 'subscribe', channel_id: 'chan-live' });
+  });
+
+  it('does NOT re-subscribe to a channel that was unsubscribed before reconnect', async () => {
+    wsManager.connect();
+    vi.advanceTimersByTime(100);
+    const ws1 = FakeWebSocket.last();
+    ws1.emitOpen();
+
+    wsManager.subscribe('chan-live');
+    wsManager.unsubscribe('chan-live');
+    ws1.emitClose(1006);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(100);
+    const ws2 = FakeWebSocket.last();
+    ws2.emitOpen();
+
+    // No subscriptions tracked → nothing replayed.
+    expect(ws2.send).not.toHaveBeenCalled();
   });
 
   it('does NOT reconnect when disconnect() is called explicitly', () => {
@@ -329,7 +400,7 @@ describe('wsManager (chat WebSocket client)', () => {
     }
   });
 
-  it('connect() called from within an active reconnect timer is a no-op while the timer is pending', () => {
+  it('connect() called from within an active reconnect timer is a no-op while the timer is pending', async () => {
     wsManager.connect();
     vi.advanceTimersByTime(100);
     const ws = FakeWebSocket.last();
@@ -345,8 +416,9 @@ describe('wsManager (chat WebSocket client)', () => {
     wsManager.connect();
     expect(FakeWebSocket.instances).toHaveLength(1);
 
-    // Allow reconnect+debounce to fire; the second socket should appear.
-    vi.advanceTimersByTime(1100);
+    // Allow reconnect (incl. the awaited token refresh) + debounce to fire;
+    // the second socket should appear.
+    await vi.advanceTimersByTimeAsync(1100);
     expect(FakeWebSocket.instances.length).toBeGreaterThanOrEqual(2);
   });
 

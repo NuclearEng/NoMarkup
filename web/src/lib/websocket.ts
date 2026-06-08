@@ -1,3 +1,4 @@
+import { attemptRefresh } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/constants';
 
@@ -90,6 +91,13 @@ class WebSocketManager {
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private outboundQueue: WsClientMessage[] = [];
   private intentionalClose = false;
+  /**
+   * Channels the app currently wants a live subscription to. The server
+   * subscription state lives on the socket, so it is lost on every drop;
+   * we replay a `subscribe` frame for each tracked channel on (re)open so a
+   * reconnected socket isn't silently subscription-less (BUG 1).
+   */
+  private activeSubscriptions: Set<string> = new Set();
 
   get connectionStatus(): ConnectionStatus {
     return this.status;
@@ -161,6 +169,11 @@ class WebSocketManager {
     this.socket.onopen = () => {
       this.setStatus(CONNECTION_STATUS.CONNECTED);
       this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+      // Re-establish subscriptions FIRST (before flushing the disconnect-time
+      // queue) so a reconnected socket is subscribed to the active channel(s)
+      // even when nothing was queued. Without this the socket shows
+      // "connected" but receives no messages/typing for the channel.
+      this.replaySubscriptions();
       this.flushQueue();
     };
 
@@ -209,6 +222,7 @@ class WebSocketManager {
     }
 
     this.outboundQueue = [];
+    this.activeSubscriptions.clear();
     this.setStatus(CONNECTION_STATUS.DISCONNECTED);
   }
 
@@ -221,10 +235,13 @@ class WebSocketManager {
   }
 
   subscribe(channelId: string): void {
+    // Remember the channel so we can re-subscribe on every (re)connect.
+    this.activeSubscriptions.add(channelId);
     this.send({ type: WS_CLIENT_MSG.SUBSCRIBE, channel_id: channelId });
   }
 
   unsubscribe(channelId: string): void {
+    this.activeSubscriptions.delete(channelId);
     this.send({ type: WS_CLIENT_MSG.UNSUBSCRIBE, channel_id: channelId });
   }
 
@@ -259,7 +276,17 @@ class WebSocketManager {
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.connect();
+      // Refresh the access token before re-dialing. An idle socket's 15-min
+      // token may have expired while down; reconnecting with the stale token
+      // would 401 and loop on backoff forever. attemptRefresh() updates the
+      // in-memory token (no-op/fast if still valid) so openSocket() reads a
+      // fresh one. We reconnect regardless of refresh outcome — a failed
+      // refresh still lets connect() retry (and surface auth failure normally).
+      void attemptRefresh().finally(() => {
+        if (!this.intentionalClose) {
+          this.connect();
+        }
+      });
     }, this.reconnectDelay);
 
     this.reconnectDelay = Math.min(
@@ -268,10 +295,29 @@ class WebSocketManager {
     );
   }
 
+  /**
+   * Re-send a `subscribe` frame for every channel the app is tracking. Called
+   * on each socket open so a fresh socket (after a reconnect) is subscribed to
+   * the active channel(s). Sends directly (not via subscribe()) to avoid
+   * mutating the tracking set while iterating it.
+   */
+  private replaySubscriptions(): void {
+    for (const channelId of this.activeSubscriptions) {
+      this.send({ type: WS_CLIENT_MSG.SUBSCRIBE, channel_id: channelId });
+    }
+  }
+
   private flushQueue(): void {
     const pending = [...this.outboundQueue];
     this.outboundQueue = [];
     for (const msg of pending) {
+      // Subscribe/unsubscribe frames are replayed authoritatively from
+      // activeSubscriptions in replaySubscriptions(); skip the queued copies so
+      // we don't double-send a subscribe (or resurrect a since-unsubscribed
+      // channel). Only transient frames (typing) flow through here.
+      if (msg.type === WS_CLIENT_MSG.SUBSCRIBE || msg.type === WS_CLIENT_MSG.UNSUBSCRIBE) {
+        continue;
+      }
       this.send(msg);
     }
   }

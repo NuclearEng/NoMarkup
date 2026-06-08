@@ -131,7 +131,8 @@ describe('useAuctionStream', () => {
     expect(auctionWsManager.connect).toHaveBeenCalledWith(
       'job-1',
       'token-abc',
-      expect.any(Function),
+      expect.any(Function), // tokenGetter
+      expect.any(Function), // tokenRefresher (BUG 2: refresh before reconnect)
     );
     expect(auctionWsManager.onMessage).toHaveBeenCalledTimes(1);
     expect(useAuctionStore.getState().activeJobId).toBe('job-1');

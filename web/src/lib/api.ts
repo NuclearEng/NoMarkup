@@ -50,7 +50,15 @@ export function getApiErrorMessage(err: unknown, fallback: string): string {
 
 let refreshPromise: Promise<boolean> | null = null;
 
-async function attemptRefresh(): Promise<boolean> {
+/**
+ * attemptRefresh exchanges the HTTP-only refresh cookie for a fresh access
+ * token and stores it via setAccessToken. Concurrent callers share one
+ * in-flight request (deduped). Exported so the WebSocket layers can refresh
+ * an expired access token before re-dialing — otherwise an idle socket whose
+ * 15-min token expired would reconnect with the same dead token and loop on
+ * 401 until an unrelated HTTP call happened to refresh it.
+ */
+export async function attemptRefresh(): Promise<boolean> {
   // Deduplicate concurrent refresh attempts
   if (refreshPromise) return refreshPromise;
 
