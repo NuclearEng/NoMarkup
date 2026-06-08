@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { InsuranceQuoteCompare } from '@/components/insurance/InsuranceQuoteCompare';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -11,7 +12,10 @@ import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { PageTransition } from '@/components/ui/page-transition';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 
-export default function InsuranceQuotesPage() {
+// Reads ?contractId=&coverageCents= — must live under a Suspense boundary so
+// useSearchParams() doesn't opt the whole route into client-only rendering
+// (Next 15 App Router requirement; same pattern as disputes/new).
+function InsuranceQuotesContent() {
   const enabled = useFeatureFlag('insurance_competition');
   const searchParams = useSearchParams();
 
@@ -27,30 +31,44 @@ export default function InsuranceQuotesPage() {
       : undefined;
 
   return (
-    <PageTransition>
-      <div className="space-y-6">
-        <Link
-          href={'/insurance' as Route}
-          className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-300 hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to Insurance
-        </Link>
+    <div className="space-y-6">
+      <Link
+        href={'/insurance' as Route}
+        className="flex min-h-[44px] items-center gap-1 text-sm text-zinc-300 hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Back to Insurance
+      </Link>
 
-        {enabled ? (
-          <InsuranceQuoteCompare
-            contractId={contractId}
-            defaultCoverageCents={defaultCoverageCents}
-          />
-        ) : (
-          <EmptyState
-            icon={<AnimatedIllustration type="search-empty" size="sm" />}
-            title="Not available yet"
-            description="Competitive insurance quotes aren't enabled for your account yet. Check back soon."
-            className="glass border-white/10"
-          />
-        )}
-      </div>
+      {enabled ? (
+        <InsuranceQuoteCompare
+          contractId={contractId}
+          defaultCoverageCents={defaultCoverageCents}
+        />
+      ) : (
+        <EmptyState
+          icon={<AnimatedIllustration type="search-empty" size="sm" />}
+          title="Not available yet"
+          description="Competitive insurance quotes aren't enabled for your account yet. Check back soon."
+          className="glass border-white/10"
+        />
+      )}
+    </div>
+  );
+}
+
+export default function InsuranceQuotesPage() {
+  return (
+    <PageTransition>
+      <Suspense
+        fallback={
+          <div className="flex min-h-[40vh] items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-gold)]/30 border-t-[var(--brand-gold)]" />
+          </div>
+        }
+      >
+        <InsuranceQuotesContent />
+      </Suspense>
     </PageTransition>
   );
 }

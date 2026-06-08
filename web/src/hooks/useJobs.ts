@@ -58,7 +58,10 @@ function buildSearchParams(params: SearchJobsParams): string {
   return queryString ? `?${queryString}` : '';
 }
 
-export function useSearchJobs(params: SearchJobsParams) {
+export function useSearchJobs(
+  params: SearchJobsParams,
+  options?: { initialData?: JobsResponse },
+) {
   return useQuery({
     queryKey: ['jobs', 'search', params],
     // Use getPublic to skip auth headers and the 401 retry/redirect cycle.
@@ -69,6 +72,10 @@ export function useSearchJobs(params: SearchJobsParams) {
     // Keep the previous page of results visible while fetching the next page
     // or during background refetches so the skeleton loader never reappears.
     placeholderData: keepPreviousData,
+    // Optional server-seeded first page (RSC pages pass their fetch result) so
+    // SSR + client first paint render the same data — no skeleton, no refetch
+    // flash. Mirrors the marketplace browse pattern (useListings).
+    ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
 }
 

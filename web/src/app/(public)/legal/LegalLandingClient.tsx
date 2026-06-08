@@ -37,11 +37,17 @@ const HOW_IT_WORKS = [
 export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandingClientProps) {
   // Browse the open legal jobs. Seeded from the server fetch so the first paint
   // is real content. Only enabled query params the legal vertical needs.
-  const { data, isLoading, isError, refetch } = useSearchJobs({
-    page: 1,
-    page_size: 12,
-    ...(legalCategoryId ? { category_id: legalCategoryId } : {}),
-  });
+  const { data, isLoading, isError, refetch } = useSearchJobs(
+    {
+      page: 1,
+      page_size: 12,
+      ...(legalCategoryId ? { category_id: legalCategoryId } : {}),
+    },
+    // Seed the cache with the server-fetched first page so SSR and the client's
+    // first paint render identical data (no skeleton flash, no immediate
+    // refetch). Mirrors the marketplace browse island.
+    { initialData: initialJobs },
+  );
 
   const jobs = data?.jobs ?? initialJobs.jobs;
 
