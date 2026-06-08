@@ -548,16 +548,24 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	finalStep := inserted[len(inserted)-1]
 	finalAmount := finalStep.AmountCents
 	finalBidder := finalStep.BidderID
-	cascadeDelta := len(inserted) // each insert is a real bid in the count
 
+	// bid_count is a user-visible "heat" signal counting the bidders on this
+	// listing — NOT the number of listing_bids rows. The auto-bid cascade
+	// inserts >1 row per visible placement (a proxy counter-bid raises an
+	// existing competitor whose original bid is already counted), so counting
+	// rows (len(inserted)) inflates and drifts. We instead recompute the
+	// canonical definition — distinct, non-retracted bidders — so this path
+	// and RetractBid agree exactly. Computed inside the FOR UPDATE tx, so it
+	// is consistent under concurrent bids/retractions.
 	if _, err := tx.Exec(ctx, `
 		UPDATE listings
 		   SET current_bid_cents=$2, current_bidder_id=$3,
-		       bid_count=COALESCE(bid_count,0)+$6,
+		       bid_count=(SELECT COUNT(DISTINCT bidder_id) FROM listing_bids
+		                   WHERE listing_id=$1 AND retracted_at IS NULL),
 		       auction_ends_at=$4, snipe_extension_count=$5,
 		       updated_at=now()
 		 WHERE id=$1`,
-		listingID, finalAmount, finalBidder, endsAt, snipeCount, cascadeDelta,
+		listingID, finalAmount, finalBidder, endsAt, snipeCount,
 	); err != nil {
 		slog.ErrorContext(ctx, "place bid: update listing failed", "error", err)
 		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "update listing failed"
@@ -1086,7 +1094,12 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 //     status='active' and becomes the new current_bid_cents on the
 //     listing. If the new leader is itself an 'awarded' or 'outbid' row
 //     we promote it back to 'active'.
-//   - listings.bid_count is recomputed from non-retracted rows.
+//   - listings.bid_count is recomputed as the number of distinct
+//     non-retracted bidders — the same definition placeBidTx writes, so
+//     the two paths can never disagree. (Counting rows here would diverge
+//     from placeBidTx, which must exclude the auto-bid cascade's proxy
+//     rows; counting distinct bidders is cascade-immune because a proxy
+//     raise belongs to a bidder already counted.)
 //   - When no prior bids remain, current_bid_cents and current_bidder_id
 //     are cleared (the listing reverts to "starting price only").
 //
@@ -1097,10 +1110,10 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 // admin tooling and fraud heuristics can detect retraction abuse (a
 // bidder who repeatedly retracts is sniping the spread).
 //
-// The bid_count delta is non-trivial because the auto-bid cascade can
-// have inserted >1 row per visible bid placement; we recompute the
-// distinct-non-retracted count rather than tracking deltas. Cheap query
-// (single index scan on listing_id, partial index excludes retracted).
+// We recompute the distinct-non-retracted-bidder count rather than
+// tracking deltas, because the auto-bid cascade can insert >1 row per
+// visible placement — a running row-count delta would inflate. Cheap
+// query (single index scan on listing_id).
 const listingRetractWindow = 60 * time.Second
 
 func (h *ListingsHandler) RetractBid(w http.ResponseWriter, r *http.Request) {
@@ -1274,7 +1287,7 @@ func (h *ListingsHandler) RetractBid(w http.ResponseWriter, r *http.Request) {
 			UPDATE listings
 			   SET current_bid_cents = $2,
 			       current_bidder_id = $3,
-			       bid_count = (SELECT COUNT(*) FROM listing_bids
+			       bid_count = (SELECT COUNT(DISTINCT bidder_id) FROM listing_bids
 			                     WHERE listing_id = $1 AND retracted_at IS NULL),
 			       updated_at = now()
 			 WHERE id = $1`,
