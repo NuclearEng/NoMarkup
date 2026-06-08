@@ -384,65 +384,76 @@ func New(
 		r.Post("/me/nps/{id}", referralsHandler.SubmitNPS)
 
 		r.Route("/providers", func(r chi.Router) {
-			r.Get("/me", providerHandler.GetMe)
-			r.Patch("/me", providerHandler.UpdateMe)
-			r.Put("/me/terms", providerHandler.SetGlobalTerms)
-			r.Put("/me/categories", providerHandler.UpdateCategories)
-			r.Put("/me/portfolio", providerHandler.UpdatePortfolio)
-			r.Put("/me/availability", providerHandler.SetAvailability)
-			r.Get("/me/streaks", providerHandler.GetStreaks)
+			// Public-to-any-authed-user: viewing a provider's public profile.
+			// NOT gated by RequireProvider — customers must be able to view
+			// seller profiles.
 			r.Get("/{id}", providerHandler.GetProvider)
 
-			// Provider verification documents
-			r.Post("/me/documents", verificationHandler.UploadDocument)
-			r.Get("/me/documents", verificationHandler.ListDocuments)
-			r.Get("/me/documents/{type}/status", verificationHandler.GetDocumentStatus)
+			// Provider-SELF routes. A non-provider (e.g. a customer-only token)
+			// must never reach these — gate the whole group with RequireProvider
+			// (admin allowed through). Mirrors how RequireAdmin gates /admin.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireProvider)
 
-			// Provider employees (team management).
-			r.Get("/me/employees", employeesHandler.List)
-			r.Post("/me/employees", employeesHandler.Create)
-			r.Patch("/me/employees/{id}", employeesHandler.Update)
-			r.Delete("/me/employees/{id}", employeesHandler.Delete)
+				r.Get("/me", providerHandler.GetMe)
+				r.Patch("/me", providerHandler.UpdateMe)
+				r.Put("/me/terms", providerHandler.SetGlobalTerms)
+				r.Put("/me/categories", providerHandler.UpdateCategories)
+				r.Put("/me/portfolio", providerHandler.UpdatePortfolio)
+				r.Put("/me/availability", providerHandler.SetAvailability)
+				r.Get("/me/streaks", providerHandler.GetStreaks)
 
-			// Stripe Connect routes for providers
-			r.Post("/me/stripe/account", paymentHandler.CreateStripeAccount)
-			r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
-			r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
+				// Provider verification documents
+				r.Post("/me/documents", verificationHandler.UploadDocument)
+				r.Get("/me/documents", verificationHandler.ListDocuments)
+				r.Get("/me/documents/{type}/status", verificationHandler.GetDocumentStatus)
 
-			// Working Capital advances
-			r.Route("/me/advances", func(r chi.Router) {
-				r.Post("/", workingCapitalHandler.RequestAdvance)
-				r.Get("/", workingCapitalHandler.ListMyAdvances)
-				r.Get("/{id}", workingCapitalHandler.GetAdvance)
-			})
+				// Provider employees (team management).
+				r.Get("/me/employees", employeesHandler.List)
+				r.Post("/me/employees", employeesHandler.Create)
+				r.Patch("/me/employees/{id}", employeesHandler.Update)
+				r.Delete("/me/employees/{id}", employeesHandler.Delete)
 
-			// Credit limit
-			r.Get("/me/credit-limit", workingCapitalHandler.GetCreditLimit)
+				// Stripe Connect routes for providers
+				r.Post("/me/stripe/account", paymentHandler.CreateStripeAccount)
+				r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
+				r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
 
-			// Expenses
-			r.Route("/me/expenses", func(r chi.Router) {
-				r.Post("/", expenseHandler.CreateExpense)
-				r.Get("/", expenseHandler.ListExpenses)
-				r.Delete("/{id}", expenseHandler.DeleteExpense)
-			})
+				// Working Capital advances
+				r.Route("/me/advances", func(r chi.Router) {
+					r.Post("/", workingCapitalHandler.RequestAdvance)
+					r.Get("/", workingCapitalHandler.ListMyAdvances)
+					r.Get("/{id}", workingCapitalHandler.GetAdvance)
+				})
 
-			// Tax Forms (1099-NEC)
-			r.Route("/me/tax-forms", func(r chi.Router) {
-				r.Get("/", taxHandler.ListTaxForms)
-				r.Get("/{year}", taxHandler.GetTaxForm)
-				r.Post("/{year}/generate", taxHandler.GenerateTaxForm)
-				r.Get("/{year}/download", taxHandler.DownloadTaxForm)
-			})
+				// Credit limit
+				r.Get("/me/credit-limit", workingCapitalHandler.GetCreditLimit)
 
-			// Reusable quote templates (Wave 5 audit Section H). Owner-bound
-			// inside the handler — every endpoint scopes to the caller's
-			// user_id so a provider can never see another's templates.
-			r.Route("/me/quote-templates", func(r chi.Router) {
-				r.Get("/", quoteTemplatesHandler.List)
-				r.Post("/", quoteTemplatesHandler.Create)
-				r.Patch("/{id}", quoteTemplatesHandler.Update)
-				r.Delete("/{id}", quoteTemplatesHandler.Delete)
-				r.Post("/{id}/use", quoteTemplatesHandler.IncrementUse)
+				// Expenses
+				r.Route("/me/expenses", func(r chi.Router) {
+					r.Post("/", expenseHandler.CreateExpense)
+					r.Get("/", expenseHandler.ListExpenses)
+					r.Delete("/{id}", expenseHandler.DeleteExpense)
+				})
+
+				// Tax Forms (1099-NEC)
+				r.Route("/me/tax-forms", func(r chi.Router) {
+					r.Get("/", taxHandler.ListTaxForms)
+					r.Get("/{year}", taxHandler.GetTaxForm)
+					r.Post("/{year}/generate", taxHandler.GenerateTaxForm)
+					r.Get("/{year}/download", taxHandler.DownloadTaxForm)
+				})
+
+				// Reusable quote templates (Wave 5 audit Section H). Owner-bound
+				// inside the handler — every endpoint scopes to the caller's
+				// user_id so a provider can never see another's templates.
+				r.Route("/me/quote-templates", func(r chi.Router) {
+					r.Get("/", quoteTemplatesHandler.List)
+					r.Post("/", quoteTemplatesHandler.Create)
+					r.Patch("/{id}", quoteTemplatesHandler.Update)
+					r.Delete("/{id}", quoteTemplatesHandler.Delete)
+					r.Post("/{id}/use", quoteTemplatesHandler.IncrementUse)
+				})
 			})
 		})
 
@@ -877,8 +888,10 @@ func New(
 			r.Get("/invoices", subscriptionHandler.ListInvoices)
 		})
 
-		// Provider instant match offer routes
+		// Provider instant match offer routes — provider-self only; gate with
+		// RequireProvider (admin allowed) so a customer-only token cannot reach them.
 		r.Route("/provider/offers", func(r chi.Router) {
+			r.Use(middleware.RequireProvider)
 			r.Get("/", instantMatchHandler.ListProviderOffers)
 			r.Post("/{jobId}/accept", instantMatchHandler.AcceptOffer)
 			r.Post("/{jobId}/decline", instantMatchHandler.DeclineOffer)

@@ -247,6 +247,80 @@ func TestRequireAdmin(t *testing.T) {
 	}
 }
 
+// --- RequireProvider tests ---
+
+func TestRequireProvider(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		claims         *Claims
+		setClaims      bool
+		wantStatus     int
+		wantBodySubstr string
+	}{
+		{
+			name:       "provider_role_passes",
+			claims:     &Claims{UserID: "u1", Email: "a@b.com", Roles: []string{"provider"}},
+			setClaims:  true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "admin_passes",
+			claims:     &Claims{UserID: "u2", Email: "a@b.com", Roles: []string{"admin"}},
+			setClaims:  true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "provider_among_multiple_roles_passes",
+			claims:     &Claims{UserID: "u3", Email: "a@b.com", Roles: []string{"customer", "provider"}},
+			setClaims:  true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:           "customer_only_returns_403",
+			claims:         &Claims{UserID: "u4", Email: "a@b.com", Roles: []string{"customer"}},
+			setClaims:      true,
+			wantStatus:     http.StatusForbidden,
+			wantBodySubstr: "provider access required",
+		},
+		{
+			name:           "empty_roles_returns_403",
+			claims:         &Claims{UserID: "u5", Email: "a@b.com", Roles: []string{}},
+			setClaims:      true,
+			wantStatus:     http.StatusForbidden,
+			wantBodySubstr: "provider access required",
+		},
+		{
+			name:           "no_claims_in_context_returns_401",
+			setClaims:      false,
+			wantStatus:     http.StatusUnauthorized,
+			wantBodySubstr: "authentication required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodGet, "/providers/me", nil)
+			if tt.setClaims {
+				ctx := context.WithValue(req.Context(), ClaimsContextKey, tt.claims)
+				req = req.WithContext(ctx)
+			}
+			rec := httptest.NewRecorder()
+
+			handler := RequireProvider(okHandler())
+			handler.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			if tt.wantBodySubstr != "" {
+				assert.Contains(t, rec.Body.String(), tt.wantBodySubstr)
+			}
+		})
+	}
+}
+
 // --- Recovery tests ---
 
 func TestRecovery(t *testing.T) {
