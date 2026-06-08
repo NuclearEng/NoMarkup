@@ -5,11 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCents(cents: number): string {
+export function formatCents(cents: number | null | undefined): string {
+  const safe = Number.isFinite(cents) ? (cents as number) : 0;
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-  }).format(cents / 100);
+  }).format(safe / 100);
 }
 
 export function formatRelativeTime(date: Date): string {

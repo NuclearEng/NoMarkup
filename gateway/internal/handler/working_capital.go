@@ -353,13 +353,16 @@ func (h *WorkingCapitalHandler) GetCreditLimit(w http.ResponseWriter, r *http.Re
 		"provider_id":             resp.GetProviderId(),
 		"max_advance_cents":       resp.GetMaxAdvanceCents(),
 		"total_outstanding_cents": resp.GetTotalOutstandingCents(),
-		"available_advance_cents": resp.GetAvailableAdvanceCents(),
-		"risk_score":              resp.GetRiskScore(),
-		"jobs_completed":          resp.GetJobsCompleted(),
-		"total_earnings_cents":    resp.GetTotalEarningsCents(),
-		"avg_job_value_cents":     resp.GetAvgJobValueCents(),
-		"on_time_rate":            resp.GetOnTimeRate(),
-		"last_computed_at":        nil,
+		// Web contract (CreditLimit) reads `available_cents`; keep this key in
+		// sync with it so the provider dashboard renders the real number instead
+		// of NaN.
+		"available_cents":      resp.GetAvailableAdvanceCents(),
+		"risk_score":           resp.GetRiskScore(),
+		"jobs_completed":       resp.GetJobsCompleted(),
+		"total_earnings_cents": resp.GetTotalEarningsCents(),
+		"avg_job_value_cents":  resp.GetAvgJobValueCents(),
+		"on_time_rate":         resp.GetOnTimeRate(),
+		"last_computed_at":     nil,
 	}
 	if resp.GetLastComputedAt() != nil {
 		result["last_computed_at"] = formatTimestamp(resp.GetLastComputedAt())

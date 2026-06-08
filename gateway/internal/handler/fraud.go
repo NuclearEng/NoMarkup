@@ -79,7 +79,7 @@ func (h *FraudHandler) ListAlerts(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -171,15 +171,21 @@ func fraudAlertToJSON(a *fraudv1.FraudAlert) map[string]interface{} {
 		signals = append(signals, fraudSignalToJSON(s))
 	}
 
+	createdAt := formatTimestamp(a.GetCreatedAt())
 	result := map[string]interface{}{
-		"id":               a.GetId(),
-		"user_id":          a.GetUserId(),
-		"signals":          signals,
-		"aggregate_risk":   riskLevelToString(a.GetAggregateRisk()),
-		"status":           alertStatusToString(a.GetStatus()),
-		"assigned_to":      a.GetAssignedTo(),
-		"resolution_notes": a.GetResolutionNotes(),
-		"created_at":       formatTimestamp(a.GetCreatedAt()),
+		"id":                   a.GetId(),
+		"user_id":              a.GetUserId(),
+		"signals":              signals,
+		"aggregate_risk_level": riskLevelToString(a.GetAggregateRisk()),
+		"status":               alertStatusToString(a.GetStatus()),
+		"assigned_admin_id":    a.GetAssignedTo(),
+		"resolution_notes":     a.GetResolutionNotes(),
+		// The fraud proto has no separate updated_at/auto_resolved fields; emit
+		// stable defaults so the web contract (FraudAlert) shape is satisfied.
+		"auto_resolved": false,
+		"created_at":    createdAt,
+		"updated_at":    createdAt,
+		"resolved_at":   nil,
 	}
 	if a.GetResolvedAt() != nil {
 		result["resolved_at"] = formatTimestamp(a.GetResolvedAt())
@@ -192,17 +198,17 @@ func fraudSignalToJSON(s *fraudv1.FraudSignal) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	return map[string]interface{}{
-		"id":                 s.GetId(),
-		"user_id":            s.GetUserId(),
-		"signal_type":        fraudSignalTypeToString(s.GetSignalType()),
-		"confidence":         s.GetConfidence(),
-		"risk_level":         riskLevelToString(s.GetRiskLevel()),
-		"details":            s.GetDetails(),
-		"ip_address":         s.GetIpAddress(),
-		"device_fingerprint": s.GetDeviceFingerprint(),
-		"reference_type":     s.GetReferenceType(),
-		"reference_id":       s.GetReferenceId(),
-		"detected_at":        formatTimestamp(s.GetDetectedAt()),
+		"id":                    s.GetId(),
+		"user_id":               s.GetUserId(),
+		"signal_type":           fraudSignalTypeToString(s.GetSignalType()),
+		"confidence":            s.GetConfidence(),
+		"risk_level":            riskLevelToString(s.GetRiskLevel()),
+		"description":           s.GetDetails(),
+		"ip_address":            s.GetIpAddress(),
+		"device_fingerprint":    s.GetDeviceFingerprint(),
+		"reference_entity_type": s.GetReferenceType(),
+		"reference_entity_id":   s.GetReferenceId(),
+		"created_at":            formatTimestamp(s.GetDetectedAt()),
 	}
 }
 

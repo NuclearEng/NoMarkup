@@ -36,17 +36,31 @@ const RISK_LABELS: Record<RiskLevel, string> = {
   critical: 'Critical',
 };
 
-function truncateId(id: string): string {
+function truncateId(id: string | null | undefined): string {
+  if (!id) return '—';
   if (id.length <= 12) return id;
   return id.slice(0, 8) + '...';
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'N/A';
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return 'N/A';
+  return parsed.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function riskLabel(risk: RiskLevel | null | undefined): string {
+  if (risk && risk in RISK_LABELS) return RISK_LABELS[risk];
+  return 'Unknown';
+}
+
+function statusLabel(status: AlertStatus | null | undefined): string {
+  if (status && status in STATUS_LABELS) return STATUS_LABELS[status];
+  return 'Unknown';
 }
 
 export function FraudAlertList() {
@@ -169,18 +183,24 @@ export function FraudAlertList() {
                   </span>
                   <Badge
                     variant="outline"
-                    className={cn('w-fit text-xs', FRAUD_RISK_CLASSES[alert.aggregate_risk_level])}
+                    className={cn(
+                      'w-fit text-xs',
+                      alert.aggregate_risk_level ? FRAUD_RISK_CLASSES[alert.aggregate_risk_level] : undefined,
+                    )}
                   >
-                    {RISK_LABELS[alert.aggregate_risk_level]}
+                    {riskLabel(alert.aggregate_risk_level)}
                   </Badge>
                   <Badge
                     variant="outline"
-                    className={cn('w-fit text-xs', FRAUD_ALERT_STATUS_CLASSES[alert.status])}
+                    className={cn(
+                      'w-fit text-xs',
+                      alert.status ? FRAUD_ALERT_STATUS_CLASSES[alert.status] : undefined,
+                    )}
                   >
-                    {STATUS_LABELS[alert.status]}
+                    {statusLabel(alert.status)}
                   </Badge>
                   <span className="w-16 text-center text-sm tabular-nums">
-                    {String(alert.signals.length)}
+                    {String(alert.signals?.length ?? 0)}
                   </span>
                   <span className="flex-1 text-right text-xs text-muted-foreground">
                     {formatDate(alert.created_at)}

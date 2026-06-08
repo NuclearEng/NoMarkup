@@ -49,13 +49,27 @@ export function CreditScoreCard() {
     return null;
   }
 
+  // Normalize every numeric field — the upstream payment service can return a
+  // zero/absent limit (e.g. grade-D providers with no remaining headroom), and
+  // a missing field must never produce NaN in the UI.
+  const maxAdvanceCents = Number.isFinite(creditLimit.max_advance_cents)
+    ? creditLimit.max_advance_cents
+    : 0;
+  const outstandingCents = Number.isFinite(creditLimit.total_outstanding_cents)
+    ? creditLimit.total_outstanding_cents
+    : 0;
+  // Prefer the authoritative available figure from the service; only derive it
+  // (clamped at >= 0) when the API didn't send a finite value.
+  const availableCents = Number.isFinite(creditLimit.available_cents)
+    ? creditLimit.available_cents
+    : Math.max(0, maxAdvanceCents - outstandingCents);
+  const riskScore = Number.isFinite(creditLimit.risk_score) ? creditLimit.risk_score : 1;
+
   const utilizationRatio =
-    creditLimit.max_advance_cents > 0
-      ? creditLimit.total_outstanding_cents / creditLimit.max_advance_cents
-      : 0;
+    maxAdvanceCents > 0 ? outstandingCents / maxAdvanceCents : 0;
   const utilizationPercent = Math.min(100, Math.round(utilizationRatio * 100));
   const colors = getUtilizationColor(utilizationRatio);
-  const grade = getRiskGrade(creditLimit.risk_score);
+  const grade = getRiskGrade(riskScore);
 
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -72,9 +86,9 @@ export function CreditScoreCard() {
         <div>
           <p
             className="text-3xl font-bold tabular-nums text-zinc-100"
-            aria-label={`Credit limit: ${formatCents(creditLimit.max_advance_cents)}`}
+            aria-label={`Credit limit: ${formatCents(maxAdvanceCents)}`}
           >
-            {formatCents(creditLimit.max_advance_cents)}
+            {formatCents(maxAdvanceCents)}
           </p>
           <p className="text-xs text-zinc-500 mt-0.5">Maximum advance limit</p>
         </div>
@@ -96,8 +110,8 @@ export function CreditScoreCard() {
             />
           </div>
           <div className="flex items-center justify-between text-xs text-zinc-500">
-            <span>{formatCents(creditLimit.total_outstanding_cents)} used</span>
-            <span>{formatCents(creditLimit.available_cents)} available</span>
+            <span>{formatCents(outstandingCents)} used</span>
+            <span>{formatCents(availableCents)} available</span>
           </div>
         </div>
 
