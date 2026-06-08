@@ -304,6 +304,120 @@ func (a *Auth) ResendVerification(ctx context.Context, email string) (*domain.Us
 	return user, token, nil
 }
 
+// passwordResetTokenExpiry is the validity duration for password reset tokens.
+// Shorter than email verification because a reset grants account access.
+const passwordResetTokenExpiry = time.Hour
+
+// resetTokenPurpose namespaces password-reset tokens so a token minted for one
+// purpose (e.g. email verification) cannot be replayed against another.
+const resetTokenPurpose = "pwreset"
+
+// RequestPasswordReset looks up the user by email and, if found, mints a
+// password-reset token to be emailed to them. It ALWAYS returns success
+// (a possibly-empty token + nil error) so the caller can return an identical
+// response regardless of whether the email exists — defeating account
+// enumeration. The boolean reports whether a real user was matched.
+func (a *Auth) RequestPasswordReset(ctx context.Context, email string) (*domain.User, string, bool, error) {
+	email = strings.TrimSpace(email)
+	user, err := a.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, domain.ErrUserNotFound) {
+			// Unknown email: no-op, but report success to the caller.
+			slog.Info("password reset requested for unknown email")
+			return nil, "", false, nil
+		}
+		return nil, "", false, fmt.Errorf("request password reset: %w", err)
+	}
+
+	token := a.GeneratePasswordResetToken(user.ID)
+	slog.Info("password reset token generated", "user_id", user.ID)
+	return user, token, true, nil
+}
+
+// ResetPassword validates a password-reset token and, if valid, replaces the
+// user's password hash. Returns ErrInvalidToken / ErrTokenExpired for an
+// unverifiable token so the gateway can surface a clean 400 (never a 500).
+// On success it revokes all existing refresh tokens so any sessions opened
+// with the old (possibly compromised) password are invalidated.
+func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
+	userID, err := a.ValidatePasswordResetToken(token)
+	if err != nil {
+		slog.Warn("password reset failed: invalid token", "error", err)
+		return fmt.Errorf("reset password: %w", err)
+	}
+
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("reset password: %w", err)
+	}
+
+	if err := a.repo.UpdatePassword(ctx, userID, hash); err != nil {
+		return fmt.Errorf("reset password: %w", err)
+	}
+
+	// Invalidate all existing sessions after a password change.
+	if err := a.repo.RevokeAllUserTokens(ctx, userID); err != nil {
+		slog.Warn("failed to revoke tokens after password reset", "user_id", userID, "error", err)
+	}
+
+	slog.Info("password reset completed", "user_id", userID)
+	return nil
+}
+
+// GeneratePasswordResetToken creates an HMAC-SHA256 signed token encoding the
+// userID, a purpose tag, and an expiration timestamp. Same construction as the
+// verification token but purpose-namespaced so the two are not interchangeable.
+func (a *Auth) GeneratePasswordResetToken(userID string) string {
+	expiry := time.Now().Add(passwordResetTokenExpiry).Unix()
+	payload := resetTokenPurpose + "." + userID + "." + strconv.FormatInt(expiry, 10)
+
+	mac := hmac.New(sha256.New, a.verificationSecret)
+	mac.Write([]byte(payload))
+	sig := hex.EncodeToString(mac.Sum(nil))
+
+	raw := payload + "." + sig
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+// ValidatePasswordResetToken validates the HMAC signature, purpose tag, and
+// expiration. Returns the embedded userID if valid, else ErrInvalidToken or
+// ErrTokenExpired.
+func (a *Auth) ValidatePasswordResetToken(token string) (string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", fmt.Errorf("validate password reset token: %w", domain.ErrInvalidToken)
+	}
+
+	parts := strings.SplitN(string(decoded), ".", 4)
+	if len(parts) != 4 || parts[0] != resetTokenPurpose {
+		return "", fmt.Errorf("validate password reset token: %w", domain.ErrInvalidToken)
+	}
+
+	purpose := parts[0]
+	userID := parts[1]
+	expiryStr := parts[2]
+	providedSig := parts[3]
+
+	payload := purpose + "." + userID + "." + expiryStr
+	mac := hmac.New(sha256.New, a.verificationSecret)
+	mac.Write([]byte(payload))
+	expectedSig := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(providedSig), []byte(expectedSig)) {
+		return "", fmt.Errorf("validate password reset token: %w", domain.ErrInvalidToken)
+	}
+
+	expiry, err := strconv.ParseInt(expiryStr, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("validate password reset token: %w", domain.ErrInvalidToken)
+	}
+	if time.Now().Unix() > expiry {
+		return "", fmt.Errorf("validate password reset token: %w", domain.ErrTokenExpired)
+	}
+
+	return userID, nil
+}
+
 // GenerateVerificationToken creates an HMAC-SHA256 signed token encoding the
 // userID and an expiration timestamp (24 hours from now). The token format is:
 //

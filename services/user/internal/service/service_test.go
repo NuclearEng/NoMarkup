@@ -23,6 +23,7 @@ type mockUserRepo struct {
 	getUserByEmailFn        func(ctx context.Context, email string) (*domain.User, error)
 	updateLastLoginFn       func(ctx context.Context, userID string, at time.Time) error
 	updateEmailVerifiedFn   func(ctx context.Context, userID string, verified bool) error
+	updatePasswordFn        func(ctx context.Context, userID, passwordHash string) error
 	createRefreshTokenFn    func(ctx context.Context, token *domain.RefreshToken) error
 	getRefreshTokenFn       func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
 	revokeRefreshTokenFn    func(ctx context.Context, tokenHash string) error
@@ -64,6 +65,12 @@ func (m *mockUserRepo) UpdateLastLogin(ctx context.Context, userID string, at ti
 }
 func (m *mockUserRepo) UpdateEmailVerified(ctx context.Context, userID string, verified bool) error {
 	return m.updateEmailVerifiedFn(ctx, userID, verified)
+}
+func (m *mockUserRepo) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	if m.updatePasswordFn != nil {
+		return m.updatePasswordFn(ctx, userID, passwordHash)
+	}
+	return nil
 }
 func (m *mockUserRepo) CreateRefreshToken(ctx context.Context, token *domain.RefreshToken) error {
 	return m.createRefreshTokenFn(ctx, token)
@@ -737,6 +744,105 @@ func TestGenerateAndValidateVerificationToken(t *testing.T) {
 	_, err = otherAuth.ValidateVerificationToken(token)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+}
+
+func TestGenerateAndValidatePasswordResetToken(t *testing.T) {
+	t.Parallel()
+
+	auth := newTestAuth(t, &mockUserRepo{})
+
+	token := auth.GeneratePasswordResetToken("user-xyz-789")
+	assert.NotEmpty(t, token)
+
+	userID, err := auth.ValidatePasswordResetToken(token)
+	require.NoError(t, err)
+	assert.Equal(t, "user-xyz-789", userID)
+
+	// A token signed with a different key is rejected.
+	otherAuth := NewAuth(nil, nil, "different-hmac-key-value-here", false)
+	_, err = otherAuth.ValidatePasswordResetToken(token)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+
+	// A verification token must NOT be accepted as a password-reset token
+	// (purpose namespacing).
+	verifyToken := auth.GenerateVerificationToken("user-xyz-789")
+	_, err = auth.ValidatePasswordResetToken(verifyToken)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+}
+
+func TestAuth_RequestPasswordReset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("known email returns token and matched=true", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockUserRepo{
+			getUserByEmailFn: func(_ context.Context, email string) (*domain.User, error) {
+				return &domain.User{ID: "user-1", Email: email}, nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		user, token, matched, err := auth.RequestPasswordReset(context.Background(), "real@example.com")
+		require.NoError(t, err)
+		assert.True(t, matched)
+		assert.NotNil(t, user)
+		assert.NotEmpty(t, token)
+	})
+
+	t.Run("unknown email is a no-op success (anti-enumeration)", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockUserRepo{
+			getUserByEmailFn: func(_ context.Context, _ string) (*domain.User, error) {
+				return nil, domain.ErrUserNotFound
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		user, token, matched, err := auth.RequestPasswordReset(context.Background(), "nobody@example.com")
+		require.NoError(t, err)
+		assert.False(t, matched)
+		assert.Nil(t, user)
+		assert.Empty(t, token)
+	})
+}
+
+func TestAuth_ResetPassword(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid token updates password and revokes sessions", func(t *testing.T) {
+		t.Parallel()
+		var storedHash string
+		var revoked bool
+		repo := &mockUserRepo{
+			updatePasswordFn: func(_ context.Context, _ string, hash string) error {
+				storedHash = hash
+				return nil
+			},
+			revokeAllUserTokensFn: func(_ context.Context, _ string) error {
+				revoked = true
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+		token := auth.GeneratePasswordResetToken("user-42")
+
+		err := auth.ResetPassword(context.Background(), token, "NewPassword123!")
+		require.NoError(t, err)
+		assert.NotEmpty(t, storedHash)
+		assert.True(t, verifyPassword("NewPassword123!", storedHash))
+		assert.True(t, revoked)
+	})
+
+	t.Run("invalid token returns ErrInvalidToken, not a 500", func(t *testing.T) {
+		t.Parallel()
+		auth := newTestAuth(t, &mockUserRepo{})
+
+		err := auth.ResetPassword(context.Background(), "not-a-real-token", "NewPassword123!")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+	})
 }
 
 // --- Profile tests ---

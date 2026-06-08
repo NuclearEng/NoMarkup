@@ -167,6 +167,24 @@ func generatePhonePassword() (string, error) {
 }
 
 // Register handles POST /api/v1/auth/register.
+// isStrongPassword applies a basic password-strength check beyond length:
+// the password must contain at least one letter AND at least one non-letter
+// (digit or symbol). This rejects trivially weak passwords like "12345678"
+// or "aaaaaaaa" while keeping mixed passwords such as "Password123!" valid.
+func isStrongPassword(pw string) bool {
+	hasLetter := false
+	hasNonLetter := false
+	for _, c := range pw {
+		switch {
+		case (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'):
+			hasLetter = true
+		default:
+			hasNonLetter = true
+		}
+	}
+	return hasLetter && hasNonLetter
+}
+
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if !decodeJSON(w, r, &req) {
@@ -180,9 +198,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate password: non-empty and minimum 8 characters.
+	// Validate password: minimum length plus a basic strength check.
+	// Length alone (e.g. "12345678") is trivially guessable, so require a
+	// mix of character classes rather than letting a numeric-only string pass.
 	if len(req.Password) < 8 {
 		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+	if !isStrongPassword(req.Password) {
+		writeError(w, http.StatusBadRequest, "password must include letters and at least one number or symbol")
 		return
 	}
 

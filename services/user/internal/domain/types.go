@@ -379,6 +379,7 @@ type UserRepository interface {
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	UpdateLastLogin(ctx context.Context, userID string, at time.Time) error
 	UpdateEmailVerified(ctx context.Context, userID string, verified bool) error
+	UpdatePassword(ctx context.Context, userID, passwordHash string) error
 
 	CreateRefreshToken(ctx context.Context, token *RefreshToken) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error)

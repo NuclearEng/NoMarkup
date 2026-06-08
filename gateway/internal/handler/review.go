@@ -105,6 +105,10 @@ func (h *ReviewHandler) ListReviewsForUser(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "user id required")
 		return
 	}
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "user id must be a valid UUID")
+		return
+	}
 
 	q := r.URL.Query()
 

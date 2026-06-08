@@ -204,6 +204,66 @@ func (s *Server) ResendVerification(ctx context.Context, req *userv1.ResendVerif
 	return &userv1.ResendVerificationResponse{}, nil
 }
 
+func (s *Server) RequestPasswordReset(ctx context.Context, req *userv1.RequestPasswordResetRequest) (*userv1.RequestPasswordResetResponse, error) {
+	if req.GetEmail() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email is required")
+	}
+
+	user, token, matched, err := s.auth.RequestPasswordReset(ctx, req.GetEmail())
+	if err != nil {
+		// Never reveal whether the email exists — log internally and still
+		// return ok so the gateway can hold the anti-enumeration contract.
+		slog.Error("password reset request failed", "error", err)
+		return &userv1.RequestPasswordResetResponse{}, nil
+	}
+
+	if matched {
+		s.sendPasswordResetEmail(ctx, user.ID, user.Email, token)
+	}
+
+	return &userv1.RequestPasswordResetResponse{}, nil
+}
+
+func (s *Server) ResetPassword(ctx context.Context, req *userv1.ResetPasswordRequest) (*userv1.ResetPasswordResponse, error) {
+	if req.GetToken() == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+	if req.GetNewPassword() == "" {
+		return nil, status.Error(codes.InvalidArgument, "new_password is required")
+	}
+
+	if err := s.auth.ResetPassword(ctx, req.GetToken(), req.GetNewPassword()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.ResetPasswordResponse{Success: true}, nil
+}
+
+// sendPasswordResetEmail dispatches a password-reset email via the notification
+// service. Failures are logged but not propagated.
+func (s *Server) sendPasswordResetEmail(ctx context.Context, userID, email, resetToken string) {
+	if s.notificationClient == nil {
+		slog.Warn("notification client not configured, password reset email not sent", "user_id", userID)
+		return
+	}
+	_, err := s.notificationClient.SendNotification(ctx, &notificationv1.SendNotificationRequest{
+		UserId:           userID,
+		NotificationType: notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED,
+		Title:            "Reset your NoMarkup password",
+		Body:             fmt.Sprintf("Click this link to reset your password: %s/reset-password?token=%s\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.", s.baseURL, resetToken),
+		ActionUrl:        fmt.Sprintf("%s/reset-password?token=%s", s.baseURL, resetToken),
+		Data: map[string]string{
+			"user_email": email,
+		},
+		Channels: []notificationv1.NotificationChannel{
+			notificationv1.NotificationChannel_NOTIFICATION_CHANNEL_EMAIL,
+		},
+	})
+	if err != nil {
+		slog.Error("failed to send password reset email", "user_id", userID, "error", err)
+	}
+}
+
 // sendVerificationEmail dispatches a verification email via the notification service.
 // Failures are logged but not propagated so the caller can continue.
 func (s *Server) sendVerificationEmail(ctx context.Context, userID, email, verificationToken string) {

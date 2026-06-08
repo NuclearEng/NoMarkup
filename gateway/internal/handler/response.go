@@ -141,6 +141,10 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnprocessableEntity, st.Message())
 	case codes.ResourceExhausted:
 		writeError(w, http.StatusTooManyRequests, st.Message())
+	case codes.Unimplemented:
+		// An unimplemented RPC is a server-side gap, not a generic failure —
+		// surface it as 501 rather than masking it as a 500.
+		writeError(w, http.StatusNotImplemented, st.Message())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}

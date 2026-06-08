@@ -119,6 +119,19 @@ func (r *PostgresRepository) UpdateEmailVerified(ctx context.Context, userID str
 	return nil
 }
 
+// UpdatePassword replaces a user's password hash.
+func (r *PostgresRepository) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	query := `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, query, passwordHash, userID)
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update password: %w", domain.ErrUserNotFound)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) CreateRefreshToken(ctx context.Context, token *domain.RefreshToken) error {
 	query := `
 		INSERT INTO refresh_tokens (user_id, token_hash, device_info, ip_address, expires_at)
