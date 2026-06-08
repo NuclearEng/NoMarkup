@@ -118,7 +118,7 @@ export function NotificationBell() {
       {open ? (
         <div
           ref={dropdownRef}
-          className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border bg-background shadow-lg sm:w-96"
+          className="absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-lg border bg-background shadow-lg sm:w-96"
           role="menu"
         >
           {/* Header */}

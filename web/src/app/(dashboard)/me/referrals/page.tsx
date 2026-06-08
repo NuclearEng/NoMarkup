@@ -149,7 +149,7 @@ export default function ReferralsPage() {
           ) : (listQ.data?.referrals.length ?? 0) === 0 ? (
             <p className="text-sm text-white/50">No referrals yet. Share your code to get started.</p>
           ) : (
-            <div className="overflow-hidden rounded-md border border-white/10">
+            <div className="overflow-x-auto rounded-md border border-white/10">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/10 bg-white/5 text-left">
