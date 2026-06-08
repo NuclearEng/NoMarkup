@@ -110,7 +110,11 @@ func (h *AuctionWSHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		"job_id", jobID,
 	)
 
-	ctx, cancel := context.WithCancel(r.Context())
+	// Bound the socket lifetime to the token's exp: when the JWT expires we
+	// close both conns with a 4001 frame so a revoked/expired session can no
+	// longer stream un-delayed, un-anonymized auction bids. The web client
+	// refreshes its token and reconnects on the close.
+	ctx, cancel := boundWSToTokenExpiry(r.Context(), claims.ExpiresAt, clientConn, backendConn)
 	defer cancel()
 
 	// Bidirectional proxy

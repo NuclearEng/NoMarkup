@@ -324,7 +324,17 @@ func (h *SpectatorWSHandler) checkIPLimit(ctx context.Context, ip string) bool {
 		rdb.Expire(ctx, key, spectatorIPKeyTTL)
 	}
 
-	return count <= maxSpectatorConnectionsPerIP
+	if count > maxSpectatorConnectionsPerIP {
+		// Over the cap: this connection is rejected and never registers, so the
+		// Decr in unregisterSpectator never runs. Undo the speculative Incr now
+		// so a rejected attempt consumes no slot — otherwise sustained over-cap
+		// attempts from one IP leak the counter and lock the IP out for the TTL.
+		// (We keep the atomic Incr-then-check to avoid a GET/Incr TOCTOU.)
+		rdb.Decr(ctx, key)
+		return false
+	}
+
+	return true
 }
 
 // registerSpectator adds a spectator to the tracking set for an auction.

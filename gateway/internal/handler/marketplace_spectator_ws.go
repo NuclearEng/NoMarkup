@@ -268,7 +268,16 @@ func (h *MarketplaceSpectatorWSHandler) checkIPLimit(ctx context.Context, ip str
 	if count == 1 {
 		rdb.Expire(ctx, key, listingSpectatorIPKeyTTL)
 	}
-	return count <= maxListingSpectatorPerIP
+	if count > maxListingSpectatorPerIP {
+		// Over the cap: the connection is rejected and never registers, so the
+		// Decr in unregisterSpectator never runs. Undo the speculative Incr now
+		// so a rejected attempt consumes no slot — otherwise sustained over-cap
+		// attempts from one IP leak the counter and lock the IP out for the TTL.
+		// (Atomic Incr-then-check is preserved to avoid a GET/Incr TOCTOU.)
+		rdb.Decr(ctx, key)
+		return false
+	}
+	return true
 }
 
 func (h *MarketplaceSpectatorWSHandler) registerSpectator(ctx context.Context, listingID, spectatorID string) {

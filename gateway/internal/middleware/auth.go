@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -46,6 +47,11 @@ type Claims struct {
 	UserID string
 	Email  string
 	Roles  []string
+	// ExpiresAt is the token's `exp` claim as a wall-clock time. Zero when the
+	// token carried no expiry. WebSocket proxies use this to bound a long-lived
+	// socket's lifetime to the token (close at exp), so a revoked/expired
+	// session cannot keep streaming privileged real-time data past expiry.
+	ExpiresAt time.Time
 }
 
 // AuthMiddleware validates RS256 JWT tokens and injects claims into the request context.
@@ -153,10 +159,16 @@ func (m *AuthMiddleware) validateToken(tokenStr string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
+	var expiresAt time.Time
+	if tc.ExpiresAt != nil {
+		expiresAt = tc.ExpiresAt.Time
+	}
+
 	return &Claims{
-		UserID: tc.Subject,
-		Email:  tc.Email,
-		Roles:  tc.Roles,
+		UserID:    tc.Subject,
+		Email:     tc.Email,
+		Roles:     tc.Roles,
+		ExpiresAt: expiresAt,
 	}, nil
 }
 

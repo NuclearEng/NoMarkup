@@ -411,7 +411,10 @@ func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		"remote_addr", r.RemoteAddr,
 	)
 
-	ctx, cancel := context.WithCancel(r.Context())
+	// Bound the socket lifetime to the token's exp: when the JWT expires we
+	// close both conns with a 4001 frame so a revoked/expired session cannot
+	// keep receiving chat messages. The web client refreshes + reconnects.
+	ctx, cancel := boundWSToTokenExpiry(r.Context(), claims.ExpiresAt, clientConn, backendConn)
 	defer cancel()
 
 	// Proxy messages bidirectionally.
@@ -441,6 +444,52 @@ func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 
 	clientConn.Close(closeStatus, closeReason)
 	backendConn.Close(closeStatus, closeReason)
+}
+
+// wsTokenExpiredStatus is the close code sent when an authed WebSocket is
+// terminated because its JWT reached `exp`. 4001 is in the library-private
+// range (4000-4999); the web clients treat it (and the accompanying reason)
+// as a signal to refresh the token and reconnect.
+const wsTokenExpiredStatus = websocket.StatusCode(4001)
+
+// boundWSToTokenExpiry bounds an authed WebSocket's lifetime to the token's
+// `exp`. It derives a context that is cancelled at expiresAt and, at that
+// moment, cleanly closes both conns with a 4001 "token expired" close frame so
+// the proxy loop unwinds and a revoked/expired session can no longer stream
+// past expiry. The returned stop func cancels the timer/derived context and
+// MUST be deferred by the caller.
+//
+// If expiresAt is zero (token carried no exp) the parent context is returned
+// unchanged with a no-op stop. If expiresAt is already in the past, the conns
+// are closed immediately (defense in depth — validation should have 401'd).
+func boundWSToTokenExpiry(parent context.Context, expiresAt time.Time, conns ...*websocket.Conn) (context.Context, context.CancelFunc) {
+	if expiresAt.IsZero() {
+		return context.WithCancel(parent)
+	}
+
+	ctx, cancel := context.WithDeadline(parent, expiresAt)
+
+	closeExpired := func() {
+		for _, c := range conns {
+			if c != nil {
+				c.Close(wsTokenExpiredStatus, "token expired, reconnect")
+			}
+		}
+	}
+
+	if d := time.Until(expiresAt); d <= 0 {
+		// Already expired at connect — close immediately. The deadline context
+		// is already Done, so the proxy loop will also unwind on its own.
+		closeExpired()
+		return ctx, cancel
+	} else {
+		timer := time.AfterFunc(d, closeExpired)
+		stop := func() {
+			timer.Stop()
+			cancel()
+		}
+		return ctx, stop
+	}
 }
 
 // proxyWebSocket copies messages from src to dst until an error occurs or ctx is cancelled.
