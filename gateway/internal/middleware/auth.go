@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 )
 
 type contextKey string
@@ -57,11 +59,17 @@ type Claims struct {
 // AuthMiddleware validates RS256 JWT tokens and injects claims into the request context.
 type AuthMiddleware struct {
 	publicKey *rsa.PublicKey
+	// cache backs the role-based idle-session sliding window. It is nil-safe:
+	// when nil (Redis disabled/unavailable) the idle-timeout layer is skipped
+	// entirely (fail open). See idle_session.go.
+	cache *cache.Client
 }
 
 // NewAuthMiddleware creates a new AuthMiddleware with the given RSA public key.
-func NewAuthMiddleware(publicKey *rsa.PublicKey) *AuthMiddleware {
-	return &AuthMiddleware{publicKey: publicKey}
+// cacheClient backs the role-based idle-session timeout (CLAUDE.md §6) and may
+// be nil — pass nil to disable idle tracking (fail open).
+func NewAuthMiddleware(publicKey *rsa.PublicKey, cacheClient *cache.Client) *AuthMiddleware {
+	return &AuthMiddleware{publicKey: publicKey, cache: cacheClient}
 }
 
 // errInvalidClaims is returned when the token's iss or aud does not match
@@ -112,6 +120,13 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 			return
 		}
+
+		// Sliding idle-session window: every authenticated request resets the
+		// user's idle TTL (role-based, most-restrictive — CLAUDE.md §6). This is
+		// the activity heartbeat that keeps an actively-browsing user from being
+		// timed out at their next token refresh. Fail-open: a nil/erroring cache
+		// is a no-op (see touchIdleSession).
+		touchIdleSession(r.Context(), m.cache, claims.UserID, claims.Roles)
 
 		ctx := context.WithValue(r.Context(), ClaimsContextKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))

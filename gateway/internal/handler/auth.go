@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -29,6 +30,10 @@ const (
 type AuthHandler struct {
 	userClient   userv1.UserServiceClient
 	secureCookie bool
+	// authMW backs the role-based idle-session timeout (CLAUDE.md §6): it owns
+	// the Redis cache client and the JWT decode used to read the refreshed
+	// token's userID/roles. nil disables idle tracking/enforcement (fail open).
+	authMW *middleware.AuthMiddleware
 }
 
 // NewAuthHandler creates a new AuthHandler.
@@ -37,6 +42,14 @@ func NewAuthHandler(userClient userv1.UserServiceClient, secureCookie bool) *Aut
 		userClient:   userClient,
 		secureCookie: secureCookie,
 	}
+}
+
+// WithIdleSession wires the idle-session timeout (CLAUDE.md §6) into the handler.
+// Additive: when not called (e.g. in tests) idle tracking/enforcement is simply
+// skipped (fail open). Returns the handler for chaining.
+func (h *AuthHandler) WithIdleSession(authMW *middleware.AuthMiddleware) *AuthHandler {
+	h.authMW = authMW
+	return h
 }
 
 type registerRequest struct {
@@ -259,6 +272,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.setRefreshTokenCookie(w, resp.GetRefreshToken())
 	}
 
+	// Seed the idle-session sliding window so a freshly logged-in session has
+	// its idle key immediately (CLAUDE.md §6). Only when MFA is NOT pending —
+	// an MFA challenge has no real session yet; that path seeds on VerifyMFA's
+	// refresh via the normal request flow. Fail-open / no-op without authMW.
+	if !resp.GetMfaRequired() {
+		h.touchIdleFromAccessToken(r.Context(), resp.GetAccessToken(), resp.GetUserId())
+	}
+
 	writeJSON(w, http.StatusOK, authResponse{
 		UserID:               resp.GetUserId(),
 		AccessToken:          resp.GetAccessToken(),
@@ -266,6 +287,28 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		MFARequired:          resp.GetMfaRequired(),
 		MFAChallengeToken:    resp.GetMfaChallengeToken(),
 	})
+}
+
+// touchIdleFromAccessToken decodes the given access token to extract the user's
+// roles and (re)sets their idle-session key with the role-derived TTL. The
+// fallbackUserID is used when the token lacks/fails to yield a subject. It is a
+// no-op when idle tracking is not wired (authMW nil) or the cache is down
+// (fail open — see middleware.TouchIdleSession).
+func (h *AuthHandler) touchIdleFromAccessToken(ctx context.Context, accessToken, fallbackUserID string) {
+	if h.authMW == nil {
+		return
+	}
+	userID := fallbackUserID
+	var roles []string
+	if accessToken != "" {
+		if claims, err := h.authMW.ValidateToken(accessToken); err == nil {
+			if claims.UserID != "" {
+				userID = claims.UserID
+			}
+			roles = claims.Roles
+		}
+	}
+	h.authMW.TouchIdleSession(ctx, userID, roles)
 }
 
 // Refresh handles POST /api/v1/auth/refresh.
@@ -298,12 +341,53 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Idle-session enforcement (CLAUDE.md §6). The user-service already rotated
+	// the refresh token and minted a new access token. Before we hand them back
+	// to the client, check the role-based idle window: if the user has made no
+	// authenticated request / WS heartbeat for longer than their role's timeout,
+	// their idle key has expired in Redis and we reject the refresh — they must
+	// sign in again. The rotated refresh token is acceptable collateral (they
+	// re-login). FAIL OPEN: if the cache is down or the token can't be decoded,
+	// `ok` is false and we skip enforcement entirely — the idle timeout is a
+	// defense-in-depth layer, never the primary gate.
+	if h.authMW != nil {
+		if userID, roles, decoded := h.decodeAccessToken(resp.GetAccessToken()); decoded {
+			if active, ok := h.authMW.IdleSessionActive(r.Context(), userID); ok && !active {
+				// Idle past the role window — do NOT set the access cookie or
+				// return the new token. Clear the session sentinel so the client
+				// stops auto-retrying and routes the user to sign-in.
+				h.clearSessionFlagCookie(w)
+				slog.InfoContext(r.Context(), "refresh rejected: idle session timed out", "user_id", userID)
+				writeError(w, http.StatusUnauthorized, "Your session timed out due to inactivity. Please sign in again.")
+				return
+			}
+			// Active (or fail-open): reset the sliding idle window with the
+			// possibly-updated role TTL so the next window starts now.
+			h.authMW.TouchIdleSession(r.Context(), userID, roles)
+		}
+	}
+
 	h.setRefreshTokenCookie(w, resp.GetRefreshToken())
 
 	writeJSON(w, http.StatusOK, authResponse{
 		AccessToken:          resp.GetAccessToken(),
 		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
 	})
+}
+
+// decodeAccessToken validates the given access token and returns its userID and
+// roles. decoded is false when the token is empty or fails validation — callers
+// must then skip idle enforcement (fail open) since they cannot identify the
+// session.
+func (h *AuthHandler) decodeAccessToken(accessToken string) (userID string, roles []string, decoded bool) {
+	if h.authMW == nil || accessToken == "" {
+		return "", nil, false
+	}
+	claims, err := h.authMW.ValidateToken(accessToken)
+	if err != nil || claims.UserID == "" {
+		return "", nil, false
+	}
+	return claims.UserID, claims.Roles, true
 }
 
 // Logout handles POST /api/v1/auth/logout.

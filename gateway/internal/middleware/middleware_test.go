@@ -64,7 +64,7 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Parallel()
 
 	key := generateTestKeyPair(t)
-	authMw := NewAuthMiddleware(&key.PublicKey)
+	authMw := NewAuthMiddleware(&key.PublicKey, nil)
 
 	tests := []struct {
 		name           string
@@ -155,7 +155,7 @@ func TestAuthMiddleware_claims_in_context(t *testing.T) {
 	t.Parallel()
 
 	key := generateTestKeyPair(t)
-	authMw := NewAuthMiddleware(&key.PublicKey)
+	authMw := NewAuthMiddleware(&key.PublicKey, nil)
 
 	token := signTestJWT(t, key, "user-456", "admin@example.com", []string{"admin", "provider"}, time.Now().Add(15*time.Minute))
 

@@ -217,8 +217,12 @@ func main() {
 	rateLimiter := middleware.NewRateLimiter(cacheClient, cfg.IsProduction(), authLimitOverride)
 
 	// Wire up handlers and middleware.
-	authMW := middleware.NewAuthMiddleware(publicKey)
+	authMW := middleware.NewAuthMiddleware(publicKey, cacheClient)
 	authHandler := handler.NewAuthHandler(userClient, secureCookie)
+	// Wire the idle-session timeout (CLAUDE.md §6) into the auth handler so
+	// Login seeds the idle key and Refresh enforces it. authMW owns the cache
+	// client + token decode; passing nil cache (Redis down) fails open.
+	authHandler.WithIdleSession(authMW)
 	userHandler := handler.NewUserHandler(userClient, dbPool)
 	providerHandler := handler.NewProviderHandler(userClient, dbPool)
 	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)

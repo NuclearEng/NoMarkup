@@ -417,12 +417,21 @@ func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := boundWSToTokenExpiry(r.Context(), claims.ExpiresAt, clientConn, backendConn)
 	defer cancel()
 
+	// Idle-session heartbeat (CLAUDE.md §6): every inbound client frame (the
+	// WS heartbeat/ping included) resets the user's role-based idle window so an
+	// actively-connected user is not timed out at their next token refresh. The
+	// touch reuses authMW's cache client and is fail-open (no-op when Redis is
+	// down). We snapshot ctx/userID/roles into the closure.
+	touchIdle := func() {
+		h.authMW.TouchIdleSession(ctx, claims.UserID, claims.Roles)
+	}
+
 	// Proxy messages bidirectionally.
 	errc := make(chan error, 2)
 
-	// Client -> Backend
+	// Client -> Backend (resets the idle window on every inbound frame).
 	go func() {
-		errc <- proxyWebSocket(ctx, clientConn, backendConn)
+		errc <- proxyWebSocket(ctx, clientConn, backendConn, touchIdle)
 	}()
 
 	// Backend -> Client
@@ -492,12 +501,21 @@ func boundWSToTokenExpiry(parent context.Context, expiresAt time.Time, conns ...
 	}
 }
 
-// proxyWebSocket copies messages from src to dst until an error occurs or ctx is cancelled.
-func proxyWebSocket(ctx context.Context, src, dst *websocket.Conn) error {
+// proxyWebSocket copies messages from src to dst until an error occurs or ctx is
+// cancelled. Optional onInbound callbacks fire after every successfully-read
+// frame — used on the client->backend direction to reset the role-based idle
+// session window so an actively-connected user (heartbeat pings or any inbound
+// frame) is not timed out at their next refresh (CLAUDE.md §6).
+func proxyWebSocket(ctx context.Context, src, dst *websocket.Conn, onInbound ...func()) error {
 	for {
 		msgType, data, err := src.Read(ctx)
 		if err != nil {
 			return err
+		}
+		for _, cb := range onInbound {
+			if cb != nil {
+				cb()
+			}
 		}
 		writeCtx, writeCancel := context.WithTimeout(ctx, 10*time.Second)
 		err = dst.Write(writeCtx, msgType, data)

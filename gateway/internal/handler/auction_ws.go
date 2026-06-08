@@ -117,12 +117,20 @@ func (h *AuctionWSHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := boundWSToTokenExpiry(r.Context(), claims.ExpiresAt, clientConn, backendConn)
 	defer cancel()
 
+	// Idle-session heartbeat (CLAUDE.md §6): every inbound client frame (the WS
+	// heartbeat/ping included) resets the user's role-based idle window so an
+	// actively-connected bidder is not timed out at their next token refresh.
+	// Fail-open (no-op when Redis is down).
+	touchIdle := func() {
+		h.authMW.TouchIdleSession(ctx, claims.UserID, claims.Roles)
+	}
+
 	// Bidirectional proxy
 	errc := make(chan error, 2)
 
-	// Client -> Backend
+	// Client -> Backend (resets the idle window on every inbound frame).
 	go func() {
-		errc <- proxyWebSocket(ctx, clientConn, backendConn)
+		errc <- proxyWebSocket(ctx, clientConn, backendConn, touchIdle)
 	}()
 
 	// Backend -> Client
