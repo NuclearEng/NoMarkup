@@ -105,7 +105,10 @@ func (h *ListingsSearchHandler) Autocomplete(w http.ResponseWriter, r *http.Requ
 		combined = combined[:limit]
 	}
 
-	writeJSON(w, http.StatusOK, autocompleteResponse{Suggestions: combined})
+	// Public search suggestions, keyed by ?q= at the edge. Stable enough for a
+	// 60s CDN TTL + 5m stale-while-revalidate — absorbs search-as-you-type
+	// bursts. No auth, no per-user data.
+	writeCachedJSON(w, r, http.StatusOK, autocompleteResponse{Suggestions: combined}, 60, 300)
 }
 
 func parseAutocompleteLimit(s string) int {
@@ -255,7 +258,9 @@ func (h *ListingsSearchHandler) Similar(w http.ResponseWriter, r *http.Request) 
 			listings = append(listings, *lj)
 		}
 	}
-	writeJSON(w, http.StatusOK, similarListingsResponse{Listings: listings})
+	// Public "similar listings" rail for a listing — relatively stable, so a
+	// 60s CDN TTL + 5m stale-while-revalidate is safe. No auth, no per-user data.
+	writeCachedJSON(w, r, http.StatusOK, similarListingsResponse{Listings: listings}, 60, 300)
 }
 
 func parseSimilarLimit(s string) int {
