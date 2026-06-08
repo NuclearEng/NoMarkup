@@ -39,13 +39,22 @@ impl BiddingEngine {
             ));
         }
 
+        // Open the transaction up front and lock the job row with FOR UPDATE so
+        // the read -> snipe-extension-count check -> snipe-extension UPDATE below
+        // is serialized against concurrent bids on the same job. Without the lock,
+        // two bids in the final snipe window can both pass the
+        // `snipe_extension_count < 3` check (TOCTOU) and both extend the deadline,
+        // or interleave so an extension is computed against a stale deadline.
+        // Mirrors the locked read in `award_bid`.
+        let mut tx = self.pool.begin().await?;
+
         // Validate auction is active and not expired.
         let job = sqlx::query_as::<_, JobRow>(
             "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
-             FROM jobs WHERE id = $1",
+             FROM jobs WHERE id = $1 FOR UPDATE",
         )
         .bind(job_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(BidError::JobNotFound)?;
 
@@ -83,8 +92,9 @@ impl BiddingEngine {
         // trigger (the v029 form) racing in-flight inserts produces
         // under-counts. Tier 1 audit caught both modes via
         // services/job/internal/service/bid_race_test.go.
-        let mut tx = self.pool.begin().await?;
-
+        //
+        // The job row is already locked FOR UPDATE on the transaction `tx`
+        // opened at the top of this function; reuse it here.
         let bid = sqlx::query_as::<_, Bid>(
             "INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents, is_offer_accepted) \
              VALUES ($1, $2, $3, $3, $4) \
