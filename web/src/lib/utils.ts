@@ -5,6 +5,37 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Hostnames that `next/image` is allowed to optimize. MUST stay in sync with
+ * the `images.remotePatterns` allowlist in `next.config.ts` — `next/image`
+ * THROWS synchronously during render for any other host ("Invalid src prop …
+ * hostname not configured"), which crashes the whole React tree up to the
+ * root error boundary. We mirror the list here so a stray/seed photo URL
+ * (e.g. dev fixtures pointing at images.unsplash.com) degrades to the photo
+ * placeholder instead of nuking the page (CLAUDE.md §15: fail soft).
+ */
+const NEXT_IMAGE_ALLOWED_HOSTS = new Set<string>(['localhost']);
+
+/**
+ * True when `src` is something `next/image` can render without throwing:
+ * a relative/path-only URL, a data URI, or an absolute URL whose host is in
+ * the `next.config.ts` remote-pattern allowlist. Use this to gate `<Image>`
+ * so an unconfigured remote host falls back to a placeholder rather than
+ * crashing the render. Returns false for null/undefined/empty.
+ */
+export function canNextImageLoad(src: string | null | undefined): boolean {
+  if (!src) return false;
+  // Relative paths and data URIs are always safe for next/image.
+  if (src.startsWith('/') || src.startsWith('data:')) return true;
+  try {
+    const { hostname } = new URL(src);
+    return NEXT_IMAGE_ALLOWED_HOSTS.has(hostname);
+  } catch {
+    // Not a parseable absolute URL — let next/image's own handling apply.
+    return false;
+  }
+}
+
 export function formatCents(cents: number | null | undefined): string {
   const safe = Number.isFinite(cents) ? (cents as number) : 0;
   return new Intl.NumberFormat('en-US', {

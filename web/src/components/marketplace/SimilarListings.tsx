@@ -24,7 +24,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 
 import { useSimilarListings } from '@/hooks/useListings';
-import { formatCents } from '@/lib/utils';
+import { canNextImageLoad, formatCents } from '@/lib/utils';
 import type { Listing } from '@/types';
 
 interface SimilarListingsProps {
@@ -80,7 +80,10 @@ export function SimilarListings({
 }
 
 function SimilarCard({ listing }: { listing: Listing }) {
-  const photo = listing.photos?.[0]?.url;
+  const rawPhoto = listing.photos?.[0]?.url;
+  // Only hand next/image a src it can actually optimize; an unconfigured
+  // remote host throws and crashes the page, so fall back to the placeholder.
+  const photo = canNextImageLoad(rawPhoto) ? rawPhoto : undefined;
   const endsAt = listing.auction_ends_at;
   return (
     <li className="w-44 shrink-0 snap-start">

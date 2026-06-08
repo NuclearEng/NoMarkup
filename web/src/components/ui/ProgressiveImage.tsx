@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useCallback, useState } from 'react';
 
-import { cn } from '@/lib/utils';
+import { canNextImageLoad, cn } from '@/lib/utils';
 
 interface ProgressiveImageProps {
   src: string;
@@ -92,6 +92,14 @@ export function ProgressiveImage({
   // Otherwise, use fill mode for responsive containers.
   const useFill = width === undefined || height === undefined;
 
+  // next/image THROWS during render for a remote host that isn't in
+  // next.config.ts's remotePatterns allowlist, which crashes the whole tree
+  // up to the root error boundary. For an unconfigured/seed host, render
+  // unoptimized (next/image's documented escape hatch — still <Image>, not a
+  // raw <img>, so §13 holds) so the page degrades gracefully instead of
+  // crashing (CLAUDE.md §15: fail soft).
+  const unoptimized = !canNextImageLoad(src);
+
   return (
     <div
       className={cn('relative overflow-hidden', className)}
@@ -106,6 +114,7 @@ export function ProgressiveImage({
           alt={alt}
           fill
           priority={priority}
+          unoptimized={unoptimized}
           className={cn(
             'object-cover transition-opacity duration-200',
             isLoaded ? 'opacity-100' : 'opacity-0',
@@ -120,6 +129,7 @@ export function ProgressiveImage({
           width={width}
           height={height}
           priority={priority}
+          unoptimized={unoptimized}
           className={cn(
             'transition-opacity duration-200',
             isLoaded ? 'opacity-100' : 'opacity-0',

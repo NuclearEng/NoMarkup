@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-import { cn, formatCents, formatRelativeTime, isAcceptanceExpired } from '@/lib/utils';
+import {
+  canNextImageLoad,
+  cn,
+  formatCents,
+  formatRelativeTime,
+  isAcceptanceExpired,
+} from '@/lib/utils';
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -148,5 +154,36 @@ describe('formatRelativeTime', () => {
     const date = new Date('2026-01-15T12:00:00Z');
     const result = formatRelativeTime(date);
     expect(result).toBe('Jan 15');
+  });
+});
+
+describe('canNextImageLoad', () => {
+  it('returns false for null/undefined/empty', () => {
+    expect(canNextImageLoad(null)).toBe(false);
+    expect(canNextImageLoad(undefined)).toBe(false);
+    expect(canNextImageLoad('')).toBe(false);
+  });
+
+  it('allows relative paths and data URIs', () => {
+    expect(canNextImageLoad('/static/photo.jpg')).toBe(true);
+    expect(canNextImageLoad('data:image/png;base64,abc')).toBe(true);
+  });
+
+  it('allows allowlisted remote hosts (next.config remotePatterns)', () => {
+    expect(canNextImageLoad('http://localhost:9000/nomarkup-dev/p.jpg')).toBe(true);
+  });
+
+  it('rejects un-allowlisted remote hosts so the page degrades instead of crashing', () => {
+    // Regression guard: unsplash seed photos must NOT be handed to next/image,
+    // which throws "Invalid src prop … hostname not configured" and crashes
+    // the whole tree to the root error boundary.
+    expect(
+      canNextImageLoad('https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800'),
+    ).toBe(false);
+    expect(canNextImageLoad('https://example.com/p.jpg')).toBe(false);
+  });
+
+  it('rejects unparseable values', () => {
+    expect(canNextImageLoad('not a url')).toBe(false);
   });
 });
