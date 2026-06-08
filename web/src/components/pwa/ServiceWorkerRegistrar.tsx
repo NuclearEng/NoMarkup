@@ -13,6 +13,26 @@ export function ServiceWorkerRegistrar(): null {
     if (typeof window === 'undefined') return;
     if (!('serviceWorker' in navigator)) return;
 
+    // In development a cache-first SW serves stale JS chunks (e.g. an old env-
+    // inlined token) past hard reloads, which is confusing to debug. Only run
+    // the PWA SW in production; in dev, actively unregister any existing SW and
+    // purge its caches so the dev bundle is always fresh.
+    if (process.env.NODE_ENV !== 'production') {
+      void (async () => {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister()));
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((k) => caches.delete(k)));
+          }
+        } catch {
+          // Non-fatal — dev cleanup is best-effort.
+        }
+      })();
+      return;
+    }
+
     const register = async () => {
       try {
         await navigator.serviceWorker.register('/sw.js', { scope: '/' });
