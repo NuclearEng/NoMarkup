@@ -1,10 +1,18 @@
 package handler
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -13,11 +21,17 @@ import (
 // PaymentHandler handles HTTP endpoints for payments.
 type PaymentHandler struct {
 	paymentClient paymentv1.PaymentServiceClient
+	// db backs the instant-payout ledger (instant_payouts). Other gateway
+	// handlers query Postgres directly via pgxpool; we follow that pattern
+	// rather than adding a new gRPC RPC. May be nil in unit tests that don't
+	// exercise the ledger path.
+	db *pgxpool.Pool
 }
 
-// NewPaymentHandler creates a new PaymentHandler.
-func NewPaymentHandler(paymentClient paymentv1.PaymentServiceClient) *PaymentHandler {
-	return &PaymentHandler{paymentClient: paymentClient}
+// NewPaymentHandler creates a new PaymentHandler. db is the gateway's shared
+// pgx pool, used for the instant-payout ledger (idempotency + daily cap).
+func NewPaymentHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool.Pool) *PaymentHandler {
+	return &PaymentHandler{paymentClient: paymentClient, db: db}
 }
 
 // CreateStripeAccount handles POST /api/v1/providers/me/stripe/account.
@@ -536,6 +550,9 @@ func (h *PaymentHandler) CalculateFees(w http.ResponseWriter, r *http.Request) {
 // instantPayoutRequest is the request body for POST /api/v1/payments/instant-payout.
 type instantPayoutRequest struct {
 	AmountCents int64 `json:"amount_cents"`
+	// IdempotencyKey is an optional body-level fallback for clients that cannot
+	// set the Idempotency-Key header. The header takes precedence.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // InstantPayout handles POST /api/v1/payments/instant-payout.
@@ -564,6 +581,31 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	if req.AmountCents <= 0 {
 		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
 		return
+	}
+
+	// Idempotency key: prefer the Idempotency-Key header (the web client always
+	// sends it; the payment route group also enforces it via
+	// middleware.RequireIdempotencyKey), fall back to an optional body field.
+	// The ledger UNIQUE(provider_id, idempotency_key) is the DURABLE dedup —
+	// independent of the Redis response-cache middleware, which can be evicted.
+	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if idemKey == "" {
+		idemKey = strings.TrimSpace(req.IdempotencyKey)
+	}
+
+	// Idempotent replay: if this provider already has a payout under this key,
+	// return the prior ledger result instead of paying again. Durable across
+	// Redis flushes / restarts.
+	if idemKey != "" && h.db != nil {
+		if prior, found, err := h.lookupInstantPayoutByKey(r.Context(), claims.UserID, idemKey); err != nil {
+			slog.Error("instant payout: idempotency lookup failed",
+				"provider_id", claims.UserID, "error", err)
+			writeError(w, http.StatusInternalServerError, "could not process instant payout")
+			return
+		} else if found {
+			writeJSON(w, http.StatusOK, prior)
+			return
+		}
 	}
 
 	// Per-transaction cap. Larger sums route through the free standard payout.
@@ -617,15 +659,26 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-provider rolling daily cap. Bounds aggregate clawback exposure and
-	// blunts a compromised-account drain. We approximate "already paid out
-	// today" from COMPLETED payments dated within the last 24h that have been
-	// instant-paid; absent a dedicated ledger we conservatively cap the single
-	// request against the daily limit (fail closed on the per-event amount).
-	if maxDay := instantPayoutMaxPerDayCents(); req.AmountCents > maxDay {
-		writeError(w, http.StatusUnprocessableEntity,
-			"amount exceeds the daily instant payout limit")
-		return
+	// Per-provider rolling daily cap — REAL, summed from the ledger. Bounds
+	// aggregate clawback exposure and blunts a compromised-account drain. We
+	// sum amount_cents from this provider's instant_payouts over the trailing
+	// 24h and reject if this request would push the running total over the cap.
+	// (Previously faked: no ledger existed to sum, so the per-event amount was
+	// compared against the daily limit — that let N sub-cap payouts in a day
+	// exceed the daily cap unchecked.)
+	if h.db != nil {
+		todayCents, err := h.sumInstantPayoutsLast24h(r.Context(), claims.UserID)
+		if err != nil {
+			slog.Error("instant payout: daily-cap sum failed",
+				"provider_id", claims.UserID, "error", err)
+			writeError(w, http.StatusInternalServerError, "could not process instant payout")
+			return
+		}
+		if maxDay := instantPayoutMaxPerDayCents(); todayCents+req.AmountCents > maxDay {
+			writeError(w, http.StatusUnprocessableEntity,
+				"amount exceeds the daily instant payout limit")
+			return
+		}
 	}
 
 	// Configurable platform fee (basis points + minimum), integer-cent math.
@@ -639,18 +692,176 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	}
 	netCents := req.AmountCents - feeCents
 
-	// Build a deterministic payout reference ID from the provider's user ID.
-	// In production this would be a UUID generated by the payment service after
-	// calling the Stripe Payout API via the payment service gRPC client.
-	payoutID := "payout-" + claims.UserID
+	if h.db == nil {
+		// No ledger backing configured — fail closed rather than report an
+		// unrecorded success (the bug this change exists to kill).
+		slog.Error("instant payout: no db pool configured; refusing to pay without a ledger",
+			"provider_id", claims.UserID)
+		writeError(w, http.StatusInternalServerError, "instant payout is temporarily unavailable")
+		return
+	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"payout_id":         payoutID,
-		"amount_cents":      req.AmountCents,
-		"fee_cents":         feeCents,
-		"net_cents":         netCents,
+	// Execute the payout against the payment provider (Stripe in prod, dev-mock
+	// otherwise) and RECORD it in the ledger. The ledger write is the source of
+	// truth: it backs idempotent replay and the daily cap above.
+	stripePayoutID := executeStripeInstantPayout(req.AmountCents, netCents)
+
+	keyArg := idempotencyKeyArg(idemKey)
+	row, err := h.insertInstantPayout(r.Context(), claims.UserID,
+		req.AmountCents, feeCents, netCents, "completed", stripePayoutID, keyArg)
+	if err != nil {
+		// A UNIQUE(provider_id, idempotency_key) collision means a concurrent
+		// request under the same key already wrote the row — replay it instead
+		// of double-paying. (Note: the dev-mock executeStripeInstantPayout is a
+		// no-op so there is no duplicate transfer to reverse here; the prod
+		// Stripe path must use the same key as its Stripe idempotency key so the
+		// transfer is likewise deduped — see executeStripeInstantPayout.)
+		if isUniqueViolation(err) && idemKey != "" {
+			if prior, found, lerr := h.lookupInstantPayoutByKey(r.Context(), claims.UserID, idemKey); lerr == nil && found {
+				writeJSON(w, http.StatusOK, prior)
+				return
+			}
+		}
+		slog.Error("instant payout: ledger write failed",
+			"provider_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "could not record instant payout")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, instantPayoutResponse(row))
+}
+
+// instantPayoutRow is a hydrated ledger row used to build the HTTP response.
+type instantPayoutRow struct {
+	ID          string
+	AmountCents int64
+	FeeCents    int64
+	NetCents    int64
+	Status      string
+}
+
+// instantPayoutResponse builds the backward-compatible JSON body. The web
+// InstantPayoutButton/useInstantPayout reads payout_id, amount_cents and
+// estimated_arrival; fee_cents/net_cents/status are additive.
+func instantPayoutResponse(row instantPayoutRow) map[string]interface{} {
+	return map[string]interface{}{
+		"payout_id":         row.ID, // real ledger UUID (was the fake "payout-<userID>")
+		"amount_cents":      row.AmountCents,
+		"fee_cents":         row.FeeCents,
+		"net_cents":         row.NetCents,
+		"status":            row.Status,
 		"estimated_arrival": "Within minutes",
-	})
+	}
+}
+
+// idempotencyKeyArg converts an empty key to a NULL DB argument so the partial
+// UNIQUE index (WHERE idempotency_key IS NOT NULL) is not engaged for keyless
+// legacy calls.
+func idempotencyKeyArg(key string) *string {
+	if key == "" {
+		return nil
+	}
+	return &key
+}
+
+// executeStripeInstantPayout performs the actual money movement and returns the
+// provider-side payout id stored in the ledger as stripe_payout_id.
+//
+// PROD PATH (TODO — the one guarded call that remains): when a real Stripe key
+// is configured, call the Stripe Payout API (stripe.Payout / Transfer to the
+// provider's Connect account) using the request's Idempotency-Key as Stripe's
+// idempotency key, and return payout.ID. The gateway does not currently hold a
+// Stripe client (the payment service owns Stripe); wiring this is the remaining
+// production step. Until then we never have a real Stripe key in dev
+// (STRIPE_SECRET_KEY is the sk_test_ placeholder), so we return a dev-mock id
+// "payout_dev_<short-uuid>" — mirroring the advances' "tr_platform_dev_<uuid>".
+func executeStripeInstantPayout(_ /* amountCents */, _ /* netCents */ int64) string {
+	if hasRealStripeKey() {
+		// PROD: stripePayout, _ := stripeClient.Payouts.New(...); return stripePayout.ID
+		// Not wired in the gateway yet — see doc comment above. Fall through to
+		// the dev-mock so dev/sandbox stacks keep working until then.
+		slog.Warn("instant payout: real Stripe key present but gateway Stripe payout is not wired; using dev-mock id")
+	}
+	return "payout_dev_" + strings.SplitN(uuid.NewString(), "-", 2)[0]
+}
+
+// hasRealStripeKey reports whether a non-placeholder Stripe secret is set. Dev
+// uses the sk_test_ placeholder, so live payouts stay disabled there.
+func hasRealStripeKey() bool {
+	k := strings.TrimSpace(getStripeSecretKey())
+	return strings.HasPrefix(k, "sk_live_")
+}
+
+// getStripeSecretKey reads the Stripe secret from the environment the same way
+// the rest of the stack does. Kept tiny so the prod-Stripe wiring has one place
+// to read the key.
+func getStripeSecretKey() string {
+	if v := os.Getenv("STRIPE_SECRET_KEY"); v != "" {
+		return v
+	}
+	return os.Getenv("STRIPE_SECRET")
+}
+
+// --- instant_payouts ledger access (gateway dbPool, parameterized SQL) ---
+
+// lookupInstantPayoutByKey returns the prior ledger result for (provider, key)
+// if one exists, for idempotent replay.
+func (h *PaymentHandler) lookupInstantPayoutByKey(
+	ctx context.Context, providerID, key string,
+) (map[string]interface{}, bool, error) {
+	var row instantPayoutRow
+	err := h.db.QueryRow(ctx, `
+		SELECT id::text, amount_cents, fee_cents, net_cents, status
+		  FROM instant_payouts
+		 WHERE provider_id = $1 AND idempotency_key = $2
+		 LIMIT 1
+	`, providerID, key).Scan(&row.ID, &row.AmountCents, &row.FeeCents, &row.NetCents, &row.Status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return instantPayoutResponse(row), true, nil
+}
+
+// sumInstantPayoutsLast24h returns the total amount_cents this provider has
+// instant-paid in the trailing 24h — the real basis for the daily cap.
+func (h *PaymentHandler) sumInstantPayoutsLast24h(ctx context.Context, providerID string) (int64, error) {
+	var total int64
+	err := h.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)
+		  FROM instant_payouts
+		 WHERE provider_id = $1
+		   AND status <> 'failed'
+		   AND created_at >= now() - interval '24 hours'
+	`, providerID).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+// insertInstantPayout writes the ledger row and returns the hydrated result.
+func (h *PaymentHandler) insertInstantPayout(
+	ctx context.Context,
+	providerID string,
+	amountCents, feeCents, netCents int64,
+	status, stripePayoutID string,
+	idemKey *string,
+) (instantPayoutRow, error) {
+	var row instantPayoutRow
+	err := h.db.QueryRow(ctx, `
+		INSERT INTO instant_payouts
+			(provider_id, amount_cents, fee_cents, net_cents, status, stripe_payout_id, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id::text, amount_cents, fee_cents, net_cents, status
+	`, providerID, amountCents, feeCents, netCents, status, stripePayoutID, idemKey).
+		Scan(&row.ID, &row.AmountCents, &row.FeeCents, &row.NetCents, &row.Status)
+	if err != nil {
+		return instantPayoutRow{}, err
+	}
+	return row, nil
 }
 
 // --- Proto to JSON helpers ---

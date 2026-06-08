@@ -243,7 +243,7 @@ func main() {
 	// Installment, insurance, and tax/invoice RPCs are all part of the unified
 	// PaymentService (proto consolidated — no separate sub-clients), so they
 	// share the single paymentClient.
-	paymentHandler := handler.NewPaymentHandler(paymentClient)
+	paymentHandler := handler.NewPaymentHandler(paymentClient, dbPool)
 	insuranceHandler := handler.NewInsuranceHandler(paymentClient)
 	// Webhook handler receives raw payloads and forwards them to backend services
 	// which perform Stripe signature verification via stripe.webhooks.constructEvent().
