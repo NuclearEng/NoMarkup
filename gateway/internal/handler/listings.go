@@ -365,6 +365,9 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 	// Single-shot photo fetch for the listings we loaded.
 	if len(ids) > 0 {
 		photoMap, perr := h.fetchPhotosForListings(r.Context(), ids)
+		if perr != nil {
+			slog.ErrorContext(r.Context(), "listings: photo fetch failed", "error", perr, "listing_count", len(ids))
+		}
 		if perr == nil {
 			for i := range results {
 				if ph, ok := photoMap[results[i].ID]; ok {
@@ -516,7 +519,9 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	}
 	d.SellerMemberSince = memberSince.UTC().Format(time.RFC3339)
 
-	if photoMap, perr := h.fetchPhotosForListings(r.Context(), []string{id}); perr == nil {
+	if photoMap, perr := h.fetchPhotosForListings(r.Context(), []string{id}); perr != nil {
+		slog.ErrorContext(r.Context(), "get listing: photo fetch failed", "error", perr, "id", id)
+	} else {
 		d.Photos = photoMap[id]
 	}
 	if d.Photos == nil {
@@ -682,8 +687,13 @@ func (h *ListingsHandler) spectatorCount(ctx context.Context, listingID string) 
 }
 
 func (h *ListingsHandler) fetchPhotosForListings(ctx context.Context, ids []string) (map[string][]listingPhotoJSON, error) {
+	// NOTE: listing_photos has no blur_hash column (columns: id, listing_id,
+	// url, sort_order, created_at). Selecting one errored on every call and the
+	// callers swallowed it, silently dropping all photos. BlurHash stays in the
+	// JSON shape (the web Listing.photos type + ProgressiveImage expect the key)
+	// but is always null until a real column/source exists.
 	rows, err := h.db.Query(ctx, `
-		SELECT id, listing_id, url, sort_order, blur_hash
+		SELECT id, listing_id, url, sort_order
 		  FROM listing_photos
 		 WHERE listing_id = ANY($1)
 		 ORDER BY listing_id, sort_order`, ids)
@@ -695,16 +705,13 @@ func (h *ListingsHandler) fetchPhotosForListings(ctx context.Context, ids []stri
 	for rows.Next() {
 		var id, lid, url string
 		var sortOrder int
-		var blur sql.NullString
-		if err := rows.Scan(&id, &lid, &url, &sortOrder, &blur); err != nil {
+		if err := rows.Scan(&id, &lid, &url, &sortOrder); err != nil {
 			return nil, err
 		}
-		ph := listingPhotoJSON{ID: id, URL: url, SortOrder: sortOrder}
-		if blur.Valid {
-			s := blur.String
-			ph.BlurHash = &s
-		}
-		out[lid] = append(out[lid], ph)
+		out[lid] = append(out[lid], listingPhotoJSON{ID: id, URL: url, SortOrder: sortOrder})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

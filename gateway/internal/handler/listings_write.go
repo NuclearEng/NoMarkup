@@ -825,7 +825,9 @@ func (h *ListingsHandler) loadListingJSON(ctx context.Context, id string) (*list
 		t := endsAt.Time
 		l.AuctionEndsAt = &t
 	}
-	if photoMap, perr := h.fetchPhotosForListings(ctx, []string{id}); perr == nil {
+	if photoMap, perr := h.fetchPhotosForListings(ctx, []string{id}); perr != nil {
+		slog.ErrorContext(ctx, "load listing: photo fetch failed", "error", perr, "id", id)
+	} else {
 		l.Photos = photoMap[id]
 	}
 	if l.Photos == nil {
