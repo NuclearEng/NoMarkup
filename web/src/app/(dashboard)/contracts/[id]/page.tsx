@@ -24,6 +24,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
 import { ShareSavingsCard } from '@/components/ui/ShareSavingsCard';
 import {
+  useAcceptanceExpired,
   useApproveCompletion,
   useCancelContract,
   useContract,
@@ -72,6 +73,14 @@ export default function ContractDetailPage() {
   const { data: allSavings } = useSavings();
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  // Called unconditionally (hooks rule) — safe before data loads: returns false
+  // for a missing/non-pending contract. True only when the acceptance window
+  // has closed, which flips the header badge to a muted "Expired".
+  const acceptanceExpired = useAcceptanceExpired(
+    data?.contract.status ?? '',
+    data?.contract.acceptance_deadline,
+  );
 
   if (isLoading) {
     return (
@@ -146,9 +155,18 @@ export default function ContractDetailPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="gold-text text-2xl font-bold tracking-tight">{contract.contract_number}</h1>
-            <Badge variant={getStatusVariant(contract.status)}>
-              {getStatusLabel(contract.status)}
-            </Badge>
+            {acceptanceExpired ? (
+              <Badge
+                variant="secondary"
+                className="border-zinc-500/30 bg-zinc-500/15 text-zinc-400"
+              >
+                Expired
+              </Badge>
+            ) : (
+              <Badge variant={getStatusVariant(contract.status)}>
+                {getStatusLabel(contract.status)}
+              </Badge>
+            )}
           </div>
           <p className="mt-1 text-3xl font-bold">{formatCents(contract.amount_cents)}</p>
         </div>

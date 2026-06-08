@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useAcceptanceExpired } from '@/hooks/useContracts';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { cn, formatCents } from '@/lib/utils';
 import type { Contract, ContractTipResponse } from '@/types';
@@ -111,6 +112,12 @@ function getProgressGradient(percent: number): string {
 }
 
 export function ContractCard({ contract }: ContractCardProps) {
+  // Pending-acceptance contracts past their deadline read as "Expired" (muted,
+  // non-actionable) instead of "Pending Acceptance" (gold/amber, actionable),
+  // so the user doesn't click in expecting to accept something the backend
+  // will reject. Hydration-safe: false until mounted.
+  const expired = useAcceptanceExpired(contract.status, contract.acceptance_deadline);
+
   const approvedCount = contract.milestones.filter(
     (m) => m.status === MILESTONE_STATUS.APPROVED,
   ).length;
@@ -131,9 +138,14 @@ export function ContractCard({ contract }: ContractCardProps) {
             </div>
             <Badge
               variant="outline"
-              className={cn('shrink-0 border font-medium', getStatusBadgeTint(contract.status))}
+              className={cn(
+                'shrink-0 border font-medium',
+                expired
+                  ? 'border-zinc-500/30 bg-zinc-500/15 text-zinc-400'
+                  : getStatusBadgeTint(contract.status),
+              )}
             >
-              {getStatusLabel(contract.status)}
+              {expired ? 'Expired' : getStatusLabel(contract.status)}
             </Badge>
           </div>
         </CardHeader>
@@ -195,9 +207,17 @@ export function ContractCard({ contract }: ContractCardProps) {
             </div>
           ) : null}
 
-          {/* Acceptance deadline for pending contracts */}
+          {/* Acceptance deadline for pending contracts — a live countdown while
+              the window is open, a muted "expired" note once it has closed. */}
           {contract.status === CONTRACT_STATUS.PENDING_ACCEPTANCE ? (
-            <AcceptanceCountdown deadline={contract.acceptance_deadline} />
+            expired ? (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                Acceptance window expired
+              </p>
+            ) : (
+              <AcceptanceCountdown deadline={contract.acceptance_deadline} />
+            )
           ) : null}
 
           {/* Job title reference */}

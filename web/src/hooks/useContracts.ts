@@ -1,8 +1,40 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { ApiError, api } from '@/lib/api';
+import { isAcceptanceExpired } from '@/lib/utils';
 import type { Contract, ContractDetail, ContractsResponse, Dispute, Milestone } from '@/types';
+
+/**
+ * Hydration-safe check for whether a contract's acceptance window has closed
+ * (status still `pending_acceptance` AND `acceptance_deadline` in the past).
+ *
+ * Returns `false` until mounted so the SSR render and the first client render
+ * agree (no `Date.now()` in the initial render → no hydration mismatch — same
+ * mounted-guard pattern as `AcceptanceCountdown` / `useCountdown`). After mount
+ * it reflects real time and re-checks once per minute so a contract that
+ * crosses its deadline while the page is open flips to expired on its own.
+ */
+export function useAcceptanceExpired(
+  status: string,
+  acceptanceDeadline: string | null | undefined,
+): boolean {
+  const [nowMs, setNowMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 60000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  if (nowMs === null) return false;
+  return isAcceptanceExpired(status, acceptanceDeadline, nowMs);
+}
 
 interface ContractsParams {
   status?: string;

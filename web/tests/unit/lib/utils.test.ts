@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
+import { cn, formatCents, formatRelativeTime, isAcceptanceExpired } from '@/lib/utils';
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -68,6 +68,29 @@ describe('formatCents', () => {
 
   it('formats amounts under a dollar', () => {
     expect(formatCents(99)).toBe('$0.99');
+  });
+});
+
+describe('isAcceptanceExpired', () => {
+  const now = new Date('2026-06-07T12:00:00Z').getTime();
+
+  it('is true when pending_acceptance and the deadline is in the past', () => {
+    expect(isAcceptanceExpired('pending_acceptance', '2026-06-01T00:00:00Z', now)).toBe(true);
+  });
+
+  it('is false when the deadline is still in the future', () => {
+    expect(isAcceptanceExpired('pending_acceptance', '2099-01-01T00:00:00Z', now)).toBe(false);
+  });
+
+  it('is false for non-pending statuses even with a past deadline', () => {
+    expect(isAcceptanceExpired('active', '2000-01-01T00:00:00Z', now)).toBe(false);
+    expect(isAcceptanceExpired('cancelled', '2000-01-01T00:00:00Z', now)).toBe(false);
+  });
+
+  it('is false (fails open) for a missing or unparseable deadline', () => {
+    expect(isAcceptanceExpired('pending_acceptance', null, now)).toBe(false);
+    expect(isAcceptanceExpired('pending_acceptance', undefined, now)).toBe(false);
+    expect(isAcceptanceExpired('pending_acceptance', 'not-a-date', now)).toBe(false);
   });
 });
 

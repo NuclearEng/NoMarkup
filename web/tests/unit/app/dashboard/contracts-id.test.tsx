@@ -69,6 +69,8 @@ vi.mock('@/components/ui/ShareSavingsCard', () => ({
 }));
 
 vi.mock('@/hooks/useContracts', () => ({
+  useAcceptanceExpired: (status: string, deadline: string | null | undefined) =>
+    status === 'pending_acceptance' && !!deadline && new Date(deadline).getTime() < Date.now(),
   useContract: () => contractState,
   useStartWork: () => ({ mutate: startWorkMutate, ...startWorkState }),
   useMarkComplete: () => ({ mutate: markCompleteMutate, ...markCompleteState }),

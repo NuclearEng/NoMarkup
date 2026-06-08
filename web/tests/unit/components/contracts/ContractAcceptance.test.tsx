@@ -20,6 +20,9 @@ let acceptState: MutState = { isPending: false, isError: false };
 let cancelState: MutState = { isPending: false, isError: false };
 
 vi.mock('@/hooks/useContracts', () => ({
+  // Mirror the real hook: pending_acceptance + past deadline ⇒ expired.
+  useAcceptanceExpired: (status: string, deadline: string | null | undefined) =>
+    status === 'pending_acceptance' && !!deadline && new Date(deadline).getTime() < Date.now(),
   useAcceptContract: () => ({
     mutate: mockAcceptMutate,
     get isPending() {
@@ -268,6 +271,33 @@ describe('ContractAcceptance', () => {
     );
     expect(screen.getByText(/Provider Accepted/)).toBeDefined();
     expect(screen.getByText(/You have already accepted this contract/i)).toBeDefined();
+  });
+
+  it('shows an Expired state (no Accept/Decline) when the acceptance deadline has passed', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(ContractAcceptance, {
+        contract: makeContract({ acceptance_deadline: '2000-01-01T00:00:00Z' }),
+      }),
+    );
+    expect(screen.getByText(/Acceptance window expired/i)).toBeDefined();
+    expect(screen.getByText(/can no longer be accepted/i)).toBeDefined();
+    // The actionable Accept/Decline buttons must be gone — no false hope.
+    expect(screen.queryByRole('button', { name: /accept contract/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^decline$/i })).toBeNull();
+    // Pending badges are replaced by the expired badge, not shown.
+    expect(screen.queryByText('Customer Pending')).toBeNull();
+  });
+
+  it('keeps Accept/Decline working for a not-yet-expired deadline', () => {
+    setUser({ id: 'cust-1' });
+    render(
+      createElement(ContractAcceptance, {
+        contract: makeContract({ acceptance_deadline: '2099-01-01T00:00:00Z' }),
+      }),
+    );
+    expect(screen.getByRole('button', { name: /accept contract/i })).toBeDefined();
+    expect(screen.queryByText(/Acceptance window expired/i)).toBeNull();
   });
 
   it('renders 1 milestone (singular text) and multiple milestones (plural text)', () => {

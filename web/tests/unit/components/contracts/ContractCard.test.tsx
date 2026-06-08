@@ -99,6 +99,33 @@ describe('ContractCard', () => {
     expect(screen.getByText('Pending Acceptance')).toBeDefined();
   });
 
+  it('marks a past-deadline pending_acceptance contract as Expired (not Pending)', () => {
+    render(
+      createElement(ContractCard, {
+        contract: makeContract({
+          status: 'pending_acceptance',
+          acceptance_deadline: '2000-01-01T00:00:00Z',
+        }),
+      }),
+    );
+    expect(screen.getByText('Expired')).toBeDefined();
+    expect(screen.queryByText('Pending Acceptance')).toBeNull();
+    expect(screen.getByText(/Acceptance window expired/i)).toBeDefined();
+  });
+
+  it('keeps a future-deadline pending_acceptance contract as Pending Acceptance', () => {
+    render(
+      createElement(ContractCard, {
+        contract: makeContract({
+          status: 'pending_acceptance',
+          acceptance_deadline: '2099-01-01T00:00:00Z',
+        }),
+      }),
+    );
+    expect(screen.getByText('Pending Acceptance')).toBeDefined();
+    expect(screen.queryByText('Expired')).toBeNull();
+  });
+
   it('renders status labels for cancelled, voided, disputed, suspended, abandoned, completed', () => {
     const statuses: Array<{ status: string; label: string }> = [
       { status: 'cancelled', label: 'Cancelled' },
