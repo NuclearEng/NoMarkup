@@ -411,6 +411,25 @@ func main() {
 		log.Fatalf("insert completed job: %v", err)
 	}
 
+	// ── 5b. Completed payments — cleared payout funds for the provider ──
+	// Instant-payout eligibility = sum of the provider's COMPLETED
+	// provider_payout_cents. Seed three completed payments on the completed
+	// contract so the provider has a positive eligible balance ($1,620) and
+	// the instant-payout success path is demoable on a fresh DB.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO payments (id, contract_id, customer_id, provider_id,
+			amount_cents, platform_fee_cents, guarantee_fee_cents, provider_payout_cents,
+			idempotency_key, status, completed_at, created_at, updated_at)
+		SELECT gen_random_uuid(), $1, $2, $3, 60000, 4800, 1200, 54000,
+			'seed-cleared-payout-'||g, 'completed', now(), now(), now()
+		FROM generate_series(1, 3) g
+		ON CONFLICT (idempotency_key) DO NOTHING`,
+		completedContractID, customerUserID, providerUserID,
+	)
+	if err != nil {
+		log.Fatalf("insert cleared-payout fixture: %v", err)
+	}
+
 	// ── 6. Bids ───────────────────────────────────────────────────
 
 	// Bids on the active job (one bid per provider per job due to UNIQUE constraint)
