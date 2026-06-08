@@ -1506,6 +1506,22 @@ export interface FeeConfig {
   lead_gen_max_fee_cents: number | null;
 }
 
+// FeeConfigSummary is the read-only shape returned by GET
+// /api/v1/admin/payments/fee-config. Unlike the FeeConfig write payload (whose
+// percentages are whole numbers entered in the form), the stored/active config
+// returns percentages as 0..1 FRACTIONS (e.g. 0.08 = 8%) and all fee bounds as
+// integer cents. `min_fee_cents` / `max_fee_cents` are 0 when unset.
+export interface FeeConfigSummary {
+  fee_percentage: number;
+  guarantee_percentage: number;
+  min_fee_cents: number;
+  max_fee_cents: number;
+  lead_gen_enabled: boolean;
+  lead_gen_percentage: number;
+  lead_gen_min_fee_cents: number;
+  lead_gen_max_fee_cents: number | null;
+}
+
 export interface CategoryMetricsResponse {
   categories: CategoryMetric[];
 }

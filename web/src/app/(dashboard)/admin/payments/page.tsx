@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { z } from 'zod';
+import { Lock, LockOpen, Minus, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
@@ -24,100 +24,64 @@ import {
 import { Switch } from '@/components/ui/switch';
 import {
   useAdminPayments,
+  useFeeConfig,
   useRevenueReport,
   useUpdateFeeConfig,
 } from '@/hooks/useAdmin';
 import { PAYMENT_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import type { Payment } from '@/types';
+import type { FeeConfigSummary, Payment } from '@/types';
 import { PAYMENT_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
 
-// Sentinel option that switches a preset dropdown into free-text mode so admins
-// can enter a value outside the preset ladder (and aren't locked out of a value
-// already configured that isn't on the list).
-const CUSTOM_OPTION = '__custom__';
+// Stepper increment per click and the bounds every percentage stepper is held
+// to. Percentages are whole-number percents in the UI (e.g. 8 = 8%); the API
+// stores 0..1 fractions, so we convert on submit (see pctToFraction).
+const STEP_PERCENT = 0.5;
+const MIN_PERCENT = 0;
+const MAX_PERCENT = 100;
 
-// Preset percentage ladders for the fee dropdowns. These are whole-number
-// percents (matching what the admin types) and are reconciled with the Go
-// DefaultFeeConfig() (services/payment/internal/domain/types.go): platform 5%,
-// guarantee 2%, lead-gen 10% when enabled. The ladders bracket those defaults
-// with the documented ranges (PRD: 5-8% take rate, 2-3% guarantee fund).
-const PLATFORM_FEE_PRESETS = ['5', '8', '10', '12', '15'] as const;
-const GUARANTEE_FEE_PRESETS = ['1', '2', '3'] as const;
-const LEAD_GEN_FEE_PRESETS = ['0', '3', '5', '10'] as const;
+// localStorage keys for the client-side state this surface owns: the lock and
+// the (UI-only) custom-fee list. Namespaced so they don't collide.
+const LOCK_STORAGE_KEY = 'nm.admin.fees.locked';
+const CUSTOM_FEES_STORAGE_KEY = 'nm.admin.fees.custom';
 
-// presetSelectValue maps the current raw string value to either a matching
-// preset (so it shows selected) or the CUSTOM_OPTION sentinel. Empty stays
-// empty so the placeholder renders.
-function presetSelectValue(value: string, presets: readonly string[]): string {
-  if (value === '') return '';
-  return presets.includes(value) ? value : CUSTOM_OPTION;
+// A client-side-only custom fee. There is currently NO backend store for
+// arbitrary named fees — platform_fee_config has fixed columns — so these are
+// persisted to localStorage and clearly flagged as not-yet-wired-to-the-API.
+// Persisting them for real needs a `platform_custom_fees` table + CRUD
+// endpoints (see the banner in CustomFeesSection).
+interface CustomFee {
+  id: string;
+  name: string;
+  /** Whole-number percent (e.g. 5 = 5%). */
+  rate: number;
 }
 
-// Validation for the fee form. Fields are kept as the raw string inputs the
-// user types; we coerce + validate here so we can surface inline field errors
-// before sending. Percentages are entered as whole numbers (e.g. "10.0") and
-// dollar fields are entered in USD (converted to cents on submit).
-const percentString = z
-  .string()
-  .refine((v) => v === '' || (!Number.isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 100), {
-    message: 'Must be between 0 and 100',
-  });
-
-const usdString = z
-  .string()
-  .refine((v) => v === '' || (!Number.isNaN(Number(v)) && Number(v) >= 0), {
-    message: 'Must be 0 or greater',
-  });
-
-const feeFormSchema = z
-  .object({
-    feePercentage: percentString,
-    guaranteePercentage: percentString,
-    minFee: usdString,
-    maxFee: usdString,
-    leadGenEnabled: z.boolean(),
-    leadGenPercentage: percentString,
-    leadGenMinFee: usdString,
-    leadGenMaxFee: usdString,
-  })
-  .superRefine((val, ctx) => {
-    // max >= min (when both provided) for the platform fee bounds.
-    if (val.minFee !== '' && val.maxFee !== '' && Number(val.maxFee) < Number(val.minFee)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['maxFee'],
-        message: 'Max fee must be ≥ min fee',
-      });
-    }
-    // lead-gen max >= min (max is optional/empty = no cap).
-    if (
-      val.leadGenMinFee !== '' &&
-      val.leadGenMaxFee !== '' &&
-      Number(val.leadGenMaxFee) < Number(val.leadGenMinFee)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['leadGenMaxFee'],
-        message: 'Max fee must be ≥ min fee',
-      });
-    }
-  });
-
-type FeeFormErrors = Partial<Record<keyof z.infer<typeof feeFormSchema>, string>>;
+// clampPercent keeps a stepper value inside [MIN_PERCENT, MAX_PERCENT] and
+// snaps to 2 decimals so repeated ±0.5 clicks never accumulate float drift.
+function clampPercent(value: number): number {
+  const bounded = Math.min(MAX_PERCENT, Math.max(MIN_PERCENT, value));
+  return Math.round(bounded * 100) / 100;
+}
 
 // usdToCents matches the existing min/max fee conversion: USD → integer cents.
 function usdToCents(value: string): number {
   return Math.round((parseFloat(value) || 0) * 100);
 }
 
-// pctToFraction converts a whole-number percent the admin types ("10" = 10%)
+// pctToFraction converts a whole-number percent the admin sees ("10" = 10%)
 // into the 0..1 fraction the API/service expect (0.10). Rounded to 4 decimals
 // to match the NUMERIC(5,4) precision of platform_fee_config.
-function pctToFraction(value: string): number {
-  return Math.round(((parseFloat(value) || 0) / 100) * 10000) / 10000;
+function pctToFraction(value: number): number {
+  return Math.round((value / 100) * 10000) / 10000;
+}
+
+// fractionToPercentNumber converts a stored 0..1 fraction (0.08) into the
+// whole-number percent the steppers operate on (8). Snapped to 2 decimals.
+function fractionToPercentNumber(fraction: number): number {
+  return Math.round(fraction * 100 * 100) / 100;
 }
 
 function formatDate(dateStr: string): string {
@@ -128,95 +92,441 @@ function formatDate(dateStr: string): string {
   });
 }
 
-interface PercentPresetFieldProps {
-  id: string;
-  label: string;
-  presets: readonly string[];
-  /** Raw whole-number percent string (e.g. "10"). Empty = unset. */
-  value: string;
-  onValueChange: (next: string) => void;
-  error?: string;
-  /** Placeholder for the custom numeric input. */
-  customPlaceholder: string;
+// fractionToPercent renders a stored 0..1 fee fraction as a human percent
+// (0.08 -> "8%"). Trailing zeros are trimmed so 0.025 -> "2.5%" but 0.08 -> "8%".
+function fractionToPercent(fraction: number): string {
+  const pct = fraction * 100;
+  const rounded = Math.round(pct * 100) / 100;
+  return `${rounded.toString()}%`;
 }
 
-// PercentPresetField renders a percentage fee as a dropdown of preset values
-// plus a "Custom…" escape hatch that reveals a numeric input — so the standard
-// rates are one click away, but admins are never locked out of an off-ladder
-// value (including one already configured). The selected option reflects the
-// current value: a matching preset shows selected, anything else shows
-// "Custom…" with the numeric input pre-filled.
-function PercentPresetField({
-  id,
-  label,
-  presets,
-  value,
-  onValueChange,
-  error,
-  customPlaceholder,
-}: PercentPresetFieldProps) {
-  // customMode is sticky: once the admin picks "Custom…", the numeric input
-  // stays visible even while empty (so they can type). It also auto-engages
-  // when the incoming value is a non-empty off-ladder rate.
-  const [customMode, setCustomMode] = useState(
-    () => presetSelectValue(value, presets) === CUSTOM_OPTION,
-  );
-  const isCustom = customMode || presetSelectValue(value, presets) === CUSTOM_OPTION;
-  const selectValue = isCustom ? CUSTOM_OPTION : value;
-  const errorId = `${id}-error`;
+// percentLabel renders a whole-number percent (8) as "8%", trimming trailing
+// zeros (2.5 -> "2.5%", 8 -> "8%").
+function percentLabel(value: number): string {
+  return `${(Math.round(value * 100) / 100).toString()}%`;
+}
+
+// feeCapLabel renders a min/max cents bound as USD, or an em-dash when unset
+// (0 or null = no cap configured).
+function feeCapLabel(cents: number | null): string {
+  return cents && cents > 0 ? formatCents(cents) : '—';
+}
+
+interface FeeSummaryRow {
+  /** Stable key + cell label. */
+  label: string;
+  /** Right-aligned value (already formatted). */
+  value: string;
+  /** Audience/side hint shown muted under the label. */
+  note: string;
+  /** Optional badge rendered after the value (e.g. lead-gen enabled state). */
+  badge?: { text: string; muted: boolean };
+}
+
+// CurrentFeesSummary is a READ-ONLY, at-a-glance view of the fees that are
+// CURRENTLY ACTIVE — pulled live from the fetched fee config (GET, not the
+// editable form below). It lets an admin confirm the live rates without
+// interpreting the steppers. Reference rows (advance, instant payout) that live
+// outside platform_fee_config are labelled as set elsewhere.
+function CurrentFeesSummary({
+  config,
+  isLoading,
+  isError,
+}: {
+  config: FeeConfigSummary | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const rows: FeeSummaryRow[] = config
+    ? [
+        {
+          label: 'Platform commission',
+          value: fractionToPercent(config.fee_percentage),
+          note: 'Seller-side',
+        },
+        {
+          label: 'Guarantee (buyer protection)',
+          value: fractionToPercent(config.guarantee_percentage),
+          note: 'Seller-side',
+        },
+        {
+          label: 'Lead-gen referral',
+          value: fractionToPercent(config.lead_gen_percentage),
+          note: 'Seller-side · opt-in',
+          badge: config.lead_gen_enabled
+            ? { text: 'Enabled', muted: false }
+            : { text: 'Disabled', muted: true },
+        },
+        {
+          label: 'Min fee cap',
+          value: feeCapLabel(config.min_fee_cents),
+          note: 'Floor per transaction',
+        },
+        {
+          label: 'Max fee cap',
+          value: feeCapLabel(config.max_fee_cents),
+          note: 'Ceiling per transaction',
+        },
+      ]
+    : [];
+
+  // Static reference rows — NOT stored in platform_fee_config; set elsewhere.
+  const referenceRows: FeeSummaryRow[] = [
+    {
+      label: 'Working-capital advance',
+      value: '3% origination + 3–15% APR (risk-based)',
+      note: 'Set elsewhere',
+    },
+    {
+      label: 'Instant payout',
+      value: '1%',
+      note: 'Set elsewhere',
+    },
+  ];
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Select
-        value={selectValue}
-        onValueChange={(next) => {
-          if (next === CUSTOM_OPTION) {
-            // Reveal the free-text input; clear so the admin types a fresh value.
-            setCustomMode(true);
-            onValueChange('');
-            return;
-          }
-          // Picking a preset exits custom mode and sets the value directly.
-          setCustomMode(false);
-          onValueChange(next);
-        }}
-      >
-        <SelectTrigger
-          id={id}
-          className="min-h-[44px]"
-          aria-label={label}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+      <CardHeader>
+        <CardTitle className="gold-text text-base">Current Fees</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isError ? (
+          <p className="text-sm text-destructive">
+            Could not load the active fee configuration. Please refresh to try again.
+          </p>
+        ) : isLoading || !config ? (
+          <div className="space-y-3" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="h-10 animate-pulse rounded-md bg-zinc-700/30"
+              />
+            ))}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <caption className="sr-only">
+              Currently active platform fees
+            </caption>
+            <thead>
+              <tr className="border-b border-[var(--brand-gold)]/10 text-left text-xs uppercase tracking-wide text-zinc-300">
+                <th scope="col" className="py-2 pr-4 font-medium">
+                  Fee
+                </th>
+                <th scope="col" className="py-2 text-right font-medium">
+                  Rate
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.label}
+                  className="border-b border-[var(--brand-gold)]/5 last:border-b-0"
+                >
+                  <td className="py-3 pr-4">
+                    <div className="font-medium text-zinc-100">{row.label}</div>
+                    <div className="text-xs text-zinc-400">{row.note}</div>
+                  </td>
+                  <td className="py-3 text-right align-top">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="font-semibold tabular-nums text-zinc-100">
+                        {row.value}
+                      </span>
+                      {row.badge ? (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'text-xs',
+                            row.badge.muted
+                              ? 'border-zinc-600 text-zinc-400'
+                              : 'border-[var(--brand-gold)]/40 text-[var(--brand-gold)]',
+                          )}
+                        >
+                          {row.badge.text}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tbody>
+              <tr>
+                <td colSpan={2} className="pt-4 pb-1">
+                  <div className="text-xs uppercase tracking-wide text-zinc-400">
+                    Other fees (set elsewhere)
+                  </div>
+                </td>
+              </tr>
+              {referenceRows.map((row) => (
+                <tr
+                  key={row.label}
+                  className="border-b border-[var(--brand-gold)]/5 last:border-b-0"
+                >
+                  <td className="py-3 pr-4">
+                    <div className="font-medium text-zinc-100">{row.label}</div>
+                    <div className="text-xs text-zinc-400">{row.note}</div>
+                  </td>
+                  <td className="py-3 text-right align-top">
+                    <span className="font-semibold tabular-nums text-zinc-100">
+                      {row.value}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <p className="text-xs text-zinc-400">
+          The buyer/customer pays no markup — fees come out of the seller payout.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface FeeStepperProps {
+  id: string;
+  label: string;
+  /** Short audience/side hint shown muted under the label. */
+  note?: string;
+  /** Current whole-number percent value (e.g. 8 = 8%). */
+  value: number;
+  onValueChange: (next: number) => void;
+  disabled?: boolean;
+  /** Optional trailing control (e.g. a remove button for custom fees). */
+  trailing?: React.ReactNode;
+}
+
+// FeeStepper adjusts a single percentage fee up/down via −/+ buttons, with the
+// current value shown between them. Bounds are enforced (0–100%), each click is
+// ±STEP_PERCENT, and the value is keyboard-adjustable (ArrowUp/ArrowDown,
+// PageUp/PageDown) via a focusable spinbutton region. Disabled = locked.
+function FeeStepper({
+  id,
+  label,
+  note,
+  value,
+  onValueChange,
+  disabled = false,
+  trailing,
+}: FeeStepperProps) {
+  function step(delta: number) {
+    onValueChange(clampPercent(value + delta));
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (disabled) return;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      step(STEP_PERCENT);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      step(-STEP_PERCENT);
+    } else if (e.key === 'PageUp') {
+      e.preventDefault();
+      step(STEP_PERCENT * 2);
+    } else if (e.key === 'PageDown') {
+      e.preventDefault();
+      step(-STEP_PERCENT * 2);
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-md border border-[var(--brand-gold)]/10 p-3">
+      <div className="min-w-0">
+        <Label htmlFor={id} className="text-sm font-medium text-zinc-100">
+          {label}
+        </Label>
+        {note ? <p className="text-xs text-zinc-400">{note}</p> : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-1 rounded-md border border-[var(--brand-gold)]/15 bg-zinc-900/40 p-1"
+          role="group"
+          aria-label={`${label} stepper`}
         >
-          <SelectValue placeholder="Select a rate" />
-        </SelectTrigger>
-        <SelectContent>
-          {presets.map((preset) => (
-            <SelectItem key={preset} value={preset}>
-              {preset}%
-            </SelectItem>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => { step(-STEP_PERCENT); }}
+            disabled={disabled || value <= MIN_PERCENT}
+            aria-label={`Decrease ${label} by ${STEP_PERCENT.toString()}%`}
+          >
+            <Minus className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <div
+            id={id}
+            role="spinbutton"
+            tabIndex={disabled ? -1 : 0}
+            aria-label={label}
+            aria-valuenow={value}
+            aria-valuemin={MIN_PERCENT}
+            aria-valuemax={MAX_PERCENT}
+            aria-valuetext={percentLabel(value)}
+            aria-disabled={disabled || undefined}
+            onKeyDown={handleKeyDown}
+            className={cn(
+              'min-w-[4rem] select-none rounded-sm px-2 text-center text-base font-semibold tabular-nums text-zinc-100',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-zinc-900',
+              disabled && 'text-zinc-500',
+            )}
+          >
+            {percentLabel(value)}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => { step(STEP_PERCENT); }}
+            disabled={disabled || value >= MAX_PERCENT}
+            aria-label={`Increase ${label} by ${STEP_PERCENT.toString()}%`}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+        {trailing}
+      </div>
+    </div>
+  );
+}
+
+interface CustomFeesSectionProps {
+  fees: CustomFee[];
+  locked: boolean;
+  onChangeRate: (id: string, rate: number) => void;
+  onRemove: (id: string) => void;
+  onAdd: (name: string, rate: number) => void;
+}
+
+// CustomFeesSection lists admin-defined custom fees (each with the same up/down
+// stepper) plus a small "add fee" form. IMPORTANT: there is no backend store
+// for these yet — they live in localStorage only and are NOT applied to any
+// transaction. The banner makes that explicit so the founder knows it's UI-only.
+function CustomFeesSection({
+  fees,
+  locked,
+  onChangeRate,
+  onRemove,
+  onAdd,
+}: CustomFeesSectionProps) {
+  const [name, setName] = useState('');
+  const [rate, setRate] = useState('');
+  const [error, setError] = useState('');
+
+  function handleAdd() {
+    const trimmed = name.trim();
+    const parsed = Number(rate);
+    if (trimmed === '') {
+      setError('Enter a fee name.');
+      return;
+    }
+    if (rate === '' || Number.isNaN(parsed) || parsed < MIN_PERCENT || parsed > MAX_PERCENT) {
+      setError('Default % must be between 0 and 100.');
+      return;
+    }
+    setError('');
+    onAdd(trimmed, clampPercent(parsed));
+    setName('');
+    setRate('');
+  }
+
+  return (
+    <div className="space-y-4 rounded-md border border-[var(--brand-gold)]/10 p-4">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-zinc-100">Custom fees</h3>
+        <p className="text-xs text-zinc-400">
+          Define additional named fees and tune them with the same steppers.
+        </p>
+      </div>
+
+      <div
+        role="note"
+        className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300"
+      >
+        <span className="font-semibold">UI preview only.</span> Custom fees are saved
+        to this browser, not the backend — they are not yet applied to any
+        transaction. Persisting them requires a <code>platform_custom_fees</code>{' '}
+        table and CRUD endpoints.
+      </div>
+
+      {fees.length > 0 ? (
+        <div className="space-y-3">
+          {fees.map((fee) => (
+            <FeeStepper
+              key={fee.id}
+              id={`custom-fee-${fee.id}`}
+              label={fee.name}
+              note="Custom · browser-only"
+              value={fee.rate}
+              onValueChange={(next) => { onChangeRate(fee.id, next); }}
+              disabled={locked}
+              trailing={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 text-destructive hover:text-destructive"
+                  onClick={() => { onRemove(fee.id); }}
+                  disabled={locked}
+                  aria-label={`Remove ${fee.name} fee`}
+                >
+                  Remove
+                </Button>
+              }
+            />
           ))}
-          <SelectItem value={CUSTOM_OPTION}>Custom…</SelectItem>
-        </SelectContent>
-      </Select>
-      {isCustom ? (
-        <Input
-          aria-label={`${label} custom value`}
-          type="number"
-          step="0.01"
-          min="0"
-          max="100"
-          placeholder={customPlaceholder}
-          value={value}
-          onChange={(e) => { onValueChange(e.target.value); }}
-          className="min-h-[44px]"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-        />
-      ) : null}
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-500">No custom fees yet.</p>
+      )}
+
+      {locked ? null : (
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+          <div className="space-y-2">
+            <Label htmlFor="custom-fee-name">Name</Label>
+            <Input
+              id="custom-fee-name"
+              placeholder="e.g. Featured listing"
+              value={name}
+              onChange={(e) => { setName(e.target.value); }}
+              className="min-h-[44px]"
+              aria-invalid={error !== '' && name.trim() === '' ? true : undefined}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="custom-fee-rate">Default %</Label>
+            <Input
+              id="custom-fee-rate"
+              type="number"
+              step="0.5"
+              min="0"
+              max="100"
+              placeholder="e.g. 5"
+              value={rate}
+              onChange={(e) => { setRate(e.target.value); }}
+              className="min-h-[44px] sm:w-28"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[44px]"
+            onClick={handleAdd}
+          >
+            <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+            Add fee
+          </Button>
+        </div>
+      )}
+
       {error ? (
-        <p id={errorId} className="text-sm text-destructive">
+        <p className="text-sm text-destructive" role="alert">
           {error}
         </p>
       ) : null}
@@ -228,18 +538,27 @@ export default function AdminPaymentsPage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
 
-  // Fee config form state
-  const [feePercentage, setFeePercentage] = useState('');
-  const [guaranteePercentage, setGuaranteePercentage] = useState('');
-  const [minFeeCents, setMinFeeCents] = useState('');
-  const [maxFeeCents, setMaxFeeCents] = useState('');
+  // Fee config form state — percentages are whole-number percents (8 = 8%) the
+  // steppers operate on; min/max are USD strings, converted to cents on submit.
+  const [feePercentage, setFeePercentage] = useState(0);
+  const [guaranteePercentage, setGuaranteePercentage] = useState(0);
+  const [minFee, setMinFee] = useState('');
+  const [maxFee, setMaxFee] = useState('');
   const [feeCategoryId, setFeeCategoryId] = useState('');
   // Lead-gen fee form state.
   const [leadGenEnabled, setLeadGenEnabled] = useState(false);
-  const [leadGenPercentage, setLeadGenPercentage] = useState('');
+  const [leadGenPercentage, setLeadGenPercentage] = useState(0);
   const [leadGenMinFee, setLeadGenMinFee] = useState('');
   const [leadGenMaxFee, setLeadGenMaxFee] = useState('');
-  const [feeErrors, setFeeErrors] = useState<FeeFormErrors>({});
+
+  // Lock state — when locked the steppers are read-only. Persisted to
+  // localStorage so a lock survives reloads (client-side only; no backend field).
+  const [locked, setLocked] = useState(false);
+  // Custom fees (UI-only) persisted to localStorage.
+  const [customFees, setCustomFees] = useState<CustomFee[]>([]);
+  // Seed the form from live config exactly once it arrives (and not again, so
+  // in-progress stepper edits aren't clobbered by a refetch).
+  const [seeded, setSeeded] = useState(false);
 
   const { data: paymentsData, isLoading: paymentsLoading, isError: paymentsError } =
     useAdminPayments({
@@ -249,41 +568,107 @@ export default function AdminPaymentsPage() {
     });
 
   const { data: revenueData, isLoading: revenueLoading } = useRevenueReport();
+  // Live, read-only view of the currently active platform fees. Backs the
+  // "Current Fees" summary above and seeds the editable steppers below.
+  const {
+    data: feeConfig,
+    isLoading: feeConfigLoading,
+    isError: feeConfigError,
+  } = useFeeConfig();
   const feeConfigMutation = useUpdateFeeConfig();
 
-  async function handleSaveFees() {
-    const parsed = feeFormSchema.safeParse({
-      feePercentage,
-      guaranteePercentage,
-      minFee: minFeeCents,
-      maxFee: maxFeeCents,
-      leadGenEnabled,
-      leadGenPercentage,
-      leadGenMinFee,
-      leadGenMaxFee,
-    });
-
-    if (!parsed.success) {
-      const nextErrors: FeeFormErrors = {};
-      for (const issue of parsed.error.issues) {
-        const field = issue.path[0];
-        if (typeof field === 'string' && !(field in nextErrors)) {
-          nextErrors[field as keyof FeeFormErrors] = issue.message;
+  // Hydrate lock + custom fees from localStorage on mount (client-only).
+  useEffect(() => {
+    try {
+      setLocked(window.localStorage.getItem(LOCK_STORAGE_KEY) === 'true');
+      const raw = window.localStorage.getItem(CUSTOM_FEES_STORAGE_KEY);
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setCustomFees(
+            parsed.filter(
+              (f): f is CustomFee =>
+                typeof f === 'object' &&
+                f !== null &&
+                typeof (f as CustomFee).id === 'string' &&
+                typeof (f as CustomFee).name === 'string' &&
+                typeof (f as CustomFee).rate === 'number',
+            ),
+          );
         }
       }
-      setFeeErrors(nextErrors);
-      return;
+    } catch {
+      // Corrupt/unavailable storage — fall back to defaults silently.
     }
+  }, []);
 
-    setFeeErrors({});
+  // Seed the steppers from the live config once it loads (fractions → percent).
+  useEffect(() => {
+    if (feeConfig && !seeded) {
+      setFeePercentage(fractionToPercentNumber(feeConfig.fee_percentage));
+      setGuaranteePercentage(fractionToPercentNumber(feeConfig.guarantee_percentage));
+      setMinFee(feeConfig.min_fee_cents > 0 ? (feeConfig.min_fee_cents / 100).toString() : '');
+      setMaxFee(feeConfig.max_fee_cents > 0 ? (feeConfig.max_fee_cents / 100).toString() : '');
+      setLeadGenEnabled(feeConfig.lead_gen_enabled);
+      setLeadGenPercentage(fractionToPercentNumber(feeConfig.lead_gen_percentage));
+      setLeadGenMinFee(
+        feeConfig.lead_gen_min_fee_cents > 0
+          ? (feeConfig.lead_gen_min_fee_cents / 100).toString()
+          : '',
+      );
+      setLeadGenMaxFee(
+        feeConfig.lead_gen_max_fee_cents && feeConfig.lead_gen_max_fee_cents > 0
+          ? (feeConfig.lead_gen_max_fee_cents / 100).toString()
+          : '',
+      );
+      setSeeded(true);
+    }
+  }, [feeConfig, seeded]);
+
+  function persistCustomFees(next: CustomFee[]) {
+    setCustomFees(next);
+    try {
+      window.localStorage.setItem(CUSTOM_FEES_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Storage unavailable — keep in-memory state; nothing else to do.
+    }
+  }
+
+  function toggleLock() {
+    const next = !locked;
+    setLocked(next);
+    try {
+      window.localStorage.setItem(LOCK_STORAGE_KEY, String(next));
+    } catch {
+      // Storage unavailable — lock stays in-memory for this session.
+    }
+  }
+
+  function handleAddCustomFee(name: string, rate: number) {
+    const id =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now().toString()}-${Math.random().toString(36).slice(2)}`;
+    persistCustomFees([...customFees, { id, name, rate }]);
+  }
+
+  function handleChangeCustomRate(id: string, rate: number) {
+    persistCustomFees(customFees.map((f) => (f.id === id ? { ...f, rate } : f)));
+  }
+
+  function handleRemoveCustomFee(id: string) {
+    persistCustomFees(customFees.filter((f) => f.id !== id));
+  }
+
+  async function handleSaveFees() {
     await feeConfigMutation.mutateAsync({
       category_id: feeCategoryId,
-      // Admins enter whole-number percents (e.g. "10" = 10%); the API/service
-      // store fractions in 0..1, so convert here. pctToFraction("10") -> 0.10.
+      // The steppers hold whole-number percents (8 = 8%); the API/service store
+      // 0..1 fractions, so convert here. pctToFraction(8) -> 0.08.
       fee_percentage: pctToFraction(feePercentage),
       guarantee_percentage: pctToFraction(guaranteePercentage),
-      min_fee_cents: usdToCents(minFeeCents),
-      max_fee_cents: usdToCents(maxFeeCents),
+      min_fee_cents: usdToCents(minFee),
+      max_fee_cents: usdToCents(maxFee),
       lead_gen_enabled: leadGenEnabled,
       lead_gen_percentage: pctToFraction(leadGenPercentage),
       lead_gen_min_fee_cents: usdToCents(leadGenMinFee),
@@ -436,41 +821,90 @@ export default function AdminPaymentsPage() {
         )}
       </div>
 
-      {/* Fee Configuration */}
+      {/* Current Fees — read-only summary of the live, active rates */}
+      <CurrentFeesSummary
+        config={feeConfig}
+        isLoading={feeConfigLoading}
+        isError={feeConfigError}
+      />
+
+      {/* Fee Configuration — stepper-driven editor */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
-          <CardTitle className="gold-text text-base">Fee Configuration</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle className="gold-text text-base">Fee Configuration</CardTitle>
+            <div className="flex items-center gap-2">
+              {locked ? (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 text-amber-300"
+                >
+                  <Lock className="mr-1 h-3 w-3" aria-hidden="true" />
+                  Locked
+                </Badge>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="min-h-[40px] text-foreground"
+                onClick={toggleLock}
+                aria-pressed={locked}
+              >
+                {locked ? (
+                  <>
+                    <LockOpen className="mr-1 h-4 w-4" aria-hidden="true" />
+                    Unlock
+                  </>
+                ) : (
+                  <>
+                    <Lock className="mr-1 h-4 w-4" aria-hidden="true" />
+                    Lock Configuration
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="fee-category">Category ID (optional)</Label>
-              <Input
-                id="fee-category"
-                placeholder="Leave blank for default"
-                value={feeCategoryId}
-                onChange={(e) => { setFeeCategoryId(e.target.value); }}
-                className="min-h-[44px]"
-              />
-            </div>
-            <PercentPresetField
+          {locked ? (
+            <p className="text-sm text-amber-300" role="status">
+              Configuration is locked. Unlock to adjust fees.
+            </p>
+          ) : null}
+
+          <div className="space-y-2">
+            <Label htmlFor="fee-category">Category ID (optional)</Label>
+            <Input
+              id="fee-category"
+              placeholder="Leave blank for default"
+              value={feeCategoryId}
+              onChange={(e) => { setFeeCategoryId(e.target.value); }}
+              className="min-h-[44px] sm:max-w-sm"
+              disabled={locked}
+            />
+          </div>
+
+          <div className="space-y-3">
+            <FeeStepper
               id="fee-percentage"
-              label="Fee Percentage"
-              presets={PLATFORM_FEE_PRESETS}
+              label="Platform commission"
+              note="Seller-side · core take rate"
               value={feePercentage}
               onValueChange={setFeePercentage}
-              error={feeErrors.feePercentage}
-              customPlaceholder="e.g. 10.0"
+              disabled={locked}
             />
-            <PercentPresetField
+            <FeeStepper
               id="guarantee-percentage"
-              label="Guarantee Percentage"
-              presets={GUARANTEE_FEE_PRESETS}
+              label="Guarantee (buyer protection)"
+              note="Seller-side · guarantee fund"
               value={guaranteePercentage}
               onValueChange={setGuaranteePercentage}
-              error={feeErrors.guaranteePercentage}
-              customPlaceholder="e.g. 2.0"
+              disabled={locked}
             />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="min-fee">Min Fee (USD)</Label>
               <Input
@@ -479,17 +913,11 @@ export default function AdminPaymentsPage() {
                 step="0.01"
                 min="0"
                 placeholder="e.g. 1.00"
-                value={minFeeCents}
-                onChange={(e) => { setMinFeeCents(e.target.value); }}
+                value={minFee}
+                onChange={(e) => { setMinFee(e.target.value); }}
                 className="min-h-[44px]"
-                aria-invalid={feeErrors.minFee ? true : undefined}
-                aria-describedby={feeErrors.minFee ? 'min-fee-error' : undefined}
+                disabled={locked}
               />
-              {feeErrors.minFee ? (
-                <p id="min-fee-error" className="text-sm text-destructive">
-                  {feeErrors.minFee}
-                </p>
-              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="max-fee">Max Fee (USD)</Label>
@@ -499,17 +927,11 @@ export default function AdminPaymentsPage() {
                 step="0.01"
                 min="0"
                 placeholder="e.g. 500.00"
-                value={maxFeeCents}
-                onChange={(e) => { setMaxFeeCents(e.target.value); }}
+                value={maxFee}
+                onChange={(e) => { setMaxFee(e.target.value); }}
                 className="min-h-[44px]"
-                aria-invalid={feeErrors.maxFee ? true : undefined}
-                aria-describedby={feeErrors.maxFee ? 'max-fee-error' : undefined}
+                disabled={locked}
               />
-              {feeErrors.maxFee ? (
-                <p id="max-fee-error" className="text-sm text-destructive">
-                  {feeErrors.maxFee}
-                </p>
-              ) : null}
             </div>
           </div>
 
@@ -531,74 +953,69 @@ export default function AdminPaymentsPage() {
                 checked={leadGenEnabled}
                 onCheckedChange={setLeadGenEnabled}
                 aria-label="Enable lead-gen fee"
+                disabled={locked}
               />
             </div>
 
             {leadGenEnabled ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <PercentPresetField
+              <div className="space-y-3">
+                <FeeStepper
                   id="lead-gen-percentage"
-                  label="Lead-gen Percentage"
-                  presets={LEAD_GEN_FEE_PRESETS}
+                  label="Lead-gen referral"
+                  note="Seller-side · per won contract"
                   value={leadGenPercentage}
                   onValueChange={setLeadGenPercentage}
-                  error={feeErrors.leadGenPercentage}
-                  customPlaceholder="e.g. 10.0"
+                  disabled={locked}
                 />
-                <div className="space-y-2">
-                  <Label htmlFor="lead-gen-min-fee">Lead-gen Min Fee (USD)</Label>
-                  <Input
-                    id="lead-gen-min-fee"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="e.g. 5.00"
-                    value={leadGenMinFee}
-                    onChange={(e) => { setLeadGenMinFee(e.target.value); }}
-                    className="min-h-[44px]"
-                    aria-invalid={feeErrors.leadGenMinFee ? true : undefined}
-                    aria-describedby={
-                      feeErrors.leadGenMinFee ? 'lead-gen-min-fee-error' : undefined
-                    }
-                  />
-                  {feeErrors.leadGenMinFee ? (
-                    <p id="lead-gen-min-fee-error" className="text-sm text-destructive">
-                      {feeErrors.leadGenMinFee}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lead-gen-max-fee">Lead-gen Max Fee (USD, optional)</Label>
-                  <Input
-                    id="lead-gen-max-fee"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Leave blank for no cap"
-                    value={leadGenMaxFee}
-                    onChange={(e) => { setLeadGenMaxFee(e.target.value); }}
-                    className="min-h-[44px]"
-                    aria-invalid={feeErrors.leadGenMaxFee ? true : undefined}
-                    aria-describedby={
-                      feeErrors.leadGenMaxFee ? 'lead-gen-max-fee-error' : undefined
-                    }
-                  />
-                  {feeErrors.leadGenMaxFee ? (
-                    <p id="lead-gen-max-fee-error" className="text-sm text-destructive">
-                      {feeErrors.leadGenMaxFee}
-                    </p>
-                  ) : null}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="lead-gen-min-fee">Lead-gen Min Fee (USD)</Label>
+                    <Input
+                      id="lead-gen-min-fee"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 5.00"
+                      value={leadGenMinFee}
+                      onChange={(e) => { setLeadGenMinFee(e.target.value); }}
+                      className="min-h-[44px]"
+                      disabled={locked}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lead-gen-max-fee">Lead-gen Max Fee (USD, optional)</Label>
+                    <Input
+                      id="lead-gen-max-fee"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Leave blank for no cap"
+                      value={leadGenMaxFee}
+                      onChange={(e) => { setLeadGenMaxFee(e.target.value); }}
+                      className="min-h-[44px]"
+                      disabled={locked}
+                    />
+                  </div>
                 </div>
               </div>
             ) : null}
           </div>
 
+          {/* Custom fees — UI-only, localStorage-backed */}
+          <CustomFeesSection
+            fees={customFees}
+            locked={locked}
+            onChangeRate={handleChangeCustomRate}
+            onRemove={handleRemoveCustomFee}
+            onAdd={handleAddCustomFee}
+          />
+
           <Button
             className="min-h-[44px]"
-            disabled={feeConfigMutation.isPending}
+            disabled={feeConfigMutation.isPending || locked}
             onClick={() => { void handleSaveFees(); }}
           >
-            {feeConfigMutation.isPending ? 'Saving...' : 'Save Fee Configuration'}
+            {feeConfigMutation.isPending ? 'Saving...' : 'Save Configuration'}
           </Button>
 
           {feeConfigMutation.isError ? (

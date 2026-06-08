@@ -16,6 +16,7 @@ import type {
   CreatePlatformBankAccountInput,
   Dispute,
   FeeConfig,
+  FeeConfigSummary,
   GrowthMetrics,
   Market,
   Payment,
@@ -46,6 +47,8 @@ const adminKeys = {
   payment: (id: string) => [...adminKeys.all, 'payments', id] as const,
   revenue: (startDate?: string, endDate?: string, groupBy?: string) =>
     [...adminKeys.all, 'revenue', startDate, endDate, groupBy] as const,
+  feeConfig: (categoryId?: string) =>
+    [...adminKeys.all, 'fee-config', categoryId] as const,
   platformMetrics: (startDate?: string, endDate?: string) =>
     [...adminKeys.all, 'platform', 'metrics', startDate, endDate] as const,
   growthMetrics: (startDate?: string, endDate?: string, groupBy?: string) =>
@@ -345,6 +348,20 @@ export function useRevenueReport(startDate?: string, endDate?: string, groupBy?:
   return useQuery({
     queryKey: adminKeys.revenue(startDate, endDate, groupBy),
     queryFn: () => api.get<RevenueReport>(`/api/v1/admin/revenue${query}`),
+  });
+}
+
+// useFeeConfig reads the currently ACTIVE fee configuration (GET, read-only) so
+// the admin can see the live rates at a glance. Percentages come back as 0..1
+// fractions and bounds as integer cents — the consuming UI formats them. An
+// optional categoryId fetches a category override; default (no arg) is the
+// platform-wide config.
+export function useFeeConfig(categoryId?: string) {
+  const query = buildQuery({ category_id: categoryId });
+  return useQuery({
+    queryKey: adminKeys.feeConfig(categoryId),
+    queryFn: () =>
+      api.get<FeeConfigSummary>(`/api/v1/admin/payments/fee-config${query}`),
   });
 }
 

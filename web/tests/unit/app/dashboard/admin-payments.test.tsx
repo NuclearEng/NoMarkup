@@ -1,10 +1,28 @@
 // Tests for the admin payments page — exercises filter, fee form inputs,
 // save action, success/error states, and table column renderers via data fixtures.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
+
+// jsdom's Storage stub on this version doesn't expose a working localStorage;
+// install a minimal in-memory shim so the page can persist lock + custom-fee
+// state (and tests can clear it between cases).
+beforeAll(() => {
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v); },
+      removeItem: (k: string) => { store.delete(k); },
+      clear: () => { store.clear(); },
+      key: (i: number) => Array.from(store.keys())[i] ?? null,
+      get length(): number { return store.size; },
+    },
+  });
+});
 
 const paymentsState: {
   data: { payments: Record<string, unknown>[]; pagination?: Record<string, unknown> } | undefined;
@@ -16,6 +34,14 @@ const revenueState: { data: Record<string, number> | undefined; isLoading: boole
   data: undefined,
   isLoading: false,
 };
+
+// Live, read-only fee config backing the "Current Fees" summary. Percentages
+// are stored 0..1 fractions (0.08 = 8%); cents are integers.
+const feeConfigState: {
+  data: Record<string, unknown> | undefined;
+  isLoading: boolean;
+  isError: boolean;
+} = { data: undefined, isLoading: false, isError: false };
 
 const feeMutate = vi.fn(() => Promise.resolve({}));
 const feeState = { isPending: false, isError: false, isSuccess: false };
@@ -38,6 +64,7 @@ vi.mock('next/link', () => ({
 vi.mock('@/hooks/useAdmin', () => ({
   useAdminPayments: () => paymentsState,
   useRevenueReport: () => revenueState,
+  useFeeConfig: () => feeConfigState,
   useUpdateFeeConfig: () => ({
     mutateAsync: feeMutate,
     isPending: feeState.isPending,
@@ -65,10 +92,16 @@ beforeEach(() => {
   paymentsState.isError = false;
   revenueState.data = undefined;
   revenueState.isLoading = false;
+  feeConfigState.data = undefined;
+  feeConfigState.isLoading = false;
+  feeConfigState.isError = false;
   feeState.isPending = false;
   feeState.isError = false;
   feeState.isSuccess = false;
   feeMutate.mockClear();
+  // The page persists lock + custom-fee state to localStorage; clear it so each
+  // test starts from an unlocked config with no custom fees.
+  window.localStorage.clear();
 });
 
 afterEach(() => {
@@ -94,6 +127,53 @@ describe('AdminPaymentsPage', () => {
     expect(screen.getByText(/10\.00%/)).toBeDefined();
   });
 
+  it('renders the Current Fees summary from live config (fractions → percent)', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.08,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 100,
+      max_fee_cents: 50000,
+      lead_gen_enabled: false,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
+    };
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    expect(screen.getByText(/Current Fees/i)).toBeDefined();
+    // Scope to the read-only summary table (labelled by its sr-only caption) so
+    // these don't collide with the editable steppers below, which reuse the
+    // same labels and also render the seeded percents.
+    const summary = within(
+      screen.getByRole('table', { name: /Currently active platform fees/i }),
+    );
+    // Fractions are formatted as human percents.
+    expect(summary.getByText(/^8%$/)).toBeDefined();
+    expect(summary.getByText(/Platform commission/i)).toBeDefined();
+    expect(summary.getByText(/Guarantee \(buyer protection\)/i)).toBeDefined();
+    // Lead-gen is off → muted Disabled badge, and the static reference rows show.
+    expect(summary.getByText(/^Disabled$/)).toBeDefined();
+    expect(summary.getByText(/Working-capital advance/i)).toBeDefined();
+    expect(screen.getByText(/Instant payout/i)).toBeDefined();
+    expect(screen.getByText(/no markup/i)).toBeDefined();
+  });
+
+  it('shows an Enabled badge when lead-gen fee is active', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.08,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 0,
+      max_fee_cents: 0,
+      lead_gen_enabled: true,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
+    };
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    expect(screen.getByText(/^Enabled$/)).toBeDefined();
+    // Unset min/max caps render as em-dashes.
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('shows error state when payments fetch fails', () => {
     paymentsState.isError = true;
     render(withQueryClient(createElement(AdminPaymentsPage)));
@@ -117,33 +197,60 @@ describe('AdminPaymentsPage', () => {
     expect((input as HTMLInputElement).value).toBe('cat-123');
   });
 
-  it('selects a preset fee percentage from the dropdown', () => {
+  it('seeds the steppers from the live fee config (fractions → percent)', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.08,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 0,
+      max_fee_cents: 0,
+      lead_gen_enabled: false,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
+    };
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    // Fee percentage is now a preset Select — open it and pick a preset.
-    const trigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole('option', { name: /^12%$/ }));
-    // The trigger reflects the chosen preset.
-    expect(trigger.textContent).toMatch(/12%/);
+    // The platform-commission stepper is a spinbutton seeded from 0.08 → 8%.
+    const stepper = screen.getByRole('spinbutton', { name: /^Platform commission$/i });
+    expect(stepper.getAttribute('aria-valuenow')).toBe('8');
   });
 
-  it('allows a custom fee percentage off the preset ladder', () => {
+  it('increments and decrements a fee via the stepper buttons', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.08,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 0,
+      max_fee_cents: 0,
+      lead_gen_enabled: false,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
+    };
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    const trigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
-    fireEvent.click(trigger);
-    // Pick "Custom…" to reveal the numeric input, then type an off-ladder value.
-    fireEvent.click(screen.getByRole('option', { name: /Custom/i }));
-    const custom = screen.getByLabelText(/Fee Percentage custom value/i);
-    fireEvent.change(custom, { target: { value: '12.5' } });
-    expect((custom as HTMLInputElement).value).toBe('12.5');
+    const stepper = screen.getByRole('spinbutton', { name: /^Platform commission$/i });
+    fireEvent.click(screen.getByRole('button', { name: /Increase Platform commission/i }));
+    expect(stepper.getAttribute('aria-valuenow')).toBe('8.5');
+    fireEvent.click(screen.getByRole('button', { name: /Decrease Platform commission/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Decrease Platform commission/i }));
+    expect(stepper.getAttribute('aria-valuenow')).toBe('7.5');
   });
 
-  it('selects a preset guarantee percentage from the dropdown', () => {
+  it('adjusts a fee via keyboard arrows on the spinbutton', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.08,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 0,
+      max_fee_cents: 0,
+      lead_gen_enabled: false,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
+    };
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    const trigger = screen.getByRole('combobox', { name: /Guarantee Percentage/i });
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole('option', { name: /^2%$/ }));
-    expect(trigger.textContent).toMatch(/2%/);
+    const stepper = screen.getByRole('spinbutton', { name: /^Platform commission$/i });
+    fireEvent.keyDown(stepper, { key: 'ArrowUp' });
+    expect(stepper.getAttribute('aria-valuenow')).toBe('8.5');
+    fireEvent.keyDown(stepper, { key: 'ArrowDown' });
+    expect(stepper.getAttribute('aria-valuenow')).toBe('8');
   });
 
   it('updates min and max fee inputs', () => {
@@ -157,53 +264,49 @@ describe('AdminPaymentsPage', () => {
   });
 
   it('calls fee mutation with parsed payload on save click', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.1,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 0,
+      max_fee_cents: 0,
+      lead_gen_enabled: false,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
+    };
     render(withQueryClient(createElement(AdminPaymentsPage)));
     fireEvent.change(screen.getByLabelText(/Category ID/i), { target: { value: 'cat-1' } });
-    // Percentages are preset dropdowns now — pick 10% and 2% from the ladders.
-    const feeTrigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
-    fireEvent.click(feeTrigger);
-    fireEvent.click(screen.getByRole('option', { name: /^10%$/ }));
-    const guaranteeTrigger = screen.getByRole('combobox', { name: /Guarantee Percentage/i });
-    fireEvent.click(guaranteeTrigger);
-    fireEvent.click(screen.getByRole('option', { name: /^2%$/ }));
     fireEvent.change(screen.getByLabelText(/Min Fee/i), { target: { value: '1' } });
     fireEvent.change(screen.getByLabelText(/Max Fee/i), { target: { value: '500' } });
-    fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save Configuration/i }));
     expect(feeMutate).toHaveBeenCalledWith({
       category_id: 'cat-1',
-      // Whole-number percents entered in the UI are sent as 0..1 fractions.
+      // Steppers hold whole-number percents (seeded 0.10 → 10%); sent as fractions.
       fee_percentage: 0.1,
       guarantee_percentage: 0.02,
       min_fee_cents: 100,
       max_fee_cents: 50000,
-      // Lead-gen is off by default → disabled with zeroed fields and no cap.
+      // Lead-gen is off → disabled with zeroed fields and no cap.
       lead_gen_enabled: false,
-      lead_gen_percentage: 0,
+      lead_gen_percentage: 0.1,
       lead_gen_min_fee_cents: 0,
       lead_gen_max_fee_cents: null,
     });
   });
 
   it('saves lead-gen fee fields when enabled', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.1,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 0,
+      max_fee_cents: 0,
+      lead_gen_enabled: true,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 500,
+      lead_gen_max_fee_cents: 5000,
+    };
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    const feeTrigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
-    fireEvent.click(feeTrigger);
-    fireEvent.click(screen.getByRole('option', { name: /^10%$/ }));
-    const guaranteeTrigger = screen.getByRole('combobox', { name: /Guarantee Percentage/i });
-    fireEvent.click(guaranteeTrigger);
-    fireEvent.click(screen.getByRole('option', { name: /^2%$/ }));
-    // Enable the lead-gen toggle to reveal its fields.
-    fireEvent.click(screen.getByLabelText(/Enable lead-gen fee/i));
-    const leadGenTrigger = screen.getByRole('combobox', { name: /Lead-gen Percentage/i });
-    fireEvent.click(leadGenTrigger);
-    fireEvent.click(screen.getByRole('option', { name: /^10%$/ }));
-    fireEvent.change(screen.getByLabelText(/Lead-gen Min Fee \(USD\)/i), {
-      target: { value: '5' },
-    });
-    fireEvent.change(screen.getByLabelText(/Lead-gen Max Fee \(USD, optional\)/i), {
-      target: { value: '50' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save Configuration/i }));
     expect(feeMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         lead_gen_enabled: true,
@@ -214,19 +317,55 @@ describe('AdminPaymentsPage', () => {
     );
   });
 
-  it('blocks save and shows an error when fee percentage is out of range', () => {
+  it('locks and unlocks the configuration, disabling steppers when locked', () => {
+    feeConfigState.data = {
+      fee_percentage: 0.08,
+      guarantee_percentage: 0.02,
+      min_fee_cents: 0,
+      max_fee_cents: 0,
+      lead_gen_enabled: false,
+      lead_gen_percentage: 0.1,
+      lead_gen_min_fee_cents: 0,
+      lead_gen_max_fee_cents: null,
+    };
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    // 150 is off the preset ladder — use the "Custom…" path to enter it, which
-    // must still be validated and blocked.
-    const feeTrigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
-    fireEvent.click(feeTrigger);
-    fireEvent.click(screen.getByRole('option', { name: /Custom/i }));
-    fireEvent.change(screen.getByLabelText(/Fee Percentage custom value/i), {
-      target: { value: '150' },
+    fireEvent.click(screen.getByRole('button', { name: /Lock Configuration/i }));
+    // Locked badge appears and the stepper +/- buttons are disabled.
+    expect(screen.getByText(/^Locked$/)).toBeDefined();
+    const incBtn: HTMLButtonElement = screen.getByRole('button', {
+      name: /Increase Platform commission/i,
     });
-    fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
-    expect(feeMutate).not.toHaveBeenCalled();
-    expect(screen.getByText(/Must be between 0 and 100/i)).toBeDefined();
+    expect(incBtn.disabled).toBe(true);
+    // Save is disabled while locked.
+    const saveBtn: HTMLButtonElement = screen.getByRole('button', {
+      name: /Save Configuration/i,
+    });
+    expect(saveBtn.disabled).toBe(true);
+    // Unlock re-enables editing.
+    fireEvent.click(screen.getByRole('button', { name: /Unlock/i }));
+    const incBtnAfter: HTMLButtonElement = screen.getByRole('button', {
+      name: /Increase Platform commission/i,
+    });
+    expect(incBtnAfter.disabled).toBe(false);
+  });
+
+  it('adds a custom fee with its own stepper, flagged as UI-only', () => {
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: 'Featured listing' } });
+    fireEvent.change(screen.getByLabelText(/Default %/i), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Add fee$/i }));
+    // The new custom fee renders as a stepper seeded at 5%.
+    const stepper = screen.getByRole('spinbutton', { name: /^Featured listing$/i });
+    expect(stepper.getAttribute('aria-valuenow')).toBe('5');
+    // The UI-only flag is present so the admin knows it isn't persisted server-side.
+    expect(screen.getByText(/UI preview only/i)).toBeDefined();
+  });
+
+  it('blocks adding a custom fee with no name', () => {
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    fireEvent.change(screen.getByLabelText(/Default %/i), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Add fee$/i }));
+    expect(screen.getByText(/Enter a fee name/i)).toBeDefined();
   });
 
   it('shows pending label and disables save when mutation pending', () => {
