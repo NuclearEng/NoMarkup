@@ -379,12 +379,29 @@ impl BiddingEngine {
         job_id: Uuid,
         provider_id: Uuid,
     ) -> Result<Bid, BidError> {
+        // Instant-match accept is an EXCLUSIVE claim: the first provider to
+        // accept an offer wins the job, and every subsequent accept must fail.
+        // The only DB-level guard previously was UNIQUE(job_id, provider_id),
+        // which stops the SAME provider double-accepting but lets two DIFFERENT
+        // providers both INSERT an offer-accepted bid — a double-award race
+        // (two concurrent accepts → two `is_offer_accepted` bids on one job).
+        //
+        // Fix: run the whole accept inside a transaction that locks the job row
+        // FOR UPDATE (mirroring `place_bid` / `award_bid`), then reject if the
+        // job has already been claimed — either it has left `active` status
+        // (already awarded/matched) or an offer-accepted bid already exists.
+        // Under the row lock the two concurrent accepts are serialized: the
+        // first transitions the job to `awarded` and commits; the second
+        // re-reads the now-`awarded` status (or sees the existing offer bid)
+        // and returns a clean error → 4xx, never a second accepted bid.
+        let mut tx = self.pool.begin().await?;
+
         let job = sqlx::query_as::<_, JobRow>(
             "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
-             FROM jobs WHERE id = $1",
+             FROM jobs WHERE id = $1 FOR UPDATE",
         )
         .bind(job_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(BidError::JobNotFound)?;
 
@@ -392,6 +409,9 @@ impl BiddingEngine {
             .offer_accepted_cents
             .ok_or_else(|| BidError::InvalidAmount("job has no offer accepted price".into()))?;
 
+        // The job must still be open. A non-`active` status means it has already
+        // been awarded/matched by a competing accept (or otherwise closed) — the
+        // second accept loses here. AuctionNotActive → failed_precondition → 422.
         if job.status != "active" {
             return Err(BidError::AuctionNotActive);
         }
@@ -401,16 +421,33 @@ impl BiddingEngine {
                 return Err(BidError::AuctionClosed);
             }
 
+        // Backstop guard, still under the FOR UPDATE lock: if any offer-accepted
+        // bid already exists for this job, the offer has been claimed. This
+        // catches the race even if the job-status transition below is ever
+        // bypassed, and rejects with AlreadyBid → already_exists → 409 Conflict.
+        let already_accepted: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM bids WHERE job_id = $1 AND is_offer_accepted = true AND status IN ('active', 'awarded'))",
+        )
+        .bind(job_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(BidError::DatabaseError)?;
+
+        if already_accepted {
+            return Err(BidError::AlreadyBid);
+        }
+
         // Insert bid at the offer price with is_offer_accepted = true.
+        // UNIQUE(job_id, provider_id) still guards the same-provider retry case.
         let bid = sqlx::query_as::<_, Bid>(
-            "INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents, is_offer_accepted) \
-             VALUES ($1, $2, $3, $3, true) \
+            "INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents, is_offer_accepted, status) \
+             VALUES ($1, $2, $3, $3, true, 'awarded') \
              RETURNING *",
         )
         .bind(job_id)
         .bind(provider_id)
         .bind(offer_cents)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
             if is_unique_violation(&e) {
@@ -420,10 +457,24 @@ impl BiddingEngine {
             }
         })?;
 
-        sqlx::query("UPDATE jobs SET bid_count = bid_count + 1 WHERE id = $1")
-            .bind(job_id)
-            .execute(&self.pool)
-            .await?;
+        // Atomically claim the job for this provider. Transitioning the job out
+        // of `active` is what makes a concurrent second accept fail its
+        // `status != "active"` check above once this tx commits.
+        sqlx::query(
+            "UPDATE jobs SET status = 'awarded', \
+             awarded_provider_id = $1, awarded_bid_id = $2, awarded_at = now(), \
+             bid_count = bid_count + 1, updated_at = now() \
+             WHERE id = $3",
+        )
+        .bind(provider_id)
+        .bind(bid.id)
+        .bind(job_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        crate::metrics::BIDS_AWARDED_TOTAL.inc();
 
         tracing::info!(
             bid_id = %bid.id,

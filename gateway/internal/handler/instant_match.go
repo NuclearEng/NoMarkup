@@ -287,10 +287,33 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Record this provider's acceptance (per-provider) and claim the offer
-	// (per-job) so it stops being shown to other providers. Claiming the
-	// shared record here is correct — accept (unlike decline) is meant to be
-	// exclusive: the first accepter wins the job.
+	// Atomically claim the offer for this provider. Accept (unlike decline) is
+	// exclusive: only the first accepter may win the job. The previous
+	// GetJSON(pending)-check-then-SetJSON(accepted) sequence was a non-atomic
+	// check-then-set — two concurrent accepts could both read "pending" and
+	// both proceed (TOCTOU), producing a double-award. ClaimJSON is a single
+	// Redis SET ... NX: exactly one caller sets the claim key and wins; every
+	// other concurrent accept sees the key already set and is rejected here
+	// with 409 Conflict, before ever reaching the bid engine. The engine's
+	// FOR UPDATE-locked accept_offer_price is the authoritative backstop.
+	claimKey := offerKey + ":claim"
+	claim := instantMatchResponse{
+		Status:      "accepted",
+		ProviderID:  claims.UserID,
+		RespondedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	if !h.cache.ClaimJSON(ctx, claimKey, claim, instantMatchTTL) {
+		// Another provider already claimed this offer. If we are the holder of
+		// the claim (e.g. a retried request), fall through; otherwise reject.
+		var existing instantMatchResponse
+		if h.cache.GetJSON(ctx, claimKey, &existing) && existing.ProviderID != claims.UserID {
+			writeError(w, http.StatusConflict, "offer has already been accepted by another provider")
+			return
+		}
+	}
+
+	// Record this provider's acceptance (per-provider) and mark the shared
+	// per-job offer record as accepted so it stops being shown to others.
 	resp := instantMatchResponse{
 		Status:      "accepted",
 		ProviderID:  claims.UserID,

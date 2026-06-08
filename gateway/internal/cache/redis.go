@@ -94,6 +94,37 @@ func (c *Client) SetJSON(ctx context.Context, key string, value interface{}, ttl
 	}
 }
 
+// ClaimJSON atomically claims a key: it marshals value and stores it with the
+// given TTL only if the key does not already exist (Redis SET ... NX). It
+// returns true if THIS caller won the claim (key was newly set), and false if
+// the key already existed (another caller already claimed it).
+//
+// This is the compare-and-set primitive that turns a non-atomic
+// GetJSON-check-then-SetJSON sequence into a single round-trip with no TOCTOU
+// window — used by instant-match AcceptOffer so that exactly one of two
+// concurrent accepts wins the Redis claim. A nil receiver or marshal/Redis
+// error fails open (returns true) so caching being down never blocks the
+// request; the engine's locked transaction is the authoritative backstop.
+func (c *Client) ClaimJSON(ctx context.Context, key string, value interface{}, ttl time.Duration) bool {
+	if c == nil {
+		return true
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		slog.Warn("cache: marshal error", "key", key, "error", err)
+		return true
+	}
+
+	won, err := c.rdb.SetNX(ctx, key, data, ttl).Result()
+	if err != nil {
+		slog.Warn("cache: setnx error", "key", key, "error", err)
+		return true
+	}
+
+	return won
+}
+
 // Delete removes one or more keys from the cache.
 func (c *Client) Delete(ctx context.Context, keys ...string) {
 	if c == nil || len(keys) == 0 {

@@ -659,28 +659,6 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-provider rolling daily cap — REAL, summed from the ledger. Bounds
-	// aggregate clawback exposure and blunts a compromised-account drain. We
-	// sum amount_cents from this provider's instant_payouts over the trailing
-	// 24h and reject if this request would push the running total over the cap.
-	// (Previously faked: no ledger existed to sum, so the per-event amount was
-	// compared against the daily limit — that let N sub-cap payouts in a day
-	// exceed the daily cap unchecked.)
-	if h.db != nil {
-		todayCents, err := h.sumInstantPayoutsLast24h(r.Context(), claims.UserID)
-		if err != nil {
-			slog.Error("instant payout: daily-cap sum failed",
-				"provider_id", claims.UserID, "error", err)
-			writeError(w, http.StatusInternalServerError, "could not process instant payout")
-			return
-		}
-		if maxDay := instantPayoutMaxPerDayCents(); todayCents+req.AmountCents > maxDay {
-			writeError(w, http.StatusUnprocessableEntity,
-				"amount exceeds the daily instant payout limit")
-			return
-		}
-	}
-
 	// Configurable platform fee (basis points + minimum), integer-cent math.
 	feeCents := computeInstantPayoutFeeCents(
 		req.AmountCents, instantPayoutFeeBps(), instantPayoutMinFeeCents())
@@ -703,13 +681,29 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 
 	// Execute the payout against the payment provider (Stripe in prod, dev-mock
 	// otherwise) and RECORD it in the ledger. The ledger write is the source of
-	// truth: it backs idempotent replay and the daily cap above.
+	// truth: it backs idempotent replay and the daily cap.
 	stripePayoutID := executeStripeInstantPayout(req.AmountCents, netCents)
 
 	keyArg := idempotencyKeyArg(idemKey)
-	row, err := h.insertInstantPayout(r.Context(), claims.UserID,
+
+	// CONCURRENCY (TOCTOU): the daily-cap check and the ledger insert must be one
+	// atomic, per-provider-serialized step. Previously the trailing-24h sum and
+	// the insert were separate statements with no lock, so N concurrent
+	// different-key payouts for the same provider each read the same pre-cap sum,
+	// all passed, and all inserted — breaching the daily cap. We now run both
+	// inside a single transaction guarded by a transaction-scoped advisory lock
+	// keyed on the provider id (pg_advisory_xact_lock). The lock serializes only
+	// same-provider payouts (different providers hash to different keys and never
+	// contend); the cap is re-summed INSIDE the lock so each request sees every
+	// previously-committed payout. The lock auto-releases at COMMIT/ROLLBACK.
+	row, err := h.insertInstantPayoutWithCap(r.Context(), claims.UserID,
 		req.AmountCents, feeCents, netCents, "completed", stripePayoutID, keyArg)
 	if err != nil {
+		if errors.Is(err, errInstantPayoutDailyCap) {
+			writeError(w, http.StatusUnprocessableEntity,
+				"amount exceeds the daily instant payout limit")
+			return
+		}
 		// A UNIQUE(provider_id, idempotency_key) collision means a concurrent
 		// request under the same key already wrote the row — replay it instead
 		// of double-paying. (Note: the dev-mock executeStripeInstantPayout is a
@@ -825,11 +819,19 @@ func (h *PaymentHandler) lookupInstantPayoutByKey(
 	return instantPayoutResponse(row), true, nil
 }
 
+// pgxQuerier is the subset of pgxpool.Pool / pgx.Tx the ledger helpers need, so
+// the same SQL runs against either the pool or an open transaction.
+type pgxQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // sumInstantPayoutsLast24h returns the total amount_cents this provider has
-// instant-paid in the trailing 24h — the real basis for the daily cap.
-func (h *PaymentHandler) sumInstantPayoutsLast24h(ctx context.Context, providerID string) (int64, error) {
+// instant-paid in the trailing 24h — the real basis for the daily cap. It takes
+// an explicit querier so it can be summed inside the cap transaction (under the
+// per-provider advisory lock), seeing all committed payouts.
+func (h *PaymentHandler) sumInstantPayoutsLast24h(ctx context.Context, q pgxQuerier, providerID string) (int64, error) {
 	var total int64
-	err := h.db.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amount_cents), 0)
 		  FROM instant_payouts
 		 WHERE provider_id = $1
@@ -843,15 +845,17 @@ func (h *PaymentHandler) sumInstantPayoutsLast24h(ctx context.Context, providerI
 }
 
 // insertInstantPayout writes the ledger row and returns the hydrated result.
+// It takes an explicit querier so the write can join the cap transaction.
 func (h *PaymentHandler) insertInstantPayout(
 	ctx context.Context,
+	q pgxQuerier,
 	providerID string,
 	amountCents, feeCents, netCents int64,
 	status, stripePayoutID string,
 	idemKey *string,
 ) (instantPayoutRow, error) {
 	var row instantPayoutRow
-	err := h.db.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		INSERT INTO instant_payouts
 			(provider_id, amount_cents, fee_cents, net_cents, status, stripe_payout_id, idempotency_key)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -859,6 +863,68 @@ func (h *PaymentHandler) insertInstantPayout(
 	`, providerID, amountCents, feeCents, netCents, status, stripePayoutID, idemKey).
 		Scan(&row.ID, &row.AmountCents, &row.FeeCents, &row.NetCents, &row.Status)
 	if err != nil {
+		return instantPayoutRow{}, err
+	}
+	return row, nil
+}
+
+// errInstantPayoutDailyCap signals that the request would breach the provider's
+// rolling 24h instant-payout cap. Mapped to 422 by the handler.
+var errInstantPayoutDailyCap = errors.New("instant payout daily cap exceeded")
+
+// insertInstantPayoutWithCap atomically enforces the rolling daily cap and
+// writes the ledger row for one provider.
+//
+// CONCURRENCY: it opens a transaction, takes a transaction-scoped advisory lock
+// keyed on the provider id (pg_advisory_xact_lock(hashtext($providerID))), then
+// re-sums the trailing-24h total and inserts — all under that lock. Same-provider
+// payouts serialize on the lock, so each request's cap sum reflects every payout
+// committed before it; different providers hash to different keys and never
+// contend. The lock releases automatically at COMMIT/ROLLBACK.
+//
+// If the request would push the trailing total over the cap, the tx is rolled
+// back and errInstantPayoutDailyCap is returned (no row written, no money moved
+// in the ledger). A UNIQUE(provider_id, idempotency_key) collision surfaces as
+// the underlying pgx error so the caller can replay the prior result.
+func (h *PaymentHandler) insertInstantPayoutWithCap(
+	ctx context.Context,
+	providerID string,
+	amountCents, feeCents, netCents int64,
+	status, stripePayoutID string,
+	idemKey *string,
+) (instantPayoutRow, error) {
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		return instantPayoutRow{}, err
+	}
+	// Rollback is a no-op after a successful Commit, so this is safe to defer
+	// unconditionally and guarantees release on every error path.
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Per-provider serialization: concurrent payouts for the SAME provider block
+	// here until the holder commits/rolls back; other providers proceed freely.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, providerID); err != nil {
+		return instantPayoutRow{}, err
+	}
+
+	// Re-sum INSIDE the lock so we count every payout committed before us, then
+	// re-check the cap. This is the authoritative check; any pre-lock read is
+	// only advisory.
+	todayCents, err := h.sumInstantPayoutsLast24h(ctx, tx, providerID)
+	if err != nil {
+		return instantPayoutRow{}, err
+	}
+	if maxDay := instantPayoutMaxPerDayCents(); todayCents+amountCents > maxDay {
+		return instantPayoutRow{}, errInstantPayoutDailyCap
+	}
+
+	row, err := h.insertInstantPayout(ctx, tx, providerID,
+		amountCents, feeCents, netCents, status, stripePayoutID, idemKey)
+	if err != nil {
+		return instantPayoutRow{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return instantPayoutRow{}, err
 	}
 	return row, nil

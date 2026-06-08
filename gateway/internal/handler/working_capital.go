@@ -303,8 +303,16 @@ func (h *WorkingCapitalHandler) RepayAdvance(w http.ResponseWriter, r *http.Requ
 
 	// Apply the paydown: increment repaid_cents and transition status, mirroring
 	// the payment repository (repaid → fully paid, otherwise mark 'repaying').
-	// Ownership is re-asserted in the WHERE so a concurrent change can't let a
-	// non-owner write. Parameterized; integer cents only.
+	//
+	// CONCURRENCY (TOCTOU): the outstanding read above is advisory only — used for
+	// friendly pre-validation. The authoritative over-repay guard lives in the
+	// UPDATE's WHERE clause (`repaid_cents + $amt <= advance_amount_cents +
+	// fee_cents`), so it is evaluated atomically against the CURRENT row under the
+	// row lock the UPDATE takes. Two concurrent different-key repays can no longer
+	// both pass a stale read and both apply: whichever commits first moves
+	// repaid_cents, and the other's WHERE re-evaluates against the new value and
+	// matches zero rows. Ownership is re-asserted in the WHERE so a concurrent
+	// change can't let a non-owner write. Parameterized; integer cents only.
 	var (
 		newPrincipal, newFee, newRepaid int64
 		newStatus                       string
@@ -323,10 +331,42 @@ func (h *WorkingCapitalHandler) RepayAdvance(w http.ResponseWriter, r *http.Requ
 			END,
 			updated_at = now()
 		WHERE id = $1 AND provider_id = $2
+		  AND repaid_cents + $3 <= advance_amount_cents + fee_cents
 		RETURNING advance_amount_cents, fee_cents, repaid_cents, status`,
 		advanceID, claims.UserID, req.AmountCents,
 	).Scan(&newPrincipal, &newFee, &newRepaid, &newStatus)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Zero rows matched. Either (a) the advance no longer exists / isn't
+			// owned by this provider, or (b) the over-repay guard rejected it
+			// (another concurrent repay raised repaid_cents so this amount now
+			// exceeds the outstanding balance). Re-read the row scoped to the
+			// owner to distinguish 404 (not found / not owned) from 422
+			// (exceeds outstanding) and report the right error.
+			var curPrincipal, curFee, curRepaid int64
+			rerr := h.db.QueryRow(r.Context(), `
+				SELECT advance_amount_cents, fee_cents, repaid_cents
+				FROM working_capital_advances
+				WHERE id = $1 AND provider_id = $2`,
+				advanceID, claims.UserID,
+			).Scan(&curPrincipal, &curFee, &curRepaid)
+			if rerr != nil {
+				if errors.Is(rerr, pgx.ErrNoRows) {
+					slog.Warn("repay advance gone or not owned on retry",
+						"advance_id", advanceID, "provider_id", claims.UserID)
+					writeError(w, http.StatusNotFound, "advance not found")
+					return
+				}
+				slog.Error("repay advance re-read failed", "error", rerr,
+					"advance_id", advanceID, "provider_id", claims.UserID)
+				writeError(w, http.StatusInternalServerError, "could not record repayment")
+				return
+			}
+			// Row exists and is owned → the WHERE rejected on the over-repay guard.
+			writeError(w, http.StatusUnprocessableEntity,
+				"Repayment amount exceeds the outstanding balance on this advance.")
+			return
+		}
 		slog.Error("repay advance update failed", "error", err,
 			"advance_id", advanceID, "provider_id", claims.UserID)
 		writeError(w, http.StatusInternalServerError, "could not record repayment")
