@@ -49,7 +49,7 @@ export function RecentlyViewed({ className, limit = 6 }: RecentlyViewedProps) {
         </h2>
       </header>
 
-      <ul className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+      <ul className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
         {listings.map((l) => (
           <RecentlyViewedCard key={l.id} listing={l} />
         ))}

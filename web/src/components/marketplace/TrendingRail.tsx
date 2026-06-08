@@ -59,7 +59,7 @@ export function TrendingRail({ className, limit = 12 }: TrendingRailProps) {
         </p>
       </header>
 
-      <ul className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+      <ul className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
         {isLoading
           ? Array.from({ length: 6 }).map((_, i) => (
               <li

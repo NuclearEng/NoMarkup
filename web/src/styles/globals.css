@@ -79,6 +79,13 @@
 }
 
 .dark {
+  /* Tell the browser this surface is dark so native UI (scrollbars, form
+     controls, spinners) renders its dark-aware variant — a visible light
+     thumb instead of a near-black one that vanishes on --background
+     (#070b14). Root-cause fix for low-contrast native scrollbars on the
+     horizontal rails (e.g. "You may also like"). WCAG 2.2 SC 1.4.11. */
+  color-scheme: dark;
+
   /* Vivid dark terminal palette — matches demo/auction */
   --background: #070b14;
   --foreground: oklch(0.95 0 0);
@@ -157,6 +164,31 @@ body {
 
 .dark {
   color: var(--foreground);
+}
+
+/* Visible scrollbar for horizontal rails on dark surfaces.
+   The native scrollbar thumb (the "slider" users drag) was rendering
+   near-black against --background (#070b14) and was effectively
+   invisible. color-scheme: dark (above) handles most browsers; this
+   makes the thumb an explicit, design-token muted gray so it always
+   clears WCAG 2.2 SC 1.4.11 (>=3:1 non-text contrast) in WebKit too.
+   Applied via the .rail-scroll class on overflow-x rails. */
+.rail-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-foreground) transparent;
+}
+.rail-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.rail-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rail-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--muted-foreground);
+  border-radius: 9999px;
+}
+.rail-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--foreground);
 }
 
 @keyframes confetti-fall {
