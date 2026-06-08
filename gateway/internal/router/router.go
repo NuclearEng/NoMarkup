@@ -238,6 +238,13 @@ func New(
 	// Public provider search (no auth required)
 	r.Get("/api/v1/providers/search", providerHandler.SearchProviders)
 
+	// Public provider profile (no auth required) — anonymous shoppers + crawlers
+	// can view a seller's page (like eBay/Whatnot). The id param is constrained
+	// to hex/hyphen (UUIDs) so it never shadows the authed static routes
+	// (/providers/me, /providers/search). GetProvider returns a PUBLIC projection
+	// — exact service_address + lat/lng are stripped for this endpoint (PII, §6).
+	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}", providerHandler.GetProvider)
+
 	// Public feature flags (no auth required)
 	r.Get("/api/v1/flags", featureFlagHandler.GetFeatureFlags)
 
@@ -384,10 +391,9 @@ func New(
 		r.Post("/me/nps/{id}", referralsHandler.SubmitNPS)
 
 		r.Route("/providers", func(r chi.Router) {
-			// Public-to-any-authed-user: viewing a provider's public profile.
-			// NOT gated by RequireProvider — customers must be able to view
-			// seller profiles.
-			r.Get("/{id}", providerHandler.GetProvider)
+			// NOTE: GET /providers/{id} (viewing a provider's public profile) is
+			// registered PUBLICLY above the auth block (anonymous shoppers + SEO).
+			// Only provider-SELF routes live here.
 
 			// Provider-SELF routes. A non-provider (e.g. a customer-only token)
 			// must never reach these — gate the whole group with RequireProvider

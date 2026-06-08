@@ -369,6 +369,12 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 		result["response_time_label"] = *label
 	}
 
+	// Public projection: this endpoint is anonymous-reachable, so never expose
+	// another seller's exact location. Drop precise address + coordinates; the
+	// service_radius_km still conveys a general serving area. (PII, §6)
+	delete(result, "service_address")
+	delete(result, "service_location") // nested {latitude, longitude} — exact GPS
+
 	writeJSON(w, http.StatusOK, result)
 }
 
