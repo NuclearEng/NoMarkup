@@ -409,6 +409,44 @@ func (s *ContractService) ListDisputes(ctx context.Context, contractID *string, 
 	return disputes, pagination, nil
 }
 
+// normalizeResolutionType maps the resolution type a client may send to the
+// canonical value the `disputes.resolution_type` CHECK constraint accepts.
+//
+// The admin UI speaks in dispute-outcome terms (favor_customer / favor_provider
+// / split), while the database column stores money-movement terms
+// (full_refund / release_payment / partial_refund / ...). We translate the
+// former and pass the latter through unchanged, so both vocabularies are valid
+// inputs and an unknown value is rejected as a clean 4xx rather than blowing up
+// on a constraint violation (SQLSTATE 23514).
+func normalizeResolutionType(rt string) (string, error) {
+	switch rt {
+	// Admin-UI outcome vocabulary.
+	case "favor_customer":
+		return "full_refund", nil
+	case "favor_provider":
+		return "release_payment", nil
+	case "split":
+		return "partial_refund", nil
+	// Canonical DB vocabulary (pass-through).
+	case "release_payment", "partial_refund", "full_refund",
+		"contract_terminated", "dismissed", "guarantee_invoked":
+		return rt, nil
+	default:
+		return "", fmt.Errorf("%w: %q", domain.ErrInvalidResolutionType, rt)
+	}
+}
+
+// normalizeGuaranteeOutcome validates the optional guarantee outcome against the
+// `disputes.guarantee_outcome` CHECK constraint. Empty is allowed (stored NULL).
+func normalizeGuaranteeOutcome(go_ string) (string, error) {
+	switch go_ {
+	case "", "replacement_provider", "refund", "denied":
+		return go_, nil
+	default:
+		return "", fmt.Errorf("%w: %q", domain.ErrInvalidGuaranteeOutcome, go_)
+	}
+}
+
 // AdminResolveDispute resolves a dispute and logs an audit entry.
 func (s *ContractService) AdminResolveDispute(
 	ctx context.Context,
@@ -416,6 +454,17 @@ func (s *ContractService) AdminResolveDispute(
 	refundAmountCents int64,
 	guaranteeOutcome string,
 ) (*domain.Dispute, error) {
+	// Translate/validate inputs against the DB CHECK constraints before any DB
+	// write, so a bad enum is a clean 400 rather than a 500.
+	normalizedType, err := normalizeResolutionType(resolutionType)
+	if err != nil {
+		return nil, fmt.Errorf("admin resolve dispute: %w", err)
+	}
+	normalizedOutcome, err := normalizeGuaranteeOutcome(guaranteeOutcome)
+	if err != nil {
+		return nil, fmt.Errorf("admin resolve dispute: %w", err)
+	}
+
 	// Validate the dispute exists before resolving.
 	existingDispute, err := s.contractRepo.GetDispute(ctx, disputeID)
 	if err != nil {
@@ -426,7 +475,7 @@ func (s *ContractService) AdminResolveDispute(
 		return nil, fmt.Errorf("admin resolve dispute: %w", domain.ErrDisputeAlreadyResolved)
 	}
 
-	resolved, err := s.contractRepo.ResolveDispute(ctx, disputeID, resolutionType, notes, adminID, refundAmountCents, guaranteeOutcome)
+	resolved, err := s.contractRepo.ResolveDispute(ctx, disputeID, normalizedType, notes, adminID, refundAmountCents, normalizedOutcome)
 	if err != nil {
 		return nil, fmt.Errorf("admin resolve dispute: %w", err)
 	}

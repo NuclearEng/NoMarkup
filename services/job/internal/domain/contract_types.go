@@ -19,6 +19,8 @@ var (
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
 	ErrDisputeNotFound         = errors.New("dispute not found")
 	ErrDisputeAlreadyResolved  = errors.New("dispute is already resolved")
+	ErrInvalidResolutionType   = errors.New("invalid resolution type")
+	ErrInvalidGuaranteeOutcome = errors.New("invalid guarantee outcome")
 )
 
 // Contract represents a contract between customer and provider.

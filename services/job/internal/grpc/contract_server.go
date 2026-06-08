@@ -664,6 +664,10 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.NotFound, "dispute not found")
 	case errors.Is(err, domain.ErrDisputeAlreadyResolved):
 		return status.Error(codes.FailedPrecondition, "dispute is already resolved")
+	case errors.Is(err, domain.ErrInvalidResolutionType):
+		return status.Error(codes.InvalidArgument, "invalid resolution type")
+	case errors.Is(err, domain.ErrInvalidGuaranteeOutcome):
+		return status.Error(codes.InvalidArgument, "invalid guarantee outcome")
 	default:
 		slog.Error("unmapped contract error", "error", err)
 		return status.Error(codes.Internal, "internal error")
