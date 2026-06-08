@@ -351,6 +351,8 @@ S3_SECRET_ACCESS_KEY=minioadmin
 NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ...
 NEXT_PUBLIC_API_URL=http://localhost:$GATEWAY_PORT
 NEXT_PUBLIC_WS_URL=ws://localhost:$GATEWAY_PORT
+API_URL=http://localhost:$GATEWAY_PORT
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
 
 SENTRY_DSN=
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP
@@ -370,6 +372,18 @@ ENVFILE
         success ".env.local created — add your Stripe/Mapbox keys"
     else
         success ".env.local exists"
+    fi
+
+    # Single source of truth: web/.env.local is a SYMLINK to the root .env.local.
+    # Why: Next.js loads web/.env.local, but bin/dev also does `set -a; source
+    # .env.local` (root) before starting web, so root's NEXT_PUBLIC_* silently
+    # OVERRODE a separate web/.env.local — two files, root quietly winning (this
+    # bit us on the Mapbox token). The symlink makes them the same file forever,
+    # and `cd web && npm run dev` reads the identical values.
+    if [[ ! -L "$ROOT/web/.env.local" ]]; then
+        rm -f "$ROOT/web/.env.local"
+        ln -s ../.env.local "$ROOT/web/.env.local"
+        success "Linked web/.env.local → ../.env.local (single env source)"
     fi
 
     # ── Web dependencies ─────────────────────────────────────────
