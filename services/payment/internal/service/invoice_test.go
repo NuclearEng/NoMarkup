@@ -163,6 +163,9 @@ func TestPaymentService_GenerateInvoice(t *testing.T) {
 			},
 			// No milestones → falls through to single-line-item path that uses JobTitle.
 		}
+		repo.getDefaultFeeConfigFn = func(_ context.Context) (*domain.FeeConfig, error) {
+			return domain.DefaultFeeConfig(), nil
+		}
 		svc := newTestPaymentService(repo, nil)
 		html, err := svc.GenerateInvoice(context.Background(), "12345678-aaaa-bbbb-cccc-dddddddddddd")
 		require.NoError(t, err)
@@ -219,10 +222,84 @@ func TestPaymentService_GenerateInvoice(t *testing.T) {
 				}, nil
 			},
 			// No payments returned.
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return domain.DefaultFeeConfig(), nil
+			},
 		}
 		svc := newTestPaymentService(repo, nil)
 		html, err := svc.GenerateInvoice(context.Background(), "12345678-aaaa-bbbb-cccc-dddddddddddd")
 		require.NoError(t, err)
 		assert.Contains(t, html, "No payments recorded")
+		// Even with no payment recorded, fees must be PROJECTED from the active
+		// fee config — never an all-zero summary on a non-zero contract.
+		// $100.00 contract: 8% platform = $8.00, 2% guarantee = $2.00, payout $90.00.
+		assert.Contains(t, html, "$8.00", "projected platform fee shows")
+		assert.Contains(t, html, "$2.00", "projected guarantee fee shows")
+		assert.Contains(t, html, "$90.00", "projected provider payout shows")
+		assert.Contains(t, html, "projected from the current fee schedule",
+			"unpaid invoice notes the fees are projected")
+	})
+
+	t.Run("projects_fees_from_config_on_unpaid_180_contract", func(t *testing.T) {
+		t.Parallel()
+		// Founder-reported case: a $180 contract with no payments must show
+		// Platform $14.40, Guarantee $3.60, Payout $162.00 — not all zeros.
+		repo := &mockPaymentRepo{
+			getContractDetailFn: func(_ context.Context, _ string) (*domain.ContractDetail, error) {
+				return &domain.ContractDetail{
+					ID:          "12345678-xx",
+					JobTitle:    "Lawn care",
+					AmountCents: 18000,
+					Status:      "active",
+					CreatedAt:   time.Now(),
+				}, nil
+			},
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return domain.DefaultFeeConfig(), nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		html, err := svc.GenerateInvoice(context.Background(), "12345678-aaaa-bbbb-cccc-dddddddddddd")
+		require.NoError(t, err)
+		assert.Contains(t, html, "$14.40", "projected platform fee (8% of $180)")
+		assert.Contains(t, html, "$3.60", "projected guarantee fee (2% of $180)")
+		assert.Contains(t, html, "$162.00", "projected provider payout")
+	})
+
+	t.Run("uses_recorded_breakdown_when_payment_exists", func(t *testing.T) {
+		t.Parallel()
+		// When a payment IS recorded, the invoice must reflect the ACTUAL stored
+		// breakdown, not a re-projection. A default config is also provided to
+		// prove the recorded values win over any projection.
+		repo := &mockPaymentRepo{
+			getContractDetailFn: func(_ context.Context, _ string) (*domain.ContractDetail, error) {
+				return &domain.ContractDetail{
+					ID:          "12345678-xx",
+					JobTitle:    "Roofing",
+					AmountCents: 50000,
+					Status:      "completed",
+					CreatedAt:   time.Now(),
+				}, nil
+			},
+			getPaymentsForContractFn: func(_ context.Context, _ string) ([]*domain.Payment, error) {
+				return []*domain.Payment{
+					{
+						ID: "p1", Status: "released", AmountCents: 50000,
+						PlatformFeeCents: 2500, GuaranteeFeeCents: 1000,
+						ProviderPayoutCents: 46500, CreatedAt: time.Now(),
+					},
+				}, nil
+			},
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return domain.DefaultFeeConfig(), nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		html, err := svc.GenerateInvoice(context.Background(), "12345678-aaaa-bbbb-cccc-dddddddddddd")
+		require.NoError(t, err)
+		assert.Contains(t, html, "$25.00", "recorded platform fee shown")
+		assert.Contains(t, html, "$465.00", "recorded provider payout shown")
+		assert.NotContains(t, html, "projected from the current fee schedule",
+			"paid invoice must NOT show the projected-fees note")
 	})
 }

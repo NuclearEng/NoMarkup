@@ -41,14 +41,46 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
 	// Generate invoice number from contract ID.
 	invoiceNum := "INV-" + strings.ToUpper(contractID[:8])
 
-	// Compute payment totals.
+	// Compute payment totals from RECORDED payments (the actual money that has
+	// moved). totalPaid only counts settled/in-escrow payments.
 	var totalPaid, totalPlatformFee, totalGuaranteeFee, totalProviderPayout int64
+	var hasRecordedFees bool
 	for _, p := range payments {
 		if p.Status == "completed" || p.Status == "released" || p.Status == "escrow" {
 			totalPaid += p.AmountCents
 			totalPlatformFee += p.PlatformFeeCents
 			totalGuaranteeFee += p.GuaranteeFeeCents
 			totalProviderPayout += p.ProviderPayoutCents
+			hasRecordedFees = true
+		}
+	}
+
+	// The fee breakdown shown on the invoice. Prefer the ACTUAL recorded
+	// breakdown when a payment exists. Otherwise (unpaid contract) fall back to
+	// the PROJECTED breakdown computed from the active fee config, so the
+	// customer/provider can see exactly what the fees will be before paying —
+	// rather than a misleading all-zero summary.
+	platformFeeCents := totalPlatformFee
+	guaranteeFeeCents := totalGuaranteeFee
+	providerPayoutCents := totalProviderPayout
+	var leadGenFeeCents int64
+	feesAreProjected := false
+
+	if !hasRecordedFees && contract.AmountCents > 0 {
+		// Project from the active (default) fee config. The same CalculateFees
+		// logic used at payment time, so projected matches what will be charged.
+		// ContractDetail carries no category, so we use the default config.
+		if breakdown, feeErr := s.CalculateFees(ctx, contract.AmountCents, nil); feeErr != nil {
+			slog.Warn("failed to project fees for unpaid invoice; showing config-free fallback",
+				"contract_id", contractID,
+				"error", feeErr,
+			)
+		} else {
+			platformFeeCents = breakdown.PlatformFeeCents
+			guaranteeFeeCents = breakdown.GuaranteeFeeCents
+			providerPayoutCents = breakdown.ProviderPayoutCents
+			leadGenFeeCents = breakdown.LeadGenFeeCents
+			feesAreProjected = true
 		}
 	}
 
@@ -111,6 +143,27 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
 	statusStamp := `<div class="stamp paid">Paid</div>`
 	if outstanding > 0 {
 		statusStamp = `<div class="stamp due">Balance Due</div>`
+	}
+
+	// Optional lead-gen fee line (only when it applies to this contract).
+	var leadGenRowHTML string
+	if leadGenFeeCents > 0 {
+		leadGenRowHTML = fmt.Sprintf(`
+    <div class="summary-item">
+      <span class="label">Lead-Gen Fee</span>
+      <span class="value">%s</span>
+    </div>`, formatCentsToDollars(leadGenFeeCents))
+	}
+
+	// When the contract is unpaid, the fee figures are projected from the active
+	// fee config (not yet charged). Make that explicit so the numbers aren't
+	// mistaken for settled amounts.
+	var feeNoteHTML string
+	if feesAreProjected {
+		feeNoteHTML = `
+    <div style="font-size: 12px; color: #888; margin-top: 8px;">
+      Platform, guarantee, and payout figures are projected from the current fee schedule and apply once this contract is paid.
+    </div>`
 	}
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
@@ -235,7 +288,7 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
     <div class="summary-item">
       <span class="label">Guarantee Fee</span>
       <span class="value">%s</span>
-    </div>
+    </div>%s
     <div class="summary-item">
       <span class="label">Provider Payout</span>
       <span class="value">%s</span>
@@ -247,7 +300,7 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
     <div class="summary-item total">
       <span class="label">Outstanding</span>
       <span class="value">%s</span>
-    </div>
+    </div>%s
   </div>
 </div>
 
@@ -266,11 +319,13 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
 		lineItemsHTML.String(),
 		paymentsHTML.String(),
 		formatCentsToDollars(contract.AmountCents),
-		formatCentsToDollars(totalPlatformFee),
-		formatCentsToDollars(totalGuaranteeFee),
-		formatCentsToDollars(totalProviderPayout),
+		formatCentsToDollars(platformFeeCents),
+		formatCentsToDollars(guaranteeFeeCents),
+		leadGenRowHTML,
+		formatCentsToDollars(providerPayoutCents),
 		formatCentsToDollars(totalPaid),
 		formatCentsToDollars(outstanding),
+		feeNoteHTML,
 		contract.ContractNumber, contract.PaymentTiming,
 	)
 
