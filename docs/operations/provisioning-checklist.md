@@ -51,6 +51,16 @@ the new `markets.go` handler / `GET /api/v1/markets`. CI builds from source, so 
 normal image build picks it up — just confirm the gateway + user images are
 rebuilt for the release.
 
+### 4. Set the internal WS-auth secret
+The gateway presents a shared secret to the chat/auction WebSocket backends so
+the internal WS hop is authenticated (`gateway/internal/config/config.go`
+`InternalWSSecret`, commit `a77ddb7`). The handshake is **inactive until the
+secret is set on both sides**.
+
+Action: set the SAME value for `INTERNAL_WS_SECRET` (alias `GATEWAY_CHAT_SECRET`)
+on the **gateway** and the **chat service** Deployments. Generate with
+`openssl rand -base64 32`. If unset, the WS auth handshake is a no-op.
+
 ---
 
 ## Recommended (not strictly blocking)

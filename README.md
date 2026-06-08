@@ -1,104 +1,122 @@
 # NoMarkup
 
-Reverse-auction service marketplace. Customers post jobs, providers compete on price — the price goes **down**, not up.
+A two-sided local marketplace built on one shared auth + payment + trust stack:
 
-Built as the **Robinhood of services** with prediction-market-inspired UI: live auction arenas, real-time order books, digit-rolling price tickers, and AAA-level motion design.
+- **Services** (`/jobs`, `/bids`, `/contracts`) — **reverse auction.** Customers post jobs, providers compete on price (the price goes **down**). The original product surface.
+- **Goods** (`/marketplace`, `/sell`, `/orders`) — **forward auction.** Sellers list physical items, buyers bid (the price goes **up**), with local pickup inside 25 miles, escrowed orders, and Buy-It-Now.
+
+Built as the **Robinhood of local commerce** with prediction-market-inspired UI: live auction arenas, real-time order books, digit-rolling price tickers, and AAA-level motion design. The name is the promise — the buyer/customer pays no markup; the platform's take comes out of the seller payout.
 
 ## Quick Start
 
 ```bash
-# Install dependencies
-cd web && npm install
+# Full stack (gateway + Go services + Rust engines + web + Postgres/Redis/Meili)
+./bin/dev up                 # start everything
+./bin/dev up web gateway     # or start specific services
 
-# Run the development server
-npm run dev
+# Web only
+cd web && npm install && npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). The gateway listens on `:8081`, the web app on `:3000`. Copy `.env.example` to `.env.local` first (see **Security & Configuration**).
 
 ## Architecture
 
 ```
 web/           Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui
-gateway/       Go API Gateway (Chi router, JWT auth, rate limiting)
-services/      Go microservices (user, job, payment, chat)
-engines/       Rust performance-critical services (bidding, fraud, trust, imaging)
-proto/         Protobuf definitions (shared gRPC contracts)
-ml/            Python ML training (fraud, pricing models)
+gateway/       Go API gateway (Chi, JWT auth, rate limiting, validation, edge-cache)
+services/      Go microservices (user, job/contract, payment, chat)
+engines/       Rust performance-critical services (bidding, fraud, trust, search, imaging, geo)
+proto/         Protobuf definitions (shared gRPC contracts, v1)
+database/      golang-migrate migrations + seed
+ml/            Python ML training (fraud, pricing — not deployed)
 deploy/        Docker, Kubernetes, Terraform
 ```
 
+Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC service mesh. Go owns CRUD, orchestration, Stripe, and WebSocket fan-out; Rust is reserved for sub-millisecond / high-throughput paths (bidding, fraud heuristics, trust scoring, search, image pipeline, geo). Data layer: PostgreSQL 16 + PostGIS, Redis 7, Meilisearch. The public catalog/data layer is edge-cached (the app HTML can't be — a per-request CSP nonce forces dynamic rendering); authed reads stay uncached.
+
 ## Key Features
 
-### Marketplace Core
-- **Live Auction Arena** — real-time WebSocket-driven bidding with order book, depth chart, and bid velocity indicators
-- **Digit-Rolling Prices** — Robinhood-style animated price tickers with green/red flash on changes
-- **5-Level Urgency Timer** — SVG progress ring with progressive pulse/glow/shake as auctions close
-- **Savings Hero** — prominent "You're saving $X (Y%)" display with rolling digit animation
-- **Fair Price Index** — animated market-data page showing real median prices by category and ZIP, with percentile range bars and price heat map
-- **Competitive Bid Context** — rank badges (gold/silver/bronze), win probability bars, market position
-- **Instant Match** — "Find me someone fast" path alongside open auctions; provider offer queue with 15-minute countdown, accept/decline flow
-- **Viewer Count** — live "👁 N providers viewing" badge per auction, Redis sorted-set backed, 30s polling
-- **Savings Badge** — "Saves you $X vs. market avg" green pill on every auction with bid history context
+### Services Marketplace (reverse auction)
+- **Live Auction Arena** — real-time WebSocket bidding with order book, depth chart, bid-velocity indicators
+- **Digit-Rolling Prices** — Robinhood-style animated tickers with green/red flash on change
+- **5-Level Urgency Timer** — SVG progress ring with progressive pulse/glow/shake as auctions close; anti-snipe extension on last-second bids
+- **Savings Hero & Fair Price Index** — "You're saving $X (Y%)" plus a market-data page of median prices by category/ZIP with percentile bars and a price heat map
+- **Instant Match** — "find me someone fast" path with a provider offer queue + 15-minute countdown
+- **Competitive Context** — rank badges, win-probability bars, live "👁 N providers viewing"
+
+### Goods Marketplace (forward auction)
+- **Ascending auctions** — buyers bid up; min-increment enforced; proxy/auto-bid cascade; anti-snipe time extension; deterministic winner at close
+- **Concurrency-safe bidding** — every bid serialized under a `FOR UPDATE` row lock; verified no lost/duplicate/wrong-winner under concurrent load; optional `Idempotency-Key` dedup
+- **Bid bonds** — refundable good-faith deposits gate bidding on flagged listings (validated before charge)
+- **Offers & counter-offers** — make/accept/reject/counter with chain-aware authorization
+- **Buy-It-Now** — instant purchase that closes the auction and opens an escrow order
+- **Orders & escrow** — buyer/seller order lifecycle (seller-confirm, pickup-confirm, auto-release), readable via `/orders/{id}` and `/me/orders`
+- **Local pickup** — 25-mile radius, Mapbox pickup maps, PostGIS-backed geo
+- **Watchlist, Follows & Feed** — watch listings, follow sellers, personalized feed
+- **City selector** — best-in-class market picker: use-my-location (→ nearest launched market by haversine), recent picks, nearby markets, and type-to-search; only launched cities surface ("more cities coming soon")
 
 ### AI-Powered Job Posting
-- **Vision Analysis** — tap "Analyze a Photo" to capture or upload a photo; `claude-haiku-4-5-20251001` extracts category, title, description, and budget range and auto-fills the form
-- **Voice Input** — browser-native Web Speech API mic button on the title field; speak your problem, form fills itself
-- **Progressive Enhancement** — form works without either feature; both are additive layers
+- **Vision Analysis** — upload a photo; `claude-haiku-4-5-20251001` extracts category, title, description, budget and auto-fills the form
+- **Voice Input** — Web Speech API mic on the title field
+- **Progressive Enhancement** — both are additive; the form works without them
 
-### Provider Workspace
-- **Daily Workspace** (`/provider/workspace`) — today's jobs + 7-day calendar, job cards with inline check-in/out and completion photos
-- **GPS Check-In/Out** — geolocation-verified job start/end with duration calculation ("Worked 3h 20m")
-- **Completion Photos** — before/after upload slots; "Mark Complete" requires at least one after-photo
-- **Dispute Resolution** — 5-step evidence collection form (contract, reason, description, photos, review); "File a Dispute" on every contract detail page
-
-### Provider Financial OS
-- **Working Capital Advances** — credit utilization bars, fee preview, repayment progress tracking; auto-deduction from payouts
-- **BNPL (Buy Now Pay Later)** — 3 or 6 installment plans for customers; provider paid immediately, platform collects installments
-- **Instant Payout** — 1% fee, funds arrive within minutes; real-time fee preview before confirming
-- **Tax Projection Card** — YTD earnings → estimated annual tax at 25% → quarterly payment breakdown
-- **Credit Score Card** — letter grade (A–D) from risk score, utilization meter, link to advance history
-- **Business Suite** — expense tracking, invoice generation, 1099-NEC tax center
-
-### Local Intelligence
-- **Seasonal Demand Banners** — rule-based alerts by category + month (HVAC in summer, landscaping in spring, etc.), dismissible
-- **Permit Intelligence** — info banner on job detail pages for categories that typically require permits (electrical, plumbing, HVAC, roofing, etc.)
-- **Fair Price Widget** — market low–high range bar on job cards, color-coded green/amber/red vs. current bids
+### Provider Workspace & Financial OS
+- **Daily Workspace** — today's jobs + 7-day calendar, GPS check-in/out with duration, before/after completion photos
+- **Working Capital Advances** — risk-based APR (3–15% by credit grade) + a flat 3% origination fee, shown as a transparent line-item breakdown; auto-deducted from payouts
+- **BNPL** — 3/6-installment plans; provider paid immediately, platform collects installments
+- **Instant Payout** — 1% fee, real-time preview
+- **Business Suite** — expense tracking, invoice generation, and an institution-grade 1099-NEC tax center with a printable summary
+- **Dispute Resolution** — evidence-collected disputes backed by the contract service, party-access enforced, admin queue + resolution
 
 ### Per-Job Insurance
-- **4 Insurance Products** — property damage (150 bps), workmanship warranty (200 bps), completion guarantee (100 bps), liability (250 bps)
-- **Risk-Adjusted Pricing** — category multipliers (1.5x roofing/electrical, 0.8x cleaning) computed at quote time
-- **Claims Lifecycle** — file, review, approve with payout or deny; admin claims queue
+- **4 products** — property damage (150 bps), workmanship warranty (200 bps), completion guarantee (100 bps), liability (250 bps), risk-adjusted by category, with a full claims lifecycle
 
 ### Platform & Design
-- **Trust Scoring** — multi-dimensional provider trust with tier badges (Top Rated, Trusted, Rising, New)
-- **Multi-Tier Celebrations** — canvas confetti from Nice (10%) to Legendary (40%+) savings
-- **Brand Gold System** — glass morphism throughout: `glass`, `glass-highlight`, `glass-elevated`, `glass-tinted-gold`, `glass-cta-gold`
-- **Full Dark Mode** — cinematic `#070b14` dark theme across all 60+ pages
-- **Best-in-Class Mobile** — fixed bottom tab bar (MD3 pattern), `viewport-fit=cover` for notched iPhones, `100dvh` dynamic viewport, 44px touch targets
-- **Accessibility** — WCAG 2.2 AA: focus rings, `aria-live` regions, `prefers-reduced-motion` on all animations
-- **Best-in-Class Onboarding** — role picker, email verification, 7-step provider wizard, Stripe Connect integration
-- **Observability** — structured JSON slog, gRPC interceptors on all Go services, `tracing::info!` on all Rust engines, OpenTelemetry distributed tracing end-to-end
+- **Geographic rollout control** — markets launch by city / state / country via an admin Markets tool (flips `markets.is_active`); the public catalog is active-gated so coverage expands market-by-market for liquidity density. Washington is the first live market. Catalog (~432 US + MX cities) crawled from craigslist + geocoded; see `docs/operations/provisioning-checklist.md`
+- **Trust Scoring** — multi-dimensional provider trust with tier badges
+- **Brand Gold + Full Dark Mode** — glass-morphism design system, cinematic `#070b14` theme across 60+ pages
+- **Best-in-Class Mobile** — fixed bottom tab bar, `100dvh`, notch-safe, 44px targets, works at 320px
+- **Accessibility** — WCAG 2.2 AA: focus rings, `aria-live`, `prefers-reduced-motion`
+- **Observability** — structured JSON slog, gRPC interceptors, Rust `tracing`, OpenTelemetry end-to-end
+
+## Fees
+
+NoMarkup's take comes out of the **seller/provider payout** — the buyer/customer pays exactly the agreed price, no markup.
+
+| Fee | Rate | Notes |
+|---|---|---|
+| Platform commission | **8%** | Seller-side; below eBay (~13%) / Etsy (~11%), far below TaskRabbit/Thumbtack (15–30%) |
+| Guarantee (buyer protection) | **2%** | Seller-side; funds the completion/escrow guarantee |
+| Lead-gen referral | **10%** | Opt-in, off by default; charged only for qualified leads when enabled |
+| Working-capital advance | **3% origination + 3–15% APR** | APR is risk-based by business credit grade |
+| Instant payout | **1%** | Optional fast payout |
+
+All fee rates are admin-configurable (with seeded defaults) and shown transparently to the user.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15, TypeScript 5, Tailwind CSS 4, shadcn/ui, Zustand, TanStack Query |
-| Backend | Go 1.22+, Chi, pgx, gRPC |
-| Engines | Rust (Tokio, tonic, sqlx) |
+| Frontend | Next.js 15, TypeScript 5 (strict), Tailwind CSS 4, shadcn/ui, Zustand, TanStack Query |
+| Backend | Go 1.22+, Chi, pgx (no ORM), gRPC + protobuf |
+| Engines | Rust (Tokio, tonic, sqlx) — bidding, fraud, trust, search, imaging, geo |
 | Database | PostgreSQL 16 + PostGIS, Redis 7, Meilisearch |
-| Infrastructure | Docker, Kubernetes, GitHub Actions |
+| Payments | Stripe (Connect Express escrow, PaymentIntents, Idempotency-Key) |
+| Infrastructure | Docker, Kubernetes, GitHub Actions, Cloudflare (DNS/CDN/edge for `no-markup.com`) |
 
 ## Development
 
 ```bash
-npm run dev            # Start dev server (Turbopack)
-npm run typecheck      # TypeScript type checking
+npm run dev            # web dev server (Turbopack)
+npm run typecheck      # TypeScript
 npm run lint           # ESLint
 npm run test           # Vitest unit tests
-npm run test:e2e       # Playwright E2E tests
-npm run build          # Production build
+npm run test:e2e       # Playwright E2E
+npm run build          # production build
+
+go test ./...          # Go services/gateway (from each module)
+cargo test             # Rust engines (from engines/)
 ```
 
 ## Security & Configuration
@@ -107,21 +125,21 @@ Backend services fail closed on missing or invalid configuration. Copy `.env.exa
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `ENVIRONMENT` | ✅ always | One of `development` / `staging` / `production`. Services refuse to start if unset or invalid. |
-| `STRIPE_WEBHOOK_SECRET` | ✅ payment service | Mandatory everywhere. Stripe webhook signature is verified on every request; there is no env-based bypass. |
-| `JWT_ISSUER`, `JWT_AUDIENCE` | recommended | Checked on every access token. Default: `https://auth.nomarkup.com` / `nomarkup-api`. |
-| `WS_ALLOWED_ORIGINS` | recommended | Comma-separated hostnames for WebSocket origin allowlist (CSWSH defense). Defaults to production hosts. |
-| `TRUSTED_PROXIES` | recommended | Comma-separated CIDRs of reverse proxies whose `X-Forwarded-For` / `X-Real-IP` headers the gateway will honor. Defaults to loopback + RFC1918. |
-| `APPLE_CLIENT_ID` | if Apple login | Audience claim checked on Apple ID tokens verified via Apple JWKS. |
+| `ENVIRONMENT` | ✅ always | `development` / `staging` / `production`. Services refuse to start if unset/invalid. |
+| `STRIPE_WEBHOOK_SECRET` | ✅ payment service | Webhook signature verified on every request; no bypass. |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | recommended | Checked on every access token. Default `https://auth.nomarkup.com` / `nomarkup-api`. |
+| `WS_ALLOWED_ORIGINS` | recommended | WebSocket origin allowlist (CSWSH defense). Defaults to production hosts. |
+| `INTERNAL_WS_SECRET` | prod | Shared secret the chat/auction WS backend requires from the gateway dial, so it stops trusting gateway-supplied `user_id`. Set on both gateway and chat. |
+| `TRUSTED_PROXIES` | recommended | CIDRs whose `X-Forwarded-For` / `X-Real-IP` the gateway honors. Defaults to loopback + RFC1918. |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | maps | Mapbox token for pickup/service maps. Use a **`pk.` (public, URL-restricted)** token — `NEXT_PUBLIC_*` is exposed client-side. |
+| `APPLE_CLIENT_ID` | if Apple login | Audience claim on Apple ID tokens verified via Apple JWKS. |
 
 Other security posture:
-- RS256 JWT with explicit signing-method pinning + `iss` / `aud` enforcement
-- argon2id password hashing (m=65536, t=3, p=4)
-- All authenticated mutation endpoints scope writes by owner
-- Idempotency keys required on `/payments` and `/subscriptions` writes
-- Stripe event dedup table prevents replay on retry
-- All service containers run as non-root
-- Next.js edge middleware gates `(dashboard)` routes and protected `/api/*` paths
+- RS256 JWT with explicit signing-method pinning + `iss`/`aud` enforcement; argon2id password hashing (m=65536, t=3, p=4)
+- Every endpoint authenticated **and** authorized; all mutations scope writes by owner/party; PII projected out of public reads
+- WebSocket subscribes (chat & auction) enforce channel-membership / job-participant access — no IDOR
+- Parameterized SQL only; idempotency keys on `/payments` and `/subscriptions`; Stripe event dedup prevents replay
+- All containers run as non-root; Next.js edge middleware gates `(dashboard)` and protected `/api/*` routes; strict CSP via per-request nonce
 
 ## License
 
