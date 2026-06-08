@@ -97,6 +97,7 @@ func New(
 	contractTipHandler *handler.ContractTipHandler,
 	calendarExportHandler *handler.CalendarExportHandler,
 	marketsHandler *handler.MarketsHandler,
+	adminMarketsHandler *handler.AdminMarketsHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -863,6 +864,13 @@ func New(
 			r.Route("/goods-reports", func(r chi.Router) {
 				r.Get("/", adminMarketplaceHandler.ListReports)
 				r.Post("/{id}/resolve", adminMarketplaceHandler.ResolveReport)
+			})
+
+			// Market rollout: list the full catalog + launch/pull-back markets
+			// at city/state/country granularity (flips markets.is_active).
+			r.Route("/markets", func(r chi.Router) {
+				r.Get("/", adminMarketsHandler.List)
+				r.Post("/activate", adminMarketsHandler.SetActive)
 			})
 
 			// Pre-quote category questions CRUD (Wave 5 audit Section H).
