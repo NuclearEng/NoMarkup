@@ -57,6 +57,7 @@ const adminKeys = {
     [...adminKeys.all, 'platform', 'categories', startDate, endDate] as const,
   banking: () => [...adminKeys.all, 'banking'] as const,
   flags: () => [...adminKeys.all, 'flags'] as const,
+  insurers: () => [...adminKeys.all, 'insurers'] as const,
 };
 
 // ─── Helper to build query strings ───────────────────
@@ -740,6 +741,102 @@ export function useToggleFlag() {
       // The public flag map (useFeatureFlags) is now stale — refresh it so the
       // live UI reflects the toggle without a hard reload.
       void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+    },
+  });
+}
+
+// ─── Insurers (competitive insurance marketplace) ─────
+//
+// Admin onboarding + approval surface for the competitive insurance
+// marketplace. Insurers are onboarded with a rate card (one row per product
+// type), then approved/suspended by an admin. Rates are stored as integer
+// basis points (1% = 100 bps) and premiums as integer cents — the UI formats
+// them. This is a pgx-direct admin surface; response shapes are inlined here
+// so each consumer sees the JSON contract at a glance.
+
+export const INSURER_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  SUSPENDED: 'suspended',
+} as const;
+
+export type InsurerStatus = (typeof INSURER_STATUS)[keyof typeof INSURER_STATUS];
+
+export const INSURANCE_PRODUCT_TYPE = {
+  PROPERTY_DAMAGE: 'property_damage',
+  WORKMANSHIP: 'workmanship',
+  COMPLETION: 'completion',
+  LIABILITY: 'liability',
+} as const;
+
+export type InsuranceProductType =
+  (typeof INSURANCE_PRODUCT_TYPE)[keyof typeof INSURANCE_PRODUCT_TYPE];
+
+export interface InsurerProduct {
+  id: string;
+  product_type: InsuranceProductType;
+  base_rate_bps: number;
+  min_premium_cents: number;
+  active: boolean;
+}
+
+export interface Insurer {
+  id: string;
+  name: string;
+  slug: string;
+  status: InsurerStatus;
+  products: InsurerProduct[];
+  created_at: string;
+}
+
+export interface AdminInsurersResponse {
+  insurers: Insurer[];
+}
+
+/** A single rate-card row in the onboarding payload (no id/active yet). */
+export interface OnboardInsurerProduct {
+  product_type: InsuranceProductType;
+  base_rate_bps: number;
+  min_premium_cents: number;
+}
+
+export interface OnboardInsurerInput {
+  name: string;
+  slug: string;
+  products: OnboardInsurerProduct[];
+}
+
+export interface UpdateInsurerInput {
+  id: string;
+  status?: InsurerStatus;
+  products?: OnboardInsurerProduct[];
+}
+
+export function useAdminInsurers() {
+  return useQuery({
+    queryKey: adminKeys.insurers(),
+    queryFn: () => api.get<AdminInsurersResponse>('/api/v1/admin/insurers'),
+  });
+}
+
+export function useOnboardInsurer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: OnboardInsurerInput) =>
+      api.post<{ insurer: Insurer }>('/api/v1/admin/insurers', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.insurers() });
+    },
+  });
+}
+
+export function useUpdateInsurer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateInsurerInput) =>
+      api.put<{ insurer: Insurer }>(`/api/v1/admin/insurers/${id}`, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.insurers() });
     },
   });
 }

@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronLeft, ChevronRight, ImagePlus, MapPin, Mic, MicOff, X, Zap } from 'lucide-react';
 import type { Route } from 'next';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
@@ -88,12 +88,17 @@ export function JobPostingForm() {
   const [sameDayRequested, setSameDayRequested] = useState(false);
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, SubmitAnswerInput>>({});
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Allow deep-linking a pre-selected category, e.g. the /legal vertical's
+  // "Post a legal job" CTA passes ?category_id=<legal subtree id>. Empty when
+  // absent, so the normal blank flow is unchanged.
+  const presetCategoryId = searchParams.get('category_id') ?? '';
   const createJob = useCreateJob();
 
   const form = useForm<JobPostingFormValues>({
     resolver: zodResolver(jobPostingSchema),
     defaultValues: {
-      categoryId: '',
+      categoryId: presetCategoryId,
       title: '',
       description: '',
       scheduleType: 'flexible',

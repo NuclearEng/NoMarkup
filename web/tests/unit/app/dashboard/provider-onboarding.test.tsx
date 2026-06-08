@@ -164,7 +164,7 @@ describe('ProviderOnboardingPage', () => {
 
   it('starts on step 1 with correct title', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
-    expect(screen.getByText(/Step 1 of 7/)).toBeDefined();
+    expect(screen.getByText(/Step 1 of 8/)).toBeDefined();
     expect(screen.getByRole('heading', { name: 'Provider Setup' })).toBeDefined();
   });
 
@@ -172,9 +172,9 @@ describe('ProviderOnboardingPage', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const nav = screen.getByRole('navigation', { name: /Onboarding steps/i });
     expect(nav).toBeDefined();
-    // 7 step buttons should render in the indicator nav
+    // 8 step buttons should render in the indicator nav (added the License step)
     const stepButtons = nav.querySelectorAll('button');
-    expect(stepButtons.length).toBe(7);
+    expect(stepButtons.length).toBe(8);
   });
 
   it('shows business info form on initial step', () => {
@@ -442,12 +442,14 @@ describe('ProviderOnboardingPage', () => {
     expect(routerPush).toHaveBeenCalledWith('/provider');
   });
 
-  it('Payments Previous button returns to Verification step', () => {
+  it('Payments Previous button returns to License step', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Payments/i }));
     const prevBtn = screen.getByRole('button', { name: /Previous/i });
     fireEvent.click(prevBtn);
-    expect(screen.getByText(/Government-Issued ID/i)).toBeDefined();
+    // The License step (added between Verification and Payments) shows the
+    // professional-license submit affordance.
+    expect(screen.getByRole('button', { name: /Submit for verification/i })).toBeDefined();
   });
 
   // -------- New tests for uncovered handlers / branches --------
@@ -708,9 +710,10 @@ describe('ProviderOnboardingPage', () => {
       file_name: 'id.pdf',
       mime_type: 'application/pdf',
     });
-    // After successful finish, advances to payments step
+    // After successful finish, advances to the License step (added between
+    // Verification and Payments).
     await waitFor(() => {
-      expect(screen.getByTestId('stripe-onboarding')).toBeDefined();
+      expect(screen.getByRole('button', { name: /Submit for verification/i })).toBeDefined();
     });
   });
 

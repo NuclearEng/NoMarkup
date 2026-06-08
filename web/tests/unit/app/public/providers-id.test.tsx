@@ -26,6 +26,12 @@ vi.mock('@/components/users/FollowButton', () => ({
   FollowButton: () => createElement('button', { 'data-testid': 'follow-button' }, 'Follow'),
 }));
 
+// VerifiedBarBadge also calls into TanStack Query (license + flag queries) — mock
+// it out for the same reason; it has its own dedicated test (legal-licenses).
+vi.mock('@/components/providers/VerifiedBarBadge', () => ({
+  VerifiedBarBadge: () => null,
+}));
+
 vi.mock('@/hooks/useProviders', () => ({
   usePublicProviderProfile: vi.fn(),
 }));

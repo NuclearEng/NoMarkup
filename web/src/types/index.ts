@@ -1993,6 +1993,70 @@ export interface InsuranceClaimsResponse {
 }
 
 // ────────────────────────────────────────
+// Competitive insurance marketplace types
+// (request quotes → compare competing insurers → bind one)
+// ────────────────────────────────────────
+
+export const INSURANCE_PRODUCT_TYPE = {
+  JOB_PROTECTION: 'job_protection',
+  GOODS_SHIPPING: 'goods_shipping',
+  WARRANTY: 'warranty',
+  LIABILITY: 'liability',
+} as const;
+export type InsuranceProductType =
+  (typeof INSURANCE_PRODUCT_TYPE)[keyof typeof INSURANCE_PRODUCT_TYPE];
+
+export interface RequestInsuranceQuotesInput {
+  product_type: string;
+  coverage_cents: number;
+  contract_id?: string;
+}
+
+/** A single competing offer from one insurer. */
+export interface InsuranceCompetitiveQuote {
+  quote_id: string;
+  insurer_id: string;
+  insurer_name: string;
+  premium_cents: number;
+  deductible_cents: number;
+  terms: string;
+  expires_at: string;
+}
+
+export interface InsuranceQuoteRequest {
+  id: string;
+  product_type: string;
+  coverage_cents: number;
+  contract_id: string | null;
+  status: string;
+  created_at: string;
+}
+
+/** POST /quote-requests response. Quotes are sorted by premium ascending. */
+export interface InsuranceQuoteRequestResponse {
+  request_id: string;
+  quotes: InsuranceCompetitiveQuote[];
+  // Echoed request fields (optional — present when the gateway returns them).
+  product_type?: string;
+  coverage_cents?: number;
+  contract_id?: string | null;
+  status?: string;
+  created_at?: string;
+}
+
+/** GET /quote-requests/{id} response. */
+export interface InsuranceQuoteRequestDetail {
+  request: InsuranceQuoteRequest;
+  quotes: InsuranceCompetitiveQuote[];
+}
+
+/** POST /quote-requests/{id}/select response. */
+export interface SelectInsuranceQuoteResponse {
+  policy_id: string;
+  status: string;
+}
+
+// ────────────────────────────────────────
 // Tax Form types
 // ────────────────────────────────────────
 

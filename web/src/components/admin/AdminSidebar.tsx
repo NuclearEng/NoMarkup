@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Banknote,
   BarChart3,
+  Building2,
   CreditCard,
   FileCheck,
   Flag,
@@ -25,12 +26,20 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { cn } from '@/lib/utils';
 
 interface AdminNavItem {
   href: Route;
   label: string;
   icon: typeof LayoutDashboard;
+  /**
+   * Optional feature-flag key gating this entry. When set, the item is hidden
+   * only when the backend explicitly reports the flag as `false`. A missing
+   * key (flag not configured) fails open — the entry stays visible — so this
+   * never breaks if the flag hasn't been seeded yet.
+   */
+  flag?: string;
 }
 
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
@@ -49,6 +58,12 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/advances' as Route, label: 'Advances', icon: Banknote },
   { href: '/admin/guarantee' as Route, label: 'Guarantee', icon: ShieldCheck },
   { href: '/admin/insurance' as Route, label: 'Insurance', icon: Umbrella },
+  {
+    href: '/admin/insurers' as Route,
+    label: 'Insurers',
+    icon: Building2,
+    flag: 'insurance_competition',
+  },
   { href: '/admin/taxonomy' as Route, label: 'Taxonomy', icon: Network },
   { href: '/admin/challenges' as Route, label: 'Challenges', icon: Trophy },
   { href: '/admin/flags' as Route, label: 'Feature Flags', icon: ToggleRight },
@@ -62,10 +77,17 @@ function isActive(pathname: string, href: string): boolean {
 
 export function AdminSidebar() {
   const pathname = usePathname();
+  const flags = useFeatureFlags();
+
+  // Hide a flagged entry only when the backend explicitly reports `false`;
+  // missing/loading flags fail open so a new surface never silently disappears.
+  const navItems = ADMIN_NAV_ITEMS.filter(
+    (item) => item.flag === undefined || flags[item.flag] !== false,
+  );
 
   return (
     <nav className="space-y-1" aria-label="Admin navigation">
-      {ADMIN_NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const active = isActive(pathname, item.href);
         return (
           <Link

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 
 import { CategorySelector } from '@/components/providers/CategorySelector';
+import { ProfessionalLicenseSection } from '@/components/providers/ProfessionalLicenseSection';
 
 const ServiceAreaMap = dynamic(
   () => import('@/components/maps/ServiceAreaMap').then((mod) => mod.ServiceAreaMap),
@@ -64,6 +65,7 @@ const STEPS = [
   { title: 'Terms', description: 'Set your default terms' },
   { title: 'Portfolio', description: 'Showcase your work' },
   { title: 'Verification', description: 'Upload documents to verify your business' },
+  { title: 'License', description: 'Add a professional license (legal services)' },
   { title: 'Payments', description: 'Connect Stripe to receive payouts' },
 ] as const;
 
@@ -158,7 +160,8 @@ export default function ProviderOnboardingPage() {
           {step === 3 ? <GlobalTermsStep onNext={goNext} onPrev={goPrev} existingProfile={providerProfile} /> : null}
           {step === 4 ? <PortfolioStep onNext={goNext} onPrev={goPrev} /> : null}
           {step === 5 ? <DocumentVerificationStep onNext={goNext} onPrev={goPrev} /> : null}
-          {step === 6 ? <PaymentsStep onNext={goNext} onPrev={goPrev} /> : null}
+          {step === 6 ? <ProfessionalLicenseStep onNext={goNext} onPrev={goPrev} /> : null}
+          {step === 7 ? <PaymentsStep onNext={goNext} onPrev={goPrev} /> : null}
         </CardContent>
       </Card>
     </div>
@@ -1205,7 +1208,33 @@ function DocumentUploadField({
   );
 }
 
-// -- Step 7: Payments (Stripe Connect) --
+// -- Step 7: Professional License (legal services) --
+// Optional. The license section self-gates behind the `legal_services` flag
+// (renders nothing when off), so non-legal providers see only a short note and
+// can skip straight through — the flow never dead-ends.
+function ProfessionalLicenseStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-zinc-300">
+        Practice law? Add your bar license so you can bid on legal jobs and earn a
+        verified badge. Not a legal provider? Skip this step.
+      </p>
+
+      <ProfessionalLicenseSection />
+
+      <div className="flex gap-3">
+        <Button type="button" variant="outline" onClick={onPrev} className="min-h-[44px]">
+          Previous
+        </Button>
+        <Button type="button" onClick={onNext} className="min-h-[44px]">
+          Continue
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// -- Step 8: Payments (Stripe Connect) --
 function PaymentsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   return (
     <div className="space-y-6">

@@ -3,6 +3,7 @@
 import { useParams } from 'next/navigation';
 
 import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
+import { VerifiedBarBadge } from '@/components/providers/VerifiedBarBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FollowButton } from '@/components/users/FollowButton';
@@ -69,6 +70,7 @@ export default function ProviderProfilePage() {
                   Verified
                 </Badge>
               ) : null}
+              <VerifiedBarBadge providerId={provider.id} />
             </div>
             {provider.business_name ? (
               <p className="text-zinc-400">{provider.display_name}</p>

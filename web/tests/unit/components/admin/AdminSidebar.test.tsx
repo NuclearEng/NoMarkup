@@ -8,6 +8,13 @@ vi.mock('next/navigation', () => ({
   usePathname: vi.fn(),
 }));
 
+// AdminSidebar reads feature flags to gate flag-scoped nav items. Mock the hook
+// so the component renders without a QueryClient and all nav items are visible.
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlags: () => ({}),
+  useFeatureFlag: () => true,
+}));
+
 const { usePathname } = await import('next/navigation');
 
 describe('AdminSidebar', () => {

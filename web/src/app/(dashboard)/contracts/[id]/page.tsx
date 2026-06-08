@@ -1,6 +1,14 @@
 'use client';
 
-import { AlertTriangle, ArrowLeft, Loader2, Play, Shield, Star } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Loader2,
+  Play,
+  Shield,
+  ShieldCheck,
+  Star,
+} from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -34,6 +42,7 @@ import {
 import { useSavings } from '@/hooks/useBids';
 import { useInstallmentSchedule } from '@/hooks/useInstallments';
 import { useReviewEligibility } from '@/hooks/useReviews';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { CHANGE_ORDER_STATUS, CONTRACT_STATUS, MILESTONE_STATUS } from '@/types';
@@ -71,6 +80,7 @@ export default function ContractDetailPage() {
   const cancelContract = useCancelContract();
   const { installments } = useInstallmentSchedule(contractId);
   const { data: allSavings } = useSavings();
+  const competitiveInsuranceEnabled = useFeatureFlag('insurance_competition');
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
@@ -412,6 +422,25 @@ export default function ContractDetailPage() {
                 <Button variant="outline" className="min-h-[44px] w-full gap-2">
                   <Shield className="h-4 w-4" aria-hidden="true" />
                   File Guarantee Claim
+                </Button>
+              </Link>
+            ) : null}
+
+            {/* Customer: Compare competing insurance quotes for this contract.
+                Gated by the insurance_competition flag (UX layer; the gateway
+                also enforces it). Additive — does not affect the fixed-product
+                InsuranceSelector used at checkout. */}
+            {isCustomer && competitiveInsuranceEnabled ? (
+              <Link
+                href={
+                  `/insurance/quotes?contractId=${contract.id}&coverageCents=${String(
+                    contract.amount_cents,
+                  )}` as Route
+                }
+              >
+                <Button variant="outline" className="min-h-[44px] w-full gap-2">
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  Compare Insurance Quotes
                 </Button>
               </Link>
             ) : null}

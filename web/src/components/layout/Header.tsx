@@ -12,11 +12,13 @@ import {
   MapPin,
   MessageSquare,
   PlusCircle,
+  Scale,
   Search,
   Zap,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
@@ -30,6 +32,9 @@ export function Header() {
   const { user, isAuthenticated, isHydrating, logout } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
+  // Legal services vertical — entry point hidden only when the flag is
+  // explicitly OFF (fail-open).
+  const legalEnabled = useFeatureFlag('legal_services');
 
   async function handleLogout() {
     await logout();
@@ -88,6 +93,16 @@ export function Header() {
             <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
             Map
           </Link>
+          {/* Legal services vertical — public landing, gated by the flag. */}
+          {legalEnabled ? (
+            <Link
+              href={'/legal' as Route}
+              className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+            >
+              <Scale className="h-3.5 w-3.5" aria-hidden="true" />
+              Legal
+            </Link>
+          ) : null}
           <Link
             href="/demo/auction"
             className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300"
@@ -211,6 +226,16 @@ export function Header() {
                     <MessageSquare className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
                     Messages
                   </Link>
+                  {legalEnabled ? (
+                    <Link
+                      href={'/legal' as Route}
+                      className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                      onClick={() => { setMobileMenuOpen(false); }}
+                    >
+                      <Scale className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
+                      Legal
+                    </Link>
+                  ) : null}
                 </div>
 
                 <Link
@@ -251,6 +276,16 @@ export function Header() {
               </>
             ) : (
               <>
+                {legalEnabled ? (
+                  <Link
+                    href={'/legal' as Route}
+                    className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                    onClick={() => { setMobileMenuOpen(false); }}
+                  >
+                    <Scale className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
+                    Legal
+                  </Link>
+                ) : null}
                 <Link
                   href="/demo/auction"
                   className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/20 hover:text-amber-300"
