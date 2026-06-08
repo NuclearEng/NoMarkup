@@ -101,6 +101,10 @@ func (h *InstallmentHandler) GetInstallmentPlan(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "plan id required")
 		return
 	}
+	if !isValidUUID(planID) {
+		writeError(w, http.StatusBadRequest, "invalid installment plan id")
+		return
+	}
 
 	// Pass the caller's identity so the payment service can enforce ownership:
 	// a BNPL plan is private to its customer and provider. Without this, the

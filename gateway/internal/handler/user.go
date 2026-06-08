@@ -293,6 +293,10 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "user id required")
 		return
 	}
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
 
 	resp, err := h.userClient.GetUser(r.Context(), &userv1.GetUserRequest{
 		UserId: userID,

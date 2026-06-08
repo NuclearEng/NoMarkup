@@ -10,6 +10,7 @@ import (
 var (
 	ErrContractNotFound        = errors.New("contract not found")
 	ErrNotContractParty        = errors.New("not a party to this contract")
+	ErrNotContractProvider     = errors.New("only the provider can mark this contract complete")
 	ErrAlreadyAccepted         = errors.New("contract already accepted by this party")
 	ErrDeadlineExpired         = errors.New("acceptance deadline has expired")
 	ErrContractNotActive       = errors.New("contract is not active")

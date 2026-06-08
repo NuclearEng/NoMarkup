@@ -246,7 +246,15 @@ func (s *ContractService) MarkComplete(ctx context.Context, contractID, provider
 		return nil, fmt.Errorf("mark complete: %w", err)
 	}
 
+	// The "providerID" param is the authenticated caller's user ID. Only the
+	// provider may mark a contract complete. Distinguish the customer (who IS a
+	// party, but lacks this permission) from a true non-party: the customer gets
+	// a clear "only the provider can complete" message rather than the
+	// misleading "not a party to this contract".
 	if contract.ProviderID != providerID {
+		if contract.CustomerID == providerID {
+			return nil, fmt.Errorf("mark complete: %w", domain.ErrNotContractProvider)
+		}
 		return nil, fmt.Errorf("mark complete: %w", domain.ErrNotContractParty)
 	}
 

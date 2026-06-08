@@ -224,6 +224,10 @@ func (h *InsuranceHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "policy id required")
 		return
 	}
+	if !isValidUUID(policyID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance policy id")
+		return
+	}
 
 	resp, err := h.client.GetInsurancePolicy(r.Context(), &paymentv1.GetInsurancePolicyRequest{
 		PolicyId: policyID,
@@ -295,6 +299,10 @@ func (h *InsuranceHandler) GetClaim(w http.ResponseWriter, r *http.Request) {
 	claimID := chi.URLParam(r, "id")
 	if claimID == "" {
 		writeError(w, http.StatusBadRequest, "claim id required")
+		return
+	}
+	if !isValidUUID(claimID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance claim id")
 		return
 	}
 

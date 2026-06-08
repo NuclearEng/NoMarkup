@@ -54,6 +54,15 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 	if input.AuctionDurationHours < 0 || input.AuctionDurationHours > 168 {
 		return nil, domain.ErrInvalidDuration
 	}
+	// Validate auction_type against the allowed set before insert so an invalid
+	// value (e.g. "open") returns a 400 instead of surfacing the DB CHECK
+	// constraint violation as a 500. Empty is allowed — the repository defaults
+	// it to "sealed".
+	if input.AuctionType != "" {
+		if _, ok := domain.ValidAuctionTypes[input.AuctionType]; !ok {
+			return nil, domain.ErrInvalidAuctionType
+		}
+	}
 	if input.ScheduleType == "" {
 		input.ScheduleType = "flexible"
 	}

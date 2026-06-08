@@ -170,6 +170,10 @@ func (h *ExpenseHandler) DeleteExpense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "expense id required")
 		return
 	}
+	if !isValidUUID(expenseID) {
+		writeError(w, http.StatusBadRequest, "invalid expense id")
+		return
+	}
 
 	_, err := h.paymentClient.DeleteExpense(r.Context(), &paymentv1.DeleteExpenseRequest{
 		ExpenseId:  expenseID,

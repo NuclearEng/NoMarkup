@@ -644,6 +644,8 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.NotFound, "contract not found")
 	case errors.Is(err, domain.ErrNotContractParty):
 		return status.Error(codes.PermissionDenied, "You are not a party to this contract")
+	case errors.Is(err, domain.ErrNotContractProvider):
+		return status.Error(codes.PermissionDenied, "Only the provider can mark this contract complete")
 	case errors.Is(err, domain.ErrAlreadyAccepted):
 		return status.Error(codes.AlreadyExists, "You have already accepted this contract")
 	case errors.Is(err, domain.ErrDeadlineExpired):

@@ -20,11 +20,27 @@ var (
 	ErrMissingDescription  = errors.New("description is required")
 	ErrMissingCategory     = errors.New("category is required")
 	ErrInvalidDuration     = errors.New("auction duration must be between 1 and 168 hours")
+	ErrInvalidAuctionType  = errors.New("auction type must be one of: sealed, live")
 	ErrDraftLimitExceeded  = errors.New("maximum of 10 draft jobs allowed")
 	ErrNotRepostable       = errors.New("job must be in closed or expired status to repost")
 	ErrNotAwarded          = errors.New("job is not in awarded status")
 	ErrNotCompleted        = errors.New("job is not in completed status")
 )
+
+// Allowed auction_type values. These MUST match the DB CHECK constraint on
+// jobs.auction_type (migration 010_live_auction): IN ('sealed', 'live').
+const (
+	AuctionTypeSealed = "sealed"
+	AuctionTypeLive   = "live"
+)
+
+// ValidAuctionTypes is the set of accepted auction_type values, used to
+// validate input before insert so an invalid value yields a 400 rather than a
+// surfaced DB CHECK-constraint violation (500).
+var ValidAuctionTypes = map[string]struct{}{
+	AuctionTypeSealed: {},
+	AuctionTypeLive:   {},
+}
 
 // Job represents a service job posting.
 type Job struct {

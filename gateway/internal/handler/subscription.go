@@ -45,6 +45,10 @@ func (h *SubscriptionHandler) GetTier(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tier id required")
 		return
 	}
+	if !isValidUUID(tierID) {
+		writeError(w, http.StatusBadRequest, "invalid subscription tier id")
+		return
+	}
 
 	resp, err := h.client.GetTier(r.Context(), &subscriptionv1.GetTierRequest{
 		TierId: tierID,

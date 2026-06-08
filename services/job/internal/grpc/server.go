@@ -760,6 +760,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "category is required")
 	case errors.Is(err, domain.ErrInvalidDuration):
 		return status.Error(codes.InvalidArgument, "auction duration must be between 1 and 168 hours")
+	case errors.Is(err, domain.ErrInvalidAuctionType):
+		return status.Error(codes.InvalidArgument, "auction type must be one of: sealed, live")
 	default:
 		slog.Error("unmapped domain error", "error", err)
 		return status.Error(codes.Internal, "internal error")

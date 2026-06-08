@@ -126,6 +126,10 @@ func (h *ChatHandler) GetChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "channel id required")
 		return
 	}
+	if !isValidUUID(channelID) {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
 
 	resp, err := h.chatClient.GetChannel(r.Context(), &chatv1.GetChannelRequest{
 		ChannelId: channelID,
@@ -150,6 +154,10 @@ func (h *ChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	channelID := chi.URLParam(r, "id")
 	if channelID == "" {
 		writeError(w, http.StatusBadRequest, "channel id required")
+		return
+	}
+	if !isValidUUID(channelID) {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
 		return
 	}
 
