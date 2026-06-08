@@ -132,6 +132,7 @@ export default function AdminUsersPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'text-right whitespace-nowrap',
       render: (user) => (

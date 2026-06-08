@@ -85,6 +85,7 @@ export default function AdminVerificationPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'text-right',
       render: (doc) => (

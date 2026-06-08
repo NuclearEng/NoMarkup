@@ -120,6 +120,7 @@ export default function AdminReviewsPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'text-right',
       render: (flag) => (

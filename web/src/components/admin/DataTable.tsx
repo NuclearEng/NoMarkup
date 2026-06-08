@@ -9,8 +9,26 @@ export interface Column<T> {
   key: string;
   header: string;
   className?: string;
+  /**
+   * Pin this column to the right edge of the scroll container so it stays
+   * visible while the rest of the table scrolls horizontally underneath.
+   * Use for the trailing "Actions" column on wide admin tables so the
+   * Approve/Reject/Suspend/Ban buttons are always reachable.
+   */
+  sticky?: boolean;
   render: (row: T) => React.ReactNode;
 }
+
+/**
+ * Opaque backgrounds for pinned cells. They MUST be fully opaque — a
+ * semi-transparent sticky cell lets the horizontally-scrolled content bleed
+ * through. These values are the effective (flattened) card colors:
+ *   - card glass: rgba(13,17,32,0.92) over --background #070b14 ≈ #0d111f
+ *   - header row: bg-white/[0.03] layered over that ≈ #141826
+ */
+const STICKY_BODY_BG = 'bg-[#0d111f]';
+const STICKY_HEADER_BG = 'bg-[#141826]';
+const STICKY_SHADOW = 'shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.6)]';
 
 interface DataTableProps<T> {
   columns: Column<T>[];
@@ -63,7 +81,11 @@ export function DataTable<T>({
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 ${col.className ?? ''}`}
+                    className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 ${
+                      col.sticky
+                        ? `sticky right-0 z-20 border-l border-white/[0.06] ${STICKY_HEADER_BG} ${STICKY_SHADOW}`
+                        : ''
+                    } ${col.className ?? ''}`}
                   >
                     {col.header}
                   </th>
@@ -96,7 +118,14 @@ export function DataTable<T>({
                     }
                   >
                     {columns.map((col) => (
-                      <td key={col.key} className={`px-4 py-3 ${col.className ?? ''}`}>
+                      <td
+                        key={col.key}
+                        className={`px-4 py-3 ${
+                          col.sticky
+                            ? `sticky right-0 z-10 border-l border-white/[0.06] ${STICKY_BODY_BG} ${STICKY_SHADOW}`
+                            : ''
+                        } ${col.className ?? ''}`}
+                      >
                         {col.render(row)}
                       </td>
                     ))}

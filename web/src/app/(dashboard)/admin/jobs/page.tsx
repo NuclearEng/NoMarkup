@@ -123,6 +123,7 @@ export default function AdminJobsPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'text-right',
       render: (job) => (

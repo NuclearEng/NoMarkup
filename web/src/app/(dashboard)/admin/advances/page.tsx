@@ -183,6 +183,7 @@ export default function AdminAdvancesPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'whitespace-nowrap',
       render: (advance) => <AdvanceActions advance={advance} />,

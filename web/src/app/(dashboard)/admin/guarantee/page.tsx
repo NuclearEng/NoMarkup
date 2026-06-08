@@ -135,6 +135,7 @@ export default function AdminGuaranteePage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       render: (claim) => (
         <Link href={`/admin/guarantee/${claim.id}` as Route}>

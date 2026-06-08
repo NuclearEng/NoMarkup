@@ -137,6 +137,7 @@ export default function AdminListingsPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'text-right',
       render: (l) => (

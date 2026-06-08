@@ -273,6 +273,7 @@ export default function AdminInsuranceClaimsPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'whitespace-nowrap',
       render: (claim) => <ClaimActions claim={claim} />,
