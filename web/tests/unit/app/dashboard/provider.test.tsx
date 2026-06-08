@@ -19,6 +19,7 @@ const earningsState: HookState = { data: undefined, isLoading: false };
 const bidsState: HookState = { data: undefined, isLoading: false };
 const trustState: HookState = { data: undefined, isLoading: false };
 const tierState: HookState = { data: undefined, isLoading: false };
+const payoutSummaryState: HookState = { data: undefined, isLoading: false };
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -46,6 +47,10 @@ vi.mock('@/hooks/useBids', () => ({
 
 vi.mock('@/hooks/useProviderProfile', () => ({
   useProviderProfile: () => profileState,
+}));
+
+vi.mock('@/hooks/usePayments', () => ({
+  useInstantPayoutSummary: () => payoutSummaryState,
 }));
 
 vi.mock('@/hooks/useTrustScore', () => ({
@@ -105,6 +110,8 @@ beforeEach(() => {
   trustState.data = undefined;
   trustState.isLoading = false;
   tierState.data = undefined;
+  payoutSummaryState.data = undefined;
+  payoutSummaryState.isLoading = false;
 });
 
 afterEach(() => {
@@ -301,7 +308,34 @@ describe('ProviderDashboardPage', () => {
     expect(skeletons.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('passes total earnings to InstantPayoutButton when analytics loads', () => {
+  it('passes the NET withdrawable balance (not gross earnings) to InstantPayoutButton', () => {
+    // Gross earnings are $1,620 but $200 was already instant-paid-out, so the
+    // server-computed net available is $1,420 (142000 cents). The button must
+    // receive the NET value — using gross would let the same cleared earnings be
+    // withdrawn repeatedly (the money-critical bug under repair).
+    analyticsState.data = {
+      jobs_completed: 0,
+      win_rate: 0,
+      total_earnings_cents: 162000,
+      average_rating: 0,
+      total_reviews: 0,
+      bids_won: 0,
+      total_bids: 0,
+      on_time_rate: 0,
+      completion_rate: 0,
+      avg_response_time_minutes: 0,
+    };
+    payoutSummaryState.data = {
+      available_cents: 142000,
+      gross_eligible_cents: 162000,
+      paid_out_cents: 20000,
+    };
+    render(withQueryClient(createElement(ProviderDashboardPage)));
+    expect(screen.getByTestId('instant-payout').textContent).toBe('142000');
+  });
+
+  it('passes 0 to InstantPayoutButton when the payout summary is unavailable', () => {
+    // Feature off / non-provider / transient error → no advertised balance.
     analyticsState.data = {
       jobs_completed: 0,
       win_rate: 0,
@@ -314,7 +348,8 @@ describe('ProviderDashboardPage', () => {
       completion_rate: 0,
       avg_response_time_minutes: 0,
     };
+    payoutSummaryState.data = undefined;
     render(withQueryClient(createElement(ProviderDashboardPage)));
-    expect(screen.getByTestId('instant-payout').textContent).toBe('99999');
+    expect(screen.getByTestId('instant-payout').textContent).toBe('0');
   });
 });

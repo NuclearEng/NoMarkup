@@ -630,32 +630,37 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Eligible balance = sum of this provider's COMPLETED payouts only. COMPLETED
-	// means escrow released and the dispute window has elapsed, so the funds are
-	// safe to front. We filter the gRPC result by provider_id because a user can
-	// appear on a payment as either the customer or the provider.
-	const completed = paymentv1.PaymentStatus_PAYMENT_STATUS_COMPLETED
-	statusFilter := completed
-	listResp, err := h.paymentClient.ListPayments(r.Context(), &paymentv1.ListPaymentsRequest{
-		UserId:       claims.UserID,
-		StatusFilter: &statusFilter,
-		Pagination:   &commonv1.PaginationRequest{Page: 1, PageSize: 1000},
-	})
+	// Eligible balance = sum of this provider's COMPLETED payouts only (see
+	// grossEligiblePayoutCents). COMPLETED means escrow released and the dispute
+	// window has elapsed, so the funds are safe to front.
+	grossEligibleCents, err := h.grossEligiblePayoutCents(r.Context(), claims.UserID)
 	if err != nil {
 		writeGRPCError(w, err)
 		return
 	}
 
-	var eligibleCents int64
-	for _, p := range listResp.GetPayments() {
-		if p.GetProviderId() == claims.UserID && p.GetStatus() == completed {
-			eligibleCents += p.GetProviderPayoutCents()
+	// NET balance = gross cleared earnings − amount already instant-paid-out.
+	// This pre-lock subtraction makes the early reject ACCURATE (so the provider
+	// sees the right number before we take the lock); the authoritative,
+	// concurrency-safe check is re-done inside insertInstantPayoutWithCap under
+	// the per-provider advisory lock. Without subtracting priorPaidOut a provider
+	// could withdraw the same cleared earnings repeatedly.
+	priorPaidOut := int64(0)
+	if h.db != nil {
+		var perr error
+		priorPaidOut, perr = h.sumAllInstantPayouts(r.Context(), h.db, claims.UserID)
+		if perr != nil {
+			slog.Error("instant payout: prior-payout sum failed",
+				"provider_id", claims.UserID, "error", perr)
+			writeError(w, http.StatusInternalServerError, "could not process instant payout")
+			return
 		}
 	}
+	availableCents := netInstantPayoutAvailableCents(grossEligibleCents, priorPaidOut)
 
-	if req.AmountCents > eligibleCents {
+	if req.AmountCents > availableCents {
 		writeError(w, http.StatusUnprocessableEntity,
-			"insufficient cleared balance available for instant payout")
+			"instant payout exceeds your available cleared balance")
 		return
 	}
 
@@ -697,8 +702,13 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	// contend); the cap is re-summed INSIDE the lock so each request sees every
 	// previously-committed payout. The lock auto-releases at COMMIT/ROLLBACK.
 	row, err := h.insertInstantPayoutWithCap(r.Context(), claims.UserID,
-		req.AmountCents, feeCents, netCents, "completed", stripePayoutID, keyArg)
+		req.AmountCents, feeCents, netCents, grossEligibleCents, "completed", stripePayoutID, keyArg)
 	if err != nil {
+		if errors.Is(err, errInstantPayoutInsufficientBalance) {
+			writeError(w, http.StatusUnprocessableEntity,
+				"instant payout exceeds your available cleared balance")
+			return
+		}
 		if errors.Is(err, errInstantPayoutDailyCap) {
 			writeError(w, http.StatusUnprocessableEntity,
 				"amount exceeds the daily instant payout limit")
@@ -723,6 +733,74 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, instantPayoutResponse(row))
+}
+
+// grossEligiblePayoutCents returns the sum of this provider's COMPLETED payouts
+// (provider_payout_cents) — the gross cleared earnings safe to front. We filter
+// by provider_id because a user can appear on a payment as either the customer
+// or the provider. This is the GROSS basis; subtract prior instant payouts (see
+// netInstantPayoutAvailableCents) for the actual withdrawable balance.
+func (h *PaymentHandler) grossEligiblePayoutCents(ctx context.Context, providerID string) (int64, error) {
+	const completed = paymentv1.PaymentStatus_PAYMENT_STATUS_COMPLETED
+	statusFilter := completed
+	listResp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
+		UserId:       providerID,
+		StatusFilter: &statusFilter,
+		Pagination:   &commonv1.PaginationRequest{Page: 1, PageSize: 1000},
+	})
+	if err != nil {
+		return 0, err
+	}
+	var gross int64
+	for _, p := range listResp.GetPayments() {
+		if p.GetProviderId() == providerID && p.GetStatus() == completed {
+			gross += p.GetProviderPayoutCents()
+		}
+	}
+	return gross, nil
+}
+
+// GetInstantPayoutSummary handles GET /api/v1/payments/instant-payout/summary.
+// It returns the provider's NET withdrawable balance so the UI shows what is
+// actually withdrawable, not the gross earnings. Server-computed (CLAUDE.md §6:
+// all price calculations server-side; client displays only) from the SAME
+// formula the mutation enforces: available = gross cleared earnings − prior
+// non-failed instant payouts.
+func (h *PaymentHandler) GetInstantPayoutSummary(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	grossEligibleCents, err := h.grossEligiblePayoutCents(r.Context(), claims.UserID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	priorPaidOut := int64(0)
+	if h.db != nil {
+		var perr error
+		priorPaidOut, perr = h.sumAllInstantPayouts(r.Context(), h.db, claims.UserID)
+		if perr != nil {
+			slog.Error("instant payout summary: prior-payout sum failed",
+				"provider_id", claims.UserID, "error", perr)
+			writeError(w, http.StatusInternalServerError, "could not load payout balance")
+			return
+		}
+	}
+
+	available := netInstantPayoutAvailableCents(grossEligibleCents, priorPaidOut)
+	if available < 0 {
+		available = 0 // never advertise a negative withdrawable balance
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"available_cents":      available,
+		"gross_eligible_cents": grossEligibleCents,
+		"paid_out_cents":       priorPaidOut,
+	})
 }
 
 // instantPayoutRow is a hydrated ledger row used to build the HTTP response.
@@ -844,6 +922,31 @@ func (h *PaymentHandler) sumInstantPayoutsLast24h(ctx context.Context, q pgxQuer
 	return total, nil
 }
 
+// sumAllInstantPayouts returns this provider's ALL-TIME instant-payout total
+// (amount_cents) across every non-failed payout — the cumulative amount already
+// disbursed against their cleared earnings. This is the value subtracted from
+// gross-eligible cleared earnings to get the NET withdrawable balance: a
+// provider may only ever instant-pay-out the sum of their COMPLETED payouts
+// MINUS what they have already taken out, otherwise they could withdraw the
+// same cleared earnings repeatedly. We exclude only 'failed' rows (consistent
+// with sumInstantPayoutsLast24h) because 'pending' and 'completed' payouts both
+// disbursed (or are mid-disbursement) and must count against the balance;
+// 'failed' never moved money. Takes an explicit querier so the authoritative
+// check can run inside the cap transaction under the per-provider advisory lock.
+func (h *PaymentHandler) sumAllInstantPayouts(ctx context.Context, q pgxQuerier, providerID string) (int64, error) {
+	var total int64
+	err := q.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)
+		  FROM instant_payouts
+		 WHERE provider_id = $1
+		   AND status <> 'failed'
+	`, providerID).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // insertInstantPayout writes the ledger row and returns the hydrated result.
 // It takes an explicit querier so the write can join the cap transaction.
 func (h *PaymentHandler) insertInstantPayout(
@@ -872,6 +975,22 @@ func (h *PaymentHandler) insertInstantPayout(
 // rolling 24h instant-payout cap. Mapped to 422 by the handler.
 var errInstantPayoutDailyCap = errors.New("instant payout daily cap exceeded")
 
+// errInstantPayoutInsufficientBalance signals that the request would exceed the
+// provider's NET cleared balance, i.e. gross-eligible cleared earnings (sum of
+// COMPLETED provider payouts) MINUS the amount already instant-paid-out. Without
+// this check a provider could withdraw the same cleared earnings repeatedly (up
+// to the daily cap), being paid far more than they earned. Mapped to 422.
+var errInstantPayoutInsufficientBalance = errors.New("instant payout exceeds available cleared balance")
+
+// netInstantPayoutAvailableCents is the single source of truth for a provider's
+// withdrawable balance: gross cleared earnings (sum of COMPLETED provider
+// payouts) MINUS everything already instant-paid-out (non-failed). Money-critical
+// and unit-tested — the whole bug class is "forgetting the subtraction", so this
+// keeps the formula in one place used by both the pre-lock and in-tx checks.
+func netInstantPayoutAvailableCents(grossEligibleCents, priorPaidOutCents int64) int64 {
+	return grossEligibleCents - priorPaidOutCents
+}
+
 // insertInstantPayoutWithCap atomically enforces the rolling daily cap and
 // writes the ledger row for one provider.
 //
@@ -886,10 +1005,18 @@ var errInstantPayoutDailyCap = errors.New("instant payout daily cap exceeded")
 // back and errInstantPayoutDailyCap is returned (no row written, no money moved
 // in the ledger). A UNIQUE(provider_id, idempotency_key) collision surfaces as
 // the underlying pgx error so the caller can replay the prior result.
+//
+// BALANCE (money-critical): grossEligibleCents is the provider's cleared
+// earnings (sum of COMPLETED provider payouts), computed by the caller. Inside
+// the lock we sum every prior non-failed instant payout and reject if
+// grossEligible − priorPaidOut < amount. Because this runs under the same
+// per-provider advisory lock as the cap check, two concurrent payouts for one
+// provider cannot jointly exceed the net balance: the second to acquire the
+// lock sees the first's committed row in priorPaidOut.
 func (h *PaymentHandler) insertInstantPayoutWithCap(
 	ctx context.Context,
 	providerID string,
-	amountCents, feeCents, netCents int64,
+	amountCents, feeCents, netCents, grossEligibleCents int64,
 	status, stripePayoutID string,
 	idemKey *string,
 ) (instantPayoutRow, error) {
@@ -905,6 +1032,19 @@ func (h *PaymentHandler) insertInstantPayoutWithCap(
 	// here until the holder commits/rolls back; other providers proceed freely.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, providerID); err != nil {
 		return instantPayoutRow{}, err
+	}
+
+	// AUTHORITATIVE net-balance check. Sum every prior non-failed instant payout
+	// INSIDE the lock, then reject if this payout would exceed the provider's net
+	// withdrawable balance (gross cleared earnings − already-paid-out). This is
+	// the check that actually prevents repeated withdrawal of the same earnings;
+	// the pre-lock check in the handler is only a friendly early reject.
+	priorPaidOut, err := h.sumAllInstantPayouts(ctx, tx, providerID)
+	if err != nil {
+		return instantPayoutRow{}, err
+	}
+	if netInstantPayoutAvailableCents(grossEligibleCents, priorPaidOut) < amountCents {
+		return instantPayoutRow{}, errInstantPayoutInsufficientBalance
 	}
 
 	// Re-sum INSIDE the lock so we count every payout committed before us, then

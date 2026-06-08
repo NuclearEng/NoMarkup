@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useProviderAnalytics, useProviderEarnings } from '@/hooks/useAnalytics';
 import { useMyBids } from '@/hooks/useBids';
+import { useInstantPayoutSummary } from '@/hooks/usePayments';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
 import { useTierRequirements, useTrustScore } from '@/hooks/useTrustScore';
 import { formatCents } from '@/lib/utils';
@@ -65,6 +66,7 @@ export default function ProviderDashboardPage() {
     undefined,
     'month',
   );
+  const { data: payoutSummary } = useInstantPayoutSummary();
   const { data: bidsData, isLoading: bidsLoading } = useMyBids('active');
   const { data: trustData, isLoading: trustLoading } = useTrustScore(userId);
   const { data: tierData } = useTierRequirements();
@@ -253,7 +255,10 @@ export default function ProviderDashboardPage() {
           ) : null}
           <CreditScoreCard />
           <InstantPayoutButton
-            availableBalanceCents={analytics?.total_earnings_cents ?? 0}
+            // NET withdrawable balance (gross cleared earnings − prior instant
+            // payouts), server-computed. NOT analytics.total_earnings_cents,
+            // which is gross and would let the same earnings be withdrawn twice.
+            availableBalanceCents={payoutSummary?.available_cents ?? 0}
           />
         </div>
       </div>

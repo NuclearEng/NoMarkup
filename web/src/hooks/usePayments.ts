@@ -198,6 +198,35 @@ export interface InstantPayoutResponse {
   estimated_arrival: string;
 }
 
+export interface InstantPayoutSummary {
+  /** Net withdrawable balance: gross cleared earnings − prior instant payouts. */
+  available_cents: number;
+  gross_eligible_cents: number;
+  paid_out_cents: number;
+}
+
+/**
+ * Net instant-payout balance for the current provider. This is the authoritative
+ * withdrawable amount (gross cleared earnings minus what was already paid out) —
+ * NOT gross total earnings, which would let a provider withdraw the same cleared
+ * earnings repeatedly. The mutation enforces the same formula server-side.
+ */
+export function useInstantPayoutSummary(enabled = true) {
+  return useQuery({
+    queryKey: ['instant-payout-summary'],
+    enabled,
+    queryFn: async () => {
+      try {
+        return await api.get<InstantPayoutSummary>('/api/v1/payments/instant-payout/summary');
+      } catch {
+        // Feature flag off / non-provider / transient error: fall back to no
+        // advertised balance rather than crashing the dashboard.
+        return null;
+      }
+    },
+  });
+}
+
 export function useInstantPayout() {
   const queryClient = useQueryClient();
 
@@ -213,6 +242,7 @@ export function useInstantPayout() {
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
       void queryClient.invalidateQueries({ queryKey: ['provider-analytics'] });
       void queryClient.invalidateQueries({ queryKey: ['provider-earnings'] });
+      void queryClient.invalidateQueries({ queryKey: ['instant-payout-summary'] });
     },
     onError: (err) => {
       toast.error(getApiErrorMessage(err, 'Instant payout failed — please try again'));

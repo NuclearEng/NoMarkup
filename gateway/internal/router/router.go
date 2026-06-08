@@ -689,6 +689,11 @@ func New(
 			r.With(middleware.RequireProvider).
 				With(middleware.RequireFlag(dbPool, cacheClient, "instant_payout")).
 				Post("/instant-payout", paymentHandler.InstantPayout)
+			// Net withdrawable balance for the instant-payout UI (gross cleared
+			// earnings − prior non-failed instant payouts). Provider-only.
+			r.With(middleware.RequireProvider).
+				With(middleware.RequireFlag(dbPool, cacheClient, "instant_payout")).
+				Get("/instant-payout/summary", paymentHandler.GetInstantPayoutSummary)
 
 			// /{id}/* mutations: only the payment's customer or provider may access.
 			r.Group(func(r chi.Router) {
