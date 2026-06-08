@@ -3,7 +3,7 @@
 import { Calendar, MapPin, Tag, Users } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -101,11 +101,26 @@ function getAuctionElapsedPercent(
 }
 
 export const JobCard = memo(function JobCard({ job }: JobCardProps) {
+  // Gates time-derived output (elapsed-% bar + relative timestamp) to post-mount.
+  // Both read `Date.now()`/`new Date()`, so an SSR value differs from the client's
+  // first render → hydration mismatch. Render neutral placeholders until mounted.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const _urgency = useMemo(() => getAuctionUrgency(job.auction_ends_at), [job.auction_ends_at]);
 
   const elapsedPercent = useMemo(
-    () => getAuctionElapsedPercent(job.created_at, job.auction_ends_at, job.auction_duration_hours),
-    [job.created_at, job.auction_ends_at, job.auction_duration_hours],
+    () =>
+      mounted
+        ? getAuctionElapsedPercent(
+            job.created_at,
+            job.auction_ends_at,
+            job.auction_duration_hours,
+          )
+        : 0,
+    [mounted, job.created_at, job.auction_ends_at, job.auction_duration_hours],
   );
 
   return (
@@ -207,8 +222,8 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
               ) : (
                 <span className="text-xs text-zinc-500">No auction</span>
               )}
-              <span className="text-xs text-zinc-500">
-                {formatRelativeTime(new Date(job.created_at))}
+              <span className="text-xs text-zinc-500" suppressHydrationWarning>
+                {mounted ? formatRelativeTime(new Date(job.created_at)) : null}
               </span>
             </div>
           </div>

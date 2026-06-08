@@ -6,6 +6,8 @@
 // stretches to fit. The chart fills missing days with zero bars so the
 // X-axis is contiguous.
 
+import { useEffect, useMemo, useState } from 'react';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { formatCents } from '@/lib/utils';
@@ -49,7 +51,18 @@ function formatDayLabel(iso: string): string {
 }
 
 export function PerformanceChart({ data, rangeDays, className }: PerformanceChartProps) {
-  const filled = fillGaps(data, rangeDays);
+  // `fillGaps` anchors the X-axis to `new Date()` ("today"); that value differs
+  // between SSR and the client's first render → hydration mismatch. Build the
+  // series only post-mount and show a skeleton until then.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const filled = useMemo(
+    () => (mounted ? fillGaps(data, rangeDays) : []),
+    [mounted, data, rangeDays],
+  );
   const maxGross = Math.max(...filled.map((d) => d.gross_cents), 1);
   const totalGross = filled.reduce((sum, p) => sum + p.gross_cents, 0);
   const totalOrders = filled.reduce((sum, p) => sum + p.order_count, 0);
@@ -65,6 +78,13 @@ export function PerformanceChart({ data, rangeDays, className }: PerformanceChar
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {!mounted ? (
+          <div
+            className="h-48 animate-pulse rounded-lg bg-muted/30"
+            aria-hidden="true"
+          />
+        ) : (
+          <>
         {/* Top-line stats */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div>
@@ -144,6 +164,8 @@ export function PerformanceChart({ data, rangeDays, className }: PerformanceChar
               <span>{formatDayLabel(filled[filled.length - 1]?.date ?? '')}</span>
             </div>
           </div>
+        )}
+          </>
         )}
       </CardContent>
     </Card>

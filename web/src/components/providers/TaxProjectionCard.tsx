@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCents } from '@/lib/utils';
@@ -11,10 +12,19 @@ interface TaxProjectionCardProps {
 }
 
 export function TaxProjectionCard({ ytdEarningsCents, taxYear }: TaxProjectionCardProps) {
-  const currentMonth = new Date().getMonth() + 1;
-  const estimatedAnnualCents = Math.round(ytdEarningsCents * (12 / currentMonth));
-  const estimatedTaxCents = Math.round(estimatedAnnualCents * 0.25);
-  const q4PaymentCents = Math.round(estimatedTaxCents / 4);
+  // `new Date().getMonth()` differs across a month boundary between SSR and the
+  // client → hydration mismatch. Compute the month post-mount; until then leave
+  // the time-derived estimates as a neutral em-dash placeholder.
+  const [currentMonth, setCurrentMonth] = useState<number | null>(null);
+  useEffect(() => {
+    setCurrentMonth(new Date().getMonth() + 1);
+  }, []);
+
+  const estimatedAnnualCents =
+    currentMonth === null ? null : Math.round(ytdEarningsCents * (12 / currentMonth));
+  const estimatedTaxCents =
+    estimatedAnnualCents === null ? null : Math.round(estimatedAnnualCents * 0.25);
+  const q4PaymentCents = estimatedTaxCents === null ? null : Math.round(estimatedTaxCents / 4);
 
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/5">
@@ -29,8 +39,8 @@ export function TaxProjectionCard({ ytdEarningsCents, taxYear }: TaxProjectionCa
           Based on{' '}
           <span className="font-semibold text-zinc-100">{formatCents(ytdEarningsCents)}</span> YTD,
           estimate{' '}
-          <span className="text-[var(--brand-gold)] font-bold text-lg">
-            ~{formatCents(estimatedTaxCents)}
+          <span className="text-[var(--brand-gold)] font-bold text-lg" suppressHydrationWarning>
+            {estimatedTaxCents === null ? '—' : `~${formatCents(estimatedTaxCents)}`}
           </span>{' '}
           owed in {String(taxYear)}.
         </p>
@@ -47,8 +57,9 @@ export function TaxProjectionCard({ ytdEarningsCents, taxYear }: TaxProjectionCa
                   className={
                     i === 3 ? 'font-semibold text-[var(--brand-gold)]' : 'text-zinc-300'
                   }
+                  suppressHydrationWarning
                 >
-                  ~{formatCents(q4PaymentCents)}
+                  {q4PaymentCents === null ? '—' : `~${formatCents(q4PaymentCents)}`}
                 </span>
               </div>
             ))}

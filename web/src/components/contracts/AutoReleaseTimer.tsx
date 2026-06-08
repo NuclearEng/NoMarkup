@@ -49,8 +49,18 @@ export function AutoReleaseTimer({ completedAt }: AutoReleaseTimerProps) {
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>(() =>
     calculateTimeRemaining(completedAt),
   );
+  // Gates the time-derived output to post-mount. A value computed during SSR via
+  // `new Date()` differs from the client's first render → hydration mismatch.
+  // Render a deterministic placeholder until mounted (see the early return below).
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    setTimeRemaining(calculateTimeRemaining(completedAt));
+  }, [completedAt]);
+
+  useEffect(() => {
+    if (!mounted) return;
     if (timeRemaining.totalMs <= 0) return;
 
     const interval = setInterval(() => {
@@ -62,7 +72,17 @@ export function AutoReleaseTimer({ completedAt }: AutoReleaseTimerProps) {
     }, 1000);
 
     return () => { clearInterval(interval); };
-  }, [completedAt, timeRemaining.totalMs]);
+  }, [completedAt, mounted, timeRemaining.totalMs]);
+
+  // Pre-mount: render a stable placeholder so SSR and the first client render
+  // match. The effect above flips `mounted` and fills in the live time after.
+  if (!mounted) {
+    return (
+      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4" suppressHydrationWarning>
+        <p className="text-sm font-medium text-yellow-800">Auto-Release Countdown</p>
+      </div>
+    );
+  }
 
   if (timeRemaining.totalMs <= 0) {
     return (

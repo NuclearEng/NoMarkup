@@ -46,8 +46,18 @@ export function AcceptanceCountdown({ deadline, compact = false }: AcceptanceCou
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>(() =>
     calculateTimeRemaining(deadline),
   );
+  // Gates the time-derived output to post-mount. A value computed during SSR via
+  // `new Date()` differs from the client's first render → hydration mismatch.
+  // Render a deterministic placeholder until mounted (see the early return below).
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    setTimeRemaining(calculateTimeRemaining(deadline));
+  }, [deadline]);
+
+  useEffect(() => {
+    if (!mounted) return;
     if (timeRemaining.totalMs <= 0) return;
 
     const interval = setInterval(() => {
@@ -59,7 +69,20 @@ export function AcceptanceCountdown({ deadline, compact = false }: AcceptanceCou
     }, 1000);
 
     return () => { clearInterval(interval); };
-  }, [deadline, timeRemaining.totalMs]);
+  }, [deadline, mounted, timeRemaining.totalMs]);
+
+  // Pre-mount: render a stable placeholder so SSR and the first client render
+  // match. The effect above flips `mounted` and fills in the live time after.
+  if (!mounted) {
+    return (
+      <span
+        className={cn('font-medium text-muted-foreground', compact ? 'text-xs' : 'text-sm')}
+        suppressHydrationWarning
+      >
+        &mdash;
+      </span>
+    );
+  }
 
   if (timeRemaining.totalMs <= 0) {
     return (

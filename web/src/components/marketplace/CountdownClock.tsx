@@ -19,9 +19,14 @@ interface CountdownClockProps {
  * enough — sub-second precision isn't visible to the user.
  */
 export function CountdownClock({ endsAt, className }: CountdownClockProps) {
-  const [now, setNow] = useState(() => Date.now());
+  // `now` starts null so the SSR render and the first client render are
+  // deterministic (no Date.now() during initial render). It's filled in after
+  // mount; otherwise the time computed on the server differs from the client a
+  // moment later → React hydration mismatch. Mirrors useCountdown.ts.
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
+    setNow(Date.now()); // first live value, post-mount
     const id = setInterval(() => {
       setNow(Date.now());
     }, 1000);
@@ -31,6 +36,13 @@ export function CountdownClock({ endsAt, className }: CountdownClockProps) {
   }, []);
 
   if (!endsAt) {
+    return (
+      <span className={cn('font-mono text-sm text-zinc-500', className)}>—:—:—</span>
+    );
+  }
+
+  // Pre-mount placeholder — identical on server and first client render.
+  if (now === null) {
     return (
       <span className={cn('font-mono text-sm text-zinc-500', className)}>—:—:—</span>
     );
