@@ -103,7 +103,8 @@ describe('ProviderTaxPage', () => {
       total_fees_cents: 1500,
     };
     render(withQueryClient(createElement(ProviderTaxPage)));
-    expect(screen.getByText(/Will Receive 1099/i)).toBeDefined();
+    // The on-screen badge plus the print-only summary both surface this text.
+    expect(screen.getAllByText(/Will Receive 1099/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows the Below Threshold badge when earnings are under the threshold', () => {
@@ -113,7 +114,8 @@ describe('ProviderTaxPage', () => {
       total_fees_cents: 100,
     };
     render(withQueryClient(createElement(ProviderTaxPage)));
-    expect(screen.getByText(/Below Threshold/i)).toBeDefined();
+    // The on-screen badge plus the print-only summary both surface this text.
+    expect(screen.getAllByText(/Below Threshold/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it('clicking Generate 1099-NEC fires the generate mutation with the parsed year', () => {
@@ -140,7 +142,8 @@ describe('ProviderTaxPage', () => {
       ],
     };
     render(withQueryClient(createElement(ProviderTaxPage)));
-    expect(screen.getByText('Quarterly Breakdown')).toBeDefined();
+    // Heading appears in both the on-screen card and the print-only summary.
+    expect(screen.getAllByText('Quarterly Breakdown').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders existing tax forms with Download button', () => {

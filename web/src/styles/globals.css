@@ -2316,40 +2316,73 @@ body {
   }
 }
 
-/* ── Print: scoped document printing ──────────────────────────────
-   Add `printing-region` to <body> and `print-region` to the element you
-   want to print. Everything else is hidden, the region is forced to a
-   clean light theme, and app chrome / .no-print is removed. Used for the
-   tax summary; the invoice prints its own standalone server document. */
+/* ── Print: dedicated print-only document ──────────────────────────
+   The app is hard dark-themed (glass blur, gradient `gold-text` with a
+   transparent text-fill, ancestor backdrop-filters). Printing the live
+   DOM produced a blank/black PDF because those effects don't paint on a
+   white page and `gold-text` is literally transparent. Instead, surfaces
+   that want a printout render a dedicated, screen-hidden `.tax-summary-print`
+   (or similar `.print-only`) block styled with explicit white-bg / black
+   text, and we toggle `printing-region` on <body> while printing so ONLY
+   that block is visible. The invoice still prints its own standalone
+   server document via an iframe (see lib/print.ts). */
 @media print {
   @page {
     size: A4;
     margin: 16mm;
   }
 
+  /* Force a clean white canvas regardless of the dark app theme. */
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* A transformed ancestor (page-enter holds `translateY(0)` via fill-mode
+     `both`) becomes the containing block for the absolutely-positioned print
+     block and can clip it to a blank page in Chrome's print engine. Clear
+     animations/transforms while printing so the print block pins to the page
+     origin reliably. */
+  body.printing-region .animate-page-enter {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  /* Hide the entire on-screen app while a print region is active. */
   body.printing-region * {
     visibility: hidden !important;
   }
 
-  body.printing-region .print-region,
-  body.printing-region .print-region * {
+  /* Reveal only the print-only block and force institutional light styling. */
+  body.printing-region .tax-summary-print,
+  body.printing-region .tax-summary-print * {
     visibility: visible !important;
-    color: #1a1a1a !important;
+    color: #000 !important;
+    -webkit-text-fill-color: #000 !important;
     background: transparent !important;
     box-shadow: none !important;
-    border-color: #e5e5e5 !important;
-    -webkit-text-fill-color: #1a1a1a !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
-  body.printing-region .print-region {
+  /* Pin the print block to the page origin and reveal it (it's `hidden`
+     via Tailwind `display:none` on screen). */
+  body.printing-region .tax-summary-print {
+    display: block !important;
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
     background: #fff !important;
     padding: 0;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
+  /* Belt-and-suspenders: anything explicitly marked no-print is removed. */
   body.printing-region .no-print {
     display: none !important;
   }

@@ -18,7 +18,9 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TaxSummaryPrint } from '@/components/providers/TaxSummaryPrint';
 import { useProviderEarnings } from '@/hooks/useAnalytics';
+import { useProfile } from '@/hooks/useProfile';
 import { useGenerateTaxForm, useTaxForms } from '@/hooks/useTaxForms';
 import { downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
@@ -42,6 +44,7 @@ export default function TaxCenterPage() {
 
   const { data: earnings, isLoading } = useProviderEarnings(startDate, endDate, 'quarter');
   const { data: taxFormsData, isLoading: taxFormsLoading } = useTaxForms();
+  const { data: profile } = useProfile();
   const generateTaxForm = useGenerateTaxForm();
 
   const ytdEarnings = earnings?.net_earnings_cents ?? 0;
@@ -57,8 +60,9 @@ export default function TaxCenterPage() {
   const quarterlyTotal = quarterlySETax + quarterlyIncomeTax;
 
   function handlePrint() {
-    // Scope the printout to the tax summary (.print-region) on a clean light
-    // theme instead of dumping the whole dark dashboard.
+    // Reveal the dedicated print-only summary (.tax-summary-print) on a clean
+    // white/black layout and hide the rest of the dark dashboard. See the
+    // `@media print` block in globals.css.
     document.body.classList.add('printing-region');
     const cleanup = () => {
       document.body.classList.remove('printing-region');
@@ -72,9 +76,31 @@ export default function TaxCenterPage() {
 
   const yearOptions = Array.from({ length: 3 }, (_, i) => currentYear - i);
 
+  const quarterlyPoints = (earnings?.data_points ?? []).map((dp) => ({
+    periodStart: dp.period_start,
+    earningsCents: dp.earnings_cents,
+    jobCount: dp.job_count,
+  }));
+
   return (
     <PageTransition>
-    <div className="space-y-6 print-region">
+    {/* Print-only institutional summary — hidden on screen, white bg / black text. */}
+    <TaxSummaryPrint
+      taxYear={taxYear}
+      providerName={profile?.displayName ?? 'Provider'}
+      providerEmail={profile?.email ?? ''}
+      grossCents={ytdEarnings + totalFees}
+      feesCents={totalFees}
+      netCents={ytdEarnings}
+      jobsCompleted={totalJobs}
+      threshold1099Cents={THRESHOLD_1099}
+      will1099={will1099}
+      quarterlySETaxCents={quarterlySETax}
+      quarterlyIncomeTaxCents={quarterlyIncomeTax}
+      quarterlyTotalCents={quarterlyTotal}
+      quarterlyPoints={quarterlyPoints}
+    />
+    <div className="space-y-6 no-print">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
