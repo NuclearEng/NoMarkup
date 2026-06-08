@@ -141,7 +141,7 @@ describe('InsuranceQuoteCompare — request → compare → select', () => {
 
     expect(requestMutate).toHaveBeenCalledTimes(1);
     expect(requestMutate).toHaveBeenCalledWith({
-      product_type: 'job_protection',
+      product_type: 'completion_guarantee',
       coverage_cents: 500000,
       contract_id: 'c-123',
     });
