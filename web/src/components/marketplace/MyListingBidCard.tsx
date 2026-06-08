@@ -17,7 +17,7 @@ interface MyListingBidCardProps {
 
 export const MyListingBidCard = memo(function MyListingBidCard({ entry }: MyListingBidCardProps) {
   const { bid, listing } = entry;
-  const heroPhoto = listing.photos[0] ?? null;
+  const heroPhoto = listing.photos?.[0] ?? null;
 
   const status: 'winning' | 'outbid' | 'awarded' | 'lost' = listing.is_user_winning
     ? listing.status === 'sold'

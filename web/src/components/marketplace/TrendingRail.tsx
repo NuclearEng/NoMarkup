@@ -82,7 +82,7 @@ function TrendingCard({
 }: {
   listing: Listing & { watcher_count?: number };
 }) {
-  const photo = listing.photos[0]?.url;
+  const photo = listing.photos?.[0]?.url;
   const watchers = listing.watcher_count ?? 0;
   return (
     <li className="w-44 shrink-0 snap-start" data-testid="trending-card">

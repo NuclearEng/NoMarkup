@@ -61,7 +61,7 @@ export const ListingCard = memo(function ListingCard({
   asStaticCard = false,
 }: ListingCardProps) {
   const heroPhoto = useMemo(
-    () => listing.photos.find((p) => p.sort_order === 0) ?? listing.photos[0] ?? null,
+    () => (listing.photos ?? []).find((p) => p.sort_order === 0) ?? listing.photos?.[0] ?? null,
     [listing.photos],
   );
 

@@ -20,6 +20,19 @@ import type {
   UpdateListingInput,
 } from '@/types';
 
+/**
+ * Normalize a listing's `photos` to a non-null array.
+ *
+ * The API can return `photos: null` for listings with no photos, but the
+ * `Listing` type declares `photos: ListingPhoto[]`. The two RSC server pages
+ * already do `photos: res.listing.photos ?? []`; this mirrors that for the
+ * client hooks so every call site receives a guaranteed array and never
+ * null-derefs (`listing.photos.find(...)`, `listing.photos[0]`, etc.).
+ */
+function normalizeListing<T extends Listing>(listing: T): T {
+  return { ...listing, photos: listing.photos ?? [] };
+}
+
 function explainListingFailure(fallback: string): (err: unknown) => void {
   return (err: unknown) => {
     if (err instanceof ApiError) {
@@ -67,7 +80,9 @@ export function useListings(
   return useQuery({
     queryKey: ['listings', 'search', params],
     queryFn: () =>
-      api.getPublic<ListingsResponse>(`/api/v1/listings${buildSearchParams(params)}`),
+      api
+        .getPublic<ListingsResponse>(`/api/v1/listings${buildSearchParams(params)}`)
+        .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
     placeholderData: keepPreviousData,
     ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
@@ -85,9 +100,11 @@ export function useTrendingListings(limit = 12) {
   return useQuery({
     queryKey: ['listings', 'trending', limit],
     queryFn: () =>
-      api.getPublic<ListingsResponse>(
-        `/api/v1/listings?sort_by=trending&page_size=${String(limit)}`,
-      ),
+      api
+        .getPublic<ListingsResponse>(
+          `/api/v1/listings?sort_by=trending&page_size=${String(limit)}`,
+        )
+        .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
     staleTime: 30_000,
   });
 }
@@ -107,7 +124,7 @@ export function useListing(id: string, options?: { initialData?: ListingDetail }
     queryFn: () =>
       api
         .getPublic<{ listing: ListingDetail }>(`/api/v1/listings/${id}`)
-        .then((res) => res.listing),
+        .then((res) => normalizeListing(res.listing)),
     enabled: !!id,
     ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
@@ -148,9 +165,11 @@ export function useSimilarListings(listingId: string) {
   return useQuery({
     queryKey: ['listings', listingId, 'similar'],
     queryFn: () =>
-      api.getPublic<SimilarListingsResponse>(
-        `/api/v1/listings/${listingId}/similar?limit=12`,
-      ),
+      api
+        .getPublic<SimilarListingsResponse>(
+          `/api/v1/listings/${listingId}/similar?limit=12`,
+        )
+        .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
     enabled: !!listingId,
     staleTime: 60_000,
   });
@@ -174,7 +193,10 @@ export function useMyListings(statusFilter?: string, page?: number) {
   const path = `/api/v1/listings/mine${qs ? `?${qs}` : ''}`;
   return useQuery({
     queryKey: ['listings', 'mine', statusFilter, page],
-    queryFn: () => api.get<MyListingsResponse>(path),
+    queryFn: () =>
+      api
+        .get<MyListingsResponse>(path)
+        .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
   });
 }
 
@@ -185,7 +207,14 @@ export function useMyListingBids(page?: number) {
   const path = `/api/v1/listings/bids/mine${qs ? `?${qs}` : ''}`;
   return useQuery({
     queryKey: ['listingBids', 'mine', page],
-    queryFn: () => api.get<MyListingBidsResponse>(path),
+    queryFn: () =>
+      api.get<MyListingBidsResponse>(path).then((res) => ({
+        ...res,
+        bids: res.bids.map((entry) => ({
+          ...entry,
+          listing: normalizeListing(entry.listing),
+        })),
+      })),
   });
 }
 

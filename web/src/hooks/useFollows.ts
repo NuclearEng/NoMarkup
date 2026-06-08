@@ -144,6 +144,13 @@ export function useMyFeed(page?: number) {
   const path = `/api/v1/me/feed${qs ? `?${qs}` : ''}`;
   return useQuery({
     queryKey: ['feed', page ?? 1],
-    queryFn: () => api.get<MyListingsResponse>(path),
+    // Normalize nullable `photos` to `[]` — the API can return null for
+    // photo-less listings while the `Listing` type declares a non-null array,
+    // so downstream cards (ScoreboardCard, ListingCard) would null-deref.
+    queryFn: () =>
+      api.get<MyListingsResponse>(path).then((res) => ({
+        ...res,
+        listings: res.listings.map((l) => ({ ...l, photos: l.photos ?? [] })),
+      })),
   });
 }

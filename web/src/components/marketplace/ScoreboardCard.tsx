@@ -59,7 +59,7 @@ interface ScoreboardCardProps {
  * scoreboard reads like ESPN GameDay rather than a category catalog.
  */
 export function ScoreboardCard({ listing, urgency = 'normal', watching = false }: ScoreboardCardProps) {
-  const photo = listing.photos[0]?.url ?? null;
+  const photo = listing.photos?.[0]?.url ?? null;
   const location =
     listing.pickup_city && listing.pickup_state
       ? `${listing.pickup_city}, ${listing.pickup_state}`

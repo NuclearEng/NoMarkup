@@ -80,7 +80,7 @@ export function SimilarListings({
 }
 
 function SimilarCard({ listing }: { listing: Listing }) {
-  const photo = listing.photos[0]?.url;
+  const photo = listing.photos?.[0]?.url;
   const endsAt = listing.auction_ends_at;
   return (
     <li className="w-44 shrink-0 snap-start">
