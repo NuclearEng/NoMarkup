@@ -22,6 +22,13 @@ const approveCompletionMutate = vi.fn();
 const cancelContractMutate = vi.fn();
 
 const installmentsState: { installments: unknown[] } = { installments: [] };
+const contractPlanState: { plan: unknown; hasPlan: boolean; isLoading: boolean } = {
+  plan: undefined,
+  hasPlan: false,
+  isLoading: false,
+};
+// customer_bnpl flag — default ON; toggled per-case. Other flags fail open.
+const flagState: Record<string, boolean> = { customer_bnpl: true };
 const savingsState: { data: unknown } = { data: undefined };
 const reviewEligibilityState: {
   data: { eligible: boolean; already_reviewed: boolean; review_window_closes_at: string } | undefined;
@@ -64,6 +71,11 @@ vi.mock('@/components/payments/InstallmentSchedule', () => ({
   InstallmentSchedule: () => createElement('div', { 'data-testid': 'installment-schedule' }),
 }));
 
+vi.mock('@/components/payments/InstallmentPlanSelector', () => ({
+  InstallmentPlanSelector: () =>
+    createElement('div', { 'data-testid': 'installment-plan-selector' }),
+}));
+
 vi.mock('@/components/ui/ShareSavingsCard', () => ({
   ShareSavingsCard: () => createElement('div', { 'data-testid': 'share-savings' }),
 }));
@@ -84,6 +96,12 @@ vi.mock('@/hooks/useBids', () => ({
 
 vi.mock('@/hooks/useInstallments', () => ({
   useInstallmentSchedule: () => installmentsState,
+  useContractInstallmentPlan: () => contractPlanState,
+}));
+
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: (key: string) => flagState[key] ?? true,
+  useFeatureFlags: () => flagState,
 }));
 
 vi.mock('@/hooks/useReviews', () => ({
@@ -132,6 +150,10 @@ beforeEach(() => {
   cancelContractState.isPending = false;
   cancelContractState.isError = false;
   installmentsState.installments = [];
+  contractPlanState.plan = undefined;
+  contractPlanState.hasPlan = false;
+  contractPlanState.isLoading = false;
+  flagState.customer_bnpl = true;
   savingsState.data = undefined;
   reviewEligibilityState.data = undefined;
   reviewEligibilityState.isLoading = false;
@@ -281,6 +303,47 @@ describe('ContractDetailPage', () => {
     contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
     render(withQueryClient(createElement(ContractDetailPage)));
     expect(screen.getByTestId('installment-schedule')).toBeDefined();
+  });
+
+  it('renders the BNPL selector for an active contract as the customer with the flag on and no plan', () => {
+    authUser.user = { id: 'cust-1' };
+    flagState.customer_bnpl = true;
+    contractPlanState.hasPlan = false;
+    installmentsState.installments = [];
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByTestId('installment-plan-selector')).toBeDefined();
+  });
+
+  it('hides the BNPL selector when the customer_bnpl flag is OFF', () => {
+    authUser.user = { id: 'cust-1' };
+    flagState.customer_bnpl = false;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.queryByTestId('installment-plan-selector')).toBeNull();
+  });
+
+  it('hides the BNPL selector and shows the schedule once a plan exists', () => {
+    authUser.user = { id: 'cust-1' };
+    flagState.customer_bnpl = true;
+    contractPlanState.hasPlan = true;
+    installmentsState.installments = [{ id: 'inst-1' }];
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.queryByTestId('installment-plan-selector')).toBeNull();
+    expect(screen.getByTestId('installment-schedule')).toBeDefined();
+  });
+
+  it('hides the BNPL selector from the provider', () => {
+    authUser.user = { id: 'prov-1' };
+    flagState.customer_bnpl = true;
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.queryByTestId('installment-plan-selector')).toBeNull();
   });
 
   it('shows the start-work error message when the start-work mutation fails', () => {

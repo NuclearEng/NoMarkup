@@ -169,7 +169,11 @@ func mapInstallmentError(err error) error {
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):
-		return status.Error(codes.NotFound, "stripe account not found")
+		// Provider hasn't completed payout (Stripe Connect) onboarding — a
+		// precondition for the immediate provider transfer, not a missing
+		// resource. FailedPrecondition → 422 (consistent with mapAdvanceError),
+		// with a message that doesn't read as "plan not found".
+		return status.Error(codes.FailedPrecondition, "this provider isn't set up to receive installment payments yet")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

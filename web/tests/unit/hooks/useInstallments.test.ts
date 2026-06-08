@@ -4,6 +4,7 @@ import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  useContractInstallmentPlan,
   useCreateInstallmentPlan,
   useInstallmentPlan,
   useInstallmentSchedule,
@@ -92,9 +93,12 @@ describe('useCreateInstallmentPlan', () => {
     result.current.mutate(input);
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
+    // The gateway requires the Idempotency-Key HEADER (separate from the body
+    // field); the hook derives it from input.idempotency_key.
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/payments/installment-plans',
       input,
+      { 'Idempotency-Key': 'idem-1' },
     );
     expect(result.current.data?.id).toBe('plan-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['installment-plans'] });
@@ -168,6 +172,43 @@ describe('useMyInstallmentPlans', () => {
 
     expect(result.current.data?.plans).toHaveLength(1);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/payments/installment-plans');
+  });
+});
+
+describe('useContractInstallmentPlan', () => {
+  let client: QueryClient;
+  beforeEach(() => { vi.resetAllMocks(); client = qc(); });
+  afterEach(() => { client.clear(); });
+
+  it('finds the plan for the contract from the { plans } shape', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ plans: [mockPlan] });
+
+    const { result } = renderHook(() => useContractInstallmentPlan('c-1'), {
+      wrapper: wrap(client),
+    });
+    await waitFor(() => { expect(result.current.hasPlan).toBe(true); });
+    expect(result.current.plan?.id).toBe('plan-1');
+  });
+
+  it('normalizes the gateway { installment_plans } shape', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ installment_plans: [mockPlan] });
+
+    const { result } = renderHook(() => useContractInstallmentPlan('c-1'), {
+      wrapper: wrap(client),
+    });
+    await waitFor(() => { expect(result.current.hasPlan).toBe(true); });
+    expect(result.current.plan?.contract_id).toBe('c-1');
+  });
+
+  it('reports no plan when none match the contract', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ plans: [mockPlan] });
+
+    const { result } = renderHook(() => useContractInstallmentPlan('other-contract'), {
+      wrapper: wrap(client),
+    });
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
+    expect(result.current.hasPlan).toBe(false);
+    expect(result.current.plan).toBeUndefined();
   });
 });
 

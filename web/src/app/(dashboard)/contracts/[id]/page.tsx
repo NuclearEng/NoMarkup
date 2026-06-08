@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
 import { GuaranteeCoverage } from '@/components/contracts/GuaranteeCoverage';
+import { InstallmentPlanSelector } from '@/components/payments/InstallmentPlanSelector';
 import { InstallmentSchedule } from '@/components/payments/InstallmentSchedule';
 import {
   getPaymentTimingLabel,
@@ -40,7 +41,7 @@ import {
   useStartWork,
 } from '@/hooks/useContracts';
 import { useSavings } from '@/hooks/useBids';
-import { useInstallmentSchedule } from '@/hooks/useInstallments';
+import { useContractInstallmentPlan, useInstallmentSchedule } from '@/hooks/useInstallments';
 import { useReviewEligibility } from '@/hooks/useReviews';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { formatCents } from '@/lib/utils';
@@ -79,8 +80,10 @@ export default function ContractDetailPage() {
   const approveCompletion = useApproveCompletion();
   const cancelContract = useCancelContract();
   const { installments } = useInstallmentSchedule(contractId);
+  const { hasPlan: hasInstallmentPlan } = useContractInstallmentPlan(contractId);
   const { data: allSavings } = useSavings();
   const competitiveInsuranceEnabled = useFeatureFlag('insurance_competition');
+  const bnplEnabled = useFeatureFlag('customer_bnpl');
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
@@ -315,6 +318,22 @@ export default function ContractDetailPage() {
 
       {/* Guarantee Coverage */}
       <GuaranteeCoverage contract={contract} />
+
+      {/* BNPL: let the customer split this contract's payment into installments.
+          Shown only on an ACTIVE contract, to the customer, when the customer_bnpl
+          flag is on AND no plan exists yet (the gateway also enforces the flag).
+          Once a plan is created the schedule below replaces this selector. */}
+      {contract.status === CONTRACT_STATUS.ACTIVE &&
+      isCustomer &&
+      bnplEnabled &&
+      !hasInstallmentPlan &&
+      installments.length === 0 ? (
+        <InstallmentPlanSelector
+          totalCents={contract.amount_cents}
+          contractId={contract.id}
+          providerId={contract.provider_id}
+        />
+      ) : null}
 
       {/* Installment Schedule */}
       {installments.length > 0 ? <InstallmentSchedule installments={installments} /> : null}

@@ -62,9 +62,17 @@ export function useCreateInstallmentPlan() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // The gateway's RequireIdempotencyKey middleware 400s any payment POST that
+    // lacks the Idempotency-Key HEADER (separate from the body's idempotency_key
+    // field, which the handler also requires). Send both, derived from the same
+    // per-call UUID so a retried request dedupes correctly.
     mutationFn: (input: CreateInstallmentPlanInput) =>
       api
-        .post<{ plan: InstallmentPlan }>('/api/v1/payments/installment-plans', input)
+        .post<{ plan: InstallmentPlan }>(
+          '/api/v1/payments/installment-plans',
+          input,
+          { 'Idempotency-Key': input.idempotency_key },
+        )
         .then((res) => res.plan),
     onSuccess: () => {
       toast.success('Payment plan created');
@@ -94,4 +102,31 @@ export function useMyInstallmentPlans() {
     queryKey: ['installment-plans'],
     queryFn: () => api.get<InstallmentPlansResponse>('/api/v1/payments/installment-plans'),
   });
+}
+
+/**
+ * Whether the current user already has an installment plan for `contractId`.
+ *
+ * Used by the contract page to decide between the BNPL *selector* (no plan yet)
+ * and the *schedule* (plan exists). Reads the same `['installment-plans']` cache
+ * key the create mutation invalidates, so a freshly-created plan flips this to
+ * `true` without a manual refetch.
+ *
+ * Normalizes the list response: the gateway returns `{ installment_plans: [] }`
+ * while the typed `InstallmentPlansResponse` shape uses `{ plans: [] }` — accept
+ * either so detection is correct against the live API and the typed contract.
+ */
+export function useContractInstallmentPlan(contractId: string) {
+  const { data, isLoading } = useMyInstallmentPlans();
+
+  const plan = useMemo<InstallmentPlan | undefined>(() => {
+    if (!data) return undefined;
+    const list =
+      (data as { plans?: InstallmentPlan[] }).plans ??
+      (data as unknown as { installment_plans?: InstallmentPlan[] }).installment_plans ??
+      [];
+    return list.find((p) => p.contract_id === contractId);
+  }, [data, contractId]);
+
+  return { plan, hasPlan: !!plan, isLoading };
 }
