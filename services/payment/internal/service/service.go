@@ -91,7 +91,10 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 	if platformFee < feeConfig.MinFeeCents {
 		platformFee = feeConfig.MinFeeCents
 	}
-	if feeConfig.MaxFeeCents != nil && platformFee > *feeConfig.MaxFeeCents {
+	// A cap of 0 cents is meaningless and means "no cap" (see
+	// domain.FeeConfig.MaxFeeCents). The repo normalizes 0 -> nil on load; clamp
+	// here only on a positive cap so a stray 0 can never zero out the platform fee.
+	if feeConfig.MaxFeeCents != nil && *feeConfig.MaxFeeCents > 0 && platformFee > *feeConfig.MaxFeeCents {
 		platformFee = *feeConfig.MaxFeeCents
 	}
 
@@ -108,7 +111,7 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 		if leadGenFee < feeConfig.LeadGenMinFeeCents {
 			leadGenFee = feeConfig.LeadGenMinFeeCents
 		}
-		if feeConfig.LeadGenMaxFeeCents != nil && leadGenFee > *feeConfig.LeadGenMaxFeeCents {
+		if feeConfig.LeadGenMaxFeeCents != nil && *feeConfig.LeadGenMaxFeeCents > 0 && leadGenFee > *feeConfig.LeadGenMaxFeeCents {
 			leadGenFee = *feeConfig.LeadGenMaxFeeCents
 		}
 	}

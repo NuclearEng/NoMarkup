@@ -22,6 +22,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
 
+	"github.com/nomarkup/nomarkup/services/payment/internal/crypto"
 	paymentgrpc "github.com/nomarkup/nomarkup/services/payment/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/payment/internal/repository"
 	"github.com/nomarkup/nomarkup/services/payment/internal/service"
@@ -137,8 +138,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// PII cipher for decrypting at-rest provider PII (e.g. service_address on
+	// 1099-NEC tax forms). Fails closed in production if ENCRYPTION_KEY is
+	// missing/invalid; in dev it generates an ephemeral key and logs a WARN.
+	piiCipher, err := crypto.FromEnv()
+	if err != nil {
+		slog.Error("failed to initialize PII cipher", "error", err)
+		os.Exit(1)
+	}
+
 	// Wire up services.
 	repo := repository.NewPostgresRepository(pool)
+	repo.SetCipher(piiCipher)
 	stripeSvc := service.NewStripeService(env)
 	paymentSvc := service.NewPaymentService(repo, stripeSvc)
 	paymentSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))

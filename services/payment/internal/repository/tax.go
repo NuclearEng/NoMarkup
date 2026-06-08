@@ -243,10 +243,11 @@ func (r *PostgresRepository) GetPaymentsForContract(ctx context.Context, contrac
 // GetProviderProfile returns the business name and service address for a provider.
 func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID string) (string, string, error) {
 	var businessName, serviceAddress *string
+	var piiEncrypted bool
 	err := r.pool.QueryRow(ctx, `
-		SELECT pp.business_name, pp.service_address
+		SELECT pp.business_name, pp.service_address, pp.pii_encrypted_v1
 		FROM provider_profiles pp
-		WHERE pp.user_id = $1`, providerID).Scan(&businessName, &serviceAddress)
+		WHERE pp.user_id = $1`, providerID).Scan(&businessName, &serviceAddress, &piiEncrypted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Fall back to the users table for the provider name.
@@ -275,6 +276,20 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID 
 	addr := ""
 	if serviceAddress != nil {
 		addr = *serviceAddress
+	}
+
+	// service_address is stored as nacl/secretbox ciphertext once pii_encrypted_v1
+	// is set (migration 031). Decrypt it before it reaches the 1099-NEC form;
+	// otherwise the tax form renders raw AES/secretbox ciphertext and is unfileable.
+	if piiEncrypted && addr != "" {
+		if r.cipher == nil {
+			return "", "", fmt.Errorf("get provider profile: cannot decrypt service_address: cipher not configured")
+		}
+		plain, decErr := r.cipher.DecryptString(addr)
+		if decErr != nil {
+			return "", "", fmt.Errorf("get provider profile: decrypt service_address: %w", decErr)
+		}
+		addr = plain
 	}
 
 	// If no business name, fall back to user name.

@@ -9,17 +9,27 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/services/payment/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
 // PostgresRepository implements domain.PaymentRepository using pgx.
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
 // NewPostgresRepository creates a new PostgreSQL-backed payment repository.
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
+}
+
+// SetCipher wires the PII cipher used to decrypt at-rest provider PII (e.g.
+// provider_profiles.service_address when generating 1099-NEC tax forms). It is
+// set after construction so the constructor signature stays stable; when nil,
+// PII reads fall back to treating stored values as plaintext.
+func (r *PostgresRepository) SetCipher(c *crypto.Cipher) {
+	r.cipher = c
 }
 
 func (r *PostgresRepository) CreatePayment(ctx context.Context, payment *domain.Payment) error {
@@ -221,7 +231,23 @@ func (r *PostgresRepository) GetFeeConfig(ctx context.Context, categoryID string
 		}
 		return nil, fmt.Errorf("get fee config: %w", err)
 	}
+	normalizeFeeCaps(fc)
 	return fc, nil
+}
+
+// normalizeFeeCaps coerces a stored fee cap of 0 to nil (the domain's "no cap"
+// sentinel, per domain.FeeConfig.MaxFeeCents). The column is NOT NULL-tolerant
+// but a legacy/seed value of 0 was being loaded as a non-nil 0, which clamped
+// the platform fee to $0 (revenue-critical). A cap of 0 cents is meaningless, so
+// 0 (or NULL) both mean "no cap". Min-fee caps need no such coercion: a floor of
+// 0 cents is valid and simply means "no floor".
+func normalizeFeeCaps(fc *domain.FeeConfig) {
+	if fc.MaxFeeCents != nil && *fc.MaxFeeCents == 0 {
+		fc.MaxFeeCents = nil
+	}
+	if fc.LeadGenMaxFeeCents != nil && *fc.LeadGenMaxFeeCents == 0 {
+		fc.LeadGenMaxFeeCents = nil
+	}
 }
 
 func (r *PostgresRepository) GetDefaultFeeConfig(ctx context.Context) (*domain.FeeConfig, error) {
@@ -248,6 +274,7 @@ func (r *PostgresRepository) GetDefaultFeeConfig(ctx context.Context) (*domain.F
 		}
 		return nil, fmt.Errorf("get default fee config: %w", err)
 	}
+	normalizeFeeCaps(fc)
 	return fc, nil
 }
 
