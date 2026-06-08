@@ -251,8 +251,10 @@ func New(
 	// — exact service_address + lat/lng are stripped for this endpoint (PII, §6).
 	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}", providerHandler.GetProvider)
 
-	// Public feature flags (no auth required)
+	// Public feature flags (no auth required). Returns a flat { key: enabled }
+	// map, CDN-cacheable. /api/v1/feature-flags is an alias for the same map.
 	r.Get("/api/v1/flags", featureFlagHandler.GetFeatureFlags)
+	r.Get("/api/v1/feature-flags", featureFlagHandler.GetFeatureFlags)
 
 	// Public Fair Price Index routes (no auth required, SEO-friendly)
 	r.Get("/api/v1/pricing", pricingHandler.GetPricingOverview)
@@ -431,8 +433,9 @@ func New(
 				r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
 				r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
 
-				// Working Capital advances
+				// Working Capital advances — gated behind the working_capital flag.
 				r.Route("/me/advances", func(r chi.Router) {
+					r.Use(middleware.RequireFlag(dbPool, cacheClient, "working_capital"))
 					r.Post("/", workingCapitalHandler.RequestAdvance)
 					r.Get("/", workingCapitalHandler.ListMyAdvances)
 					r.Get("/{id}", workingCapitalHandler.GetAdvance)
@@ -663,7 +666,8 @@ func New(
 			r.Post("/dev/methods", paymentHandler.AddDevPaymentMethod)
 			r.Delete("/methods/{id}", paymentHandler.DeletePaymentMethod)
 			r.Post("/calculate-fees", paymentHandler.CalculateFees)
-			r.Post("/instant-payout", paymentHandler.InstantPayout)
+			r.With(middleware.RequireFlag(dbPool, cacheClient, "instant_payout")).
+				Post("/instant-payout", paymentHandler.InstantPayout)
 
 			// /{id}/* mutations: only the payment's customer or provider may access.
 			r.Group(func(r chi.Router) {
@@ -677,16 +681,18 @@ func New(
 				r.Post("/{id}/release", paymentHandler.ReleasePayment)
 			})
 
-			// BNPL installment plan routes
+			// BNPL installment plan routes — gated behind the customer_bnpl flag.
 			r.Route("/installment-plans", func(r chi.Router) {
+				r.Use(middleware.RequireFlag(dbPool, cacheClient, "customer_bnpl"))
 				r.Post("/", installmentHandler.CreateInstallmentPlan)
 				r.Get("/", installmentHandler.ListInstallmentPlans)
 				r.Get("/{id}", installmentHandler.GetInstallmentPlan)
 			})
 		})
 
-		// Insurance routes
+		// Insurance routes — gated behind the per_job_insurance flag.
 		r.Route("/insurance", func(r chi.Router) {
+			r.Use(middleware.RequireFlag(dbPool, cacheClient, "per_job_insurance"))
 			r.Post("/quote", insuranceHandler.GetQuote)
 			r.Post("/purchase", insuranceHandler.PurchaseInsurance)
 			r.Get("/policies", insuranceHandler.ListPolicies)

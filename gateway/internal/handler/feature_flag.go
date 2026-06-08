@@ -7,19 +7,26 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 )
+
+// featureFlagCachePrefix must match middleware.featureFlagPrefix so an admin
+// toggle invalidates the same key the RequireFlag middleware reads.
+const featureFlagCachePrefix = "feature_flag"
 
 // FeatureFlagHandler handles HTTP endpoints for feature flag management.
 // Feature flags are a gateway-level concern stored directly in PostgreSQL,
 // not routed through a downstream gRPC service.
 type FeatureFlagHandler struct {
-	db *pgxpool.Pool
+	db    *pgxpool.Pool
+	cache *cache.Client
 }
 
 // NewFeatureFlagHandler creates a new FeatureFlagHandler.
 // If db is nil (e.g. DATABASE_URL not set), endpoints return empty/default responses.
-func NewFeatureFlagHandler(db *pgxpool.Pool) *FeatureFlagHandler {
-	return &FeatureFlagHandler{db: db}
+func NewFeatureFlagHandler(db *pgxpool.Pool, cacheClient *cache.Client) *FeatureFlagHandler {
+	return &FeatureFlagHandler{db: db, cache: cacheClient}
 }
 
 // GetFeatureFlags handles GET /api/v1/flags (public).
@@ -136,6 +143,12 @@ func (h *FeatureFlagHandler) UpdateFeatureFlag(w http.ResponseWriter, r *http.Re
 	if result.RowsAffected() == 0 {
 		writeError(w, http.StatusNotFound, "feature flag not found")
 		return
+	}
+
+	// Invalidate the RequireFlag middleware's cache so the toggle applies
+	// immediately instead of after the 30s TTL.
+	if h.cache != nil {
+		h.cache.Delete(r.Context(), cache.Key(featureFlagCachePrefix, key))
 	}
 
 	slog.Info("feature flag updated", "key", key, "enabled", req.Enabled)

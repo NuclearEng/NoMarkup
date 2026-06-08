@@ -274,7 +274,7 @@ func main() {
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
-	featureFlagHandler := handler.NewFeatureFlagHandler(dbPool)
+	featureFlagHandler := handler.NewFeatureFlagHandler(dbPool, cacheClient)
 	pricingHandler := handler.NewPricingHandler(dbPool)
 	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
 	challengeHandler := handler.NewChallengeHandler(dbPool)
