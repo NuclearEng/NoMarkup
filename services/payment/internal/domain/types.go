@@ -80,9 +80,13 @@ type FeeConfig struct {
 // starting values that the admin can review and persist, rather than surfacing
 // a "not configured" error for a predictable empty-state.
 func DefaultFeeConfig() *FeeConfig {
+	// Fair-but-sustainable take rate. 8% platform + 2% guarantee = 10% seller-side,
+	// below eBay (~13%), Etsy (~11%), and far below TaskRabbit/Thumbtack (15-30%).
+	// The buyer pays no markup (fees come out of the seller payout) — true to the
+	// NoMarkup brand. Lead-gen stays an opt-in extra (off by default).
 	return &FeeConfig{
-		FeePercentage:       0.05, // 5%
-		GuaranteePercentage: 0.02, // 2%
+		FeePercentage:       0.08, // 8% platform commission
+		GuaranteePercentage: 0.02, // 2% buyer-protection guarantee
 		MinFeeCents:         0,
 		MaxFeeCents:         nil,
 		LeadGenEnabled:      false,
