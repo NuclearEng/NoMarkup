@@ -615,6 +615,175 @@ func (h *ListingOrdersHandler) FileListingDispute(w http.ResponseWriter, r *http
 	})
 }
 
+// orderResponse is the read shape returned by GetOrder / ListMyOrders.
+// Money is integer cents (per CLAUDE.md). Nullable DB columns are emitted
+// as empty strings / zero so the JSON shape is stable for every caller.
+type orderResponse struct {
+	OrderID           string `json:"order_id"`
+	ListingID         string `json:"listing_id"`
+	BuyerID           string `json:"buyer_id"`
+	SellerID          string `json:"seller_id"`
+	EscrowStatus      string `json:"escrow_status"`
+	AmountCents       int64  `json:"amount_cents"`
+	FeeCents          int64  `json:"fee_cents"`
+	SellerPayoutCents int64  `json:"seller_payout_cents"`
+	PaymentIntentID   string `json:"payment_intent_id"`
+	DisputeID         string `json:"dispute_id,omitempty"`
+	PickupConfirmedAt string `json:"pickup_confirmed_at,omitempty"`
+	SellerConfirmedAt string `json:"seller_confirmed_at,omitempty"`
+	ReleasedAt        string `json:"released_at,omitempty"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+// nullTimeRFC3339 renders a nullable timestamp as RFC3339, or "" if NULL.
+func nullTimeRFC3339(t sql.NullTime) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
+}
+
+// scanOrder maps a listing_orders row (in the canonical column order used by
+// orderSelectColumns) onto an orderResponse. Shared by GetOrder and
+// ListMyOrders so the read shape stays identical across both endpoints.
+func scanOrder(row pgx.Row) (orderResponse, error) {
+	var (
+		id, listingID, buyerID, sellerID, escrowStatus string
+		amountCents, feeCents, sellerPayoutCents       int64
+		paymentIntentID, disputeID                     sql.NullString
+		pickupConfirmedAt, sellerConfirmedAt           sql.NullTime
+		releasedAt, createdAt, updatedAt               sql.NullTime
+	)
+	if err := row.Scan(
+		&id, &listingID, &buyerID, &sellerID, &escrowStatus,
+		&amountCents, &feeCents, &sellerPayoutCents,
+		&paymentIntentID, &disputeID,
+		&pickupConfirmedAt, &sellerConfirmedAt, &releasedAt,
+		&createdAt, &updatedAt,
+	); err != nil {
+		return orderResponse{}, err
+	}
+	return orderResponse{
+		OrderID:           id,
+		ListingID:         listingID,
+		BuyerID:           buyerID,
+		SellerID:          sellerID,
+		EscrowStatus:      escrowStatus,
+		AmountCents:       amountCents,
+		FeeCents:          feeCents,
+		SellerPayoutCents: sellerPayoutCents,
+		PaymentIntentID:   paymentIntentID.String,
+		DisputeID:         disputeID.String,
+		PickupConfirmedAt: nullTimeRFC3339(pickupConfirmedAt),
+		SellerConfirmedAt: nullTimeRFC3339(sellerConfirmedAt),
+		ReleasedAt:        nullTimeRFC3339(releasedAt),
+		CreatedAt:         nullTimeRFC3339(createdAt),
+		UpdatedAt:         nullTimeRFC3339(updatedAt),
+	}, nil
+}
+
+// orderSelectColumns is the canonical projection consumed by scanOrder.
+const orderSelectColumns = `
+	id::text, listing_id::text, buyer_id::text, seller_id::text, escrow_status,
+	amount_cents, fee_cents, seller_payout_cents,
+	payment_intent_id, dispute_id::text,
+	pickup_confirmed_at, seller_confirmed_at, released_at,
+	created_at, updated_at`
+
+// GetOrder handles GET /api/v1/orders/{id}.
+//
+// Returns the full order record (status, amounts, escrow state, timestamps).
+// Authorization: ONLY the order's buyer or seller — or an admin — may read
+// it. Anyone else gets 403. 404 if the order does not exist, 400 on a
+// malformed id. This mirrors the participant check the mutation handlers
+// (ConfirmPickup / SellerConfirm) already enforce.
+func (h *ListingOrdersHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	orderID := chi.URLParam(r, "id")
+	if !isValidUUID(orderID) {
+		writeError(w, http.StatusBadRequest, "invalid order id")
+		return
+	}
+
+	order, err := scanOrder(h.db.QueryRow(r.Context(),
+		`SELECT `+orderSelectColumns+` FROM listing_orders WHERE id = $1`, orderID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "order not found")
+			return
+		}
+		slog.Error("get order: select", "order_id", orderID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	// Authorization: buyer, seller, or admin only.
+	if !hasRole(claims, "admin") &&
+		order.BuyerID != claims.UserID &&
+		order.SellerID != claims.UserID {
+		writeError(w, http.StatusForbidden, "not a participant on this order")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, order)
+}
+
+// listMyOrdersResponse wraps the authenticated user's orders.
+type listMyOrdersResponse struct {
+	Orders []orderResponse `json:"orders"`
+}
+
+// ListMyOrders handles GET /api/v1/me/orders.
+//
+// Returns every order on which the authenticated user is EITHER the buyer or
+// the seller, newest first — the "my orders" index. No admin override here:
+// it is intentionally scoped to the caller's own participation. The
+// buyer_id / seller_id indexes (idx_listing_orders_buyer_id /
+// _seller_id, migration 034) back this query.
+func (h *ListingOrdersHandler) ListMyOrders(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT `+orderSelectColumns+`
+		   FROM listing_orders
+		  WHERE buyer_id = $1 OR seller_id = $1
+		  ORDER BY created_at DESC`, claims.UserID)
+	if err != nil {
+		slog.Error("list my orders: query", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	defer rows.Close()
+
+	orders := make([]orderResponse, 0)
+	for rows.Next() {
+		order, err := scanOrder(rows)
+		if err != nil {
+			slog.Error("list my orders: scan", "user_id", claims.UserID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		orders = append(orders, order)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("list my orders: rows", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, listMyOrdersResponse{Orders: orders})
+}
+
 // hasRole is defined in bid.go and shared across the package.
 
 // decodeJSON is provided in another handler file — we re-use it.

@@ -572,12 +572,17 @@ func New(
 		// idempotent (state-machine guards the transitions).
 		// See docs/operations/marketplace-escrow.md for the lifecycle.
 		r.Route("/orders", func(r chi.Router) {
+			// Read: buyer/seller/admin only (handler enforces 403/404/400).
+			r.Get("/{id}", listingOrdersHandler.GetOrder)
 			r.Post("/{id}/confirm-pickup", listingOrdersHandler.ConfirmPickup)
 			r.Post("/{id}/file-dispute", listingOrdersHandler.FileListingDispute)
 			// Wave 5 polish — mutual handshake + no-show counters.
 			r.Post("/{id}/seller-confirm", listingOrdersHandler.SellerConfirm)
 			r.Post("/{id}/report-no-show", listingOrdersHandler.ReportNoShow)
 		})
+
+		// "My orders" index — the caller's orders as buyer and/or seller.
+		r.Get("/me/orders", listingOrdersHandler.ListMyOrders)
 
 		// ── Power-seller surface (Wave 5) ─────────────────────────────
 		// Daily-revenue chart, sell-through pill, top categories, CSV
