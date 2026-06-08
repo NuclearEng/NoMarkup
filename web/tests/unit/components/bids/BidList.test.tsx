@@ -248,6 +248,53 @@ describe('BidList', () => {
     expect(screen.getByText('Acme Co')).toBeDefined();
   });
 
+  it('actually reorders the rendered list by trust score (desc), not just price', async () => {
+    const user = userEvent.setup();
+    const data: BidsForJobResponse = {
+      bids: [
+        // Source order is price-ascending; trust order must differ.
+        makeBid({ id: 'a', amount_cents: 20000, provider: 'LowTrust', trust: 10 }),
+        makeBid({ id: 'b', amount_cents: 22000, provider: 'HighTrust', trust: 90 }),
+        makeBid({ id: 'c', amount_cents: 24000, provider: 'MidTrust', trust: 50 }),
+      ],
+    };
+    vi.mocked(useBidsForJob).mockReturnValue({
+      data,
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useBidsForJob>);
+    withProvider(<BidList jobId="job-1" canAward={false} />);
+
+    const order = () => screen.getAllByText(/LowTrust|HighTrust|MidTrust/).map((e) => e.textContent);
+    expect(order()).toEqual(['LowTrust', 'HighTrust', 'MidTrust']); // price asc
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByRole('option', { name: /Trust Score/i }));
+    expect(order()).toEqual(['HighTrust', 'MidTrust', 'LowTrust']); // trust desc
+  });
+
+  it('reorders by Price: High to Low', async () => {
+    const user = userEvent.setup();
+    const data: BidsForJobResponse = {
+      bids: [
+        makeBid({ id: 'a', amount_cents: 20000, provider: 'Cheap' }),
+        makeBid({ id: 'b', amount_cents: 22000, provider: 'Mid' }),
+        makeBid({ id: 'c', amount_cents: 24000, provider: 'Pricey' }),
+      ],
+    };
+    vi.mocked(useBidsForJob).mockReturnValue({
+      data,
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useBidsForJob>);
+    withProvider(<BidList jobId="job-1" canAward={false} />);
+    const order = () => screen.getAllByText(/Cheap|Mid|Pricey/).map((e) => e.textContent);
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByRole('option', { name: /Price: High to Low/i }));
+    expect(order()).toEqual(['Pricey', 'Mid', 'Cheap']);
+  });
+
   it('renders an empty list when data is undefined', () => {
     vi.mocked(useBidsForJob).mockReturnValue({
       data: undefined,
