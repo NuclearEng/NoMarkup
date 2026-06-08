@@ -2,8 +2,15 @@
 
 import { useChatStore } from '@/stores/chat-store';
 
+// Stable empty-array reference. Returning a fresh `[]` literal from the selector
+// makes useSyncExternalStore see a new snapshot every render → infinite loop
+// ("getSnapshot should be cached" / "Maximum update depth exceeded").
+const EMPTY_TYPING_USERS: string[] = [];
+
 export function TypingIndicator({ channelId }: { channelId: string }) {
-  const typingUsers = useChatStore((state) => state.typingUsers[channelId] ?? []);
+  const typingUsers = useChatStore(
+    (state) => state.typingUsers[channelId] ?? EMPTY_TYPING_USERS,
+  );
 
   if (typingUsers.length === 0) return null;
 

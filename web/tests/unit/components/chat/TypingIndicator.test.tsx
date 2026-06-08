@@ -55,6 +55,24 @@ describe('TypingIndicator', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('returns a STABLE empty reference so useSyncExternalStore does not loop (regression)', () => {
+    // Regression: ISSUE — TypingIndicator infinite loop
+    // `?? []` produced a NEW array on every selector call → useSyncExternalStore
+    // saw a fresh snapshot each render → "getSnapshot should be cached" /
+    // "Maximum update depth exceeded". The selector must return a referentially
+    // stable value for the empty (no-one-typing) case.
+    let captured: ((s: unknown) => unknown) | undefined;
+    vi.mocked(useChatStore).mockImplementation(((selector: unknown) => {
+      captured = selector as (s: unknown) => unknown;
+      return (selector as (s: unknown) => unknown)({ typingUsers: {} });
+    }) as unknown as typeof useChatStore);
+    render(<TypingIndicator channelId="missing-chan" />);
+    expect(captured).toBeDefined();
+    const state = { typingUsers: {} as Record<string, string[]> };
+    // Same state, two calls → must be the SAME reference (fails with `?? []`).
+    expect(captured?.(state)).toBe(captured?.(state));
+  });
+
   it('falls back to "Someone" label when first user entry is undefined', () => {
     // typingUsers has length but the first slot is undefined — the `?? 'Someone'`
     // default at line 10 is exercised.
