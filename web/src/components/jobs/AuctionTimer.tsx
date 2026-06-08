@@ -179,6 +179,10 @@ export const AuctionTimer = memo(function AuctionTimer({
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>(() =>
     calculateTimeRemaining(auctionEndsAt),
   );
+  // Gates the live countdown to post-mount. A time value computed during SSR
+  // differs from the client a moment later → hydration mismatch. Render a
+  // deterministic placeholder until mounted (see the early return below).
+  const [mounted, setMounted] = useState(false);
 
   // Calculate total auction duration for ring progress
   const auctionStartMs = useRef(Date.now());
@@ -187,6 +191,7 @@ export const AuctionTimer = memo(function AuctionTimer({
   );
 
   useEffect(() => {
+    setMounted(true);
     const remaining = calculateTimeRemaining(auctionEndsAt);
     setTimeRemaining(remaining);
     if (remaining.totalMs <= 0) return;
@@ -229,6 +234,23 @@ export const AuctionTimer = memo(function AuctionTimer({
   );
 
   const ringProgress = timeRemaining.totalMs / totalDurationMs.current;
+
+  // Pre-mount: render a stable dash so SSR and the first client render match.
+  // The effect above flips `mounted` and fills in the live time immediately after.
+  if (!mounted) {
+    return (
+      <span
+        className={cn(
+          'font-medium text-muted-foreground',
+          compact ? 'text-xs' : 'text-sm',
+          className,
+        )}
+        suppressHydrationWarning
+      >
+        &mdash;
+      </span>
+    );
+  }
 
   // Closed state
   if (timeRemaining.totalMs <= 0) {
