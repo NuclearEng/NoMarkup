@@ -180,6 +180,10 @@ func (h *WorkingCapitalHandler) GetAdvance(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "advance id required")
 		return
 	}
+	if !isValidUUID(advanceID) {
+		writeError(w, http.StatusBadRequest, "invalid advance id")
+		return
+	}
 
 	resp, err := h.paymentClient.GetAdvance(r.Context(), &paymentv1.GetAdvanceRequest{
 		AdvanceId: advanceID,

@@ -320,17 +320,18 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if refreshToken == "" {
-		writeError(w, http.StatusBadRequest, "refresh token required")
-		return
-	}
-
-	_, err := h.userClient.Logout(r.Context(), &userv1.LogoutRequest{
-		RefreshToken: refreshToken,
-	})
-	if err != nil {
-		writeGRPCError(w, err)
-		return
+	// Logout is best-effort: a token-only client (valid Bearer, no refresh
+	// cookie) must still be able to log out. When we DO have a refresh token,
+	// revoke it server-side. When we don't, skip the revoke and just clear the
+	// client-side cookies — there is nothing to revoke and erroring would trap
+	// the client in a logged-in-looking state it can't escape.
+	if refreshToken != "" {
+		if _, err := h.userClient.Logout(r.Context(), &userv1.LogoutRequest{
+			RefreshToken: refreshToken,
+		}); err != nil {
+			writeGRPCError(w, err)
+			return
+		}
 	}
 
 	http.SetCookie(w, &http.Cookie{

@@ -72,7 +72,12 @@ type setMarketsActiveRequest struct {
 	Slugs      []string `json:"slugs"`       // specific cities, e.g. ["seattle","spokane"]
 	RegionCode *string  `json:"region_code"` // a US state, e.g. "WA" (launches the whole state)
 	Country    *string  `json:"country"`     // "US" or "MX" (launches the whole country)
-	Active     bool     `json:"active"`      // target state: true = launch, false = pull back
+	// Target state: true = launch, false = pull back. Accept BOTH "active" and
+	// the list/response field name "is_active" (alias) so a field-name typo
+	// cannot silently bind nothing → default false → mass-deactivate markets.
+	// Pointers so we can tell "explicitly false" from "field absent".
+	Active   *bool `json:"active"`
+	IsActive *bool `json:"is_active"`
 }
 
 // SetActive handles POST /api/v1/admin/markets/activate.
@@ -82,11 +87,24 @@ func (h *AdminMarketsHandler) SetActive(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Resolve the target active state from either "active" or its alias
+	// "is_active". Require the field explicitly: if NEITHER is present, reject
+	// with 400 rather than defaulting to false and silently pulling markets
+	// offline on a field-name typo. If both are present, "active" wins.
+	active := body.Active
+	if active == nil {
+		active = body.IsActive
+	}
+	if active == nil {
+		writeError(w, http.StatusBadRequest, "active (or is_active) is required and must be true or false")
+		return
+	}
+
 	// Build an OR of the provided selectors. Require at least one so a malformed
 	// request can never flip the entire catalog by accident.
 	ors := make([]string, 0, 3)
 	args := make([]interface{}, 0, 4)
-	args = append(args, body.Active) // $1 = target active state
+	args = append(args, *active) // $1 = target active state
 
 	if len(body.Slugs) > 0 {
 		args = append(args, body.Slugs)
@@ -128,7 +146,7 @@ func (h *AdminMarketsHandler) SetActive(w http.ResponseWriter, r *http.Request) 
 	}
 	slog.Info("admin set markets active",
 		"admin_id", adminID,
-		"active", body.Active,
+		"active", *active,
 		"slugs", body.Slugs,
 		"region_code", body.RegionCode,
 		"country", body.Country,
@@ -137,6 +155,6 @@ func (h *AdminMarketsHandler) SetActive(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"updated": tag.RowsAffected(),
-		"active":  body.Active,
+		"active":  *active,
 	})
 }

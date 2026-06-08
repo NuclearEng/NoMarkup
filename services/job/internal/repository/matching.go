@@ -21,7 +21,7 @@ func (r *PostgresRepository) QueryMatchingProviders(ctx context.Context, categor
 	}
 
 	query := `
-		WITH category_tree AS (
+		WITH RECURSIVE category_tree AS (
 			-- Include the target category and all its descendants so matching
 			-- works whether the job specifies a top-level category, subcategory,
 			-- or service type.

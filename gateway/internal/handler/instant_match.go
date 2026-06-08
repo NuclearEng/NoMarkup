@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -67,12 +68,13 @@ func providerResponseKey(jobID, providerID string) string {
 // InstantMatchHandler handles instant match endpoints.
 type InstantMatchHandler struct {
 	jobClient jobv1.JobServiceClient
+	bidClient bidv1.BidServiceClient
 	cache     *cache.Client
 }
 
 // NewInstantMatchHandler creates a new InstantMatchHandler.
-func NewInstantMatchHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client) *InstantMatchHandler {
-	return &InstantMatchHandler{jobClient: jobClient, cache: cacheClient}
+func NewInstantMatchHandler(jobClient jobv1.JobServiceClient, bidClient bidv1.BidServiceClient, cacheClient *cache.Client) *InstantMatchHandler {
+	return &InstantMatchHandler{jobClient: jobClient, bidClient: bidClient, cache: cacheClient}
 }
 
 // CreateInstantMatch handles POST /api/v1/jobs/{id}/instant-match.
@@ -301,20 +303,30 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 	rec.ProviderID = claims.UserID
 	h.cache.SetJSON(ctx, offerKey, rec, instantMatchTTL)
 
+	// Award the job to this provider by calling the bid service's
+	// AcceptOfferPrice(jobId, providerId) RPC — the same award path
+	// POST /jobs/{id}/bids/accept-offer uses (see bid.go). This creates the
+	// awarded bid + contract. AcceptOfferPrice resolves the offer's price
+	// server-side, so no price needs to be passed from here.
+	bidResp, err := h.bidClient.AcceptOfferPrice(ctx, &bidv1.AcceptOfferPriceRequest{
+		JobId:      jobID,
+		ProviderId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
 	slog.Info("instant match offer accepted",
 		"job_id", jobID,
 		"provider_id", claims.UserID,
+		"bid_id", bidResp.GetBid().GetId(),
 	)
 
-	// NOTE: the contract/bid award is not yet wired here. Accepting an
-	// instant-match offer should award the job to this provider by calling
-	// the bid service's AcceptOfferPrice(jobId, providerId) RPC (the same
-	// path POST /jobs/{id}/bids/accept-offer uses, see bid.go), which creates
-	// the awarded bid + contract. That requires giving InstantMatchHandler a
-	// bidv1.BidServiceClient via NewInstantMatchHandler — a constructor/router
-	// change owned outside this handler set. Until then the offer state is
-	// tracked correctly but no contract row is created.
-	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "accepted",
+		"bid":    protoBidToJSON(bidResp.GetBid()),
+	})
 }
 
 // DeclineOffer handles POST /api/v1/provider/offers/{jobId}/decline.
