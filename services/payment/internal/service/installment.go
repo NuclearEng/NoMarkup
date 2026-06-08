@@ -355,9 +355,30 @@ func (s *InstallmentService) checkPlanCompletion(ctx context.Context, planID str
 	return nil
 }
 
-// GetInstallmentPlan retrieves an installment plan by ID.
-func (s *InstallmentService) GetInstallmentPlan(ctx context.Context, planID string) (*domain.InstallmentPlan, error) {
-	return s.repo.GetInstallmentPlan(ctx, planID)
+// GetInstallmentPlan retrieves an installment plan by ID, enforcing ownership.
+//
+// A BNPL plan is private to its two parties: the customer who owes the
+// installments and the provider who was paid. The caller (identified by
+// callerUserID, taken from the gateway's verified JWT claims) may read a plan
+// only if they are that customer or provider, or an admin. To avoid leaking the
+// existence of a plan to unrelated users (IDOR enumeration), an unauthorized
+// caller gets ErrInstallmentPlanNotFound — the same response as a missing id —
+// rather than a distinguishable forbidden error.
+func (s *InstallmentService) GetInstallmentPlan(ctx context.Context, planID, callerUserID string, callerIsAdmin bool) (*domain.InstallmentPlan, error) {
+	plan, err := s.repo.GetInstallmentPlan(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !callerIsAdmin && callerUserID != plan.CustomerID && callerUserID != plan.ProviderID {
+		slog.Warn("installment plan access denied: caller is not owner",
+			"plan_id", planID,
+			"caller_user_id", callerUserID,
+		)
+		return nil, domain.ErrInstallmentPlanNotFound
+	}
+
+	return plan, nil
 }
 
 // ListInstallmentPlans lists installment plans for a user.

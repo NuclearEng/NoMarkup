@@ -119,6 +119,25 @@ func (h *InsuranceHandler) PurchaseInsurance(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Validate required fields up front so a missing field returns a clear 400
+	// rather than a 500 from a downstream FK / NOT NULL violation at insert time.
+	if req.ProductID == "" {
+		writeError(w, http.StatusBadRequest, "product_id is required")
+		return
+	}
+	if req.ContractID == "" {
+		writeError(w, http.StatusBadRequest, "contract_id is required")
+		return
+	}
+	if req.ProviderID == "" {
+		writeError(w, http.StatusBadRequest, "provider_id is required")
+		return
+	}
+	if req.ContractAmountCents <= 0 {
+		writeError(w, http.StatusBadRequest, "contract_amount_cents must be greater than zero")
+		return
+	}
+
 	resp, err := h.client.PurchaseInsurance(r.Context(), &paymentv1.PurchaseInsuranceRequest{
 		ProductId:           req.ProductID,
 		ContractId:          req.ContractID,
@@ -194,7 +213,7 @@ func (h *InsuranceHandler) ListPolicies(w http.ResponseWriter, r *http.Request) 
 
 // GetPolicy handles GET /api/v1/insurance/policies/{id}.
 func (h *InsuranceHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -214,7 +233,18 @@ func (h *InsuranceHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoInsurancePolicyToJSON(resp.GetPolicy()))
+	// Ownership check: a policy may only be read by its customer or provider,
+	// or by an admin. Return 404 (not 403) to non-owners so the endpoint does
+	// not leak the existence of other tenants' policies (IDOR fix).
+	policy := resp.GetPolicy()
+	if !hasRole(claims, "admin") &&
+		policy.GetCustomerId() != claims.UserID &&
+		policy.GetProviderId() != claims.UserID {
+		writeError(w, http.StatusNotFound, "insurance policy not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoInsurancePolicyToJSON(policy))
 }
 
 type fileClaimRequest struct {
@@ -256,7 +286,7 @@ func (h *InsuranceHandler) FileClaim(w http.ResponseWriter, r *http.Request) {
 
 // GetClaim handles GET /api/v1/insurance/claims/{id}.
 func (h *InsuranceHandler) GetClaim(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -276,7 +306,27 @@ func (h *InsuranceHandler) GetClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoInsuranceClaimToJSON(resp.GetClaim()))
+	claim := resp.GetClaim()
+
+	// Ownership check (IDOR fix): a claim may be read by the claimant who filed
+	// it, by either party on the underlying policy (customer/provider), or by an
+	// admin. Non-owners get 404 so the endpoint does not leak claim existence.
+	if !hasRole(claims, "admin") && claim.GetClaimantId() != claims.UserID {
+		polResp, err := h.client.GetInsurancePolicy(r.Context(), &paymentv1.GetInsurancePolicyRequest{
+			PolicyId: claim.GetPolicyId(),
+		})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "insurance claim not found")
+			return
+		}
+		policy := polResp.GetPolicy()
+		if policy.GetCustomerId() != claims.UserID && policy.GetProviderId() != claims.UserID {
+			writeError(w, http.StatusNotFound, "insurance claim not found")
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, protoInsuranceClaimToJSON(claim))
 }
 
 // AdminListClaims handles GET /api/v1/admin/insurance/claims.

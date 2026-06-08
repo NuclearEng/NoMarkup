@@ -668,6 +668,60 @@ impl BiddingEngine {
             .ok_or(BidError::BidNotFound)
     }
 
+    /// Get a single bid by ID, enforcing that the requester is allowed to view it.
+    ///
+    /// In a sealed reverse auction the full details of a bid (amount, provider,
+    /// status) must only be visible to:
+    /// - the **bid owner** (the provider who placed it),
+    /// - the **job's customer** (the owner of the auction), or
+    /// - an **admin** (`is_admin == true`).
+    ///
+    /// Any other authenticated user — e.g. a competing provider — must be denied,
+    /// otherwise rivals could read each other's sealed bids by GUID (IDOR).
+    ///
+    /// # Errors
+    ///
+    /// - `BidError::BidNotFound` if the bid does not exist.
+    /// - `BidError::JobNotFound` if the bid's job is missing (data integrity issue).
+    /// - `BidError::PermissionDenied` if the requester is not the bid owner, the job
+    ///   customer, or an admin.
+    pub async fn get_bid_authorized(
+        &self,
+        bid_id: Uuid,
+        requesting_user_id: Uuid,
+        is_admin: bool,
+    ) -> Result<Bid, BidError> {
+        let bid = self.get_bid(bid_id).await?;
+
+        // Admins may view any bid (e.g. dispute resolution, support).
+        if is_admin {
+            return Ok(bid);
+        }
+
+        // The bid owner (provider who placed it) may always view it.
+        if bid.provider_id == requesting_user_id {
+            return Ok(bid);
+        }
+
+        // The customer who owns the auction may view bids on their job.
+        let job = sqlx::query_as::<_, JobRow>(
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
+             FROM jobs WHERE id = $1",
+        )
+        .bind(bid.job_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(BidError::JobNotFound)?;
+
+        if job.customer_id == requesting_user_id {
+            return Ok(bid);
+        }
+
+        Err(BidError::PermissionDenied(
+            "not authorized to view this bid".into(),
+        ))
+    }
+
     /// Get the count of active bids for a job.
     ///
     /// # Errors

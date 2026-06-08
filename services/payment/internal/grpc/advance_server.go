@@ -7,6 +7,7 @@ import (
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/nomarkup/nomarkup/services/payment/internal/service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -174,15 +175,26 @@ func domainAdvanceToProto(a *domain.Advance) *paymentv1.Advance {
 		return nil
 	}
 
+	// Itemized for transparency: the flat origination/service portion of the
+	// STORED FeeCents (the remainder is APR interest). The invariant the gateway
+	// relies on is service_fee + interest == fee_cents, so the breakdown must be
+	// derived FROM the stored total — never by recomputing 3% of principal fresh.
+	// Recomputing diverges on legacy rows whose stored fee predates the current
+	// 3% origination model (e.g. stored fee 986 vs recomputed 3000), which would
+	// push the breakdown over the total and clamp interest to a fake 0. Cap the
+	// service portion at the stored fee so the two line items always sum to it.
+	serviceFeeCents := domain.AdvanceServiceFeeCents(a.AdvanceAmountCents)
+	if serviceFeeCents > a.FeeCents {
+		serviceFeeCents = a.FeeCents
+	}
+
 	pb := &paymentv1.Advance{
 		Id:                 a.ID,
 		ProviderId:         a.ProviderID,
 		ContractId:         a.ContractID,
 		AdvanceAmountCents: a.AdvanceAmountCents,
 		FeeCents:           a.FeeCents,
-		// Itemized for transparency: the flat origination/service portion of
-		// FeeCents (the remainder is APR interest). Derived from the principal.
-		ServiceFeeCents:    domain.AdvanceServiceFeeCents(a.AdvanceAmountCents),
+		ServiceFeeCents:    serviceFeeCents,
 		RepaidCents:        a.RepaidCents,
 		Status:             a.Status,
 		StripeTransferId:   a.StripeTransferID,
@@ -211,6 +223,10 @@ func mapAdvanceError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrAdvanceNotFound):
 		return status.Error(codes.NotFound, "advance not found")
+	case errors.Is(err, service.ErrInsufficientCredit):
+		// Over-lending guard: the request is well-formed but exceeds available
+		// credit. FailedPrecondition → gateway 422 with an actionable message.
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
 	default:

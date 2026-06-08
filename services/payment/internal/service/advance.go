@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -11,6 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
+
+// ErrInsufficientCredit is returned when a requested advance exceeds the
+// provider's available credit (max_advance minus current outstanding). It is a
+// business-rule precondition failure, not bad input — the gRPC layer maps it to
+// FailedPrecondition so the gateway surfaces an actionable 422.
+var ErrInsufficientCredit = errors.New("requested amount exceeds available credit")
 
 // ── Risk-based advance pricing ──────────────────────────────────────────
 // The APR a provider pays = a base ("market") rate + a credit-risk premium
@@ -207,6 +214,25 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 	if score < minLendingScore {
 		return nil, fmt.Errorf("request advance declined: credit score %d (grade %s) is below the minimum to qualify", score, grade)
 	}
+
+	// Over-lending guard: enforce the provider's available credit BEFORE booking
+	// the advance. Available = max_advance - currently-outstanding, computed by
+	// the same authoritative logic the credit-limit endpoint surfaces. A request
+	// above the available line is a validation error (→ 400/422 at the gateway),
+	// never a silent over-extension. Integer cents throughout.
+	limit, err := s.ComputeCreditLimit(ctx, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("request advance: %w", err)
+	}
+	available := limit.MaxAdvanceCents - limit.TotalOutstandingCents
+	if available < 0 {
+		available = 0
+	}
+	if amountCents > available {
+		return nil, fmt.Errorf("request advance: %w: requested %d cents exceeds available credit of %d cents (max %d, outstanding %d)",
+			ErrInsufficientCredit, amountCents, available, limit.MaxAdvanceCents, limit.TotalOutstandingCents)
+	}
+
 	aprBps := dynamicAPRBps(score)
 	// Total fee = prorated APR interest + flat origination/service fee. Both
 	// are disclosed to the provider as separate line items; FeeCents stores the

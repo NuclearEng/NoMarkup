@@ -176,9 +176,28 @@ impl BidService for BidServiceImpl {
 
         let bid_id = parse_uuid(&req.bid_id, "bid_id")?;
 
+        // Enforce viewer authorization: a sealed-auction bid is only visible to
+        // the bid owner (provider), the job's customer, or an admin. Without this
+        // check any authenticated user could read a rival's sealed bid by GUID
+        // (IDOR). The gateway always sets `requesting_user_id` from JWT claims; a
+        // missing/empty value is treated as unauthenticated and denied.
+        if req.requesting_user_id.is_empty() {
+            warn!(bid_id = %bid_id, "get_bid rejected: missing requesting_user_id");
+            return Err(Status::permission_denied(
+                "requesting_user_id is required to view a bid",
+            ));
+        }
+        let requesting_user_id = parse_uuid(&req.requesting_user_id, "requesting_user_id")?;
+
+        // NOTE: the GetBidRequest proto carries no role field, so admin status
+        // cannot be asserted over this RPC; `is_admin` is false here. Owner and
+        // customer reads (the common cases) are fully supported. Granting admins
+        // read access requires a `requesting_user_role`/`is_admin` field on the
+        // proto (additive, v1-safe) or gRPC metadata — not done here to avoid
+        // regenerating the contract.
         let bid = self
             .engine
-            .get_bid(bid_id)
+            .get_bid_authorized(bid_id, requesting_user_id, false)
             .await
             .map_err(bid_error_to_status)?;
 

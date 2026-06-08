@@ -5134,8 +5134,13 @@ func (x *CreateInstallmentPlanResponse) GetFirstInstallmentClientSecret() string
 }
 
 type GetInstallmentPlanRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PlanId        string                 `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	PlanId string                 `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	// Ownership context, set by the gateway from the caller's JWT claims. The
+	// service authorizes the read: a non-admin caller may only read a plan whose
+	// customer_id or provider_id matches caller_user_id (otherwise NotFound).
+	CallerUserId  string `protobuf:"bytes,2,opt,name=caller_user_id,json=callerUserId,proto3" json:"caller_user_id,omitempty"`
+	CallerIsAdmin bool   `protobuf:"varint,3,opt,name=caller_is_admin,json=callerIsAdmin,proto3" json:"caller_is_admin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5175,6 +5180,20 @@ func (x *GetInstallmentPlanRequest) GetPlanId() string {
 		return x.PlanId
 	}
 	return ""
+}
+
+func (x *GetInstallmentPlanRequest) GetCallerUserId() string {
+	if x != nil {
+		return x.CallerUserId
+	}
+	return ""
+}
+
+func (x *GetInstallmentPlanRequest) GetCallerIsAdmin() bool {
+	if x != nil {
+		return x.CallerIsAdmin
+	}
+	return false
 }
 
 type GetInstallmentPlanResponse struct {
@@ -8838,9 +8857,11 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\"\xa0\x01\n" +
 	"\x1dCreateInstallmentPlanResponse\x128\n" +
 	"\x04plan\x18\x01 \x01(\v2$.nomarkup.payment.v1.InstallmentPlanR\x04plan\x12E\n" +
-	"\x1ffirst_installment_client_secret\x18\x02 \x01(\tR\x1cfirstInstallmentClientSecret\"4\n" +
+	"\x1ffirst_installment_client_secret\x18\x02 \x01(\tR\x1cfirstInstallmentClientSecret\"\x82\x01\n" +
 	"\x19GetInstallmentPlanRequest\x12\x17\n" +
-	"\aplan_id\x18\x01 \x01(\tR\x06planId\"V\n" +
+	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12$\n" +
+	"\x0ecaller_user_id\x18\x02 \x01(\tR\fcallerUserId\x12&\n" +
+	"\x0fcaller_is_admin\x18\x03 \x01(\bR\rcallerIsAdmin\"V\n" +
 	"\x1aGetInstallmentPlanResponse\x128\n" +
 	"\x04plan\x18\x01 \x01(\v2$.nomarkup.payment.v1.InstallmentPlanR\x04plan\"\xb9\x01\n" +
 	"\x1bListInstallmentPlansRequest\x12\x17\n" +

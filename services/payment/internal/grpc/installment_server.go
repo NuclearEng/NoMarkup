@@ -63,8 +63,14 @@ func (s *Server) GetInstallmentPlan(ctx context.Context, req *paymentv1.GetInsta
 	if req.GetPlanId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "plan_id is required")
 	}
+	// caller_user_id is the gateway-supplied identity from the verified JWT.
+	// It is required so the service can enforce per-plan ownership (an
+	// admin caller still passes caller_is_admin=true to bypass the check).
+	if req.GetCallerUserId() == "" && !req.GetCallerIsAdmin() {
+		return nil, status.Error(codes.InvalidArgument, "caller_user_id is required")
+	}
 
-	plan, err := s.installmentSvc.GetInstallmentPlan(ctx, req.GetPlanId())
+	plan, err := s.installmentSvc.GetInstallmentPlan(ctx, req.GetPlanId(), req.GetCallerUserId(), req.GetCallerIsAdmin())
 	if err != nil {
 		return nil, mapInstallmentError(err)
 	}

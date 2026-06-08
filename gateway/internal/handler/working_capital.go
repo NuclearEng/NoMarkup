@@ -60,6 +60,11 @@ func (h *WorkingCapitalHandler) RequestAdvance(w http.ResponseWriter, r *http.Re
 				"Advance declined: your business credit score is below the minimum to qualify right now. Complete and repay more jobs on time to build it up.")
 			return
 		}
+		if strings.Contains(err.Error(), "exceeds available credit") {
+			writeError(w, http.StatusUnprocessableEntity,
+				"Advance declined: the requested amount exceeds your available credit. Check your credit limit and reduce the amount, or repay outstanding advances to free up credit.")
+			return
+		}
 		slog.Error("request advance gRPC call failed", "error", err, "provider_id", claims.UserID)
 		writeGRPCError(w, err)
 		return
@@ -164,7 +169,7 @@ func (h *WorkingCapitalHandler) ListMyAdvances(w http.ResponseWriter, r *http.Re
 
 // GetAdvance handles GET /api/v1/providers/me/advances/{id}.
 func (h *WorkingCapitalHandler) GetAdvance(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -185,8 +190,20 @@ func (h *WorkingCapitalHandler) GetAdvance(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Ownership check (IDOR guard): this is the provider-facing `/me/` route, so
+	// the advance MUST belong to the calling provider. The payment service fetches
+	// by id only, so enforce ownership here against the verified JWT subject.
+	// Respond 404 (not 403) so a non-owner cannot even confirm the id exists.
+	advance := resp.GetAdvance()
+	if advance == nil || advance.GetProviderId() != claims.UserID {
+		slog.Warn("advance ownership check failed",
+			"advance_id", advanceID, "caller_provider_id", claims.UserID)
+		writeError(w, http.StatusNotFound, "advance not found")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"advance": protoAdvanceToJSON(resp.GetAdvance()),
+		"advance": protoAdvanceToJSON(advance),
 	})
 }
 

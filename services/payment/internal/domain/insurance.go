@@ -15,6 +15,7 @@ var (
 	ErrPolicyExpired            = errors.New("insurance policy has expired")
 	ErrClaimExceedsCoverage     = errors.New("claim amount exceeds coverage")
 	ErrClaimNotReviewable       = errors.New("claim is not in reviewable state")
+	ErrClaimantNotPolicyholder  = errors.New("only the policyholder may file a claim against this policy")
 )
 
 // InsuranceProduct represents a type of insurance available on the platform.

@@ -363,9 +363,9 @@ func TestInstallmentService_ProcessDueInstallments(t *testing.T) {
 func TestInstallmentService_GetAndList(t *testing.T) {
 	t.Parallel()
 
-	t.Run("get_delegates_to_repo", func(t *testing.T) {
+	t.Run("get_returns_plan_for_owning_customer", func(t *testing.T) {
 		t.Parallel()
-		expected := &domain.InstallmentPlan{ID: "plan-1"}
+		expected := &domain.InstallmentPlan{ID: "plan-1", CustomerID: "cust-1", ProviderID: "prov-1"}
 		repo := &mockPaymentRepo{
 			getInstallmentPlanFn: func(_ context.Context, planID string) (*domain.InstallmentPlan, error) {
 				assert.Equal(t, "plan-1", planID)
@@ -373,7 +373,49 @@ func TestInstallmentService_GetAndList(t *testing.T) {
 			},
 		}
 		svc := newTestInstallmentService(repo)
-		got, err := svc.GetInstallmentPlan(context.Background(), "plan-1")
+		got, err := svc.GetInstallmentPlan(context.Background(), "plan-1", "cust-1", false)
+		require.NoError(t, err)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("get_returns_plan_for_owning_provider", func(t *testing.T) {
+		t.Parallel()
+		expected := &domain.InstallmentPlan{ID: "plan-1", CustomerID: "cust-1", ProviderID: "prov-1"}
+		repo := &mockPaymentRepo{
+			getInstallmentPlanFn: func(_ context.Context, _ string) (*domain.InstallmentPlan, error) {
+				return expected, nil
+			},
+		}
+		svc := newTestInstallmentService(repo)
+		got, err := svc.GetInstallmentPlan(context.Background(), "plan-1", "prov-1", false)
+		require.NoError(t, err)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("get_denies_non_owner_with_not_found", func(t *testing.T) {
+		t.Parallel()
+		plan := &domain.InstallmentPlan{ID: "plan-1", CustomerID: "cust-1", ProviderID: "prov-1"}
+		repo := &mockPaymentRepo{
+			getInstallmentPlanFn: func(_ context.Context, _ string) (*domain.InstallmentPlan, error) {
+				return plan, nil
+			},
+		}
+		svc := newTestInstallmentService(repo)
+		got, err := svc.GetInstallmentPlan(context.Background(), "plan-1", "attacker", false)
+		require.ErrorIs(t, err, domain.ErrInstallmentPlanNotFound)
+		assert.Nil(t, got)
+	})
+
+	t.Run("get_allows_admin_for_any_plan", func(t *testing.T) {
+		t.Parallel()
+		expected := &domain.InstallmentPlan{ID: "plan-1", CustomerID: "cust-1", ProviderID: "prov-1"}
+		repo := &mockPaymentRepo{
+			getInstallmentPlanFn: func(_ context.Context, _ string) (*domain.InstallmentPlan, error) {
+				return expected, nil
+			},
+		}
+		svc := newTestInstallmentService(repo)
+		got, err := svc.GetInstallmentPlan(context.Background(), "plan-1", "some-admin", true)
 		require.NoError(t, err)
 		assert.Equal(t, expected, got)
 	})

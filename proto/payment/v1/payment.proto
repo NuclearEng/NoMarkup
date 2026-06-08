@@ -706,6 +706,11 @@ message CreateInstallmentPlanResponse {
 
 message GetInstallmentPlanRequest {
   string plan_id = 1;
+  // Ownership context, set by the gateway from the caller's JWT claims. The
+  // service authorizes the read: a non-admin caller may only read a plan whose
+  // customer_id or provider_id matches caller_user_id (otherwise NotFound).
+  string caller_user_id = 2;
+  bool caller_is_admin = 3;
 }
 
 message GetInstallmentPlanResponse {

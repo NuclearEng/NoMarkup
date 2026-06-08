@@ -120,6 +120,17 @@ func (s *InsuranceService) PurchaseInsurance(ctx context.Context, input domain.P
 		return nil, "", fmt.Errorf("purchase insurance create: %w", err)
 	}
 
+	// Re-read the inserted row so the response carries DB-populated columns
+	// (created_at / updated_at) instead of the Go zero value (0001-01-01).
+	if created, err := s.repo.GetInsurancePolicy(ctx, policyID); err != nil {
+		slog.Warn("failed to re-read insurance policy after create",
+			"policy_id", policyID,
+			"error", err,
+		)
+	} else {
+		policy = created
+	}
+
 	slog.Info("insurance policy created",
 		"policy_id", policyID,
 		"policy_number", policyNumber,
@@ -174,6 +185,14 @@ func (s *InsuranceService) FileInsuranceClaim(ctx context.Context, input domain.
 	policy, err := s.repo.GetInsurancePolicy(ctx, input.PolicyID)
 	if err != nil {
 		return nil, fmt.Errorf("file insurance claim: %w", err)
+	}
+
+	// Authorization (funds-theft guard): only the policyholder (the customer who
+	// purchased the policy) may file a claim against it. The approved payout is
+	// sent to the claimant, so an unauthenticated claimant could otherwise drain
+	// funds against another tenant's policy.
+	if input.ClaimantID != policy.CustomerID {
+		return nil, fmt.Errorf("file insurance claim: %w", domain.ErrClaimantNotPolicyholder)
 	}
 
 	if policy.Status != "active" {

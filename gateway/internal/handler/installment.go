@@ -90,7 +90,7 @@ func (h *InstallmentHandler) CreateInstallmentPlan(w http.ResponseWriter, r *htt
 
 // GetInstallmentPlan handles GET /api/v1/payments/installment-plans/{id}.
 func (h *InstallmentHandler) GetInstallmentPlan(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -102,11 +102,25 @@ func (h *InstallmentHandler) GetInstallmentPlan(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Pass the caller's identity so the payment service can enforce ownership:
+	// a BNPL plan is private to its customer and provider. Without this, the
+	// fetch was a classic IDOR — any authenticated user could read any plan by
+	// id. A non-owner now gets NotFound (mapped to 404) from the service.
+	isAdmin := false
+	for _, role := range claims.Roles {
+		if role == "admin" {
+			isAdmin = true
+			break
+		}
+	}
+
 	resp, err := h.installmentClient.GetInstallmentPlan(r.Context(), &paymentv1.GetInstallmentPlanRequest{
-		PlanId: planID,
+		PlanId:        planID,
+		CallerUserId:  claims.UserID,
+		CallerIsAdmin: isAdmin,
 	})
 	if err != nil {
-		slog.Error("get installment plan gRPC call failed", "error", err, "plan_id", planID)
+		slog.Error("get installment plan gRPC call failed", "error", err, "plan_id", planID, "caller_user_id", claims.UserID)
 		writeGRPCError(w, err)
 		return
 	}

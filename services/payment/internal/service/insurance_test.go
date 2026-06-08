@@ -492,6 +492,7 @@ func TestInsuranceService_FileInsuranceClaim(t *testing.T) {
 	activePolicy := &domain.InsurancePolicy{
 		ID:                  "pol-1",
 		Status:              "active",
+		CustomerID:          "cust-1",
 		CoverageAmountCents: 1000000,
 		// Future expiration so the time-window check passes.
 		ExpirationDate: time.Now().UTC().AddDate(1, 0, 0),
@@ -561,6 +562,32 @@ func TestInsuranceService_FileInsuranceClaim(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, domain.ErrClaimExceedsCoverage)
+	})
+
+	t.Run("rejects_claimant_who_is_not_policyholder", func(t *testing.T) {
+		t.Parallel()
+		var createCalled bool
+		repo := &mockInsuranceRepo{
+			getInsurancePolicyFn: func(_ context.Context, _ string) (*domain.InsurancePolicy, error) {
+				p := *activePolicy
+				return &p, nil
+			},
+			createInsuranceClaimFn: func(_ context.Context, _ *domain.InsuranceClaim) error {
+				createCalled = true
+				return nil
+			},
+		}
+		svc := newTestInsuranceService(repo)
+		_, err := svc.FileInsuranceClaim(context.Background(), domain.FileInsuranceClaimInput{
+			PolicyID:           "pol-1",
+			ClaimantID:         "attacker-2", // not the policy's customer
+			ClaimType:          "workmanship_defect",
+			Description:        "trying to drain someone else's policy",
+			ClaimedAmountCents: 50000,
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrClaimantNotPolicyholder)
+		assert.False(t, createCalled, "must not create a claim for a non-policyholder")
 	})
 }
 

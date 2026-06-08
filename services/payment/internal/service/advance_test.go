@@ -144,14 +144,30 @@ func TestPaymentService_RequestAdvance(t *testing.T) {
 			var captured *domain.Advance
 			repo := &mockPaymentRepo{
 				// RequestAdvance computes the borrower's business credit score
-				// first (reads payments + advance history); stub both so the
-				// thin-file path scores grade D (eligible) and the create path
-				// is reached.
+				// first (reads payments + advance history), then enforces the
+				// available-credit guard via ComputeCreditLimit. Stub the payment
+				// history with enough released earnings that the computed
+				// max_advance (= (earnings/6)/2) comfortably clears the 50000
+				// requested amount, and keep the score grade-eligible.
 				listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
-					return nil, 0, nil
+					// (1,000,000/6)/2 = 83,333 cents max_advance ≥ 50,000 requested.
+					return []*domain.Payment{{ProviderPayoutCents: 1_000_000}}, 1, nil
 				},
 				listAdvancesFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Advance, int, error) {
 					return nil, 0, nil
+				},
+				// No outstanding advances → full max_advance is available.
+				getActiveAdvancesFn: func(_ context.Context, _ string) ([]*domain.Advance, error) {
+					return nil, nil
+				},
+				upsertCreditLimitFn: func(_ context.Context, _ *domain.CreditLimit) error {
+					return nil
+				},
+				// ComputeCreditLimit re-fetches the persisted limit and writes the
+				// derived max/outstanding onto it, so this only needs to be
+				// non-nil to avoid the nil-pointer deref.
+				getCreditLimitFn: func(_ context.Context, providerID string) (*domain.CreditLimit, error) {
+					return &domain.CreditLimit{ProviderID: providerID}, nil
 				},
 				createAdvanceFn: func(_ context.Context, advance *domain.Advance) error {
 					if tt.repoErr != nil {
@@ -187,6 +203,47 @@ func TestPaymentService_RequestAdvance(t *testing.T) {
 			assert.Equal(t, adv.ID, captured.ID)
 		})
 	}
+
+	// Over-lending guard: a request exceeding available credit (max_advance −
+	// outstanding) must be rejected with ErrInsufficientCredit BEFORE any
+	// advance is booked. Here max_advance ≈ 83,333 but 80,000 is already
+	// outstanding, leaving ≈ 3,333 available against a 50,000 request.
+	t.Run("rejects_request_over_available_credit", func(t *testing.T) {
+		t.Parallel()
+
+		var createCalled bool
+		repo := &mockPaymentRepo{
+			listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
+				return []*domain.Payment{{ProviderPayoutCents: 1_000_000}}, 1, nil
+			},
+			listAdvancesFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Advance, int, error) {
+				return nil, 0, nil
+			},
+			// One active advance with 80,000 still outstanding eats most of the
+			// max_advance line, leaving available < the 50,000 requested.
+			getActiveAdvancesFn: func(_ context.Context, _ string) ([]*domain.Advance, error) {
+				return []*domain.Advance{{AdvanceAmountCents: 80_000, FeeCents: 0, RepaidCents: 0}}, nil
+			},
+			upsertCreditLimitFn: func(_ context.Context, _ *domain.CreditLimit) error {
+				return nil
+			},
+			getCreditLimitFn: func(_ context.Context, providerID string) (*domain.CreditLimit, error) {
+				return &domain.CreditLimit{ProviderID: providerID}, nil
+			},
+			createAdvanceFn: func(_ context.Context, _ *domain.Advance) error {
+				createCalled = true
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+
+		adv, err := svc.RequestAdvance(context.Background(), "prov-1", "contract-1", 50_000)
+		require.Error(t, err)
+		assert.Nil(t, adv)
+		assert.True(t, errors.Is(err, ErrInsufficientCredit),
+			"expected ErrInsufficientCredit, got %v", err)
+		assert.False(t, createCalled, "advance must not be booked when over available credit")
+	})
 }
 
 // --- ReviewAdvance ---

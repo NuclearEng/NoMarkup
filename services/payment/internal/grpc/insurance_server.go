@@ -403,6 +403,8 @@ func mapInsuranceError(err error) error {
 		return status.Error(codes.InvalidArgument, "claim amount exceeds coverage")
 	case errors.Is(err, domain.ErrClaimNotReviewable):
 		return status.Error(codes.FailedPrecondition, "claim is not in reviewable state")
+	case errors.Is(err, domain.ErrClaimantNotPolicyholder):
+		return status.Error(codes.PermissionDenied, "only the policyholder may file a claim against this policy")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}
