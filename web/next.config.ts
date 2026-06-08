@@ -86,7 +86,14 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(withBundleAnalyzer(nextConfig), {
+// Only run the analyzer wrapper for `npm run analyze`. Calling it on every
+// dev/build config-load (even gated enabled:false) was corrupting the dev
+// bundler's module graph ("undefined ... reading 'call'"), so keep dev/build
+// on the bare config.
+const configForExport =
+  process.env.ANALYZE === 'true' ? withBundleAnalyzer(nextConfig) : nextConfig;
+
+export default withSentryConfig(configForExport, {
   // Suppresses source map upload logs during build.
   silent: true,
   org: process.env.SENTRY_ORG,
