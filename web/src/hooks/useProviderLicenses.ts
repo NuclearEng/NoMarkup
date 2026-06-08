@@ -153,3 +153,99 @@ export function hasVerifiedBarLicense(licenses: PublicProviderLicense[]): boolea
     (l) => l.license_type === LICENSE_TYPE.BAR && l.status === LICENSE_STATUS.VERIFIED,
   );
 }
+
+/* -------------------------------------------------------------------------- *
+ * Admin license review
+ * -------------------------------------------------------------------------- */
+
+/** Status filter accepted by the admin queue endpoint. `all` returns every
+ *  status; the others filter to a single lifecycle state. */
+export const ADMIN_LICENSE_FILTER = {
+  PENDING: 'pending',
+  VERIFIED: 'verified',
+  REJECTED: 'rejected',
+  ALL: 'all',
+} as const;
+
+export type AdminLicenseFilter =
+  (typeof ADMIN_LICENSE_FILTER)[keyof typeof ADMIN_LICENSE_FILTER];
+
+/**
+ * A license as the ADMIN review queue sees it. Unlike the public projection,
+ * the admin receives the FULL license_number plus the provider id and the
+ * verification audit fields (verified_by / verified_at).
+ */
+export interface AdminLicense {
+  id: string;
+  provider_id: string;
+  license_type: LicenseType;
+  license_number: string;
+  jurisdiction: string;
+  status: LicenseStatus;
+  verified_by?: string | null;
+  verified_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminLicensePagination {
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export interface AdminLicensesResponse {
+  licenses: AdminLicense[];
+  pagination: AdminLicensePagination;
+}
+
+const ADMIN_LICENSES_KEY = ['adminLicenses'] as const;
+
+/**
+ * useAdminLicenses powers the admin review queue. Returns the licenses (or an
+ * empty list) plus pagination for the requested status filter. Admin-only on
+ * the backend (gateway RequireAdmin).
+ */
+export function useAdminLicenses(status: AdminLicenseFilter) {
+  return useQuery({
+    queryKey: [...ADMIN_LICENSES_KEY, status],
+    queryFn: () =>
+      api.get<AdminLicensesResponse>(
+        `/api/v1/admin/licenses?status=${status}`,
+      ),
+  });
+}
+
+export interface ReviewLicenseInput {
+  id: string;
+  status: typeof LICENSE_STATUS.VERIFIED | typeof LICENSE_STATUS.REJECTED;
+}
+
+/**
+ * useReviewLicense verifies or rejects a submitted license. On success it
+ * invalidates every admin-queue query so the reviewed row moves to its new
+ * filter immediately, and surfaces the gateway's real error on failure.
+ */
+export function useReviewLicense() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, status }: ReviewLicenseInput) =>
+      api.put<AdminLicense>(`/api/v1/admin/licenses/${id}`, { status }),
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.status === LICENSE_STATUS.VERIFIED
+          ? 'License verified'
+          : 'License rejected',
+      );
+      void queryClient.invalidateQueries({ queryKey: ADMIN_LICENSES_KEY });
+    },
+    onError: (err: unknown) => {
+      if (err instanceof ApiError) {
+        toast.error(err.userMessage('Could not update license'));
+        return;
+      }
+      toast.error('Could not update license');
+    },
+  });
+}
