@@ -174,9 +174,9 @@ function MessageBubble({
       >
         {message.sender_id.charAt(0).toUpperCase()}
       </div>
-      <div className={cn('max-w-[85%] sm:max-w-[70%]', isOwnMessage ? 'items-end' : 'items-start')}>
-        <div className="mb-0.5 flex items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground">{message.sender_id}</span>
+      <div className={cn('min-w-0 max-w-[85%] sm:max-w-[70%]', isOwnMessage ? 'items-end' : 'items-start')}>
+        <div className="mb-0.5 flex min-w-0 items-center gap-2">
+          <span className="truncate text-xs font-medium text-muted-foreground">{message.sender_id}</span>
         </div>
         {message.is_deleted ? (
           <div
@@ -329,7 +329,7 @@ export function MessageThread({ channelId }: { channelId: string }) {
   }
 
   return (
-    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-3">
+    <div ref={scrollContainerRef} className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
       {hasMore ? (
         <div className="mb-4 flex justify-center">
           <Button

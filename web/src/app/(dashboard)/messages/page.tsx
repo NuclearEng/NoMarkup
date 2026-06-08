@@ -127,7 +127,7 @@ export default function MessagesPage() {
         </div>
 
         {/* Main thread area */}
-        <div className={cn('flex-1', activeChannelId ? 'block' : 'hidden md:block')}>
+        <div className={cn('min-w-0 flex-1', activeChannelId ? 'block' : 'hidden md:block')}>
           {activeChannelId ? (
             <div className="flex h-full flex-col">
               {/* Mobile back button */}
