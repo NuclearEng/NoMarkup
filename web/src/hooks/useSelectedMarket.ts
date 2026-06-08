@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Market } from '@/types';
 
 const STORAGE_KEY = 'nm.selectedMarket';
+const RECENTS_KEY = 'nm.recentMarkets';
+const RECENTS_MAX = 5;
 const EVENT = 'nm:selectedMarket';
 
 function read(): Market | null {
@@ -59,4 +61,53 @@ export function useSelectedMarket(): [Market | null, (m: Market | null) => void]
   }, []);
 
   return [market, setMarket];
+}
+
+function readRecents(): Market[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(RECENTS_KEY);
+    const arr = raw ? (JSON.parse(raw) as Market[]) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * useRecentMarkets tracks the last few markets the user picked (most-recent
+ * first, deduped by slug, capped). Powers the "Recent" shortcut in the city
+ * picker so returning users don't re-search. localStorage-backed, hydrated after
+ * mount, kept in sync via the same custom event as the selected market.
+ */
+export function useRecentMarkets(): [Market[], (m: Market) => void] {
+  const [recents, setRecents] = useState<Market[]>([]);
+
+  useEffect(() => {
+    setRecents(readRecents());
+  }, []);
+
+  useEffect(() => {
+    const sync = () => { setRecents(readRecents()); };
+    window.addEventListener(EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  const pushRecent = useCallback((m: Market) => {
+    if (typeof window === 'undefined') return;
+    const next = [m, ...readRecents().filter((r) => r.slug !== m.slug)].slice(0, RECENTS_MAX);
+    try {
+      window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage failures
+    }
+    setRecents(next);
+    window.dispatchEvent(new Event(EVENT));
+  }, []);
+
+  return [recents, pushRecent];
 }
