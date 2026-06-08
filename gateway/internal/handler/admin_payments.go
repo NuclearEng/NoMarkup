@@ -248,7 +248,10 @@ func buildFeeConfigUpdateReq(adminID string, categoryID *string, feePct, guarant
 		LeadGenPercentage:   leadGenPct,
 		LeadGenMinFeeCents:  leadGenMin,
 	}
-	if categoryID != nil {
+	// Treat a blank category as "default config" (no override). The form sends
+	// category_id="" when the optional field is left blank; forwarding that would
+	// push an empty string into the UUID column downstream (a 500).
+	if categoryID != nil && *categoryID != "" {
 		grpcReq.CategoryId = categoryID
 	}
 	if maxFee != nil {

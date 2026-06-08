@@ -507,8 +507,17 @@ func (r *PostgresRepository) UpdateFeeConfig(ctx context.Context, categoryID *st
 	}
 	defer tx.Rollback(ctx)
 
+	// Normalize an empty-string category to a true NULL ("default" config).
+	// The form sends category_id="" when the optional field is left blank;
+	// passing that straight into the UUID column on INSERT below fails with
+	// `invalid input syntax for type uuid: ""` (a 500). Collapsing it to nil
+	// here keeps the deactivate branch and the INSERT consistent on "default".
+	if categoryID != nil && *categoryID == "" {
+		categoryID = nil
+	}
+
 	// Deactivate current active config for this category (or default).
-	if categoryID != nil && *categoryID != "" {
+	if categoryID != nil {
 		_, err = tx.Exec(ctx, `
 			UPDATE platform_fee_config SET active = false, updated_at = now()
 			WHERE category_id = $1 AND active = true`, *categoryID)

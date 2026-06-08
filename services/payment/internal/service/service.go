@@ -548,6 +548,14 @@ func (s *PaymentService) AdminGetPaymentDetails(ctx context.Context, paymentID s
 
 // AdminUpdateFeeConfig updates the fee configuration for a category or the default.
 func (s *PaymentService) AdminUpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64, leadGenEnabled bool, leadGenPercentage float64, leadGenMinFeeCents int64, leadGenMaxFeeCents *int64) (*domain.FeeConfig, error) {
+	// A non-empty category override must be a valid UUID. Empty/absent means the
+	// default (platform-wide) config. Reject a malformed id as a 400, not a 500
+	// from the downstream UUID cast.
+	if categoryID != nil && *categoryID != "" {
+		if _, err := uuid.Parse(*categoryID); err != nil {
+			return nil, fmt.Errorf("admin update fee config: category_id must be a valid uuid: %w", domain.ErrInvalidAmount)
+		}
+	}
 	if feePercentage < 0 || feePercentage > 1 {
 		return nil, fmt.Errorf("admin update fee config: fee_percentage must be between 0 and 1: %w", domain.ErrInvalidAmount)
 	}
