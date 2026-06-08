@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,14 +19,49 @@ const (
 	instantMatchOfferTTL = 15 * time.Minute
 )
 
-// instantMatchRecord is stored in Redis under instant_match:{jobId}.
+// instantMatchRecord is the per-job offer broadcast, stored in Redis under
+// instant_match:{jobId}. It is created by the customer and discovered by
+// every eligible provider via ListProviderOffers.
+//
+// Status here is the lifecycle of the OFFER itself, not any one provider's
+// response:
+//   - "pending"  → still open; any invited provider may accept or decline.
+//   - "accepted" → a provider has claimed it; it is removed from everyone
+//     else's open-offer list. AcceptedBy records the winner.
+//
+// A single provider declining MUST NOT mutate this record — that would
+// block all other invited providers. Per-provider responses live in their
+// own keys (see instantMatchResponse / providerResponseKey).
 type instantMatchRecord struct {
 	Status      string `json:"status"`
 	ProviderID  string `json:"provider_id"`
+	AcceptedBy  string `json:"accepted_by,omitempty"`
 	OfferSentAt string `json:"offer_sent_at"`
 	ExpiresAt   string `json:"expires_at"`
 	JobTitle    string `json:"job_title,omitempty"`
 	AmountCents int64  `json:"amount_cents,omitempty"`
+}
+
+// instantMatchResponse is a single provider's response to a job's offer,
+// stored per (job, provider) under instant_match:{jobId}:resp:{providerId}.
+// Tracking responses per provider keeps one provider's decline from
+// affecting any other provider's offer.
+type instantMatchResponse struct {
+	Status      string `json:"status"` // "accepted" | "declined"
+	ProviderID  string `json:"provider_id"`
+	RespondedAt string `json:"responded_at"`
+}
+
+// jobOfferKey is the per-job offer broadcast key.
+func jobOfferKey(jobID string) string {
+	return fmt.Sprintf("instant_match:%s", jobID)
+}
+
+// providerResponseKey is the per-(job, provider) response key. It is a child
+// of the job offer key but uses a distinct ":resp:" segment so the
+// "instant_match:*" SCAN in ListProviderOffers can filter it out.
+func providerResponseKey(jobID, providerID string) string {
+	return fmt.Sprintf("instant_match:%s:resp:%s", jobID, providerID)
 }
 
 // InstantMatchHandler handles instant match endpoints.
@@ -96,7 +132,7 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 		rec.AmountCents = job.GetStartingBidCents()
 	}
 
-	redisKey := fmt.Sprintf("instant_match:%s", jobID)
+	redisKey := jobOfferKey(jobID)
 	h.cache.SetJSON(r.Context(), redisKey, rec, instantMatchTTL)
 
 	slog.Info("instant match created",
@@ -114,7 +150,7 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 // ListProviderOffers handles GET /api/v1/provider/offers.
 // Requires auth — provider only. Scans Redis for all pending instant_match:* keys.
 func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
@@ -150,6 +186,13 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 
 	offers := make([]map[string]interface{}, 0, len(keys))
 	for _, key := range keys {
+		// The SCAN pattern "instant_match:*" also matches the per-provider
+		// response keys "instant_match:{jobId}:resp:{providerId}". Those are
+		// not offers — skip them.
+		if strings.Contains(key, ":resp:") {
+			continue
+		}
+
 		data, err := rdb.Get(ctx, key).Bytes()
 		if err != nil {
 			continue
@@ -170,10 +213,17 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 			jobID = key[len("instant_match:"):]
 		}
 
+		// Hide offers this provider has already responded to (accepted or
+		// declined) so a decline removes the offer for THIS provider only.
+		var resp instantMatchResponse
+		if h.cache.GetJSON(ctx, providerResponseKey(jobID, claims.UserID), &resp) {
+			continue
+		}
+
 		offers = append(offers, map[string]interface{}{
-			"job_id":     jobID,
-			"job_title":  rec.JobTitle,
-			"expires_at": rec.ExpiresAt,
+			"job_id":       jobID,
+			"job_title":    rec.JobTitle,
+			"expires_at":   rec.ExpiresAt,
 			"amount_cents": rec.AmountCents,
 		})
 	}
@@ -201,16 +251,30 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	redisKey := fmt.Sprintf("instant_match:%s", jobID)
+	ctx := r.Context()
+	offerKey := jobOfferKey(jobID)
 
 	var rec instantMatchRecord
-	if !h.cache.GetJSON(r.Context(), redisKey, &rec) {
+	if !h.cache.GetJSON(ctx, offerKey, &rec) {
 		writeError(w, http.StatusNotFound, "offer not found")
 		return
 	}
 
+	// If this provider already declined this offer, they cannot now accept.
+	var prior instantMatchResponse
+	if h.cache.GetJSON(ctx, providerResponseKey(jobID, claims.UserID), &prior) {
+		if prior.Status == "accepted" {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+			return
+		}
+		writeError(w, http.StatusConflict, "you have already declined this offer")
+		return
+	}
+
+	// The offer must still be open. A "pending" offer is claimable; an
+	// already-"accepted" offer has been won by another provider.
 	if rec.Status != "pending" {
-		writeError(w, http.StatusConflict, "offer is no longer pending")
+		writeError(w, http.StatusConflict, "offer is no longer available")
 		return
 	}
 
@@ -221,15 +285,35 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Record this provider's acceptance (per-provider) and claim the offer
+	// (per-job) so it stops being shown to other providers. Claiming the
+	// shared record here is correct — accept (unlike decline) is meant to be
+	// exclusive: the first accepter wins the job.
+	resp := instantMatchResponse{
+		Status:      "accepted",
+		ProviderID:  claims.UserID,
+		RespondedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	h.cache.SetJSON(ctx, providerResponseKey(jobID, claims.UserID), resp, instantMatchTTL)
+
 	rec.Status = "accepted"
+	rec.AcceptedBy = claims.UserID
 	rec.ProviderID = claims.UserID
-	h.cache.SetJSON(r.Context(), redisKey, rec, instantMatchTTL)
+	h.cache.SetJSON(ctx, offerKey, rec, instantMatchTTL)
 
 	slog.Info("instant match offer accepted",
 		"job_id", jobID,
 		"provider_id", claims.UserID,
 	)
 
+	// NOTE: the contract/bid award is not yet wired here. Accepting an
+	// instant-match offer should award the job to this provider by calling
+	// the bid service's AcceptOfferPrice(jobId, providerId) RPC (the same
+	// path POST /jobs/{id}/bids/accept-offer uses, see bid.go), which creates
+	// the awarded bid + contract. That requires giving InstantMatchHandler a
+	// bidv1.BidServiceClient via NewInstantMatchHandler — a constructor/router
+	// change owned outside this handler set. Until then the offer state is
+	// tracked correctly but no contract row is created.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 }
 
@@ -253,21 +337,36 @@ func (h *InstantMatchHandler) DeclineOffer(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	redisKey := fmt.Sprintf("instant_match:%s", jobID)
+	ctx := r.Context()
+	offerKey := jobOfferKey(jobID)
 
 	var rec instantMatchRecord
-	if !h.cache.GetJSON(r.Context(), redisKey, &rec) {
+	if !h.cache.GetJSON(ctx, offerKey, &rec) {
 		writeError(w, http.StatusNotFound, "offer not found")
 		return
 	}
 
-	if rec.Status != "pending" {
-		writeError(w, http.StatusConflict, "offer is no longer pending")
+	// A decline is scoped to THIS provider only — we record it in the
+	// per-(job, provider) key and deliberately do NOT mutate the shared
+	// per-job offer record. Other invited providers keep seeing the offer as
+	// pending and can still accept it.
+	var prior instantMatchResponse
+	if h.cache.GetJSON(ctx, providerResponseKey(jobID, claims.UserID), &prior) {
+		if prior.Status == "accepted" {
+			writeError(w, http.StatusConflict, "you have already accepted this offer")
+			return
+		}
+		// Already declined — idempotent.
+		writeJSON(w, http.StatusOK, map[string]string{"status": "declined"})
 		return
 	}
 
-	rec.Status = "declined"
-	h.cache.SetJSON(r.Context(), redisKey, rec, instantMatchTTL)
+	resp := instantMatchResponse{
+		Status:      "declined",
+		ProviderID:  claims.UserID,
+		RespondedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	h.cache.SetJSON(ctx, providerResponseKey(jobID, claims.UserID), resp, instantMatchTTL)
 
 	slog.Info("instant match offer declined",
 		"job_id", jobID,

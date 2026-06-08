@@ -306,7 +306,7 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
 			"requires_bid_bond": true,
 			"bond_amount_cents": bondCents,
-			"error":             "first-time bidders must post a bid bond",
+			"error":             "a bid bond is required before your first bid on this listing",
 		})
 		return
 	}
@@ -758,15 +758,18 @@ func formatRFC3339OrNull(t time.Time) interface{} {
 }
 
 // bidBondCheck returns (true, requiredBondCents) iff this user must post a
-// bond before placing the bid. The check has two short-circuits:
+// bond before placing the bid. The check has three short-circuits:
 //
 //  1. h.db is nil → returns false (dev/sandbox stacks without DB skip the
 //     check; placeBidTx will already 503 on its own guard).
 //  2. The user has at least one historical bid_bonds row in 'released'
 //     status → trusted; skip the gate forever.
+//  3. The user already holds an 'authorized' bond on THIS listing → they
+//     have posted + confirmed a bond for this auction and may keep bidding
+//     (including raising past 10× the posted amount) without re-gating.
 //
-// Otherwise we look for an 'authorized' bond on this listing covering at
-// least 10% (or $5 floor) of the intended bid; if absent, return true.
+// Only a genuine first-time bidder on this listing — no authorized bond at
+// all — is gated (return true) and asked to post one.
 //
 // Errors are treated as "let the bid through" rather than block — the
 // audit pipeline still records the bid, and a follow-up cron can clamp
@@ -790,23 +793,26 @@ func (h *ListingsHandler) bidBondCheck(ctx context.Context, userID, listingID st
 		return false, 0
 	}
 
-	var amount int64
-	err := h.db.QueryRow(ctx, `
-		SELECT amount_cents FROM bid_bonds
-		 WHERE user_id = $1 AND listing_id = $2 AND status = 'authorized'
-		 ORDER BY created_at DESC
-		 LIMIT 1`, userID, listingID).Scan(&amount)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return true, required
-	}
-	if err != nil {
-		slog.WarnContext(ctx, "bid bond active lookup failed", "error", err, "user_id", userID, "listing_id", listingID)
+	// An existing authorized bond on THIS listing means the bidder already
+	// posted + confirmed a bond for this auction. Trust them for continued
+	// bidding — including raises past 10× the posted amount — rather than
+	// re-gating mid-auction as if they were a first-time bidder.
+	var hasAuthorized bool
+	if err := h.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM bid_bonds
+			 WHERE user_id = $1 AND listing_id = $2 AND status = 'authorized'
+		)`, userID, listingID).Scan(&hasAuthorized); err != nil {
+		slog.WarnContext(ctx, "bid bond authorized lookup failed", "error", err, "user_id", userID, "listing_id", listingID)
 		return false, 0
 	}
-	if amount < required {
-		return true, required
+	if hasAuthorized {
+		return false, 0
 	}
-	return false, 0
+
+	// No authorized bond for this (listing, bidder): genuine first-time
+	// bidder on this auction → gate.
+	return true, required
 }
 
 // MyListings handles GET /api/v1/listings/me — seller's own listings.
@@ -1108,7 +1114,8 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 		   SET status='sold',
 		       current_bid_cents=$2,
 		       current_bidder_id=$3,
-		       bid_count=COALESCE(bid_count,0)+1,
+		       bid_count=(SELECT COUNT(DISTINCT bidder_id) FROM listing_bids
+		                   WHERE listing_id=$1 AND retracted_at IS NULL),
 		       updated_at=now()
 		 WHERE id=$1`,
 		id, buyNowCents.Int64, claims.UserID,

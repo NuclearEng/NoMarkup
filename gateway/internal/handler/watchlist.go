@@ -79,8 +79,10 @@ type createSavedSearchRequest struct {
 // a no-op.
 //
 // Returns: { watching: true, watcher_count: int } where watcher_count is
-// the live spectator count from Redis (best-effort; 0 when Redis is
-// unavailable).
+// the persistent number of users watching this listing, recomputed from
+// listing_watchlist after the insert so the caller sees their own watch
+// reflected immediately (the live spectator set in Redis does not include
+// a user who has not pinged the viewer endpoint).
 func (h *WatchlistHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	if h.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
@@ -123,9 +125,20 @@ func (h *WatchlistHandler) Watch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Recompute the persistent watcher count after the insert so the caller
+	// sees their own watch reflected immediately.
+	var watcherCount int
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT COUNT(*) FROM listing_watchlist WHERE listing_id = $1`, id,
+	).Scan(&watcherCount); err != nil {
+		slog.ErrorContext(r.Context(), "watch listing: count failed", "error", err, "listing_id", id)
+		writeError(w, http.StatusInternalServerError, "failed to count watchers")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"watching":      true,
-		"watcher_count": h.spectatorCount(r.Context(), id),
+		"watcher_count": watcherCount,
 	})
 }
 
