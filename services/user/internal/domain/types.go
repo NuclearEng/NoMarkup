@@ -392,6 +392,13 @@ type UserRepository interface {
 	CreateRefreshToken(ctx context.Context, token *RefreshToken) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	// RevokeRefreshTokenIfActive atomically revokes a refresh token only if it
+	// is currently active (not already revoked) and reports whether a row was
+	// actually revoked. The UPDATE ... WHERE revoked_at IS NULL is the atomic
+	// gate: of N concurrent refreshes sharing one single-use token, exactly one
+	// observes rows-affected == 1 (true); the rest see 0 (false) and must be
+	// rejected. This enforces one-time refresh-token rotation under concurrency.
+	RevokeRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error)
 	RevokeAllUserTokens(ctx context.Context, userID string) error
 
 	UpdateUser(ctx context.Context, userID string, input UpdateUserInput) (*User, error)

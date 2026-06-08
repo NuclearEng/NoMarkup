@@ -232,16 +232,27 @@ func (a *Auth) RefreshToken(ctx context.Context, rawToken string) (*domain.Token
 		return nil, fmt.Errorf("refresh token: %w", err)
 	}
 
-	if stored.RevokedAt != nil {
-		return nil, fmt.Errorf("refresh token: %w", domain.ErrTokenRevoked)
-	}
+	// Expiry is a cheap, side-effect-free reject; do it before the atomic
+	// revoke so an expired token never consumes the single-use gate.
 	if time.Now().After(stored.ExpiresAt) {
 		return nil, fmt.Errorf("refresh token: %w", domain.ErrTokenExpired)
 	}
 
-	// Revoke the old token (rotation).
-	if err := a.repo.RevokeRefreshToken(ctx, tokenHash); err != nil {
+	// Atomic single-use rotation gate. Instead of the racy check-then-revoke
+	// (read RevokedAt == nil, then RevokeRefreshToken), we REVOKE FIRST and let
+	// the database be the arbiter: the revoke UPDATE only matches a row whose
+	// revoked_at IS NULL, so among N concurrent refreshes sharing one token,
+	// exactly one observes rows-affected == 1 and is allowed to mint a new
+	// pair. Every loser (already-revoked token, or a concurrent request that
+	// won the race) sees revoked == false and is rejected with ErrTokenRevoked
+	// (the gateway maps it to 401). This preserves the single-valid-refresh
+	// happy path while making a leaked/forked token unusable more than once.
+	revoked, err := a.repo.RevokeRefreshTokenIfActive(ctx, tokenHash)
+	if err != nil {
 		return nil, fmt.Errorf("refresh token revoke old: %w", err)
+	}
+	if !revoked {
+		return nil, fmt.Errorf("refresh token: %w", domain.ErrTokenRevoked)
 	}
 
 	user, err := a.repo.GetUserByID(ctx, stored.UserID)
@@ -329,7 +340,7 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email string) (*domain.
 		return nil, "", false, fmt.Errorf("request password reset: %w", err)
 	}
 
-	token := a.GeneratePasswordResetToken(user.ID)
+	token := a.GeneratePasswordResetToken(user.ID, user.PasswordHash)
 	slog.Info("password reset token generated", "user_id", user.ID)
 	return user, token, true, nil
 }
@@ -340,7 +351,32 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email string) (*domain.
 // On success it revokes all existing refresh tokens so any sessions opened
 // with the old (possibly compromised) password are invalidated.
 func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
-	userID, err := a.ValidatePasswordResetToken(token)
+	// The token's HMAC is bound to the user's CURRENT password hash (see
+	// GeneratePasswordResetToken), so we must load that hash before we can
+	// verify the token. Peek the embedded userID (structurally validated, but
+	// NOT yet trusted — the binding+signature check below is the real gate),
+	// fetch the user, then validate the full token against their live hash.
+	peekedUserID, err := peekResetTokenUserID(token)
+	if err != nil {
+		slog.Warn("password reset failed: malformed token", "error", err)
+		return fmt.Errorf("reset password: %w", err)
+	}
+
+	user, err := a.repo.GetUserByID(ctx, peekedUserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrUserNotFound) {
+			// Don't leak existence; treat as an invalid token.
+			slog.Warn("password reset failed: token user not found")
+			return fmt.Errorf("reset password: %w", domain.ErrInvalidToken)
+		}
+		return fmt.Errorf("reset password: %w", err)
+	}
+
+	// Full validation, including the HMAC binding to the current password hash.
+	// Once the password is changed below, this same token's HMAC will no longer
+	// match the (new) hash, so the link is single-use and any other outstanding
+	// reset links for this user are invalidated too.
+	userID, err := a.ValidatePasswordResetToken(token, user.PasswordHash)
 	if err != nil {
 		slog.Warn("password reset failed: invalid token", "error", err)
 		return fmt.Errorf("reset password: %w", err)
@@ -364,25 +400,69 @@ func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) err
 	return nil
 }
 
+// passwordHashBinding derives a short, stable fingerprint of the user's current
+// password hash. It is folded into the reset-token HMAC payload so the token is
+// cryptographically bound to the password that was in effect when the token was
+// minted. After a successful reset the stored password_hash changes, the
+// fingerprint changes, and the old token's HMAC no longer verifies — making
+// every reset link single-use and invalidating all outstanding links on any
+// password change. We hash the hash (rather than embedding it) so the password
+// hash itself never travels in the emailed link.
+func passwordHashBinding(passwordHash string) string {
+	sum := sha256.Sum256([]byte(passwordHash))
+	// 8 bytes (64 bits) of the digest is ample to make collisions infeasible
+	// for an attacker who cannot read the DB; it also keeps the token compact.
+	return hex.EncodeToString(sum[:8])
+}
+
 // GeneratePasswordResetToken creates an HMAC-SHA256 signed token encoding the
-// userID, a purpose tag, and an expiration timestamp. Same construction as the
-// verification token but purpose-namespaced so the two are not interchangeable.
-func (a *Auth) GeneratePasswordResetToken(userID string) string {
+// userID, a purpose tag, an expiration timestamp, and — folded into the signed
+// payload — a binding to the user's CURRENT password hash. Purpose-namespaced
+// so it is not interchangeable with a verification token; hash-bound so it
+// self-invalidates after the first successful reset (see passwordHashBinding).
+func (a *Auth) GeneratePasswordResetToken(userID, currentPasswordHash string) string {
 	expiry := time.Now().Add(passwordResetTokenExpiry).Unix()
+	binding := passwordHashBinding(currentPasswordHash)
+	// The binding is part of the HMAC INPUT but is NOT carried in the token
+	// itself — the validator recomputes it from the live password hash. This is
+	// what makes a stale token fail after the password changes.
 	payload := resetTokenPurpose + "." + userID + "." + strconv.FormatInt(expiry, 10)
+	signed := payload + "." + binding
 
 	mac := hmac.New(sha256.New, a.verificationSecret)
-	mac.Write([]byte(payload))
+	mac.Write([]byte(signed))
 	sig := hex.EncodeToString(mac.Sum(nil))
 
 	raw := payload + "." + sig
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
-// ValidatePasswordResetToken validates the HMAC signature, purpose tag, and
-// expiration. Returns the embedded userID if valid, else ErrInvalidToken or
-// ErrTokenExpired.
-func (a *Auth) ValidatePasswordResetToken(token string) (string, error) {
+// peekResetTokenUserID extracts the embedded userID from a reset token after
+// only structural + purpose checks — it does NOT verify the HMAC (which can't
+// be checked without the user's current password hash). Callers MUST follow up
+// with ValidatePasswordResetToken before trusting the token; the returned ID is
+// only safe to use for the user lookup that yields that hash.
+func peekResetTokenUserID(token string) (string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", fmt.Errorf("peek password reset token: %w", domain.ErrInvalidToken)
+	}
+	parts := strings.SplitN(string(decoded), ".", 4)
+	if len(parts) != 4 || parts[0] != resetTokenPurpose {
+		return "", fmt.Errorf("peek password reset token: %w", domain.ErrInvalidToken)
+	}
+	if parts[1] == "" {
+		return "", fmt.Errorf("peek password reset token: %w", domain.ErrInvalidToken)
+	}
+	return parts[1], nil
+}
+
+// ValidatePasswordResetToken validates the HMAC signature (which is bound to
+// currentPasswordHash), purpose tag, and expiration. Returns the embedded
+// userID if valid, else ErrInvalidToken or ErrTokenExpired. Pass the user's
+// live password hash; once that hash changes the token no longer verifies,
+// giving one-time-use semantics for free.
+func (a *Auth) ValidatePasswordResetToken(token, currentPasswordHash string) (string, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return "", fmt.Errorf("validate password reset token: %w", domain.ErrInvalidToken)
@@ -398,9 +478,11 @@ func (a *Auth) ValidatePasswordResetToken(token string) (string, error) {
 	expiryStr := parts[2]
 	providedSig := parts[3]
 
+	binding := passwordHashBinding(currentPasswordHash)
 	payload := purpose + "." + userID + "." + expiryStr
+	signed := payload + "." + binding
 	mac := hmac.New(sha256.New, a.verificationSecret)
-	mac.Write([]byte(payload))
+	mac.Write([]byte(signed))
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(providedSig), []byte(expectedSig)) {

@@ -197,6 +197,22 @@ func (r *PostgresRepository) RevokeRefreshToken(ctx context.Context, tokenHash s
 	return nil
 }
 
+// RevokeRefreshTokenIfActive runs the same revoke UPDATE but reports whether a
+// row was actually transitioned from active to revoked (RowsAffected == 1).
+// Because Postgres applies the row lock + `revoked_at IS NULL` predicate
+// atomically, only the FIRST of N concurrent statements touching the same token
+// matches the predicate and affects a row; every later statement sees
+// revoked_at already set and affects 0 rows. The caller uses this boolean as
+// the single-winner gate for refresh-token rotation.
+func (r *PostgresRepository) RevokeRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error) {
+	query := `UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`
+	tag, err := r.pool.Exec(ctx, query, tokenHash)
+	if err != nil {
+		return false, fmt.Errorf("revoke refresh token if active: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func (r *PostgresRepository) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	query := `UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`
 	_, err := r.pool.Exec(ctx, query, userID)

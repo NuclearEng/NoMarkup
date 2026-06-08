@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,10 +26,11 @@ type mockUserRepo struct {
 	updateLastLoginFn       func(ctx context.Context, userID string, at time.Time) error
 	updateEmailVerifiedFn   func(ctx context.Context, userID string, verified bool) error
 	updatePasswordFn        func(ctx context.Context, userID, passwordHash string) error
-	createRefreshTokenFn    func(ctx context.Context, token *domain.RefreshToken) error
-	getRefreshTokenFn       func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
-	revokeRefreshTokenFn    func(ctx context.Context, tokenHash string) error
-	revokeAllUserTokensFn   func(ctx context.Context, userID string) error
+	createRefreshTokenFn         func(ctx context.Context, token *domain.RefreshToken) error
+	getRefreshTokenFn            func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
+	revokeRefreshTokenFn         func(ctx context.Context, tokenHash string) error
+	revokeRefreshTokenIfActiveFn func(ctx context.Context, tokenHash string) (bool, error)
+	revokeAllUserTokensFn        func(ctx context.Context, userID string) error
 	updateUserFn            func(ctx context.Context, userID string, input domain.UpdateUserInput) (*domain.User, error)
 	enableRoleFn            func(ctx context.Context, userID string, role string) (*domain.User, error)
 	createProviderProfileFn func(ctx context.Context, userID string) (*domain.ProviderProfile, error)
@@ -80,6 +83,9 @@ func (m *mockUserRepo) GetRefreshToken(ctx context.Context, tokenHash string) (*
 }
 func (m *mockUserRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
 	return m.revokeRefreshTokenFn(ctx, tokenHash)
+}
+func (m *mockUserRepo) RevokeRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error) {
+	return m.revokeRefreshTokenIfActiveFn(ctx, tokenHash)
 }
 func (m *mockUserRepo) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	if m.revokeAllUserTokensFn != nil {
@@ -525,7 +531,7 @@ func TestAuth_RefreshToken(t *testing.T) {
 	tests := []struct {
 		name            string
 		getRefreshToken func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
-		revokeRefreshFn func(ctx context.Context, tokenHash string) error
+		revokeIfActive  func(ctx context.Context, tokenHash string) (bool, error)
 		getUserByIDFn   func(ctx context.Context, id string) (*domain.User, error)
 		wantErr         bool
 		errContain      string
@@ -539,7 +545,8 @@ func TestAuth_RefreshToken(t *testing.T) {
 					ExpiresAt: time.Now().Add(time.Hour),
 				}, nil
 			},
-			revokeRefreshFn: func(_ context.Context, _ string) error { return nil },
+			// Active token: the atomic revoke affects exactly one row.
+			revokeIfActive: func(_ context.Context, _ string) (bool, error) { return true, nil },
 			getUserByIDFn: func(_ context.Context, _ string) (*domain.User, error) {
 				return &domain.User{
 					ID:    "user-1",
@@ -559,8 +566,10 @@ func TestAuth_RefreshToken(t *testing.T) {
 					RevokedAt: &now,
 				}, nil
 			},
-			wantErr:    true,
-			errContain: "token revoked",
+			// Already revoked: the gated revoke affects zero rows -> reject.
+			revokeIfActive: func(_ context.Context, _ string) (bool, error) { return false, nil },
+			wantErr:        true,
+			errContain:     "token revoked",
 		},
 		{
 			name: "expired_token_returns_error",
@@ -581,9 +590,9 @@ func TestAuth_RefreshToken(t *testing.T) {
 			t.Parallel()
 
 			repo := &mockUserRepo{
-				getRefreshTokenFn:    tt.getRefreshToken,
-				revokeRefreshTokenFn: tt.revokeRefreshFn,
-				getUserByIDFn:        tt.getUserByIDFn,
+				getRefreshTokenFn:            tt.getRefreshToken,
+				revokeRefreshTokenIfActiveFn: tt.revokeIfActive,
+				getUserByIDFn:                tt.getUserByIDFn,
 				createRefreshTokenFn: func(_ context.Context, _ *domain.RefreshToken) error {
 					return nil
 				},
@@ -606,6 +615,60 @@ func TestAuth_RefreshToken(t *testing.T) {
 			assert.NotEmpty(t, pair.RefreshToken)
 		})
 	}
+}
+
+// TestAuth_RefreshToken_ConcurrentSingleWinner proves the atomic-revoke gate:
+// when N goroutines refresh the SAME single-use token at once, exactly one
+// succeeds (mints a new pair) and the rest are rejected with ErrTokenRevoked.
+// The mock emulates the DB's `UPDATE ... WHERE revoked_at IS NULL` semantics
+// with an atomic compare-and-swap so the first caller wins and later callers
+// see zero rows affected.
+func TestAuth_RefreshToken_ConcurrentSingleWinner(t *testing.T) {
+	t.Parallel()
+
+	const n = 12
+
+	// revoked is flipped 0 -> 1 exactly once; only that caller "affected a row".
+	var revoked int32
+	repo := &mockUserRepo{
+		getRefreshTokenFn: func(_ context.Context, _ string) (*domain.RefreshToken, error) {
+			return &domain.RefreshToken{
+				ID:        "rt-shared",
+				UserID:    "user-shared",
+				ExpiresAt: time.Now().Add(time.Hour),
+			}, nil
+		},
+		revokeRefreshTokenIfActiveFn: func(_ context.Context, _ string) (bool, error) {
+			return atomic.CompareAndSwapInt32(&revoked, 0, 1), nil
+		},
+		getUserByIDFn: func(_ context.Context, _ string) (*domain.User, error) {
+			return &domain.User{ID: "user-shared", Email: "s@example.com", Roles: []string{"customer"}}, nil
+		},
+		createRefreshTokenFn: func(_ context.Context, _ *domain.RefreshToken) error { return nil },
+	}
+	auth := newTestAuth(t, repo)
+
+	var wg sync.WaitGroup
+	var successes, revokedErrs int32
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			pair, err := auth.RefreshToken(context.Background(), "raw-refresh-token")
+			if err == nil {
+				require.NotNil(t, pair)
+				atomic.AddInt32(&successes, 1)
+				return
+			}
+			if errors.Is(err, domain.ErrTokenRevoked) {
+				atomic.AddInt32(&revokedErrs, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	assert.Equal(t, int32(1), atomic.LoadInt32(&successes), "exactly one refresh must win")
+	assert.Equal(t, int32(n-1), atomic.LoadInt32(&revokedErrs), "all losers must get ErrTokenRevoked")
 }
 
 // --- Auth.Logout tests ---
@@ -754,23 +817,31 @@ func TestGenerateAndValidatePasswordResetToken(t *testing.T) {
 
 	auth := newTestAuth(t, &mockUserRepo{})
 
-	token := auth.GeneratePasswordResetToken("user-xyz-789")
+	const currentHash = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"
+	token := auth.GeneratePasswordResetToken("user-xyz-789", currentHash)
 	assert.NotEmpty(t, token)
 
-	userID, err := auth.ValidatePasswordResetToken(token)
+	// Valid token verified against the SAME (current) hash returns the userID.
+	userID, err := auth.ValidatePasswordResetToken(token, currentHash)
 	require.NoError(t, err)
 	assert.Equal(t, "user-xyz-789", userID)
 
+	// Hash binding: once the password hash changes, the same token no longer
+	// verifies -> single-use semantics for free.
+	_, err = auth.ValidatePasswordResetToken(token, currentHash+"-changed")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+
 	// A token signed with a different key is rejected.
 	otherAuth := NewAuth(nil, nil, "different-hmac-key-value-here", false)
-	_, err = otherAuth.ValidatePasswordResetToken(token)
+	_, err = otherAuth.ValidatePasswordResetToken(token, currentHash)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
 
 	// A verification token must NOT be accepted as a password-reset token
 	// (purpose namespacing).
 	verifyToken := auth.GenerateVerificationToken("user-xyz-789")
-	_, err = auth.ValidatePasswordResetToken(verifyToken)
+	_, err = auth.ValidatePasswordResetToken(verifyToken, currentHash)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
 }
@@ -814,11 +885,18 @@ func TestAuth_RequestPasswordReset(t *testing.T) {
 func TestAuth_ResetPassword(t *testing.T) {
 	t.Parallel()
 
+	// originalHash is the password hash in effect when the reset token is
+	// minted. The token is HMAC-bound to it.
+	const originalHash = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$b3JpZ2luYWw"
+
 	t.Run("valid token updates password and revokes sessions", func(t *testing.T) {
 		t.Parallel()
 		var storedHash string
 		var revoked bool
 		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: originalHash}, nil
+			},
 			updatePasswordFn: func(_ context.Context, _ string, hash string) error {
 				storedHash = hash
 				return nil
@@ -829,13 +907,40 @@ func TestAuth_ResetPassword(t *testing.T) {
 			},
 		}
 		auth := newTestAuth(t, repo)
-		token := auth.GeneratePasswordResetToken("user-42")
+		token := auth.GeneratePasswordResetToken("user-42", originalHash)
 
 		err := auth.ResetPassword(context.Background(), token, "NewPassword123!")
 		require.NoError(t, err)
 		assert.NotEmpty(t, storedHash)
 		assert.True(t, verifyPassword("NewPassword123!", storedHash))
 		assert.True(t, revoked)
+	})
+
+	t.Run("token is single-use: rejected on replay after password changed", func(t *testing.T) {
+		t.Parallel()
+		// Simulate stateful storage: the first reset mutates the stored hash,
+		// so the second use validates against the NEW hash and the token's
+		// HMAC (bound to originalHash) no longer matches.
+		currentHash := originalHash
+		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: currentHash}, nil
+			},
+			updatePasswordFn: func(_ context.Context, _ string, hash string) error {
+				currentHash = hash // password rotates -> binding fingerprint changes
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+		token := auth.GeneratePasswordResetToken("user-99", originalHash)
+
+		// First use succeeds.
+		require.NoError(t, auth.ResetPassword(context.Background(), token, "FirstNewPass1!"))
+
+		// Replay of the SAME token must now fail (token bound to the old hash).
+		err := auth.ResetPassword(context.Background(), token, "AttackerPass2!")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidToken))
 	})
 
 	t.Run("invalid token returns ErrInvalidToken, not a 500", func(t *testing.T) {
