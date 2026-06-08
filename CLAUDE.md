@@ -928,7 +928,9 @@ WEB_PORT=3000
 mcmaster.com (one of the fastest catalog sites on the internet). Speed is a feature and
 a first-class acceptance criterion, not an afterthought.
 
-### Performance budgets (hard targets — treat as gates)
+### Performance budgets (hard gates)
+The **user-felt** metrics are the primary gates — they're what "McMaster-fast" actually means
+and they ARE achievable on our stack:
 | Metric | Target |
 |--------|--------|
 | LCP (first load, P75 field) | < 1.5s; **stretch < 300ms** on edge-cached HTML |
@@ -936,8 +938,14 @@ a first-class acceptance criterion, not an afterthought.
 | Navigation (cached/CDN hit) | < 100ms perceived |
 | CLS | < 0.05 (target perfect 0) |
 | TTFB (edge hit) | < 100ms |
-| Initial client JS (gzipped) | < 35KB; **stretch < 20KB** incl. any WASM |
-| Per-route JS (gzipped) | < 50KB |
+
+JS budgets are **React-floor-aware** (measured, not aspirational — see baseline below):
+| Surface | First Load JS budget |
+|--------|--------|
+| Shared by all routes | ≤ **190 kB** parsed (~60 kB gzip) — the React+Next runtime floor; **don't regress** |
+| Interactive route (auctions, sell, dashboards) | ≤ **300 kB** First Load; trim with islands/dynamic |
+| Read/catalog route (browse, listing detail) | as low as possible toward the shared floor |
+| Genuinely-static surface (pure RSC, no islands, or a future Go-`templ` page) | **< 20–35 kB** total — the only place the aggressive McMaster-MPA budget applies |
 
 ### Stack reality (do not pretend otherwise)
 Frontend is **Next.js 15 App Router + React 19** (81 pages). Backend is **Go** (gateway +
@@ -946,6 +954,32 @@ browser WASM today). There is currently **no Go `templ`/`html/template` app rend
 **no Rust WASM in the UI**. The McMaster *goals* below are mandatory; the *mechanism* is
 whatever provably hits them on THIS stack. Do not invent a Go-SSR or WASM layer unless it
 measurably beats the Next.js equivalent.
+
+### Measured baseline & what we learned (2026-06, `npm run analyze`)
+- Shared First Load JS: **~183 kB parsed** (React + react-dom ~107 kB + Next runtime + app-wide
+  providers). This is the **React floor** — irreducible without leaving React on that surface.
+- Routes range ~220–370 kB First Load; the heaviest are *interactive* (auctions, sell,
+  onboarding), not catalog. Catalog pages (`/marketplace` 272 kB, `/marketplace/[id]` 268 kB)
+  carry small route-specific JS (13–23 kB) — already lean.
+- Heavy deps are **already lazy/route-isolated**: `mapbox-gl` (~454 kB) is in an async chunk,
+  not in any First Load; `recharts` is confined to `/sell/analytics`. **Dependency-carving is
+  exhausted — no headroom there.**
+- **Validated:** the RSC pilot (`/marketplace` + `/marketplace/[id]`) left First Load JS flat
+  (interactivity is irreducible) but delivered server-rendered first paint + SEO + cacheable
+  HTML. On interactive pages, **RSC wins LCP/SEO/cache, not bundle size.** Set expectations
+  accordingly — don't promise a JS cut from RSC on an interactive surface.
+
+### Default pattern for new pages: RSC-first + seeded client island (proven)
+This is the standard, shipped on the marketplace pages — copy it:
+1. `page.tsx` is a **Server Component**: `async`, server-fetches its data
+   (`GET ${API_URL}/api/v1/...`, public reads need no auth), normalizes nullable fields,
+   `notFound()` on miss, sets `next: { revalidate: N }` for edge cache (short for live data),
+   and exports `metadata`/`generateMetadata` for SEO.
+2. The interactive UI lives in a `*Client.tsx` **island** (`'use client'`) seeded with the
+   server data via TanStack Query `initialData` — so first paint is real content, no skeleton,
+   and all interactivity (live bidding, WS, countdowns) is preserved unchanged.
+3. Keep islands small; push `'use client'` to the leaf. Genuinely-static content stays in the
+   Server Component (no client JS).
 
 ### Principles (apply to every page/feature)
 1. **Server-render the HTML.** Default to React Server Components / SSR so first paint is
