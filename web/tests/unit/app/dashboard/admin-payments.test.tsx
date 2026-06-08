@@ -117,18 +117,33 @@ describe('AdminPaymentsPage', () => {
     expect((input as HTMLInputElement).value).toBe('cat-123');
   });
 
-  it('updates fee percentage input', () => {
+  it('selects a preset fee percentage from the dropdown', () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    const input = screen.getByLabelText(/^Fee Percentage$/i);
-    fireEvent.change(input, { target: { value: '12.5' } });
-    expect((input as HTMLInputElement).value).toBe('12.5');
+    // Fee percentage is now a preset Select — open it and pick a preset.
+    const trigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('option', { name: /^12%$/ }));
+    // The trigger reflects the chosen preset.
+    expect(trigger.textContent).toMatch(/12%/);
   });
 
-  it('updates guarantee percentage input', () => {
+  it('allows a custom fee percentage off the preset ladder', () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    const input = screen.getByLabelText(/Guarantee Percentage/i);
-    fireEvent.change(input, { target: { value: '2.0' } });
-    expect((input as HTMLInputElement).value).toBe('2.0');
+    const trigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
+    fireEvent.click(trigger);
+    // Pick "Custom…" to reveal the numeric input, then type an off-ladder value.
+    fireEvent.click(screen.getByRole('option', { name: /Custom/i }));
+    const custom = screen.getByLabelText(/Fee Percentage custom value/i);
+    fireEvent.change(custom, { target: { value: '12.5' } });
+    expect((custom as HTMLInputElement).value).toBe('12.5');
+  });
+
+  it('selects a preset guarantee percentage from the dropdown', () => {
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    const trigger = screen.getByRole('combobox', { name: /Guarantee Percentage/i });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('option', { name: /^2%$/ }));
+    expect(trigger.textContent).toMatch(/2%/);
   });
 
   it('updates min and max fee inputs', () => {
@@ -144,8 +159,13 @@ describe('AdminPaymentsPage', () => {
   it('calls fee mutation with parsed payload on save click', () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
     fireEvent.change(screen.getByLabelText(/Category ID/i), { target: { value: 'cat-1' } });
-    fireEvent.change(screen.getByLabelText(/^Fee Percentage$/i), { target: { value: '10' } });
-    fireEvent.change(screen.getByLabelText(/Guarantee Percentage/i), { target: { value: '2' } });
+    // Percentages are preset dropdowns now — pick 10% and 2% from the ladders.
+    const feeTrigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
+    fireEvent.click(feeTrigger);
+    fireEvent.click(screen.getByRole('option', { name: /^10%$/ }));
+    const guaranteeTrigger = screen.getByRole('combobox', { name: /Guarantee Percentage/i });
+    fireEvent.click(guaranteeTrigger);
+    fireEvent.click(screen.getByRole('option', { name: /^2%$/ }));
     fireEvent.change(screen.getByLabelText(/Min Fee/i), { target: { value: '1' } });
     fireEvent.change(screen.getByLabelText(/Max Fee/i), { target: { value: '500' } });
     fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
@@ -166,11 +186,17 @@ describe('AdminPaymentsPage', () => {
 
   it('saves lead-gen fee fields when enabled', () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    fireEvent.change(screen.getByLabelText(/^Fee Percentage$/i), { target: { value: '10' } });
-    fireEvent.change(screen.getByLabelText(/Guarantee Percentage/i), { target: { value: '2' } });
+    const feeTrigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
+    fireEvent.click(feeTrigger);
+    fireEvent.click(screen.getByRole('option', { name: /^10%$/ }));
+    const guaranteeTrigger = screen.getByRole('combobox', { name: /Guarantee Percentage/i });
+    fireEvent.click(guaranteeTrigger);
+    fireEvent.click(screen.getByRole('option', { name: /^2%$/ }));
     // Enable the lead-gen toggle to reveal its fields.
     fireEvent.click(screen.getByLabelText(/Enable lead-gen fee/i));
-    fireEvent.change(screen.getByLabelText(/Lead-gen Percentage/i), { target: { value: '10' } });
+    const leadGenTrigger = screen.getByRole('combobox', { name: /Lead-gen Percentage/i });
+    fireEvent.click(leadGenTrigger);
+    fireEvent.click(screen.getByRole('option', { name: /^10%$/ }));
     fireEvent.change(screen.getByLabelText(/Lead-gen Min Fee \(USD\)/i), {
       target: { value: '5' },
     });
@@ -190,7 +216,14 @@ describe('AdminPaymentsPage', () => {
 
   it('blocks save and shows an error when fee percentage is out of range', () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
-    fireEvent.change(screen.getByLabelText(/^Fee Percentage$/i), { target: { value: '150' } });
+    // 150 is off the preset ladder — use the "Custom…" path to enter it, which
+    // must still be validated and blocked.
+    const feeTrigger = screen.getByRole('combobox', { name: /^Fee Percentage$/i });
+    fireEvent.click(feeTrigger);
+    fireEvent.click(screen.getByRole('option', { name: /Custom/i }));
+    fireEvent.change(screen.getByLabelText(/Fee Percentage custom value/i), {
+      target: { value: '150' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Save Fee Configuration/i }));
     expect(feeMutate).not.toHaveBeenCalled();
     expect(screen.getByText(/Must be between 0 and 100/i)).toBeDefined();

@@ -613,13 +613,21 @@ func main() {
 	// The admin fee-config endpoint (GET /api/v1/admin/payments/fee-config)
 	// and every payment fee calculation fall back to the default config row
 	// (category_id IS NULL, active = true). Without it the endpoint 404s and
-	// fee math has no source of truth. Seed a sensible default: 10% platform
-	// fee, 2% guarantee fund — matching the in-code defaults. Idempotent via
-	// WHERE NOT EXISTS so re-runs don't stack duplicate active defaults.
+	// fee math has no source of truth. Seed the platform's documented default,
+	// kept in sync with domain.DefaultFeeConfig() (services/payment/internal/
+	// domain/types.go) so a fresh DB matches the in-code fallback exactly:
+	//   - 5% platform take rate          (PRD: 5-8% take rate)
+	//   - 2% guarantee fund contribution (PRD: 2-3%, within the take rate)
+	//   - no min/max fee cap
+	//   - lead-gen fee disabled (0%)     (additive, opt-in per CLAUDE.md)
+	// Idempotent via WHERE NOT EXISTS so re-runs don't stack duplicate active
+	// defaults.
 	_, err = tx.Exec(ctx, `
 		INSERT INTO platform_fee_config
-			(fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active)
-		SELECT 0.1000, 0.0200, 0, NULL, true
+			(fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents, active,
+			 lead_gen_enabled, lead_gen_percentage, lead_gen_min_fee_cents, lead_gen_max_fee_cents)
+		SELECT 0.0500, 0.0200, 0, NULL, true,
+		       false, 0.0000, 0, NULL
 		WHERE NOT EXISTS (
 			SELECT 1 FROM platform_fee_config
 			WHERE category_id IS NULL AND active = true
