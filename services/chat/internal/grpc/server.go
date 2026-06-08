@@ -289,6 +289,10 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "message not found")
 	case errors.Is(err, domain.ErrEmptyMessage):
 		return status.Error(codes.InvalidArgument, "message content is empty")
+	case errors.Is(err, domain.ErrNoBidForChat):
+		// Predictable precondition (provider has no active bid on the job) —
+		// must not 500. FailedPrecondition → gateway 422.
+		return status.Error(codes.FailedPrecondition, "provider must have an active bid on the job to chat")
 	case strings.Contains(msg, "is required"):
 		return status.Error(codes.InvalidArgument, msg)
 	default:
