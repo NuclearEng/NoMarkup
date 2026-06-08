@@ -266,8 +266,17 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Idempotency guard (CLAUDE.md §6): an optional client-supplied
+	// Idempotency-Key dedups rapid double-submits. Unlike the min-increment
+	// rule (which only catches identical-amount resubmits), this catches a
+	// double-click that fires two DISTINCT increasing amounts. When the key
+	// is empty (older clients) behavior is unchanged — the bid is still
+	// serialized by the FOR UPDATE lock + min-increment in placeBidTx. The
+	// dedup runs inside that same lock so it is race-free.
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+
 	bid, current, bidderCount, snipe, newEnds, requiresBond, bondCents, errCode, errMsg := h.placeBidTx(
-		r.Context(), id, claims.UserID, req.AmountCents, req.MaxBidCents,
+		r.Context(), id, claims.UserID, req.AmountCents, req.MaxBidCents, idempotencyKey,
 	)
 	if errCode != 0 {
 		writeError(w, errCode, errMsg)
@@ -348,7 +357,15 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 //
 // On validation failure, returns errCode != 0 and an errMsg suitable for
 // the user.
-func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID string, amountCents int64, maxBidCents *int64) (
+//
+// Idempotency: when idempotencyKey is non-empty, the buyer's visible bid
+// row is persisted with that key and a partial UNIQUE index on
+// (listing_id, bidder_id, idempotency_key) (migration 056) prevents a
+// duplicate. The dedup probe runs inside the FOR UPDATE listings-row lock,
+// so a concurrent double-submit is serialized: the first wins, the second
+// sees the prior row and returns the SAME result (no second bid recorded).
+// An empty key skips the guard entirely — legacy clients are unaffected.
+func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID string, amountCents int64, maxBidCents *int64, idempotencyKey string) (
 	bid listingBidJSON, currentCents int64, bidderCount int, snipeApplied bool, newEnds time.Time, requiresBond bool, bondCents int64, errCode int, errMsg string,
 ) {
 	tx, err := h.db.Begin(ctx)
@@ -380,6 +397,71 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	if err != nil {
 		slog.ErrorContext(ctx, "place bid: select for update failed", "error", err, "listing_id", listingID)
 		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "failed to lock listing"
+	}
+
+	// ── Idempotency dedup ─────────────────────────────────────────────
+	// Now holding the listings-row lock (so a concurrent double-submit is
+	// serialized behind us), check whether this exact (listing_id,
+	// bidder_id, idempotency_key) already produced a bid. If so, return the
+	// PRIOR result and do NOT insert a second bid. The probe is the only
+	// thing that runs before the validation gates, so a replay short-circuits
+	// even if the auction state has since changed (e.g. the auction ended
+	// after the original bid committed). Empty key → skip the guard.
+	if idempotencyKey != "" {
+		var (
+			priorID        string
+			priorAmount    int64
+			priorCreatedAt time.Time
+			priorStatus    string
+		)
+		err = tx.QueryRow(ctx, `
+			SELECT id, amount_cents, created_at, status
+			  FROM listing_bids
+			 WHERE listing_id = $1 AND bidder_id = $2 AND idempotency_key = $3
+			 LIMIT 1`, listingID, bidderID, idempotencyKey,
+		).Scan(&priorID, &priorAmount, &priorCreatedAt, &priorStatus)
+		switch {
+		case err == nil:
+			// Replay: rebuild the response from the listing's current state +
+			// the stored bid. No rows are written; the deferred Rollback
+			// releases the lock cleanly.
+			var displayName sql.NullString
+			if e := tx.QueryRow(ctx,
+				`SELECT display_name FROM users WHERE id=$1`, bidderID,
+			).Scan(&displayName); e != nil {
+				displayName = sql.NullString{String: "Bidder", Valid: true}
+			}
+			cur := startCents
+			if currentBidCents.Valid {
+				cur = currentBidCents.Int64
+			}
+			if e := tx.QueryRow(ctx, `
+				SELECT COUNT(DISTINCT bidder_id) FROM listing_bids WHERE listing_id=$1`,
+				listingID).Scan(&bidderCount); e != nil {
+				bidderCount = 0
+			}
+			endsAt := time.Time{}
+			if auctionEndsAt.Valid {
+				endsAt = auctionEndsAt.Time
+			}
+			bid = listingBidJSON{
+				ID:                priorID,
+				ListingID:         listingID,
+				BidderID:          bidderID,
+				BidderDisplayName: displayName.String,
+				AmountCents:       priorAmount,
+				IsWinning:         priorStatus == "active",
+				CreatedAt:         priorCreatedAt,
+			}
+			slog.InfoContext(ctx, "listing bid idempotency replay",
+				"listing_id", listingID, "bidder_id", bidderID, "bid_id", priorID)
+			return bid, cur, bidderCount, false, endsAt, false, 0, 0, ""
+		case errors.Is(err, pgx.ErrNoRows):
+			// First time we've seen this key — fall through to place the bid.
+		default:
+			slog.ErrorContext(ctx, "place bid: idempotency lookup failed", "error", err, "listing_id", listingID)
+			return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "idempotency lookup failed"
+		}
 	}
 
 	if sellerID == bidderID {
@@ -513,11 +595,22 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 		} else {
 			maxArg = nil
 		}
+		// Persist the idempotency key ONLY on the buyer's own visible bid
+		// (step 0). Proxy-cascade counter-bids belong to other bidders /
+		// the auction engine and must not carry this buyer's key — and the
+		// partial UNIQUE index would reject a second non-NULL key for the
+		// same (listing_id, bidder_id) anyway.
+		var keyArg interface{}
+		if idempotencyKey != "" && step.BidderID == bidderID && idx == 0 {
+			keyArg = idempotencyKey
+		} else {
+			keyArg = nil
+		}
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO listing_bids (listing_id, bidder_id, amount_cents, max_bid_cents, status, created_at)
-			VALUES ($1, $2, $3, $4, $5, now())
+			INSERT INTO listing_bids (listing_id, bidder_id, amount_cents, max_bid_cents, status, idempotency_key, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, now())
 			RETURNING id, created_at`,
-			listingID, step.BidderID, step.AmountCents, maxArg, status,
+			listingID, step.BidderID, step.AmountCents, maxArg, status, keyArg,
 		).Scan(&newID, &createdAt); err != nil {
 			slog.ErrorContext(ctx, "place bid: insert cascade step failed", "error", err, "step_index", idx)
 			return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "insert bid failed"
