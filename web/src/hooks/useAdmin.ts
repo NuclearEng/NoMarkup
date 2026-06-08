@@ -17,6 +17,7 @@ import type {
   Dispute,
   FeeConfig,
   GrowthMetrics,
+  Market,
   Payment,
   PaginationResponse,
   PlatformBankAccount,
@@ -575,6 +576,47 @@ export function useResolveReport() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'goods-reports'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+// ─── Markets (rollout) ────────────────────────────────
+//
+// The market catalog (cities/regions) admin surface. Launching a market sets
+// is_active=true, making it publicly browseable; pulling back sets it false.
+// On any change we invalidate BOTH the admin catalog (['admin','markets']) and
+// the public selector cache (['markets'] — see useMarkets.ts) so the live
+// MarketSelector reflects the change immediately.
+
+export function useAdminMarkets() {
+  return useQuery({
+    queryKey: ['admin', 'markets'],
+    queryFn: () => api.get<{ markets: Market[] }>('/api/v1/admin/markets'),
+  });
+}
+
+export interface SetMarketsActiveInput {
+  /** Explicit market slugs to target. */
+  slugs?: string[];
+  /** 2-letter US state code (region) to target in bulk. */
+  region_code?: string;
+  /** Country to target in bulk. */
+  country?: 'US' | 'MX';
+  /** true launches the selected markets, false pulls them back. */
+  active: boolean;
+}
+
+export function useSetMarketsActive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetMarketsActiveInput) =>
+      api.post<{ updated: number; active: boolean }>(
+        '/api/v1/admin/markets/activate',
+        input,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'markets'] });
+      void queryClient.invalidateQueries({ queryKey: ['markets'] });
     },
   });
 }
