@@ -96,6 +96,7 @@ func New(
 	quoteTemplatesHandler *handler.QuoteTemplatesHandler,
 	contractTipHandler *handler.ContractTipHandler,
 	calendarExportHandler *handler.CalendarExportHandler,
+	marketsHandler *handler.MarketsHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -165,6 +166,10 @@ func New(
 		// them before the visitor authenticates (Wave 5 audit Section H).
 		r.Get("/{id}/questions", categoryQuestionsHandler.ListByCategory)
 	})
+
+	// Public market catalog (no auth) — source for the city/market selector.
+	// Edge-cached; the catalog is admin/ops-managed and near-static.
+	r.Get("/api/v1/markets", marketsHandler.List)
 
 	// iCal feed — auth via cookie OR ?token= so calendar-app subscriptions
 	// (Apple Calendar, Google, Outlook) work without forwarding cookies.

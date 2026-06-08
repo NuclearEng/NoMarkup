@@ -314,6 +314,7 @@ func main() {
 	quoteTemplatesHandler := handler.NewQuoteTemplatesHandler(dbPool)
 	contractTipHandler := handler.NewContractTipHandler(dbPool)
 	calendarExportHandler := handler.NewCalendarExportHandler(dbPool, publicKey)
+	marketsHandler := handler.NewMarketsHandler(dbPool)
 
 	// Optional Meilisearch client for listings autocomplete + "similar"
 	// rails. Mirrors the env conventions used by services/job
@@ -375,6 +376,7 @@ func main() {
 		quoteTemplatesHandler,
 		contractTipHandler,
 		calendarExportHandler,
+		marketsHandler,
 	)
 
 	srv := &http.Server{
