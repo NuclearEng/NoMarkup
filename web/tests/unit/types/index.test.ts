@@ -550,10 +550,11 @@ describe('UPLOAD_CONTEXT', () => {
     expect(UPLOAD_CONTEXT.JOB_PHOTO).toBe('job_photo');
     expect(UPLOAD_CONTEXT.DOCUMENT).toBe('document');
     expect(UPLOAD_CONTEXT.REVIEW_PHOTO).toBe('review_photo');
+    expect(UPLOAD_CONTEXT.LISTING).toBe('listing');
   });
 
-  it('has exactly 5 contexts', () => {
-    expect(Object.keys(UPLOAD_CONTEXT)).toHaveLength(5);
+  it('has exactly 6 contexts', () => {
+    expect(Object.keys(UPLOAD_CONTEXT)).toHaveLength(6);
   });
 
   it('produces the correct type', () => {

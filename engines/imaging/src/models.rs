@@ -120,6 +120,7 @@ pub enum UploadContext {
     JobPhoto,
     Document,
     ReviewPhoto,
+    Listing,
 }
 
 impl UploadContext {
@@ -132,6 +133,7 @@ impl UploadContext {
             "job_photo" => Some(Self::JobPhoto),
             "document" => Some(Self::Document),
             "review_photo" => Some(Self::ReviewPhoto),
+            "listing" => Some(Self::Listing),
             _ => None,
         }
     }
@@ -145,6 +147,7 @@ impl UploadContext {
             Self::JobPhoto => "job-photos",
             Self::Document => "documents",
             Self::ReviewPhoto => "review-photos",
+            Self::Listing => "listings",
         }
     }
 }

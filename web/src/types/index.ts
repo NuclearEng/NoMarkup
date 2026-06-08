@@ -1043,6 +1043,7 @@ export const UPLOAD_CONTEXT = {
   JOB_PHOTO: 'job_photo',
   DOCUMENT: 'document',
   REVIEW_PHOTO: 'review_photo',
+  LISTING: 'listing',
 } as const;
 export type UploadContext = (typeof UPLOAD_CONTEXT)[keyof typeof UPLOAD_CONTEXT];
 

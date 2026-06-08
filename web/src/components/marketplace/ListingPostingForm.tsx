@@ -32,13 +32,16 @@ import {
 } from '@/components/ui/select';
 import { SortablePhotoGrid, type PhotoSlot } from '@/components/ui/SortablePhotoGrid';
 import { Textarea } from '@/components/ui/textarea';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCreateListing } from '@/hooks/useListings';
+import { getApiErrorMessage } from '@/lib/api';
 import { scorePhotoQuality } from '@/lib/photo-quality';
 import { cn, formatCents } from '@/lib/utils';
 import {
   listingPostingSchema,
   type ListingPostingFormValues,
 } from '@/lib/validations';
+import { UPLOAD_CONTEXT } from '@/types';
 import type { CreateListingInput, ListingDurationHours } from '@/types';
 
 const STEPS = [
@@ -157,6 +160,8 @@ const MIN_QUALITY_TO_PUBLISH = 30;
 export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps = {}) {
   const router = useRouter();
   const createListing = useCreateListing();
+  const photoUpload = useImageUpload({ context: UPLOAD_CONTEXT.LISTING });
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [step, setStep] = useState(0);
   const [photoSlots, setPhotoSlots] = useState<PhotoEditorSlot[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -423,8 +428,31 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
       return;
     }
     try {
+      // Photos are local blob: previews until now. Upload each to storage and
+      // send the CONFIRMED urls — otherwise the listing persists dead blob:
+      // URLs that render fine in this tab but show nothing on the marketplace.
+      setUploadingPhotos(true);
+      const photoUrls: string[] = [];
+      for (const slot of photoSlots) {
+        const blob = slot.file ?? (await (await fetch(slot.url)).blob());
+        const file =
+          blob instanceof File
+            ? blob
+            : new File([blob], `${slot.id}.jpg`, { type: blob.type || 'image/jpeg' });
+        const outcome = await photoUpload.upload(file);
+        if (!outcome.ok) {
+          form.setError('root', { message: `Couldn't upload a photo: ${outcome.error}` });
+          return;
+        }
+        photoUrls.push(outcome.result.confirmedUrl);
+      }
+
       const values = form.getValues();
-      const input: CreateListingInput = { ...buildInput(values), publish: true };
+      const input: CreateListingInput = {
+        ...buildInput(values),
+        photo_urls: photoUrls,
+        publish: true,
+      };
       const created = await createListing.mutateAsync(input);
       if (onPublishSuccess) {
         onPublishSuccess(created.id);
@@ -432,8 +460,11 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
       }
       router.push('/sell/mine' as Route);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to publish listing';
-      form.setError('root', { message });
+      form.setError('root', {
+        message: getApiErrorMessage(error, 'Failed to publish listing'),
+      });
+    } finally {
+      setUploadingPhotos(false);
     }
   }
 
@@ -874,10 +905,14 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
             onClick={() => {
               void handlePublish();
             }}
-            disabled={createListing.isPending}
+            disabled={createListing.isPending || uploadingPhotos}
             className="min-h-[44px] bg-[var(--brand-gold)] text-black hover:bg-[var(--brand-gold)]/90"
           >
-            {createListing.isPending ? 'Publishing…' : 'Publish listing'}
+            {uploadingPhotos
+              ? 'Uploading photos…'
+              : createListing.isPending
+                ? 'Publishing…'
+                : 'Publish listing'}
           </Button>
         )}
       </div>

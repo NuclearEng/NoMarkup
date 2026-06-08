@@ -868,6 +868,7 @@ mod tests {
             UploadContext::from_str_context("review_photo"),
             Some(UploadContext::ReviewPhoto)
         );
+        assert_eq!(UploadContext::from_str_context("listing"), Some(UploadContext::Listing));
         assert_eq!(UploadContext::from_str_context("unknown"), None);
     }
 
@@ -878,6 +879,7 @@ mod tests {
         assert_eq!(UploadContext::JobPhoto.path_prefix(), "job-photos");
         assert_eq!(UploadContext::Document.path_prefix(), "documents");
         assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
+        assert_eq!(UploadContext::Listing.path_prefix(), "listings");
     }
 
     // ------------------------------------------------------------------
