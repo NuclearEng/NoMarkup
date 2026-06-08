@@ -381,10 +381,14 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		h.overlayCurrentOffer(r.Context(), results, ids)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	// Public, identical-for-everyone browse results → edge-cacheable.
+	// 30s CDN TTL + 2m stale-while-revalidate absorbs catalog traffic while
+	// keeping listings fresh; per-user watchlist/bid state is hydrated
+	// client-side, never in this response.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{
 		"listings":   results,
 		"pagination": pageMeta(page, pageSize, total),
-	})
+	}, 30, 120)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -525,7 +529,10 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	h.overlayCurrentOffer(r.Context(), overlay, []string{id})
 	d.listingJSON = overlay[0]
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"listing": d})
+	// Public listing detail → edge-cacheable. Short 15s TTL (auctions move
+	// fast) + 1m stale-while-revalidate; live bid state is fetched separately
+	// by the client island, so a slightly-stale snapshot here is safe.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"listing": d}, 15, 60)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
