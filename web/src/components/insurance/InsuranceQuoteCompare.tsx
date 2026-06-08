@@ -41,9 +41,9 @@ interface InsuranceQuoteCompareProps {
 }
 
 const PRODUCT_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: INSURANCE_PRODUCT_TYPE.JOB_PROTECTION, label: 'Job protection' },
-  { value: INSURANCE_PRODUCT_TYPE.GOODS_SHIPPING, label: 'Shipping & delivery' },
-  { value: INSURANCE_PRODUCT_TYPE.WARRANTY, label: 'Extended warranty' },
+  { value: INSURANCE_PRODUCT_TYPE.COMPLETION_GUARANTEE, label: 'Job completion guarantee' },
+  { value: INSURANCE_PRODUCT_TYPE.PROPERTY_DAMAGE, label: 'Property damage' },
+  { value: INSURANCE_PRODUCT_TYPE.WORKMANSHIP_WARRANTY, label: 'Workmanship warranty' },
   { value: INSURANCE_PRODUCT_TYPE.LIABILITY, label: 'Liability' },
 ];
 
@@ -271,7 +271,7 @@ export function InsuranceQuoteCompare({
   const coverageId = useId();
 
   const [productType, setProductType] = useState<string>(
-    defaultProductType ?? INSURANCE_PRODUCT_TYPE.JOB_PROTECTION,
+    defaultProductType ?? INSURANCE_PRODUCT_TYPE.COMPLETION_GUARANTEE,
   );
   // Coverage is held as a dollar string for the input; converted to cents on
   // submit. Money is integer cents end-to-end (never float dollars on the wire).

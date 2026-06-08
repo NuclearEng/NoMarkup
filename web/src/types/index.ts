@@ -1997,10 +1997,13 @@ export interface InsuranceClaimsResponse {
 // (request quotes → compare competing insurers → bind one)
 // ────────────────────────────────────────
 
+// Must match the product_type values carriers actually offer (insurer_products,
+// migration 063) and the gateway fan-out query — otherwise a quote request finds
+// no matching carrier and returns 0 quotes. Same taxonomy as per-job insurance.
 export const INSURANCE_PRODUCT_TYPE = {
-  JOB_PROTECTION: 'job_protection',
-  GOODS_SHIPPING: 'goods_shipping',
-  WARRANTY: 'warranty',
+  COMPLETION_GUARANTEE: 'completion_guarantee',
+  PROPERTY_DAMAGE: 'property_damage',
+  WORKMANSHIP_WARRANTY: 'workmanship_warranty',
   LIABILITY: 'liability',
 } as const;
 export type InsuranceProductType =

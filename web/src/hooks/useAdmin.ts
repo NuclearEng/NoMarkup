@@ -762,10 +762,14 @@ export const INSURER_STATUS = {
 
 export type InsurerStatus = (typeof INSURER_STATUS)[keyof typeof INSURER_STATUS];
 
+// Values must match what carriers offer (insurer_products, migration 063) + the
+// per-job insurance taxonomy, so admin-created products are queryable by the
+// quote fan-out. 'workmanship'/'completion' previously did NOT match the seeded
+// 'workmanship_warranty'/'completion_guarantee'.
 export const INSURANCE_PRODUCT_TYPE = {
   PROPERTY_DAMAGE: 'property_damage',
-  WORKMANSHIP: 'workmanship',
-  COMPLETION: 'completion',
+  WORKMANSHIP: 'workmanship_warranty',
+  COMPLETION: 'completion_guarantee',
   LIABILITY: 'liability',
 } as const;
 
