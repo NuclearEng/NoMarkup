@@ -49,25 +49,29 @@ type marketJSON struct {
 	Lng        *float64 `json:"lng"`
 }
 
-// List handles GET /api/v1/markets.
+// List handles GET /api/v1/markets — the PUBLIC catalog.
+//
+// Public reads are gated to launched markets only (is_active = true). Rollout is
+// controlled by admins flipping is_active (migration 055 launched Washington;
+// further launches via the admin Markets tool). Gating here, server-side, is
+// defense-in-depth: even a client that forgets to filter can never surface a
+// city we haven't launched. Admins see the full catalog via the separate
+// /api/v1/admin/markets endpoint.
 func (h *MarketsHandler) List(w http.ResponseWriter, r *http.Request) {
-	out := make([]marketJSON, 0, 512)
+	out := make([]marketJSON, 0, 64)
 
 	if h.db == nil {
-		writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"markets": out}, 300, 3600)
+		writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"markets": out}, 30, 300)
 		return
 	}
 
-	// Build a parameterized WHERE from optional filters. Never interpolate.
-	conds := make([]string, 0, 3)
-	args := make([]interface{}, 0, 3)
+	// Always active-only. Optional country/q filters layer on top. Parameterized.
+	conds := []string{"is_active = true"}
+	args := make([]interface{}, 0, 2)
 
 	if c := strings.ToUpper(r.URL.Query().Get("country")); c == "US" || c == "MX" {
 		args = append(args, c)
 		conds = append(conds, "country = $"+itoa(len(args)))
-	}
-	if r.URL.Query().Get("active") == "true" {
-		conds = append(conds, "is_active = true")
 	}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		args = append(args, "%"+q+"%")
@@ -76,13 +80,10 @@ func (h *MarketsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `SELECT id, slug, name, region, region_code, country, is_active, lat, lng
-	            FROM markets`
-	if len(conds) > 0 {
-		query += " WHERE " + strings.Join(conds, " AND ")
-	}
-	// Sort: launched markets first, then by region then name for a stable,
-	// human-scannable list grouped by state in the UI.
-	query += " ORDER BY is_active DESC, country, region NULLS LAST, name"
+	            FROM markets WHERE ` + strings.Join(conds, " AND ") +
+		// US first, then by region then name — a stable, human-scannable list
+		// grouped by state in the UI (no MX-before-US default).
+		" ORDER BY (country <> 'US'), country, region NULLS LAST, name"
 
 	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
@@ -105,5 +106,8 @@ func (h *MarketsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"markets": out}, 300, 3600)
+	// Short TTL so an admin launching a new city propagates to the public
+	// catalog within seconds (a marketing-launch moment), while still absorbing
+	// catalog read load. stale-while-revalidate keeps it snappy.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"markets": out}, 30, 300)
 }
