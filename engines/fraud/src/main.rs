@@ -58,8 +58,45 @@ use sqlx::postgres::PgPoolOptions;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use tower_http::catch_panic::CatchPanicLayer;
+
 use crate::engine::FraudDetector;
 use crate::grpc::{FraudServiceImpl, FraudServiceServer};
+
+/// Panic boundary for the gRPC service stack (CLAUDE.md §9: "panics are bugs —
+/// catch at the service boundary"). A panic inside any handler is caught by the
+/// `CatchPanicLayer` and routed here instead of resetting the HTTP/2 stream.
+///
+/// We log the panic via `tracing::error!` so the crash is observable, then
+/// return a trailers-only gRPC error frame: HTTP 200 with `content-type:
+/// application/grpc` and `grpc-status: 13` (Internal). This is what a gRPC
+/// client expects — a bare HTTP 500 with no grpc-status reads as an opaque
+/// transport error, not a `Status`.
+///
+/// The body is `tonic::body::BoxBody` (`UnsyncBoxBody<Bytes, Status>`), whose
+/// error type unifies with the `Box<dyn Error + Send + Sync>` the layered tonic
+/// server stack expects.
+fn handle_panic(
+    err: Box<dyn std::any::Any + Send + 'static>,
+) -> http::Response<tonic::body::BoxBody> {
+    let details = if let Some(s) = err.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = err.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    };
+
+    tracing::error!(panic = %details, "gRPC handler panicked; returning Internal");
+
+    http::Response::builder()
+        .status(http::StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/grpc")
+        .header("grpc-status", "13")
+        .header("grpc-message", "internal error")
+        .body(tonic::body::empty_body())
+        .expect("static gRPC panic response is always well-formed")
+}
 
 fn init_tracing(service_name: &str) {
     let env_filter = EnvFilter::from_default_env();
@@ -155,6 +192,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("fraud engine starting on {}", addr);
 
     tonic::transport::Server::builder()
+        .layer(CatchPanicLayer::custom(handle_panic))
         .add_service(health_service)
         .add_service(FraudServiceServer::new(service))
         .serve_with_shutdown(addr, async {
