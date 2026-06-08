@@ -145,7 +145,7 @@ export function CategorySelector({ selected, onChange }: CategorySelectorProps) 
       />
 
       {/* Category list */}
-      <ul className="space-y-1" aria-label="Categories">
+      <ul className="max-h-[300px] space-y-1 overflow-y-auto" aria-label="Categories">
         {filtered.map((cat) => (
           <li key={cat.id}>
             {isLeafLevel ? (
