@@ -403,16 +403,17 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	// listing_orders row — escrow released, pickup confirmed.
 	_, err = tx.Exec(ctx, `
 		INSERT INTO listing_orders (id, listing_id, seller_id, buyer_id,
-			amount_cents, fee_cents, escrow_status,
+			amount_cents, fee_cents, seller_payout_cents, escrow_status,
 			pickup_confirmed_at, released_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'released', $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'released', $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
 			escrow_status = 'released',
-			pickup_confirmed_at = $7,
-			released_at = $8,
+			seller_payout_cents = $7,
+			pickup_confirmed_at = $8,
+			released_at = $9,
 			updated_at = now()`,
 		soldOrderID, listingSoldID, providerUserID, customerUserID,
-		24500, 1225, // 5% fee
+		24500, 1225, 23275, // amount, 5% fee, payout = amount - fee (released → seller paid)
 		soldEnd.Add(1*time.Hour), soldEnd.Add(2*time.Hour),
 	)
 	if err != nil {

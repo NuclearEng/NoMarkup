@@ -162,7 +162,14 @@ func (s *Server) FindOrCreateByOAuth(ctx context.Context, req *userv1.FindOrCrea
 func (s *Server) RefreshToken(ctx context.Context, req *userv1.RefreshTokenRequest) (*userv1.RefreshTokenResponse, error) {
 	pair, err := s.auth.RefreshToken(ctx, req.GetRefreshToken())
 	if err != nil {
-		slog.Error("refresh token failed", "error", err)
+		// A revoked/expired/replayed refresh token is a normal auth outcome
+		// (e.g. a concurrent-refresh loser or a replay attempt), not a server
+		// fault — log at WARN so it doesn't pollute ERROR-level alerting.
+		if errors.Is(err, domain.ErrTokenRevoked) || errors.Is(err, domain.ErrTokenExpired) || errors.Is(err, domain.ErrInvalidToken) {
+			slog.Warn("refresh token rejected", "error", err)
+		} else {
+			slog.Error("refresh token failed", "error", err)
+		}
 		return nil, mapDomainError(err)
 	}
 
