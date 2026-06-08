@@ -251,30 +251,6 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// ── Bid bond pre-auth (Wave 4 anti-fraud) ─────────────────────────
-	// First-time bidders must post a Stripe SetupIntent-based bond before
-	// their first bid is accepted. eBay/Whatnot ship this; we didn't.
-	//
-	// The check is intentionally cheap: zero history rows in 'released'
-	// status AND no 'authorized' bond covering ≥10% of the intended bid
-	// for this listing → return 402 with a `requires_bid_bond` flag and
-	// the bond amount. The web client follows up with POST /bid-bond to
-	// mint the SetupIntent + persist the row, confirms it via Stripe
-	// Elements, calls /bid-bond/confirm to flip 'pending'→'authorized',
-	// and retries the bid.
-	//
-	// Surgical: this runs BEFORE placeBidTx so we don't even open a tx
-	// when the bond gate trips. Existing auto-bid cascade logic (Agent F)
-	// is untouched.
-	if needsBond, bondCents := h.bidBondCheck(r.Context(), claims.UserID, id, req.AmountCents); needsBond {
-		writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
-			"requires_bid_bond": true,
-			"bond_amount_cents": bondCents,
-			"error":             "first-time bidders must post a bid bond",
-		})
-		return
-	}
-
 	// Capture the previous high bidder BEFORE the cascade runs so the
 	// notification scheduler can fan an outbid event out to them. This is
 	// best-effort: a missed lookup just suppresses the notify; a slightly
@@ -290,11 +266,39 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	bid, current, bidderCount, snipe, newEnds, errCode, errMsg := h.placeBidTx(
+	bid, current, bidderCount, snipe, newEnds, requiresBond, bondCents, errCode, errMsg := h.placeBidTx(
 		r.Context(), id, claims.UserID, req.AmountCents, req.MaxBidCents,
 	)
 	if errCode != 0 {
 		writeError(w, errCode, errMsg)
+		return
+	}
+
+	// ── Bid bond pre-auth (Wave 4 anti-fraud) ─────────────────────────
+	// First-time bidders must post a Stripe SetupIntent-based bond before
+	// their first bid is accepted. eBay/Whatnot ship this; we didn't.
+	//
+	// The check is intentionally cheap: zero history rows in 'released'
+	// status AND no 'authorized' bond covering ≥10% of the intended bid
+	// for this listing → return 402 with a `requires_bid_bond` flag and
+	// the bond amount. The web client follows up with POST /bid-bond to
+	// mint the SetupIntent + persist the row, confirms it via Stripe
+	// Elements, calls /bid-bond/confirm to flip 'pending'→'authorized',
+	// and retries the bid.
+	//
+	// The gate runs INSIDE placeBidTx, AFTER the listing-existence /
+	// seller-self / auction-state / increment validations and BEFORE any
+	// bid rows are written (the tx is rolled back when it trips). This way
+	// a user is only asked for a bond once their bid is otherwise valid —
+	// a below-increment bid 400s, a self-bid 403s, an ended auction 409s,
+	// and a nonexistent listing 404s, instead of all returning a
+	// misleading 402.
+	if requiresBond {
+		writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
+			"requires_bid_bond": true,
+			"bond_amount_cents": bondCents,
+			"error":             "first-time bidders must post a bid bond",
+		})
 		return
 	}
 
@@ -345,11 +349,11 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 // On validation failure, returns errCode != 0 and an errMsg suitable for
 // the user.
 func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID string, amountCents int64, maxBidCents *int64) (
-	bid listingBidJSON, currentCents int64, bidderCount int, snipeApplied bool, newEnds time.Time, errCode int, errMsg string,
+	bid listingBidJSON, currentCents int64, bidderCount int, snipeApplied bool, newEnds time.Time, requiresBond bool, bondCents int64, errCode int, errMsg string,
 ) {
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
-		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "failed to start tx"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "failed to start tx"
 	}
 	defer tx.Rollback(ctx)
 
@@ -371,21 +375,21 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 		&auctionEndsAt, &snipeCount)
 	_ = minIncrement // legacy schema does not yet have a per-listing column
 	if errors.Is(err, pgx.ErrNoRows) {
-		return bid, 0, 0, false, time.Time{}, http.StatusNotFound, "listing not found"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusNotFound, "listing not found"
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "place bid: select for update failed", "error", err, "listing_id", listingID)
-		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "failed to lock listing"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "failed to lock listing"
 	}
 
 	if sellerID == bidderID {
-		return bid, 0, 0, false, time.Time{}, http.StatusForbidden, "sellers cannot bid on their own listing"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusForbidden, "sellers cannot bid on their own listing"
 	}
 	if status != "active" {
-		return bid, 0, 0, false, time.Time{}, http.StatusConflict, "auction is not active"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusConflict, "auction is not active"
 	}
 	if !auctionEndsAt.Valid || auctionEndsAt.Time.Before(time.Now()) {
-		return bid, 0, 0, false, time.Time{}, http.StatusConflict, "auction has ended"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusConflict, "auction has ended"
 	}
 
 	// Increment validation.
@@ -399,7 +403,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 		required = prevCents + inc
 	}
 	if amountCents < required {
-		return bid, prevCents, 0, false, auctionEndsAt.Time,
+		return bid, prevCents, 0, false, auctionEndsAt.Time, false, 0,
 			http.StatusBadRequest,
 			fmt.Sprintf("bid must be at least %d cents", required)
 	}
@@ -408,13 +412,29 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	// and would never trigger a cascade).
 	if maxBidCents != nil {
 		if *maxBidCents < amountCents {
-			return bid, prevCents, 0, false, auctionEndsAt.Time,
+			return bid, prevCents, 0, false, auctionEndsAt.Time, false, 0,
 				http.StatusBadRequest, "max_bid_cents must be >= amount_cents"
 		}
 		if currentBidCents.Valid && *maxBidCents <= prevCents {
-			return bid, prevCents, 0, false, auctionEndsAt.Time,
+			return bid, prevCents, 0, false, auctionEndsAt.Time, false, 0,
 				http.StatusBadRequest, "max_bid_cents must exceed current bid"
 		}
+	}
+
+	// ── Bid bond gate (Wave 4 anti-fraud) ─────────────────────────────
+	// Only now, with the bid established as otherwise valid (listing
+	// exists, auction active + not ended, bidder is not the seller, amount
+	// clears the increment, max is well-formed), do we ask first-time
+	// bidders to post a bond. Running it here — after the validations and
+	// before any bid rows are written — means a below-increment bid 400s, a
+	// self-bid 403s, an ended auction 409s, and a missing listing 404s,
+	// rather than every one of them returning a misleading 402.
+	//
+	// The check reads bid_bonds on h.db (outside this tx); the tx holds the
+	// listings row lock and is rolled back via the deferred Rollback when
+	// the gate trips. No bid rows have been inserted yet.
+	if needsBond, requiredBond := h.bidBondCheck(ctx, bidderID, listingID, amountCents); needsBond {
+		return bid, prevCents, 0, false, auctionEndsAt.Time, true, requiredBond, 0, ""
 	}
 
 	// Look up the highest standing competing max-bid (a different
@@ -436,7 +456,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	).Scan(&competingBidder, &competingMaxRaw)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "place bid: lookup competing max failed", "error", err)
-		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "lookup competing max failed"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "lookup competing max failed"
 	}
 	var competingMax *int64
 	if competingMaxRaw.Valid {
@@ -466,7 +486,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 			UPDATE listing_bids SET status='outbid'
 			 WHERE listing_id=$1 AND status='active'`, listingID); err != nil {
 			slog.ErrorContext(ctx, "place bid: demote outbid failed", "error", err)
-			return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "demote failed"
+			return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "demote failed"
 		}
 	}
 
@@ -500,7 +520,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 			listingID, step.BidderID, step.AmountCents, maxArg, status,
 		).Scan(&newID, &createdAt); err != nil {
 			slog.ErrorContext(ctx, "place bid: insert cascade step failed", "error", err, "step_index", idx)
-			return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "insert bid failed"
+			return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "insert bid failed"
 		}
 		inserted = append(inserted, insertedStep{
 			ID:          newID,
@@ -512,7 +532,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	}
 	if len(inserted) == 0 {
 		// Defensive: cascade always inserts at least the visible bid.
-		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "cascade produced no bids"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "cascade produced no bids"
 	}
 
 	// Snipe extension: based on the LAST cascade step's wall clock.
@@ -540,7 +560,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 		listingID, finalAmount, finalBidder, endsAt, snipeCount, cascadeDelta,
 	); err != nil {
 		slog.ErrorContext(ctx, "place bid: update listing failed", "error", err)
-		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "update listing failed"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "update listing failed"
 	}
 
 	// Get the FINAL bidder's display name for the response (this is
@@ -563,7 +583,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "place bid: commit failed", "error", err)
-		return bid, 0, 0, false, time.Time{}, http.StatusInternalServerError, "commit failed"
+		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "commit failed"
 	}
 
 	bid = listingBidJSON{
@@ -575,7 +595,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 		IsWinning:         true,
 		CreatedAt:         finalStep.CreatedAt,
 	}
-	return bid, finalAmount, bidderCount, snipeApplied, endsAt, 0, ""
+	return bid, finalAmount, bidderCount, snipeApplied, endsAt, false, 0, 0, ""
 }
 
 // publishBidPlaced fires the spectator-stream event. Best-effort.
@@ -963,7 +983,7 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 	// leave two "active" rows behind. The synthetic buy-now bid below
 	// inserts as status='awarded'.
 	if _, err := tx.Exec(r.Context(), `
-		UPDATE listing_bids SET status='outbid', updated_at=now()
+		UPDATE listing_bids SET status='outbid'
 		 WHERE listing_id=$1 AND status='active'`, id); err != nil {
 		slog.ErrorContext(r.Context(), "buy-now: demote outbid failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "demote failed")
@@ -972,8 +992,8 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 
 	// Synthetic award-bid at the buy-now price.
 	if _, err := tx.Exec(r.Context(), `
-		INSERT INTO listing_bids (listing_id, bidder_id, amount_cents, status, created_at, updated_at)
-		VALUES ($1, $2, $3, 'awarded', now(), now())`,
+		INSERT INTO listing_bids (listing_id, bidder_id, amount_cents, status, created_at)
+		VALUES ($1, $2, $3, 'awarded', now())`,
 		id, claims.UserID, buyNowCents.Int64,
 	); err != nil {
 		slog.ErrorContext(r.Context(), "buy-now: insert synthetic bid failed", "error", err)
@@ -1196,8 +1216,7 @@ func (h *ListingsHandler) RetractBid(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.Exec(r.Context(), `
 		UPDATE listing_bids
 		   SET status = 'retracted',
-		       retracted_at = now(),
-		       updated_at = now()
+		       retracted_at = now()
 		 WHERE id = $1`, bidID,
 	); err != nil {
 		slog.ErrorContext(r.Context(), "retract: bid update failed",
@@ -1243,7 +1262,7 @@ func (h *ListingsHandler) RetractBid(w http.ResponseWriter, r *http.Request) {
 		// idempotent in that case).
 		if _, err := tx.Exec(r.Context(), `
 			UPDATE listing_bids
-			   SET status = 'active', updated_at = now()
+			   SET status = 'active'
 			 WHERE id = $1`, nextID,
 		); err != nil {
 			slog.ErrorContext(r.Context(), "retract: promote next bid failed",

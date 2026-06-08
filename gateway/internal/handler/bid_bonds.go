@@ -139,6 +139,31 @@ func (h *BidBondHandler) CreateBidBond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify the listing exists before minting a SetupIntent + bond row.
+	// Without this, a bond on a bogus listing_id trips the
+	// bid_bonds_listing_id_fkey FK (SQLSTATE 23503) and surfaces as a raw
+	// 500. Map the missing-listing case to a clean 404 instead. Also reject
+	// the seller posting a bond on their OWN listing (mirrors the bid /
+	// offer seller-self checks) so sellers can't mint junk bonds +
+	// SetupIntents against their own auctions.
+	var listingSellerID string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT seller_id::text FROM listings WHERE id = $1`, listingID,
+	).Scan(&listingSellerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "listing not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "bid-bond: listing lookup failed", "error", err, "listing_id", listingID)
+		writeError(w, http.StatusInternalServerError, "failed to verify listing")
+		return
+	}
+	if listingSellerID == claims.UserID {
+		writeError(w, http.StatusForbidden, "sellers cannot post a bid bond on their own listing")
+		return
+	}
+
 	bondCents := requiredBondCents(req.IntendedBidCents)
 
 	// Mint the SetupIntent. If the payment service is not wired, fall back
@@ -167,7 +192,7 @@ func (h *BidBondHandler) CreateBidBond(w http.ResponseWriter, r *http.Request) {
 	// in the schema, so we use the client_secret as a stable key — Stripe
 	// SetupIntent client_secrets are unique per intent.
 	var bondID string
-	err := h.db.QueryRow(r.Context(), `
+	err = h.db.QueryRow(r.Context(), `
 		INSERT INTO bid_bonds (user_id, listing_id, stripe_pi_id, amount_cents, status)
 		VALUES ($1, $2, $3, $4, 'pending')
 		RETURNING id`,

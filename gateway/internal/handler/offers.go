@@ -315,7 +315,9 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pull the offer + parent listing in one round-trip so we can authorize
-	// the action with full context.
+	// the action with full context. `depth` is the offer's distance from the
+	// root of its counter-chain (root buyer offer = 0); we use its parity to
+	// decide which participant the offer is currently awaiting.
 	var (
 		listingID    string
 		buyerID      string
@@ -323,15 +325,26 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		amountCents  int64
 		status       string
 		listingState string
+		depth        int
 	)
 	err := h.db.QueryRow(r.Context(), `
+		WITH RECURSIVE chain AS (
+			SELECT id, parent_offer_id, 0 AS depth
+			  FROM listing_offers
+			 WHERE id = $1
+			UNION ALL
+			SELECT p.id, p.parent_offer_id, c.depth + 1
+			  FROM listing_offers p
+			  JOIN chain c ON p.id = c.parent_offer_id
+		)
 		SELECT lo.listing_id::text, lo.buyer_id::text,
 		       l.seller_id::text, lo.amount_cents,
-		       lo.status, l.status
+		       lo.status, l.status,
+		       (SELECT MAX(depth) FROM chain)
 		  FROM listing_offers lo
 		  JOIN listings l ON l.id = lo.listing_id
 		 WHERE lo.id = $1`, offerID,
-	).Scan(&listingID, &buyerID, &sellerID, &amountCents, &status, &listingState)
+	).Scan(&listingID, &buyerID, &sellerID, &amountCents, &status, &listingState, &depth)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "offer not found")
 		return
@@ -342,16 +355,30 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authorization: seller actions vs buyer actions.
+	// Determine who the offer is currently awaiting, and who authored it,
+	// from the counter-chain depth parity.
+	awaitingUserID, authorUserID := offerParticipantsForDepth(depth, buyerID, sellerID)
+
+	// Only the two participants may act; everyone else (incl. admins, who
+	// use their own surface) is forbidden.
+	if claims.UserID != sellerID && claims.UserID != buyerID {
+		writeError(w, http.StatusForbidden, "only the offer's buyer or seller can act on it")
+		return
+	}
+
+	// Authorization keyed on who the offer is awaiting (not a fixed role),
+	// so a seller's counter can be accepted/rejected/countered by the
+	// buyer it now awaits — and vice-versa. withdraw is reserved for the
+	// participant who authored the offer (pulling their own proposal).
 	switch action {
 	case "accept", "reject", "counter":
-		if claims.UserID != sellerID {
-			writeError(w, http.StatusForbidden, "only the seller can accept, reject, or counter")
+		if claims.UserID != awaitingUserID {
+			writeError(w, http.StatusForbidden, "you cannot act on an offer that is not awaiting your response")
 			return
 		}
 	case "withdraw":
-		if claims.UserID != buyerID {
-			writeError(w, http.StatusForbidden, "only the offer's buyer can withdraw it")
+		if claims.UserID != authorUserID {
+			writeError(w, http.StatusForbidden, "only the participant who made this offer can withdraw it")
 			return
 		}
 	}
@@ -522,6 +549,26 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+}
+
+// offerParticipantsForDepth derives, from a counter-chain depth, which
+// participant the offer is currently awaiting and which participant
+// authored it.
+//
+// The chain strictly alternates authorship:
+//
+//	depth 0 (root buyer offer) — authored by buyer,  awaiting SELLER
+//	depth 1 (seller's counter) — authored by seller, awaiting BUYER
+//	depth 2 (buyer's counter)  — authored by buyer,  awaiting SELLER
+//	...
+//
+// so even depth → awaiting seller, odd depth → awaiting buyer; the author
+// is always the other participant.
+func offerParticipantsForDepth(depth int, buyerID, sellerID string) (awaitingUserID, authorUserID string) {
+	if depth%2 == 1 {
+		return buyerID, sellerID
+	}
+	return sellerID, buyerID
 }
 
 // loadOffer best-effort fetches a single offer row. Returns nil on any
