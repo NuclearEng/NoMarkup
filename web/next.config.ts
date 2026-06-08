@@ -1,5 +1,10 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
+import bundleAnalyzer from '@next/bundle-analyzer';
+
+// Bundle analyzer: only active for `ANALYZE=true next build` (npm run analyze).
+// Writes treemaps to .next/analyze/*.html — zero impact on normal builds.
+const withBundleAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === 'true' });
 
 const API_URL = process.env['API_URL'] ?? process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8081';
 
@@ -81,7 +86,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
+export default withSentryConfig(withBundleAnalyzer(nextConfig), {
   // Suppresses source map upload logs during build.
   silent: true,
   org: process.env.SENTRY_ORG,
