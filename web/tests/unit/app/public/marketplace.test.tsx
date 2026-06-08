@@ -1,17 +1,17 @@
-// Marketplace index page — covers loading, error, empty, and success states.
+// Marketplace browse — the page is now an async Server Component (server fetch
+// of the default listing set) and all interactivity lives in
+// ListingBrowseClient. These tests render the client island directly with a
+// seeded `initialListings`, mirroring what the server passes in. Covers
+// loading, error, empty, and success states.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from '../dashboard/_helpers';
+import type { ListingsResponse } from '@/types';
 
 const listingsState: {
-  data:
-    | {
-        listings: { id: string; title: string }[];
-        pagination: { totalCount: number; totalPages: number; hasNext: boolean };
-      }
-    | undefined;
+  data: ListingsResponse | undefined;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -71,8 +71,21 @@ vi.mock('@/components/marketplace/ListingFilters', () => ({
     ),
 }));
 
+// useListings returns the seeded initialData by default (success path). Tests
+// that need the loading/error branches override listingsState before rendering.
 vi.mock('@/hooks/useListings', () => ({
-  useListings: () => listingsState,
+  useListings: (
+    _params: unknown,
+    options?: { initialData?: ListingsResponse },
+  ) => ({
+    ...listingsState,
+    // Mirror TanStack: while loading or errored there is no resolved data; on
+    // the success path the seeded initialData is what first paint renders.
+    data:
+      listingsState.isLoading || listingsState.isError
+        ? undefined
+        : (listingsState.data ?? options?.initialData),
+  }),
   useListingsAutocomplete: () => ({ data: { suggestions: [] }, isLoading: false }),
   useSimilarListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
   useTrendingListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
@@ -84,7 +97,18 @@ vi.mock('@/hooks/useRecentlyViewed', () => ({
   useRecentlyViewedListings: () => ({ listings: [], isLoading: false }),
 }));
 
-import MarketplacePage from '@/app/(public)/marketplace/page';
+import { ListingBrowseClient } from '@/components/marketplace/ListingBrowseClient';
+
+const EMPTY_SEED: ListingsResponse = {
+  listings: [],
+  pagination: { totalCount: 0, page: 1, pageSize: 60, totalPages: 0, hasNext: false },
+};
+
+function renderClient(seed: ListingsResponse = EMPTY_SEED) {
+  return render(
+    withQueryClient(createElement(ListingBrowseClient, { initialListings: seed })),
+  );
+}
 
 beforeEach(() => {
   listingsState.data = undefined;
@@ -96,13 +120,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('MarketplacePage', () => {
+describe('ListingBrowseClient', () => {
   it('renders the page header', () => {
-    listingsState.data = {
-      listings: [],
-      pagination: { totalCount: 0, totalPages: 0, hasNext: false },
-    };
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient();
     expect(screen.getByRole('heading', { name: /The .*Live.* Marketplace/i })).toBeDefined();
     expect(
       screen.getByText(/Auctions are watched, not posted/i),
@@ -111,13 +131,13 @@ describe('MarketplacePage', () => {
 
   it('renders skeletons while loading', () => {
     listingsState.isLoading = true;
-    const { container } = render(withQueryClient(createElement(MarketplacePage)));
+    const { container } = renderClient();
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
   it('renders the error empty state on isError', () => {
     listingsState.isError = true;
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient();
     expect(screen.getByText(/Failed to load auctions/i)).toBeDefined();
   });
 
@@ -125,48 +145,58 @@ describe('MarketplacePage', () => {
     const refetch = vi.fn();
     listingsState.isError = true;
     listingsState.refetch = refetch;
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalled();
   });
 
   it('renders the empty state with no filters', () => {
-    listingsState.data = {
-      listings: [],
-      pagination: { totalCount: 0, totalPages: 0, hasNext: false },
-    };
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient();
     expect(screen.getByText(/No live auctions right now/i)).toBeDefined();
   });
 
-  it('renders listing cards when results exist', () => {
-    listingsState.data = {
+  it('renders listing cards on first paint from the seeded initialListings', () => {
+    const seed: ListingsResponse = {
       listings: [
-        { id: 'a', title: 'Sofa' },
-        { id: 'b', title: 'Bike' },
-      ],
-      pagination: { totalCount: 2, totalPages: 1, hasNext: false },
+        // Far-future end times so they bucket into "Later Today".
+        {
+          id: 'a',
+          title: 'Sofa',
+          auction_ends_at: new Date(Date.now() + 86_400_000).toISOString(),
+          bid_count: 1,
+        },
+        {
+          id: 'b',
+          title: 'Bike',
+          auction_ends_at: new Date(Date.now() + 86_400_000).toISOString(),
+          bid_count: 2,
+        },
+      ] as unknown as ListingsResponse['listings'],
+      pagination: { totalCount: 2, page: 1, pageSize: 60, totalPages: 1, hasNext: false },
     };
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient(seed);
     expect(screen.getByTestId('listing-a')).toBeDefined();
     expect(screen.getByTestId('listing-b')).toBeDefined();
   });
 
   it('renders the urgency strip with the closing-soon count', () => {
-    listingsState.data = {
-      listings: [{ id: 'a', title: 'A' }],
-      pagination: { totalCount: 1, totalPages: 1, hasNext: false },
+    const seed: ListingsResponse = {
+      listings: [
+        {
+          id: 'a',
+          title: 'A',
+          auction_ends_at: new Date(Date.now() + 86_400_000).toISOString(),
+          bid_count: 0,
+        },
+      ] as unknown as ListingsResponse['listings'],
+      pagination: { totalCount: 1, page: 1, pageSize: 60, totalPages: 1, hasNext: false },
     };
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient(seed);
     expect(screen.getByTestId('urgency-strip')).toBeDefined();
   });
 
   it('toggles the mobile filters panel', () => {
-    listingsState.data = {
-      listings: [],
-      pagination: { totalCount: 0, totalPages: 0, hasNext: false },
-    };
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient();
     const toggle = screen.getByRole('button', { name: /Filters/i });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(toggle);
@@ -174,11 +204,7 @@ describe('MarketplacePage', () => {
   });
 
   it('renders the filters panel mocked component', () => {
-    listingsState.data = {
-      listings: [],
-      pagination: { totalCount: 0, totalPages: 0, hasNext: false },
-    };
-    render(withQueryClient(createElement(MarketplacePage)));
+    renderClient();
     expect(screen.getByTestId('filters')).toBeDefined();
   });
 });

@@ -50,12 +50,26 @@ function buildSearchParams(params: SearchListingsParams): string {
   return qs ? `?${qs}` : '';
 }
 
-export function useListings(params: SearchListingsParams) {
+/**
+ * Marketplace browse/search query.
+ *
+ * Accepts an optional `initialData` so a Server Component can seed the cache
+ * for the default-filter key — the browse page then renders the server-fetched
+ * grid on first paint instead of the loading skeleton (RSC-first browse page).
+ * Only the default-filter query is seeded; once the user changes filters the
+ * query key changes, no seed exists, and TanStack refetches client-side as
+ * before (UX unchanged).
+ */
+export function useListings(
+  params: SearchListingsParams,
+  options?: { initialData?: ListingsResponse },
+) {
   return useQuery({
     queryKey: ['listings', 'search', params],
     queryFn: () =>
       api.getPublic<ListingsResponse>(`/api/v1/listings${buildSearchParams(params)}`),
     placeholderData: keepPreviousData,
+    ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
 }
 
