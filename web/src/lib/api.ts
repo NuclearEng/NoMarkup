@@ -137,7 +137,19 @@ async function request<T>(
     throw new ApiError(response.status, await response.text());
   }
 
-  return response.json() as Promise<T>;
+  // 204 No Content (and other empty-body successes, e.g. DELETE endpoints) have
+  // no JSON to parse. Calling response.json() on an empty body throws a
+  // SyntaxError — in WebKit/Safari the message is the cryptic "The string did
+  // not match the expected pattern." — which surfaced as a false "delete
+  // failed" toast even though the server succeeded. Return undefined instead.
+  if (response.status === 204 || response.headers.get('Content-Length') === '0') {
+    return undefined as T;
+  }
+  const text = await response.text();
+  if (text === '') {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 export const api = {

@@ -154,6 +154,26 @@ describe('api request methods', () => {
     expect(c1[1]?.method).toBe('DELETE');
   });
 
+  it('DELETE returning 204 No Content resolves (does not throw on empty body)', async () => {
+    // Regression: the gateway returns 204 with an empty body for DELETE
+    // (e.g. expenses). Calling response.json() on an empty body throws
+    // "The string did not match the expected pattern." in WebKit, surfacing
+    // as a false "delete failed" toast. The client must tolerate empty bodies.
+    vi.mocked(getAccessToken).mockReturnValue('token-1');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const result = await api.delete('/api/v1/providers/me/expenses/abc');
+    expect(result).toBeUndefined();
+  });
+
+  it('200 with an empty body resolves to undefined instead of throwing', async () => {
+    vi.mocked(getAccessToken).mockReturnValue('token-1');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('', { status: 200 }));
+
+    const result = await api.delete('/api/v1/x');
+    expect(result).toBeUndefined();
+  });
+
   it('postUnauthed does NOT attach Authorization header', async () => {
     vi.mocked(getAccessToken).mockReturnValue('would-be-leaked');
     vi.mocked(fetch).mockResolvedValueOnce(new Response('{}', { status: 200 }));
