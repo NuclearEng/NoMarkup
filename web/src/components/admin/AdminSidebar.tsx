@@ -16,6 +16,7 @@ import {
   Shield,
   ShieldCheck,
   ShoppingBag,
+  ToggleRight,
   Trophy,
   Umbrella,
   Users,
@@ -50,6 +51,7 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/insurance' as Route, label: 'Insurance', icon: Umbrella },
   { href: '/admin/taxonomy' as Route, label: 'Taxonomy', icon: Network },
   { href: '/admin/challenges' as Route, label: 'Challenges', icon: Trophy },
+  { href: '/admin/flags' as Route, label: 'Feature Flags', icon: ToggleRight },
   { href: '/admin/platform' as Route, label: 'Platform', icon: LineChart },
 ];
 

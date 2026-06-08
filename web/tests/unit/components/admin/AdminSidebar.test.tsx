@@ -32,6 +32,7 @@ describe('AdminSidebar', () => {
     expect(screen.getByRole('link', { name: /guarantee/i })).toBeDefined();
     expect(screen.getByRole('link', { name: /taxonomy/i })).toBeDefined();
     expect(screen.getByRole('link', { name: /challenges/i })).toBeDefined();
+    expect(screen.getByRole('link', { name: /feature flags/i })).toBeDefined();
     expect(screen.getByRole('link', { name: /platform/i })).toBeDefined();
   });
 

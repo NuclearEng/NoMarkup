@@ -56,6 +56,7 @@ const adminKeys = {
   categoryMetrics: (startDate?: string, endDate?: string) =>
     [...adminKeys.all, 'platform', 'categories', startDate, endDate] as const,
   banking: () => [...adminKeys.all, 'banking'] as const,
+  flags: () => [...adminKeys.all, 'flags'] as const,
 };
 
 // ─── Helper to build query strings ───────────────────
@@ -696,6 +697,49 @@ export function useResolveGoodsDispute() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'goods-disputes'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+// ─── Feature flags ────────────────────────────────────
+//
+// Gateway-level flags stored directly in PostgreSQL (no gRPC service). The
+// list endpoint returns full metadata for the admin dashboard; the update
+// endpoint flips a single flag's enabled state by key. Toggling a flag here
+// changes what the public `/api/v1/flags` map (useFeatureFlags) returns, so on
+// success we invalidate both the admin list and the public flag cache.
+
+export interface AdminFeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string;
+  updated_at: string;
+}
+
+export interface AdminFeatureFlagsResponse {
+  flags: AdminFeatureFlag[];
+}
+
+export function useAdminFlags() {
+  return useQuery({
+    queryKey: adminKeys.flags(),
+    queryFn: () => api.get<AdminFeatureFlagsResponse>('/api/v1/admin/flags'),
+  });
+}
+
+export function useToggleFlag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { key: string; enabled: boolean }) =>
+      api.put<{ key: string; enabled: boolean }>(
+        `/api/v1/admin/flags/${vars.key}`,
+        { enabled: vars.enabled },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.flags() });
+      // The public flag map (useFeatureFlags) is now stale — refresh it so the
+      // live UI reflects the toggle without a hard reload.
+      void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
     },
   });
 }
