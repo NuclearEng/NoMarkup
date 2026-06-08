@@ -13,6 +13,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Provisioning gate (fail-closed)
+        # The production deploy is a placeholder until the Kubernetes cluster is
+        # provisioned. Rather than silently "succeed" and give a false sense that
+        # a deploy happened, fail closed until the provisioning actions in
+        # docs/operations/provisioning-checklist.md are done and the repo/
+        # environment variable DEPLOY_PROVISIONED is set to "true".
+        #
+        # Critical actions the checklist gates (see that file for details):
+        #   1. A K8s migration Job / init-container running `migrate up`
+        #      (nothing applies database/migrations/ on deploy yet).
+        #   2. APP_VERSION injected per release on the gateway (auto-invalidates
+        #      the category-tree cache; otherwise new categories serve stale).
+        #   3. Rebuilt gateway/user images (include the new /api/v1/markets route).
+        if: ${{ vars.DEPLOY_PROVISIONED != 'true' }}
+        run: |
+          echo "::error::Production deploy is NOT provisioned — failing closed."
+          echo ""
+          echo "Set the repo/environment variable DEPLOY_PROVISIONED=true only"
+          echo "after completing docs/operations/provisioning-checklist.md:"
+          echo "  1. Migrations auto-apply (K8s migration Job / init-container, 'migrate up')"
+          echo "  2. APP_VERSION set per release on the gateway (category cache auto-bust)"
+          echo "  3. Gateway/user images rebuilt (new /api/v1/markets handler)"
+          echo ""
+          echo "Until then this job intentionally fails so a tag push cannot"
+          echo "masquerade as a real deployment."
+          exit 1
+
       - name: Extract version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
