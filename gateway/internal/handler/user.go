@@ -282,6 +282,12 @@ func (h *UserHandler) GetSavings(w http.ResponseWriter, r *http.Request) {
 
 // GetUser handles GET /api/v1/users/{id}.
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
 	userID := chi.URLParam(r, "id")
 	if userID == "" {
 		writeError(w, http.StatusBadRequest, "user id required")
@@ -296,7 +302,19 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoUserToJSON(resp.GetUser()))
+	result := protoUserToJSON(resp.GetUser())
+
+	// PII strip: only the user themselves or an admin may see contact details
+	// and security flags. Other callers get a public projection. (PII, §6)
+	if result != nil && userID != claims.UserID && !hasRole(claims, "admin") {
+		delete(result, "email")
+		delete(result, "email_verified")
+		delete(result, "phone")
+		delete(result, "phone_verified")
+		delete(result, "mfa_enabled")
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func parseUserRole(r string) commonv1.UserRole {

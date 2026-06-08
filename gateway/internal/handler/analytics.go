@@ -146,6 +146,13 @@ func (h *AnalyticsHandler) GetProviderAnalytics(w http.ResponseWriter, r *http.R
 		providerID = claims.UserID
 	}
 
+	// Owner-scoped: only the provider themselves or an admin may read a
+	// provider's analytics (revenue/win-rate is sensitive). (IDOR, §6)
+	if providerID != claims.UserID && !hasRole(claims, "admin") {
+		writeError(w, http.StatusForbidden, "not authorized to view this provider's analytics")
+		return
+	}
+
 	req := &analyticsv1.GetProviderAnalyticsRequest{
 		ProviderId: providerID,
 		DateRange:  parseDateRangeFromQuery(r.URL.Query()),
@@ -198,6 +205,13 @@ func (h *AnalyticsHandler) GetProviderEarnings(w http.ResponseWriter, r *http.Re
 	providerID := chi.URLParam(r, "id")
 	if providerID == "" {
 		providerID = claims.UserID
+	}
+
+	// Owner-scoped: only the provider themselves or an admin may read a
+	// provider's earnings (revenue). (IDOR, §6)
+	if providerID != claims.UserID && !hasRole(claims, "admin") {
+		writeError(w, http.StatusForbidden, "not authorized to view this provider's earnings")
+		return
 	}
 
 	q := r.URL.Query()
