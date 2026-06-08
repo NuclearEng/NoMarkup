@@ -16,7 +16,7 @@
 // to close every tab to pick up notification handler changes. The cache
 // version is bumped to invalidate stale entries.
 
-const CACHE_VERSION = 'nomarkup-v1';
+const CACHE_VERSION = 'nomarkup-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 self.addEventListener('install', (event) => {
