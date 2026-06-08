@@ -54,7 +54,7 @@ export function CookieConsent() {
       aria-label="Cookie preferences"
       aria-modal="false"
       data-testid="cookie-consent-banner"
-      className="fixed inset-x-3 bottom-3 z-[60] mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl backdrop-blur-md sm:bottom-6 sm:p-5"
+      className="fixed inset-x-3 bottom-3 z-[60] mx-auto max-w-md rounded-2xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl backdrop-blur-md sm:inset-x-auto sm:bottom-6 sm:left-6 sm:mx-0 sm:p-5"
     >
       <h2 className="mb-1 text-sm font-semibold text-white">Cookie preferences</h2>
       <p className="text-xs text-zinc-400">
