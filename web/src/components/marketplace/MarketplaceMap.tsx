@@ -118,6 +118,11 @@ export function MarketplaceMap({
     const center = initialCenter ?? deriveCenter(listings, AUSTIN_CENTER);
     let cancelled = false;
 
+    // Tracks whether the style finished loading. A non-fatal error AFTER load
+    // (a single missing tile/sprite/glyph, a telemetry blip) must NOT replace
+    // the whole map with the fallback — only a failure to load is fatal.
+    let loaded = false;
+
     async function init() {
       try {
         const mapboxgl = (await import('mapbox-gl')).default;
@@ -196,6 +201,7 @@ export function MarketplaceMap({
           });
 
           mapRef.current = map;
+          loaded = true;
           setMapLoaded(true);
         });
 
@@ -213,7 +219,10 @@ export function MarketplaceMap({
 
         map.on('error', () => {
           if (cancelled) return;
-          setMapError(true);
+          // Only treat it as fatal if the map never loaded (bad token, style or
+          // network failure). Post-load non-fatal errors (a missing tile/sprite)
+          // are ignored so a working map is never swapped for the fallback.
+          if (!loaded) setMapError(true);
         });
       } catch {
         if (!cancelled) setMapError(true);
