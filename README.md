@@ -149,6 +149,7 @@ Other security posture:
 - **Abuse limits:** tiered per-IP rate limiting (auth / public-read / standard), 1 MB request-body cap, field-length limits, and paginated/clamped list reads
 - Parameterized SQL only; idempotency keys on payment/bid mutations; Stripe event dedup prevents replay
 - **Typed errors, never a leaky 500:** every predictable condition (draft cap, ownership, validation, missing resource) maps to a specific 4xx with an intuitive message; domain errors are mapped at the gRPC boundary, internals are never exposed
+- **Resilient engines:** the Rust engines (bidding/fraud/trust/imaging) run behind a `CatchPanicLayer` panic boundary (§9) — a handler panic is logged and returned as a clean gRPC `Internal` to that one caller, never a stream reset or a downed worker; numeric paths are proptest-guarded against panics
 - Feature-flag kill-switches (`/admin/flags`) fail-closed at the gateway; all containers run as non-root; Next.js edge middleware gates `(dashboard)` and protected `/api/*`; strict CSP via per-request nonce
 
 ## License
