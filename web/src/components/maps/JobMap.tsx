@@ -93,6 +93,11 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
 
     let cancelled = false;
 
+    // Tracks whether the style finished loading. A non-fatal error AFTER load
+    // (a single missing tile/sprite/glyph, a telemetry blip) must NOT replace
+    // the whole map with the fallback — only a failure to load is fatal.
+    let loaded = false;
+
     async function initMap() {
       try {
         const mapboxgl = (await import('mapbox-gl')).default;
@@ -113,12 +118,14 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
         map.on('load', () => {
           if (cancelled) return;
           mapRef.current = map;
+          loaded = true;
           setMapLoaded(true);
         });
 
         map.on('error', () => {
           if (cancelled) return;
-          setMapError(true);
+          // Only fatal if the map never loaded; ignore post-load non-fatal errors.
+          if (!loaded) setMapError(true);
         });
       } catch {
         if (!cancelled) {
