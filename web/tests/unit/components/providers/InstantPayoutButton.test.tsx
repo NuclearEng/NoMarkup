@@ -13,6 +13,13 @@ vi.mock('@/hooks/usePayments', () => ({
   }),
 }));
 
+// Feature-flag gating is covered separately (feature-flag-gating.test.tsx);
+// here we exercise the flag-ON path so the card renders.
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: () => true,
+  useFeatureFlags: () => ({}),
+}));
+
 describe('InstantPayoutButton', () => {
   beforeEach(() => {
     mutate.mockReset();

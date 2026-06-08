@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { formatCents } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
@@ -62,8 +63,14 @@ export function InstallmentPlanSelector({
   onSelect,
   className,
 }: InstallmentPlanSelectorProps) {
+  const bnplEnabled = useFeatureFlag('customer_bnpl');
   const [selected, setSelected] = useState<number>(1);
   const plans = buildPlans(totalCents);
+
+  // "Pay in installments" (BNPL) is gated behind the customer_bnpl flag. When
+  // off, hide the whole selector so the checkout flow falls back to pay-in-full
+  // rather than showing an option the gateway will 503.
+  if (!bnplEnabled) return null;
 
   function handleSelect(plan: PlanOption) {
     setSelected(plan.installments);

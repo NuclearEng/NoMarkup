@@ -32,6 +32,7 @@ import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { WebSocketProvider } from '@/components/providers/WebSocketProvider';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useProfile } from '@/hooks/useProfile';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -168,9 +169,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isAdmin = user?.roles.includes(USER_ROLE.ADMIN) ?? false;
   const [moreOpen, setMoreOpen] = useState(false);
 
+  // Working Capital (advances) is gated behind the working_capital flag. When
+  // off, drop the nav entry so we don't link to a surface the gateway 503s.
+  const workingCapitalEnabled = useFeatureFlag('working_capital');
+  const providerNavItems = workingCapitalEnabled
+    ? PROVIDER_NAV_ITEMS
+    : PROVIDER_NAV_ITEMS.filter((item) => item.href !== '/provider/advances');
+
   const allNavItems = [
     ...BASE_NAV_ITEMS,
-    ...(isProvider ? PROVIDER_NAV_ITEMS : []),
+    ...(isProvider ? providerNavItems : []),
     ...(isAdmin ? ADMIN_NAV_ITEMS : []),
     ...COMMON_NAV_ITEMS,
   ];

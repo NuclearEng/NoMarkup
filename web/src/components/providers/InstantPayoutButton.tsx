@@ -7,6 +7,7 @@ import { useInstantPayout } from '@/hooks/usePayments';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { formatCents } from '@/lib/utils';
 
 interface InstantPayoutButtonProps {
@@ -14,10 +15,15 @@ interface InstantPayoutButtonProps {
 }
 
 export function InstantPayoutButton({ availableBalanceCents = 0 }: InstantPayoutButtonProps) {
+  const instantPayoutEnabled = useFeatureFlag('instant_payout');
   const [amountDollars, setAmountDollars] = useState<string>(
     availableBalanceCents > 0 ? String(Math.floor(availableBalanceCents / 100)) : '',
   );
   const instantPayout = useInstantPayout();
+
+  // Hide the entry point entirely when the feature is off (admin toggle).
+  // The gateway also enforces this with a 503, so this is the UX layer.
+  if (!instantPayoutEnabled) return null;
 
   const amountCents = Math.round(parseFloat(amountDollars || '0') * 100);
   const feeCents = Math.round(amountCents * 0.01);

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useInsuranceProducts, useInsuranceQuote, usePurchaseInsurance } from '@/hooks/useInsurance';
 import { formatCents } from '@/lib/utils';
 import type { InsuranceProduct } from '@/types';
@@ -136,9 +137,17 @@ export function InsuranceSelector({
   onComplete,
   className,
 }: InsuranceSelectorProps) {
+  const insuranceEnabled = useFeatureFlag('per_job_insurance');
   const { data: productsData, isLoading, isError } = useInsuranceProducts();
 
   const products = productsData?.products ?? [];
+
+  // Hide the "add insurance" step when the per_job_insurance flag is off. The
+  // gateway also enforces this (503), so this is the UX layer that keeps the
+  // checkout flow clean. Placed after all hooks to respect the Rules of Hooks.
+  if (!insuranceEnabled) {
+    return null;
+  }
 
   if (isLoading) {
     return (

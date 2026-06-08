@@ -46,7 +46,7 @@ export function InlineOfferComposer({
   enabled = true,
   className,
 }: InlineOfferComposerProps) {
-  const offersFlag = useFeatureFlag('marketplace_offers' as never);
+  const offersFlag = useFeatureFlag('marketplace_offers');
   const canMakeOffers = enabled && offersFlag;
 
   const [open, setOpen] = useState(false);

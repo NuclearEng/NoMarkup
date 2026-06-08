@@ -1,11 +1,34 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InstallmentPlanSelector } from '@/components/payments/InstallmentPlanSelector';
 
+// customer_bnpl flag — default ON; toggled per-test for the gating case.
+let bnplEnabled = true;
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: () => bnplEnabled,
+  useFeatureFlags: () => ({ customer_bnpl: bnplEnabled }),
+}));
+
 describe('InstallmentPlanSelector', () => {
+  beforeEach(() => {
+    bnplEnabled = true;
+  });
+
+  it('renders nothing when the customer_bnpl flag is OFF', () => {
+    bnplEnabled = false;
+    const { container } = render(
+      createElement(InstallmentPlanSelector, {
+        totalCents: 100_00,
+        onSelect: vi.fn(),
+      }),
+    );
+    expect(screen.queryByText('Pay in Full')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('renders the three installment plan options', () => {
     render(
       createElement(InstallmentPlanSelector, {

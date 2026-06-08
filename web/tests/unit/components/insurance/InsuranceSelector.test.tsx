@@ -11,6 +11,13 @@ vi.mock('@/hooks/useInsurance', () => ({
   usePurchaseInsurance: vi.fn(),
 }));
 
+// per_job_insurance flag — default ON; toggled per-test for the gating case.
+let insuranceEnabled = true;
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: () => insuranceEnabled,
+  useFeatureFlags: () => ({ per_job_insurance: insuranceEnabled }),
+}));
+
 const { useInsuranceProducts, useInsuranceQuote, usePurchaseInsurance } =
   await import('@/hooks/useInsurance');
 
@@ -52,7 +59,30 @@ function defaultPurchase() {
 describe('InsuranceSelector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    insuranceEnabled = true;
     usePurchase.mockReturnValue(defaultPurchase());
+  });
+
+  it('renders nothing when the per_job_insurance flag is OFF', () => {
+    insuranceEnabled = false;
+    // Even with products available, the gated step must not render.
+    useProducts.mockReturnValue({
+      data: { products: [product] },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useInsuranceProducts>);
+    useQuote.mockReturnValue({ data: { quote }, isLoading: false } as unknown as ReturnType<
+      typeof useInsuranceQuote
+    >);
+
+    const { container } = render(
+      createElement(InsuranceSelector, {
+        contractId: 'c1',
+        paymentMethodId: 'pm1',
+      }),
+    );
+    expect(screen.queryByText('Protect Your Project')).not.toBeInTheDocument();
+    expect(container.firstChild).toBeNull();
   });
 
   it('renders nothing when there are no products', () => {

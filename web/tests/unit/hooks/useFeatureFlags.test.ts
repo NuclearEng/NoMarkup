@@ -44,10 +44,11 @@ describe('useFeatureFlags', () => {
     client.clear();
   });
 
-  it('fetches /api/v1/flags via getPublic and merges over the default-false set', async () => {
+  it('fetches /api/v1/flags via getPublic and returns the gateway map verbatim', async () => {
     vi.mocked(api.getPublic).mockResolvedValueOnce({
       fair_price_index: true,
       live_auction: true,
+      instant_payout: false,
     });
 
     const { result } = renderHook(() => useFeatureFlags(), { wrapper: wrap(client) });
@@ -58,21 +59,23 @@ describe('useFeatureFlags', () => {
     expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/flags');
     expect(result.current.fair_price_index).toBe(true);
     expect(result.current.live_auction).toBe(true);
-    // Defaults still present for unsent flags.
-    expect(result.current.spectator_mode).toBe(false);
-    expect(result.current.nomarkup_guarantee).toBe(false);
-    expect(result.current.smart_matching).toBe(false);
-    expect(result.current.provider_business_os).toBe(false);
+    // An explicitly-disabled flag is reported as false.
+    expect(result.current.instant_payout).toBe(false);
+    // Flags not present in the response are simply absent (undefined), and the
+    // accessor treats absence as enabled (fail-open) — see the useFeatureFlag suite.
+    expect(result.current.spectator_mode).toBeUndefined();
+    expect(result.current.nomarkup_guarantee).toBeUndefined();
   });
 
-  it('falls back to all-false defaults during initial fetch (no network result yet)', () => {
+  it('returns an empty map during the initial fetch (no network result yet)', () => {
     // Mock a never-resolving fetch so the query stays pending.
     vi.mocked(api.getPublic).mockImplementation(() => new Promise(() => {}));
 
     const { result } = renderHook(() => useFeatureFlags(), { wrapper: wrap(client) });
 
-    expect(result.current.fair_price_index).toBe(false);
-    expect(result.current.live_auction).toBe(false);
+    // No data yet — flags are absent, so the accessor will fail-open to enabled.
+    expect(result.current.fair_price_index).toBeUndefined();
+    expect(result.current.live_auction).toBeUndefined();
   });
 });
 
@@ -86,7 +89,7 @@ describe('useFeatureFlag', () => {
     client.clear();
   });
 
-  it('returns the boolean for a specific flag once flags resolve', async () => {
+  it('returns true for a flag the gateway reports as enabled', async () => {
     vi.mocked(api.getPublic).mockResolvedValueOnce({ spectator_mode: true });
 
     const { result } = renderHook(() => useFeatureFlag('spectator_mode'), {
@@ -98,35 +101,32 @@ describe('useFeatureFlag', () => {
     });
   });
 
-  it('returns false for a flag that is missing from the response', async () => {
+  it('returns false ONLY when the gateway explicitly reports the flag disabled', async () => {
+    vi.mocked(api.getPublic).mockResolvedValueOnce({ instant_payout: false });
+
+    const { result } = renderHook(() => useFeatureFlag('instant_payout'), {
+      wrapper: wrap(client),
+    });
+
+    // Wait for the resolved value (until then it fail-opens to true).
+    await waitFor(() => {
+      expect(result.current).toBe(false);
+    });
+  });
+
+  it('fails OPEN (returns true) for a flag absent from the response', async () => {
+    // Fail-open: a flag the gateway does not mention is treated as enabled so
+    // nothing flickers off during load or a flags-endpoint outage. The backend
+    // still enforces a genuinely-off feature with a 503.
     vi.mocked(api.getPublic).mockResolvedValueOnce({ live_auction: true });
 
     const { result } = renderHook(() => useFeatureFlag('nomarkup_guarantee'), {
       wrapper: wrap(client),
     });
 
-    // Wait for the network call to settle so default merge has happened.
     await waitFor(() => {
       expect(vi.mocked(api.getPublic)).toHaveBeenCalled();
     });
-    expect(result.current).toBe(false);
-  });
-
-  it('returns false (via ?? fallback) for a flag absent from both response and DEFAULT_FLAGS', async () => {
-    // The FeatureFlags interface has an index signature [key: string]: boolean,
-    // so callers can ask for arbitrary flag names. When the key is not in the
-    // gateway response AND not in DEFAULT_FLAGS, the index access returns
-    // undefined and the `?? false` fallback kicks in.
-    vi.mocked(api.getPublic).mockResolvedValueOnce({ fair_price_index: true });
-
-    const { result } = renderHook(
-      () => useFeatureFlag('not_a_real_flag' as 'fair_price_index'),
-      { wrapper: wrap(client) },
-    );
-
-    await waitFor(() => {
-      expect(vi.mocked(api.getPublic)).toHaveBeenCalled();
-    });
-    expect(result.current).toBe(false);
+    expect(result.current).toBe(true);
   });
 });
