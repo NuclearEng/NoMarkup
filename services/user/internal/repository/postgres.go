@@ -1129,7 +1129,7 @@ func (r *PostgresRepository) UpdatePhoneVerified(ctx context.Context, userID str
 
 func (r *PostgresRepository) CreateDocument(ctx context.Context, doc *domain.Document) error {
 	query := `
-		INSERT INTO verification_documents (user_id, document_type, status, file_name, storage_url, expires_at)
+		INSERT INTO verification_documents (user_id, document_type, status, file_name, file_url, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, updated_at`
 
@@ -1149,17 +1149,18 @@ func (r *PostgresRepository) CreateDocument(ctx context.Context, doc *domain.Doc
 
 func (r *PostgresRepository) GetDocument(ctx context.Context, documentID string) (*domain.Document, error) {
 	query := `
-		SELECT id, user_id, document_type, status, file_name, storage_url,
+		SELECT id, user_id, document_type, status, file_name, file_url,
 		       rejection_reason, expires_at, created_at, updated_at
 		FROM verification_documents
 		WHERE id = $1`
 
 	var doc domain.Document
-	var rejectionReason, storageURL *string
+	var fileName, rejectionReason, storageURL *string
+	var expiresAt *time.Time
 	err := r.pool.QueryRow(ctx, query, documentID).Scan(
 		&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
-		&doc.FileName, &storageURL, &rejectionReason,
-		&doc.ExpiresAt, &doc.CreatedAt, &doc.UpdatedAt,
+		&fileName, &storageURL, &rejectionReason,
+		&expiresAt, &doc.CreatedAt, &doc.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1167,18 +1168,22 @@ func (r *PostgresRepository) GetDocument(ctx context.Context, documentID string)
 		}
 		return nil, fmt.Errorf("get document: %w", err)
 	}
+	if fileName != nil {
+		doc.FileName = *fileName
+	}
 	if rejectionReason != nil {
 		doc.RejectionReason = *rejectionReason
 	}
 	if storageURL != nil {
 		doc.StorageURL = *storageURL
 	}
+	doc.ExpiresAt = expiresAt
 	return &doc, nil
 }
 
 func (r *PostgresRepository) GetDocumentByUserAndType(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error) {
 	query := `
-		SELECT id, user_id, document_type, status, file_name, storage_url,
+		SELECT id, user_id, document_type, status, file_name, file_url,
 		       rejection_reason, expires_at, created_at, updated_at
 		FROM verification_documents
 		WHERE user_id = $1 AND document_type = $2
@@ -1186,11 +1191,12 @@ func (r *PostgresRepository) GetDocumentByUserAndType(ctx context.Context, userI
 		LIMIT 1`
 
 	var doc domain.Document
-	var rejectionReason, storageURL *string
+	var fileName, rejectionReason, storageURL *string
+	var expiresAt *time.Time
 	err := r.pool.QueryRow(ctx, query, userID, string(docType)).Scan(
 		&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
-		&doc.FileName, &storageURL, &rejectionReason,
-		&doc.ExpiresAt, &doc.CreatedAt, &doc.UpdatedAt,
+		&fileName, &storageURL, &rejectionReason,
+		&expiresAt, &doc.CreatedAt, &doc.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1198,18 +1204,22 @@ func (r *PostgresRepository) GetDocumentByUserAndType(ctx context.Context, userI
 		}
 		return nil, fmt.Errorf("get document by user and type: %w", err)
 	}
+	if fileName != nil {
+		doc.FileName = *fileName
+	}
 	if rejectionReason != nil {
 		doc.RejectionReason = *rejectionReason
 	}
 	if storageURL != nil {
 		doc.StorageURL = *storageURL
 	}
+	doc.ExpiresAt = expiresAt
 	return &doc, nil
 }
 
 func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) ([]domain.Document, error) {
 	query := `
-		SELECT id, user_id, document_type, status, file_name, storage_url,
+		SELECT id, user_id, document_type, status, file_name, file_url,
 		       rejection_reason, expires_at, created_at, updated_at
 		FROM verification_documents
 		WHERE user_id = $1
@@ -1225,14 +1235,18 @@ func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) (
 	var docs []domain.Document
 	for rows.Next() {
 		var doc domain.Document
-		var rejectionReason, storageURL *string
+		var fileName, rejectionReason, storageURL *string
+		var expiresAt *time.Time
 		err := rows.Scan(
 			&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
-			&doc.FileName, &storageURL, &rejectionReason,
-			&doc.ExpiresAt, &doc.CreatedAt, &doc.UpdatedAt,
+			&fileName, &storageURL, &rejectionReason,
+			&expiresAt, &doc.CreatedAt, &doc.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("list documents scan: %w", err)
+		}
+		if fileName != nil {
+			doc.FileName = *fileName
 		}
 		if rejectionReason != nil {
 			doc.RejectionReason = *rejectionReason
@@ -1240,6 +1254,7 @@ func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) (
 		if storageURL != nil {
 			doc.StorageURL = *storageURL
 		}
+		doc.ExpiresAt = expiresAt
 		docs = append(docs, doc)
 	}
 	if err := rows.Err(); err != nil {
