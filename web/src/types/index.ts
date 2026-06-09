@@ -2076,8 +2076,12 @@ export interface TaxForm {
   tax_year: number;
   form_type: string;
   status: string;
-  generated_at: string;
-  download_url: string | null;
+  // Gateway returns the standard created_at/updated_at timestamps (see
+  // protoTaxFormToJSON in gateway/internal/handler/tax.go) — there is no
+  // `generated_at` field. The download link is served under `pdf_url`.
+  created_at: string;
+  updated_at: string;
+  pdf_url: string;
 }
 
 export interface TaxFormsResponse {

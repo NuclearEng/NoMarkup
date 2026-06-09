@@ -708,11 +708,18 @@ func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 		result["reposted_from_id"] = j.GetRepostedFromId()
 	}
 
-	// Category.
+	// Category. Emit BOTH the nested object (consumed by the auction/replay
+	// terminals) and the flat category_id/category_name/category_slug fields
+	// that the web `Job` type and every job-list/detail/dashboard surface read
+	// (web/src/types/index.ts). Without the flat fields the UI rendered an empty
+	// category everywhere (frontend↔gateway contract drift).
 	if cat := j.GetCategory(); cat != nil {
 		result["category"] = map[string]interface{}{
 			"id": cat.GetId(), "name": cat.GetName(), "slug": cat.GetSlug(), "icon": cat.GetIcon(),
 		}
+		result["category_id"] = cat.GetId()
+		result["category_name"] = cat.GetName()
+		result["category_slug"] = cat.GetSlug()
 	}
 	if sub := j.GetSubcategory(); sub != nil {
 		result["subcategory"] = map[string]interface{}{

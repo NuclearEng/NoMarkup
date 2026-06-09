@@ -336,7 +336,7 @@ export default function TaxCenterPage() {
                         </p>
                         <p className="text-xs text-zinc-300">
                           Generated:{' '}
-                          {new Date(form.generated_at).toLocaleDateString('en-US', {
+                          {new Date(form.created_at).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',
