@@ -26,10 +26,18 @@ describe('TypingIndicator', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders single-user message when one user is typing', () => {
-    mockTyping('chan-1', ['alice']);
+  it('renders the generic "Typing…" label when one user is typing and no name is provided', () => {
+    // The WS typing payload carries only a raw user UUID; without a resolved
+    // name we must NOT leak the UUID — fall back to a generic label.
+    mockTyping('chan-1', ['00000000-0000-0000-0000-000000000001']);
     render(<TypingIndicator channelId="chan-1" />);
-    expect(screen.getByText('alice is typing')).toBeDefined();
+    expect(screen.getByText('Typing…')).toBeDefined();
+  });
+
+  it('renders "{name} is typing" when the other party name is provided', () => {
+    mockTyping('chan-1', ['00000000-0000-0000-0000-000000000001']);
+    render(<TypingIndicator channelId="chan-1" otherPartyName="Alice" />);
+    expect(screen.getByText('Alice is typing')).toBeDefined();
   });
 
   it('renders multi-user message when multiple users are typing', () => {
@@ -73,12 +81,11 @@ describe('TypingIndicator', () => {
     expect(captured?.(state)).toBe(captured?.(state));
   });
 
-  it('falls back to "Someone" label when first user entry is undefined', () => {
-    // typingUsers has length but the first slot is undefined — the `?? 'Someone'`
-    // default at line 10 is exercised.
-    const sparseUsers = [undefined as unknown as string];
-    mockTyping('chan-1', sparseUsers);
-    render(<TypingIndicator channelId="chan-1" />);
-    expect(screen.getByText('Someone is typing')).toBeDefined();
+  it('falls back to the generic label when otherPartyName is blank/whitespace', () => {
+    // A whitespace-only name must not render "  is typing" — it falls through
+    // to the generic "Typing…" label.
+    mockTyping('chan-1', ['00000000-0000-0000-0000-000000000001']);
+    render(<TypingIndicator channelId="chan-1" otherPartyName="   " />);
+    expect(screen.getByText('Typing…')).toBeDefined();
   });
 });

@@ -94,7 +94,7 @@ function ActiveThread({ channelId }: { channelId: string }) {
         </div>
       ) : null}
       <MessageThread channelId={channelId} />
-      <TypingIndicator channelId={channelId} />
+      <TypingIndicator channelId={channelId} otherPartyName={otherPartyName} />
       <MessageInput channelId={channelId} channelStatus={channelStatus} />
     </div>
   );
