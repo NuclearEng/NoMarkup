@@ -356,7 +356,12 @@ export default function TaxCenterPage() {
               <Button
                 variant="outline"
                 className="min-h-[44px] gap-2"
-                disabled={generateTaxForm.isPending}
+                disabled={generateTaxForm.isPending || !will1099}
+                title={
+                  !will1099
+                    ? 'A 1099-NEC is only issued once earnings reach the $600 IRS threshold for the selected year.'
+                    : undefined
+                }
                 onClick={() => {
                   generateTaxForm.mutate(parseInt(taxYear, 10));
                 }}
@@ -372,7 +377,11 @@ export default function TaxCenterPage() {
             <CardContent>
               {generateTaxForm.isError ? (
                 <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-                  Failed to generate tax form. Please try again.
+                  {getApiErrorMessage(generateTaxForm.error, 'Failed to generate tax form. Please try again.')}
+                </div>
+              ) : !will1099 ? (
+                <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+                  Earnings for {taxYear} are below the $600 IRS 1099-NEC threshold, so no 1099-NEC is issued for this year.
                 </div>
               ) : null}
 

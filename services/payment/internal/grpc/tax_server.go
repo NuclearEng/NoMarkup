@@ -170,6 +170,8 @@ func mapTaxError(err error) error {
 		return status.Error(codes.NotFound, "contract not found")
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
+	case errors.Is(err, domain.ErrBelow1099Threshold):
+		return status.Error(codes.FailedPrecondition, domain.ErrBelow1099Threshold.Error())
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

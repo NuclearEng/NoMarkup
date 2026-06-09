@@ -299,7 +299,15 @@ var (
 	ErrInvalidInstallmentCount = errors.New("installment count must be 3 or 6")
 	ErrTaxFormNotFound         = errors.New("tax form not found")
 	ErrContractNotFound        = errors.New("contract not found")
+	ErrBelow1099Threshold      = errors.New("earnings are below the $600 IRS 1099-NEC reporting threshold for this tax year")
 )
+
+// Threshold1099NECCents is the IRS minimum nonemployee-compensation total
+// (in integer cents) at or above which a payer must issue a 1099-NEC for a
+// tax year. Below this, no 1099-NEC is required or valid, so generation is
+// gated server-side (the UI shows a "Below Threshold" badge, but the gate must
+// be enforced at the boundary, not just in the client).
+const Threshold1099NECCents int64 = 60000 // $600.00
 
 // TaxForm represents a 1099-NEC or 1099-K tax form record.
 type TaxForm struct {

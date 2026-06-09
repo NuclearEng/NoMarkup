@@ -80,7 +80,7 @@ func TestPaymentService_GenerateTaxForm(t *testing.T) {
 	t.Run("falls_back_when_provider_profile_missing", func(t *testing.T) {
 		t.Parallel()
 		repo := &mockPaymentRepo{
-			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 100, nil },
+			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 75000, nil },
 			getProviderProfileFn: func(_ context.Context, _ string) (string, string, error) {
 				return "", "", errors.New("profile not found")
 			},
@@ -95,7 +95,7 @@ func TestPaymentService_GenerateTaxForm(t *testing.T) {
 	t.Run("uses_default_address_when_profile_address_blank", func(t *testing.T) {
 		t.Parallel()
 		repo := &mockPaymentRepo{
-			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 100, nil },
+			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 75000, nil },
 			getProviderProfileFn: func(_ context.Context, _ string) (string, string, error) {
 				return "Solo Plumbing", "", nil
 			},
@@ -147,7 +147,7 @@ func TestPaymentService_GenerateTaxForm(t *testing.T) {
 	t.Run("propagates_create_tax_form_error", func(t *testing.T) {
 		t.Parallel()
 		repo := &mockPaymentRepo{
-			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 100, nil },
+			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 75000, nil },
 			createTaxFormFn: func(_ context.Context, _ *domain.TaxForm) error {
 				return errors.New("unique violation")
 			},
@@ -156,6 +156,39 @@ func TestPaymentService_GenerateTaxForm(t *testing.T) {
 		_, err := svc.GenerateTaxForm(context.Background(), "prov-1", currentYear-1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unique violation")
+	})
+
+	t.Run("gates_below_600_dollar_irs_threshold", func(t *testing.T) {
+		t.Parallel()
+		createCalled := false
+		repo := &mockPaymentRepo{
+			// $599.99 — one cent below the $600 (60000-cent) IRS 1099-NEC threshold.
+			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 59999, nil },
+			createTaxFormFn: func(_ context.Context, _ *domain.TaxForm) error {
+				createCalled = true
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		_, err := svc.GenerateTaxForm(context.Background(), "prov-1", currentYear-1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrBelow1099Threshold)
+		assert.False(t, createCalled, "must not persist a 1099 below the $600 threshold")
+	})
+
+	t.Run("allows_exactly_600_dollar_threshold", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockPaymentRepo{
+			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 60000, nil },
+			getProviderProfileFn: func(_ context.Context, _ string) (string, string, error) {
+				return "Edge Co", "1 Edge St", nil
+			},
+			createTaxFormFn: func(_ context.Context, _ *domain.TaxForm) error { return nil },
+		}
+		svc := newTestPaymentService(repo, nil)
+		tf, err := svc.GenerateTaxForm(context.Background(), "prov-1", currentYear-1)
+		require.NoError(t, err)
+		assert.Equal(t, int64(60000), tf.TotalCompensationCents)
 	})
 }
 

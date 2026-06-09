@@ -27,6 +27,16 @@ func (s *PaymentService) GenerateTaxForm(ctx context.Context, providerID string,
 		return nil, fmt.Errorf("generate tax form: %w", err)
 	}
 
+	// Gate on the IRS $600 1099-NEC reporting threshold. Below this, a 1099-NEC
+	// is neither required nor valid, so emitting one would produce a misleading
+	// tax document. Fail closed with a precise, self-serve message (CLAUDE.md
+	// §15) rather than generating a $0/below-threshold form. The UI also shows a
+	// "Below Threshold" badge, but the authoritative check must live here at the
+	// service boundary — the client gate is bypassable via the direct API.
+	if totalEarnings < domain.Threshold1099NECCents {
+		return nil, fmt.Errorf("generate tax form: %w", domain.ErrBelow1099Threshold)
+	}
+
 	// Get provider profile (legal name, address).
 	businessName, serviceAddress, err := s.repo.GetProviderProfile(ctx, providerID)
 	if err != nil {

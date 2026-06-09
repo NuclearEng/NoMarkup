@@ -199,9 +199,10 @@ describe('ProviderTaxPage', () => {
   });
 
   it('clicking Generate 1099-NEC fires the generate mutation with the parsed year', () => {
+    // Above the $600 threshold so the Generate button is enabled.
     earningsState.data = {
-      net_earnings_cents: 0,
-      total_jobs: 0,
+      net_earnings_cents: 100_000,
+      total_jobs: 1,
       total_fees_cents: 0,
     };
     render(withQueryClient(createElement(ProviderTaxPage)));
