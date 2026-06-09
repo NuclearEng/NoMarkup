@@ -394,7 +394,7 @@ function CustomerAnalyticsView() {
                           </div>
 
                           <div
-                            className="bg-primary w-full rounded-t transition-all"
+                            className="w-full rounded-t bg-[var(--brand-gold)] transition-all"
                             style={{ height: `${String(height)}%` }}
                             role="img"
                             aria-label={`${new Date(point.period_start).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}: ${formatCents(point.amount_cents)} spent on ${String(point.job_count)} jobs`}
