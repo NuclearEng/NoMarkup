@@ -334,6 +334,12 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "employee id required")
 		return
 	}
+	if !isValidUUID(id) {
+		// Without this, a non-UUID path param reaches Postgres as an invalid
+		// uuid cast and surfaces as a 500. A malformed id is a client error.
+		writeError(w, http.StatusBadRequest, "invalid employee id")
+		return
+	}
 
 	var body updateEmployeeBody
 	if !decodeJSON(w, r, &body) {
@@ -424,6 +430,10 @@ func (h *EmployeesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "employee id required")
+		return
+	}
+	if !isValidUUID(id) {
+		writeError(w, http.StatusBadRequest, "invalid employee id")
 		return
 	}
 

@@ -388,6 +388,12 @@ func (h *CategoryQuestionsHandler) SubmitAnswers(w http.ResponseWriter, r *http.
 			       answer_json = EXCLUDED.answer_json`,
 			jobID, a.QuestionID, a.AnswerText, jsonArg,
 		); err != nil {
+			if isForeignKeyViolation(err) {
+				// Predictable: question_id is a valid UUID but references no
+				// existing category_question (or the job vanished). Client error.
+				writeError(w, http.StatusBadRequest, "question_id does not reference an existing question")
+				return
+			}
 			slog.ErrorContext(r.Context(), "answers upsert failed", "error", err, "question_id", a.QuestionID)
 			writeError(w, http.StatusInternalServerError, "failed to record answers")
 			return

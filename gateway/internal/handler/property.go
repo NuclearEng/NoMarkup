@@ -138,7 +138,7 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Update handles PUT /api/v1/properties/{id}.
 func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -147,6 +147,14 @@ func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	propertyID := chi.URLParam(r, "id")
 	if propertyID == "" {
 		writeError(w, http.StatusBadRequest, "property id required")
+		return
+	}
+
+	// Ownership check: the UpdateProperty/DeleteProperty gRPC contracts scope
+	// only by property_id (no user_id), so without this gate any authenticated
+	// user could mutate another user's property by id (IDOR). ListProperties is
+	// already scoped to the caller, so membership there proves ownership.
+	if !h.ownsProperty(w, r, claims.UserID, propertyID) {
 		return
 	}
 
@@ -173,7 +181,7 @@ func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 // Delete handles DELETE /api/v1/properties/{id}.
 func (h *PropertyHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -182,6 +190,11 @@ func (h *PropertyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	propertyID := chi.URLParam(r, "id")
 	if propertyID == "" {
 		writeError(w, http.StatusBadRequest, "property id required")
+		return
+	}
+
+	// Ownership check — see Update. Prevents cross-user delete (IDOR).
+	if !h.ownsProperty(w, r, claims.UserID, propertyID) {
 		return
 	}
 
@@ -194,6 +207,29 @@ func (h *PropertyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ownsProperty verifies that propertyID belongs to userID by listing the
+// caller's own properties (the ListProperties RPC is scoped by user_id) and
+// checking membership. It writes the appropriate error response and returns
+// false when the caller does not own the property (404, not 403, so existence
+// of another user's property id is not leaked). On a downstream gRPC failure
+// it writes the mapped error and returns false.
+func (h *PropertyHandler) ownsProperty(w http.ResponseWriter, r *http.Request, userID, propertyID string) bool {
+	resp, err := h.userClient.ListProperties(r.Context(), &userv1.ListPropertiesRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return false
+	}
+	for _, p := range resp.GetProperties() {
+		if p.GetId() == propertyID {
+			return true
+		}
+	}
+	writeError(w, http.StatusNotFound, "property not found")
+	return false
 }
 
 // protoPropertyToJSON converts a proto Property to a JSON-friendly map.
