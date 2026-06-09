@@ -158,8 +158,16 @@ func (h *AuctionHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 	// down (it refcounts via len(conns)).
 	defer h.unsubscribeAll(ac)
 
+	// The path-based jobID is the connection's whole reason to exist. If that
+	// initial subscribe is denied (not a participant), close the socket instead
+	// of leaving it open and idle — otherwise a denied non-party holds a full
+	// proxied connection until token expiry. A later message-based subscribe to a
+	// different job is refused per-job without closing, preserving multi-job use.
 	if jobID != "" {
-		h.subscribe(ctx, userID, jobID, ac)
+		if !h.subscribe(ctx, userID, jobID, ac) {
+			conn.Close(websocket.StatusPolicyViolation, "not authorized for this auction")
+			return
+		}
 	}
 
 	// Read pump — handle client messages
