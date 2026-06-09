@@ -16,13 +16,36 @@ import type {
 export function useInstallmentSchedule(contractId: string) {
   const { data: contractData, isLoading: contractLoading } = useContract(contractId);
   const { data: paymentsData, isLoading: paymentsLoading } = usePayments({ status: undefined });
+  // The plan's scheduled installments exist the moment the plan is created; the
+  // payment-derived fallback below stays empty until a charge actually posts, so
+  // a freshly-created BNPL plan would otherwise render no schedule inline on the
+  // contract page. Prefer the plan's scheduled rows when a plan exists.
+  const { plan: contractPlan } = useContractInstallmentPlan(contractId);
+  const { data: planDetail, isLoading: planLoading } = useInstallmentPlan(
+    contractPlan?.id ?? '',
+  );
 
   const installments = useMemo<InstallmentInfo[]>(() => {
+    // Primary source: the plan's scheduled installments (present on creation).
+    const scheduled = planDetail?.plan?.installments;
+    if (scheduled && scheduled.length > 0) {
+      const totalInstallments = planDetail.plan.installment_count;
+      return [...scheduled]
+        .sort((a, b) => a.installment_number - b.installment_number)
+        .map((si) => ({
+          installment_number: si.installment_number,
+          total_installments: totalInstallments,
+          amount_cents: si.amount_cents,
+          status: si.status,
+          due_date: si.due_date,
+          paid_at: si.paid_at ?? undefined,
+        }));
+    }
+
+    // Fallback: derive from this contract's installment payments.
     if (!contractData || !paymentsData) return [];
 
     const contract = contractData.contract;
-
-    // Filter payments for this contract that have installment info
     const contractPayments = paymentsData.payments.filter(
       (p) =>
         p.contract_id === contractId &&
@@ -50,11 +73,11 @@ export function useInstallmentSchedule(contractId: string) {
     }
 
     return result;
-  }, [contractData, paymentsData, contractId]);
+  }, [planDetail, contractData, paymentsData, contractId]);
 
   return {
     installments,
-    isLoading: contractLoading || paymentsLoading,
+    isLoading: contractLoading || paymentsLoading || planLoading,
   };
 }
 
