@@ -515,12 +515,16 @@ describe('NOTIFICATION_TYPE', () => {
     expect(NOTIFICATION_TYPE.WISHLIST_MATCH).toBe('wishlist_match');
   });
 
-  it('has exactly 27 notification types', () => {
-    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(27);
+  it('has exactly 28 notification types', () => {
+    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(28);
   });
 
   it('includes JOB_MATCHED (pre-matching)', () => {
     expect(NOTIFICATION_TYPE.JOB_MATCHED).toBe('job_matched');
+  });
+
+  it('includes BID_OUTBID (goods auction outbid)', () => {
+    expect(NOTIFICATION_TYPE.BID_OUTBID).toBe('bid_outbid');
   });
 
   it('produces the correct type', () => {

@@ -103,6 +103,8 @@ enum NotificationType {
   NOTIFICATION_TYPE_JOB_MATCHED = 40;
   // Marketplace wishlist
   NOTIFICATION_TYPE_WISHLIST_MATCH = 41;
+  // Goods-marketplace outbid — a higher bid landed on a listing you were winning.
+  NOTIFICATION_TYPE_BID_OUTBID = 42;
 }
 
 message Notification {

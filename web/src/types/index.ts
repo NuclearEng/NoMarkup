@@ -1005,6 +1005,8 @@ export const NOTIFICATION_TYPE = {
   JOB_MATCHED: 'job_matched',
   // Marketplace wishlist
   WISHLIST_MATCH: 'wishlist_match',
+  // Goods auction: a higher bid landed on a listing you were winning
+  BID_OUTBID: 'bid_outbid',
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
 

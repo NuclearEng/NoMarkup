@@ -473,6 +473,10 @@ func notificationTypeToString(nt notificationv1.NotificationType) string {
 		return "recurring_instance_ready"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH:
 		return "wishlist_match"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID:
+		return "bid_outbid"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED:
+		return "job_matched"
 	default:
 		return "unspecified"
 	}
@@ -546,6 +550,10 @@ func stringToNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY
 	case "wishlist_match":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH
+	case "bid_outbid":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID
+	case "job_matched":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}

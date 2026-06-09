@@ -416,6 +416,10 @@ func defaultPreferences(userID string) *domain.NotificationPreferences {
 		// Goods-marketplace retention: ≥10% drop vs. saved baseline on a
 		// watched listing. Wired by price_drop_scheduler.go.
 		"price_drop",
+		// Goods auction outbid (notify:outbid:* → listing_scheduler.go) and
+		// services pre-match (job.go notifyProviderOfMatch). Both are real
+		// emit paths; list them so users can manage their channel prefs.
+		"bid_outbid", "job_matched",
 	}
 
 	for _, t := range allTypes {
