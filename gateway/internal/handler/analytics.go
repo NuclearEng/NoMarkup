@@ -175,6 +175,13 @@ func (h *AnalyticsHandler) GetProviderAnalytics(w http.ResponseWriter, r *http.R
 	if providerID == "" || providerID == "me" {
 		providerID = claims.UserID
 	}
+	// A malformed provider id reaches a UUID-typed query in the analytics
+	// service and surfaces as a 500. Reject it as a 400 up front. (Checked after
+	// "me" resolution so the alias still works.)
+	if !isValidUUID(providerID) {
+		writeError(w, http.StatusBadRequest, "invalid provider id")
+		return
+	}
 
 	// Owner-scoped: only the provider themselves or an admin may read a
 	// provider's analytics (revenue/win-rate is sensitive). (IDOR, §6)
@@ -238,6 +245,12 @@ func (h *AnalyticsHandler) GetProviderEarnings(w http.ResponseWriter, r *http.Re
 	// UUID against claims.UserID below and always 403s for the owner.
 	if providerID == "" || providerID == "me" {
 		providerID = claims.UserID
+	}
+	// Reject a malformed provider id before it reaches the analytics service's
+	// UUID-typed query, mirroring GetProviderAnalytics. (After "me" resolution.)
+	if !isValidUUID(providerID) {
+		writeError(w, http.StatusBadRequest, "invalid provider id")
+		return
 	}
 
 	// Owner-scoped: only the provider themselves or an admin may read a

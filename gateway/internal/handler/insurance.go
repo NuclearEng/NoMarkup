@@ -283,6 +283,14 @@ func (h *InsuranceHandler) FileClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// policy_id is a UUID FK — reject a malformed value here so it never reaches
+	// the `WHERE id = $1` policy lookup, where a non-UUID string errors inside
+	// pgx and surfaces as a generic 500 instead of an actionable 400.
+	if !isValidUUID(req.PolicyID) {
+		writeError(w, http.StatusBadRequest, "invalid policy id")
+		return
+	}
+
 	resp, err := h.client.FileInsuranceClaim(r.Context(), &paymentv1.FileInsuranceClaimRequest{
 		PolicyId:           req.PolicyID,
 		ClaimantId:         claims.UserID,
@@ -414,8 +422,10 @@ func (h *InsuranceHandler) AdminReviewClaim(w http.ResponseWriter, r *http.Reque
 	}
 
 	claimID := chi.URLParam(r, "id")
-	if claimID == "" {
-		writeError(w, http.StatusBadRequest, "claim id required")
+	if !isValidUUID(claimID) {
+		// claim_id keys a UUID column; a malformed value would error inside pgx
+		// (invalid uuid syntax) and bubble up as a 500. Mirror GetClaim's check.
+		writeError(w, http.StatusBadRequest, "invalid insurance claim id")
 		return
 	}
 
