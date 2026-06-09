@@ -70,6 +70,31 @@ type createSavedSearchRequest struct {
 	AlertFrequency string          `json:"alert_frequency"`
 }
 
+// normalizeSavedSearchQuery guarantees the emitted `query` is always a JSON
+// object. Legacy rows persisted `query_json` as a bare string (e.g. "hammers");
+// new rows persist an object ({q, category}). Parse a bare string into {"q": ...}
+// so consumers can always read `query.q` without sniffing the type. Non-string,
+// non-object or invalid JSON falls back to an empty object.
+func normalizeSavedSearchQuery(raw []byte) json.RawMessage {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return json.RawMessage(`{}`)
+	}
+	switch trimmed[0] {
+	case '{':
+		return json.RawMessage(raw)
+	case '"':
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			wrapped := map[string]string{"q": s}
+			if b, err := json.Marshal(wrapped); err == nil {
+				return json.RawMessage(b)
+			}
+		}
+	}
+	return json.RawMessage(`{}`)
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/v1/listings/{id}/watch — add to watchlist
 // ─────────────────────────────────────────────────────────────────────────
@@ -375,7 +400,7 @@ func (h *WatchlistHandler) CreateSavedSearch(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "failed to save search")
 		return
 	}
-	row.Query = json.RawMessage(queryJSON)
+	row.Query = normalizeSavedSearchQuery(queryJSON)
 	if lastRunAt.Valid {
 		t := lastRunAt.Time
 		row.LastRunAt = &t
@@ -424,7 +449,7 @@ func (h *WatchlistHandler) ListSavedSearches(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusInternalServerError, "scan error")
 			return
 		}
-		s.Query = json.RawMessage(queryJSON)
+		s.Query = normalizeSavedSearchQuery(queryJSON)
 		if lastRunAt.Valid {
 			t := lastRunAt.Time
 			s.LastRunAt = &t

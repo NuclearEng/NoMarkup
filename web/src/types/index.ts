@@ -1318,12 +1318,13 @@ export interface AdminProviderProfile {
 export interface VerificationDocument {
   id: string;
   user_id: string;
-  user_name: string;
+  user_email: string;
+  user_display_name: string;
   document_type: string;
   status: string;
-  submitted_at: string;
-  reviewed_at?: string;
-  reviewer_notes?: string;
+  file_name: string;
+  file_url: string;
+  created_at?: string;
 }
 
 export interface Dispute {

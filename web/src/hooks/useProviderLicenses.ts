@@ -50,14 +50,22 @@ export interface ProviderLicense {
 
 /**
  * Public-safe license projection from GET /providers/{id}/licenses. The full
- * license_number is never exposed publicly — only the last 4 — and only
- * verified licenses are returned.
+ * license_number is never exposed publicly — the gateway masks it to a last-4
+ * form (e.g. "••••1234") under the same `license_number` key — and only verified
+ * licenses are returned. Shape mirrors the gateway's licenseJSON projection.
  */
 export interface PublicProviderLicense {
+  id: string;
+  provider_id: string;
   license_type: LicenseType;
+  /** Masked to last-4 on the public path (e.g. "••••1234"). */
+  license_number: string;
   jurisdiction: string;
   status: LicenseStatus;
-  last4: string;
+  verified_by?: string | null;
+  verified_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SubmitLicenseInput {

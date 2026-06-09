@@ -248,9 +248,20 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"preferences": prefs,
-	})
+	// UpdatePreferencesResponse intentionally carries only the per-type rows
+	// (proto contract), but GET returns the full envelope with the global
+	// toggles. Echo the same envelope here so a consumer reading the mutation
+	// result doesn't get undefined globals — fetch the authoritative globals.
+	out := map[string]interface{}{"preferences": prefs}
+	if cur, gerr := h.notifClient.GetPreferences(r.Context(), &notificationv1.GetPreferencesRequest{
+		UserId: claims.UserID,
+	}); gerr == nil {
+		out["global_push_enabled"] = cur.GetGlobalPushEnabled()
+		out["global_email_enabled"] = cur.GetGlobalEmailEnabled()
+		out["global_sms_enabled"] = cur.GetGlobalSmsEnabled()
+	}
+
+	writeJSON(w, http.StatusOK, out)
 }
 
 // --- Device registration ---

@@ -158,7 +158,16 @@ describe('VerifiedBarBadge', () => {
   it('renders the badge when the provider has a verified bar license', () => {
     flagState = { legal_services: true };
     publicLicenses = [
-      { license_type: 'bar', jurisdiction: 'Texas', status: 'verified', last4: '4567' },
+      {
+        id: 'lic-1',
+        provider_id: 'prov-1',
+        license_type: 'bar',
+        license_number: '••••4567',
+        jurisdiction: 'Texas',
+        status: 'verified',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
     ];
     renderWithClient(createElement(VerifiedBarBadge, { providerId: 'prov-1' }));
     expect(screen.getByText(/Verified Bar Member/i)).toBeInTheDocument();
@@ -167,7 +176,16 @@ describe('VerifiedBarBadge', () => {
   it('does NOT render when the only bar license is still pending', () => {
     flagState = { legal_services: true };
     publicLicenses = [
-      { license_type: 'bar', jurisdiction: 'Texas', status: 'pending', last4: '4567' },
+      {
+        id: 'lic-1',
+        provider_id: 'prov-1',
+        license_type: 'bar',
+        license_number: '••••4567',
+        jurisdiction: 'Texas',
+        status: 'pending',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
     ];
     const { container } = renderWithClient(
       createElement(VerifiedBarBadge, { providerId: 'prov-1' }),
@@ -179,7 +197,16 @@ describe('VerifiedBarBadge', () => {
   it('does NOT render when the legal_services flag is OFF, even if verified', () => {
     flagState = { legal_services: false };
     publicLicenses = [
-      { license_type: 'bar', jurisdiction: 'Texas', status: 'verified', last4: '4567' },
+      {
+        id: 'lic-1',
+        provider_id: 'prov-1',
+        license_type: 'bar',
+        license_number: '••••4567',
+        jurisdiction: 'Texas',
+        status: 'verified',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
     ];
     const { container } = renderWithClient(
       createElement(VerifiedBarBadge, { providerId: 'prov-1' }),

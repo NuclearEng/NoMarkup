@@ -37,10 +37,13 @@ function makeDoc(overrides: Partial<VerificationDocument> = {}): VerificationDoc
   return {
     id: 'doc-1',
     user_id: 'user-12345678-aaaa-bbbb-cccc-dddddddddddd',
-    user_name: 'Bob Builder',
+    user_email: 'bob@example.com',
+    user_display_name: 'Bob Builder',
     document_type: 'drivers_license',
     status: 'pending',
-    submitted_at: '2024-01-01T00:00:00Z',
+    file_name: 'license.jpg',
+    file_url: 'https://example.com/license.jpg',
+    created_at: '2024-01-01T00:00:00Z',
     ...overrides,
   };
 }

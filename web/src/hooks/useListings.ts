@@ -405,7 +405,12 @@ export function useDisputeOrder() {
       reason: string;
       description: string;
     }) =>
-      api.post<{ order: ListingOrder }>(`/api/v1/orders/${orderId}/file-dispute`, {
+      api.post<{
+        dispute_id: string;
+        order_id: string;
+        escrow_status: string;
+        status: string;
+      }>(`/api/v1/orders/${orderId}/file-dispute`, {
         reason,
         description,
       }),
