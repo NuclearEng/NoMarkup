@@ -1476,28 +1476,23 @@ func (r *PostgresRepository) SearchProviders(ctx context.Context, input domain.P
 		"u.status = 'active'",
 		"'provider' = ANY(u.roles)",
 	}
-	args := []interface{}{}
+	// WHERE args are numbered independently of the distance SELECT expression.
+	// The distance computation (distanceExpr) only appears in the data query's
+	// SELECT and ORDER BY, never in WHERE, so its lng/lat parameters must NOT be
+	// bound to the count query — doing so passed pgx more parameters than the
+	// count statement referenced and failed every geo search with a 500. Build
+	// whereArgs ($1..) for the count; the data query appends the distance + page
+	// args after them.
+	whereArgs := []interface{}{}
 	argIdx := 1
 
-	// Distance calculation and filtering by location/radius.
-	distanceExpr := "0"
-	if input.Latitude != nil && input.Longitude != nil {
-		// ST_DistanceSphere returns metres; divide by 1000 for km.
-		distanceExpr = fmt.Sprintf(
-			"ST_DistanceSphere(pp.service_location, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)) / 1000.0",
-			argIdx, argIdx+1,
-		)
-		args = append(args, *input.Longitude, *input.Latitude)
-		argIdx += 2
-
-		if input.RadiusKm > 0 {
-			whereClauses = append(whereClauses, fmt.Sprintf(
-				"pp.service_location IS NOT NULL AND ST_DistanceSphere(pp.service_location, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)) / 1000.0 <= $%d",
-				argIdx, argIdx+1, argIdx+2,
-			))
-			args = append(args, *input.Longitude, *input.Latitude, input.RadiusKm)
-			argIdx += 3
-		}
+	if input.Latitude != nil && input.Longitude != nil && input.RadiusKm > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf(
+			"pp.service_location IS NOT NULL AND ST_DistanceSphere(pp.service_location, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)) / 1000.0 <= $%d",
+			argIdx, argIdx+1, argIdx+2,
+		))
+		whereArgs = append(whereArgs, *input.Longitude, *input.Latitude, input.RadiusKm)
+		argIdx += 3
 	}
 
 	// Filter by category IDs.
@@ -1506,7 +1501,7 @@ func (r *PostgresRepository) SearchProviders(ctx context.Context, input domain.P
 			"EXISTS (SELECT 1 FROM provider_service_categories psc WHERE psc.provider_id = pp.id AND psc.category_id = ANY($%d))",
 			argIdx,
 		))
-		args = append(args, input.CategoryIDs)
+		whereArgs = append(whereArgs, input.CategoryIDs)
 		argIdx++
 	}
 
@@ -1516,7 +1511,7 @@ func (r *PostgresRepository) SearchProviders(ctx context.Context, input domain.P
 			"COALESCE(rs.average_rating, 0) >= $%d",
 			argIdx,
 		))
-		args = append(args, *input.MinRating)
+		whereArgs = append(whereArgs, *input.MinRating)
 		argIdx++
 	}
 
@@ -1533,7 +1528,8 @@ func (r *PostgresRepository) SearchProviders(ctx context.Context, input domain.P
 
 	whereSQL := strings.Join(whereClauses, " AND ")
 
-	// Count total matching providers.
+	// Count total matching providers — bound only with whereArgs (the count
+	// query has no distance SELECT, so it references nothing beyond WHERE).
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM users u
@@ -1545,8 +1541,23 @@ func (r *PostgresRepository) SearchProviders(ctx context.Context, input domain.P
 		WHERE %s`, whereSQL)
 
 	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, countQuery, whereArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("search providers count: %w", err)
+	}
+
+	// The data query reuses the WHERE args, then appends the distance lng/lat
+	// (referenced only by the SELECT/ORDER BY distance expression) and finally
+	// the LIMIT/OFFSET — so its placeholders continue past whereArgs.
+	args := append([]interface{}{}, whereArgs...)
+	distanceExpr := "0"
+	if input.Latitude != nil && input.Longitude != nil {
+		// ST_DistanceSphere returns metres; divide by 1000 for km.
+		distanceExpr = fmt.Sprintf(
+			"ST_DistanceSphere(pp.service_location, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)) / 1000.0",
+			argIdx, argIdx+1,
+		)
+		args = append(args, *input.Longitude, *input.Latitude)
+		argIdx += 2
 	}
 
 	// Determine ORDER BY clause.
@@ -1578,7 +1589,7 @@ func (r *PostgresRepository) SearchProviders(ctx context.Context, input domain.P
 			u.display_name,
 			COALESCE(pp.business_name, '') AS business_name,
 			COALESCE(u.avatar_url, '') AS avatar_url,
-			(%s)::float8 AS distance_km,
+			COALESCE((%s), 0)::float8 AS distance_km,
 			COALESCE(rs.average_rating, 0)::float8 AS average_rating,
 			COALESCE(rs.review_count, 0) AS review_count,
 			COALESCE(pp.on_time_rate, 0)::float8 AS on_time_rate,
