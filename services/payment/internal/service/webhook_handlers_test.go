@@ -145,6 +145,205 @@ func TestHandleWebhook_ChargeDisputeCreated(t *testing.T) {
 	})
 }
 
+// --- charge.dispute.closed ---
+
+func TestHandleWebhook_ChargeDisputeClosed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("won_returns_payment_to_escrow_recoverable", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_dispclose_won", "charge.dispute.closed", stripe.Dispute{
+			ID:            "dp_won",
+			Status:        stripe.DisputeStatusWon,
+			PaymentIntent: &stripe.PaymentIntent{ID: "pi_won"},
+		})
+
+		var statusUpdate string
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{ID: "pmt-1", Status: "disputed"}, nil
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, status string) error {
+				statusUpdate = status
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		// Back to escrow so the normal transfer.created -> released path can run.
+		assert.Equal(t, "escrow", statusUpdate, "won dispute must un-freeze escrow so it is releasable")
+	})
+
+	t.Run("warning_closed_and_prevented_also_recover_escrow", func(t *testing.T) {
+		t.Parallel()
+		for _, ds := range []stripe.DisputeStatus{stripe.DisputeStatusWarningClosed, stripe.DisputeStatusPrevented} {
+			ds := ds
+			event := newEvent(t, "evt_dispclose_"+string(ds), "charge.dispute.closed", stripe.Dispute{
+				ID:            "dp_" + string(ds),
+				Status:        ds,
+				PaymentIntent: &stripe.PaymentIntent{ID: "pi_" + string(ds)},
+			})
+			var statusUpdate string
+			repo := &mockPaymentRepo{
+				recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+				markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+				findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+					return &domain.Payment{ID: "pmt-1", Status: "disputed"}, nil
+				},
+				updatePaymentStatusFn: func(_ context.Context, _, status string) error {
+					statusUpdate = status
+					return nil
+				},
+			}
+			svc := newTestPaymentService(repo, nil)
+			svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+			err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+			require.NoError(t, err)
+			assert.Equal(t, "escrow", statusUpdate, "early-warning close (%s) means no funds pulled, escrow recoverable", ds)
+		}
+	})
+
+	t.Run("lost_marks_payment_charged_back_terminal", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_dispclose_lost", "charge.dispute.closed", stripe.Dispute{
+			ID:            "dp_lost",
+			Status:        stripe.DisputeStatusLost,
+			PaymentIntent: &stripe.PaymentIntent{ID: "pi_lost"},
+		})
+
+		var statusUpdate string
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{ID: "pmt-1", Status: "disputed"}, nil
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, status string) error {
+				statusUpdate = status
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, "chargeback", statusUpdate, "lost dispute is terminal: money left the platform")
+	})
+
+	t.Run("idempotent_no_op_when_not_disputed", func(t *testing.T) {
+		t.Parallel()
+		// A redelivered close finds the payment already moved out of 'disputed'.
+		// We must not re-touch the state machine (no double-move of money state).
+		for _, current := range []string{"escrow", "chargeback", "released", "completed"} {
+			current := current
+			event := newEvent(t, "evt_dispclose_dup_"+current, "charge.dispute.closed", stripe.Dispute{
+				ID:            "dp_dup",
+				Status:        stripe.DisputeStatusWon,
+				PaymentIntent: &stripe.PaymentIntent{ID: "pi_dup"},
+			})
+			var updateCalled bool
+			repo := &mockPaymentRepo{
+				recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+				markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+				findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+					return &domain.Payment{ID: "pmt-1", Status: current}, nil
+				},
+				updatePaymentStatusFn: func(_ context.Context, _, _ string) error {
+					updateCalled = true
+					return nil
+				},
+			}
+			svc := newTestPaymentService(repo, nil)
+			svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+			err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+			require.NoError(t, err)
+			assert.False(t, updateCalled, "dispute.closed on a payment already in %q must be a no-op", current)
+		}
+	})
+
+	t.Run("unknown_status_leaves_disputed_and_acks", func(t *testing.T) {
+		t.Parallel()
+		// A close event with a non-terminal/unknown status must not guess which
+		// way money went — leave it frozen, ack so Stripe doesn't retry-storm.
+		event := newEvent(t, "evt_dispclose_unknown", "charge.dispute.closed", stripe.Dispute{
+			ID:            "dp_unknown",
+			Status:        stripe.DisputeStatusUnderReview, // not won/lost/closed
+			PaymentIntent: &stripe.PaymentIntent{ID: "pi_unknown"},
+		})
+		var updateCalled bool
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{ID: "pmt-1", Status: "disputed"}, nil
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, _ string) error {
+				updateCalled = true
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.False(t, updateCalled, "unknown dispute status must not move money state")
+	})
+
+	t.Run("noop_when_no_payment_intent_attached", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_dispclose_orphan", "charge.dispute.closed", stripe.Dispute{
+			ID:     "dp_orphan",
+			Status: stripe.DisputeStatusWon,
+		})
+		var findCalled bool
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				findCalled = true
+				return nil, nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.False(t, findCalled, "dispute without payment_intent must not trigger a lookup")
+	})
+
+	t.Run("fail_safe_when_payment_not_found", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_dispclose_miss", "charge.dispute.closed", stripe.Dispute{
+			ID:            "dp_miss",
+			Status:        stripe.DisputeStatusLost,
+			PaymentIntent: &stripe.PaymentIntent{ID: "pi_miss"},
+		})
+		var updateCalled bool
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return nil, errors.New("not found")
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, _ string) error {
+				updateCalled = true
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err, "record-not-found must be acked, not retried")
+		assert.False(t, updateCalled)
+	})
+}
+
 // --- transfer.created ---
 
 func TestHandleWebhook_TransferCreated(t *testing.T) {

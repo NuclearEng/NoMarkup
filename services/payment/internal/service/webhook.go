@@ -127,6 +127,8 @@ func (s *PaymentService) dispatchWebhookEvent(ctx context.Context, event stripe.
 		return s.handlePaymentIntentFailed(ctx, event)
 	case "charge.dispute.created":
 		return s.handleChargeDisputeCreated(ctx, event)
+	case "charge.dispute.closed":
+		return s.handleChargeDisputeClosed(ctx, event)
 	case "transfer.created":
 		return s.handleTransferCreated(ctx, event)
 	case "charge.refunded":
@@ -264,6 +266,93 @@ func (s *PaymentService) handleChargeDisputeCreated(ctx context.Context, event s
 	slog.Info("payment disputed", "payment_id", payment.ID, "dispute_id", dispute.ID)
 
 	return nil
+}
+
+// handleChargeDisputeClosed resolves a chargeback dispute that Stripe has
+// closed. This is the terminal counterpart to charge.dispute.created: created
+// freezes the payment in 'disputed' (escrow held); closed un-freezes it based
+// on the outcome. Without this handler a disputed payment stays 'disputed'
+// forever and its escrow is un-releasable without manual DB surgery.
+//
+// Outcome branching (dispute.Status):
+//   - won / warning_closed / prevented: the merchant keeps the funds. The
+//     bank did not pull money. We return the payment to 'escrow' — the normal
+//     release path (transfer.created -> 'released') can then resume. We do NOT
+//     jump straight to 'released' here: releasing is the job of the transfer
+//     flow, which also records the stripe_transfer_id; this handler only
+//     un-freezes the escrow state machine.
+//   - lost: the chargeback pulled the funds back to the cardholder. This is
+//     terminal — money left the platform, the seller is not paid. We mark the
+//     payment 'chargeback' (the canonical terminal status in the DB CHECK
+//     constraint and gRPC mapping). Escrow is never released to the seller.
+//
+// Idempotency: we only act when the payment is currently 'disputed'. A
+// re-delivered close (Stripe redelivers successful events) finds the payment
+// already in 'escrow' or 'chargeback' and is a no-op, so we never double-move
+// the state machine.
+//
+// Fail-safe: an unknown/unexpected dispute status, a missing payment_intent,
+// or a record-not-found are all logged and acked (return nil -> 200) so Stripe
+// does not retry-storm for 3 days on a non-retryable condition. Genuine infra
+// errors (DB write failure) still propagate so Stripe retries.
+func (s *PaymentService) handleChargeDisputeClosed(ctx context.Context, event stripe.Event) error {
+	var dispute stripe.Dispute
+	if err := json.Unmarshal(event.Data.Raw, &dispute); err != nil {
+		return fmt.Errorf("parse charge.dispute.closed: %w", err)
+	}
+
+	if dispute.PaymentIntent == nil {
+		slog.Warn("closed dispute has no payment_intent, acking", "dispute_id", dispute.ID)
+		return nil
+	}
+
+	payment, err := s.repo.FindByStripePaymentIntentID(ctx, dispute.PaymentIntent.ID)
+	if err != nil {
+		// Unknown payment: ack so Stripe doesn't retry. (fail-safe)
+		slog.Warn("payment not found for closed dispute, acking",
+			"pi_id", dispute.PaymentIntent.ID, "dispute_id", dispute.ID, "error", err)
+		return nil
+	}
+
+	// Idempotency guard: only act on a payment we previously froze as
+	// 'disputed'. A redelivery (already escrow/chargeback) or a payment that
+	// was never frozen is a no-op.
+	if payment.Status != "disputed" {
+		slog.Info("dispute.closed for payment not in disputed state, no-op",
+			"payment_id", payment.ID, "dispute_id", dispute.ID,
+			"current_status", payment.Status, "dispute_status", string(dispute.Status))
+		return nil
+	}
+
+	switch dispute.Status {
+	case stripe.DisputeStatusWon, stripe.DisputeStatusWarningClosed, stripe.DisputeStatusPrevented:
+		// Merchant kept the funds. Return to escrow so the normal release path
+		// (transfer.created) can resume.
+		if err := s.repo.UpdatePaymentStatus(ctx, payment.ID, "escrow"); err != nil {
+			return fmt.Errorf("update status to escrow after dispute won: %w", err)
+		}
+		slog.Info("dispute closed in merchant's favor, escrow recoverable",
+			"payment_id", payment.ID, "dispute_id", dispute.ID, "dispute_status", string(dispute.Status))
+		return nil
+
+	case stripe.DisputeStatusLost:
+		// Chargeback took the money. Terminal; escrow not released to seller.
+		if err := s.repo.UpdatePaymentStatus(ctx, payment.ID, "chargeback"); err != nil {
+			return fmt.Errorf("update status to chargeback after dispute lost: %w", err)
+		}
+		slog.Info("dispute lost, payment charged back",
+			"payment_id", payment.ID, "dispute_id", dispute.ID)
+		return nil
+
+	default:
+		// Unknown/non-terminal status on a close event (shouldn't happen, but
+		// fail-safe): leave the payment frozen in 'disputed' rather than guess
+		// which way money went. Ack so Stripe doesn't retry; this is visible in
+		// logs for an operator to inspect. Do NOT move money state on a guess.
+		slog.Warn("dispute.closed with unexpected status, leaving payment disputed",
+			"payment_id", payment.ID, "dispute_id", dispute.ID, "dispute_status", string(dispute.Status))
+		return nil
+	}
 }
 
 func (s *PaymentService) handleTransferCreated(ctx context.Context, event stripe.Event) error {
