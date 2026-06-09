@@ -173,6 +173,96 @@ func TestSendNotification(t *testing.T) {
 	}
 }
 
+// TestSendNotification_ExplicitChannelsRespectPrefs proves that an explicit
+// channel set (as the welcome / re-engagement / NPS schedulers pass) is still
+// filtered against a user's explicitly-stored per-type preference, while
+// transactional sends with no stored preference for the type pass through.
+func TestSendNotification_ExplicitChannelsRespectPrefs(t *testing.T) {
+	t.Parallel()
+
+	emailEnabled := func(deliveries []ChannelDelivery) (present, delivered bool) {
+		for _, d := range deliveries {
+			if d.Channel == "email" {
+				return true, d.Delivered
+			}
+		}
+		return false, false
+	}
+
+	t.Run("explicit email dropped when user disabled email for type", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					// User turned OFF email for the welcome cadence.
+					"welcome_day_1": {InApp: true, Email: false, Push: false, SMS: false},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{})
+
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "welcome_day_1",
+			"Welcome", "body", "/marketplace",
+			map[string]string{"user_email": "user@example.com"},
+			[]string{"in_app", "email"}, // scheduler's explicit intent
+		)
+		require.NoError(t, err)
+		present, _ := emailEnabled(deliveries)
+		assert.False(t, present, "email channel must be filtered out when user disabled it for this type")
+	})
+
+	t.Run("explicit email kept when no stored pref for type (transactional)", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					// Pref exists for an UNRELATED type; none for "unspecified".
+					"new_bid": {InApp: true, Email: false},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{})
+
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "unspecified",
+			"Reset your password", "link", "/reset",
+			map[string]string{"user_email": "user@example.com"},
+			[]string{"email"}, // password-reset transactional intent
+		)
+		require.NoError(t, err)
+		present, delivered := emailEnabled(deliveries)
+		assert.True(t, present, "transactional email must pass through when user has no pref for this type")
+		assert.True(t, delivered, "email should be delivered (dev-mode no-op succeeds)")
+	})
+
+	t.Run("explicit email kept when user enabled email for type", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					"welcome_day_1": {InApp: true, Email: true},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{})
+
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "welcome_day_1",
+			"Welcome", "body", "/marketplace",
+			map[string]string{"user_email": "user@example.com"},
+			[]string{"in_app", "email"},
+		)
+		require.NoError(t, err)
+		present, delivered := emailEnabled(deliveries)
+		assert.True(t, present, "email must be kept when user enabled it for this type")
+		assert.True(t, delivered)
+	})
+}
+
 func TestSendBulkNotification(t *testing.T) {
 	t.Parallel()
 

@@ -51,6 +51,22 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 	channels := requestedChannels
 	if len(channels) == 0 {
 		channels = s.resolveChannels(ctx, userID, notifType)
+	} else {
+		// A caller passed explicit channels (e.g. the welcome / re-engagement
+		// / NPS schedulers, or the transactional password-reset / verification
+		// emails). Explicit channels are an intent ("this notification wants
+		// email"), NOT a license to ignore the user's preferences. Filter the
+		// requested set against any preference the user has EXPLICITLY stored
+		// for this type so a user who turned off the email channel for a
+		// retention notification stops getting emailed — matching how the
+		// nil-channel (resolveChannels) path already behaves.
+		//
+		// We only drop a channel the user has explicitly disabled for this
+		// type. Channels with no stored preference (transactional emails sent
+		// as `unspecified`, or a retention type the user never touched) pass
+		// through unchanged, so this neither breaks password-reset email nor
+		// silently disables a default-on retention send.
+		channels = s.filterByExplicitPrefs(ctx, userID, notifType, channels)
 	}
 
 	// Ensure in_app is always included.
@@ -389,6 +405,56 @@ func (s *Service) resolveChannels(ctx context.Context, userID, notifType string)
 		channels = []string{"in_app"}
 	}
 	return channels
+}
+
+// filterByExplicitPrefs removes any channel the user has EXPLICITLY disabled
+// for this notification type from the requested set. It only consults
+// preferences the user has actually stored (the repository returns exactly the
+// types present in the JSONB column) — a type the user has never configured is
+// left untouched so transactional sends (password reset / verification, sent as
+// `unspecified`) and default-on retention notifications still deliver.
+//
+// in_app is never dropped here: SendNotification re-adds it unconditionally
+// downstream, and the in-app record is the durable notification, so dropping it
+// would lose the notification entirely. The dedicated in-app per-type toggle is
+// already honored by the resolveChannels (nil-channel) path.
+func (s *Service) filterByExplicitPrefs(ctx context.Context, userID, notifType string, requested []string) []string {
+	prefs, err := s.repo.GetPreferences(ctx, userID)
+	if err != nil {
+		// No stored preferences (or a transient read error): respect the
+		// caller's intent rather than guessing. Fail open toward delivery —
+		// the same posture resolveChannels takes when GetPreferences errors.
+		return requested
+	}
+
+	cp, ok := prefs.Preferences[notifType]
+	if !ok {
+		// User has never configured this type — nothing to enforce.
+		return requested
+	}
+
+	filtered := make([]string, 0, len(requested))
+	for _, ch := range requested {
+		switch ch {
+		case "email":
+			if cp.Email {
+				filtered = append(filtered, ch)
+			}
+		case "push":
+			if cp.Push {
+				filtered = append(filtered, ch)
+			}
+		case "sms":
+			if cp.SMS {
+				filtered = append(filtered, ch)
+			}
+		default:
+			// in_app and any unknown channel pass through; in_app is always
+			// re-added downstream regardless.
+			filtered = append(filtered, ch)
+		}
+	}
+	return filtered
 }
 
 // defaultPreferences returns default notification preferences for a new user.

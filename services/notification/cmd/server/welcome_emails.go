@@ -197,9 +197,13 @@ func processWelcomeStage(ctx context.Context, pool *pgxpool.Pool, svc *service.S
 			data["user_email"] = u.email
 		}
 
-		// Force email + in-app channels for the welcome cadence — the
-		// audit calls these out as critical onboarding touchpoints, so
-		// we don't gate them behind defaultChannelPrefs.
+		// Request email + in-app for the welcome cadence. These are the
+		// intended channels for onboarding, but SendNotification filters
+		// this set against any preference the user has EXPLICITLY stored for
+		// the type (filterByExplicitPrefs) — so a user who turned off email
+		// for `welcome_day_1` gets in-app only, not email. We don't pre-seed
+		// these types into defaultChannelPrefs, so an untouched user keeps
+		// receiving the cadence on both channels.
 		channels := []string{"in_app", "email"}
 
 		if _, _, err := svc.SendNotification(ctx, u.userID, stage.notifType,
