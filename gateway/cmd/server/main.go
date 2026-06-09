@@ -226,7 +226,7 @@ func main() {
 	userHandler := handler.NewUserHandler(userClient, dbPool)
 	providerHandler := handler.NewProviderHandler(userClient, trustClient, dbPool)
 	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)
-	jobHandler := handler.NewJobHandler(jobClient, cacheClient, fraudClient)
+	jobHandler := handler.NewJobHandler(jobClient, cacheClient, fraudClient, dbPool)
 	// bidHandler depends on the contract client so awarding a bid also creates
 	// a contract row in the same request (fixes severed customer-accept pipeline).
 	bidHandler := handler.NewBidHandler(bidClient, contractClient, dbPool)
@@ -318,6 +318,10 @@ func main() {
 	sellerAnalyticsHandler := handler.NewSellerAnalyticsHandler(dbPool)
 	promotedListingsHandler := handler.NewPromotedListingsHandler(dbPool, paymentClient)
 	csvExportHandler := handler.NewCSVExportHandler(dbPool)
+	// GDPR Art. 15 / CCPA right-to-access — self-service personal-data export.
+	// Gateway-direct (pure owner-scoped SQL, no gRPC hop), mirroring the
+	// erasure cascade's table set.
+	dataExportHandler := handler.NewDataExportHandler(dbPool)
 	// Wave 5 Agent Q surface — wired here since main.go is the shared
 	// composition root (router signature already references these). The
 	// handler implementations live in agent Q's owned files.
@@ -394,6 +398,7 @@ func main() {
 		adminMarketsHandler,
 		insuranceCompetitionHandler,
 		providerLicenseHandler,
+		dataExportHandler,
 	)
 
 	srv := &http.Server{

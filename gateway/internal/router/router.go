@@ -102,6 +102,7 @@ func New(
 	adminMarketsHandler *handler.AdminMarketsHandler,
 	insuranceCompetitionHandler *handler.InsuranceCompetitionHandler,
 	providerLicenseHandler *handler.ProviderLicenseHandler,
+	dataExportHandler *handler.DataExportHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -383,6 +384,10 @@ func New(
 			r.Patch("/me", userHandler.UpdateMe)
 			r.Post("/me/roles", userHandler.EnableRole)
 			r.Get("/me/savings", userHandler.GetSavings)
+			// GDPR Art. 15 / CCPA right-to-access — self-service "download my
+			// data". Strictly owner-scoped: the handler keys off claims.UserID
+			// only (no {id}), so a caller can only ever export their own data.
+			r.Get("/me/export", dataExportHandler.ExportMyData)
 			// GDPR / CCPA right-to-erasure pipeline.
 			r.Delete("/me", userHandler.RequestMyDeletion)
 			r.Post("/me/restore", userHandler.RestoreMyAccount)

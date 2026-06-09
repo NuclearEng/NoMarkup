@@ -184,6 +184,9 @@ var routeTiers = []struct {
 	{"/api/v1/auth/mfa/disable", TierStrict},
 	{"/api/v1/users/me/enable-role", TierStrict},
 	{"/api/v1/users/me/deactivate", TierStrict},
+	// GDPR data export fans out ~19 owner-scoped queries — throttle it so a
+	// caller can't hammer the full-account read on a loop.
+	{"/api/v1/users/me/export", TierStrict},
 	{"/api/v1/verification/documents", TierStrict},
 	{"/api/v1/admin/", TierStrict},
 	{"/api/v1/bids/", TierStrict},

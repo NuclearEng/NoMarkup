@@ -193,17 +193,30 @@ export function idempotencyHeader(): Record<string, string> {
 // <a href> can't attach the Authorization header — the gateway middleware
 // returns 401, leaving the user with a blank page / "nothing happened."
 export async function downloadAuthenticated(path: string, filename: string): Promise<void> {
-  const headers: Record<string, string> = {};
-  const token = getAccessToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  const fetchOnce = async (): Promise<Response> => {
+    const headers: Record<string, string> = {};
+    const token = getAccessToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(`${API_BASE_URL}${path}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    });
+  };
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'GET',
-    headers,
-    credentials: 'include',
-  });
+  let response = await fetchOnce();
+
+  // Short-lived access tokens expire after 15 min; on 401 refresh once and
+  // retry, mirroring request() above so a stale token doesn't surface as a
+  // spurious download failure.
+  if (response.status === 401) {
+    const refreshed = await attemptRefresh();
+    if (refreshed) {
+      response = await fetchOnce();
+    }
+  }
 
   if (!response.ok) {
     throw new ApiError(response.status, await response.text());

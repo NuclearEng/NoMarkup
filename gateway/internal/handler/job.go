@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
@@ -37,33 +38,88 @@ type JobHandler struct {
 	jobClient   jobv1.JobServiceClient
 	cache       *cache.Client
 	fraudClient fraudv1.FraudServiceClient // optional — if nil, fraud signal recording is skipped
+	db          *pgxpool.Pool              // optional — used for the job-creation velocity gate
 }
 
-// NewJobHandler creates a new JobHandler. The fraud client is optional —
-// callers may pass nil to disable fraud signal recording (e.g. in tests).
-func NewJobHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client, fraudClient fraudv1.FraudServiceClient) *JobHandler {
-	return &JobHandler{jobClient: jobClient, cache: cacheClient, fraudClient: fraudClient}
+// NewJobHandler creates a new JobHandler. The fraud client and db pool are
+// optional — callers may pass nil to disable fraud signal recording (e.g. in
+// tests). Without the db pool the velocity gate degrades to a no-op (no
+// signal recorded) rather than the old behavior of stamping a fraud signal on
+// every job creation.
+func NewJobHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client, fraudClient fraudv1.FraudServiceClient, db *pgxpool.Pool) *JobHandler {
+	return &JobHandler{jobClient: jobClient, cache: cacheClient, fraudClient: fraudClient, db: db}
 }
 
-// recordJobCreationSignal fires a velocity fraud signal asynchronously after
-// a job is created. We do not block the response on the fraud engine: it has
-// a hard 500ms timeout, errors are logged and swallowed so a fraud-engine
-// outage cannot stall job creation.
+// Job-creation velocity thresholds. Mirror the fraud engine's own velocity
+// bands (engines/fraud/src/engine.rs: >=3/hour = elevated, >=5/hour = high) so
+// the gateway and the engine agree on what "rapid posting" means. A signal is
+// recorded ONLY when posting is genuinely anomalous — a normal cadence records
+// nothing.
+const (
+	jobVelocityWindow       = time.Hour
+	jobVelocityElevated     = 3 // jobs in the window before we flag at all
+	jobVelocityHigh         = 5 // jobs in the window for a high-confidence flag
+	jobVelocityElevatedConf = 0.5
+	jobVelocityHighConf     = 0.75
+)
+
+// recordJobCreationSignal evaluates the job-creation velocity for this user and
+// records a fraud signal ONLY when the rate is anomalous. Posting a job is
+// normal activity, not fraud, so the common case records nothing.
+//
+// Previously this stamped a `pending` VELOCITY signal on EVERY job creation.
+// That polluted the admin fraud queue (which surfaces pending signals), tanked
+// every active poster's trust fraud_score (the trust engine counts these as
+// fraud), and — because the trust engine pins any user with a pending/confirmed
+// signal to the `under_review` tier — permanently demoted every job-poster
+// regardless of their real reputation. The velocity GATE here restores the
+// original intent (catch rapid-fire posting) without the false positives.
+//
+// We do not block the response on this: it runs detached with a hard 500ms
+// timeout, and any error is logged and swallowed so neither the DB nor the
+// fraud engine can stall or fail job creation.
 func (h *JobHandler) recordJobCreationSignal(parent context.Context, userID, jobID, ipAddress string) {
-	if h.fraudClient == nil {
+	if h.fraudClient == nil || h.db == nil {
+		// No fraud engine or no DB to run the velocity gate → record nothing.
+		// (Failing closed here would mean stamping benign activity as fraud.)
 		return
 	}
 
-	// Detach from the request context so the call survives the HTTP response.
+	// Detach from the request context so the work survives the HTTP response.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
+		// Real velocity check: how many jobs has this user posted in the
+		// window (including the one just created)? The jobs.created_at +
+		// customer_id columns are indexed; this is a cheap point count.
+		var recentCount int
+		if err := h.db.QueryRow(ctx, `
+			SELECT COUNT(*) FROM jobs
+			 WHERE customer_id = $1
+			   AND created_at >= now() - $2::interval`,
+			userID, jobVelocityWindow.String(),
+		).Scan(&recentCount); err != nil {
+			slog.WarnContext(parent, "job velocity check failed",
+				"user_id", userID, "job_id", jobID, "error", err)
+			return
+		}
+
+		// Below the elevated threshold → normal cadence, nothing to record.
+		if recentCount < jobVelocityElevated {
+			return
+		}
+
+		confidence := jobVelocityElevatedConf
+		if recentCount >= jobVelocityHigh {
+			confidence = jobVelocityHighConf
+		}
+
 		_, err := h.fraudClient.RecordSignal(ctx, &fraudv1.RecordSignalRequest{
 			UserId:        userID,
 			SignalType:    fraudv1.FraudSignalType_FRAUD_SIGNAL_TYPE_VELOCITY,
-			Confidence:    0.5, // velocity heuristic; engine tunes its own threshold
-			Details:       "job_created",
+			Confidence:    confidence,
+			Details:       fmt.Sprintf("high job-post velocity: %d jobs in last hour", recentCount),
 			IpAddress:     ipAddress,
 			ReferenceType: "job",
 			ReferenceId:   jobID,

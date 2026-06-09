@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ShieldX, Undo2 } from 'lucide-react';
+import { AlertTriangle, Download, ShieldX, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 
 interface DeletionResponse {
@@ -49,6 +49,10 @@ export default function AccountSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restored, setRestored] = useState(false);
+
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const canSubmit =
     reason.length > 0 && confirmation === 'DELETE' && !submitting;
@@ -101,6 +105,21 @@ export default function AccountSettingsPage() {
   async function handleLogout() {
     await logout();
     router.replace('/');
+  }
+
+  async function handleExport() {
+    setExportError(null);
+    setExported(false);
+    setExporting(true);
+    try {
+      const filename = `nomarkup-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+      await downloadAuthenticated('/api/v1/users/me/export', filename);
+      setExported(true);
+    } catch (err) {
+      setExportError(getApiErrorMessage(err, 'Could not prepare your data export. Please try again.'));
+    } finally {
+      setExporting(false);
+    }
   }
 
   // Already requested — show the grace-period state.
@@ -179,6 +198,68 @@ export default function AccountSettingsPage() {
 
   return (
     <div className="space-y-6">
+      <Card className="glass border border-[var(--brand-gold)]/10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg text-zinc-100">
+            <Download className="h-5 w-5" aria-hidden="true" />
+            Download my data
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2 text-sm text-zinc-300">
+            <p>
+              Get a copy of the personal data NoMarkup holds about your account
+              (GDPR Article 15 / CCPA right to access). The download is a single
+              JSON file that includes your:
+            </p>
+            <ul className="ml-5 list-disc space-y-1">
+              <li>Profile and account details</li>
+              <li>Jobs, listings, bids, and offers you created</li>
+              <li>Contracts and orders you took part in</li>
+              <li>Payments, payouts, and advances</li>
+              <li>Reviews you wrote and messages you sent</li>
+              <li>Notifications, wishlist, watchlist, saved searches, referrals</li>
+            </ul>
+            <p className="text-xs text-zinc-400">
+              For privacy, other people&rsquo;s details inside shared records
+              (messages, contracts, orders) are shown only as a display name,
+              and security data such as passwords is never included. Very long
+              histories may be capped &mdash; capped sections are flagged in the
+              file.
+            </p>
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={() => { void handleExport(); }}
+            disabled={exporting}
+            className="min-h-[44px]"
+          >
+            <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+            {exporting ? 'Preparing your file…' : 'Download my data'}
+          </Button>
+
+          {exported && (
+            <p
+              className="text-sm text-emerald-400"
+              role="status"
+              aria-live="polite"
+            >
+              Your data export has been downloaded.
+            </p>
+          )}
+          {exportError && (
+            <p
+              className="text-sm text-red-400"
+              role="alert"
+              aria-live="assertive"
+            >
+              {exportError}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
           <CardTitle className="gold-text flex items-center gap-2 text-lg">
