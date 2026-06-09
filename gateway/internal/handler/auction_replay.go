@@ -58,7 +58,7 @@ func (h *AuctionReplayHandler) GetAuctionReplay(w http.ResponseWriter, r *http.R
 		SELECT j.title, COALESCE(sc.name, ''), j.starting_bid_cents, j.auction_type, j.status
 		FROM jobs j
 		LEFT JOIN service_categories sc ON sc.id = j.category_id
-		WHERE j.id = $1
+		WHERE j.id = $1 AND j.deleted_at IS NULL
 	`, jobID).Scan(&jobTitle, &categoryName, &startingBidCents, &auctionType, &jobStatus)
 	if err != nil {
 		slog.Error("failed to query job for replay", "job_id", jobID, "error", err)

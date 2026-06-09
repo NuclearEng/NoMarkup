@@ -31,14 +31,18 @@ func isValidUUID(s string) bool {
 // Source of truth (verified against the live schema):
 //
 //	SELECT table_name FROM information_schema.columns WHERE column_name = 'deleted_at';
-//	-> chat_messages, contracts, jobs, platform_bank_account, properties, users
+//	-> chat_messages, contracts, jobs, platform_bank_account, properties,
+//	   users, wishlist_items
 //
 // Keep this in sync when a gated table gains or loses its `deleted_at` column.
 var softDeleteTables = map[string]bool{
-	"contracts":  true,
-	"jobs":       true,
-	"properties": true,
-	"users":      true,
+	"chat_messages":         true,
+	"contracts":             true,
+	"jobs":                  true,
+	"platform_bank_account": true,
+	"properties":            true,
+	"users":                 true,
+	"wishlist_items":        true,
 	// reviews, payments, disputes: NO deleted_at column — intentionally absent.
 }
 

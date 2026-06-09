@@ -89,6 +89,7 @@ func (h *CalendarExportHandler) ExportICS(w http.ResponseWriter, r *http.Request
 		  FROM contracts c
 		  JOIN jobs j ON j.id = c.job_id
 		 WHERE (c.customer_id = $1 OR c.provider_id = $1)
+		   AND c.deleted_at IS NULL
 		   AND c.status NOT IN ('cancelled', 'voided')
 		 ORDER BY COALESCE(c.started_at, j.scheduled_date, c.created_at) ASC
 		 LIMIT 500`, userID)

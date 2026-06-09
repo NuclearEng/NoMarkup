@@ -133,6 +133,7 @@ func promptContracts(ctx context.Context, pool *pgxpool.Pool, svc *service.Servi
 		SELECT c.id::text, c.customer_id::text
 		  FROM contracts c
 		 WHERE c.status = 'completed'
+		   AND c.deleted_at IS NULL
 		   AND c.updated_at <= now() - interval '48 hours'
 		   AND NOT EXISTS (
 		     SELECT 1 FROM nps_surveys s

@@ -545,7 +545,8 @@ func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, o
 		       acceptance_deadline, accepted_at, started_at, completed_at,
 		       cancelled_at, created_at, updated_at
 		FROM contracts
-		WHERE status = 'active' AND completed_at IS NOT NULL AND completed_at <= $1`, cutoff)
+		WHERE status = 'active' AND completed_at IS NOT NULL AND completed_at <= $1
+		  AND deleted_at IS NULL`, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("get contracts awaiting approval: %w", err)
 	}
