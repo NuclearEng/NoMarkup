@@ -134,7 +134,7 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
       >
         <CardHeader className="relative z-[2] pb-3">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-2 text-base leading-snug font-semibold text-zinc-100">
+            <h3 className="line-clamp-2 min-w-0 text-base leading-snug font-semibold break-words text-zinc-100">
               {job.title}
             </h3>
             <Badge variant={getStatusVariant(job.status)} className="shrink-0">
