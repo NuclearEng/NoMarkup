@@ -753,6 +753,21 @@ func (h *AdminMarketplaceHandler) CreateReport(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// The listing must exist. Without this pre-check a well-formed but unknown id
+	// hits the listing_reports FK and the bare error map turns it into a 500 —
+	// a predictable "not found" condition must be a 404.
+	var listingExists bool
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT EXISTS (SELECT 1 FROM listings WHERE id = $1)`, listingID).Scan(&listingExists); err != nil {
+		slog.Error("create listing report: existence check failed", "error", err, "id", listingID)
+		writeError(w, http.StatusInternalServerError, "failed to create report")
+		return
+	}
+	if !listingExists {
+		writeError(w, http.StatusNotFound, "listing not found")
+		return
+	}
+
 	// reporter_id is optional (anonymous reports allowed).
 	var reporterID *string
 	if claims, ok := middleware.GetClaims(r.Context()); ok {

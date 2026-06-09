@@ -624,6 +624,21 @@ func (h *ListingsHandler) GetListingBids(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Guard parent visibility: a nonexistent, hidden, or draft listing must 404
+	// here too, not return an empty 200 that discloses "this id could exist" and
+	// mirrors the detail endpoint's visibility rule.
+	var visible bool
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT EXISTS (SELECT 1 FROM listings WHERE id = $1 AND is_hidden = false AND status <> 'draft')`, id).Scan(&visible); err != nil {
+		slog.Error("listing bids: visibility check failed", "error", err, "listing_id", id)
+		writeError(w, http.StatusInternalServerError, "failed to load bids")
+		return
+	}
+	if !visible {
+		writeError(w, http.StatusNotFound, "listing not found")
+		return
+	}
+
 	rows, err := h.db.Query(r.Context(), `
 		SELECT b.id, b.listing_id, b.bidder_id,
 			COALESCE(u.display_name, 'Bidder'),

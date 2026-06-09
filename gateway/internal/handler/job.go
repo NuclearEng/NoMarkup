@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -32,6 +34,41 @@ const (
 	maxJobTitleLen       = 200
 	maxJobDescriptionLen = 5000
 )
+
+// maxPageSize caps a client-supplied page_size so a huge value can't ask the
+// service for an unbounded result set.
+const maxPageSize = 100
+
+// parseGeoParam reads an optional float query param, validating it is within
+// [min,max]. Returns ok=false with the value zeroed when the param is present
+// but unparseable or out of range, so the caller can return a 400 instead of
+// silently degrading garbage input to a (0,0) centroid / negative radius.
+func parseGeoParam(q url.Values, key string, min, max float64) (val float64, present, ok bool) {
+	raw := q.Get(key)
+	if raw == "" {
+		return 0, false, true
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v < min || v > max {
+		return 0, true, false
+	}
+	return v, true, true
+}
+
+// parsePageParam reads an optional positive integer query param. Returns
+// ok=false when present-but-invalid (non-numeric, negative, zero, or
+// overflowing int32) so the caller can 400 rather than truncating to garbage.
+func parsePageParam(q url.Values, key string, def int) (val int, ok bool) {
+	raw := q.Get(key)
+	if raw == "" {
+		return def, true
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < 1 || v > math.MaxInt32 {
+		return def, false
+	}
+	return v, true
+}
 
 // JobHandler handles HTTP endpoints for jobs.
 type JobHandler struct {
@@ -440,19 +477,21 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		grpcReq.CategoryIds = splitCommas(catIDs)
 	}
 
-	if lat := q.Get("latitude"); lat != "" {
-		if lng := q.Get("longitude"); lng != "" {
-			latF, _ := strconv.ParseFloat(lat, 64)
-			lngF, _ := strconv.ParseFloat(lng, 64)
-			grpcReq.Location = &commonv1.Location{
-				Latitude:  latF,
-				Longitude: lngF,
-			}
-		}
+	latF, latPresent, latOK := parseGeoParam(q, "latitude", -90, 90)
+	lngF, lngPresent, lngOK := parseGeoParam(q, "longitude", -180, 180)
+	if !latOK || !lngOK {
+		writeError(w, http.StatusBadRequest, "latitude must be within [-90,90] and longitude within [-180,180]")
+		return
 	}
-	if radius := q.Get("radius_km"); radius != "" {
-		r, _ := strconv.ParseFloat(radius, 64)
-		grpcReq.RadiusKm = r
+	if latPresent && lngPresent {
+		grpcReq.Location = &commonv1.Location{Latitude: latF, Longitude: lngF}
+	}
+	if radiusF, present, ok := parseGeoParam(q, "radius_km", 0, 20037); present {
+		if !ok || radiusF <= 0 {
+			writeError(w, http.StatusBadRequest, "radius_km must be a positive distance")
+			return
+		}
+		grpcReq.RadiusKm = radiusF
 	}
 
 	if minPrice := q.Get("min_price_cents"); minPrice != "" {
@@ -484,13 +523,14 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	page := 1
-	pageSize := 20
-	if p := q.Get("page"); p != "" {
-		page, _ = strconv.Atoi(p)
+	page, pageOK := parsePageParam(q, "page", 1)
+	pageSize, sizeOK := parsePageParam(q, "page_size", 20)
+	if !pageOK || !sizeOK {
+		writeError(w, http.StatusBadRequest, "page and page_size must be positive integers")
+		return
 	}
-	if ps := q.Get("page_size"); ps != "" {
-		pageSize, _ = strconv.Atoi(ps)
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 	grpcReq.Pagination = &commonv1.PaginationRequest{
 		Page:     int32(page),
@@ -609,13 +649,14 @@ func (h *JobHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 		grpcReq.PropertyId = &propID
 	}
 
-	page := 1
-	pageSize := 20
-	if p := q.Get("page"); p != "" {
-		page, _ = strconv.Atoi(p)
+	page, pageOK := parsePageParam(q, "page", 1)
+	pageSize, sizeOK := parsePageParam(q, "page_size", 20)
+	if !pageOK || !sizeOK {
+		writeError(w, http.StatusBadRequest, "page and page_size must be positive integers")
+		return
 	}
-	if ps := q.Get("page_size"); ps != "" {
-		pageSize, _ = strconv.Atoi(ps)
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 	grpcReq.Pagination = &commonv1.PaginationRequest{
 		Page:     int32(page),
@@ -679,19 +720,21 @@ func (h *JobHandler) MapView(w http.ResponseWriter, r *http.Request) {
 
 	grpcReq := &jobv1.GetJobsOnMapRequest{}
 
-	if lat := q.Get("latitude"); lat != "" {
-		if lng := q.Get("longitude"); lng != "" {
-			latF, _ := strconv.ParseFloat(lat, 64)
-			lngF, _ := strconv.ParseFloat(lng, 64)
-			grpcReq.Center = &commonv1.Location{
-				Latitude:  latF,
-				Longitude: lngF,
-			}
-		}
+	latF, latPresent, latOK := parseGeoParam(q, "latitude", -90, 90)
+	lngF, lngPresent, lngOK := parseGeoParam(q, "longitude", -180, 180)
+	if !latOK || !lngOK {
+		writeError(w, http.StatusBadRequest, "latitude must be within [-90,90] and longitude within [-180,180]")
+		return
 	}
-	if radius := q.Get("radius_km"); radius != "" {
-		v, _ := strconv.ParseFloat(radius, 64)
-		grpcReq.RadiusKm = v
+	if latPresent && lngPresent {
+		grpcReq.Center = &commonv1.Location{Latitude: latF, Longitude: lngF}
+	}
+	if radiusF, present, ok := parseGeoParam(q, "radius_km", 0, 20037); present {
+		if !ok || radiusF <= 0 {
+			writeError(w, http.StatusBadRequest, "radius_km must be a positive distance")
+			return
+		}
+		grpcReq.RadiusKm = radiusF
 	}
 	if catIDs := q.Get("category_ids"); catIDs != "" {
 		grpcReq.CategoryIds = splitCommas(catIDs)
