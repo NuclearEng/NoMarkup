@@ -30,10 +30,12 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -42,6 +44,11 @@ import (
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// maxOfferMessageLen caps the free-text note attached to an offer / counter.
+// Mirrors the chat message cap (a buyer note is the same class of UGC); bounds
+// the column so a client cannot persist an unbounded blob.
+const maxOfferMessageLen = 2000
 
 // OffersHandler exposes the Best-Offer surface.
 type OffersHandler struct {
@@ -114,8 +121,13 @@ func (h *OffersHandler) CreateOffer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.AmountCents <= 0 {
-		writeError(w, http.StatusBadRequest, "amount_cents must be > 0")
+	if msg := validateMoneyCents("amount_cents", req.AmountCents); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if utf8.RuneCountInString(req.Message) > maxOfferMessageLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("message must be at most %d characters", maxOfferMessageLen))
 		return
 	}
 
@@ -439,8 +451,13 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 
 	case "counter":
-		if req.CounterAmountCents <= 0 {
-			writeError(w, http.StatusBadRequest, "counter_amount_cents must be > 0")
+		if msg := validateMoneyCents("counter_amount_cents", req.CounterAmountCents); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		if utf8.RuneCountInString(req.Message) > maxOfferMessageLen {
+			writeError(w, http.StatusBadRequest,
+				fmt.Sprintf("message must be at most %d characters", maxOfferMessageLen))
 			return
 		}
 		// Open a tx — we flip the original to 'countered' and INSERT the

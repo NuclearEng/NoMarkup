@@ -34,6 +34,28 @@ func isValidUUID(s string) bool {
 	return uuidRegex.MatchString(s)
 }
 
+// maxMoneyCents is the inclusive upper bound for any user-supplied money amount
+// (bids, offers, counters). $10,000,000.00 is far above any legitimate consumer
+// goods/services transaction on the platform but bounds the value so a client
+// cannot persist an absurd amount (e.g. $10 trillion) that corrupts auction
+// state, downstream fee math, or analytics. Lower bound (> 0) is checked at each
+// call site with its own message. Mirrors the cap pattern used for insurance
+// coverage in insurance_competition.go.
+const maxMoneyCents int64 = 1_000_000_000
+
+// validateMoneyCents reports whether amount is a positive integer-cent value
+// within the sane platform bounds. fieldName names the JSON field for the error
+// message. Returns "" when valid, otherwise an intuitive 400-grade message.
+func validateMoneyCents(fieldName string, amount int64) string {
+	if amount <= 0 {
+		return fieldName + " must be positive"
+	}
+	if amount > maxMoneyCents {
+		return fmt.Sprintf("%s must be at most %d ($%d)", fieldName, maxMoneyCents, maxMoneyCents/100)
+	}
+	return ""
+}
+
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

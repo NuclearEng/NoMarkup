@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,6 +14,10 @@ import (
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// maxDisplayNameLen bounds the user-facing display name. 80 chars is generous
+// for a real name or handle while bounding the column against an unbounded blob.
+const maxDisplayNameLen = 80
 
 // UserHandler handles HTTP endpoints for user profiles.
 type UserHandler struct {
@@ -66,6 +73,32 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	var req updateUserRequest
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	// Server-side validation: never trust the client's Zod pass. A nil pointer
+	// means "field omitted, leave unchanged"; a present pointer must hold a
+	// valid value. Previously an empty display_name or a garbage timezone was
+	// persisted with a 200 — both are rejected here with an intuitive 400.
+	if req.DisplayName != nil {
+		trimmed := strings.TrimSpace(*req.DisplayName)
+		if trimmed == "" {
+			writeError(w, http.StatusBadRequest, "display_name cannot be empty")
+			return
+		}
+		if utf8.RuneCountInString(trimmed) > maxDisplayNameLen {
+			writeError(w, http.StatusBadRequest,
+				fmt.Sprintf("display_name must be at most %d characters", maxDisplayNameLen))
+			return
+		}
+		req.DisplayName = &trimmed
+	}
+	if req.Timezone != nil && *req.Timezone != "" {
+		// LoadLocation validates against the IANA tz database; an unknown zone
+		// (e.g. "Narnia/Nowhere") returns an error rather than being persisted.
+		if _, err := time.LoadLocation(*req.Timezone); err != nil {
+			writeError(w, http.StatusBadRequest, "timezone must be a valid IANA timezone (e.g. America/New_York)")
+			return
+		}
 	}
 
 	grpcReq := &userv1.UpdateUserRequest{

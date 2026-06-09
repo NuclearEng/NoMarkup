@@ -59,8 +59,8 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.AmountCents <= 0 {
-		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
+	if msg := validateMoneyCents("amount_cents", req.AmountCents); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -108,8 +108,8 @@ func (h *BidHandler) UpdateBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.NewAmountCents <= 0 {
-		writeError(w, http.StatusBadRequest, "new_amount_cents must be positive")
+	if msg := validateMoneyCents("new_amount_cents", req.NewAmountCents); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 

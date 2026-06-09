@@ -241,14 +241,21 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.AmountCents <= 0 {
-		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
+	if msg := validateMoneyCents("amount_cents", req.AmountCents); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
-	// max_bid_cents is optional; if present it must be >= the visible bid.
-	if req.MaxBidCents != nil && *req.MaxBidCents < req.AmountCents {
-		writeError(w, http.StatusBadRequest, "max_bid_cents must be >= amount_cents")
-		return
+	// max_bid_cents is optional; if present it must be >= the visible bid and
+	// within the same sane upper bound as the bid itself.
+	if req.MaxBidCents != nil {
+		if msg := validateMoneyCents("max_bid_cents", *req.MaxBidCents); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		if *req.MaxBidCents < req.AmountCents {
+			writeError(w, http.StatusBadRequest, "max_bid_cents must be >= amount_cents")
+			return
+		}
 	}
 
 	// Capture the previous high bidder BEFORE the cascade runs so the
