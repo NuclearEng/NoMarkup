@@ -108,7 +108,7 @@ export default function SavedSearchesPage() {
           }
         />
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-3" aria-live="polite">
           {searches.map((search) => (
             <li
               key={search.id}

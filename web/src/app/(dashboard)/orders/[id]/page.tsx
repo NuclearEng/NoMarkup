@@ -312,10 +312,24 @@ export default function OrderDetailPage() {
               rows={5}
               maxLength={2000}
               aria-label="Dispute description"
+              aria-describedby={
+                disputeDescription.length > 0 &&
+                disputeDescription.trim().length < DISPUTE_DESCRIPTION_MIN
+                  ? 'dispute-description-error'
+                  : undefined
+              }
+              aria-invalid={
+                disputeDescription.length > 0 &&
+                disputeDescription.trim().length < DISPUTE_DESCRIPTION_MIN
+              }
             />
             {disputeDescription.length > 0 &&
             disputeDescription.trim().length < DISPUTE_DESCRIPTION_MIN ? (
-              <p className="text-xs text-amber-400">
+              <p
+                id="dispute-description-error"
+                role="alert"
+                className="text-xs text-amber-400"
+              >
                 Please add at least {DISPUTE_DESCRIPTION_MIN} characters so our team can review.
               </p>
             ) : null}

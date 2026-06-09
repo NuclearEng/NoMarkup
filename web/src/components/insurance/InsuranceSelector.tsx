@@ -59,7 +59,7 @@ function InsuranceProductCard({
   if (purchased) {
     return (
       <Card className="border-emerald-500/30 bg-emerald-500/5">
-        <CardContent className="flex items-center gap-3 pt-6">
+        <CardContent className="flex items-center gap-3 pt-6" role="status" aria-live="polite">
           <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
           <div>
             <p className="text-sm font-medium text-emerald-300">{product.name} added</p>
@@ -128,7 +128,9 @@ function InsuranceProductCard({
         </Button>
 
         {purchaseInsurance.isError ? (
-          <p className="text-xs text-destructive">Failed to purchase. Please try again.</p>
+          <p role="alert" className="text-xs text-destructive">
+            Failed to purchase. Please try again.
+          </p>
         ) : null}
       </CardContent>
     </Card>

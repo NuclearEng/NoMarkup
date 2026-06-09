@@ -30,7 +30,7 @@ import {
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Header } from '@/components/layout/Header';
 import { AuthGuard } from '@/components/providers/AuthGuard';
@@ -174,6 +174,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const isAdmin = user?.roles.includes(USER_ROLE.ADMIN) ?? false;
   const [moreOpen, setMoreOpen] = useState(false);
+  // Focus management for the hand-rolled (non-Radix) "More" drawer: close on
+  // Escape and move focus into the drawer on open so keyboard users aren't
+  // stranded behind the modal (WCAG 2.1.1 / 2.4.3).
+  const moreCloseRef = useRef<HTMLButtonElement>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    moreCloseRef.current?.focus();
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMoreOpen(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [moreOpen]);
 
   // Working Capital (advances) is gated behind the working_capital flag. When
   // off, drop the nav entry so we don't link to a surface the gateway 503s.
@@ -279,6 +295,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* More button */}
           <button
+            ref={moreTriggerRef}
             type="button"
             className={cn(
               'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[0.625rem] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-gold)]/60',
@@ -303,7 +320,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div
               className="fixed inset-0 z-[60] bg-black/60 lg:hidden"
               aria-hidden="true"
-              onClick={() => { setMoreOpen(false); }}
+              onClick={() => {
+                setMoreOpen(false);
+                moreTriggerRef.current?.focus();
+              }}
             />
             <div
               className="fixed bottom-0 left-0 right-0 z-[70] animate-fade-in rounded-t-2xl border-t border-white/10 bg-[#0c0f18] px-4 pt-4 lg:hidden"
@@ -315,9 +335,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-sm font-semibold text-zinc-100">All Pages</span>
                 <button
+                  ref={moreCloseRef}
                   type="button"
                   className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60"
-                  onClick={() => { setMoreOpen(false); }}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    moreTriggerRef.current?.focus();
+                  }}
                   aria-label="Close navigation menu"
                 >
                   <X className="h-5 w-5" aria-hidden="true" />

@@ -1,6 +1,7 @@
 'use client';
 
 import { Gavel, Heart, MapPin } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import type { Route } from 'next';
 import type { MouseEvent } from 'react';
@@ -8,7 +9,7 @@ import type { MouseEvent } from 'react';
 import { CountdownClock } from '@/components/marketplace/CountdownClock';
 import { WatcherBadge } from '@/components/marketplace/WatcherBadge';
 import { useWatchListing } from '@/hooks/useWatchlist';
-import { formatCents } from '@/lib/utils';
+import { canNextImageLoad, formatCents } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { Listing } from '@/types';
 
@@ -70,7 +71,10 @@ export function ScoreboardCard({
   watching = false,
   showWatch = true,
 }: ScoreboardCardProps) {
-  const photo = listing.photos?.[0]?.url ?? null;
+  const rawPhoto = listing.photos?.[0]?.url ?? null;
+  // Only hand next/image a src it can actually optimize; an unconfigured
+  // remote host throws and crashes the page, so fall back to the placeholder.
+  const photo = rawPhoto && canNextImageLoad(rawPhoto) ? rawPhoto : null;
   const location =
     listing.pickup_city && listing.pickup_state
       ? `${listing.pickup_city}, ${listing.pickup_state}`
@@ -102,11 +106,12 @@ export function ScoreboardCard({
       {/* Hero image */}
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-white/[0.04]">
         {photo ? (
-          <img
+          <Image
             src={photo}
             alt={listing.title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-            loading="lazy"
+            fill
+            sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+            className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-zinc-700">
