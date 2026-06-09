@@ -159,6 +159,15 @@ func (s *SubscriptionServer) ListInvoices(ctx context.Context, req *subscription
 // --- Webhook RPC ---
 
 func (s *SubscriptionServer) HandleSubscriptionWebhook(ctx context.Context, req *subscriptionv1.HandleSubscriptionWebhookRequest) (*subscriptionv1.HandleSubscriptionWebhookResponse, error) {
+	// Signature verification is MANDATORY and fails closed. An attacker who can
+	// reach this endpoint must not be able to forge subscription lifecycle
+	// events (e.g. customer.subscription.deleted to expire a victim, or
+	// invoice.paid to flip past_due -> active without payment). Reject before
+	// parsing or applying any side effects.
+	if _, err := s.svc.VerifyWebhookSignature([]byte(req.GetPayload()), req.GetSignature()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid webhook signature")
+	}
+
 	// Parse the raw webhook payload to extract event type and subscription data.
 	var event struct {
 		Type string `json:"type"`

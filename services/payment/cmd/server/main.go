@@ -158,6 +158,7 @@ func main() {
 	// Wire up subscription service (shares same repo and stripe service).
 	// Subscription has its own proto service, so it keeps a separate gRPC server.
 	subscriptionSvc := service.NewSubscriptionService(repo, stripeSvc)
+	subscriptionSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))
 	subscriptionGRPCServer := paymentgrpc.NewSubscriptionServer(subscriptionSvc)
 
 	// Wire subscription event delegation so payment events route subscription

@@ -3,21 +3,45 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/stripe/stripe-go/v82"
 )
 
 // SubscriptionService implements subscription business logic.
 type SubscriptionService struct {
-	repo   domain.SubscriptionRepository
-	stripe *StripeService
+	repo             domain.SubscriptionRepository
+	stripe           *StripeService
+	webhookValidator WebhookEventValidator
 }
 
 // NewSubscriptionService creates a new subscription service.
 func NewSubscriptionService(repo domain.SubscriptionRepository, stripe *StripeService) *SubscriptionService {
 	return &SubscriptionService{repo: repo, stripe: stripe}
+}
+
+// SetWebhookValidator injects a WebhookEventValidator used to verify the Stripe
+// signature on subscription webhook deliveries. This is the ONLY supported way
+// to enable signature verification; there is no env-based bypass. Production
+// callers must wire a StripeWebhookValidator at startup (see cmd/server/main.go).
+func (s *SubscriptionService) SetWebhookValidator(v WebhookEventValidator) {
+	s.webhookValidator = v
+}
+
+// VerifyWebhookSignature verifies the raw subscription webhook payload against
+// its Stripe-Signature header. Security: verification is MANDATORY and fails
+// closed — if no validator is configured we refuse the event rather than
+// processing an unauthenticated payload. A non-nil error means the caller MUST
+// reject the webhook with a 4xx (never process it).
+func (s *SubscriptionService) VerifyWebhookSignature(payload []byte, signature string) (stripe.Event, error) {
+	if s.webhookValidator == nil {
+		slog.Error("subscription webhook validator not configured, refusing event")
+		return stripe.Event{}, fmt.Errorf("webhook validator not configured")
+	}
+	return s.webhookValidator.ConstructEvent(payload, signature)
 }
 
 // ListTiers returns all active subscription tiers.
