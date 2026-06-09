@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,6 +34,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -46,6 +49,10 @@ type ListingsHandler struct {
 	// active (CreateListing → NotifyWishlistMatches). Optional: a nil
 	// wishlist simply skips the alert, so create still works standalone.
 	wishlist *WishlistHandler
+	// trust supplies the seller's real computed trust score/tier for the
+	// listing-detail seller card. Optional: a nil client leaves the seller
+	// trust fields null (the card still renders, just without a trust badge).
+	trust trustv1.TrustServiceClient
 }
 
 // NewListingsHandler returns a ListingsHandler. Both deps may be nil:
@@ -61,6 +68,40 @@ func NewListingsHandler(db *pgxpool.Pool, cacheClient *cache.Client) *ListingsHa
 // stable. Safe to leave unset; the alert is then a no-op.
 func (h *ListingsHandler) SetWishlist(wl *WishlistHandler) {
 	h.wishlist = wl
+}
+
+// SetTrustClient wires the trust engine into the listing-detail seller card so
+// it shows the seller's real computed trust score/tier. Kept as a setter (like
+// SetWishlist) to keep the NewListingsHandler signature stable. Safe to leave
+// unset: a nil client leaves seller_trust_score/seller_trust_tier null.
+func (h *ListingsHandler) SetTrustClient(c trustv1.TrustServiceClient) {
+	h.trust = c
+}
+
+// sellerTrust fetches a seller's real computed trust score from the trust
+// engine and returns it as a 0–100 integer score plus tier string — matching
+// the web ListingDetail.seller_trust_score (number) / seller_trust_tier fields.
+// The trust engine returns overall_score on a 0.0–1.0 scale (same as provider.go
+// emits); the seller card's score field is an integer, so we scale ×100 and
+// round. Fully fail-soft: a nil client, missing score, or any error returns
+// (nil, nil) so the detail page still renders without a trust badge.
+func (h *ListingsHandler) sellerTrust(ctx context.Context, sellerID string) (*int, *string) {
+	if h.trust == nil || sellerID == "" {
+		return nil, nil
+	}
+	resp, err := h.trust.GetTrustScore(ctx, &trustv1.GetTrustScoreRequest{UserId: sellerID})
+	if err != nil {
+		// NotFound is expected for sellers without a score yet.
+		slog.DebugContext(ctx, "seller trust score lookup failed", "error", err, "seller_id", sellerID)
+		return nil, nil
+	}
+	score := resp.GetScore()
+	if score == nil {
+		return nil, nil
+	}
+	v := int(math.Round(score.GetOverallScore() * 100))
+	tier := trustTierToString(score.GetTier())
+	return &v, &tier
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -447,8 +488,6 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	var lat, lng pgtype.Float8
 	var endsAt pgtype.Timestamptz
 	var memberSince time.Time
-	var trustTier sql.NullString
-	var trustScore sql.NullInt32
 	var reserveCents, buyNowCents pgtype.Int8
 	var reserveMet pgtype.Bool
 	var condition sql.NullString
@@ -475,8 +514,7 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 			l.condition,
 			l.created_at, l.updated_at,
 			COALESCE(u.display_name, ''), u.created_at,
-			(SELECT COUNT(*) FROM listings WHERE seller_id = l.seller_id AND status IN ('active','sold')),
-			NULL::text, NULL::int
+			(SELECT COUNT(*) FROM listings WHERE seller_id = l.seller_id AND status IN ('active','sold'))
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
 		  LEFT JOIN users u ON u.id = l.seller_id
@@ -497,7 +535,6 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		&condition,
 		&d.CreatedAt, &d.UpdatedAt,
 		&d.SellerDisplayName, &memberSince, &d.SellerListingsCount,
-		&trustTier, &trustScore,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "listing not found")
@@ -524,14 +561,9 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	// elapsed reads as 'ended' (no close-worker flips it). Keeps the badge
 	// from contradicting the "Auction Closed" countdown on the detail page.
 	d.Status = effectiveListingStatus(d.Status, d.AuctionEndsAt)
-	if trustTier.Valid {
-		s := trustTier.String
-		d.SellerTrustTier = &s
-	}
-	if trustScore.Valid {
-		v := int(trustScore.Int32)
-		d.SellerTrustScore = &v
-	}
+	// Seller trust: real computed score/tier from the trust engine. Fail-soft —
+	// (nil, nil) when no score yet or the engine is unreachable.
+	d.SellerTrustScore, d.SellerTrustTier = h.sellerTrust(r.Context(), d.SellerID)
 	if reserveCents.Valid {
 		v := reserveCents.Int64
 		d.ReservePriceCents = &v

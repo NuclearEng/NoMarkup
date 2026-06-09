@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -26,6 +28,7 @@ import (
 type BidHandler struct {
 	bidClient      bidv1.BidServiceClient
 	contractClient contractv1.ContractServiceClient
+	trustClient    trustv1.TrustServiceClient
 	db             *pgxpool.Pool
 }
 
@@ -35,6 +38,16 @@ type BidHandler struct {
 // stays severed. db (optional) is used only to emit in-app notifications.
 func NewBidHandler(bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *BidHandler {
 	return &BidHandler{bidClient: bidClient, contractClient: contractClient, db: db}
+}
+
+// SetTrustClient wires the trust engine into the bid handler so the
+// customer-facing bid list can show each bidder's real computed trust score.
+// Kept as a setter (rather than a constructor arg) so NewBidHandler's signature
+// — referenced across main.go and tests — stays stable. Safe to leave unset: a
+// nil trust client makes the trust enrichment a no-op (bids render without a
+// trust card), matching the gateway's nil-safe degradation pattern.
+func (h *BidHandler) SetTrustClient(c trustv1.TrustServiceClient) {
+	h.trustClient = c
 }
 
 type placeBidRequest struct {
@@ -413,6 +426,17 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve each bidder's real computed trust score. We dedupe provider IDs
+	// across the bid list and do ONE trust lookup per unique provider (a single
+	// provider can hold many bids on the same job), not one per bid.
+	providerIDs := make([]string, 0, len(resp.GetBids()))
+	for _, bwp := range resp.GetBids() {
+		if pid := bwp.GetBid().GetProviderId(); pid != "" {
+			providerIDs = append(providerIDs, pid)
+		}
+	}
+	trustByProvider := h.batchTrustScores(r.Context(), providerIDs)
+
 	bids := make([]map[string]interface{}, 0, len(resp.GetBids()))
 	for _, bwp := range resp.GetBids() {
 		entry := map[string]interface{}{
@@ -421,8 +445,11 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 			"provider_business_name": bwp.GetProviderBusinessName(),
 			"provider_avatar_url":    bwp.GetProviderAvatarUrl(),
 			"jobs_completed":         bwp.GetJobsCompleted(),
-			"trust_score":            nil,
-			"review_summary":         nil,
+			// Real trust score, fetched above. nil when the provider has no
+			// score yet or the trust engine was unreachable (fail-soft) — the
+			// BidCard then renders without a trust gauge, never an error.
+			"trust_score":    trustByProvider[bwp.GetBid().GetProviderId()],
+			"review_summary": nil,
 		}
 		bids = append(bids, entry)
 	}
@@ -430,6 +457,68 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"bids": bids,
 	})
+}
+
+// batchTrustScores fetches the real computed trust score for a set of provider
+// IDs and returns a map keyed by provider ID. The score shape matches the
+// public projection emitted everywhere else (provider.go): {overall_score
+// (0.0–1.0), tier}, which the web BidCard reads (it multiplies overall_score by
+// 100 for the 0–100 gauge). Input IDs are deduped so each unique provider is
+// looked up exactly once. Lookups run with a bounded concurrent fan-out (the
+// trust proto exposes no batch *query* RPC — BatchComputeTrustScores recomputes
+// rather than reads). Fully fail-soft: a nil trust client, a missing score, or
+// any lookup error simply omits that provider from the map (caller emits null),
+// never failing the bid list.
+func (h *BidHandler) batchTrustScores(ctx context.Context, providerIDs []string) map[string]map[string]interface{} {
+	out := make(map[string]map[string]interface{})
+	if h.trustClient == nil || len(providerIDs) == 0 {
+		return out
+	}
+
+	// Dedupe while preserving a stable set of unique IDs.
+	unique := make([]string, 0, len(providerIDs))
+	seen := make(map[string]struct{}, len(providerIDs))
+	for _, id := range providerIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	const maxConcurrent = 8
+	sem := make(chan struct{}, maxConcurrent)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, id := range unique {
+		wg.Add(1)
+		go func(providerID string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			resp, err := h.trustClient.GetTrustScore(ctx, &trustv1.GetTrustScoreRequest{UserId: providerID})
+			if err != nil {
+				// NotFound is expected for providers without a score yet.
+				slog.DebugContext(ctx, "bid list trust score lookup failed", "error", err, "provider_id", providerID)
+				return
+			}
+			score := resp.GetScore()
+			if score == nil {
+				return
+			}
+			summary := map[string]interface{}{
+				"overall_score": score.GetOverallScore(),
+				"tier":          trustTierToString(score.GetTier()),
+			}
+			mu.Lock()
+			out[providerID] = summary
+			mu.Unlock()
+		}(id)
+	}
+	wg.Wait()
+	return out
 }
 
 // ListMyBids handles GET /api/v1/bids/mine.

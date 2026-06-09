@@ -230,6 +230,9 @@ func main() {
 	// bidHandler depends on the contract client so awarding a bid also creates
 	// a contract row in the same request (fixes severed customer-accept pipeline).
 	bidHandler := handler.NewBidHandler(bidClient, contractClient, dbPool)
+	// Wire the trust engine so the customer-facing bid list shows each bidder's
+	// real computed trust score (otherwise it renders without a trust gauge).
+	bidHandler.SetTrustClient(trustClient)
 	contractHandler := handler.NewContractHandler(contractClient, userClient, dbPool)
 
 	// Review service lives on the same gRPC server as the job service.
@@ -304,6 +307,9 @@ func main() {
 	// Wire the wishlist price-alert fan-out into the listing-create path so a
 	// new active listing that matches a buyer's wishlist notifies the owner.
 	listingsHandler.SetWishlist(wishlistHandler)
+	// Wire the trust engine so the listing-detail seller card shows the
+	// seller's real computed trust score/tier instead of null.
+	listingsHandler.SetTrustClient(trustClient)
 	followsHandler := handler.NewFollowsHandler(dbPool)
 	pushSubscriptionsHandler := handler.NewPushSubscriptionsHandler(dbPool)
 	complianceHandler := handler.NewComplianceHandler(dbPool)
