@@ -1023,11 +1023,16 @@ impl FraudDetector {
         let auto_actioned = action.is_some();
         let auto_action = action.map(ToString::to_string);
 
-        sqlx::query(
+        // Only review an alert that is not already in a terminal state. Without
+        // this guard a resolved verdict could be flipped indefinitely, and each
+        // re-review re-stamps auto_action (restrict/ban) — re-firing the
+        // downstream enforcement side effect on an already-decided alert.
+        // 'confirmed' (investigating) is intermediate and may still advance.
+        let result = sqlx::query(
             "UPDATE fraud_signals \
              SET status = $1, reviewed_at = now(), auto_actioned = $2, \
                  auto_action = $3, updated_at = now() \
-             WHERE id = $4",
+             WHERE id = $4 AND status NOT IN ('actioned', 'dismissed')",
         )
         .bind(new_status)
         .bind(auto_actioned)
@@ -1035,6 +1040,22 @@ impl FraudDetector {
         .bind(signal_id)
         .execute(&self.pool)
         .await?;
+
+        if result.rows_affected() == 0 {
+            // Distinguish a missing alert (404) from an already-terminal one (400).
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM fraud_signals WHERE id = $1)",
+            )
+            .bind(signal_id)
+            .fetch_one(&self.pool)
+            .await?;
+            if exists {
+                return Err(FraudError::InvalidArgument(
+                    "alert is already resolved".to_string(),
+                ));
+            }
+            return Err(FraudError::SignalNotFound(signal_id.to_string()));
+        }
 
         self.get_signal(signal_id).await
     }
