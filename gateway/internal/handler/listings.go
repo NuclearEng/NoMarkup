@@ -518,7 +518,9 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
 		  LEFT JOIN users u ON u.id = l.seller_id
-		 WHERE l.id = $1`,
+		 WHERE l.id = $1
+		   AND l.is_hidden = false
+		   AND l.status <> 'draft'`,
 		id,
 	).Scan(
 		&d.ID, &d.SellerID, &d.CategoryID,
