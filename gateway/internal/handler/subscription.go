@@ -107,6 +107,12 @@ func (h *SubscriptionHandler) CreateSubscription(w http.ResponseWriter, r *http.
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// Validate the tier id up front like GetTier/ChangeTier do; a malformed UUID
+	// otherwise reaches the uuid-typed tier lookup and 500s on this money path.
+	if !isValidUUID(req.TierID) {
+		writeError(w, http.StatusBadRequest, "invalid subscription tier id")
+		return
+	}
 
 	resp, err := h.client.CreateSubscription(r.Context(), &subscriptionv1.CreateSubscriptionRequest{
 		UserId:          claims.UserID,

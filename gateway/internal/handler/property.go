@@ -110,6 +110,14 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ZipCode: req.Address.ZipCode,
 	}
 	if req.Address.Latitude != nil && req.Address.Longitude != nil {
+		// Bound coordinates before they flow into ST_MakePoint — out-of-range
+		// values silently corrupt every PostGIS proximity query (25mi pickup
+		// radius, provider distance) that later reads this column.
+		if *req.Address.Latitude < -90 || *req.Address.Latitude > 90 ||
+			*req.Address.Longitude < -180 || *req.Address.Longitude > 180 {
+			writeError(w, http.StatusBadRequest, "latitude must be within [-90,90] and longitude within [-180,180]")
+			return
+		}
 		addr.Location = &commonv1.Location{
 			Latitude:  *req.Address.Latitude,
 			Longitude: *req.Address.Longitude,

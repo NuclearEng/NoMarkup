@@ -201,7 +201,12 @@ func New(
 	// (Apple Calendar, Google, Outlook) work without forwarding cookies.
 	// The handler authorises internally; mounted outside the auth-required
 	// block so the optional-token branch is reachable.
-	r.Get("/api/v1/me/calendar.ics", calendarExportHandler.ExportICS)
+	// Wrap in optionalAuth so a cookie/Bearer caller actually gets claims
+	// populated (the handler checks GetClaims first); without this wrapper no
+	// middleware ran on the route, so the documented cookie/header path always
+	// fell through to 401 and only ?token= worked. The ?token= fallback still
+	// works when no auth header is present.
+	r.Get("/api/v1/me/calendar.ics", optionalAuth(authMW, calendarExportHandler.ExportICS))
 
 	// All job routes in one group (mix of public and authenticated)
 	r.Route("/api/v1/jobs", func(r chi.Router) {
