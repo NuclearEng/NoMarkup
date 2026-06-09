@@ -9,6 +9,8 @@ import (
 	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -62,17 +64,27 @@ func (h *AnalyticsHandler) GetMarketRange(w http.ResponseWriter, r *http.Request
 
 	resp, err := h.client.GetMarketRange(r.Context(), req)
 	if err != nil {
+		// "No market range computed yet for this category" is a predictable
+		// empty state, not a missing resource — the analytics service signals it
+		// with gRPC NotFound. Surface it as a 200 no-data response so the
+		// fair-price widget can distinguish "no data yet" from a real error and
+		// stop spamming the console with 404s on every dataless category (§15).
+		if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"has_data": false})
+			return
+		}
 		writeGRPCError(w, err)
 		return
 	}
 
 	mr := resp.GetRange()
 	if mr == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"has_data": false})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"has_data":       true,
 		"category_id":    mr.GetCategoryId(),
 		"subcategory_id": mr.GetSubcategoryId(),
 		"service_type_id": mr.GetServiceTypeId(),

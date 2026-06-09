@@ -23,7 +23,10 @@ function getBidPositionColor(
 export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPriceWidgetProps) {
   const { data: marketRange } = useMarketRange(categoryId);
 
-  if (!marketRange || marketRange.data_points < 3) {
+  // Render nothing when there's no computed market data yet (has_data === false),
+  // the request is still loading, or the sample is too small to be meaningful.
+  // This is the normal empty state for a fresh category — not an error.
+  if (!marketRange || !marketRange.has_data || marketRange.data_points < 3) {
     return null;
   }
 

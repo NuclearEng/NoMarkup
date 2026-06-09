@@ -158,10 +158,15 @@ export function useCalculateFees() {
   });
 }
 
-export function useStripeAccountStatus() {
+export function useStripeAccountStatus(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['stripe-account-status'],
     queryFn: () => api.get<StripeAccountStatus>('/api/v1/providers/me/stripe/status'),
+    // This is the PROVIDER payout (Stripe Connect) account status — a
+    // provider-only endpoint. Callers must gate it on the provider role so
+    // customers (who have saved cards for paying, not a payout account) don't
+    // fire a guaranteed 403.
+    enabled: options?.enabled ?? true,
   });
 }
 

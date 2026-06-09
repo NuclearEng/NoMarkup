@@ -6,6 +6,7 @@ import type { AnalyticsMarketRange } from '@/types';
 
 function makeRange(overrides: Partial<AnalyticsMarketRange> = {}): AnalyticsMarketRange {
   return {
+    has_data: true,
     category_id: 'cat-1',
     subcategory_id: 'sub-1',
     service_type_id: 'svc-1',

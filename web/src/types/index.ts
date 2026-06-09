@@ -1186,6 +1186,10 @@ export interface ChangeTierInput {
 
 // Analytics types
 export interface AnalyticsMarketRange {
+  // false when no market range has been computed for this category yet — a
+  // predictable empty state, not an error. The full fields below are only
+  // present when has_data is true.
+  has_data: boolean;
   category_id: string;
   subcategory_id: string;
   service_type_id: string;

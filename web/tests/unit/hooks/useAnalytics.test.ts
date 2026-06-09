@@ -64,6 +64,7 @@ function createWrapper(queryClient: QueryClient) {
 }
 
 const mockMarketRange: AnalyticsMarketRange = {
+  has_data: true,
   category_id: 'cat-1',
   subcategory_id: 'subcat-1',
   service_type_id: 'svc-1',

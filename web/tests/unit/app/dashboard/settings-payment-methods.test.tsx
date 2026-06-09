@@ -36,6 +36,18 @@ vi.mock('@/components/payments/AddPaymentMethodForm', () => ({
     ),
 }));
 
+// Mutable auth state — the provider-payout section is role-gated, so tests set
+// the role they need. Defaults to a provider so the existing payout-section
+// assertions below see that section.
+const authState: { user: { id: string; roles: string[] } | null } = {
+  user: { id: 'user-1', roles: ['provider'] },
+};
+
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (selector: (s: { user: unknown }) => unknown) =>
+    selector({ user: authState.user }),
+}));
+
 vi.mock('@/hooks/usePayments', () => ({
   useCreateStripeAccount: vi.fn(),
   useDeletePaymentMethod: vi.fn(),
@@ -87,6 +99,7 @@ function setHooks(opts: {
 describe('PaymentMethodsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: 'user-1', roles: ['provider'] };
     setHooks({});
   });
 
@@ -265,5 +278,32 @@ describe('PaymentMethodsPage', () => {
     expect(
       screen.getByText('Complete your Stripe account setup to receive payouts for completed jobs.'),
     ).toBeDefined();
+  });
+
+  // --- Customer role: the provider payout (Stripe Connect) section is hidden
+  // and the provider-only status query is gated off, so no 403 fires. ---
+
+  it('hides the provider payout section entirely for customers', () => {
+    authState.user = { id: 'cust-1', roles: ['customer'] };
+    setHooks({ stripeData: { charges_enabled: true } });
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    expect(screen.queryByText('Provider Payouts')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Set Up Payouts' })).toBeNull();
+    // The customer still sees their saved-cards section.
+    expect(screen.getByText('Saved Payment Methods')).toBeDefined();
+  });
+
+  it('gates useStripeAccountStatus to disabled for customers (no provider-only call)', () => {
+    authState.user = { id: 'cust-1', roles: ['customer'] };
+    setHooks({});
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    expect(useStripeAccountStatus).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it('enables useStripeAccountStatus for providers', () => {
+    authState.user = { id: 'prov-1', roles: ['provider'] };
+    setHooks({});
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+    expect(useStripeAccountStatus).toHaveBeenCalledWith({ enabled: true });
   });
 });

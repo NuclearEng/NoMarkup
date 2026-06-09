@@ -14,13 +14,21 @@ import {
   usePaymentMethods,
   useStripeAccountStatus,
 } from '@/hooks/usePayments';
+import { useAuthStore } from '@/stores/auth-store';
+import { USER_ROLE } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function PaymentMethodsPage() {
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  // The Stripe Connect payout account is provider-only. Gate the status query
+  // (and the payout section below) on the provider role so customers — who only
+  // have saved cards for paying — never hit the provider-only endpoint and get
+  // a guaranteed 403.
+  const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const { data: methodsData, isLoading, isError } = usePaymentMethods();
   const deleteMethod = useDeletePaymentMethod();
-  const stripeStatus = useStripeAccountStatus();
+  const stripeStatus = useStripeAccountStatus({ enabled: isProvider });
   const createStripeAccount = useCreateStripeAccount();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -50,7 +58,9 @@ export default function PaymentMethodsPage() {
             Payment Methods
           </h1>
           <p className="mt-1 text-zinc-300">
-            Manage your payment methods and payout settings
+            {isProvider
+              ? 'Manage your payment methods and payout settings'
+              : 'Manage your saved payment methods'}
           </p>
         </div>
         {!showAddForm ? (
@@ -153,9 +163,13 @@ export default function PaymentMethodsPage() {
         </CardContent>
       </Card>
 
+      {/* Provider payout (Stripe Connect) — providers only. Customers don't
+          have a payout account, so the section is hidden for them entirely and
+          the provider-only status endpoint is never called (no 403). */}
+      {isProvider ? (
+      <>
       <div className="glass-divider" role="separator" />
 
-      {/* Stripe Connect Status (for providers) */}
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
         <CardHeader>
           <CardTitle className="gold-text text-lg">Provider Payouts</CardTitle>
@@ -214,6 +228,8 @@ export default function PaymentMethodsPage() {
           )}
         </CardContent>
       </Card>
+      </>
+      ) : null}
     </div>
   );
 }

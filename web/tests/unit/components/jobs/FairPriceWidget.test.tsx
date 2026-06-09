@@ -21,9 +21,17 @@ describe('FairPriceWidget', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('renders nothing when the category has no market data yet (has_data false)', () => {
+    vi.mocked(useMarketRange).mockReturnValue({
+      data: { has_data: false },
+    } as unknown as ReturnType<typeof useMarketRange>);
+    const { container } = render(<FairPriceWidget categoryId="cat-1" />);
+    expect(container.firstChild).toBeNull();
+  });
+
   it('renders nothing when fewer than 3 data points', () => {
     vi.mocked(useMarketRange).mockReturnValue({
-      data: { low_cents: 1000, median_cents: 2000, high_cents: 3000, data_points: 2 },
+      data: { has_data: true, low_cents: 1000, median_cents: 2000, high_cents: 3000, data_points: 2 },
     } as unknown as ReturnType<typeof useMarketRange>);
     const { container } = render(<FairPriceWidget categoryId="cat-1" />);
     expect(container.firstChild).toBeNull();
@@ -32,6 +40,7 @@ describe('FairPriceWidget', () => {
   it('renders price range labels when data is available', () => {
     vi.mocked(useMarketRange).mockReturnValue({
       data: {
+        has_data: true,
         low_cents: 5000,
         median_cents: 10000,
         high_cents: 15000,
@@ -47,6 +56,7 @@ describe('FairPriceWidget', () => {
   it('shows correct singular vs plural job count', () => {
     vi.mocked(useMarketRange).mockReturnValue({
       data: {
+        has_data: true,
         low_cents: 5000,
         median_cents: 10000,
         high_cents: 15000,
@@ -60,6 +70,7 @@ describe('FairPriceWidget', () => {
   it('renders accessibly with aria-label', () => {
     vi.mocked(useMarketRange).mockReturnValue({
       data: {
+        has_data: true,
         low_cents: 5000,
         median_cents: 10000,
         high_cents: 15000,
@@ -72,7 +83,7 @@ describe('FairPriceWidget', () => {
 
   it('uses emerald color when current bid is below median', () => {
     vi.mocked(useMarketRange).mockReturnValue({
-      data: { low_cents: 5000, median_cents: 10000, high_cents: 15000, data_points: 8 },
+      data: { has_data: true, low_cents: 5000, median_cents: 10000, high_cents: 15000, data_points: 8 },
     } as unknown as ReturnType<typeof useMarketRange>);
     const { container } = render(
       <FairPriceWidget categoryId="cat-1" currentLowestBidCents={7000} />,
@@ -82,7 +93,7 @@ describe('FairPriceWidget', () => {
 
   it('uses amber color when current bid is between median and high', () => {
     vi.mocked(useMarketRange).mockReturnValue({
-      data: { low_cents: 5000, median_cents: 10000, high_cents: 15000, data_points: 8 },
+      data: { has_data: true, low_cents: 5000, median_cents: 10000, high_cents: 15000, data_points: 8 },
     } as unknown as ReturnType<typeof useMarketRange>);
     const { container } = render(
       <FairPriceWidget categoryId="cat-1" currentLowestBidCents={12000} />,
@@ -92,7 +103,7 @@ describe('FairPriceWidget', () => {
 
   it('uses red color when current bid is above high range', () => {
     vi.mocked(useMarketRange).mockReturnValue({
-      data: { low_cents: 5000, median_cents: 10000, high_cents: 15000, data_points: 8 },
+      data: { has_data: true, low_cents: 5000, median_cents: 10000, high_cents: 15000, data_points: 8 },
     } as unknown as ReturnType<typeof useMarketRange>);
     const { container } = render(
       <FairPriceWidget categoryId="cat-1" currentLowestBidCents={20000} />,

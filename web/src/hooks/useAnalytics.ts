@@ -23,8 +23,22 @@ export function useMarketRange(
 
   return useQuery({
     queryKey: ['market-range', categoryId, subcategoryId, serviceTypeId],
-    queryFn: () => api.get<AnalyticsMarketRange>(path),
     enabled: !!categoryId,
+    retry: false,
+    queryFn: async () => {
+      try {
+        return await api.get<AnalyticsMarketRange>(path);
+      } catch (error) {
+        // "No market range computed yet" is a normal empty state. The gateway
+        // now returns 200 { has_data: false }, but stay tolerant of older
+        // deployments that 404'd, so the widget never surfaces a console error
+        // for a dataless category.
+        if (error instanceof ApiError && error.status === 404) {
+          return { has_data: false } as AnalyticsMarketRange;
+        }
+        throw error;
+      }
+    },
   });
 }
 
