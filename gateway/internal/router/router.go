@@ -150,8 +150,16 @@ func New(
 		// MFA verify does not require auth (uses challenge token from login).
 		r.Post("/mfa/verify", authHandler.VerifyMFA)
 
-		// Logout and phone verification require authentication.
-		r.With(authMW.Handler).Post("/logout", authHandler.Logout)
+		// Logout must NOT require a live access token. It authenticates off the
+		// refresh-token cookie/body and revokes it server-side (the Logout
+		// handler reads no JWT claims). Gating it behind the auth middleware
+		// meant a client whose 15-min access token had already expired could
+		// never revoke its 7-day refresh token — the session stayed alive
+		// server-side, violating §6 (logout invalidates the session, not just
+		// the client cache). Public, like /refresh, which is the symmetric path.
+		r.Post("/logout", authHandler.Logout)
+
+		// Phone verification requires authentication.
 		r.With(authMW.Handler).Post("/verify-phone", authHandler.VerifyPhone)
 		r.With(authMW.Handler).Post("/send-phone-otp", authHandler.SendPhoneOTP)
 
