@@ -20,10 +20,21 @@ function getMapboxToken(): string {
   return process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
 }
 
-function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: Job) => void }) {
-  const jobsWithLocation = jobs.filter(
-    (job) => job.location_lat !== null && job.location_lng !== null,
+/**
+ * A job is plottable only when it has non-null coordinates that aren't the
+ * (0,0) Null-Island placeholder a failed geocode can leave behind — plotting
+ * (0,0) would drop a bogus pin off the coast of Africa.
+ */
+function hasRealLocation(job: Job): boolean {
+  return (
+    job.location_lat !== null &&
+    job.location_lng !== null &&
+    !(job.location_lat === 0 && job.location_lng === 0)
   );
+}
+
+function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: Job) => void }) {
+  const jobsWithLocation = jobs.filter(hasRealLocation);
 
   return (
     <div className="bg-muted/30 rounded-xl border p-6">
@@ -153,9 +164,7 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
 
     async function addMarkers() {
       const mapboxgl = (await import('mapbox-gl')).default;
-      const jobsWithLocation = jobs.filter(
-        (job) => job.location_lat !== null && job.location_lng !== null,
-      );
+      const jobsWithLocation = jobs.filter(hasRealLocation);
 
       // Remove existing markers via source if it exists
       if (map.getSource('jobs')) {

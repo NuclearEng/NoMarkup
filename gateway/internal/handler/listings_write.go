@@ -254,10 +254,12 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 	// pin a pickup point silently failed every distance filter — this was
 	// the gap Wave 1 punted on.
 	lng, lat := 0.0, 0.0
+	hasLocation := false // true once we've resolved a real pickup point
 	hasPin := req.PickupLng != nil && req.PickupLat != nil
 	if hasPin {
 		lng = *req.PickupLng
 		lat = *req.PickupLat
+		hasLocation = true
 	} else {
 		zip := strings.TrimSpace(req.PickupZip)
 		if zip != "" {
@@ -269,16 +271,36 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 			case err == nil:
 				lat = zlat
 				lng = zlng
+				hasLocation = true
 			case errors.Is(err, pgx.ErrNoRows):
+				// Unknown ZIP: not a server fault, but we can't geocode it.
+				// On publish this is a hard error below (we refuse to ship an
+				// item that's invisible to every radius search); on a draft we
+				// keep the (0,0) placeholder so the seller can refine later.
 				slog.WarnContext(r.Context(),
-					"create listing: zip not in zip_codes lookup; falling back to (0,0)",
+					"create listing: zip not in zip_codes lookup; no pickup centroid",
 					"zip", zip, "seller_id", claims.UserID)
 			default:
-				slog.WarnContext(r.Context(),
-					"create listing: zip_codes lookup failed; falling back to (0,0)",
+				// Transient DB failure — surface as a 500, don't silently drop
+				// the item to (0,0) and pretend it succeeded.
+				slog.ErrorContext(r.Context(),
+					"create listing: zip_codes lookup failed",
 					"zip", zip, "error", err)
+				writeError(w, http.StatusInternalServerError, "failed to resolve pickup location")
+				return
 			}
 		}
+	}
+
+	// A published listing MUST have a real pickup point — without one it lands
+	// at (0,0) and is invisible to every 25-mile radius search (the core
+	// "local pickup only" promise), with no signal to the seller. Fail closed
+	// with an actionable message instead. Drafts may save without coordinates
+	// and resolve them before publishing.
+	if req.Publish && !hasLocation {
+		writeError(w, http.StatusBadRequest,
+			"add a pickup location (a valid ZIP we cover, or drop a map pin) before publishing — buyers search by distance")
+		return
 	}
 
 	// ── Insert + photos in one transaction ──────────────────────────

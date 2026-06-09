@@ -52,6 +52,20 @@ function getMapboxToken(): string {
 }
 
 /**
+ * A listing has a real, plottable pickup point only when it has non-null
+ * coordinates that aren't the (0,0) Null-Island placeholder. Legacy listings
+ * posted before geocoding was enforced can carry (0,0); plotting those would
+ * drop a bogus pin in the Gulf of Guinea, so we treat them as location-less.
+ */
+function hasRealCoords(l: Listing): boolean {
+  return (
+    l.pickup_lat != null &&
+    l.pickup_lng != null &&
+    !(l.pickup_lat === 0 && l.pickup_lng === 0)
+  );
+}
+
+/**
  * Computes a sensible center from the listings themselves: average of the
  * pickup coords. Falls back to the supplied default when no listing has
  * geo data.
@@ -60,9 +74,7 @@ function deriveCenter(
   listings: Listing[],
   fallback: [number, number],
 ): [number, number] {
-  const withCoords = listings.filter(
-    (l) => l.pickup_lat != null && l.pickup_lng != null,
-  );
+  const withCoords = listings.filter(hasRealCoords);
   if (withCoords.length === 0) return fallback;
   let lat = 0;
   let lng = 0;
@@ -74,9 +86,7 @@ function deriveCenter(
 }
 
 function MapFallback({ listings }: { listings: Listing[] }) {
-  const withLocation = listings.filter(
-    (l) => l.pickup_lat !== null && l.pickup_lng !== null,
-  );
+  const withLocation = listings.filter(hasRealCoords);
   return (
     <div className="bg-muted/30 rounded-xl border p-6">
       <div className="text-muted-foreground mb-4 flex items-center gap-2">
@@ -251,9 +261,7 @@ export function MarketplaceMap({
     if (!mapRef.current || !mapLoaded) return;
     const map = mapRef.current;
 
-    const withCoords = listings.filter(
-      (l) => l.pickup_lat != null && l.pickup_lng != null,
-    );
+    const withCoords = listings.filter(hasRealCoords);
 
     // Update source for clusters. `getSource` returns the broad Source union;
     // narrow to GeoJSONSource so .setData type-checks.
