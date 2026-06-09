@@ -269,8 +269,8 @@ func TestPaymentService_PaymentMethodLifecycle_DevMode(t *testing.T) {
 	require.Len(t, methods, 1)
 	assert.Equal(t, "4242", methods[0].LastFour)
 
-	// DeletePaymentMethod removes it
-	err = svc.DeletePaymentMethod(context.Background(), pm.ID)
+	// DeletePaymentMethod removes it (scoped to the owner, user-1)
+	err = svc.DeletePaymentMethod(context.Background(), "user-1", pm.ID)
 	require.NoError(t, err)
 
 	methods, err = svc.ListPaymentMethods(context.Background(), "user-1")

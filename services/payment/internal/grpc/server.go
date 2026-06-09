@@ -131,7 +131,14 @@ func (s *Server) ListPaymentMethods(ctx context.Context, req *paymentv1.ListPaym
 }
 
 func (s *Server) DeletePaymentMethod(ctx context.Context, req *paymentv1.DeletePaymentMethodRequest) (*paymentv1.DeletePaymentMethodResponse, error) {
-	if err := s.svc.DeletePaymentMethod(ctx, req.GetPaymentMethodId()); err != nil {
+	// customer_id is required so deletion is scoped to the OWNER. Without it the
+	// service detaches a payment method by id alone — an IDOR letting any user
+	// delete another user's card by id (security audit 2026-04). The gateway
+	// always sends the verified JWT subject.
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	if err := s.svc.DeletePaymentMethod(ctx, req.GetCustomerId(), req.GetPaymentMethodId()); err != nil {
 		return nil, mapDomainError(err)
 	}
 	return &paymentv1.DeletePaymentMethodResponse{}, nil

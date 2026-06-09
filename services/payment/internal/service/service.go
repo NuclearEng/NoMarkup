@@ -563,8 +563,29 @@ func (s *PaymentService) AddDevPaymentMethod(ctx context.Context, customerID, br
 	return &pm, nil
 }
 
-// DeletePaymentMethod detaches a payment method.
-func (s *PaymentService) DeletePaymentMethod(ctx context.Context, paymentMethodID string) error {
+// DeletePaymentMethod detaches a payment method owned by customerID.
+//
+// Ownership (IDOR guard): the payment method MUST belong to customerID. We
+// confirm membership by listing the caller's own methods (ListPaymentMethods is
+// owner-scoped — dev: keyed by user id; prod: keyed by the user's Stripe
+// customer id) and checking the id is present before detaching. A method that
+// isn't the caller's returns ErrPaymentNotFound → gRPC NotFound → 404, so a
+// non-owner can neither delete nor probe for another user's card id.
+func (s *PaymentService) DeletePaymentMethod(ctx context.Context, customerID, paymentMethodID string) error {
+	methods, err := s.ListPaymentMethods(ctx, customerID)
+	if err != nil {
+		return fmt.Errorf("delete payment method: load owner methods: %w", err)
+	}
+	owned := false
+	for _, m := range methods {
+		if m.ID == paymentMethodID {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return domain.ErrPaymentNotFound
+	}
 	return s.stripe.DeletePaymentMethod(ctx, paymentMethodID)
 }
 
