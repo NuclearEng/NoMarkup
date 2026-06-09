@@ -44,7 +44,7 @@ import {
   useRepayAdvance,
   useRequestAdvance,
 } from '@/hooks/useWorkingCapital';
-import { cn, formatCents } from '@/lib/utils';
+import { cn, formatCents, repaymentProgress } from '@/lib/utils';
 import type { AdvanceStatus, CreditLimit, WorkingCapitalAdvance } from '@/types';
 import { ADVANCE_STATUS } from '@/types';
 
@@ -936,29 +936,42 @@ export default function ProviderAdvancesPage() {
                       advance.status === ADVANCE_STATUS.DISBURSED ||
                       advance.status === ADVANCE_STATUS.REPAID) ? (() => {
                       const totalOwed = advance.advance_amount_cents + advance.fee_cents;
-                      const repaymentPercent = totalOwed > 0 ? Math.min(100, Math.round((advance.repaid_cents / totalOwed) * 100)) : 0;
+                      // Exact, transparent progress: rounds DOWN and never shows
+                      // 100% / "Paid in full" unless the outstanding balance is
+                      // truly $0.00 (e.g. an 8¢ shortfall renders as 99%, not 100%).
+                      const { percent: repaymentPercent, outstandingCents: remainingCents, complete } =
+                        repaymentProgress(advance.repaid_cents, totalOwed);
                       return (
                         <div className="mt-1.5 space-y-1">
                           <div className="flex items-center justify-between text-xs text-white/40">
                             <span>Repayment</span>
-                            <span className="tabular-nums">{String(repaymentPercent)}%</span>
+                            <span className="tabular-nums">
+                              {complete ? 'Paid in full' : `${String(repaymentPercent)}%`}
+                            </span>
                           </div>
                           <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
                             <div
                               className={cn(
                                 'h-full rounded-full transition-all duration-500',
-                                repaymentPercent >= 100
-                                  ? 'bg-emerald-500/60'
-                                  : 'bg-[var(--brand-gold)]/60',
+                                complete ? 'bg-emerald-500/60' : 'bg-[var(--brand-gold)]/60',
                               )}
                               style={{ width: `${String(repaymentPercent)}%` }}
                               role="progressbar"
                               aria-valuenow={advance.repaid_cents}
                               aria-valuemin={0}
                               aria-valuemax={totalOwed}
-                              aria-label="Repayment progress"
+                              aria-label={
+                                complete
+                                  ? 'Repayment progress: paid in full'
+                                  : `Repayment progress: ${String(repaymentPercent)}%, ${formatCents(remainingCents)} remaining`
+                              }
                             />
                           </div>
+                          {!complete && remainingCents > 0 ? (
+                            <p className="text-xs text-white/40 tabular-nums">
+                              {formatCents(remainingCents)} remaining
+                            </p>
+                          ) : null}
                         </div>
                       );
                     })() : null}

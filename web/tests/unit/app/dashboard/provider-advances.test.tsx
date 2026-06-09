@@ -360,7 +360,19 @@ describe('ProviderAdvancesPage', () => {
     expect(screen.getByText(/Repaid:/)).toBeDefined();
     // Look for "Repayment" label inside progress bar section
     expect(screen.getByText('Repayment')).toBeDefined();
-    expect(screen.getAllByRole('progressbar', { name: 'Repayment progress' }).length).toBe(1);
+    // Exact, floored progress (repaymentProgress): repaid 50000 of total owed
+    // 100000 + 2500 = 102500 → 48.78% floors to 48%, never rounds up. The bar's
+    // accessible name now embeds the exact percent + remaining balance, and the
+    // remaining-balance line below it shows "$525.00 remaining".
+    const bar = screen.getByRole('progressbar', {
+      name: /Repayment progress: 48%, \$525\.00 remaining/,
+    });
+    expect(bar).toBeDefined();
+    expect(bar.getAttribute('aria-valuenow')).toBe('50000');
+    expect(bar.getAttribute('aria-valuemax')).toBe('102500');
+    // The exact floored percent is shown (48%, not a rounded-up 100%).
+    expect(screen.getByText('48%')).toBeDefined();
+    expect(screen.getByText('$525.00 remaining')).toBeDefined();
   });
 
   it('renders fully-repaid advance with 100% progress bar (repaid)', () => {
@@ -381,8 +393,16 @@ describe('ProviderAdvancesPage', () => {
     });
     render(withQueryClient(createElement(ProviderAdvancesPage)));
     expect(screen.getByText('Repayment')).toBeDefined();
-    // Repaid, 100%, should appear
-    expect(screen.getByText(/100%/)).toBeDefined();
+    // Outstanding is exactly $0 (repaid 102500 == total owed 100000 + 2500), so
+    // repaymentProgress reports complete → the bar reads "Paid in full" rather
+    // than a numeric "100%", and its accessible name says "paid in full".
+    expect(screen.getByText('Paid in full')).toBeDefined();
+    const bar = screen.getByRole('progressbar', {
+      name: /Repayment progress: paid in full/,
+    });
+    expect(bar).toBeDefined();
+    // No "$X remaining" line is rendered when fully repaid.
+    expect(screen.queryByText(/remaining/)).toBeNull();
   });
 
   it('renders disbursed advance with 0% repayment progress', () => {

@@ -66,6 +66,49 @@ export function isAcceptanceExpired(
   return deadlineMs < nowMs;
 }
 
+/**
+ * Exact, transparent repayment progress for a paid-vs-owed bar (integer cents).
+ *
+ * Financial-accuracy rule (NoMarkup): the bar must NEVER claim "100%" / "paid in
+ * full" while any balance remains. We therefore:
+ *   - compute the exact ratio repaid/total in integer cents;
+ *   - round the displayed percent DOWN (`Math.floor`), so e.g. 99.992% (8¢ short
+ *     on a large advance) shows 99% — never a rounded-up 100%;
+ *   - clamp the displayed percent to a maximum of 99 whenever `outstandingCents`
+ *     is > 0, so it cannot read 100% with a balance still owed (a 99.6% raw ratio
+ *     that floors to 99 is fine; a 99.999% ratio that would floor to 99 is fine,
+ *     but a ratio that floors to 100 with cents left is forced back to 99);
+ *   - only return `100` / `complete: true` when `outstandingCents === 0` exactly.
+ *
+ * `outstandingCents` is the authoritative remaining balance (total − repaid,
+ * floored at 0) and is what should be surfaced to the user verbatim.
+ */
+export function repaymentProgress(
+  repaidCents: number,
+  totalOwedCents: number,
+): { percent: number; outstandingCents: number; complete: boolean } {
+  const total = Number.isFinite(totalOwedCents) ? Math.max(0, totalOwedCents) : 0;
+  const repaid = Number.isFinite(repaidCents) ? Math.max(0, repaidCents) : 0;
+
+  if (total <= 0) {
+    // Nothing owed → nothing to repay; treat as complete with no balance.
+    return { percent: 100, outstandingCents: 0, complete: true };
+  }
+
+  const outstandingCents = Math.max(0, total - repaid);
+  const complete = outstandingCents === 0;
+
+  if (complete) {
+    return { percent: 100, outstandingCents: 0, complete: true };
+  }
+
+  // Round DOWN so we never overstate progress, and hard-cap at 99 while any
+  // balance remains so the bar can never render as 100% with cents outstanding.
+  const rawPercent = Math.floor((repaid / total) * 100);
+  const percent = Math.min(99, Math.max(0, rawPercent));
+  return { percent, outstandingCents, complete: false };
+}
+
 export function formatRelativeTime(date: Date): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
