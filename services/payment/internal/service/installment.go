@@ -45,6 +45,22 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 		return nil, "", fmt.Errorf("create installment plan: %w", domain.ErrInvalidAmount)
 	}
 
+	// Reconcile against the contract server-side. This flow pays the provider in
+	// full immediately, so the client must not control either the amount or the
+	// payee. Without this a customer could set total_amount_cents to any value and
+	// point provider_id at an arbitrary provider, and the platform would pay out
+	// that exact amount on the spot. Derive both from the contract of record.
+	contract, err := s.repo.GetContractForPayment(ctx, input.ContractID)
+	if err != nil {
+		return nil, "", fmt.Errorf("create installment plan: %w", err)
+	}
+	if input.CustomerID != contract.CustomerID {
+		return nil, "", fmt.Errorf("create installment plan: %w", domain.ErrContractNotOwned)
+	}
+	// BNPL covers the whole contract, so the principal IS the contract amount.
+	input.TotalAmountCents = contract.AmountCents
+	input.ProviderID = contract.ProviderID
+
 	// Calculate fee.
 	feeRate, err := feeRateForCount(input.InstallmentCount)
 	if err != nil {

@@ -86,12 +86,67 @@ func TestInstallmentService_CreateInstallmentPlan(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	// Regression: /qa 2026-06-09 — CreateInstallmentPlan trusted the client's
+	// total_amount_cents and provider_id and paid that provider immediately. The
+	// fix derives both from the contract. The principal billed and the payee must
+	// come from the contract, never the request body.
+	t.Run("derives_amount_and_provider_from_contract", func(t *testing.T) {
+		t.Parallel()
+		var capturedPlan *domain.InstallmentPlan
+		repo := &mockPaymentRepo{
+			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+				return &domain.ContractForPayment{ID: contractID, CustomerID: "cust-1", ProviderID: "prov-real", AmountCents: 30000, Status: "active"}, nil
+			},
+			createInstallmentPlanFn:             func(_ context.Context, p *domain.InstallmentPlan) error { capturedPlan = p; return nil },
+			createScheduledInstallmentsFn:       func(_ context.Context, _ []domain.ScheduledInstallment) error { return nil },
+			getStripeAccountIDFn:                func(_ context.Context, _ string) (string, error) { return "acct_dev", nil },
+			updateInstallmentPlanProviderPaidFn: func(_ context.Context, _, _ string) error { return nil },
+			updateScheduledInstallmentStatusFn:  func(_ context.Context, _, _ string, _ *string) error { return nil },
+			getInstallmentPlanFn:                func(_ context.Context, _ string) (*domain.InstallmentPlan, error) { return capturedPlan, nil },
+		}
+		svc := newTestInstallmentService(repo)
+		plan, _, err := svc.CreateInstallmentPlan(context.Background(), domain.CreateInstallmentPlanInput{
+			ContractID:       "c1",
+			CustomerID:       "cust-1",
+			ProviderID:       "prov-attacker", // ignored
+			TotalAmountCents: 999_999_999,      // ignored
+			InstallmentCount: 3,
+			PaymentMethodID:  "pm_1",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, plan)
+		assert.Equal(t, int64(30000), plan.TotalAmountCents, "principal must be the contract amount, not the client's")
+		assert.Equal(t, "prov-real", plan.ProviderID, "payee must be the contract provider, not the client's")
+	})
+
+	t.Run("rejects_non_owner_customer", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockPaymentRepo{
+			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+				return &domain.ContractForPayment{ID: contractID, CustomerID: "cust-1", ProviderID: "prov-real", AmountCents: 30000, Status: "active"}, nil
+			},
+		}
+		svc := newTestInstallmentService(repo)
+		_, _, err := svc.CreateInstallmentPlan(context.Background(), domain.CreateInstallmentPlanInput{
+			ContractID:       "c1",
+			CustomerID:       "cust-attacker",
+			ProviderID:       "prov-1",
+			TotalAmountCents: 30000,
+			InstallmentCount: 3,
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrContractNotOwned)
+	})
+
 	t.Run("3_installment_plan_fee_and_distribution", func(t *testing.T) {
 		t.Parallel()
 		// $300.00 × 3% fee = $9.00 → $309.00 total ÷ 3 = $103.00 each.
 		var capturedPlan *domain.InstallmentPlan
 		var capturedInstallments []domain.ScheduledInstallment
 		repo := &mockPaymentRepo{
+			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+				return &domain.ContractForPayment{ID: contractID, CustomerID: "cust-1", ProviderID: "prov-1", AmountCents: 30000, Status: "active"}, nil
+			},
 			createInstallmentPlanFn: func(_ context.Context, p *domain.InstallmentPlan) error {
 				capturedPlan = p
 				return nil
@@ -148,6 +203,9 @@ func TestInstallmentService_CreateInstallmentPlan(t *testing.T) {
 		// → totalWithFee = $105.01 = 10501 cents / 6 = 1750. 1750*6 = 10500. Remainder = 1.
 		var captured []domain.ScheduledInstallment
 		repo := &mockPaymentRepo{
+			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+				return &domain.ContractForPayment{ID: contractID, CustomerID: "cust-1", ProviderID: "prov-1", AmountCents: 10001, Status: "active"}, nil
+			},
 			createScheduledInstallmentsFn: func(_ context.Context, ins []domain.ScheduledInstallment) error {
 				captured = ins
 				return nil
