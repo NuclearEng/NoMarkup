@@ -458,3 +458,75 @@ func TestGetUnreadCounts(t *testing.T) {
 	assert.Len(t, counts, 1)
 	assert.Equal(t, 3, counts[0].UnreadCount)
 }
+
+// stubLookup is a hand-wired AliasLookup for relay-rewrite tests.
+type stubLookup struct {
+	emailAlias string
+	phoneProxy string
+	hasReplied bool
+	err        error
+}
+
+func (s stubLookup) LookupCold(_ context.Context, _, _ string) (string, string, bool, error) {
+	return s.emailAlias, s.phoneProxy, s.hasReplied, s.err
+}
+
+// TestMaybeRewriteForRelay locks in the cold-open privacy contract: a phone or
+// email in a message body is rewritten to the recipient's alias (or masked)
+// until the recipient has replied, after which the body passes through.
+func TestMaybeRewriteForRelay(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		lookup  AliasLookup
+		content string
+		want    string
+	}{
+		{
+			name:    "nil lookup is a no-op",
+			lookup:  nil,
+			content: "Call me at 555-123-4567",
+			want:    "Call me at 555-123-4567",
+		},
+		{
+			name:    "no contact info passes through",
+			lookup:  stubLookup{},
+			content: "Can you do it next week?",
+			want:    "Can you do it next week?",
+		},
+		{
+			name:    "warm channel (recipient replied) does not rewrite",
+			lookup:  stubLookup{hasReplied: true, phoneProxy: "555-000-0000"},
+			content: "Here is my cell 555-123-4567",
+			want:    "Here is my cell 555-123-4567",
+		},
+		{
+			name:    "cold-open with alias rewrites email and phone",
+			lookup:  stubLookup{emailAlias: "alias-xyz@relay.nomarkup.com", phoneProxy: "555-000-0000"},
+			content: "Email me a@b.com or call 555-123-4567",
+			want:    "Email me alias-xyz@relay.nomarkup.com or call 555-000-0000",
+		},
+		{
+			name:    "cold-open without proxy masks the phone (fail-closed)",
+			lookup:  stubLookup{},
+			content: "Reach me at 555-123-4567",
+			want:    "Reach me at ***-***-****",
+		},
+		{
+			name:    "lookup error leaves content untouched",
+			lookup:  stubLookup{err: errors.New("db down")},
+			content: "Text 555-123-4567",
+			want:    "Text 555-123-4567",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := maybeRewriteForRelay(ctx, tt.lookup, "chan-1", "recip-1", tt.content)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

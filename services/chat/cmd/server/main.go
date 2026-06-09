@@ -125,6 +125,11 @@ func main() {
 	repo := repository.NewPostgresRepository(pool)
 	pubsub := service.NewPubSub(rdb)
 	svc := service.New(repo, pubsub)
+	// Wire the cold-open relay so a phone/email typed into a message body is
+	// rewritten to the recipient's alias until they reply (privacy promise:
+	// "your email and phone stay private until you reply"). DB-backed; safe to
+	// run unconditionally — it degrades to masking when no alias row exists.
+	svc.SetRelay(service.NewPGAliasLookup(pool))
 	srv := chatgrpc.NewServer(svc)
 
 	// Create WebSocket hub and handler.
