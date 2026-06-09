@@ -193,7 +193,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
 
       <div className="grid gap-6 lg:grid-cols-5">
         {/* Photos column */}
-        <div className="space-y-4 lg:col-span-3">
+        <div className="min-w-0 space-y-4 lg:col-span-3">
           <ListingPhotoCarousel photos={listing.photos} alt={listing.title} />
 
           {/* Title row */}
@@ -214,7 +214,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                     aria-pressed={isWatching}
                     aria-label={isWatching ? 'Remove from watchlist' : 'Add to watchlist'}
                     className={cn(
-                      'inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors',
+                      'inline-flex h-11 w-11 items-center justify-center rounded-full border transition-colors',
                       isWatching
                         ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
                         : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/30 hover:text-white',
@@ -326,7 +326,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-4 lg:col-span-2">
+        <div className="min-w-0 space-y-4 lg:col-span-2">
           {/* Snipe extension banner */}
           {listing.snipe_extension_count > 0 && listing.auction_ends_at ? (
             <SnipeExtensionBanner

@@ -165,7 +165,7 @@ export function ScoreboardCard({
             aria-pressed={watching}
             aria-label={watching ? 'Remove from watchlist' : 'Add to watchlist'}
             className={cn(
-              'absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full border backdrop-blur-md transition-colors',
+              'absolute top-2 right-2 inline-flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md transition-colors',
               watching
                 ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
                 : 'border-white/10 bg-black/30 text-white/80 hover:border-white/30 hover:text-white',

@@ -322,7 +322,7 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
           stop(e);
           setOpen(true);
         }}
-        className="hover:bg-muted/50 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-zinc-600 p-2 text-xs text-zinc-300 transition-colors"
+        className="hover:bg-muted/50 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-dashed border-zinc-600 p-2 text-xs text-zinc-300 transition-colors"
         aria-label="Tip your provider"
       >
         <Heart className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />

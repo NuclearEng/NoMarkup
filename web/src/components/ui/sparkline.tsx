@@ -103,7 +103,10 @@ export function Sparkline({
       width={width}
       height={height}
       viewBox={`0 0 ${String(width)} ${String(height)}`}
-      className={cn('overflow-visible', className)}
+      // width/height set the intrinsic aspect via the viewBox; max-w-full + h-auto
+      // let the chart shrink to its container so a wide sparkline never overflows
+      // on mobile (preserveAspectRatio defaults to uniform scaling).
+      className={cn('h-auto max-w-full overflow-visible', className)}
       role="img"
       aria-label={`Sparkline chart showing ${trend === 'up' ? 'upward' : 'downward'} trend`}
     >
