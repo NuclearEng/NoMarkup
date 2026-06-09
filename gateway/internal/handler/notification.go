@@ -477,6 +477,10 @@ func notificationTypeToString(nt notificationv1.NotificationType) string {
 		return "bid_outbid"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED:
 		return "job_matched"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_RECEIVED:
+		return "offer_received"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_COUNTERED:
+		return "offer_countered"
 	default:
 		return "unspecified"
 	}
@@ -554,6 +558,10 @@ func stringToNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID
 	case "job_matched":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED
+	case "offer_received":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_RECEIVED
+	case "offer_countered":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_COUNTERED
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}

@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
@@ -14,17 +17,24 @@ import (
 )
 
 // BidHandler handles HTTP endpoints for bids.
+//
+// db is optional — when non-nil it is used purely to EMIT in-app notifications
+// for bid events (a provider placing a bid → notify the job's customer; a
+// customer awarding a bid → notify the winning provider). It is never on the
+// critical path of placing/awarding a bid; a nil pool simply skips the
+// notification (fail-soft), matching the rest of the gateway's nil-safe pattern.
 type BidHandler struct {
 	bidClient      bidv1.BidServiceClient
 	contractClient contractv1.ContractServiceClient
+	db             *pgxpool.Pool
 }
 
 // NewBidHandler creates a new BidHandler. The optional contractClient is used
 // to create a contract row immediately after a bid is awarded — without it,
 // awarding a bid just flips status and the customer-accept → contract pipeline
-// stays severed.
-func NewBidHandler(bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient) *BidHandler {
-	return &BidHandler{bidClient: bidClient, contractClient: contractClient}
+// stays severed. db (optional) is used only to emit in-app notifications.
+func NewBidHandler(bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *BidHandler {
+	return &BidHandler{bidClient: bidClient, contractClient: contractClient, db: db}
 }
 
 type placeBidRequest struct {
@@ -86,7 +96,83 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		"amount_cents", req.AmountCents,
 		"bid_id", resp.GetBid().GetId(),
 	)
+
+	// Notify the job's customer that a new bid landed on their job. Fail-soft:
+	// runs after the bid is committed and swallows all errors so a notification
+	// problem never breaks bidding. Recipient is the job owner (never the
+	// bidding provider — emitNotification also guards self-notify).
+	h.notifyNewBid(r.Context(), jobID, claims.UserID, req.AmountCents)
+
 	writeJSON(w, http.StatusCreated, protoBidToJSON(resp.GetBid()))
+}
+
+// notifyNewBid emits a `new_bid` in-app notification to the customer who owns
+// the job. Fully fail-soft (see emitNotification): any error is logged and
+// swallowed. The job is a reverse auction, so a new bid is good news for the
+// customer (someone is competing to do their job).
+func (h *BidHandler) notifyNewBid(ctx context.Context, jobID, providerID string, amountCents int64) {
+	if h.db == nil {
+		return
+	}
+
+	var customerID, title string
+	if err := h.db.QueryRow(ctx,
+		`SELECT customer_id::text, title FROM jobs WHERE id = $1`, jobID,
+	).Scan(&customerID, &title); err != nil {
+		slog.ErrorContext(ctx, "new bid notification: job lookup failed",
+			"error", err, "job_id", jobID)
+		return
+	}
+
+	dollars := fmt.Sprintf("$%.2f", float64(amountCents)/100)
+	emitNotification(ctx, h.db,
+		providerID, customerID,
+		"new_bid",
+		"New bid on your job",
+		fmt.Sprintf("A provider bid %s on \"%s\".", dollars, title),
+		"/jobs/"+jobID,
+		"job", jobID,
+	)
+}
+
+// notifyBidAwarded emits a single `bid_awarded` in-app notification to the
+// provider who won the job. When a contract row was created (contractID != ""),
+// the body and deep link point at the contract so the provider can act on it;
+// otherwise we link back to the job. One notification intentionally covers both
+// the award and the contract creation (same recipient, same instant) so the
+// provider is not double-notified. Fully fail-soft.
+func (h *BidHandler) notifyBidAwarded(ctx context.Context, jobID, customerID, providerID string, amountCents int64, contractID string) {
+	if h.db == nil {
+		return
+	}
+
+	var title string
+	if err := h.db.QueryRow(ctx, `SELECT title FROM jobs WHERE id = $1`, jobID).Scan(&title); err != nil {
+		// Title is enrichment only — fall back to a generic phrasing rather
+		// than dropping the notification, so the provider is still told.
+		slog.WarnContext(ctx, "bid awarded notification: job title lookup failed",
+			"error", err, "job_id", jobID)
+		title = "your job"
+	}
+
+	dollars := fmt.Sprintf("$%.2f", float64(amountCents)/100)
+	actionURL := "/jobs/" + jobID
+	body := fmt.Sprintf("Your %s bid on \"%s\" was accepted.", dollars, title)
+	entityType, entityID := "job", jobID
+	if contractID != "" {
+		actionURL = "/contracts/" + contractID
+		body = fmt.Sprintf("Your %s bid on \"%s\" was accepted — your contract is ready.", dollars, title)
+		entityType, entityID = "contract", contractID
+	}
+
+	emitNotification(ctx, h.db,
+		customerID, providerID,
+		"bid_awarded",
+		"You won the job",
+		body,
+		actionURL,
+		entityType, entityID,
+	)
 }
 
 // UpdateBid handles PATCH /api/v1/bids/{id}.
@@ -288,6 +374,14 @@ func (h *BidHandler) AwardBid(w http.ResponseWriter, r *http.Request) {
 		"customer_id", claims.UserID,
 		"contract_id", contractID,
 	)
+
+	// Notify the WINNING provider their bid was awarded (and, when contract
+	// creation succeeded, that the contract is ready). One notification covers
+	// both "bid awarded" and "contract created" — same recipient, same moment —
+	// so we never double-notify. Fail-soft: swallows all errors. Recipient is
+	// the awarded provider, never the awarding customer (self-notify guarded).
+	h.notifyBidAwarded(r.Context(), jobID, claims.UserID, awardedBid.GetProviderId(), awardedBid.GetAmountCents(), contractID)
+
 	result := protoBidToJSON(awardedBid)
 	if contractID != "" {
 		result["contract_id"] = contractID

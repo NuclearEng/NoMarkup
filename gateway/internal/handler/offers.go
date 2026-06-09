@@ -191,6 +191,20 @@ func (h *OffersHandler) CreateOffer(w http.ResponseWriter, r *http.Request) {
 		out.Message = &s
 	}
 
+	// Notify the SELLER that a buyer made an offer on their listing. Fail-soft:
+	// runs after the offer is persisted and swallows all errors so a
+	// notification problem never breaks offer creation. The actor (buyer) is
+	// never the recipient (emitNotification also guards self-notify).
+	dollars := fmt.Sprintf("$%.2f", float64(req.AmountCents)/100)
+	emitNotification(r.Context(), h.db,
+		claims.UserID, sellerID,
+		"offer_received",
+		"New offer on your listing",
+		fmt.Sprintf("A buyer offered %s for your item.", dollars),
+		"/marketplace/"+listingID,
+		"listing", listingID,
+	)
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"offer": out})
 }
 
@@ -516,6 +530,22 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "tx commit failed")
 			return
 		}
+
+		// Notify the OTHER party that their offer was countered. The counter is
+		// authored by claims.UserID (who the parent offer was awaiting), so the
+		// recipient is authorUserID — the participant who made the offer now
+		// being countered, and who must respond next. Works in both directions:
+		// seller-counters-buyer (recipient=buyer) and buyer-counters-seller
+		// (recipient=seller). Fail-soft; self-notify guarded.
+		counterDollars := fmt.Sprintf("$%.2f", float64(req.CounterAmountCents)/100)
+		emitNotification(r.Context(), h.db,
+			claims.UserID, authorUserID,
+			"offer_countered",
+			"Your offer was countered",
+			fmt.Sprintf("The other party countered with %s.", counterDollars),
+			"/marketplace/"+listingID,
+			"listing", listingID,
+		)
 
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
 			"offer":          h.loadOffer(r.Context(), newID),

@@ -57,7 +57,7 @@ func TestValidateMoneyCents(t *testing.T) {
 // test would panic / 500 instead.
 func TestPlaceBidRejectsAbsurdAmount(t *testing.T) {
 	t.Parallel()
-	h := NewBidHandler(nil, nil) // nil bid client: validation must fire first
+	h := NewBidHandler(nil, nil, nil) // nil bid client: validation must fire first
 
 	r := chi.NewRouter()
 	r.Post("/api/v1/jobs/{id}/bids", h.PlaceBid)
@@ -76,7 +76,7 @@ func TestPlaceBidRejectsAbsurdAmount(t *testing.T) {
 // TestPlaceBidRejectsZeroAmount pins the lower bound at the boundary too.
 func TestPlaceBidRejectsZeroAmount(t *testing.T) {
 	t.Parallel()
-	h := NewBidHandler(nil, nil)
+	h := NewBidHandler(nil, nil, nil)
 
 	r := chi.NewRouter()
 	r.Post("/api/v1/jobs/{id}/bids", h.PlaceBid)

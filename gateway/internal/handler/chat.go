@@ -300,7 +300,79 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Notify the OTHER channel participant of the new message (the single
+	// highest-value emission). Fail-soft: a notification failure must never
+	// fail the send, so this runs after the 201 path is committed and swallows
+	// all errors. We resolve the recipient from the channel's two participants
+	// (customer_id/provider_id) and pick the one that is not the sender.
+	h.notifyNewMessage(r.Context(), channelID, claims.UserID, req.Content)
+
 	writeJSON(w, http.StatusCreated, protoMessageToJSON(resp.GetMessage()))
+}
+
+// notifyNewMessage emits a `new_message` in-app notification to the channel
+// participant who is NOT the sender. Entirely fail-soft (see emitNotification):
+// any DB error is logged and swallowed so a notification problem can never
+// break chat. A nil pool is a no-op (the gateway's nil-safe DB pattern), in
+// which case no notification is produced but the message still sent.
+func (h *ChatHandler) notifyNewMessage(ctx context.Context, channelID, senderID, content string) {
+	if h.db == nil {
+		return
+	}
+
+	var customerID, providerID string
+	err := h.db.QueryRow(ctx,
+		`SELECT customer_id::text, provider_id::text FROM chat_channels WHERE id = $1`,
+		channelID,
+	).Scan(&customerID, &providerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "new message notification: channel lookup failed",
+			"error", err, "channel_id", channelID)
+		return
+	}
+
+	// Recipient is whichever participant is not the sender.
+	recipientID := providerID
+	if senderID == providerID {
+		recipientID = customerID
+	}
+
+	// Resolve the sender's display name for the title (fail-soft → fallback).
+	senderName := "Someone"
+	if names := h.resolveParticipantNames(ctx, senderID); names != nil {
+		if n := names[senderID]; n != "" {
+			senderName = n
+		}
+	}
+
+	// Short, safe preview of the message body (runes, capped). Avoids leaking
+	// an unbounded blob into the notification body and keeps the list tidy.
+	preview := messagePreview(content)
+
+	emitNotification(ctx, h.db,
+		senderID, recipientID,
+		"new_message",
+		fmt.Sprintf("New message from %s", senderName),
+		preview,
+		"/messages?channel="+channelID,
+		"chat_channel", channelID,
+	)
+}
+
+// messagePreview returns a short, single-line preview of a chat message body
+// for use in a notification. Capped at 140 runes with an ellipsis; image/file
+// messages (empty or non-text content) get a generic placeholder.
+func messagePreview(content string) string {
+	const maxPreview = 140
+	trimmed := content
+	if trimmed == "" {
+		return "Sent you a message"
+	}
+	if utf8.RuneCountInString(trimmed) > maxPreview {
+		runes := []rune(trimmed)
+		return string(runes[:maxPreview]) + "…"
+	}
+	return trimmed
 }
 
 // MarkRead handles POST /api/v1/channels/{id}/read.

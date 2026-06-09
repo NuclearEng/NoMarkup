@@ -105,6 +105,9 @@ enum NotificationType {
   NOTIFICATION_TYPE_WISHLIST_MATCH = 41;
   // Goods-marketplace outbid — a higher bid landed on a listing you were winning.
   NOTIFICATION_TYPE_BID_OUTBID = 42;
+  // Goods-marketplace Best-Offer chain.
+  NOTIFICATION_TYPE_OFFER_RECEIVED = 43;   // a buyer made an offer on your listing
+  NOTIFICATION_TYPE_OFFER_COUNTERED = 44;  // the other party countered your offer
 }
 
 message Notification {

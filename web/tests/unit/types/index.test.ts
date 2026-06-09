@@ -515,8 +515,8 @@ describe('NOTIFICATION_TYPE', () => {
     expect(NOTIFICATION_TYPE.WISHLIST_MATCH).toBe('wishlist_match');
   });
 
-  it('has exactly 28 notification types', () => {
-    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(28);
+  it('has exactly 30 notification types', () => {
+    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(30);
   });
 
   it('includes JOB_MATCHED (pre-matching)', () => {

@@ -1007,6 +1007,9 @@ export const NOTIFICATION_TYPE = {
   WISHLIST_MATCH: 'wishlist_match',
   // Goods auction: a higher bid landed on a listing you were winning
   BID_OUTBID: 'bid_outbid',
+  // Goods Best-Offer chain
+  OFFER_RECEIVED: 'offer_received',
+  OFFER_COUNTERED: 'offer_countered',
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
 
