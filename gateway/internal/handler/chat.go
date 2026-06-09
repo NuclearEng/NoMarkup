@@ -603,6 +603,34 @@ func boundWSToTokenExpiry(parent context.Context, expiresAt time.Time, conns ...
 // session window so an actively-connected user (heartbeat pings or any inbound
 // frame) is not timed out at their next refresh (CLAUDE.md §6).
 func proxyWebSocket(ctx context.Context, src, dst *websocket.Conn, onInbound ...func()) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Server-initiated keepalive: ping the client every 30s and require a pong
+	// within 10s. Without this the read loop blocks on src.Read until the token
+	// expires (~15 min), so a silent or half-open (TCP-dead) peer holds a
+	// goroutine pair + a backend conn (+ a Redis listener for auctions) the whole
+	// time. A failed ping cancels ctx, which unblocks src.Read below and tears
+	// the proxy down. Mirrors the spectator keepalive (spectator_ws.go).
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pingCtx, pingCancel := context.WithTimeout(ctx, 10*time.Second)
+				err := src.Ping(pingCtx)
+				pingCancel()
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
 	for {
 		msgType, data, err := src.Read(ctx)
 		if err != nil {
