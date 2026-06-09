@@ -102,20 +102,22 @@ describe('useReviewsForUser', () => {
   afterEach(() => { client.clear(); });
 
   it('fetches with no params', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ reviews: [], total: 0 });
+    // Public read on the provider profile — uses getPublic to dodge the auth
+    // interceptor's 401 redirect for logged-out visitors.
+    vi.mocked(api.getPublic).mockResolvedValueOnce({ reviews: [], total: 0 });
     const { result } = renderHook(() => useReviewsForUser('u-1'), { wrapper: wrap(client) });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/users/u-1/reviews');
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/users/u-1/reviews');
   });
 
   it('appends direction + pagination', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ reviews: [], total: 0 });
+    vi.mocked(api.getPublic).mockResolvedValueOnce({ reviews: [], total: 0 });
     const { result } = renderHook(
       () => useReviewsForUser('u-1', { direction: 'received', page: 2, per_page: 25 }),
       { wrapper: wrap(client) },
     );
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
       '/api/v1/users/u-1/reviews?direction=received&page=2&per_page=25',
     );
   });

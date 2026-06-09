@@ -13,6 +13,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useFollow } from '@/hooks/useFollows';
+import { getAccessToken } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 export interface FollowButtonProps {
@@ -53,6 +54,16 @@ export function FollowButton({
     e.stopPropagation();
     e.preventDefault();
     if (isSelf || isPending) {
+      return;
+    }
+    // Logged-out visitor (this button lives on the PUBLIC seller profile):
+    // follow/unfollow is auth-gated, so firing the mutation would 401 and the
+    // api interceptor would clearTokens() + redirect to /login mid-interaction
+    // (plus the optimistic UI would flip first) — a jarring bounce off a public
+    // page. Instead, prompt sign-in cleanly, matching the other gated CTAs
+    // (e.g. "Sign in to bid" → /login).
+    if (typeof window !== 'undefined' && !getAccessToken()) {
+      window.location.href = '/login';
       return;
     }
     const next = !following;

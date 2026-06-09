@@ -63,8 +63,13 @@ export function useReviewsForUser(userId: string, params?: ReviewsForUserParams)
   const path = `/api/v1/users/${userId}/reviews${query ? `?${query}` : ''}`;
 
   return useQuery({
+    // Public read: a logged-out visitor on the public provider profile
+    // (/providers/{id}) reads reviews as social proof. Use getPublic so an
+    // anonymous fetch never triggers the auth interceptor's 401 → clearTokens
+    // → redirect-to-/login path that would bounce a visitor off a public page.
+    // The gateway route is public; signed-in callers don't need a bearer here.
     queryKey: ['reviews', userId, params?.direction, params?.page, params?.per_page],
-    queryFn: () => api.get<ReviewsForUserResponse>(path),
+    queryFn: () => api.getPublic<ReviewsForUserResponse>(path),
     enabled: !!userId,
   });
 }

@@ -27,13 +27,19 @@ export function useMarketRange(
     retry: false,
     queryFn: async () => {
       try {
-        return await api.get<AnalyticsMarketRange>(path);
+        // Public read: the FairPriceWidget renders on the public jobs browse +
+        // job-detail surface, so logged-out visitors hit this. getPublic skips
+        // the bearer + the 401 → clearTokens → redirect-to-/login interceptor
+        // path that would otherwise bounce an anonymous visitor off a public
+        // page. The gateway route is public (aggregate fair-price data, no PII).
+        return await api.getPublic<AnalyticsMarketRange>(path);
       } catch (error) {
         // "No market range computed yet" is a normal empty state. The gateway
         // now returns 200 { has_data: false }, but stay tolerant of older
         // deployments that 404'd, so the widget never surfaces a console error
-        // for a dataless category.
-        if (error instanceof ApiError && error.status === 404) {
+        // for a dataless category. A 401 from a pre-redeploy gateway (route was
+        // auth-gated) is likewise treated as no-data so the public page renders.
+        if (error instanceof ApiError && (error.status === 404 || error.status === 401)) {
           return { has_data: false } as AnalyticsMarketRange;
         }
         throw error;

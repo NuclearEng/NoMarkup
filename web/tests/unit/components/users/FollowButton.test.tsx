@@ -25,12 +25,24 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+// FollowButton reads getAccessToken() to decide whether a click toggles the
+// follow (logged in) or prompts sign-in (logged out). Default: logged in, so
+// the existing toggle tests exercise the mutation path. The logged-out case
+// is overridden per-test.
+vi.mock('@/lib/auth', () => ({
+  getAccessToken: vi.fn(() => 'test-token'),
+}));
+
 const { api } = (await import('@/lib/api')) as unknown as {
   api: {
     get: ReturnType<typeof vi.fn>;
     post: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
+};
+
+const { getAccessToken } = (await import('@/lib/auth')) as unknown as {
+  getAccessToken: ReturnType<typeof vi.fn>;
 };
 
 function withProvider(children: ReactNode): ReactNode {
@@ -46,6 +58,8 @@ function withProvider(children: ReactNode): ReactNode {
 describe('FollowButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default to logged-in for the toggle tests; the logged-out test overrides.
+    getAccessToken.mockReturnValue('test-token');
   });
 
   afterEach(() => {
@@ -73,6 +87,40 @@ describe('FollowButton', () => {
     });
     // Optimistic flip happened.
     expect(screen.getByText('Following')).toBeDefined();
+  });
+
+  // Public-funnel guard: a logged-out visitor on the public seller profile must
+  // be prompted to sign in (clean nav to /login) rather than firing the
+  // auth-gated follow mutation — which would 401 and bounce them off the page.
+  it('redirects a logged-out visitor to /login instead of calling the API', async () => {
+    getAccessToken.mockReturnValue(null);
+    const original = window.location;
+    const hrefSetter = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...original,
+        get href() {
+          return '';
+        },
+        set href(v: string) {
+          hrefSetter(v);
+        },
+      },
+    });
+
+    render(withProvider(<FollowButton sellerId="seller-1" />));
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(hrefSetter).toHaveBeenCalledWith('/login');
+    expect(api.post).not.toHaveBeenCalled();
+    // No optimistic flip — still shows "Follow".
+    expect(screen.getByText('Follow')).toBeDefined();
+
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: original,
+    });
   });
 
   it('disables itself when currentUserId equals sellerId (self-follow)', () => {

@@ -109,7 +109,8 @@ describe('useMarketRange', () => {
   });
 
   it('fetches market range for a category', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(mockMarketRange);
+    // Public read (FairPriceWidget renders for logged-out visitors) → getPublic.
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockMarketRange);
 
     const { result } = renderHook(() => useMarketRange('cat-1'), {
       wrapper: createWrapper(queryClient),
@@ -119,13 +120,13 @@ describe('useMarketRange', () => {
 
     expect(result.current.data?.low_cents).toBe(5000);
     expect(result.current.data?.median_cents).toBe(12500);
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/analytics/market/range?category_id=cat-1'),
     );
   });
 
   it('passes subcategory and service type params', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(mockMarketRange);
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockMarketRange);
 
     const { result } = renderHook(() => useMarketRange('cat-1', 'subcat-1', 'svc-1'), {
       wrapper: createWrapper(queryClient),
@@ -133,10 +134,10 @@ describe('useMarketRange', () => {
 
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
       expect.stringContaining('subcategory_id=subcat-1'),
     );
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
       expect.stringContaining('service_type_id=svc-1'),
     );
   });
@@ -147,11 +148,11 @@ describe('useMarketRange', () => {
     });
 
     expect(result.current.fetchStatus).toBe('idle');
-    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+    expect(vi.mocked(api.getPublic)).not.toHaveBeenCalled();
   });
 
   it('handles API errors', async () => {
-    vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'));
+    vi.mocked(api.getPublic).mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(() => useMarketRange('cat-1'), {
       wrapper: createWrapper(queryClient),
@@ -159,6 +160,19 @@ describe('useMarketRange', () => {
 
     await waitFor(() => { expect(result.current.isError).toBe(true); });
     expect(result.current.error).toBeDefined();
+  });
+
+  it('treats 404/401 as a no-data empty state (public page still renders)', async () => {
+    for (const status of [404, 401]) {
+      const qc = createTestQueryClient();
+      vi.mocked(api.getPublic).mockRejectedValueOnce(new FakeApiError(status, 'no data'));
+      const { result } = renderHook(() => useMarketRange('cat-1'), {
+        wrapper: createWrapper(qc),
+      });
+      await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+      expect(result.current.data?.has_data).toBe(false);
+      qc.clear();
+    }
   });
 });
 

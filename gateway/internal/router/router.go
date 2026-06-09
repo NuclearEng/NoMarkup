@@ -282,6 +282,16 @@ func New(
 	r.Get("/api/v1/pricing", pricingHandler.GetPricingOverview)
 	r.Get("/api/v1/pricing/{category}", pricingHandler.GetPricingByCategory)
 
+	// Public market price range (no auth required) — the FairPriceWidget on
+	// every public JobCard (jobs browse + job detail) reads this aggregate
+	// low/median/high band as social proof, the same SEO-friendly fair-price
+	// data class as /api/v1/pricing above. GetMarketRange reads no auth claims
+	// (it keys off query params + returns only aggregates, no PII). It
+	// previously lived in the auth-gated /analytics/market group, so a
+	// logged-out visitor on /jobs 401'd and the web's auth interceptor bounced
+	// them to /login — a top-of-funnel killer. /analytics/market/trends stays
+	// authenticated (dashboard-only, unused by the public surface).
+
 	// Public insurance products (no auth required)
 	r.Get("/api/v1/insurance/products", insuranceHandler.ListProducts)
 
@@ -337,10 +347,24 @@ func New(
 	// my-follows, and my-feed live inside the protected /api/v1 block below.
 	r.Get("/api/v1/users/{id}/followers", followsHandler.ListFollowers)
 
-	// Market analytics routes (require authentication)
+	// Public reviews list — reviews are social proof, shown on the public
+	// provider profile (/providers/{id}) that anonymous shoppers + crawlers
+	// land on (like eBay/Whatnot). The handler reads no auth claims (it keys
+	// off the URL {id}), and the public provider-search endpoint already
+	// exposes review aggregates (review_summary). Previously this sat inside
+	// the auth-gated /users block, so a logged-out visitor's reviews fetch on
+	// the public profile 401'd and the web's auth interceptor bounced them to
+	// /login — a top-of-funnel killer. {id} is UUID-constrained so it never
+	// shadows the authed static /users/me route.
+	r.Get("/api/v1/users/{id:[0-9a-fA-F-]+}/reviews", reviewHandler.ListReviewsForUser)
+
+	// Public market price range — used by the FairPriceWidget on the public
+	// jobs surface (registered above with the Fair Price Index routes).
+	r.Get("/api/v1/analytics/market/range", analyticsHandler.GetMarketRange)
+
+	// Market trends analytics (require authentication — dashboard only).
 	r.Route("/api/v1/analytics/market", func(r chi.Router) {
 		r.Use(authMW.Handler)
-		r.Get("/range", analyticsHandler.GetMarketRange)
 		r.Get("/trends", analyticsHandler.GetMarketTrends)
 	})
 
@@ -357,7 +381,8 @@ func New(
 			r.Delete("/me", userHandler.RequestMyDeletion)
 			r.Post("/me/restore", userHandler.RestoreMyAccount)
 			r.Get("/{id}", userHandler.GetUser)
-			r.Get("/{id}/reviews", reviewHandler.ListReviewsForUser)
+			// NOTE: GET /users/{id}/reviews is registered PUBLICLY above the
+			// auth block (social proof on the public provider profile + SEO).
 			r.Get("/{id}/trust-score", trustHandler.GetTrustScore)
 			r.Get("/{id}/trust-history", trustHandler.GetTrustScoreHistory)
 		})
