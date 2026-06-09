@@ -134,10 +134,13 @@ export function useReviewInsuranceClaim() {
       approved_amount_cents?: number;
       denial_reason?: string;
     }) => {
+      // The gateway reviewClaimRequest reads a boolean `approved` flag (not an
+      // `action` string). Sending `action` left `approved` defaulting to false,
+      // so the Approve button silently DENIED the claim and no payout fired.
       const raw = await api.post<Record<string, unknown>>(
         `/api/v1/admin/insurance/claims/${variables.claimId}/review`,
         {
-          action: variables.action,
+          approved: variables.action === 'approve',
           approved_amount_cents: variables.approved_amount_cents,
           denial_reason: variables.denial_reason,
         },

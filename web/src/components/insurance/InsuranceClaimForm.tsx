@@ -21,12 +21,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { useFileInsuranceClaim } from '@/hooks/useInsurance';
 import { formatCents } from '@/lib/utils';
 
+// Values MUST match the insurance_claims.claim_type DB CHECK constraint
+// (migration 022): property_damage, workmanship_defect, incomplete_work,
+// liability_incident. Any other value fails the insert with a 500.
 const CLAIM_TYPES = [
-  { value: 'damage', label: 'Property Damage' },
+  { value: 'property_damage', label: 'Property Damage' },
+  { value: 'workmanship_defect', label: 'Workmanship Defect' },
   { value: 'incomplete_work', label: 'Incomplete Work' },
-  { value: 'quality_defect', label: 'Quality Defect' },
-  { value: 'contractor_abandonment', label: 'Contractor Abandonment' },
-  { value: 'other', label: 'Other' },
+  { value: 'liability_incident', label: 'Liability Incident' },
 ] as const;
 
 const claimSchema = z.object({

@@ -333,7 +333,7 @@ describe('InsuranceClaimForm', () => {
     expect(onSuccess).toHaveBeenCalledTimes(1);
     const [vars] = mutate.mock.calls[0] ?? [];
     expect((vars as { policy_id: string }).policy_id).toBe('pol-1');
-    expect((vars as { claim_type: string }).claim_type).toBe('damage');
+    expect((vars as { claim_type: string }).claim_type).toBe('property_damage');
     expect((vars as { claimed_amount_cents: number }).claimed_amount_cents).toBe(5000);
   });
 
@@ -362,7 +362,7 @@ describe('InsuranceClaimForm', () => {
     );
 
     await user.click(screen.getByRole('combobox'));
-    const option = await screen.findByRole('option', { name: 'Other' });
+    const option = await screen.findByRole('option', { name: 'Property Damage' });
     await user.click(option);
 
     await user.type(screen.getByLabelText(/Description/), longDescription);
@@ -409,7 +409,7 @@ describe('InsuranceClaimForm', () => {
     );
     // Choose a claim type so the schema validates.
     await user.click(screen.getByRole('combobox'));
-    const option = await screen.findByRole('option', { name: 'Other' });
+    const option = await screen.findByRole('option', { name: 'Property Damage' });
     await user.click(option);
 
     await user.type(screen.getByLabelText(/Description/), longDescription);

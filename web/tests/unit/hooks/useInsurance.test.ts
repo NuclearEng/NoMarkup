@@ -331,7 +331,7 @@ describe('useReviewInsuranceClaim', () => {
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/admin/insurance/claims/clm-1/review',
-      { action: 'approve', approved_amount_cents: 45000, denial_reason: undefined },
+      { approved: true, approved_amount_cents: 45000, denial_reason: undefined },
     );
     expect(spy).toHaveBeenCalledWith({ queryKey: ['admin-insurance-claims'] });
   });
@@ -349,7 +349,7 @@ describe('useReviewInsuranceClaim', () => {
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/admin/insurance/claims/clm-1/review',
-      { action: 'deny', approved_amount_cents: undefined, denial_reason: 'no coverage' },
+      { approved: false, approved_amount_cents: undefined, denial_reason: 'no coverage' },
     );
   });
 

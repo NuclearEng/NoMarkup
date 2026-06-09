@@ -753,6 +753,36 @@ func TestInsuranceService_ReviewInsuranceClaim(t *testing.T) {
 		assert.Equal(t, "approved", capturedStatus)
 	})
 
+	t.Run("rejects_approved_amount_exceeding_coverage", func(t *testing.T) {
+		t.Parallel()
+		var reviewCalled bool
+		repo := &mockInsuranceRepo{
+			getInsuranceClaimFn: func(_ context.Context, _ string) (*domain.InsuranceClaim, error) {
+				return &domain.InsuranceClaim{ID: "clm-1", Status: "filed", PolicyID: "pol-1"}, nil
+			},
+			getInsurancePolicyFn: func(_ context.Context, _ string) (*domain.InsurancePolicy, error) {
+				return &domain.InsurancePolicy{
+					ID: "pol-1", Status: "active",
+					CoverageAmountCents: 50000, DeductibleCents: 5000,
+				}, nil
+			},
+			updateInsuranceClaimReviewFn: func(_ context.Context, _, _ string, _ *int64, _, _, _ string) error {
+				reviewCalled = true
+				return nil
+			},
+		}
+		svc := newTestInsuranceService(repo)
+		_, err := svc.ReviewInsuranceClaim(context.Background(), domain.ReviewInsuranceClaimInput{
+			ClaimID:             "clm-1",
+			ReviewerID:          "admin-1",
+			Approved:            true,
+			ApprovedAmountCents: 99999999, // far above the 50000 coverage limit
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrClaimExceedsCoverage)
+		assert.False(t, reviewCalled, "must not approve/pay out an over-coverage amount")
+	})
+
 	t.Run("denies_claim", func(t *testing.T) {
 		t.Parallel()
 		var capturedStatus string

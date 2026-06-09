@@ -1931,12 +1931,17 @@ export const INSURANCE_POLICY_STATUS = {
 export type InsurancePolicyStatus =
   (typeof INSURANCE_POLICY_STATUS)[keyof typeof INSURANCE_POLICY_STATUS];
 
+// Values MUST match the insurance_claims.status DB CHECK constraint
+// (migration 022): filed, under_review, approved, denied, paid_out, appealed,
+// closed. The backend marks a paid claim 'paid_out' (not 'paid').
 export const INSURANCE_CLAIM_STATUS = {
   FILED: 'filed',
   UNDER_REVIEW: 'under_review',
   APPROVED: 'approved',
   DENIED: 'denied',
-  PAID: 'paid',
+  PAID_OUT: 'paid_out',
+  APPEALED: 'appealed',
+  CLOSED: 'closed',
 } as const;
 export type InsuranceClaimStatus =
   (typeof INSURANCE_CLAIM_STATUS)[keyof typeof INSURANCE_CLAIM_STATUS];

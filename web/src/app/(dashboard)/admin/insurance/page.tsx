@@ -32,7 +32,9 @@ const CLAIM_STATUS_CLASSES: Record<InsuranceClaimStatus, string> = {
   under_review: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
   approved: 'bg-green-500/10 text-green-300 border-green-500/30',
   denied: 'bg-red-500/10 text-red-300 border-red-500/30',
-  paid: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  paid_out: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  appealed: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+  closed: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
 };
 
 const CLAIM_STATUS_LABELS: Record<InsuranceClaimStatus, string> = {
@@ -40,7 +42,9 @@ const CLAIM_STATUS_LABELS: Record<InsuranceClaimStatus, string> = {
   under_review: 'Under Review',
   approved: 'Approved',
   denied: 'Denied',
-  paid: 'Paid',
+  paid_out: 'Paid Out',
+  appealed: 'Appealed',
+  closed: 'Closed',
 };
 
 function formatDate(dateStr: string): string {

@@ -330,6 +330,15 @@ func (s *InsuranceService) ReviewInsuranceClaim(ctx context.Context, input domai
 		approvedAmount = claim.ClaimedAmountCents
 	}
 
+	// Coverage cap (funds-protection guard): the approved amount must never exceed
+	// the policy's coverage limit. The file-time check only bounds the *claimed*
+	// amount; the assessor-supplied approved amount is a separate input that must
+	// be re-validated server-side, or an admin could approve a payout far larger
+	// than the policy ever covered. Fail closed.
+	if approvedAmount > policy.CoverageAmountCents {
+		return nil, fmt.Errorf("review insurance claim: %w", domain.ErrClaimExceedsCoverage)
+	}
+
 	// Payout = approved_amount - deductible (floored at 0).
 	payout := approvedAmount - policy.DeductibleCents
 	if payout < 0 {
