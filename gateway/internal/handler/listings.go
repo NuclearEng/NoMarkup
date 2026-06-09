@@ -159,6 +159,13 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 	if cat := q.Get("category_id"); cat != "" && isValidUUID(cat) {
 		args = append(args, cat)
 		clauses = append(clauses, "l.category_id = $"+strconv.Itoa(len(args)))
+	} else if slug := q.Get("category_slug"); slug != "" {
+		// Slug-or-id flexibility (CLAUDE.md §15): the autocomplete dropdown emits
+		// category suggestions keyed by slug, so a category click deep-links as
+		// ?category_slug=…. Resolve it against the joined service_categories row
+		// rather than ignoring it (which would silently return ALL listings).
+		args = append(args, slug)
+		clauses = append(clauses, "c.slug = $"+strconv.Itoa(len(args)))
 	}
 
 	// ── 25-mile pickup-radius filter ───────────────────────────────────────
@@ -241,9 +248,12 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 
 	where := strings.Join(clauses, " AND ")
 
+	// LEFT JOIN service_categories so a category_slug filter (which references
+	// c.slug) resolves here too — the count must use the same FROM/WHERE as the
+	// SELECT below or the two disagree (and a c.slug clause would error outright).
 	var total int
 	if err := h.db.QueryRow(r.Context(),
-		"SELECT COUNT(*) FROM listings l WHERE "+where, args...).Scan(&total); err != nil {
+		"SELECT COUNT(*) FROM listings l LEFT JOIN service_categories c ON c.id = l.category_id WHERE "+where, args...).Scan(&total); err != nil {
 		slog.Error("listings count failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to count listings")
 		return

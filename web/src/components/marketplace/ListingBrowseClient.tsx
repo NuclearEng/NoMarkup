@@ -40,19 +40,33 @@ function bucketFor(endsAt: string | null, now: number): Bucket {
 
 interface ListingBrowseClientProps {
   initialListings: ListingsResponse;
+  // Filter set parsed from the page URL (?q=&category_id=&sort_by=…). Seeds the
+  // first-paint state so a deep-linked / shared / SearchBar-submitted search
+  // URL renders the matching results instead of the default browse view.
+  initialFilters?: SearchListingsParams;
 }
 
-export function ListingBrowseClient({ initialListings }: ListingBrowseClientProps) {
-  const [filters, setFilters] = useState<SearchListingsParams>(DEFAULT_FILTERS);
+export function ListingBrowseClient({
+  initialListings,
+  initialFilters,
+}: ListingBrowseClientProps) {
+  // The very first render uses the URL-derived filters (falling back to the
+  // defaults when the URL carried none). We capture this object once so its
+  // identity is stable across renders — the `initialData` seed below keys on
+  // exactly this filters object, matching the server-fetched set.
+  const [seedFilters] = useState<SearchListingsParams>(
+    () => initialFilters ?? DEFAULT_FILTERS,
+  );
+  const [filters, setFilters] = useState<SearchListingsParams>(seedFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Seed only the default-filter query so first paint renders the server grid.
+  // Seed only the initial-filter query so first paint renders the server grid.
   // When `filters` changes the query key changes — no seed there — and TanStack
   // refetches client-side exactly as it did before this change.
-  const isDefaultFilters = filters === DEFAULT_FILTERS;
+  const isSeedFilters = filters === seedFilters;
   const { data, isLoading, isError, refetch } = useListings(
     filters,
-    isDefaultFilters ? { initialData: initialListings } : undefined,
+    isSeedFilters ? { initialData: initialListings } : undefined,
   );
 
   // Hydrate the watch-heart state. Fetch the signed-in user's watchlist once
@@ -69,6 +83,7 @@ export function ListingBrowseClient({ initialListings }: ListingBrowseClientProp
   const hasActiveFilters =
     filters.query !== undefined ||
     filters.category_id !== undefined ||
+    filters.category_slug !== undefined ||
     filters.pickup_zip !== undefined ||
     filters.radius_km !== undefined ||
     filters.min_price_cents !== undefined ||

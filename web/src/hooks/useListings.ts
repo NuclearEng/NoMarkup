@@ -47,6 +47,7 @@ function buildSearchParams(params: SearchListingsParams): string {
   const sp = new URLSearchParams();
   if (params.query) sp.set('q', params.query);
   if (params.category_id) sp.set('category_id', params.category_id);
+  if (params.category_slug) sp.set('category_slug', params.category_slug);
   if (params.pickup_zip) sp.set('pickup_zip', params.pickup_zip);
   if (params.radius_km !== undefined) sp.set('radius_km', String(params.radius_km));
   if (params.lat !== undefined) sp.set('lat', String(params.lat));
