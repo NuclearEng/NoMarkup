@@ -599,6 +599,61 @@ export function useResolveReport() {
   });
 }
 
+// ─── User & message abuse reports ─────────────────────
+
+export interface AdminUserReport {
+  id: string;
+  reporter_id: string;
+  reporter_email?: string | null;
+  reported_user_id: string;
+  reported_user_email?: string | null;
+  channel_id?: string | null;
+  message_id?: string | null;
+  reason: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export interface AdminUserReportsResponse {
+  reports: AdminUserReport[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminUserReports(params?: {
+  status?: string;
+  reported_user_id?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    reported_user_id: params?.reported_user_id,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'user-reports', params],
+    queryFn: () => api.get<AdminUserReportsResponse>(`/api/v1/admin/user-reports${query}`),
+  });
+}
+
+export function useResolveUserReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { reportId: string; action: 'dismiss' | 'actioned' | 'review'; notes: string }) =>
+      api.post(`/api/v1/admin/user-reports/${vars.reportId}/resolve`, {
+        action: vars.action,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'user-reports'] });
+    },
+  });
+}
+
 // ─── Markets (rollout) ────────────────────────────────
 //
 // The market catalog (cities/regions) admin surface. Launching a market sets

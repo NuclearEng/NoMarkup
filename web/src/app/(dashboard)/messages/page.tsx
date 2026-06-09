@@ -7,6 +7,7 @@ import { ChannelList } from '@/components/chat/ChannelList';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { MessageThread } from '@/components/chat/MessageThread';
 import { RelayBanner } from '@/components/chat/RelayBanner';
+import { ReportButton } from '@/components/chat/ReportButton';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
@@ -90,7 +91,14 @@ function ActiveThread({ channelId }: { channelId: string }) {
             </div>
             <span className="truncate text-sm font-medium">{otherPartyName}</span>
           </div>
-          <BlockButton userId={otherPartyId} isBlocked={isBlocked} />
+          <div className="flex items-center gap-1">
+            <ReportButton
+              userId={otherPartyId}
+              displayName={otherPartyName ?? undefined}
+              channelId={channelId}
+            />
+            <BlockButton userId={otherPartyId} isBlocked={isBlocked} />
+          </div>
         </div>
       ) : null}
       <MessageThread channelId={channelId} />

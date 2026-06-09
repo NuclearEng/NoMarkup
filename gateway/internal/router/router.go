@@ -88,6 +88,7 @@ func New(
 	listingReplayHandler *handler.ListingReplayHandler,
 	chatRelayHandler *handler.ChatRelayHandler,
 	userBlocksHandler *handler.UserBlocksHandler,
+	userReportsHandler *handler.UserReportsHandler,
 	chatTemplatesHandler *handler.ChatTemplatesHandler,
 	referralsHandler *handler.ReferralsHandler,
 	sellerAnalyticsHandler *handler.SellerAnalyticsHandler,
@@ -820,6 +821,11 @@ func New(
 		r.Delete("/users/{id}/block", userBlocksHandler.Unblock)
 		r.Get("/me/blocks", userBlocksHandler.MyBlocks)
 
+		// Report a user (and optionally a specific message) for abuse.
+		// Owner-scoped (reporter = authed user, no self-report); surfaces
+		// to the admin moderation queue at /admin/user-reports.
+		r.Post("/users/{id}/report", userReportsHandler.CreateUserReport)
+
 		// Image pipeline routes
 		r.Route("/images", func(r chi.Router) {
 			r.Post("/upload-url", imageHandler.GetUploadURL)
@@ -966,6 +972,12 @@ func New(
 			r.Route("/goods-reports", func(r chi.Router) {
 				r.Get("/", adminMarketplaceHandler.ListReports)
 				r.Post("/{id}/resolve", adminMarketplaceHandler.ResolveReport)
+			})
+
+			// User & message abuse reports (harassment/spam/scam/etc).
+			r.Route("/user-reports", func(r chi.Router) {
+				r.Get("/", userReportsHandler.ListUserReports)
+				r.Post("/{id}/resolve", userReportsHandler.ResolveUserReport)
 			})
 
 			// Market rollout: list the full catalog + launch/pull-back markets

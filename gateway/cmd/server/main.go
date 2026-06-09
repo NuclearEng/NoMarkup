@@ -260,6 +260,7 @@ func main() {
 	chatHandler := handler.NewChatHandler(chatClient, userClient, authMW, cfg.ChatWSAddr, cfg.InternalWSSecret, dbPool)
 	chatRelayHandler := handler.NewChatRelayHandler(dbPool)
 	userBlocksHandler := handler.NewUserBlocksHandler(dbPool)
+	userReportsHandler := handler.NewUserReportsHandler(dbPool)
 	chatTemplatesHandler := handler.NewChatTemplatesHandler(dbPool)
 	auctionWSHandler := handler.NewAuctionWSHandler(authMW, cfg.ChatWSAddr, cfg.InternalWSSecret)
 	spectatorWSHandler := handler.NewSpectatorWSHandler(cacheClient)
@@ -379,6 +380,7 @@ func main() {
 		listingReplayHandler,
 		chatRelayHandler,
 		userBlocksHandler,
+		userReportsHandler,
 		chatTemplatesHandler,
 		referralsHandler,
 		sellerAnalyticsHandler,
