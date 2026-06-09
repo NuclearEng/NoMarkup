@@ -191,6 +191,42 @@ describe('InsuranceSelector', () => {
     expect(args.payment_method_id).toBe('pm1');
   });
 
+  it('gates purchase when the customer has no payment method', async () => {
+    // No saved payment methods → cannot purchase; the component must prompt to
+    // add one and disable Add Protection (server-side ownership/amount aside,
+    // the UI must never let a payment-method-less buyer fire the mutation).
+    useMethods.mockReturnValue({
+      data: { payment_methods: [] },
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePaymentMethods>);
+    const mutate = vi.fn();
+    usePurchase.mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof usePurchaseInsurance>);
+    useProducts.mockReturnValue({
+      data: { products: [product] },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useInsuranceProducts>);
+    useQuote.mockReturnValue({
+      data: { quote },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useInsuranceQuote>);
+
+    const user = userEvent.setup();
+    render(createElement(InsuranceSelector, { contractId: 'c1' }));
+
+    // The add-a-payment-method prompt is shown.
+    expect(screen.getByRole('link', { name: /payment method/i })).toBeInTheDocument();
+    // Add Protection is disabled and clicking it never fires the mutation.
+    const button = screen.getByRole('button', { name: /Add Protection/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    await user.click(button);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it('invokes onComplete when Skip Insurance is clicked', async () => {
     useProducts.mockReturnValue({
       data: { products: [product] },
