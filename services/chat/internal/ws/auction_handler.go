@@ -38,6 +38,14 @@ type auctionConn struct {
 	cancel    context.CancelFunc
 	sendCh    chan []byte
 	closeOnce sync.Once
+
+	// jobs is the set of jobIDs this connection is currently subscribed to. It
+	// is the authoritative cleanup list: on disconnect every entry is
+	// unsubscribed so a connection that subscribed to additional jobs over the
+	// wire (subscribe_auction) does not leak its slot in h.jobs[*].conns and
+	// keep the per-job Redis listener alive forever. Guarded by jobsMu.
+	jobsMu sync.Mutex
+	jobs   map[string]struct{}
 }
 
 // enqueue attempts to buffer data for delivery. It reports false if the buffer
@@ -139,13 +147,19 @@ func (h *AuctionHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 		conn:   conn,
 		cancel: cancel,
 		sendCh: make(chan []byte, auctionSendBuffer),
+		jobs:   make(map[string]struct{}),
 	}
 	go ac.writePump(ctx)
 
+	// On disconnect, unsubscribe from EVERY job this connection joined — not just
+	// the initial query-param jobID. A client can subscribe to additional jobs
+	// over the wire (subscribe_auction); without this, those slots leak in
+	// h.jobs[*].conns and their per-job Redis listener goroutine never tears
+	// down (it refcounts via len(conns)).
+	defer h.unsubscribeAll(ac)
+
 	if jobID != "" {
-		if h.subscribe(ctx, userID, jobID, ac) {
-			defer h.unsubscribe(jobID, conn)
-		}
+		h.subscribe(ctx, userID, jobID, ac)
 	}
 
 	// Read pump — handle client messages
@@ -254,6 +268,12 @@ func (h *AuctionHandler) subscribe(ctx context.Context, userID, jobID string, ac
 	job.conns[ac.conn] = ac
 	h.mu.Unlock()
 
+	// Record the subscription on the connection so disconnect cleanup
+	// (unsubscribeAll) tears down every job this conn joined.
+	ac.jobsMu.Lock()
+	ac.jobs[jobID] = struct{}{}
+	ac.jobsMu.Unlock()
+
 	slog.Info("auction ws subscribed", "user_id", userID, "job_id", jobID)
 	return true
 }
@@ -277,11 +297,32 @@ func (h *AuctionHandler) unsubscribe(jobID string, conn *websocket.Conn) {
 	if !ok {
 		return
 	}
+	if ac, ok := job.conns[conn]; ok {
+		ac.jobsMu.Lock()
+		delete(ac.jobs, jobID)
+		ac.jobsMu.Unlock()
+	}
 	delete(job.conns, conn)
 	if len(job.conns) == 0 {
 		// Last subscriber gone: stop the long-lived listener and drop the job.
 		job.listenCancel()
 		delete(h.jobs, jobID)
+	}
+}
+
+// unsubscribeAll removes the connection from every job it joined. Called once on
+// disconnect so no job retains a dead connection (which would otherwise keep its
+// per-job Redis listener goroutine alive via the len(conns) refcount).
+func (h *AuctionHandler) unsubscribeAll(ac *auctionConn) {
+	ac.jobsMu.Lock()
+	jobIDs := make([]string, 0, len(ac.jobs))
+	for jobID := range ac.jobs {
+		jobIDs = append(jobIDs, jobID)
+	}
+	ac.jobsMu.Unlock()
+
+	for _, jobID := range jobIDs {
+		h.unsubscribe(jobID, ac.conn)
 	}
 }
 
