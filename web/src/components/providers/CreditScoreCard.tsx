@@ -1,11 +1,47 @@
 'use client';
 
-import Link from 'next/link';
+import { Clock, ShieldCheck, TrendingUp } from 'lucide-react';
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { useCreditLimit } from '@/hooks/useWorkingCapital';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCents } from '@/lib/utils';
+
+// The three factors below mirror businessCreditScore() in the gateway
+// (gateway/internal/handler/advance_pricing.go), which is itself a mirror of
+// the payment service's authoritative scoring. Keep the weights and guidance in
+// sync with that formula — do not invent factors the model does not use.
+const SCORE_FACTORS = [
+  {
+    icon: Clock,
+    title: 'Repayment history',
+    weight: 'Up to 50%',
+    description:
+      'Repay every working-capital advance on time. This is the single largest factor. Providers with no advance history start from a neutral baseline (grade D) and climb as they build a clean repayment record.',
+  },
+  {
+    icon: TrendingUp,
+    title: 'Completed jobs',
+    weight: 'Up to 30%',
+    description:
+      'Complete more contracts. Your score increases with each finished job up to 20 completed jobs, where this factor is maxed out.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Total earnings',
+    weight: 'Up to 20%',
+    description:
+      'Grow your lifetime earnings on the platform. Higher cumulative earnings raise this factor in tiers, rewarding consistent, higher-value work.',
+  },
+] as const;
 
 function getRiskGrade(riskScore: number): string {
   if (riskScore < 0.3) return 'A';
@@ -131,12 +167,62 @@ export function CreditScoreCard() {
           </div>
         </div>
 
-        <Link
-          href="/provider/advances"
-          className="text-xs text-[var(--brand-gold)] hover:underline focus:outline-none focus-visible:underline"
-        >
-          How to improve your score &rarr;
-        </Link>
+        <Dialog>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              className="rounded-sm text-xs text-[var(--brand-gold)] hover:underline focus:outline-none focus-visible:underline focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+            >
+              How to improve your score &rarr;
+            </button>
+          </DialogTrigger>
+          {/*
+            glass-elevated + explicit bg-card: opaque, lifted surface over the
+            bg-black/80 overlay even where backdrop-filter is unsupported, so the
+            dialog never renders as a transparent panel (mirrors RepayDialog).
+            Radix handles focus trapping + restore and Escape-to-close.
+          */}
+          <DialogContent className="glass-elevated max-w-md bg-card">
+            <DialogHeader>
+              <DialogTitle className="text-white/90">
+                How to improve your NoMarkup Credit Score
+              </DialogTitle>
+              <DialogDescription className="text-white/50">
+                Your score (0&ndash;100) sets your credit grade and the rate on working-capital
+                advances. It is built from three factors:
+              </DialogDescription>
+            </DialogHeader>
+
+            <ul className="space-y-4">
+              {SCORE_FACTORS.map((factor) => (
+                <li key={factor.title} className="flex items-start gap-3">
+                  <span
+                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-gold)]/10"
+                    aria-hidden="true"
+                  >
+                    <factor.icon className="h-4 w-4 text-[var(--brand-gold)]" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm font-medium text-white/80">{factor.title}</p>
+                      <span className="shrink-0 text-xs font-semibold text-[var(--brand-gold)] tabular-nums">
+                        {factor.weight}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-white/50">
+                      {factor.description}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <p className="text-xs leading-relaxed text-white/40">
+              Scores update automatically as your repayment, job, and earnings history change. A
+              higher score raises your grade (A&ndash;F) and lowers your advance APR.
+            </p>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

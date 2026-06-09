@@ -1,13 +1,8 @@
-import { render, screen } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreditScoreCard } from '@/components/providers/CreditScoreCard';
-
-vi.mock('next/link', () => ({
-  default: ({ children, href, ...rest }: { children: ReactNode; href: string }) =>
-    createElement('a', { href, ...rest }, children),
-}));
 
 vi.mock('@/hooks/useWorkingCapital', () => ({
   useCreditLimit: vi.fn(() => ({ data: null, isLoading: true })),
@@ -156,7 +151,11 @@ describe('CreditScoreCard', () => {
     expect(screen.getByText('$0 available')).toBeDefined();
   });
 
-  it('renders an improvement link to /provider/advances', () => {
+  it('does NOT route the improve-score control to the working-capital / advances page', () => {
+    // Regression (ISSUE: credit-score "how to improve" link): the trigger used
+    // to be a <Link href="/provider/advances">, dumping the user on the
+    // working-capital page instead of explaining how to improve the score. It is
+    // now a dialog trigger (a button), and nothing here links to advances.
     vi.mocked(useCreditLimit).mockReturnValue({
       data: {
         max_advance_cents: 1000000,
@@ -167,7 +166,52 @@ describe('CreditScoreCard', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useCreditLimit>);
     render(<CreditScoreCard />);
-    const link = screen.getByText(/How to improve/);
-    expect(link.getAttribute('href')).toBe('/provider/advances');
+
+    const trigger = screen.getByRole('button', { name: /how to improve your score/i });
+    // A button, not a navigation link — no href at all.
+    expect(trigger.getAttribute('href')).toBeNull();
+
+    const advancesLinks = screen
+      .queryAllByRole('link')
+      .filter((el) => el.getAttribute('href')?.includes('advances'));
+    expect(advancesLinks).toHaveLength(0);
+  });
+
+  it('opens an explainer dialog describing the real score factors', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useCreditLimit).mockReturnValue({
+      data: {
+        max_advance_cents: 1000000,
+        total_outstanding_cents: 100000,
+        available_cents: 900000,
+        risk_score: 0.2,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCreditLimit>);
+    render(<CreditScoreCard />);
+
+    // Dialog content is not mounted until the trigger is activated.
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /how to improve your score/i }));
+
+    const dialog = screen.getByRole('dialog');
+    // Factors must match the gateway businessCreditScore() model
+    // (gateway/internal/handler/advance_pricing.go) — repayment 50%, jobs 30%,
+    // earnings 20% — not invented advice.
+    // Match the exact factor headings — the descriptions also mention these
+    // phrases, so a fuzzy /completed jobs/i would match multiple nodes.
+    expect(within(dialog).getByText('Repayment history')).toBeDefined();
+    expect(within(dialog).getByText('Completed jobs')).toBeDefined();
+    expect(within(dialog).getByText('Total earnings')).toBeDefined();
+    expect(within(dialog).getByText(/up to 50%/i)).toBeDefined();
+    expect(within(dialog).getByText(/up to 30%/i)).toBeDefined();
+    expect(within(dialog).getByText(/up to 20%/i)).toBeDefined();
+
+    // The explainer must not send the user to the advances page.
+    const dialogAdvancesLinks = within(dialog)
+      .queryAllByRole('link')
+      .filter((el) => el.getAttribute('href')?.includes('advances'));
+    expect(dialogAdvancesLinks).toHaveLength(0);
   });
 });
