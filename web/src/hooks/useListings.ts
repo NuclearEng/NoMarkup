@@ -355,8 +355,11 @@ export function useCreateListingDraft() {
 export function useListingOrder(orderId: string) {
   return useQuery({
     queryKey: ['listingOrders', orderId],
-    queryFn: () =>
-      api.get<{ order: ListingOrder }>(`/api/v1/orders/${orderId}`).then((res) => res.order),
+    // The gateway returns the order at the top level (GET /orders/{id} →
+    // listing_orders.go writeJSON(order)), not wrapped in { order }. Reading the
+    // envelope here yielded undefined → the order page rendered "Order not found"
+    // despite a 200 (affects both buy-now and accepted-offer orders).
+    queryFn: () => api.get<ListingOrder>(`/api/v1/orders/${orderId}`),
     enabled: !!orderId,
   });
 }
