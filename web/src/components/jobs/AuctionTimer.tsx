@@ -144,7 +144,7 @@ function TimerRing({
       width={size}
       height={size}
       viewBox={`0 0 ${String(size)} ${String(size)}`}
-      className="absolute inset-0 -rotate-90"
+      className="pointer-events-none absolute inset-0 z-0 -rotate-90"
       aria-hidden="true"
     >
       {/* Track ring */}
@@ -342,10 +342,12 @@ export const AuctionTimer = memo(function AuctionTimer({
             strokeWidth={3}
           />
 
-          {/* Timer text inside ring */}
+          {/* Timer text inside ring — sits ABOVE the ring (z-10) so the
+              H:M:S digits stay readable; the ring (z-0, pointer-events-none)
+              is painted behind it. */}
           <div
             className={cn(
-              'absolute inset-0 flex flex-col items-center justify-center',
+              'absolute inset-0 z-10 flex flex-col items-center justify-center',
               'transition-colors duration-500',
               colorClass,
               animationClass,

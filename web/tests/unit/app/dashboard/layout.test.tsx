@@ -70,6 +70,9 @@ vi.mock('@/stores/auth-store', () => ({
     selector({
       user: authStoreState.user,
       isHydrating: authStoreState.isHydrating,
+      // DashboardLayout always renders behind AuthGuard, so the shared
+      // SidebarNav (which self-gates on auth) always sees an authed user here.
+      isAuthenticated: authStoreState.user !== null && !authStoreState.isHydrating,
     }),
 }));
 

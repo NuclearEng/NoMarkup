@@ -1,29 +1,13 @@
 'use client';
 
 import {
-  Banknote,
-  BarChart3,
-  Bookmark,
   Briefcase,
-  Building2,
   CreditCard,
-  FileText,
   Gavel,
-  Heart,
   Home,
-  LayoutDashboard,
   MailWarning,
   Menu,
   MessageSquare,
-  PlusCircle,
-  Rss,
-  Settings,
-  Shield,
-  Tag,
-  Trophy,
-  User,
-  Users,
-  Wrench,
   X,
   Zap,
 } from 'lucide-react';
@@ -33,9 +17,10 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { Header } from '@/components/layout/Header';
+import { activeNavHref, SidebarNav, useNavItems } from '@/components/layout/SidebarNav';
+import type { NavItem } from '@/components/layout/SidebarNav';
 import { AuthGuard } from '@/components/providers/AuthGuard';
 import { WebSocketProvider } from '@/components/providers/WebSocketProvider';
-import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useProfile } from '@/hooks/useProfile';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -95,61 +80,6 @@ function EmailVerificationBanner() {
   );
 }
 
-interface NavItem {
-  href: Route;
-  label: string;
-  icon: typeof Home;
-}
-
-const BASE_NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard' as Route, label: 'Dashboard', icon: Home },
-  { href: '/profile' as Route, label: 'Profile', icon: User },
-];
-
-const PROVIDER_NAV_ITEMS: NavItem[] = [
-  { href: '/provider' as Route, label: 'Provider Dashboard', icon: LayoutDashboard },
-  { href: '/provider/workspace' as Route, label: 'Workspace', icon: Wrench },
-  { href: '/bids' as Route, label: 'My Bids', icon: Gavel },
-  { href: '/provider/team' as Route, label: 'Team', icon: Users },
-  { href: '/provider/advances' as Route, label: 'Working Capital', icon: Banknote },
-  { href: '/provider/business' as Route, label: 'Business Tools', icon: Building2 },
-  { href: '/provider/challenges' as Route, label: 'Challenges', icon: Trophy },
-];
-
-const ADMIN_NAV_ITEMS: NavItem[] = [
-  { href: '/admin' as Route, label: 'Admin Panel', icon: Shield },
-  { href: '/admin/users' as Route, label: 'Manage Users', icon: Users },
-  { href: '/admin/disputes' as Route, label: 'Disputes', icon: BarChart3 },
-];
-
-const COMMON_NAV_ITEMS: NavItem[] = [
-  { href: '/marketplace' as Route, label: 'Marketplace', icon: Gavel },
-  { href: '/me/watchlist' as Route, label: 'Watchlist', icon: Heart },
-  { href: '/me/saved-searches' as Route, label: 'Saved Searches', icon: Bookmark },
-  { href: '/me/feed' as Route, label: 'My Feed', icon: Rss },
-  { href: '/sell/new' as Route, label: 'Sell an Item', icon: Tag },
-  { href: '/contracts' as Route, label: 'Contracts', icon: FileText },
-  { href: '/payments' as Route, label: 'Payments', icon: CreditCard },
-  { href: '/messages' as Route, label: 'Messages', icon: MessageSquare },
-  { href: '/jobs/mine' as Route, label: 'My Jobs', icon: Briefcase },
-  { href: '/jobs/new' as Route, label: 'Post Job', icon: PlusCircle },
-  { href: '/settings/security' as Route, label: 'Settings', icon: Settings },
-];
-
-// The single active nav href = the MOST-SPECIFIC (longest) item whose path the
-// current URL matches exactly or as a sub-path. This prevents a parent like
-// "/provider" (Provider Dashboard) from staying highlighted when you're on a
-// child tab like "/provider/team" — the child wins.
-function activeNavHref(pathname: string, hrefs: readonly string[]): string | null {
-  let best: string | null = null;
-  for (const href of hrefs) {
-    if (pathname === href || pathname.startsWith(href + '/')) {
-      if (best === null || href.length > best.length) best = href;
-    }
-  }
-  return best;
-}
-
 /** Four primary destinations shown in the mobile bottom tab bar (plus "More"). */
 function getPrimaryTabItems(isProvider: boolean): NavItem[] {
   if (isProvider) {
@@ -172,7 +102,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const user = useAuthStore((state) => state.user);
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
-  const isAdmin = user?.roles.includes(USER_ROLE.ADMIN) ?? false;
   const [moreOpen, setMoreOpen] = useState(false);
   // Focus management for the hand-rolled (non-Radix) "More" drawer: close on
   // Escape and move focus into the drawer on open so keyboard users aren't
@@ -191,19 +120,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [moreOpen]);
 
-  // Working Capital (advances) is gated behind the working_capital flag. When
-  // off, drop the nav entry so we don't link to a surface the gateway 503s.
-  const workingCapitalEnabled = useFeatureFlag('working_capital');
-  const providerNavItems = workingCapitalEnabled
-    ? PROVIDER_NAV_ITEMS
-    : PROVIDER_NAV_ITEMS.filter((item) => item.href !== '/provider/advances');
-
-  const allNavItems = [
-    ...BASE_NAV_ITEMS,
-    ...(isProvider ? providerNavItems : []),
-    ...(isAdmin ? ADMIN_NAV_ITEMS : []),
-    ...COMMON_NAV_ITEMS,
-  ];
+  // Full nav list (role + feature-flag aware) — shared with the desktop
+  // sidebar via the extracted SidebarNav component so the "More" drawer below
+  // never drifts from the sidebar.
+  const allNavItems = useNavItems();
 
   const primaryTabItems = getPrimaryTabItems(isProvider);
 
@@ -218,42 +138,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <EmailVerificationBanner />
 
         <div className="flex flex-1">
-          {/* Desktop sidebar — hidden on mobile */}
-          <aside className="glass-sidebar hidden w-64 lg:block">
-            <nav className="space-y-1 p-4" aria-label="Dashboard navigation">
-              {allNavItems.map((item) => {
-                const active = item.href === activeSidebarHref;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      'relative flex min-h-[44px] items-center gap-3 rounded-r-lg px-3 py-2 text-sm font-medium transition-all duration-200',
-                      active
-                        ? 'rounded-l-none border-l-2 border-[var(--brand-gold)] bg-[var(--brand-gold)]/10 pl-[10px] text-[var(--brand-gold)] shadow-[inset_0_1px_0_rgba(201,168,76,0.1)]'
-                        : 'rounded-lg text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/40',
-                    )}
-                    aria-current={active ? 'page' : undefined}
-                  >
-                    <item.icon
-                      className={cn('h-4 w-4', active ? 'text-[var(--brand-gold)]' : '')}
-                      style={{ opacity: active ? 1 : 0.6 }}
-                      aria-hidden="true"
-                    />
-                    {item.label}
-                  </Link>
-                );
-              })}
-              <div className="glass-divider my-2" aria-hidden="true" />
-              <Link
-                href={'/demo/auction' as Route}
-                className="relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-all duration-200 hover:bg-amber-500/10 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
-              >
-                <Zap className="h-4 w-4" aria-hidden="true" />
-                Live Demo
-              </Link>
-            </nav>
-          </aside>
+          {/* Desktop sidebar — hidden on mobile. Shared with the marketplace. */}
+          <SidebarNav />
 
           <WebSocketProvider>
             {/* Main content — mobile padding clears the fixed bottom tab bar */}
