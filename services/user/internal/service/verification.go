@@ -21,7 +21,7 @@ func NewVerification(repo domain.UserRepository) *Verification {
 // UploadDocument stores document metadata and uploads the file to storage.
 // In practice the raw file data would be uploaded to S3; here we persist the
 // metadata record and set the status to pending review.
-func (v *Verification) UploadDocument(ctx context.Context, userID string, docType domain.DocumentType, fileName string, storageURL string) (*domain.Document, error) {
+func (v *Verification) UploadDocument(ctx context.Context, userID string, docType domain.DocumentType, fileName string, storageURL string, mimeType string, sizeBytes int64) (*domain.Document, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("upload document: user_id is required")
 	}
@@ -38,6 +38,8 @@ func (v *Verification) UploadDocument(ctx context.Context, userID string, docTyp
 		Status:     domain.DocStatusPending,
 		FileName:   fileName,
 		StorageURL: storageURL,
+		MimeType:   mimeType,
+		SizeBytes:  sizeBytes,
 	}
 
 	if err := v.repo.CreateDocument(ctx, doc); err != nil {

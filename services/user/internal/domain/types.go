@@ -331,6 +331,8 @@ type Document struct {
 	Status          DocumentStatus
 	FileName        string
 	StorageURL      string
+	MimeType        string
+	SizeBytes       int64
 	RejectionReason string
 	ExpiresAt       *time.Time
 	CreatedAt       time.Time

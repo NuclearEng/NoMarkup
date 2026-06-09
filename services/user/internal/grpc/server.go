@@ -425,12 +425,16 @@ func (s *Server) UploadDocument(ctx context.Context, req *userv1.UploadDocumentR
 
 	storageURL := ""
 	fileName := ""
+	mimeType := ""
+	var sizeBytes int64
 	if req.GetFile() != nil {
 		storageURL = req.GetFile().GetUrl()
 		fileName = req.GetFile().GetName()
+		mimeType = req.GetFile().GetMimeType()
+		sizeBytes = int64(req.GetFile().GetSizeBytes())
 	}
 
-	doc, err := s.verification.UploadDocument(ctx, req.GetUserId(), domain.DocumentType(req.GetDocumentType()), fileName, storageURL)
+	doc, err := s.verification.UploadDocument(ctx, req.GetUserId(), domain.DocumentType(req.GetDocumentType()), fileName, storageURL, mimeType, sizeBytes)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
