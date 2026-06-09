@@ -2089,6 +2089,33 @@ export interface TaxFormsResponse {
   forms: TaxForm[];
 }
 
+/**
+ * Authoritative server-side tax estimate (gateway computes this in integer
+ * cents — see gateway/internal/handler/tax_estimate_calc.go). All `_cents`
+ * fields are integers; `effective_rate` / `*_rate` are fractions in 0..1.
+ */
+export interface TaxEstimate {
+  tax_year: number;
+  net_earnings_cents: number;
+  se_calc_base_cents: number; // 92.35% of net (Schedule SE basis)
+  se_tax_cents: number;
+  se_tax_rate: number;
+  half_se_tax_deduction_cents: number;
+  standard_deduction_cents: number;
+  federal_taxable_cents: number;
+  federal_income_tax_cents: number;
+  state_code: string; // USPS 2-letter, or '' when unknown
+  state_tax_rate: number;
+  state_income_tax_cents: number;
+  has_state_data: boolean;
+  total_tax_cents: number;
+  effective_rate: number; // total_tax / net_earnings, 0..1
+}
+
+export interface TaxEstimateResponse {
+  tax_estimate: TaxEstimate;
+}
+
 // ────────────────────────────────────────
 // Goods Marketplace (Forward Auction) types
 // ────────────────────────────────────────

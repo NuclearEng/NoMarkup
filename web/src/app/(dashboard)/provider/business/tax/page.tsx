@@ -21,15 +21,23 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TaxSummaryPrint } from '@/components/providers/TaxSummaryPrint';
 import { useProviderEarnings } from '@/hooks/useAnalytics';
 import { useProfile } from '@/hooks/useProfile';
-import { useGenerateTaxForm, useTaxForms } from '@/hooks/useTaxForms';
+import { useGenerateTaxForm, useTaxEstimate, useTaxForms } from '@/hooks/useTaxForms';
 import { downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { toast } from 'sonner';
 
-const SE_TAX_RATE = 0.153; // 15.3% self-employment tax
-const ESTIMATED_INCOME_TAX_RATE = 0.22; // 22% estimated federal income tax bracket
-
 const THRESHOLD_1099 = 60000; // $600 in cents
+
+/** Format a 0..1 fraction as a percent string, e.g. 0.153 → "15.3%". */
+function formatRatePercent(rate: number): string {
+  if (!Number.isFinite(rate)) return '0%';
+  return `${(rate * 100).toFixed(rate * 100 >= 10 ? 1 : 2)}%`;
+}
+
+/** Round annual cents to a per-quarter figure (÷4, nearest cent). */
+function perQuarter(annualCents: number): number {
+  return Math.round(annualCents / 4);
+}
 
 function getCurrentYear(): number {
   return new Date().getFullYear();
@@ -45,6 +53,7 @@ export default function TaxCenterPage() {
   const { data: earnings, isLoading } = useProviderEarnings(startDate, endDate, 'quarter');
   const { data: taxFormsData, isLoading: taxFormsLoading } = useTaxForms();
   const { data: profile } = useProfile();
+  const { data: estimateData } = useTaxEstimate(parseInt(taxYear, 10));
   const generateTaxForm = useGenerateTaxForm();
 
   const ytdEarnings = earnings?.net_earnings_cents ?? 0;
@@ -53,11 +62,25 @@ export default function TaxCenterPage() {
 
   const will1099 = ytdEarnings >= THRESHOLD_1099;
 
-  // Quarterly estimates
-  const quarterlyEarnings = ytdEarnings / 4;
-  const quarterlySETax = Math.round(quarterlyEarnings * SE_TAX_RATE);
-  const quarterlyIncomeTax = Math.round(quarterlyEarnings * ESTIMATED_INCOME_TAX_RATE);
-  const quarterlyTotal = quarterlySETax + quarterlyIncomeTax;
+  // Authoritative tax estimate (SE + federal income + state) computed server-side
+  // in integer cents — see gateway/internal/handler/tax_estimate_calc.go. The
+  // client renders these figures verbatim and never recomputes the tax itself.
+  const estimate = estimateData?.tax_estimate;
+  const annualSETax = estimate?.se_tax_cents ?? 0;
+  const annualFederalIncomeTax = estimate?.federal_income_tax_cents ?? 0;
+  const annualStateTax = estimate?.state_income_tax_cents ?? 0;
+  const annualTotalTax = estimate?.total_tax_cents ?? 0;
+  const effectiveRate = estimate?.effective_rate ?? 0;
+  const seTaxRate = estimate?.se_tax_rate ?? 0.153;
+  const stateTaxRate = estimate?.state_tax_rate ?? 0;
+  const stateCode = estimate?.state_code ?? '';
+  const hasStateData = estimate?.has_state_data ?? false;
+
+  // Quarterly = annual ÷ 4 (estimated-tax payments are quarterly).
+  const quarterlySETax = perQuarter(annualSETax);
+  const quarterlyIncomeTax = perQuarter(annualFederalIncomeTax);
+  const quarterlyStateTax = perQuarter(annualStateTax);
+  const quarterlyTotal = perQuarter(annualTotalTax);
 
   function handlePrint() {
     // Reveal the dedicated print-only summary (.tax-summary-print) on a clean
@@ -97,7 +120,13 @@ export default function TaxCenterPage() {
       will1099={will1099}
       quarterlySETaxCents={quarterlySETax}
       quarterlyIncomeTaxCents={quarterlyIncomeTax}
+      quarterlyStateTaxCents={quarterlyStateTax}
       quarterlyTotalCents={quarterlyTotal}
+      effectiveRate={effectiveRate}
+      seTaxRate={seTaxRate}
+      stateCode={stateCode}
+      stateTaxRate={stateTaxRate}
+      hasStateData={hasStateData}
       quarterlyPoints={quarterlyPoints}
     />
     <div className="space-y-6 no-print">
@@ -225,31 +254,64 @@ export default function TaxCenterPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-zinc-300">
-                Estimated quarterly tax payments based on your current earnings pace. These are
-                estimates only — consult a tax professional for accurate figures.
+                Estimated full-year federal and state tax on your net self-employment income,
+                computed from the 2025 tax code. These are estimates only — consult a tax
+                professional for accurate figures.
               </p>
               <Separator />
+
+              {/* Annual breakdown — transparent, itemized, server-computed. */}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-zinc-300">
-                  Self-Employment Tax (15.3%)
+                  Self-Employment Tax ({formatRatePercent(seTaxRate)})
                 </span>
-                <span className="text-sm tabular-nums">{formatCents(quarterlySETax)}/quarter</span>
+                <span className="text-sm tabular-nums">{formatCents(annualSETax)}/yr</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-zinc-300">Federal Income Tax</span>
+                <span className="text-sm tabular-nums">
+                  {formatCents(annualFederalIncomeTax)}/yr
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-zinc-300">
-                  Estimated Income Tax (22%)
+                  State Income Tax
+                  {hasStateData && stateCode
+                    ? ` (${stateCode}${stateTaxRate > 0 ? ` · ${formatRatePercent(stateTaxRate)}` : ''})`
+                    : ''}
                 </span>
-                <span className="text-sm tabular-nums">
-                  {formatCents(quarterlyIncomeTax)}/quarter
-                </span>
+                <span className="text-sm tabular-nums">{formatCents(annualStateTax)}/yr</span>
               </div>
               <Separator />
               <div className="flex items-center justify-between">
-                <span className="font-medium">Est. Quarterly Payment</span>
-                <span className="text-lg font-bold tabular-nums">
-                  {formatCents(quarterlyTotal)}
-                </span>
+                <span className="font-medium">Est. Annual Tax</span>
+                <div className="text-right">
+                  <span className="text-lg font-bold tabular-nums">
+                    {formatCents(annualTotalTax)}
+                  </span>
+                  <span className="ml-2 text-xs text-zinc-300">
+                    ({formatRatePercent(effectiveRate)} effective)
+                  </span>
+                </div>
               </div>
+              <div className="flex items-center justify-between text-sm text-zinc-300">
+                <span>Est. Quarterly Payment</span>
+                <span className="tabular-nums">{formatCents(quarterlyTotal)}/quarter</span>
+              </div>
+
+              {!hasStateData ? (
+                <p className="text-xs text-amber-300/80">
+                  We couldn&apos;t determine your state from your completed jobs, so no state
+                  income tax is included. Add a completed job with a service location to refine
+                  this estimate.
+                </p>
+              ) : stateTaxRate === 0 ? (
+                <p className="text-xs text-white/50">
+                  {stateCode} has no state income tax on earned income, so only federal tax
+                  applies.
+                </p>
+              ) : null}
+
               <p className="text-xs text-white/50">
                 Quarterly due dates: Apr 15, Jun 15, Sep 15, Jan 15 (following year)
               </p>

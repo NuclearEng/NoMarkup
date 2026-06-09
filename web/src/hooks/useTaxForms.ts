@@ -2,12 +2,27 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { api, downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
-import type { TaxForm, TaxFormsResponse } from '@/types';
+import type { TaxEstimateResponse, TaxForm, TaxFormsResponse } from '@/types';
 
 export function useTaxForms() {
   return useQuery({
     queryKey: ['tax-forms'],
     queryFn: () => api.get<TaxFormsResponse>('/api/v1/providers/me/tax-forms'),
+  });
+}
+
+/**
+ * Authoritative server-computed tax estimate (SE + federal income + state) for
+ * the given tax year. The backend is the single source of truth — the client
+ * only renders the returned integer-cent figures, never recomputes them.
+ */
+export function useTaxEstimate(year: number) {
+  return useQuery({
+    queryKey: ['tax-estimate', year],
+    queryFn: () =>
+      api.get<TaxEstimateResponse>(
+        `/api/v1/providers/me/tax-estimate?year=${String(year)}`,
+      ),
   });
 }
 

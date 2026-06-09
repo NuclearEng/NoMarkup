@@ -1,10 +1,10 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronRight, Clock, MapPin, Radio, Tag, Users } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Clock, Heart, MapPin, Radio, Tag, Users } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { BuyItNowButton } from '@/components/marketplace/BuyItNowButton';
@@ -31,7 +31,8 @@ import {
 } from '@/hooks/useListings';
 import { useMarketplaceSpectator } from '@/hooks/useMarketplaceSpectator';
 import { useRecordRecentView } from '@/hooks/useRecentlyViewed';
-import { formatCents, formatRelativeTime } from '@/lib/utils';
+import { useWatchListing, useWatchlist } from '@/hooks/useWatchlist';
+import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import type { ListingDetail } from '@/types';
 import { LISTING_STATUS } from '@/types';
@@ -69,6 +70,19 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
 
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
+  // ─── Watch (heart) state ─────────────────────────────────────────
+  // Hydrate the watch state from the signed-in user's watchlist (auth-only;
+  // skipped for logged-out visitors). The detail-page heart toggles the same
+  // /listings/{id}/watch endpoint the browse grid uses; useWatchListing
+  // invalidates ['watchlist'] + ['listings', id] on success so the filled/
+  // empty state stays in sync across the grid, this page, and /me/watchlist.
+  const { data: watchlistData } = useWatchlist(undefined, { enabled: isAuthenticated });
+  const isWatching = useMemo(
+    () => (watchlistData?.listings ?? []).some((l) => l.id === listingId),
+    [watchlistData, listingId],
+  );
+  const watchMutation = useWatchListing(listingId);
 
   // ─── Live spectator stream ───────────────────────────────────────
   const { isConnected: liveConnected, watcherCount, lastBid } = useMarketplaceSpectator(listingId);
@@ -186,9 +200,37 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
           <div className="space-y-1">
             <div className="flex items-start justify-between gap-3">
               <h1 className="text-2xl font-bold tracking-tight text-zinc-100">{listing.title}</h1>
-              <Badge variant={listing.status === 'active' ? 'active' : 'secondary'}>
-                {listing.status.replace(/_/g, ' ')}
-              </Badge>
+              <div className="flex shrink-0 items-center gap-2">
+                {/* Watch heart — auth-only. Mirrors the browse-grid ScoreboardCard
+                    heart so a user can track this auction straight from the
+                    detail page. */}
+                {isAuthenticated ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      watchMutation.mutate({ watching: !isWatching });
+                    }}
+                    disabled={watchMutation.isPending}
+                    aria-pressed={isWatching}
+                    aria-label={isWatching ? 'Remove from watchlist' : 'Add to watchlist'}
+                    className={cn(
+                      'inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors',
+                      isWatching
+                        ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
+                        : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/30 hover:text-white',
+                      watchMutation.isPending ? 'opacity-60' : '',
+                    )}
+                  >
+                    <Heart
+                      className={cn('h-4 w-4', isWatching ? 'fill-current' : '')}
+                      aria-hidden="true"
+                    />
+                  </button>
+                ) : null}
+                <Badge variant={listing.status === 'active' ? 'active' : 'secondary'}>
+                  {listing.status.replace(/_/g, ' ')}
+                </Badge>
+              </div>
             </div>
             <p className="text-sm text-zinc-400">
               Posted {formatRelativeTime(new Date(listing.created_at))}

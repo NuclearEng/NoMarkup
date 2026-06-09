@@ -10,21 +10,26 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // ProviderHandler handles HTTP endpoints for provider profiles.
 type ProviderHandler struct {
-	userClient userv1.UserServiceClient
-	db         *pgxpool.Pool
+	userClient  userv1.UserServiceClient
+	trustClient trustv1.TrustServiceClient
+	db          *pgxpool.Pool
 }
 
 // NewProviderHandler creates a new ProviderHandler.
-// The db pool is used for gateway-level queries (e.g. streaks) that don't
-// have a corresponding gRPC RPC. If db is nil, those endpoints degrade gracefully.
-func NewProviderHandler(userClient userv1.UserServiceClient, db *pgxpool.Pool) *ProviderHandler {
-	return &ProviderHandler{userClient: userClient, db: db}
+// The db pool is used for gateway-level queries (e.g. streaks, review
+// aggregates) that don't have a corresponding gRPC RPC. If db is nil, those
+// endpoints degrade gracefully. trustClient supplies the real computed trust
+// score for the public profile; if it or the score is unavailable the profile
+// still renders without the trust card.
+func NewProviderHandler(userClient userv1.UserServiceClient, trustClient trustv1.TrustServiceClient, db *pgxpool.Pool) *ProviderHandler {
+	return &ProviderHandler{userClient: userClient, trustClient: trustClient, db: db}
 }
 
 type updateProviderRequest struct {
@@ -369,6 +374,17 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 		result["response_time_label"] = *label
 	}
 
+	// Trust score (real, computed by the trust engine) + review summary
+	// (aggregated from published reviews). The public profile page renders both
+	// — without these the trust card and rating stat silently disappear. Both
+	// degrade to absent on error so the profile still loads (§15: fail soft).
+	if ts := h.trustScoreSummary(r.Context(), userID); ts != nil {
+		result["trust_score"] = ts
+	}
+	if rs := h.reviewSummary(r.Context(), userID); rs != nil {
+		result["review_summary"] = rs
+	}
+
 	// Social proof: follower_count (always) + is_following (relative to the
 	// authenticated caller, if any). This route is wrapped in optionalAuth, so
 	// a logged-out shopper simply sees is_following=false. Both degrade to a
@@ -419,6 +435,65 @@ func (h *ProviderHandler) isFollowing(ctx context.Context, followerID, sellerID 
 		return false
 	}
 	return exists
+}
+
+// trustScoreSummary fetches the user's real computed trust score from the trust
+// engine and projects it to the public {overall_score (0.0-1.0), tier} shape the
+// client expects. Returns nil if no score exists yet or the engine is
+// unreachable — the profile still renders without a trust card.
+func (h *ProviderHandler) trustScoreSummary(ctx context.Context, userID string) map[string]interface{} {
+	if h.trustClient == nil {
+		return nil
+	}
+	resp, err := h.trustClient.GetTrustScore(ctx, &trustv1.GetTrustScoreRequest{UserId: userID})
+	if err != nil {
+		// NotFound is expected for users without a score yet; log others.
+		slog.DebugContext(ctx, "provider trust score lookup failed", "error", err, "user_id", userID)
+		return nil
+	}
+	score := resp.GetScore()
+	if score == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"overall_score": score.GetOverallScore(),
+		"tier":          trustTierToString(score.GetTier()),
+	}
+}
+
+// reviewSummary aggregates a provider's PUBLISHED reviews (matching the trust
+// engine's filter) into {average_rating, review_count, on_time_rate}. Errors
+// degrade to nil so the profile still renders without a rating stat.
+func (h *ProviderHandler) reviewSummary(ctx context.Context, userID string) map[string]interface{} {
+	if h.db == nil {
+		return nil
+	}
+	var avg float64
+	var count int
+	if err := h.db.QueryRow(ctx,
+		`SELECT COALESCE(AVG(overall_rating)::float8, 0), COUNT(*)
+		   FROM reviews WHERE reviewee_id = $1 AND status = 'published'`,
+		userID,
+	).Scan(&avg, &count); err != nil {
+		slog.WarnContext(ctx, "provider review summary failed", "error", err, "user_id", userID)
+		return nil
+	}
+	if count == 0 {
+		return nil
+	}
+	// on_time_rate lives on the provider profile; surface it alongside so the
+	// client's ReviewSummary shape is complete. Best-effort.
+	var onTimeRate float64
+	_ = h.db.QueryRow(ctx,
+		`SELECT COALESCE(on_time_rate, 0)::float8 FROM provider_profiles WHERE user_id = $1`,
+		userID,
+	).Scan(&onTimeRate)
+
+	return map[string]interface{}{
+		"average_rating": avg,
+		"review_count":   count,
+		"on_time_rate":   onTimeRate,
+	}
 }
 
 // SearchProviders handles GET /api/v1/providers/search.

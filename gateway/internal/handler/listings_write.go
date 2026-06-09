@@ -346,6 +346,19 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "listing created but reload failed")
 		return
 	}
+
+	// Wishlist price-alert fan-out — only for listings that went live
+	// (drafts aren't visible, so they don't match a "notify me when
+	// available" want). The reference price on a brand-new listing is its
+	// starting price (no bids yet). Runs after commit; any failure is logged
+	// and swallowed inside NotifyWishlistMatches so it never breaks create.
+	if status == "active" && h.wishlist != nil {
+		h.wishlist.NotifyWishlistMatches(
+			r.Context(), newID, claims.UserID, title, resolvedCategoryID,
+			req.StartingPriceCents,
+		)
+	}
+
 	writeJSON(w, http.StatusCreated, listing)
 }
 

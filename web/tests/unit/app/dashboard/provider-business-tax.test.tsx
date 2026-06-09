@@ -23,6 +23,34 @@ const taxFormsState: {
   isLoading: boolean;
 } = { data: undefined, isLoading: false };
 
+// Authoritative server-computed tax estimate (integer cents + 0..1 rates). The
+// page reads these verbatim from useTaxEstimate and never recomputes the tax —
+// see gateway/internal/handler/tax_estimate_calc.go for the source of truth.
+// Figures below are internally consistent for ~$50,000 net self-employment
+// income: SE tax (15.3%), federal income tax, CA state, total + effective rate.
+const ESTIMATE_FIXTURE = {
+  tax_year: 2026,
+  net_earnings_cents: 5_000_000,
+  se_calc_base_cents: 4_617_500,
+  se_tax_cents: 706_478, // 15.3% of SE base
+  se_tax_rate: 0.153,
+  half_se_tax_deduction_cents: 353_239,
+  standard_deduction_cents: 1_500_000,
+  federal_taxable_cents: 3_146_761,
+  federal_income_tax_cents: 354_000,
+  state_code: 'CA',
+  state_tax_rate: 0.04,
+  state_income_tax_cents: 188_000,
+  has_state_data: true,
+  total_tax_cents: 1_248_478, // SE + federal + state
+  effective_rate: 0.2497, // total_tax / net_earnings
+};
+
+const taxEstimateState: {
+  data: { tax_estimate: typeof ESTIMATE_FIXTURE } | undefined;
+  isLoading: boolean;
+} = { data: { tax_estimate: ESTIMATE_FIXTURE }, isLoading: false };
+
 const generateMutate = vi.fn();
 const generateState = { isPending: false, isError: false };
 const downloadAuth = vi.fn((..._args: unknown[]) => Promise.resolve());
@@ -53,6 +81,9 @@ vi.mock('@/hooks/useTaxForms', () => ({
     isError: generateState.isError,
   }),
   useTaxForms: () => taxFormsState,
+  // New server-side tax estimate the page now reads instead of computing a flat
+  // client-side number. Returns the authoritative integer-cent breakdown.
+  useTaxEstimate: () => taxEstimateState,
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -73,6 +104,8 @@ beforeEach(() => {
   earningsState.isLoading = false;
   taxFormsState.data = undefined;
   taxFormsState.isLoading = false;
+  taxEstimateState.data = { tax_estimate: ESTIMATE_FIXTURE };
+  taxEstimateState.isLoading = false;
   generateState.isPending = false;
   generateState.isError = false;
   generateMutate.mockReset();
@@ -88,6 +121,53 @@ describe('ProviderTaxPage', () => {
   it('renders without throwing', () => {
     const { container } = render(withQueryClient(createElement(ProviderTaxPage)));
     expect(container).toBeTruthy();
+  });
+
+  it('renders the transparent server-computed tax breakdown (SE + federal + state + effective rate)', () => {
+    earningsState.data = {
+      net_earnings_cents: 5_000_000,
+      total_jobs: 12,
+      total_fees_cents: 250_000,
+    };
+    render(withQueryClient(createElement(ProviderTaxPage)));
+
+    // The breakdown LABELS appear in both the on-screen card (annual /yr) and
+    // the print-only summary (quarterly /quarter), so assert label presence with
+    // getAllByText and pin the on-screen ANNUAL dollar figures with getByText.
+    //
+    // SE tax line carries its rate label (15.3%) and the server's annual figure.
+    expect(screen.getAllByText(/Self-Employment Tax \(15\.3%\)/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('$7,064.78/yr')).toBeDefined();
+    // Federal income tax — annual, verbatim from the estimate.
+    expect(screen.getAllByText('Federal Income Tax').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('$3,540.00/yr')).toBeDefined();
+    // State income tax surfaces the state code + its rate, and the annual figure.
+    expect(
+      screen.getAllByText(/State Income Tax\s*\(CA · 4\.00%\)/).length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('$1,880.00/yr')).toBeDefined();
+    // Est. annual total + effective rate badge (total_tax / net_earnings).
+    expect(screen.getByText('$12,484.78')).toBeDefined();
+    expect(screen.getAllByText(/\(25\.0% effective\)/).length).toBeGreaterThanOrEqual(1);
+    // Quarterly estimated payment = annual total ÷ 4, shown on-screen.
+    expect(screen.getByText('$3,121.20/quarter')).toBeDefined();
+  });
+
+  it('shows the no-state-data notice when the estimate lacks a state', () => {
+    earningsState.data = { net_earnings_cents: 5_000_000, total_jobs: 1, total_fees_cents: 0 };
+    taxEstimateState.data = {
+      tax_estimate: {
+        ...ESTIMATE_FIXTURE,
+        state_code: '',
+        state_tax_rate: 0,
+        state_income_tax_cents: 0,
+        has_state_data: false,
+      },
+    };
+    render(withQueryClient(createElement(ProviderTaxPage)));
+    expect(
+      screen.getByText(/couldn.t determine your state from your completed jobs/i),
+    ).toBeDefined();
   });
 
   it('shows loading skeletons while earnings are loading', () => {

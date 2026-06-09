@@ -224,7 +224,7 @@ func main() {
 	// client + token decode; passing nil cache (Redis down) fails open.
 	authHandler.WithIdleSession(authMW)
 	userHandler := handler.NewUserHandler(userClient, dbPool)
-	providerHandler := handler.NewProviderHandler(userClient, dbPool)
+	providerHandler := handler.NewProviderHandler(userClient, trustClient, dbPool)
 	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)
 	jobHandler := handler.NewJobHandler(jobClient, cacheClient, fraudClient)
 	// bidHandler depends on the contract client so awarding a bid also creates
@@ -234,7 +234,7 @@ func main() {
 
 	// Review service lives on the same gRPC server as the job service.
 	reviewClient := reviewv1.NewReviewServiceClient(jobConn)
-	reviewHandler := handler.NewReviewHandler(reviewClient)
+	reviewHandler := handler.NewReviewHandler(reviewClient, trustClient)
 
 	// Subscription service lives on the same gRPC server as the payment service.
 	subscriptionClient := subscriptionv1.NewSubscriptionServiceClient(paymentConn)
@@ -256,7 +256,7 @@ func main() {
 	verificationHandler := handler.NewVerificationHandler(userClient)
 	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient, dbPool)
 	expenseHandler := handler.NewExpenseHandler(paymentClient)
-	taxHandler := handler.NewTaxHandler(paymentClient)
+	taxHandler := handler.NewTaxHandler(paymentClient, analyticsClient, dbPool)
 	chatHandler := handler.NewChatHandler(chatClient, userClient, authMW, cfg.ChatWSAddr, cfg.InternalWSSecret, dbPool)
 	chatRelayHandler := handler.NewChatRelayHandler(dbPool)
 	userBlocksHandler := handler.NewUserBlocksHandler(dbPool)
@@ -299,6 +299,10 @@ func main() {
 	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
 	listingsHandler := handler.NewListingsHandler(dbPool, cacheClient)
 	watchlistHandler := handler.NewWatchlistHandler(dbPool, cacheClient)
+	wishlistHandler := handler.NewWishlistHandler(dbPool)
+	// Wire the wishlist price-alert fan-out into the listing-create path so a
+	// new active listing that matches a buyer's wishlist notifies the owner.
+	listingsHandler.SetWishlist(wishlistHandler)
 	followsHandler := handler.NewFollowsHandler(dbPool)
 	pushSubscriptionsHandler := handler.NewPushSubscriptionsHandler(dbPool)
 	complianceHandler := handler.NewComplianceHandler(dbPool)
@@ -365,6 +369,7 @@ func main() {
 		listingOrdersHandler,
 		listingsHandler,
 		watchlistHandler,
+		wishlistHandler,
 		followsHandler,
 		listingsSearchHandler,
 		pushSubscriptionsHandler,

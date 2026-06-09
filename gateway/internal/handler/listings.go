@@ -42,6 +42,10 @@ import (
 type ListingsHandler struct {
 	db    *pgxpool.Pool
 	cache *cache.Client
+	// wishlist drives the price-alert fan-out when a new listing goes
+	// active (CreateListing → NotifyWishlistMatches). Optional: a nil
+	// wishlist simply skips the alert, so create still works standalone.
+	wishlist *WishlistHandler
 }
 
 // NewListingsHandler returns a ListingsHandler. Both deps may be nil:
@@ -49,6 +53,14 @@ type ListingsHandler struct {
 // counts and bid-event publishing (handlers degrade gracefully).
 func NewListingsHandler(db *pgxpool.Pool, cacheClient *cache.Client) *ListingsHandler {
 	return &ListingsHandler{db: db, cache: cacheClient}
+}
+
+// SetWishlist wires the wishlist price-alert notifier into the listing-create
+// path. Kept as a setter (rather than a constructor arg) so the existing
+// NewListingsHandler signature — referenced across main.go and tests — stays
+// stable. Safe to leave unset; the alert is then a no-op.
+func (h *ListingsHandler) SetWishlist(wl *WishlistHandler) {
+	h.wishlist = wl
 }
 
 // ─────────────────────────────────────────────────────────────────────────

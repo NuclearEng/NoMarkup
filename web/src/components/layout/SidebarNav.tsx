@@ -17,6 +17,7 @@ import {
   Rss,
   Settings,
   Shield,
+  Sparkles,
   Tag,
   Trophy,
   User,
@@ -63,6 +64,7 @@ export const ADMIN_NAV_ITEMS: NavItem[] = [
 export const COMMON_NAV_ITEMS: NavItem[] = [
   { href: '/marketplace' as Route, label: 'Marketplace', icon: Gavel },
   { href: '/me/watchlist' as Route, label: 'Watchlist', icon: Heart },
+  { href: '/me/wishlist' as Route, label: 'Wishlist', icon: Sparkles },
   { href: '/me/saved-searches' as Route, label: 'Saved Searches', icon: Bookmark },
   { href: '/me/feed' as Route, label: 'My Feed', icon: Rss },
   { href: '/sell/new' as Route, label: 'Sell an Item', icon: Tag },

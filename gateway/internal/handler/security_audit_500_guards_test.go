@@ -268,7 +268,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			pattern: "/api/v1/providers/{id}",
 			path:    "/api/v1/providers/" + bad,
 			role:    "customer",
-			handler: NewProviderHandler(nil, nil).GetProvider,
+			handler: NewProviderHandler(nil, nil, nil).GetProvider,
 		},
 	}
 

@@ -194,7 +194,9 @@ describe('(public)/providers/[id]/page', () => {
   it('renders the trust score panel and tier badge when trust_score is present', () => {
     vi.mocked(usePublicProviderProfile).mockReturnValue({
       data: makeProvider({
-        trust_score: { overall_score: 87, tier: 'gold_tier' },
+        // overall_score is on the API's 0.0-1.0 scale (matches the gateway
+        // trust handler / BidCard); the page renders it as a 0-100 composite.
+        trust_score: { overall_score: 0.87, tier: 'gold_tier' },
       }),
       isLoading: false,
       isError: false,
@@ -202,7 +204,7 @@ describe('(public)/providers/[id]/page', () => {
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
     render(createElement(ProviderProfilePage));
-    // Trust score appears twice (hero + stats grid).
+    // Trust score appears twice (hero + stats grid), rendered as a percentage.
     expect(screen.getAllByText('87').length).toBeGreaterThanOrEqual(2);
     // Tier name title-cased and underscores swapped for spaces.
     expect(screen.getByText('Gold Tier')).toBeDefined();

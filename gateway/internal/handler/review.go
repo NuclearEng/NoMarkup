@@ -1,23 +1,33 @@
 package handler
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // ReviewHandler handles HTTP endpoints for reviews.
 type ReviewHandler struct {
 	reviewClient reviewv1.ReviewServiceClient
+	trustClient  trustv1.TrustServiceClient
 }
 
 // NewReviewHandler creates a new ReviewHandler.
-func NewReviewHandler(reviewClient reviewv1.ReviewServiceClient) *ReviewHandler {
-	return &ReviewHandler{reviewClient: reviewClient}
+//
+// trustClient is used to recompute the reviewee's trust score after a review is
+// created (the double-blind publish path lives in the review service; the trust
+// engine reads only published reviews, so a recompute is always safe and only
+// moves the score once both parties have submitted and the reviews go live).
+func NewReviewHandler(reviewClient reviewv1.ReviewServiceClient, trustClient trustv1.TrustServiceClient) *ReviewHandler {
+	return &ReviewHandler{reviewClient: reviewClient, trustClient: trustClient}
 }
 
 // createReviewRequest is the JSON request body for creating a review.
@@ -76,7 +86,36 @@ func (h *ReviewHandler) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, protoReviewToJSON(resp.GetReview()))
+	review := resp.GetReview()
+
+	// Feed the new review into the trust score. The review service publishes the
+	// double-blind pair once both sides submit; the trust engine only counts
+	// published reviews, so this recompute reflects the reviewee's true rating as
+	// soon as the pair goes live. Fire-and-forget: a recompute failure must not
+	// fail the review write.
+	h.recomputeTrustScore(review.GetRevieweeId())
+
+	writeJSON(w, http.StatusCreated, protoReviewToJSON(review))
+}
+
+// recomputeTrustScore asynchronously triggers a trust-score recomputation for a
+// user. Used after review writes so a published review actually moves the
+// reviewee's trust score. Errors are logged, never surfaced — trust scoring is a
+// derived signal and must degrade gracefully (§15: fail soft).
+func (h *ReviewHandler) recomputeTrustScore(userID string) {
+	if h.trustClient == nil || userID == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := h.trustClient.ComputeTrustScore(ctx, &trustv1.ComputeTrustScoreRequest{
+			UserId:        userID,
+			TriggerReason: "review_received",
+		}); err != nil {
+			slog.Warn("trust score recompute after review failed", "user_id", userID, "error", err)
+		}
+	}()
 }
 
 // GetReview handles GET /api/v1/reviews/{id}.

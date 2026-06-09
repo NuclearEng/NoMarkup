@@ -18,8 +18,19 @@ interface TaxSummaryPrintProps {
   will1099: boolean;
   quarterlySETaxCents: number;
   quarterlyIncomeTaxCents: number;
+  quarterlyStateTaxCents: number;
   quarterlyTotalCents: number;
+  effectiveRate: number;
+  seTaxRate: number;
+  stateCode: string;
+  stateTaxRate: number;
+  hasStateData: boolean;
   quarterlyPoints: QuarterlyPoint[];
+}
+
+function formatRatePercent(rate: number): string {
+  if (!Number.isFinite(rate)) return '0%';
+  return `${(rate * 100).toFixed(rate * 100 >= 10 ? 1 : 2)}%`;
 }
 
 function formatGeneratedOn(): string {
@@ -53,7 +64,13 @@ export function TaxSummaryPrint(props: TaxSummaryPrintProps) {
     will1099,
     quarterlySETaxCents,
     quarterlyIncomeTaxCents,
+    quarterlyStateTaxCents,
     quarterlyTotalCents,
+    effectiveRate,
+    seTaxRate,
+    stateCode,
+    stateTaxRate,
+    hasStateData,
     quarterlyPoints,
   } = props;
 
@@ -130,27 +147,44 @@ export function TaxSummaryPrint(props: TaxSummaryPrintProps) {
 
       {/* Quarterly Tax Estimates */}
       <section className="mb-8 break-inside-avoid">
-        <h2 className="mb-3 text-lg font-bold">Quarterly Tax Estimates</h2>
+        <h2 className="mb-3 text-lg font-bold">Estimated Tax</h2>
         <p className="mb-3 text-sm">
-          Estimated quarterly payments based on current earnings pace. Due dates: Apr 15,
-          Jun 15, Sep 15, and Jan 15 (following year).
+          Estimated full-year federal and state tax on net self-employment income (2025 tax
+          code), shown per quarter. Estimated-tax due dates: Apr 15, Jun 15, Sep 15, and Jan 15
+          (following year).
         </p>
         <table className="w-full border-collapse text-sm">
           <tbody>
             <tr className="border-b border-neutral-400">
-              <td className="py-2">Self-Employment Tax (15.3%)</td>
+              <td className="py-2">Self-Employment Tax ({formatRatePercent(seTaxRate)})</td>
               <td className="py-2 text-right tabular-nums">
                 {formatCents(quarterlySETaxCents)}/quarter
               </td>
             </tr>
             <tr className="border-b border-neutral-400">
-              <td className="py-2">Estimated Income Tax (22%)</td>
+              <td className="py-2">Federal Income Tax</td>
               <td className="py-2 text-right tabular-nums">
                 {formatCents(quarterlyIncomeTaxCents)}/quarter
               </td>
             </tr>
+            <tr className="border-b border-neutral-400">
+              <td className="py-2">
+                State Income Tax
+                {hasStateData && stateCode
+                  ? ` (${stateCode}${stateTaxRate > 0 ? ` · ${formatRatePercent(stateTaxRate)}` : ''})`
+                  : ''}
+              </td>
+              <td className="py-2 text-right tabular-nums">
+                {formatCents(quarterlyStateTaxCents)}/quarter
+              </td>
+            </tr>
             <tr className="border-b-2 border-black font-bold">
-              <td className="py-2">Estimated Quarterly Payment</td>
+              <td className="py-2">
+                Estimated Quarterly Payment
+                <span className="ml-2 font-normal text-neutral-700">
+                  ({formatRatePercent(effectiveRate)} effective)
+                </span>
+              </td>
               <td className="py-2 text-right tabular-nums">
                 {formatCents(quarterlyTotalCents)}
               </td>

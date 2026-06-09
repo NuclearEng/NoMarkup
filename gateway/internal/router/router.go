@@ -78,6 +78,7 @@ func New(
 	listingOrdersHandler *handler.ListingOrdersHandler,
 	listingsHandler *handler.ListingsHandler,
 	watchlistHandler *handler.WatchlistHandler,
+	wishlistHandler *handler.WishlistHandler,
 	followsHandler *handler.FollowsHandler,
 	listingsSearchHandler *handler.ListingsSearchHandler,
 	pushSubscriptionsHandler *handler.PushSubscriptionsHandler,
@@ -485,6 +486,10 @@ func New(
 					r.Get("/{year}/download", taxHandler.DownloadTaxForm)
 				})
 
+				// Authoritative server-side tax estimate (SE + federal + state),
+				// owner-scoped via the JWT subject inside the handler.
+				r.Get("/me/tax-estimate", taxHandler.GetTaxEstimate)
+
 				// Reusable quote templates (Wave 5 audit Section H). Owner-bound
 				// inside the handler — every endpoint scopes to the caller's
 				// user_id so a provider can never see another's templates.
@@ -681,6 +686,13 @@ func New(
 		r.Post("/me/saved-searches", watchlistHandler.CreateSavedSearch)
 		r.Get("/me/saved-searches", watchlistHandler.ListSavedSearches)
 		r.Delete("/me/saved-searches/{id}", watchlistHandler.DeleteSavedSearch)
+
+		// Wishlist + price alerts — buyer's "dream item" loop. The alert
+		// fan-out is triggered from CreateListing (see listings_write.go),
+		// not from a route here.
+		r.Post("/me/wishlist", wishlistHandler.CreateWishlistItem)
+		r.Get("/me/wishlist", wishlistHandler.ListWishlist)
+		r.Delete("/me/wishlist/{id}", wishlistHandler.DeleteWishlistItem)
 
 		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {

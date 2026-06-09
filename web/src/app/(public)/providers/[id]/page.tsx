@@ -106,11 +106,12 @@ export default function ProviderProfilePage() {
             ) : null}
           </div>
 
-          {/* Trust score — prominent gold accent */}
+          {/* Trust score — prominent gold accent. overall_score is 0.0-1.0;
+              display as a 0-100 composite (matches BidCard / TrustScoreBadge). */}
           {provider.trust_score ? (
             <div className="flex flex-col items-center gap-1 rounded-xl border border-[var(--brand-gold)]/15 bg-[var(--brand-gold)]/5 px-5 py-3 text-center">
               <p className="text-3xl font-bold text-[var(--brand-gold)]">
-                {String(provider.trust_score.overall_score)}
+                {Math.round(provider.trust_score.overall_score * 100)}
               </p>
               <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Trust Score</p>
               <Badge className="mt-0.5 border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-xs text-[var(--brand-gold)]">
@@ -147,7 +148,7 @@ export default function ProviderProfilePage() {
         ) : null}
         <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
           <p className="text-2xl font-bold text-[var(--brand-gold)]">
-            {provider.trust_score ? String(provider.trust_score.overall_score) : '--'}
+            {provider.trust_score ? Math.round(provider.trust_score.overall_score * 100) : '--'}
           </p>
           <p className="text-xs text-zinc-500">Trust Score</p>
         </div>
