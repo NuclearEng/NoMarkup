@@ -167,7 +167,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			pattern: "/api/v1/admin/disputes/{id}",
 			path:    "/api/v1/admin/disputes/" + bad,
 			role:    "admin",
-			handler: NewAdminDisputesHandler(nil).GetDispute,
+			handler: NewAdminDisputesHandler(nil, nil).GetDispute,
 		},
 		{
 			name:    "admin ReviewDocument",

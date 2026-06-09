@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -483,7 +484,7 @@ type releasePaymentRequest struct {
 
 // ReleasePayment handles POST /api/v1/payments/{id}/release.
 func (h *PaymentHandler) ReleasePayment(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -509,7 +510,27 @@ func (h *PaymentHandler) ReleasePayment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoPaymentToJSON(resp.GetPayment()))
+	// Notify the provider that escrow was released and their payout is on the
+	// way. The Payment proto carries provider_id/customer_id directly, so no DB
+	// lookup is needed. Recipient is always the provider (the payee); the actor
+	// is whoever released (customer confirming completion, or an admin), so the
+	// provider is never the actor. Fail-soft + nil-safe via emitNotification.
+	pay := resp.GetPayment()
+	dollars := fmt.Sprintf("$%.2f", float64(pay.GetProviderPayoutCents())/100)
+	actionURL := "/payments/" + pay.GetId()
+	if pay.GetContractId() != "" {
+		actionURL = "/contracts/" + pay.GetContractId()
+	}
+	emitNotification(r.Context(), h.db,
+		claims.UserID, pay.GetProviderId(),
+		"payout_sent",
+		"Payout released",
+		fmt.Sprintf("Escrow was released — your payout of %s is on the way.", dollars),
+		actionURL,
+		"payment", pay.GetId(),
+	)
+
+	writeJSON(w, http.StatusOK, protoPaymentToJSON(pay))
 }
 
 type calculateFeesRequest struct {

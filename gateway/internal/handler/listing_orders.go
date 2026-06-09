@@ -230,6 +230,31 @@ func (h *ListingOrdersHandler) ConfirmPickup(w http.ResponseWriter, r *http.Requ
 		"both_confirmed", bothConfirmed,
 	)
 
+	// Notify the seller that the buyer confirmed pickup. If this call completed
+	// the mutual handshake (both_confirmed → escrow released), tell the seller
+	// their payment is on the way instead. The actor is the buyer (or an admin
+	// override); emitNotification's self-notify guard prevents a buyer==seller
+	// edge from self-notifying. Fail-soft, post-commit.
+	if nextStatus == "released" {
+		emitNotification(r.Context(), h.db,
+			claims.UserID, sellerID,
+			"payment_released",
+			"Payment released",
+			"Pickup is confirmed by both parties — your payout for this sale has been released.",
+			"/orders/"+orderID,
+			"listing_order", orderID,
+		)
+	} else {
+		emitNotification(r.Context(), h.db,
+			claims.UserID, sellerID,
+			"payment_received",
+			"Pickup confirmed",
+			"The buyer confirmed pickup. Confirm on your side to release the payment.",
+			"/orders/"+orderID,
+			"listing_order", orderID,
+		)
+	}
+
 	writeJSON(w, http.StatusOK, confirmPickupResponse{
 		OrderID:           orderID,
 		EscrowStatus:      nextStatus,
@@ -274,18 +299,18 @@ func (h *ListingOrdersHandler) SellerConfirm(w http.ResponseWriter, r *http.Requ
 	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	var (
-		sellerID, escrowStatus string
-		pickupConfirmedAt      sql.NullTime
-		sellerConfirmedAt      sql.NullTime
-		disputeID              sql.NullString
+		buyerID, sellerID, escrowStatus string
+		pickupConfirmedAt               sql.NullTime
+		sellerConfirmedAt               sql.NullTime
+		disputeID                       sql.NullString
 	)
 	if err := tx.QueryRow(r.Context(), `
-		SELECT seller_id::text, escrow_status, pickup_confirmed_at,
+		SELECT buyer_id::text, seller_id::text, escrow_status, pickup_confirmed_at,
 		       seller_confirmed_at, dispute_id::text
 		  FROM listing_orders
 		 WHERE id = $1
 		 FOR UPDATE`, orderID).
-		Scan(&sellerID, &escrowStatus, &pickupConfirmedAt,
+		Scan(&buyerID, &sellerID, &escrowStatus, &pickupConfirmedAt,
 			&sellerConfirmedAt, &disputeID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "order not found")
@@ -353,6 +378,31 @@ func (h *ListingOrdersHandler) SellerConfirm(w http.ResponseWriter, r *http.Requ
 		"both_confirmed", bothConfirmed,
 		"next_status", nextStatus,
 	)
+
+	// Mirror of ConfirmPickup, from the seller's side: notify the BUYER. If this
+	// ack completed the handshake (escrow released) tell the buyer the payment
+	// to the seller has been released; otherwise nudge them that the seller
+	// confirmed and their confirmation is awaited. Actor is the seller (or admin
+	// override); self-notify guard covers a buyer==seller edge. Fail-soft.
+	if nextStatus == "released" {
+		emitNotification(r.Context(), h.db,
+			claims.UserID, buyerID,
+			"payment_released",
+			"Payment released",
+			"Pickup is confirmed by both parties — the payment has been released to the seller.",
+			"/orders/"+orderID,
+			"listing_order", orderID,
+		)
+	} else {
+		emitNotification(r.Context(), h.db,
+			claims.UserID, buyerID,
+			"payment_received",
+			"Seller confirmed pickup",
+			"The seller confirmed pickup. Confirm on your side to release the payment.",
+			"/orders/"+orderID,
+			"listing_order", orderID,
+		)
+	}
 
 	writeJSON(w, http.StatusOK, sellerConfirmResponse{
 		OrderID:           orderID,
@@ -560,16 +610,16 @@ func (h *ListingOrdersHandler) FileListingDispute(w http.ResponseWriter, r *http
 	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	var (
-		buyerID, escrowStatus string
-		pickupAt              sql.NullTime
-		disputeID             sql.NullString
+		buyerID, sellerID, escrowStatus string
+		pickupAt                        sql.NullTime
+		disputeID                       sql.NullString
 	)
 	if err := tx.QueryRow(r.Context(), `
-		SELECT buyer_id::text, escrow_status, pickup_confirmed_at, dispute_id::text
+		SELECT buyer_id::text, seller_id::text, escrow_status, pickup_confirmed_at, dispute_id::text
 		  FROM listing_orders
 		 WHERE id = $1
 		 FOR UPDATE`, orderID).
-		Scan(&buyerID, &escrowStatus, &pickupAt, &disputeID); err != nil {
+		Scan(&buyerID, &sellerID, &escrowStatus, &pickupAt, &disputeID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "order not found")
 			return
@@ -633,6 +683,18 @@ func (h *ListingOrdersHandler) FileListingDispute(w http.ResponseWriter, r *http
 		"dispute_id", newDisputeID,
 		"buyer_id", claims.UserID,
 		"reason", body.Reason,
+	)
+
+	// Notify the counterparty (the seller — only the buyer can file a goods
+	// dispute) that a dispute was opened against the order. Fail-soft, runs
+	// post-commit; emitNotification guards self-notify and nil-db.
+	emitNotification(r.Context(), h.db,
+		claims.UserID, sellerID,
+		"dispute_opened",
+		"A dispute was opened",
+		"The buyer opened a dispute on your sale. Review the order and respond.",
+		"/orders/"+orderID,
+		"listing_order", orderID,
 	)
 
 	writeJSON(w, http.StatusCreated, fileListingDisputeResponse{

@@ -183,6 +183,75 @@ func TestChatRecipientResolution(t *testing.T) {
 	}
 }
 
+// setPref upserts a single per-type in-app preference for a user, so the prefs
+// JSONB looks exactly like the notification service writes it
+// ({"<type>": {"in_app": <bool>, ...}}). Registers cleanup.
+func setPref(t *testing.T, pool *pgxpool.Pool, userID, notifType string, inApp bool) {
+	t.Helper()
+	prefs := `{"` + notifType + `": {"in_app": ` + map[bool]string{true: "true", false: "false"}[inApp] + `, "email": true, "push": true, "sms": false}}`
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO notification_preferences (user_id, preferences, email_digest)
+		VALUES ($1, $2::jsonb, 'daily')
+		ON CONFLICT (user_id) DO UPDATE SET preferences = $2::jsonb`,
+		userID, prefs,
+	); err != nil {
+		t.Fatalf("set pref: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM notification_preferences WHERE user_id = $1`, userID)
+	})
+}
+
+// TestEmitNotificationRespectsInAppPreference proves emitNotification HONORS the
+// recipient's per-type in-app preference (the prefs UI is not decorative) while
+// FAILING OPEN on every ambiguous case:
+//   - explicit in_app=false  → SUPPRESSED (no row),
+//   - explicit in_app=true   → delivered,
+//   - NO prefs row at all    → delivered (fail open / default-on),
+//   - prefs row but no key for this type → delivered (fail open).
+func TestEmitNotificationRespectsInAppPreference(t *testing.T) {
+	pool := testNotifPool(t)
+	ctx := context.Background()
+	actor := seedUser(t, pool, "pref-actor-"+randSuffix()+"@nomarkup.test")
+
+	// 1. Disabled → suppressed.
+	rDisabled := seedUser(t, pool, "pref-off-"+randSuffix()+"@nomarkup.test")
+	setPref(t, pool, rDisabled, "new_message", false)
+	emitNotification(ctx, pool, actor, rDisabled, "new_message", "t", "b", "/x", "", "")
+	if got := countNotifs(t, pool, rDisabled, "new_message"); got != 0 {
+		t.Fatalf("disabled pref must suppress in-app notification: got %d, want 0", got)
+	}
+
+	// 2. Enabled → delivered.
+	rEnabled := seedUser(t, pool, "pref-on-"+randSuffix()+"@nomarkup.test")
+	setPref(t, pool, rEnabled, "new_message", true)
+	emitNotification(ctx, pool, actor, rEnabled, "new_message", "t", "b", "/x", "", "")
+	if got := countNotifs(t, pool, rEnabled, "new_message"); got != 1 {
+		t.Fatalf("enabled pref must deliver: got %d, want 1", got)
+	}
+
+	// 3. No prefs row → fail open (delivered).
+	rNoRow := seedUser(t, pool, "pref-none-"+randSuffix()+"@nomarkup.test")
+	emitNotification(ctx, pool, actor, rNoRow, "new_message", "t", "b", "/x", "", "")
+	if got := countNotifs(t, pool, rNoRow, "new_message"); got != 1 {
+		t.Fatalf("absent prefs row must FAIL OPEN (deliver): got %d, want 1", got)
+	}
+
+	// 4. Prefs row exists but disabled a DIFFERENT type → this type falls
+	//    through (no key) and is delivered (fail open).
+	rOtherKey := seedUser(t, pool, "pref-other-"+randSuffix()+"@nomarkup.test")
+	setPref(t, pool, rOtherKey, "new_bid", false) // unrelated type disabled
+	emitNotification(ctx, pool, actor, rOtherKey, "new_message", "t", "b", "/x", "", "")
+	if got := countNotifs(t, pool, rOtherKey, "new_message"); got != 1 {
+		t.Fatalf("absent per-type key must FAIL OPEN (deliver): got %d, want 1", got)
+	}
+	// ...and the explicitly disabled type IS suppressed for the same user.
+	emitNotification(ctx, pool, actor, rOtherKey, "new_bid", "t", "b", "/x", "", "")
+	if got := countNotifs(t, pool, rOtherKey, "new_bid"); got != 0 {
+		t.Fatalf("explicitly disabled type must be suppressed: got %d, want 0", got)
+	}
+}
+
 func randSuffix() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])

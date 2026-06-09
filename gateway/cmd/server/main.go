@@ -234,7 +234,7 @@ func main() {
 
 	// Review service lives on the same gRPC server as the job service.
 	reviewClient := reviewv1.NewReviewServiceClient(jobConn)
-	reviewHandler := handler.NewReviewHandler(reviewClient, trustClient)
+	reviewHandler := handler.NewReviewHandler(reviewClient, trustClient, dbPool)
 
 	// Subscription service lives on the same gRPC server as the payment service.
 	subscriptionClient := subscriptionv1.NewSubscriptionServiceClient(paymentConn)
@@ -273,7 +273,7 @@ func main() {
 	adminUsersHandler := handler.NewAdminUsersHandler(userClient)
 	adminVerificationHandler := handler.NewAdminVerificationHandler(userClient)
 	adminJobsHandler := handler.NewAdminJobsHandler(jobClient)
-	adminDisputesHandler := handler.NewAdminDisputesHandler(contractClient)
+	adminDisputesHandler := handler.NewAdminDisputesHandler(contractClient, dbPool)
 	adminReviewsHandler := handler.NewAdminReviewsHandler(reviewClient)
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)
@@ -288,7 +288,7 @@ func main() {
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, cacheClient)
-	disputeHandler := handler.NewDisputeHandler(contractClient)
+	disputeHandler := handler.NewDisputeHandler(contractClient, dbPool)
 	piiCipher, err := gatewaycrypto.FromEnv()
 	if err != nil {
 		slog.Error("crypto: load encryption key", "error", err)

@@ -529,11 +529,12 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 	// service (over-refund guard), but the dispute row drives escrow + audit and
 	// must never claim more than the order total. Fail closed on a missing order.
 	var orderAmountCents int64
+	var disputeOrderID, disputeBuyerID, disputeSellerID string
 	if err := tx.QueryRow(r.Context(), `
-		SELECT COALESCE(lo.amount_cents, 0)
+		SELECT COALESCE(lo.amount_cents, 0), lo.id::text, lo.buyer_id::text, lo.seller_id::text
 		  FROM marketplace_disputes md
 		  JOIN listing_orders lo ON lo.id = md.listing_order_id
-		 WHERE md.id = $1`, id).Scan(&orderAmountCents); err != nil {
+		 WHERE md.id = $1`, id).Scan(&orderAmountCents, &disputeOrderID, &disputeBuyerID, &disputeSellerID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "goods dispute not found")
 			return
@@ -645,6 +646,19 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 		writeError(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
+
+	// Notify BOTH parties (buyer + seller) that the admin resolved the goods
+	// dispute. Admin is the actor → both receive it. Fail-soft, post-commit.
+	{
+		const (
+			title = "Your dispute was resolved"
+			body  = "An admin reviewed and resolved the dispute on your order. See the outcome."
+		)
+		url := "/orders/" + disputeOrderID
+		emitNotification(r.Context(), h.db, claims.UserID, disputeBuyerID, "dispute_resolved", title, body, url, "listing_order", disputeOrderID)
+		emitNotification(r.Context(), h.db, claims.UserID, disputeSellerID, "dispute_resolved", title, body, url, "listing_order", disputeOrderID)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"dispute_id": id,
 		"status":     "resolved",

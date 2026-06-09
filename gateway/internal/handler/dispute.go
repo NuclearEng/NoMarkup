@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -15,13 +19,39 @@ import (
 // over the contract service's dispute RPCs so that disputes filed here land in
 // the same Postgres-backed store the admin queue and the contract-scoped
 // endpoints read from.
+//
+// db is the gateway pool, used ONLY to resolve a service dispute's counterparty
+// (the contracts row carries customer_id/provider_id) so the notification on
+// filing reaches the OTHER party, not the filer. It is nil-safe: a nil pool
+// degrades to "no notification" (the dispute itself still files).
 type DisputeHandler struct {
 	contractClient contractv1.ContractServiceClient
+	db             *pgxpool.Pool
 }
 
 // NewDisputeHandler creates a new DisputeHandler.
-func NewDisputeHandler(contractClient contractv1.ContractServiceClient) *DisputeHandler {
-	return &DisputeHandler{contractClient: contractClient}
+func NewDisputeHandler(contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *DisputeHandler {
+	return &DisputeHandler{contractClient: contractClient, db: db}
+}
+
+// contractParties resolves the (customer_id, provider_id) for a contract so a
+// dispute notification can target the party who is NOT the actor. Returns empty
+// strings on any failure — the caller treats that as "skip notification" (the
+// emit seam is also no-self-notify + nil-safe, so this only loses enrichment).
+func (h *DisputeHandler) contractParties(ctx context.Context, contractID string) (customerID, providerID string) {
+	if h.db == nil || contractID == "" {
+		return "", ""
+	}
+	if err := h.db.QueryRow(ctx,
+		`SELECT customer_id::text, provider_id::text FROM contracts WHERE id = $1`, contractID,
+	).Scan(&customerID, &providerID); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "dispute notification: contract party lookup failed",
+				"error", err, "contract_id", contractID)
+		}
+		return "", ""
+	}
+	return customerID, providerID
 }
 
 // disputeReasonToType maps the reason values the dispute-filing form sends to
@@ -105,6 +135,25 @@ func (h *DisputeHandler) FileDispute(w http.ResponseWriter, r *http.Request) {
 		"dispute_id", dispute.GetId(),
 		"contract_id", body.ContractID,
 		"user_id", claims.UserID,
+	)
+
+	// Notify the counterparty (the contract party who did NOT file) that a
+	// dispute was opened against the contract. Fail-soft: resolves parties from
+	// the contracts row; if the lookup fails we skip the notification rather
+	// than fail the (already-committed) dispute. emitNotification also guards
+	// self-notify, so passing the filer as actor is belt-and-suspenders.
+	customerID, providerID := h.contractParties(r.Context(), body.ContractID)
+	counterparty := customerID
+	if claims.UserID == customerID {
+		counterparty = providerID
+	}
+	emitNotification(r.Context(), h.db,
+		claims.UserID, counterparty,
+		"dispute_opened",
+		"A dispute was opened",
+		"The other party opened a dispute on your contract. Review the details and respond.",
+		"/contracts/"+body.ContractID,
+		"contract", body.ContractID,
 	)
 
 	writeJSON(w, http.StatusCreated, map[string]string{

@@ -269,7 +269,32 @@ func (h *ContractHandler) ApproveMilestone(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoMilestoneToJSON(resp.GetMilestone()))
+	// Notify the provider that the customer approved their milestone. The
+	// approver is always the customer, so the recipient is the contract's
+	// provider, resolved from the milestone's contract_id via the gateway pool.
+	// Fail-soft: a lookup miss skips the notification (the approval already
+	// committed); emitNotification guards nil-db + self-notify.
+	m := resp.GetMilestone()
+	if h.db != nil && m.GetContractId() != "" {
+		var providerID string
+		if err := h.db.QueryRow(r.Context(),
+			`SELECT provider_id::text FROM contracts WHERE id = $1`, m.GetContractId(),
+		).Scan(&providerID); err != nil {
+			slog.ErrorContext(r.Context(), "milestone approved notification: provider lookup failed",
+				"error", err, "contract_id", m.GetContractId())
+		} else {
+			emitNotification(r.Context(), h.db,
+				claims.UserID, providerID,
+				"milestone_approved",
+				"Milestone approved",
+				"The customer approved a milestone on your contract.",
+				"/contracts/"+m.GetContractId(),
+				"contract", m.GetContractId(),
+			)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, protoMilestoneToJSON(m))
 }
 
 type requestRevisionRequest struct {

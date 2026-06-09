@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
@@ -18,6 +19,7 @@ import (
 type ReviewHandler struct {
 	reviewClient reviewv1.ReviewServiceClient
 	trustClient  trustv1.TrustServiceClient
+	db           *pgxpool.Pool
 }
 
 // NewReviewHandler creates a new ReviewHandler.
@@ -26,8 +28,12 @@ type ReviewHandler struct {
 // created (the double-blind publish path lives in the review service; the trust
 // engine reads only published reviews, so a recompute is always safe and only
 // moves the score once both parties have submitted and the reviews go live).
-func NewReviewHandler(reviewClient reviewv1.ReviewServiceClient, trustClient trustv1.TrustServiceClient) *ReviewHandler {
-	return &ReviewHandler{reviewClient: reviewClient, trustClient: trustClient}
+//
+// db is the gateway pool, passed only so the emitNotification seam can write the
+// reviewee's "a review was submitted" in-app row (and gate it on their prefs).
+// nil-safe.
+func NewReviewHandler(reviewClient reviewv1.ReviewServiceClient, trustClient trustv1.TrustServiceClient, db *pgxpool.Pool) *ReviewHandler {
+	return &ReviewHandler{reviewClient: reviewClient, trustClient: trustClient, db: db}
 }
 
 // createReviewRequest is the JSON request body for creating a review.
@@ -94,6 +100,21 @@ func (h *ReviewHandler) CreateReview(w http.ResponseWriter, r *http.Request) {
 	// soon as the pair goes live. Fire-and-forget: a recompute failure must not
 	// fail the review write.
 	h.recomputeTrustScore(review.GetRevieweeId())
+
+	// Notify the reviewee that they were reviewed — but stay CONTENT-NEUTRAL.
+	// Reviews are double-blind: the rating/comment must not leak before the pair
+	// is published, and the gateway does not see the publish state. A neutral
+	// "a review was submitted" is safe in BOTH the pending and published states
+	// and never reveals the score. Recipient is the reviewee; the reviewer is
+	// the actor (self-notify guard covers the same-user edge). Fail-soft.
+	emitNotification(r.Context(), h.db,
+		review.GetReviewerId(), review.GetRevieweeId(),
+		"review_received",
+		"A review was submitted",
+		"Someone submitted a review for your completed work. It becomes visible once both sides review.",
+		"/profile/reviews",
+		"contract", review.GetContractId(),
+	)
 
 	writeJSON(w, http.StatusCreated, protoReviewToJSON(review))
 }

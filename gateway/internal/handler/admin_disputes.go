@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 
@@ -12,13 +17,46 @@ import (
 )
 
 // AdminDisputesHandler handles admin dispute management endpoints.
+//
+// db is the gateway pool, used ONLY to resolve a resolved dispute's two contract
+// parties (customer_id/provider_id) so BOTH are notified that their dispute was
+// resolved. nil-safe: a nil pool degrades to "no notification".
 type AdminDisputesHandler struct {
 	contractClient contractv1.ContractServiceClient
+	db             *pgxpool.Pool
 }
 
 // NewAdminDisputesHandler creates a new AdminDisputesHandler.
-func NewAdminDisputesHandler(contractClient contractv1.ContractServiceClient) *AdminDisputesHandler {
-	return &AdminDisputesHandler{contractClient: contractClient}
+func NewAdminDisputesHandler(contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *AdminDisputesHandler {
+	return &AdminDisputesHandler{contractClient: contractClient, db: db}
+}
+
+// notifyDisputeResolved tells BOTH contract parties (customer + provider) that
+// the admin resolved their dispute. The admin is the actor, so neither party is
+// the actor and both receive it (emitNotification's self-notify guard is a
+// no-op here). Fully fail-soft: a party lookup failure skips the notification
+// and never affects the (already-committed) resolution.
+func (h *AdminDisputesHandler) notifyDisputeResolved(ctx context.Context, adminID, contractID string) {
+	if h.db == nil || contractID == "" {
+		return
+	}
+	var customerID, providerID string
+	if err := h.db.QueryRow(ctx,
+		`SELECT customer_id::text, provider_id::text FROM contracts WHERE id = $1`, contractID,
+	).Scan(&customerID, &providerID); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "dispute resolved notification: contract party lookup failed",
+				"error", err, "contract_id", contractID)
+		}
+		return
+	}
+	const (
+		title = "Your dispute was resolved"
+		body  = "An admin reviewed and resolved the dispute on your contract. See the outcome."
+	)
+	url := "/contracts/" + contractID
+	emitNotification(ctx, h.db, adminID, customerID, "dispute_resolved", title, body, url, "contract", contractID)
+	emitNotification(ctx, h.db, adminID, providerID, "dispute_resolved", title, body, url, "contract", contractID)
 }
 
 // ListDisputes handles GET /api/v1/admin/disputes.
@@ -138,6 +176,9 @@ func (h *AdminDisputesHandler) ResolveDispute(w http.ResponseWriter, r *http.Req
 		writeGRPCError(w, err)
 		return
 	}
+
+	// Notify BOTH contract parties that their dispute was resolved. Fail-soft.
+	h.notifyDisputeResolved(r.Context(), claims.UserID, resp.GetDispute().GetContractId())
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"dispute": disputeToJSON(resp.GetDispute()),
