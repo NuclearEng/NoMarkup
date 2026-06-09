@@ -241,6 +241,19 @@ describe('DashboardLayout', () => {
     expect(activeHrefs).not.toContain('/provider');
   });
 
+  it('renders the buyer surface nav links (watchlist, saved searches, feed) for any authed user', () => {
+    authStoreState.user = { id: 'u1', roles: ['customer'] };
+    render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
+    // Common nav items appear for every authenticated user (sidebar + drawer),
+    // so there is at least one of each. Assert the new surfaces are linked.
+    const watchlist = screen.getAllByText('Watchlist')[0]?.closest('a');
+    const savedSearches = screen.getAllByText('Saved Searches')[0]?.closest('a');
+    const feed = screen.getAllByText('My Feed')[0]?.closest('a');
+    expect(watchlist?.getAttribute('href')).toBe('/me/watchlist');
+    expect(savedSearches?.getAttribute('href')).toBe('/me/saved-searches');
+    expect(feed?.getAttribute('href')).toBe('/me/feed');
+  });
+
   it('renders Live Demo CTA in both desktop sidebar and mobile drawer', () => {
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
     // One in sidebar, then a second appears once the More drawer opens.

@@ -7,6 +7,7 @@ import Link from 'next/link';
 
 import type { Column } from '@/components/admin/DataTable';
 import { DataTable } from '@/components/admin/DataTable';
+import { GoodsDisputesPanel } from '@/components/admin/GoodsDisputesPanel';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -18,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdminDisputes } from '@/hooks/useAdmin';
 import { DISPUTE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
@@ -129,62 +131,72 @@ export default function AdminDisputesPage() {
     },
   ];
 
-  if (isError) {
-    return (
-      <div className="space-y-6">
-        <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Management</h1>
-        <EmptyState
-          icon={<AnimatedIllustration type="error" size="sm" />}
-          title="Failed to load disputes"
-          description="Please try refreshing the page."
-        />
-      </div>
-    );
-  }
-
   return (
     <PageTransition>
     <div className="space-y-6">
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Dispute Management</h1>
         <p className="mt-1 text-zinc-300">
-          Review and resolve contract disputes between customers and providers.
+          Review and resolve disputes across services and goods.
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium text-zinc-300">Status:</span>
-        <Select
-          value={statusFilter ?? ALL_FILTER}
-          onValueChange={(v) => {
-            setStatusFilter(v === ALL_FILTER ? undefined : v);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-full min-h-[44px] sm:w-[180px]" aria-label="Filter disputes by status">
-            <SelectValue placeholder="All Statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_FILTER}>All Statuses</SelectItem>
-            {Object.entries(DISPUTE_STATUS).map(([key, value]) => (
-              <SelectItem key={key} value={value}>
-                {DISPUTE_STATUS_LABELS[value]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <Tabs defaultValue="services" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="services">Services</TabsTrigger>
+          <TabsTrigger value="goods">Goods</TabsTrigger>
+        </TabsList>
 
-      <DataTable
-        columns={columns}
-        data={data?.disputes ?? []}
-        rowKey={(dispute) => dispute.id}
-        pagination={data?.pagination}
-        page={page}
-        onPageChange={setPage}
-        loading={isLoading}
-        emptyMessage="No disputes found matching the current filters."
-      />
+        <TabsContent value="services" className="space-y-4">
+          {isError ? (
+            <EmptyState
+              icon={<AnimatedIllustration type="error" size="sm" />}
+              title="Failed to load disputes"
+              description="Please try refreshing the page."
+            />
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-zinc-300">Status:</span>
+                <Select
+                  value={statusFilter ?? ALL_FILTER}
+                  onValueChange={(v) => {
+                    setStatusFilter(v === ALL_FILTER ? undefined : v);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-full min-h-[44px] sm:w-[180px]" aria-label="Filter disputes by status">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_FILTER}>All Statuses</SelectItem>
+                    {Object.entries(DISPUTE_STATUS).map(([key, value]) => (
+                      <SelectItem key={key} value={value}>
+                        {DISPUTE_STATUS_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <DataTable
+                columns={columns}
+                data={data?.disputes ?? []}
+                rowKey={(dispute) => dispute.id}
+                pagination={data?.pagination}
+                page={page}
+                onPageChange={setPage}
+                loading={isLoading}
+                emptyMessage="No disputes found matching the current filters."
+              />
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="goods">
+          <GoodsDisputesPanel />
+        </TabsContent>
+      </Tabs>
     </div>
     </PageTransition>
   );
