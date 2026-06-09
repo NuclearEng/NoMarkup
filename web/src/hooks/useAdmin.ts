@@ -826,8 +826,14 @@ export function useAdminInsurers() {
 export function useOnboardInsurer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: OnboardInsurerInput) =>
-      api.post<{ insurer: Insurer }>('/api/v1/admin/insurers', input),
+    // The gateway reads the rate card under `rate_card` (createInsurerRequest);
+    // sending `products` silently drops every row, onboarding a carrier that can
+    // never quote. Map the UI's `products` to the wire field here.
+    mutationFn: ({ products, ...rest }: OnboardInsurerInput) =>
+      api.post<{ insurer: Insurer }>('/api/v1/admin/insurers', {
+        ...rest,
+        rate_card: products,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminKeys.insurers() });
     },
@@ -837,8 +843,13 @@ export function useOnboardInsurer() {
 export function useUpdateInsurer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: UpdateInsurerInput) =>
-      api.put<{ insurer: Insurer }>(`/api/v1/admin/insurers/${id}`, body),
+    // Same wire-field mapping as onboarding: the gateway upserts the rate card
+    // from `rate_card`, not `products`.
+    mutationFn: ({ id, products, ...rest }: UpdateInsurerInput) =>
+      api.put<{ insurer: Insurer }>(`/api/v1/admin/insurers/${id}`, {
+        ...rest,
+        ...(products ? { rate_card: products } : {}),
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminKeys.insurers() });
     },

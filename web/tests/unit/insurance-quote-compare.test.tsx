@@ -76,7 +76,23 @@ vi.mock('@/hooks/useInsuranceMarketplace', () => ({
       },
     ) => {
       selectMutate(quoteId);
-      opts?.onSuccess?.({ policy_id: 'POL-9001', status: 'active' });
+      opts?.onSuccess?.({
+        id: 'POL-9001',
+        request_id: 'REQ-1',
+        quote_id: quoteId,
+        insurer_id: 'INS-1',
+        insurer_name: 'Acme Mutual',
+        customer_id: 'CUST-1',
+        contract_id: null,
+        product_type: 'completion_guarantee',
+        coverage_amount_cents: 500000,
+        premium_cents: 4500,
+        deductible_cents: 10000,
+        terms: 'covered',
+        status: 'active',
+        effective_date: '2026-06-09',
+        expiration_date: '2026-06-16',
+      });
     },
     isPending: false,
     variables: undefined,

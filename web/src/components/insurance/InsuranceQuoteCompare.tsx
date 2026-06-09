@@ -216,7 +216,7 @@ function QuoteComparison({
                 You&apos;re covered
               </p>
               <p className="text-sm text-emerald-300/80">
-                Policy {boundPolicy.policy_id} is {boundPolicy.status}.
+                Policy {boundPolicy.id} is {boundPolicy.status}.
               </p>
             </div>
           </CardContent>

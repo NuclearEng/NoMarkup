@@ -2070,10 +2070,27 @@ export interface InsuranceQuoteRequestDetail {
   quotes: InsuranceCompetitiveQuote[];
 }
 
-/** POST /quote-requests/{id}/select response. */
+/**
+ * POST /quote-requests/{id}/select response — the bound marketplace policy.
+ * The gateway returns the full policy object (marketplacePolicyJSON) keyed by
+ * `id` (NOT `policy_id`); the bind-confirmation UI reads `id`/`status`.
+ */
 export interface SelectInsuranceQuoteResponse {
-  policy_id: string;
+  id: string;
+  request_id: string;
+  quote_id: string;
+  insurer_id: string;
+  insurer_name: string;
+  customer_id: string;
+  contract_id: string | null;
+  product_type: string;
+  coverage_amount_cents: number;
+  premium_cents: number;
+  deductible_cents: number;
+  terms: string;
   status: string;
+  effective_date: string;
+  expiration_date: string | null;
 }
 
 // ────────────────────────────────────────
@@ -2380,6 +2397,9 @@ export interface PlaceListingBidResponse {
 export interface SearchListingsParams {
   query?: string;
   category_id?: string;
+  /** Slug alternative to category_id — the gateway accepts either. Used by the
+   *  autocomplete category suggestions, which only carry a slug. */
+  category_slug?: string;
   pickup_zip?: string;
   radius_km?: number;
   min_price_cents?: number;
