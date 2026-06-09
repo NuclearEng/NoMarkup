@@ -22,6 +22,17 @@ var (
 	ErrDisputeAlreadyResolved  = errors.New("dispute is already resolved")
 	ErrInvalidResolutionType   = errors.New("invalid resolution type")
 	ErrInvalidGuaranteeOutcome = errors.New("invalid guarantee outcome")
+	// ErrInvalidGuaranteePayout guards the guarantee-claim money path: the
+	// admin-set payout must be non-negative and never exceed the covered
+	// contract amount (the guarantee can refund at most what was contracted).
+	ErrInvalidGuaranteePayout = errors.New("invalid guarantee payout amount")
+
+	// Change-order sentinels.
+	ErrChangeOrderNotFound     = errors.New("change order not found")
+	ErrChangeOrderNotProposer  = errors.New("only the provider can propose a change order")
+	ErrChangeOrderNotResponder = errors.New("only the customer can respond to a change order")
+	ErrChangeOrderNotPending   = errors.New("change order is no longer pending")
+	ErrInvalidChangeOrderDelta = errors.New("invalid change order amount delta")
 )
 
 // Contract represents a contract between customer and provider.
@@ -130,6 +141,16 @@ type ContractRepository interface {
 	ApproveCompletion(ctx context.Context, contractID string) (*Contract, error)
 	GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]Contract, error)
 	UpdateJobCompleted(ctx context.Context, jobID string) error
+
+	// Change orders
+	CreateChangeOrder(ctx context.Context, order *ChangeOrder) (*ChangeOrder, error)
+	GetChangeOrder(ctx context.Context, changeOrderID string) (*ChangeOrder, error)
+	// AcceptChangeOrder atomically marks the change order accepted and applies the
+	// amount delta to the contract (and its single milestone, if present). It
+	// returns the updated change order.
+	AcceptChangeOrder(ctx context.Context, changeOrderID string) (*ChangeOrder, error)
+	// RejectChangeOrder marks the change order rejected without any money change.
+	RejectChangeOrder(ctx context.Context, changeOrderID string) (*ChangeOrder, error)
 
 	// Disputes
 	CreateDispute(ctx context.Context, dispute *Dispute) (*Dispute, error)

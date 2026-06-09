@@ -33,6 +33,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { PageTransition } from '@/components/ui/page-transition';
 import { ShareSavingsCard } from '@/components/ui/ShareSavingsCard';
 import {
@@ -41,6 +44,8 @@ import {
   useCancelContract,
   useContract,
   useMarkComplete,
+  useProposeChangeOrder,
+  useRespondToChangeOrder,
   useStartWork,
 } from '@/hooks/useContracts';
 import { useSavings } from '@/hooks/useBids';
@@ -82,6 +87,8 @@ export default function ContractDetailPage() {
   const markComplete = useMarkComplete();
   const approveCompletion = useApproveCompletion();
   const cancelContract = useCancelContract();
+  const proposeChangeOrder = useProposeChangeOrder();
+  const respondToChangeOrder = useRespondToChangeOrder();
   const { installments } = useInstallmentSchedule(contractId);
   const { hasPlan: hasInstallmentPlan } = useContractInstallmentPlan(contractId);
   const { data: allSavings } = useSavings();
@@ -89,6 +96,9 @@ export default function ContractDetailPage() {
   const bnplEnabled = useFeatureFlag('customer_bnpl');
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showChangeOrderForm, setShowChangeOrderForm] = useState(false);
+  const [changeOrderDescription, setChangeOrderDescription] = useState('');
+  const [changeOrderAmount, setChangeOrderAmount] = useState('');
 
   // Called unconditionally (hooks rule) — safe before data loads: returns false
   // for a missing/non-pending contract. True only when the acceptance window
@@ -152,6 +162,35 @@ export default function ContractDetailPage() {
         setShowCancelConfirm(false);
       },
     });
+  }
+
+  function handleProposeChangeOrder() {
+    // Parse the dollar amount to integer cents. The server re-validates the
+    // delta (non-zero, within bounds, keeps the contract amount positive), so
+    // a bad value is rejected server-side regardless of this client check.
+    const dollars = Number.parseFloat(changeOrderAmount);
+    if (!Number.isFinite(dollars) || dollars === 0) {
+      return;
+    }
+    const amountDeltaCents = Math.round(dollars * 100);
+    proposeChangeOrder.mutate(
+      {
+        contractId: contract.id,
+        description: changeOrderDescription.trim(),
+        amount_delta_cents: amountDeltaCents,
+      },
+      {
+        onSuccess: () => {
+          setShowChangeOrderForm(false);
+          setChangeOrderDescription('');
+          setChangeOrderAmount('');
+        },
+      },
+    );
+  }
+
+  function handleRespondToChangeOrder(changeOrderId: string, accepted: boolean) {
+    respondToChangeOrder.mutate({ contractId: contract.id, changeOrderId, accepted });
   }
 
   return (
@@ -501,9 +540,79 @@ export default function ContractDetailPage() {
       ) : null}
 
       {/* Change Orders */}
-      {change_orders.length > 0 ? (
+      {change_orders.length > 0 || (isProvider && contract.status === CONTRACT_STATUS.ACTIVE) ? (
         <div className="space-y-3">
-          <h3 className="gold-text text-lg font-semibold">Change Orders</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="gold-text text-lg font-semibold">Change Orders</h3>
+            {isProvider && contract.status === CONTRACT_STATUS.ACTIVE ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-[44px]"
+                onClick={() => {
+                  setShowChangeOrderForm((v) => !v);
+                }}
+              >
+                {showChangeOrderForm ? 'Cancel' : 'Propose Change Order'}
+              </Button>
+            ) : null}
+          </div>
+
+          {/* Provider: propose a new change order */}
+          {isProvider && contract.status === CONTRACT_STATUS.ACTIVE && showChangeOrderForm ? (
+            <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+              <CardContent className="space-y-4 pt-6">
+                <div className="space-y-2">
+                  <Label htmlFor="co-description">Description</Label>
+                  <Textarea
+                    id="co-description"
+                    value={changeOrderDescription}
+                    onChange={(e) => {
+                      setChangeOrderDescription(e.target.value);
+                    }}
+                    placeholder="Describe the scope change and why the price needs to adjust."
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="co-amount">Amount change (USD)</Label>
+                  <Input
+                    id="co-amount"
+                    type="number"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={changeOrderAmount}
+                    onChange={(e) => {
+                      setChangeOrderAmount(e.target.value);
+                    }}
+                    placeholder="e.g. 250 to add $250, or -100 to reduce"
+                  />
+                  <p className="text-zinc-300 text-xs">
+                    Use a negative number to reduce the contract amount. The customer must approve
+                    before the contract amount changes.
+                  </p>
+                </div>
+                <Button
+                  className="min-h-[44px]"
+                  onClick={handleProposeChangeOrder}
+                  disabled={
+                    proposeChangeOrder.isPending ||
+                    changeOrderDescription.trim().length === 0 ||
+                    changeOrderAmount.trim().length === 0 ||
+                    Number.parseFloat(changeOrderAmount) === 0 ||
+                    !Number.isFinite(Number.parseFloat(changeOrderAmount))
+                  }
+                >
+                  {proposeChangeOrder.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    'Submit Change Order'
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <div className="space-y-3">
             {change_orders.map((order) => (
               <Card key={order.id} className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -530,6 +639,33 @@ export default function ContractDetailPage() {
                       </span>
                     </div>
                   </div>
+
+                  {/* Customer: approve or reject a pending change order */}
+                  {isCustomer && order.status === CHANGE_ORDER_STATUS.PROPOSED ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        className="min-h-[44px]"
+                        onClick={() => {
+                          handleRespondToChangeOrder(order.id, true);
+                        }}
+                        disabled={respondToChangeOrder.isPending}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="min-h-[44px]"
+                        onClick={() => {
+                          handleRespondToChangeOrder(order.id, false);
+                        }}
+                        disabled={respondToChangeOrder.isPending}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             ))}

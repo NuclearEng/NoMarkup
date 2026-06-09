@@ -645,6 +645,143 @@ func (r *PostgresRepository) getContractChangeOrders(ctx context.Context, contra
 	return orders, nil
 }
 
+// --- Change Order Repository Methods ---
+
+// CreateChangeOrder inserts a new change order in 'proposed' status. The
+// change_orders.changes_json column is NOT NULL; this minimal change-order flow
+// carries only a description + amount delta, so we persist an empty object.
+func (r *PostgresRepository) CreateChangeOrder(ctx context.Context, order *domain.ChangeOrder) (*domain.ChangeOrder, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO change_orders (
+			contract_id, proposed_by, description, changes_json,
+			amount_delta_cents, status
+		) VALUES ($1, $2, $3, '{}'::jsonb, $4, 'proposed')
+		RETURNING id`,
+		order.ContractID, order.ProposedBy, order.Description, order.AmountDeltaCents,
+	).Scan(&id)
+	if err != nil {
+		return nil, fmt.Errorf("create change order insert: %w", err)
+	}
+	return r.GetChangeOrder(ctx, id)
+}
+
+// GetChangeOrder retrieves a single change order by ID.
+func (r *PostgresRepository) GetChangeOrder(ctx context.Context, changeOrderID string) (*domain.ChangeOrder, error) {
+	var o domain.ChangeOrder
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, contract_id, proposed_by, description,
+		       changes_json, amount_delta_cents, status,
+		       accepted_at, rejected_at, created_at, updated_at
+		FROM change_orders
+		WHERE id = $1`, changeOrderID).Scan(
+		&o.ID, &o.ContractID, &o.ProposedBy, &o.Description,
+		&o.ChangesJSON, &o.AmountDeltaCents, &o.Status,
+		&o.AcceptedAt, &o.RejectedAt, &o.CreatedAt, &o.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrChangeOrderNotFound
+		}
+		return nil, fmt.Errorf("get change order: %w", err)
+	}
+	return &o, nil
+}
+
+// AcceptChangeOrder atomically flips a proposed change order to 'accepted' and
+// applies the amount delta to the contract amount and (if the contract has a
+// single milestone) that milestone's amount. The status guard in the UPDATE
+// ... WHERE status = 'proposed' makes this idempotent: a second accept affects
+// zero rows and returns ErrChangeOrderNotPending, so the delta can never be
+// applied twice. All writes share one transaction.
+func (r *PostgresRepository) AcceptChangeOrder(ctx context.Context, changeOrderID string) (*domain.ChangeOrder, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("accept change order begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Flip status only if still proposed; capture the delta + contract atomically.
+	var contractID string
+	var delta int64
+	err = tx.QueryRow(ctx, `
+		UPDATE change_orders
+		SET status = 'accepted', accepted_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'proposed'
+		RETURNING contract_id, amount_delta_cents`,
+		changeOrderID).Scan(&contractID, &delta)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Either the change order does not exist or it is not pending.
+			var exists bool
+			_ = r.pool.QueryRow(ctx,
+				`SELECT EXISTS(SELECT 1 FROM change_orders WHERE id = $1)`, changeOrderID).Scan(&exists)
+			if !exists {
+				return nil, domain.ErrChangeOrderNotFound
+			}
+			return nil, domain.ErrChangeOrderNotPending
+		}
+		return nil, fmt.Errorf("accept change order update: %w", err)
+	}
+
+	// Apply the delta to the contract amount.
+	_, err = tx.Exec(ctx, `
+		UPDATE contracts SET amount_cents = amount_cents + $1, updated_at = now()
+		WHERE id = $2`, delta, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("accept change order contract amount: %w", err)
+	}
+
+	// Keep milestone amounts reconciled with the contract amount. When the
+	// contract has exactly one milestone (the default single "Complete work"
+	// milestone), the milestone total must equal the contract amount, so we
+	// apply the delta there too. For multi-milestone contracts we leave the
+	// existing milestone splits untouched — re-splitting is out of scope for the
+	// amount-delta flow and would require explicit per-milestone instructions.
+	var milestoneCount int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM milestones WHERE contract_id = $1`, contractID).Scan(&milestoneCount); err != nil {
+		return nil, fmt.Errorf("accept change order milestone count: %w", err)
+	}
+	if milestoneCount == 1 {
+		_, err = tx.Exec(ctx, `
+			UPDATE milestones SET amount_cents = amount_cents + $1, updated_at = now()
+			WHERE contract_id = $2`, delta, contractID)
+		if err != nil {
+			return nil, fmt.Errorf("accept change order milestone amount: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("accept change order commit: %w", err)
+	}
+
+	return r.GetChangeOrder(ctx, changeOrderID)
+}
+
+// RejectChangeOrder marks a proposed change order rejected. No money moves. The
+// status guard makes a double-reject (or reject-after-accept) a no-op that
+// surfaces as ErrChangeOrderNotPending.
+func (r *PostgresRepository) RejectChangeOrder(ctx context.Context, changeOrderID string) (*domain.ChangeOrder, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE change_orders
+		SET status = 'rejected', rejected_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'proposed'`, changeOrderID)
+	if err != nil {
+		return nil, fmt.Errorf("reject change order update: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		_ = r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM change_orders WHERE id = $1)`, changeOrderID).Scan(&exists)
+		if !exists {
+			return nil, domain.ErrChangeOrderNotFound
+		}
+		return nil, domain.ErrChangeOrderNotPending
+	}
+	return r.GetChangeOrder(ctx, changeOrderID)
+}
+
 // --- Dispute Repository Methods ---
 
 // CreateDispute inserts a new dispute into the database.

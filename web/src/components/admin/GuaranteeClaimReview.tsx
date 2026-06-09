@@ -97,6 +97,15 @@ export function GuaranteeClaimReview({
       setFormError('Payout amount must be greater than $0.00 for approval');
       return;
     }
+    // The guarantee can refund at most the covered contract amount. Mirror the
+    // server-side cap so the admin gets immediate feedback instead of a round
+    // trip; the gateway + contract service re-enforce this authoritatively.
+    if (contractAmountCents !== undefined && payoutCents > contractAmountCents) {
+      setFormError(
+        `Payout cannot exceed the contract value (${formatCents(contractAmountCents)})`,
+      );
+      return;
+    }
     setFormError('');
 
     await reviewMutation.mutateAsync({

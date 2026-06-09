@@ -355,6 +355,128 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 	return nil
 }
 
+// --- Change Order Methods ---
+
+// ProposeChangeOrder lets the provider propose a scope/price change on an active
+// contract. Only the provider may propose; the contract must be active. The
+// delta is validated server-side (integer cents): it must be non-zero, and the
+// resulting contract amount must stay strictly positive and within a sane bound
+// (no absurd values). The amount math is never trusted to the client.
+func (s *ContractService) ProposeChangeOrder(
+	ctx context.Context,
+	contractID, proposedBy, description string,
+	amountDeltaCents int64,
+) (*domain.ChangeOrder, error) {
+	contract, err := s.contractRepo.GetContract(ctx, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("propose change order: %w", err)
+	}
+
+	// Only the provider may propose a change order. A customer is a party but
+	// lacks this permission; a true non-party gets the not-a-party error.
+	if contract.ProviderID != proposedBy {
+		if contract.CustomerID == proposedBy {
+			return nil, fmt.Errorf("propose change order: %w", domain.ErrChangeOrderNotProposer)
+		}
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrNotContractParty)
+	}
+
+	if contract.Status != "active" {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrContractNotActive)
+	}
+
+	// Validate the delta server-side. Reject a no-op (zero) delta, a delta that
+	// would drive the contract to zero/negative, and absurd magnitudes. The
+	// upper bound (1 trillion cents = $10B) guards against overflow/typos.
+	const maxAmountCents int64 = 1_000_000_000_000
+	if amountDeltaCents == 0 {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrInvalidChangeOrderDelta)
+	}
+	if amountDeltaCents < -maxAmountCents || amountDeltaCents > maxAmountCents {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrInvalidChangeOrderDelta)
+	}
+	newAmount := contract.AmountCents + amountDeltaCents
+	if newAmount <= 0 || newAmount > maxAmountCents {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrInvalidChangeOrderDelta)
+	}
+
+	order := &domain.ChangeOrder{
+		ContractID:       contractID,
+		ProposedBy:       proposedBy,
+		Description:      description,
+		AmountDeltaCents: amountDeltaCents,
+		Status:           "proposed",
+	}
+
+	created, err := s.contractRepo.CreateChangeOrder(ctx, order)
+	if err != nil {
+		return nil, fmt.Errorf("propose change order: %w", err)
+	}
+
+	slog.Info("change order proposed",
+		"change_order_id", created.ID,
+		"contract_id", contractID,
+		"proposed_by", proposedBy,
+		"amount_delta_cents", amountDeltaCents,
+	)
+	return created, nil
+}
+
+// RespondToChangeOrder lets the customer accept or reject a proposed change
+// order. Only the customer may respond. On accept, the contract amount and the
+// single-milestone amount are adjusted by the delta atomically in the repo; the
+// status guard there makes a double-accept a clean ErrChangeOrderNotPending
+// (409). On reject, no money moves.
+func (s *ContractService) RespondToChangeOrder(
+	ctx context.Context,
+	changeOrderID, userID string,
+	accepted bool,
+) (*domain.ChangeOrder, error) {
+	order, err := s.contractRepo.GetChangeOrder(ctx, changeOrderID)
+	if err != nil {
+		return nil, fmt.Errorf("respond to change order: %w", err)
+	}
+
+	contract, err := s.contractRepo.GetContract(ctx, order.ContractID)
+	if err != nil {
+		return nil, fmt.Errorf("respond to change order: %w", err)
+	}
+
+	// Only the customer may respond. The provider proposed it; letting them
+	// also approve would let one party unilaterally change the contract amount.
+	if contract.CustomerID != userID {
+		if contract.ProviderID == userID {
+			return nil, fmt.Errorf("respond to change order: %w", domain.ErrChangeOrderNotResponder)
+		}
+		return nil, fmt.Errorf("respond to change order: %w", domain.ErrNotContractParty)
+	}
+
+	// Guard at the service layer too (the repo also guards atomically): a change
+	// order that is not still proposed cannot be responded to.
+	if order.Status != "proposed" {
+		return nil, fmt.Errorf("respond to change order: %w", domain.ErrChangeOrderNotPending)
+	}
+
+	var updated *domain.ChangeOrder
+	if accepted {
+		updated, err = s.contractRepo.AcceptChangeOrder(ctx, changeOrderID)
+	} else {
+		updated, err = s.contractRepo.RejectChangeOrder(ctx, changeOrderID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("respond to change order: %w", err)
+	}
+
+	slog.Info("change order responded",
+		"change_order_id", changeOrderID,
+		"contract_id", order.ContractID,
+		"user_id", userID,
+		"accepted", accepted,
+		"status", updated.Status,
+	)
+	return updated, nil
+}
+
 // --- Dispute Methods ---
 
 // OpenDispute creates a new dispute against a contract.
@@ -496,6 +618,32 @@ func (s *ContractService) AdminResolveDispute(
 
 	if existingDispute.Status == "resolved" || existingDispute.Status == "closed" {
 		return nil, fmt.Errorf("admin resolve dispute: %w", domain.ErrDisputeAlreadyResolved)
+	}
+
+	// Money guard (CLAUDE.md §6 — all price calculations server-side, fail
+	// closed). The admin-supplied payout is untrusted client input. Enforce
+	// two invariants here, BEFORE the row is written, so neither a negative
+	// payout nor a payout exceeding the covered contract amount can ever be
+	// persisted — the guarantee can refund at most what was contracted, and
+	// never a negative amount. The gateway clamps too, but this is the
+	// authoritative check (the gateway is not the only possible caller).
+	if refundAmountCents < 0 {
+		return nil, fmt.Errorf("admin resolve dispute: %w: payout must be non-negative", domain.ErrInvalidGuaranteePayout)
+	}
+	if refundAmountCents > 0 {
+		// Load the covered contract to read its amount cap. The dispute always
+		// carries the contract id; a missing contract is a hard error rather
+		// than an uncapped payout.
+		coveredContract, cerr := s.contractRepo.GetContract(ctx, existingDispute.ContractID)
+		if cerr != nil {
+			return nil, fmt.Errorf("admin resolve dispute: load covered contract: %w", cerr)
+		}
+		if refundAmountCents > coveredContract.AmountCents {
+			return nil, fmt.Errorf(
+				"admin resolve dispute: %w: payout %d exceeds covered contract amount %d",
+				domain.ErrInvalidGuaranteePayout, refundAmountCents, coveredContract.AmountCents,
+			)
+		}
 	}
 
 	resolved, err := s.contractRepo.ResolveDispute(ctx, disputeID, normalizedType, notes, adminID, refundAmountCents, normalizedOutcome)

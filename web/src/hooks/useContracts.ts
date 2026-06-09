@@ -214,6 +214,52 @@ export function useRequestRevision() {
   });
 }
 
+export function useProposeChangeOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (variables: {
+      contractId: string;
+      description: string;
+      amount_delta_cents: number;
+    }) =>
+      api.post<Record<string, unknown>>(
+        `/api/v1/contracts/${variables.contractId}/change-orders`,
+        {
+          description: variables.description,
+          amount_delta_cents: variables.amount_delta_cents,
+        },
+      ),
+    onSuccess: (_data, variables) => {
+      toast.success('Change order proposed');
+      void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
+    },
+    onError: explainFailure('Failed to propose change order'),
+  });
+}
+
+export function useRespondToChangeOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (variables: {
+      contractId: string;
+      changeOrderId: string;
+      accepted: boolean;
+    }) =>
+      api.put<Record<string, unknown>>(
+        `/api/v1/contracts/${variables.contractId}/change-orders/${variables.changeOrderId}`,
+        { accepted: variables.accepted },
+      ),
+    onSuccess: (_data, variables) => {
+      toast.success(variables.accepted ? 'Change order approved' : 'Change order rejected');
+      void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+    },
+    onError: explainFailure('Failed to respond to change order'),
+  });
+}
+
 export function useOpenDispute() {
   const queryClient = useQueryClient();
 

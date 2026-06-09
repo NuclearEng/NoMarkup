@@ -88,6 +88,8 @@ vi.mock('@/hooks/useContracts', () => ({
   useMarkComplete: () => ({ mutate: markCompleteMutate, ...markCompleteState }),
   useApproveCompletion: () => ({ mutate: approveCompletionMutate, ...approveCompletionState }),
   useCancelContract: () => ({ mutate: cancelContractMutate, ...cancelContractState }),
+  useProposeChangeOrder: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useRespondToChangeOrder: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/hooks/useBids', () => ({

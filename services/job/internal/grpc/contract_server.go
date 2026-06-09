@@ -256,6 +256,58 @@ func (s *ContractServer) CancelContract(ctx context.Context, req *contractv1.Can
 	}, nil
 }
 
+// --- Change Order RPCs ---
+
+func (s *ContractServer) ProposeChangeOrder(ctx context.Context, req *contractv1.ProposeChangeOrderRequest) (*contractv1.ProposeChangeOrderResponse, error) {
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract id is required")
+	}
+	if req.GetProposedBy() == "" {
+		return nil, status.Error(codes.InvalidArgument, "proposed_by is required")
+	}
+	if req.GetDescription() == "" {
+		return nil, status.Error(codes.InvalidArgument, "description is required")
+	}
+
+	order, err := s.svc.ProposeChangeOrder(
+		ctx,
+		req.GetContractId(),
+		req.GetProposedBy(),
+		req.GetDescription(),
+		req.GetAmountDeltaCents(),
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.ProposeChangeOrderResponse{
+		ChangeOrder: domainChangeOrderToProto(order),
+	}, nil
+}
+
+func (s *ContractServer) RespondToChangeOrder(ctx context.Context, req *contractv1.RespondToChangeOrderRequest) (*contractv1.RespondToChangeOrderResponse, error) {
+	if req.GetChangeOrderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "change_order_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	order, err := s.svc.RespondToChangeOrder(
+		ctx,
+		req.GetChangeOrderId(),
+		req.GetUserId(),
+		req.GetAccepted(),
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.RespondToChangeOrderResponse{
+		ChangeOrder: domainChangeOrderToProto(order),
+	}, nil
+}
+
 // --- Dispute RPCs ---
 
 func (s *ContractServer) OpenDispute(ctx context.Context, req *contractv1.OpenDisputeRequest) (*contractv1.OpenDisputeResponse, error) {
@@ -670,6 +722,18 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid resolution type")
 	case errors.Is(err, domain.ErrInvalidGuaranteeOutcome):
 		return status.Error(codes.InvalidArgument, "invalid guarantee outcome")
+	case errors.Is(err, domain.ErrInvalidGuaranteePayout):
+		return status.Error(codes.InvalidArgument, "payout must be non-negative and at most the covered contract amount")
+	case errors.Is(err, domain.ErrChangeOrderNotFound):
+		return status.Error(codes.NotFound, "change order not found")
+	case errors.Is(err, domain.ErrChangeOrderNotProposer):
+		return status.Error(codes.PermissionDenied, "Only the provider can propose a change order")
+	case errors.Is(err, domain.ErrChangeOrderNotResponder):
+		return status.Error(codes.PermissionDenied, "Only the customer can respond to a change order")
+	case errors.Is(err, domain.ErrChangeOrderNotPending):
+		return status.Error(codes.FailedPrecondition, "This change order has already been responded to")
+	case errors.Is(err, domain.ErrInvalidChangeOrderDelta):
+		return status.Error(codes.InvalidArgument, "invalid change order amount")
 	default:
 		slog.Error("unmapped contract error", "error", err)
 		return status.Error(codes.Internal, "internal error")

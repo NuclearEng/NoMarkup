@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -280,6 +281,39 @@ func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *ht
 		resolutionType = "guarantee_invoked"
 		guaranteeOutcome = "refund"
 		refundCents = body.PayoutCents
+
+		// Money guard (CLAUDE.md §6 — server-side price calc, fail closed).
+		// The payout is untrusted admin input. Reject a negative payout and a
+		// payout exceeding the covered contract amount with a clean,
+		// admin-actionable 400 BEFORE the gRPC call. The contract service
+		// re-enforces both invariants authoritatively; this is the front-line
+		// check that surfaces the contract cap in the error message.
+		if refundCents < 0 {
+			writeError(w, http.StatusBadRequest, "payout amount must not be negative")
+			return
+		}
+		if refundCents > 0 && h.db != nil {
+			var capCents int64
+			err := h.db.QueryRow(r.Context(), `
+				SELECT c.amount_cents
+				  FROM disputes d
+				  JOIN contracts c ON c.id = d.contract_id
+				 WHERE d.id = $1`, claimID,
+			).Scan(&capCents)
+			switch {
+			case errors.Is(err, pgx.ErrNoRows):
+				// Fall through — the service layer maps a missing dispute to 404.
+			case err != nil:
+				slog.ErrorContext(r.Context(), "guarantee review: payout-cap lookup failed",
+					"error", err, "claim_id", claimID)
+				writeError(w, http.StatusInternalServerError, "failed to verify payout cap")
+				return
+			case refundCents > capCents:
+				writeError(w, http.StatusBadRequest,
+					"payout exceeds the covered contract amount ("+formatCentsUSD(capCents)+")")
+				return
+			}
+		}
 	}
 
 	resp, err := h.contractClient.AdminResolveDispute(r.Context(), &contractv1.AdminResolveDisputeRequest{
@@ -328,6 +362,17 @@ func disputeToJSON(d *contractv1.Dispute) map[string]interface{} {
 		result["resolution_notes"] = d.GetResolutionNotes()
 	}
 	return result
+}
+
+// formatCentsUSD renders an integer cent amount as a "$X.YY" string for
+// admin-facing error messages. Always two decimals; handles negatives.
+func formatCentsUSD(cents int64) string {
+	neg := ""
+	if cents < 0 {
+		neg = "-"
+		cents = -cents
+	}
+	return fmt.Sprintf("%s$%d.%02d", neg, cents/100, cents%100)
 }
 
 func parseDisputeStatus(s string) contractv1.DisputeStatus {
