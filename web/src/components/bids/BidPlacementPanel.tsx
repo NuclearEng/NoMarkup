@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Minus, Plus, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,16 @@ export function BidPlacementPanel({
   // Suggest a bid slightly below current lowest
   const suggestedBid = Math.max(Math.round(currentLowest * 0.95), 100);
   const [bidCents, setBidCents] = useState(suggestedBid);
+
+  // Keep the bid in range when a competing provider underbids and the
+  // refetched `currentLowest` drops below the (stale) suggested amount.
+  // `useState(suggestedBid)` only seeds the initial value, so without this
+  // the amount stays anchored to the old lowest — the submit button then
+  // silently disables (bidCents > currentLowest) even though the provider
+  // never touched it. Re-clamp down to a fresh ~5% under the new lowest.
+  useEffect(() => {
+    setBidCents((prev) => (prev > currentLowest ? Math.max(Math.round(currentLowest * 0.95), 100) : prev));
+  }, [currentLowest]);
 
   const savings =
     startingPrice > 0 ? Math.round(((startingPrice - bidCents) / startingPrice) * 100) : 0;
