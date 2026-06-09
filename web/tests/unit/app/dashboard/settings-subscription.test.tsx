@@ -165,7 +165,7 @@ describe('SubscriptionPage', () => {
       max_service_categories: 5,
       portfolio_images: 9,
       max_portfolio_images: 10,
-      current_fee_percentage: 7,
+      current_fee_percentage: 0.07,
     };
     render(withQueryClient(createElement(SubscriptionPage)));
     expect(screen.getByText('Active Bids')).toBeDefined();

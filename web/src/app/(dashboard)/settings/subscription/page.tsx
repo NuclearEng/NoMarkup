@@ -282,7 +282,7 @@ export default function SubscriptionPage() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-zinc-300">Current platform fee</span>
               <span className="font-semibold">
-                {String(usage.current_fee_percentage)}%
+                {((usage.current_fee_percentage ?? 0) * 100).toFixed(0)}%
               </span>
             </div>
           </CardContent>

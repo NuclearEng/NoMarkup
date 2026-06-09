@@ -124,7 +124,9 @@ describe('ProfessionalLicenseSection — submit', () => {
       expect(apiPost).toHaveBeenCalledWith('/api/v1/providers/me/licenses', {
         license_type: 'bar',
         license_number: '1234567',
-        jurisdiction: 'California',
+        // The form submits the 2-letter state code (gateway requires len==2),
+        // chosen via the "California" option label.
+        jurisdiction: 'CA',
       });
     });
   });
