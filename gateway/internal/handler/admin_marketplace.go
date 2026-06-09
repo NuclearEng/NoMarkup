@@ -704,18 +704,35 @@ func (h *AdminMarketplaceHandler) ResolveReport(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Only resolve a report that is not already in a terminal state. Without
+	// this, a second resolve silently overwrites the prior resolution,
+	// reviewed_by, and reviewed_at — letting one admin's verdict be replaced with
+	// no audit trail. 'reviewed' is intermediate and may still advance.
 	tag, err := h.db.Exec(r.Context(), `
 		UPDATE listing_reports
 		   SET status = $1, reviewed_by = $2, reviewed_at = now(),
 		       resolution = $3, updated_at = now()
-		 WHERE id = $4`, newStatus, claims.UserID, body.Notes, id)
+		 WHERE id = $4 AND status NOT IN ('dismissed', 'actioned')`,
+		newStatus, claims.UserID, body.Notes, id)
 	if err != nil {
 		slog.Error("admin resolve report failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to resolve")
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeError(w, http.StatusNotFound, "report not found")
+		// Either the report doesn't exist (404) or it's already terminal (409).
+		var exists bool
+		if e := h.db.QueryRow(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM listing_reports WHERE id = $1)`, id).Scan(&exists); e != nil {
+			slog.Error("admin resolve report existence check failed", "error", e)
+			writeError(w, http.StatusInternalServerError, "failed to resolve")
+			return
+		}
+		if !exists {
+			writeError(w, http.StatusNotFound, "report not found")
+			return
+		}
+		writeError(w, http.StatusConflict, "report already resolved")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
