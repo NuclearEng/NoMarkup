@@ -29,8 +29,8 @@ func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -64,8 +64,8 @@ func (h *ContractHandler) AcceptContract(w http.ResponseWriter, r *http.Request)
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -90,8 +90,8 @@ func (h *ContractHandler) StartWork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -179,8 +179,8 @@ func (h *ContractHandler) SubmitMilestone(w http.ResponseWriter, r *http.Request
 	}
 
 	milestoneID := chi.URLParam(r, "id")
-	if milestoneID == "" {
-		writeError(w, http.StatusBadRequest, "milestone id required")
+	if !isValidUUID(milestoneID) {
+		writeError(w, http.StatusBadRequest, "invalid milestone id")
 		return
 	}
 
@@ -205,8 +205,8 @@ func (h *ContractHandler) ApproveMilestone(w http.ResponseWriter, r *http.Reques
 	}
 
 	milestoneID := chi.URLParam(r, "id")
-	if milestoneID == "" {
-		writeError(w, http.StatusBadRequest, "milestone id required")
+	if !isValidUUID(milestoneID) {
+		writeError(w, http.StatusBadRequest, "invalid milestone id")
 		return
 	}
 
@@ -235,8 +235,8 @@ func (h *ContractHandler) RequestRevision(w http.ResponseWriter, r *http.Request
 	}
 
 	milestoneID := chi.URLParam(r, "id")
-	if milestoneID == "" {
-		writeError(w, http.StatusBadRequest, "milestone id required")
+	if !isValidUUID(milestoneID) {
+		writeError(w, http.StatusBadRequest, "invalid milestone id")
 		return
 	}
 
@@ -267,8 +267,8 @@ func (h *ContractHandler) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -293,8 +293,8 @@ func (h *ContractHandler) ApproveCompletion(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -323,8 +323,8 @@ func (h *ContractHandler) CancelContract(w http.ResponseWriter, r *http.Request)
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -366,8 +366,8 @@ func (h *ContractHandler) CreateChangeOrder(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -399,8 +399,8 @@ func (h *ContractHandler) ListChangeOrders(w http.ResponseWriter, r *http.Reques
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -437,8 +437,8 @@ func (h *ContractHandler) RespondToChangeOrder(w http.ResponseWriter, r *http.Re
 	}
 
 	orderID := chi.URLParam(r, "orderId")
-	if orderID == "" {
-		writeError(w, http.StatusBadRequest, "change order id required")
+	if !isValidUUID(orderID) {
+		writeError(w, http.StatusBadRequest, "invalid change order id")
 		return
 	}
 
@@ -478,8 +478,8 @@ func (h *ContractHandler) OpenDispute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -522,8 +522,8 @@ func (h *ContractHandler) SubmitGuaranteeClaim(w http.ResponseWriter, r *http.Re
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -573,8 +573,8 @@ func (h *ContractHandler) GetGuaranteeClaim(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -628,8 +628,8 @@ func (h *ContractHandler) ReportNoShow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -654,8 +654,8 @@ func (h *ContractHandler) ReportAbandonment(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -682,8 +682,8 @@ func (h *ContractHandler) ExportPDF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 

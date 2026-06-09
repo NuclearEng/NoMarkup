@@ -68,8 +68,8 @@ func (h *AdminVerificationHandler) ListPendingDocuments(w http.ResponseWriter, r
 // Body: {approved: bool, rejection_reason: string}.
 func (h *AdminVerificationHandler) ReviewDocument(w http.ResponseWriter, r *http.Request) {
 	documentID := chi.URLParam(r, "id")
-	if documentID == "" {
-		writeError(w, http.StatusBadRequest, "document id required")
+	if !isValidUUID(documentID) {
+		writeError(w, http.StatusBadRequest, "invalid document id")
 		return
 	}
 

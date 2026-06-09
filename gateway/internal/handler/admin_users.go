@@ -89,8 +89,8 @@ func (h *AdminUsersHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 // GetUser handles GET /api/v1/admin/users/{id}.
 func (h *AdminUsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -137,8 +137,8 @@ func (h *AdminUsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 // SuspendUser handles POST /api/v1/admin/users/{id}/suspend.
 func (h *AdminUsersHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -182,8 +182,8 @@ func (h *AdminUsersHandler) SuspendUser(w http.ResponseWriter, r *http.Request) 
 // recorded in the admin audit log.
 func (h *AdminUsersHandler) ReactivateUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -221,8 +221,8 @@ func (h *AdminUsersHandler) ReactivateUser(w http.ResponseWriter, r *http.Reques
 // BanUser handles POST /api/v1/admin/users/{id}/ban.
 func (h *AdminUsersHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 

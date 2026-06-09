@@ -84,8 +84,8 @@ func (h *AdminDisputesHandler) ListDisputes(w http.ResponseWriter, r *http.Reque
 // GetDispute handles GET /api/v1/admin/disputes/{id}.
 func (h *AdminDisputesHandler) GetDispute(w http.ResponseWriter, r *http.Request) {
 	disputeID := chi.URLParam(r, "id")
-	if disputeID == "" {
-		writeError(w, http.StatusBadRequest, "dispute id required")
+	if !isValidUUID(disputeID) {
+		writeError(w, http.StatusBadRequest, "invalid dispute id")
 		return
 	}
 
@@ -105,8 +105,8 @@ func (h *AdminDisputesHandler) GetDispute(w http.ResponseWriter, r *http.Request
 // ResolveDispute handles POST /api/v1/admin/disputes/{id}/resolve.
 func (h *AdminDisputesHandler) ResolveDispute(w http.ResponseWriter, r *http.Request) {
 	disputeID := chi.URLParam(r, "id")
-	if disputeID == "" {
-		writeError(w, http.StatusBadRequest, "dispute id required")
+	if !isValidUUID(disputeID) {
+		writeError(w, http.StatusBadRequest, "invalid dispute id")
 		return
 	}
 
@@ -207,8 +207,8 @@ func (h *AdminDisputesHandler) ListGuaranteeClaims(w http.ResponseWriter, r *htt
 // Admin approves or rejects a guarantee claim.
 func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *http.Request) {
 	claimID := chi.URLParam(r, "id")
-	if claimID == "" {
-		writeError(w, http.StatusBadRequest, "claim id required")
+	if !isValidUUID(claimID) {
+		writeError(w, http.StatusBadRequest, "invalid claim id")
 		return
 	}
 

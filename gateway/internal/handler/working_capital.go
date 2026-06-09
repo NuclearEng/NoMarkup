@@ -470,8 +470,8 @@ func (h *WorkingCapitalHandler) AdminReviewAdvance(w http.ResponseWriter, r *htt
 	}
 
 	advanceID := chi.URLParam(r, "id")
-	if advanceID == "" {
-		writeError(w, http.StatusBadRequest, "advance id required")
+	if !isValidUUID(advanceID) {
+		writeError(w, http.StatusBadRequest, "invalid advance id")
 		return
 	}
 
@@ -511,8 +511,8 @@ func (h *WorkingCapitalHandler) AdminDisburseAdvance(w http.ResponseWriter, r *h
 	}
 
 	advanceID := chi.URLParam(r, "id")
-	if advanceID == "" {
-		writeError(w, http.StatusBadRequest, "advance id required")
+	if !isValidUUID(advanceID) {
+		writeError(w, http.StatusBadRequest, "invalid advance id")
 		return
 	}
 

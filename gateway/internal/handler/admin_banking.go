@@ -92,8 +92,8 @@ func (h *AdminBankingHandler) DeletePlatformBankAccount(w http.ResponseWriter, r
 	}
 
 	id := chi.URLParam(r, "id")
-	if id == "" {
-		writeError(w, http.StatusBadRequest, "bank account id required")
+	if !isValidUUID(id) {
+		writeError(w, http.StatusBadRequest, "invalid bank account id")
 		return
 	}
 

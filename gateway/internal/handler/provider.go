@@ -351,8 +351,8 @@ func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
 // GetProvider handles GET /api/v1/providers/{id}.
 func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 

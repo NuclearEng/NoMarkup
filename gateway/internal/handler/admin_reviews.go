@@ -78,8 +78,8 @@ func (h *AdminReviewsHandler) ListFlaggedReviews(w http.ResponseWriter, r *http.
 // ResolveFlag handles POST /api/v1/admin/reviews/flags/{id}/resolve.
 func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request) {
 	flagID := chi.URLParam(r, "id")
-	if flagID == "" {
-		writeError(w, http.StatusBadRequest, "flag id required")
+	if !isValidUUID(flagID) {
+		writeError(w, http.StatusBadRequest, "invalid flag id")
 		return
 	}
 
@@ -116,8 +116,8 @@ func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request
 // RemoveReview handles DELETE /api/v1/admin/reviews/{id}.
 func (h *AdminReviewsHandler) RemoveReview(w http.ResponseWriter, r *http.Request) {
 	reviewID := chi.URLParam(r, "id")
-	if reviewID == "" {
-		writeError(w, http.StatusBadRequest, "review id required")
+	if !isValidUUID(reviewID) {
+		writeError(w, http.StatusBadRequest, "invalid review id")
 		return
 	}
 

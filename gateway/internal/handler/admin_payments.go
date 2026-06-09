@@ -93,8 +93,8 @@ func (h *AdminPaymentsHandler) ListPayments(w http.ResponseWriter, r *http.Reque
 // GetPaymentDetails handles GET /api/v1/admin/payments/{id}.
 func (h *AdminPaymentsHandler) GetPaymentDetails(w http.ResponseWriter, r *http.Request) {
 	paymentID := chi.URLParam(r, "id")
-	if paymentID == "" {
-		writeError(w, http.StatusBadRequest, "payment id required")
+	if !isValidUUID(paymentID) {
+		writeError(w, http.StatusBadRequest, "invalid payment id")
 		return
 	}
 

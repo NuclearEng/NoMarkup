@@ -92,8 +92,8 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 	}
 
 	jobID := chi.URLParam(r, "id")
-	if jobID == "" {
-		writeError(w, http.StatusBadRequest, "job id required")
+	if !isValidUUID(jobID) {
+		writeError(w, http.StatusBadRequest, "invalid job id")
 		return
 	}
 
