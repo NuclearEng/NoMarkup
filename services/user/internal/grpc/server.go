@@ -864,6 +864,12 @@ func (s *Server) AdminSuspendUser(ctx context.Context, req *userv1.AdminSuspendU
 	if req.GetAdminId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
 	}
+	// An admin must not be able to suspend their own account — doing so locks
+	// them out of the admin surface the moment their current access token
+	// expires, leaving DB surgery as the only recovery.
+	if req.GetUserId() == req.GetAdminId() {
+		return nil, status.Error(codes.InvalidArgument, "an admin cannot suspend their own account")
+	}
 
 	if err := s.admin.SuspendUser(ctx, req.GetUserId(), req.GetReason(), req.GetAdminId()); err != nil {
 		return nil, mapDomainError(err)
@@ -930,6 +936,10 @@ func (s *Server) AdminBanUser(ctx context.Context, req *userv1.AdminBanUserReque
 	}
 	if req.GetAdminId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	// An admin must not be able to ban their own account (self-lockout).
+	if req.GetUserId() == req.GetAdminId() {
+		return nil, status.Error(codes.InvalidArgument, "an admin cannot ban their own account")
 	}
 
 	if err := s.admin.BanUser(ctx, req.GetUserId(), req.GetReason(), req.GetAdminId()); err != nil {
