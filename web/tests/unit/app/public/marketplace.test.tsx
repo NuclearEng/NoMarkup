@@ -37,8 +37,53 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('@/components/marketplace/ScoreboardCard', () => ({
-  ScoreboardCard: ({ listing }: { listing: { id: string; title: string } }) =>
-    createElement('article', { 'data-testid': `listing-${listing.id}` }, listing.title),
+  ScoreboardCard: ({
+    listing,
+    watching,
+    showWatch,
+  }: {
+    listing: { id: string; title: string };
+    watching?: boolean;
+    showWatch?: boolean;
+  }) =>
+    createElement(
+      'article',
+      {
+        'data-testid': `listing-${listing.id}`,
+        'data-watching': String(Boolean(watching)),
+        'data-show-watch': String(showWatch ?? true),
+      },
+      listing.title,
+    ),
+}));
+
+vi.mock('@/components/marketplace/SaveSearchButton', () => ({
+  SaveSearchButton: () =>
+    createElement('button', { type: 'button', 'data-testid': 'save-search' }, 'Save this search'),
+}));
+
+// Auth + watchlist state are driven per-test. Defaults: logged-out, empty
+// watchlist. The watchlist query is `enabled: isAuthenticated`, so the hook
+// only resolves data when authenticated.
+const authState = { isAuthenticated: false, userId: undefined as string | undefined };
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (
+    selector: (s: { isAuthenticated: boolean; user: { id: string } | null }) => unknown,
+  ) =>
+    selector({
+      isAuthenticated: authState.isAuthenticated,
+      user: authState.userId ? { id: authState.userId } : null,
+    }),
+}));
+
+const watchlistState: { ids: string[] } = { ids: [] };
+vi.mock('@/hooks/useWatchlist', () => ({
+  useWatchlist: (_page?: number, options?: { enabled?: boolean }) => ({
+    data:
+      (options?.enabled ?? true)
+        ? { listings: watchlistState.ids.map((id) => ({ id })), pagination: {} }
+        : undefined,
+  }),
 }));
 
 vi.mock('@/components/marketplace/UrgencyStrip', () => ({
@@ -115,6 +160,9 @@ beforeEach(() => {
   listingsState.isLoading = false;
   listingsState.isError = false;
   listingsState.refetch = vi.fn();
+  authState.isAuthenticated = false;
+  authState.userId = undefined;
+  watchlistState.ids = [];
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -206,5 +254,53 @@ describe('ListingBrowseClient', () => {
   it('renders the filters panel mocked component', () => {
     renderClient();
     expect(screen.getByTestId('filters')).toBeDefined();
+  });
+
+  // Bug 1 — the browse grid must pass real watch state down to each card.
+  function laterTodaySeed(ids: string[]): ListingsResponse {
+    return {
+      listings: ids.map((id) => ({
+        id,
+        title: id,
+        auction_ends_at: new Date(Date.now() + 86_400_000).toISOString(),
+        bid_count: 0,
+      })) as unknown as ListingsResponse['listings'],
+      pagination: { totalCount: ids.length, page: 1, pageSize: 60, totalPages: 1, hasNext: false },
+    };
+  }
+
+  it('hides the watch heart for logged-out visitors (showWatch=false)', () => {
+    authState.isAuthenticated = false;
+    renderClient(laterTodaySeed(['a']));
+    const card = screen.getByTestId('listing-a');
+    expect(card.getAttribute('data-show-watch')).toBe('false');
+    expect(card.getAttribute('data-watching')).toBe('false');
+  });
+
+  it('passes watching=true only for listings on the user watchlist', () => {
+    authState.isAuthenticated = true;
+    authState.userId = 'me';
+    watchlistState.ids = ['a'];
+    renderClient(laterTodaySeed(['a', 'b']));
+    const watched = screen.getByTestId('listing-a');
+    const notWatched = screen.getByTestId('listing-b');
+    expect(watched.getAttribute('data-show-watch')).toBe('true');
+    expect(watched.getAttribute('data-watching')).toBe('true');
+    expect(notWatched.getAttribute('data-watching')).toBe('false');
+  });
+
+  it('shows the Save-this-search entry point only when authenticated', () => {
+    authState.isAuthenticated = false;
+    const { rerender } = renderClient(laterTodaySeed(['a']));
+    expect(screen.queryByTestId('save-search')).toBeNull();
+
+    authState.isAuthenticated = true;
+    authState.userId = 'me';
+    rerender(
+      withQueryClient(
+        createElement(ListingBrowseClient, { initialListings: laterTodaySeed(['a']) }),
+      ),
+    );
+    expect(screen.getByTestId('save-search')).toBeDefined();
   });
 });

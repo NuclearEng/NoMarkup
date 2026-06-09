@@ -246,12 +246,14 @@ func New(
 	// Public provider search (no auth required)
 	r.Get("/api/v1/providers/search", providerHandler.SearchProviders)
 
-	// Public provider profile (no auth required) — anonymous shoppers + crawlers
+	// Public provider profile (optional auth) — anonymous shoppers + crawlers
 	// can view a seller's page (like eBay/Whatnot). The id param is constrained
 	// to hex/hyphen (UUIDs) so it never shadows the authed static routes
 	// (/providers/me, /providers/search). GetProvider returns a PUBLIC projection
 	// — exact service_address + lat/lng are stripped for this endpoint (PII, §6).
-	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}", providerHandler.GetProvider)
+	// optionalAuth lets the handler resolve is_following for a signed-in caller
+	// while still serving logged-out visitors (is_following=false). (Bug 3)
+	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}", optionalAuth(authMW, providerHandler.GetProvider))
 
 	// A provider's VERIFIED licenses only (verified-lawyer badge); PII-masked.
 	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}/licenses", providerLicenseHandler.ListProviderVerifiedLicenses)

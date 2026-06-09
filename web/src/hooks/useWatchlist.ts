@@ -57,8 +57,14 @@ export function useWatchListing(listingId: string) {
   });
 }
 
-/** The signed-in user's watchlist, hydrated as full listing rows. */
-export function useWatchlist(page?: number) {
+/**
+ * The signed-in user's watchlist, hydrated as full listing rows.
+ *
+ * `enabled` lets callers on public surfaces (e.g. the marketplace browse grid)
+ * skip the request for logged-out visitors — the endpoint is auth-only and
+ * would 401. Defaults to true for the dedicated /me/watchlist page.
+ */
+export function useWatchlist(page?: number, options?: { enabled?: boolean }) {
   const sp = new URLSearchParams();
   if (page !== undefined) sp.set('page', String(page));
   const qs = sp.toString();
@@ -66,6 +72,7 @@ export function useWatchlist(page?: number) {
   return useQuery({
     queryKey: ['watchlist', page ?? 1],
     queryFn: () => api.get<MyListingsResponse>(path),
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -75,15 +82,77 @@ export function useWatchlist(page?: number) {
 
 export type SavedSearchAlertFrequency = 'instant' | 'daily' | 'weekly' | 'off';
 
+/**
+ * The persisted query is polymorphic across schema generations:
+ *
+ *   - legacy rows store it as a bare free-text string (the raw search box),
+ *   - newer rows store an object: `{ q, category }` (and may carry the full
+ *     {@link SearchListingsParams} shape going forward).
+ *
+ * The UI must tolerate both without crashing, so the type is a union and all
+ * reads go through {@link summarizeSavedSearchQuery} / {@link savedSearchQueryToParams}.
+ */
+export interface SavedSearchQueryObject extends Partial<SearchListingsParams> {
+  /** New-row alias for the free-text term. */
+  q?: string;
+  /** New-row alias for the category facet (label or id). */
+  category?: string;
+}
+
+export type SavedSearchQuery = string | SavedSearchQueryObject;
+
 export interface SavedSearch {
   id: string;
   user_id: string;
   name: string;
-  query: SearchListingsParams;
+  query: SavedSearchQuery;
   alert_frequency: SavedSearchAlertFrequency;
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Narrow the polymorphic saved-search `query` into a flat
+ * {@link SearchListingsParams} the marketplace filters understand. A bare
+ * string becomes `{ query }`; an object's `q`/`category` aliases are folded
+ * onto the canonical `query`/`category_id` fields. Never throws on unexpected
+ * shapes — unknown values yield an empty param set.
+ */
+export function savedSearchQueryToParams(query: SavedSearchQuery): SearchListingsParams {
+  if (typeof query === 'string') {
+    return query.trim() ? { query: query.trim() } : {};
+  }
+  if (query !== null && typeof query === 'object') {
+    const { q, category, ...rest } = query;
+    const params: SearchListingsParams = { ...rest };
+    if (q !== undefined && params.query === undefined) params.query = q;
+    if (category !== undefined && params.category_id === undefined) {
+      params.category_id = category;
+    }
+    return params;
+  }
+  return {};
+}
+
+/**
+ * Human-readable one-line summary of a saved search for list rendering.
+ * Tolerates the string-or-object union and degrades to "All auctions" when
+ * the query carries no distinguishing facets.
+ */
+export function summarizeSavedSearchQuery(query: SavedSearchQuery): string {
+  const params = savedSearchQueryToParams(query);
+  const parts: string[] = [];
+  if (params.query) parts.push(`"${params.query}"`);
+  if (params.category_id) parts.push(`in ${params.category_id}`);
+  if (params.pickup_zip) parts.push(`near ${params.pickup_zip}`);
+  if (params.min_price_cents !== undefined || params.max_price_cents !== undefined) {
+    const min = params.min_price_cents !== undefined ? `$${String(Math.round(params.min_price_cents / 100))}` : '';
+    const max = params.max_price_cents !== undefined ? `$${String(Math.round(params.max_price_cents / 100))}` : '';
+    parts.push(min && max ? `${min}–${max}` : min ? `${min}+` : `under ${max}`);
+  }
+  if (params.ending_soon) parts.push('ending soon');
+  return parts.length > 0 ? parts.join(' · ') : 'All auctions';
 }
 
 export interface SavedSearchesResponse {

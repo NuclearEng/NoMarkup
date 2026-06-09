@@ -9,10 +9,14 @@ import { Button } from '@/components/ui/button';
 import { FollowButton } from '@/components/users/FollowButton';
 import { usePublicProviderProfile } from '@/hooks/useProviders';
 import { useReviewsForUser } from '@/hooks/useReviews';
+import { useAuthStore } from '@/stores/auth-store';
 
 export default function ProviderProfilePage() {
   const params = useParams<{ id: string }>();
   const { data: provider, isLoading, isError, refetch } = usePublicProviderProfile(params.id);
+  // Resolve the signed-in user (client-side store, no network) so
+  // FollowButton's self-guard can fire. Logged-out visitors get undefined.
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const { data: reviewsData } = useReviewsForUser(provider?.user_id ?? '', {
     direction: 'customer_to_provider',
     per_page: 5,
@@ -92,7 +96,12 @@ export default function ProviderProfilePage() {
             ) : null}
             {provider.user_id ? (
               <div className="mt-3">
-                <FollowButton sellerId={provider.user_id} />
+                <FollowButton
+                  sellerId={provider.user_id}
+                  initialFollowing={provider.is_following ?? false}
+                  followerCount={provider.follower_count}
+                  currentUserId={currentUserId}
+                />
               </div>
             ) : null}
           </div>

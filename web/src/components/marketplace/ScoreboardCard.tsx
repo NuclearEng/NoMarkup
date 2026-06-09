@@ -50,6 +50,12 @@ interface ScoreboardCardProps {
    * mutation per card.
    */
   watching?: boolean;
+  /**
+   * Whether to render the watch heart at all. Defaults to true. The browse
+   * grid passes `false` for logged-out visitors so the heart (an auth-only
+   * action) isn't shown to anonymous shoppers.
+   */
+  showWatch?: boolean;
 }
 
 /**
@@ -58,7 +64,12 @@ interface ScoreboardCardProps {
  * watcher count is visible, and the styling escalates with urgency so the
  * scoreboard reads like ESPN GameDay rather than a category catalog.
  */
-export function ScoreboardCard({ listing, urgency = 'normal', watching = false }: ScoreboardCardProps) {
+export function ScoreboardCard({
+  listing,
+  urgency = 'normal',
+  watching = false,
+  showWatch = true,
+}: ScoreboardCardProps) {
   const photo = listing.photos?.[0]?.url ?? null;
   const location =
     listing.pickup_city && listing.pickup_state
@@ -139,23 +150,26 @@ export function ScoreboardCard({ listing, urgency = 'normal', watching = false }
         ) : null}
 
         {/* Watch heart — top-right corner. Stops propagation so clicking the
-            heart doesn't navigate into the listing. */}
-        <button
-          type="button"
-          onClick={onHeartClick}
-          disabled={watchMutation.isPending}
-          aria-pressed={watching}
-          aria-label={watching ? 'Remove from watchlist' : 'Add to watchlist'}
-          className={cn(
-            'absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full border backdrop-blur-md transition-colors',
-            watching
-              ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
-              : 'border-white/10 bg-black/30 text-white/80 hover:border-white/30 hover:text-white',
-            watchMutation.isPending ? 'opacity-60' : '',
-          )}
-        >
-          <Heart className={cn('h-4 w-4', watching ? 'fill-current' : '')} aria-hidden="true" />
-        </button>
+            heart doesn't navigate into the listing. Hidden for logged-out
+            visitors (showWatch=false) since watching is an auth-only action. */}
+        {showWatch ? (
+          <button
+            type="button"
+            onClick={onHeartClick}
+            disabled={watchMutation.isPending}
+            aria-pressed={watching}
+            aria-label={watching ? 'Remove from watchlist' : 'Add to watchlist'}
+            className={cn(
+              'absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full border backdrop-blur-md transition-colors',
+              watching
+                ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
+                : 'border-white/10 bg-black/30 text-white/80 hover:border-white/30 hover:text-white',
+              watchMutation.isPending ? 'opacity-60' : '',
+            )}
+          >
+            <Heart className={cn('h-4 w-4', watching ? 'fill-current' : '')} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       {/* Body */}

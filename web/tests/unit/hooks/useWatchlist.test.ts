@@ -4,6 +4,8 @@ import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  savedSearchQueryToParams,
+  summarizeSavedSearchQuery,
   useCreateSavedSearch,
   useDeleteSavedSearch,
   useSavedSearches,
@@ -210,5 +212,48 @@ describe('useWatchlist hooks', () => {
       expect(api.delete).toHaveBeenCalledWith('/api/v1/me/saved-searches/s-42');
       expect(toastSuccess).toHaveBeenCalledWith('Saved search removed');
     });
+  });
+});
+
+// Bug 2 — the persisted saved-search `query` is polymorphic (bare string for
+// legacy rows, object for new rows). The guards must tolerate BOTH so reading
+// a saved search never throws.
+describe('savedSearchQueryToParams (polymorphic guard)', () => {
+  it('narrows a bare legacy string into { query }', () => {
+    expect(savedSearchQueryToParams('vintage cameras')).toEqual({ query: 'vintage cameras' });
+  });
+
+  it('trims and drops an empty string to an empty param set', () => {
+    expect(savedSearchQueryToParams('   ')).toEqual({});
+  });
+
+  it('folds the new-row { q, category } aliases onto canonical fields', () => {
+    expect(savedSearchQueryToParams({ q: 'desk', category: 'furniture' })).toEqual({
+      query: 'desk',
+      category_id: 'furniture',
+    });
+  });
+
+  it('passes through a full SearchListingsParams object', () => {
+    expect(
+      savedSearchQueryToParams({ query: 'lamp', min_price_cents: 1000, ending_soon: true }),
+    ).toEqual({ query: 'lamp', min_price_cents: 1000, ending_soon: true });
+  });
+});
+
+describe('summarizeSavedSearchQuery (polymorphic guard)', () => {
+  it('summarizes a legacy string', () => {
+    expect(summarizeSavedSearchQuery('cameras')).toBe('"cameras"');
+  });
+
+  it('summarizes an object with facets', () => {
+    expect(
+      summarizeSavedSearchQuery({ q: 'desk', category: 'furniture', ending_soon: true }),
+    ).toBe('"desk" · in furniture · ending soon');
+  });
+
+  it('degrades to "All auctions" for an empty query', () => {
+    expect(summarizeSavedSearchQuery({})).toBe('All auctions');
+    expect(summarizeSavedSearchQuery('')).toBe('All auctions');
   });
 });

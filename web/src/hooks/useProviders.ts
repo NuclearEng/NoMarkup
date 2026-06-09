@@ -17,6 +17,10 @@ export interface PublicProvider {
   member_since: string;
   verified: boolean;
   response_time_label?: string;
+  /** Whether the authenticated caller already follows this seller. */
+  is_following?: boolean;
+  /** Live follower count for social proof. */
+  follower_count?: number;
 }
 
 export interface SearchProvidersParams {

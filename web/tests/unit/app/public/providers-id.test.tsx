@@ -21,9 +21,39 @@ vi.mock('@/components/providers/ResponseTimeBadge', () => ({
 }));
 
 // FollowButton calls into TanStack Query — mock it out to keep the
-// provider-profile suite focused on the profile presentation.
+// provider-profile suite focused on the profile presentation. The mock
+// surfaces the hydration props (Bug 3) as data-attrs so we can assert the
+// page wires initial follow state through correctly.
 vi.mock('@/components/users/FollowButton', () => ({
-  FollowButton: () => createElement('button', { 'data-testid': 'follow-button' }, 'Follow'),
+  FollowButton: ({
+    sellerId,
+    initialFollowing,
+    followerCount,
+    currentUserId,
+  }: {
+    sellerId: string;
+    initialFollowing?: boolean;
+    followerCount?: number;
+    currentUserId?: string;
+  }) =>
+    createElement(
+      'button',
+      {
+        'data-testid': 'follow-button',
+        'data-seller-id': sellerId,
+        'data-initial-following': String(Boolean(initialFollowing)),
+        'data-follower-count': followerCount === undefined ? '' : String(followerCount),
+        'data-current-user-id': currentUserId ?? '',
+      },
+      'Follow',
+    ),
+}));
+
+// Control the signed-in user id for the self-guard wiring assertion.
+const authState = { userId: undefined as string | undefined };
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (selector: (s: { user: { id: string } | null }) => unknown) =>
+    selector({ user: authState.userId ? { id: authState.userId } : null }),
 }));
 
 // VerifiedBarBadge also calls into TanStack Query (license + flag queries) — mock
@@ -61,6 +91,7 @@ function makeProvider(overrides: Record<string, unknown> = {}): Record<string, u
 describe('(public)/providers/[id]/page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.userId = undefined;
     vi.mocked(useReviewsForUser).mockReturnValue({
       data: { reviews: [] },
     } as unknown as ReturnType<typeof useReviewsForUser>);
@@ -266,6 +297,39 @@ describe('(public)/providers/[id]/page', () => {
     expect(screen.getByText(/Good job overall\./)).toBeDefined();
     expect(screen.getByText('Provider Response')).toBeDefined();
     expect(screen.getByText('Thanks for the kind words!')).toBeDefined();
+  });
+
+  // Bug 3 — the page must hydrate FollowButton with is_following /
+  // follower_count from the profile + the signed-in user's id.
+  it('wires is_following, follower_count, and currentUserId into FollowButton', () => {
+    authState.userId = 'viewer-9';
+    vi.mocked(usePublicProviderProfile).mockReturnValue({
+      data: makeProvider({ user_id: 'u1', is_following: true, follower_count: 128 }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof usePublicProviderProfile>);
+
+    render(createElement(ProviderProfilePage));
+    const btn = screen.getByTestId('follow-button');
+    expect(btn.getAttribute('data-seller-id')).toBe('u1');
+    expect(btn.getAttribute('data-initial-following')).toBe('true');
+    expect(btn.getAttribute('data-follower-count')).toBe('128');
+    expect(btn.getAttribute('data-current-user-id')).toBe('viewer-9');
+  });
+
+  it('defaults FollowButton to not-following when is_following is absent (fail-soft)', () => {
+    vi.mocked(usePublicProviderProfile).mockReturnValue({
+      data: makeProvider({ user_id: 'u1' }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof usePublicProviderProfile>);
+
+    render(createElement(ProviderProfilePage));
+    const btn = screen.getByTestId('follow-button');
+    expect(btn.getAttribute('data-initial-following')).toBe('false');
+    expect(btn.getAttribute('data-current-user-id')).toBe('');
   });
 
   it('renders the trust score "--" placeholder in stats when no trust score', () => {

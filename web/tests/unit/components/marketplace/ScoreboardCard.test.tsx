@@ -127,4 +127,28 @@ describe('ScoreboardCard', () => {
     render(withQueryClient(<ScoreboardCard listing={{ ...baseListing, bid_count: 1 }} />));
     expect(screen.getByText('1 bid')).toBeDefined();
   });
+
+  // Bug 1 — the watch heart must reflect the passed-in state, not always
+  // default to "not watching".
+  it('reflects watching=true on the heart (filled, aria-pressed, remove label)', () => {
+    render(withQueryClient(<ScoreboardCard listing={baseListing} watching />));
+    const heart = screen.getByRole('button', { name: /Remove from watchlist/i });
+    expect(heart.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('reflects watching=false on the heart (add label, aria-pressed=false)', () => {
+    render(withQueryClient(<ScoreboardCard listing={baseListing} watching={false} />));
+    const heart = screen.getByRole('button', { name: /Add to watchlist/i });
+    expect(heart.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('hides the watch heart entirely when showWatch=false (logged-out)', () => {
+    render(withQueryClient(<ScoreboardCard listing={baseListing} showWatch={false} />));
+    expect(screen.queryByRole('button', { name: /watchlist/i })).toBeNull();
+  });
+
+  it('shows the watch heart by default (showWatch defaults to true)', () => {
+    render(withQueryClient(<ScoreboardCard listing={baseListing} />));
+    expect(screen.getByRole('button', { name: /Add to watchlist/i })).toBeDefined();
+  });
 });

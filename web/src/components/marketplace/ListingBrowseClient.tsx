@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 
 import { ListingFilters } from '@/components/marketplace/ListingFilters';
 import { RecentlyViewed } from '@/components/marketplace/RecentlyViewed';
+import { SaveSearchButton } from '@/components/marketplace/SaveSearchButton';
 import { ScoreboardCard } from '@/components/marketplace/ScoreboardCard';
 import { SearchBar } from '@/components/marketplace/SearchBar';
 import { TrendingRail } from '@/components/marketplace/TrendingRail';
@@ -12,6 +13,8 @@ import { UrgencyStrip } from '@/components/marketplace/UrgencyStrip';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useListings } from '@/hooks/useListings';
+import { useWatchlist } from '@/hooks/useWatchlist';
+import { useAuthStore } from '@/stores/auth-store';
 import type { Listing, ListingsResponse, SearchListingsParams } from '@/types';
 
 const DEFAULT_PAGE_SIZE = 60;
@@ -50,6 +53,17 @@ export function ListingBrowseClient({ initialListings }: ListingBrowseClientProp
   const { data, isLoading, isError, refetch } = useListings(
     filters,
     isDefaultFilters ? { initialData: initialListings } : undefined,
+  );
+
+  // Hydrate the watch-heart state. Fetch the signed-in user's watchlist once
+  // (auth-only; skipped for logged-out visitors) and turn it into a Set of
+  // listing ids so each ScoreboardCard's heart reflects + toggles real state
+  // instead of always firing "add". (Bug 1)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const { data: watchlistData } = useWatchlist(undefined, { enabled: isAuthenticated });
+  const watchedIds = useMemo(
+    () => new Set((watchlistData?.listings ?? []).map((l) => l.id)),
+    [watchlistData],
   );
 
   const hasActiveFilters =
@@ -180,6 +194,15 @@ export function ListingBrowseClient({ initialListings }: ListingBrowseClientProp
               Filters
             </h2>
             <ListingFilters filters={filters} onChange={setFilters} />
+            {/* Save-this-search entry point — auth-only (the create endpoint
+                requires a session). Persists the active filter set as a
+                standing alert. (Bug 2) */}
+            {isAuthenticated ? (
+              <SaveSearchButton
+                filters={filters}
+                className="mt-4 min-h-[44px] w-full justify-center border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
+              />
+            ) : null}
           </div>
         </aside>
 
@@ -258,6 +281,8 @@ export function ListingBrowseClient({ initialListings }: ListingBrowseClientProp
                         key={listing.id}
                         listing={listing}
                         urgency="critical"
+                        showWatch={isAuthenticated}
+                        watching={watchedIds.has(listing.id)}
                       />
                     ))}
                   </div>
@@ -277,6 +302,8 @@ export function ListingBrowseClient({ initialListings }: ListingBrowseClientProp
                         key={listing.id}
                         listing={listing}
                         urgency="urgent"
+                        showWatch={isAuthenticated}
+                        watching={watchedIds.has(listing.id)}
                       />
                     ))}
                   </div>
@@ -292,7 +319,12 @@ export function ListingBrowseClient({ initialListings }: ListingBrowseClientProp
                 >
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {buckets.later.map((listing) => (
-                      <ScoreboardCard key={listing.id} listing={listing} />
+                      <ScoreboardCard
+                        key={listing.id}
+                        listing={listing}
+                        showWatch={isAuthenticated}
+                        watching={watchedIds.has(listing.id)}
+                      />
                     ))}
                   </div>
                 </Section>

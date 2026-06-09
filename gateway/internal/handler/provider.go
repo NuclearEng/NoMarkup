@@ -369,6 +369,16 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 		result["response_time_label"] = *label
 	}
 
+	// Social proof: follower_count (always) + is_following (relative to the
+	// authenticated caller, if any). This route is wrapped in optionalAuth, so
+	// a logged-out shopper simply sees is_following=false. Both degrade to a
+	// safe default on DB error — the profile still renders. (Bug 3)
+	result["follower_count"] = h.followerCount(r.Context(), userID)
+	result["is_following"] = false
+	if claims, ok := middleware.GetClaims(r.Context()); ok && claims.UserID != "" {
+		result["is_following"] = h.isFollowing(r.Context(), claims.UserID, userID)
+	}
+
 	// Public projection: this endpoint is anonymous-reachable, so never expose
 	// another seller's exact location. Drop precise address + coordinates; the
 	// service_radius_km still conveys a general serving area. (PII, §6)
@@ -376,6 +386,39 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 	delete(result, "service_location") // nested {latitude, longitude} — exact GPS
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// followerCount returns the live follower count for a seller. Errors degrade
+// to 0 so the profile still renders without a count.
+func (h *ProviderHandler) followerCount(ctx context.Context, sellerID string) int {
+	if h.db == nil {
+		return 0
+	}
+	var n int
+	if err := h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM seller_follows WHERE seller_id = $1`, sellerID,
+	).Scan(&n); err != nil {
+		slog.WarnContext(ctx, "provider follower count failed", "error", err, "seller_id", sellerID)
+		return 0
+	}
+	return n
+}
+
+// isFollowing reports whether followerID already follows sellerID. Errors
+// degrade to false (fail-soft: the button just shows "Follow").
+func (h *ProviderHandler) isFollowing(ctx context.Context, followerID, sellerID string) bool {
+	if h.db == nil {
+		return false
+	}
+	var exists bool
+	if err := h.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM seller_follows WHERE follower_id = $1 AND seller_id = $2)`,
+		followerID, sellerID,
+	).Scan(&exists); err != nil {
+		slog.WarnContext(ctx, "provider is_following check failed", "error", err, "follower_id", followerID, "seller_id", sellerID)
+		return false
+	}
+	return exists
 }
 
 // SearchProviders handles GET /api/v1/providers/search.
