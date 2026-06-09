@@ -535,6 +535,44 @@ func (r *ListingPostgresRepository) GetListingBids(ctx context.Context, listingI
 	return out, pag, nil
 }
 
+// FindEndedAuctions returns the IDs of listings whose auction deadline has
+// passed but are still status='active' — i.e. auctions that need closing.
+// Ordered oldest-deadline-first so the most-overdue auctions resolve first,
+// and bounded by limit so a backlog can't blow up a single worker tick.
+//
+// This is a pure read; the actual close (and its FOR UPDATE lock + status
+// guard) happens per-listing in CloseListingAuction, so an ID returned here
+// that a concurrent worker already closed is harmless — the close is a no-op.
+func (r *ListingPostgresRepository) FindEndedAuctions(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT id::text
+		   FROM listings
+		  WHERE status = 'active'
+		    AND auction_ends_at < now()
+		  ORDER BY auction_ends_at ASC
+		  LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("find ended auctions: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("find ended auctions scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("find ended auctions rows: %w", err)
+	}
+	return ids, nil
+}
+
 // CloseListingAuction transitions an expired auction to sold (or expired, if
 // no bids), promotes the winning bid, and creates the listing_orders row.
 // Idempotent: re-calling on a sold listing is a no-op (returns the existing
@@ -549,10 +587,11 @@ func (r *ListingPostgresRepository) CloseListingAuction(ctx context.Context, lis
 	var sellerID, currentStatus string
 	var currentBid *int64
 	var currentBidderID *string
+	var reservePrice *int64
 	err = tx.QueryRow(ctx,
-		`SELECT seller_id, status, current_bid_cents, current_bidder_id
+		`SELECT seller_id, status, current_bid_cents, current_bidder_id, reserve_price_cents
 		   FROM listings WHERE id = $1 FOR UPDATE`, listingID).
-		Scan(&sellerID, &currentStatus, &currentBid, &currentBidderID)
+		Scan(&sellerID, &currentStatus, &currentBid, &currentBidderID, &reservePrice)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil, fmt.Errorf("close listing: %w", domain.ErrListingNotFound)
@@ -560,8 +599,18 @@ func (r *ListingPostgresRepository) CloseListingAuction(ctx context.Context, lis
 		return nil, nil, fmt.Errorf("close listing lock: %w", err)
 	}
 
-	// Idempotency.
-	if currentStatus == "sold" {
+	// Idempotency. A re-run over an already-closed listing is a no-op: a
+	// 'sold' listing returns its existing order; an 'expired'/'cancelled'/
+	// 'draft' listing is past the active window and returns no order. The
+	// status-guarded transitions below never re-fire because we only ever
+	// reach them from status='active'.
+	if currentStatus != "active" {
+		if currentStatus != "sold" {
+			// expired / cancelled / draft — nothing to award, no order.
+			_ = tx.Commit(ctx)
+			l, err := r.GetListing(ctx, listingID)
+			return l, nil, err
+		}
 		// Re-fetch listing + order outside the tx to keep things simple.
 		_ = tx.Commit(ctx)
 		l, err := r.GetListing(ctx, listingID)
@@ -581,8 +630,22 @@ func (r *ListingPostgresRepository) CloseListingAuction(ctx context.Context, lis
 		return l, o, nil
 	}
 
-	// No bids → expired.
-	if currentBid == nil || currentBidderID == nil {
+	// No bids, OR a high bid that fails to meet a set reserve → expired.
+	// reserve_price_cents is the hidden minimum the seller will accept; NULL
+	// means "no reserve" and the high bid wins outright. When the high bid is
+	// strictly below the reserve, the auction closes WITHOUT a sale: no
+	// winner, no listing_orders row, no money moved. This matches the
+	// documented contract in migration 039_listing_reserve_bin_zips.up.sql.
+	reserveNotMet := reservePrice != nil && currentBid != nil && *currentBid < *reservePrice
+	if currentBid == nil || currentBidderID == nil || reserveNotMet {
+		// Bids that existed but didn't win the item are finalised as 'outbid'
+		// so no stale 'active' bid lingers on an expired listing.
+		if _, err := tx.Exec(ctx,
+			`UPDATE listing_bids
+			    SET status = 'outbid'
+			  WHERE listing_id = $1 AND status = 'active'`, listingID); err != nil {
+			return nil, nil, fmt.Errorf("close listing expire finalise bids: %w", err)
+		}
 		if _, err := tx.Exec(ctx,
 			`UPDATE listings SET status = 'expired' WHERE id = $1`, listingID); err != nil {
 			return nil, nil, fmt.Errorf("close listing expire: %w", err)

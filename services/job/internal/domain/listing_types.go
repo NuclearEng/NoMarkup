@@ -157,6 +157,7 @@ type ListingRepository interface {
 	GetListingBids(ctx context.Context, listingID string, page, pageSize int) ([]*ListingBid, *Pagination, error)
 
 	// Auction lifecycle
+	FindEndedAuctions(ctx context.Context, limit int) ([]string, error)
 	CloseListingAuction(ctx context.Context, listingID string) (*Listing, *ListingOrder, error)
 
 	// Post-award

@@ -279,6 +279,107 @@ func (s *ListingService) CloseListingAuction(ctx context.Context, listingID stri
 	return l, o, nil
 }
 
+// CloseEndedAuctions resolves auctions whose deadline has passed but that are
+// still status='active'. It fetches a bounded batch of ended auctions and
+// closes each one via CloseListingAuction. Returns (closed, expired) counts:
+//   - closed  = listings that produced a winning order (escrow held)
+//   - expired = listings closed with no sale (no bids OR reserve not met)
+//
+// Money-safety: each close runs in its own FOR UPDATE-locked, status-guarded
+// transaction in the repository, and listing_orders has a UNIQUE(listing_id)
+// constraint, so a listing can never produce two orders even if two worker
+// ticks (or two job-service instances) race the same row — the loser's
+// status guard turns its close into a no-op. A re-run over an already-resolved
+// listing does nothing.
+//
+// Fail-soft: a single listing that errors is logged and skipped; the loop
+// continues so one poisoned row can never stall the whole backlog or crash
+// the worker.
+func (s *ListingService) CloseEndedAuctions(ctx context.Context, batchSize int) (closed, expired int, err error) {
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+	ids, err := s.repo.FindEndedAuctions(ctx, batchSize)
+	if err != nil {
+		return 0, 0, fmt.Errorf("close ended auctions: find: %w", err)
+	}
+	for _, id := range ids {
+		l, o, closeErr := s.CloseListingAuction(ctx, id)
+		if closeErr != nil {
+			// Fail-soft: log and continue. Do not abort the batch.
+			slog.ErrorContext(ctx, "close ended auctions: listing close failed",
+				"listing_id", id, "error", closeErr)
+			continue
+		}
+		if o != nil {
+			closed++
+			s.publishAuctionWon(ctx, l, o)
+		} else {
+			expired++
+			s.publishAuctionExpired(ctx, l)
+		}
+	}
+	return closed, expired, nil
+}
+
+// publishAuctionWon fires best-effort `notify:auction_won:{user_id}` Redis
+// events to the winning buyer and the seller after an auction closes with a
+// sale. Best-effort: any failure is logged and never propagated (a missing
+// notification must never undo a committed order). nil-safe when rdb is unset.
+func (s *ListingService) publishAuctionWon(ctx context.Context, l *domain.Listing, o *domain.ListingOrder) {
+	if s.rdb == nil || l == nil || o == nil {
+		return
+	}
+	base := map[string]interface{}{
+		"type":         "auction_won",
+		"listing_id":   o.ListingID,
+		"order_id":     o.ID,
+		"title":        l.Title,
+		"amount_cents": o.AmountCents,
+		"buyer_id":     o.BuyerID,
+		"seller_id":    o.SellerID,
+		"timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	for _, userID := range []string{o.BuyerID, o.SellerID} {
+		data, marshalErr := json.Marshal(base)
+		if marshalErr != nil {
+			slog.Warn("publish auction_won: marshal failed", "error", marshalErr)
+			return
+		}
+		channel := fmt.Sprintf("notify:auction_won:%s", userID)
+		if pubErr := s.rdb.Publish(ctx, channel, data).Err(); pubErr != nil {
+			slog.Warn("publish auction_won: redis publish failed",
+				"listing_id", o.ListingID, "user_id", userID, "error", pubErr)
+		}
+	}
+}
+
+// publishAuctionExpired fires a best-effort `notify:auction_expired:{seller_id}`
+// Redis event after an auction closes WITHOUT a sale (no bids or reserve not
+// met). Best-effort and nil-safe — failures are logged only.
+func (s *ListingService) publishAuctionExpired(ctx context.Context, l *domain.Listing) {
+	if s.rdb == nil || l == nil {
+		return
+	}
+	payload := map[string]interface{}{
+		"type":       "auction_expired",
+		"listing_id": l.ID,
+		"seller_id":  l.SellerID,
+		"title":      l.Title,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		slog.Warn("publish auction_expired: marshal failed", "error", err)
+		return
+	}
+	channel := fmt.Sprintf("notify:auction_expired:%s", l.SellerID)
+	if err := s.rdb.Publish(ctx, channel, data).Err(); err != nil {
+		slog.Warn("publish auction_expired: redis publish failed",
+			"listing_id", l.ID, "seller_id", l.SellerID, "error", err)
+	}
+}
+
 // ConfirmPickup is the buyer-only escrow release.
 func (s *ListingService) ConfirmPickup(ctx context.Context, orderID, buyerID string) (*domain.ListingOrder, error) {
 	o, err := s.repo.ConfirmPickup(ctx, orderID, buyerID)

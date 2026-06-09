@@ -12,6 +12,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -126,7 +127,21 @@ func main() {
 	listingRepo := repository.NewListingPostgresRepository(pool)
 	listingHydrate := buildListingHydrator(pool)
 	listingService := service.NewListingService(listingRepo).WithSearch(listingSearchEngine, listingHydrate)
-	_ = listingService // reserved for future gRPC wiring; keeps build clean
+
+	// Optional Redis client — used only for the best-effort auction-close
+	// notification seam (auction_won / auction_expired). The auction-close
+	// worker functions correctly without it; failures here never block the
+	// money path. Wire it only if REDIS_URL is set.
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		if opt, perr := redis.ParseURL(redisURL); perr != nil {
+			slog.Warn("auction-close: invalid REDIS_URL, notifications disabled", "error", perr)
+		} else {
+			rdb := redis.NewClient(opt)
+			defer func() { _ = rdb.Close() }()
+			listingService = listingService.WithRedis(rdb)
+			slog.Info("auction-close: redis notification seam enabled")
+		}
+	}
 
 	// Wire up provider matching engine.
 	matchingService := service.NewMatchingService(repo)
@@ -169,6 +184,19 @@ func main() {
 
 	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
 	startObservabilityServer(sigCtx, "job-service", port, pool)
+
+	// Goods-marketplace auction-close worker. Periodically resolves auctions
+	// past their deadline that are still active: highest qualifying bidder wins
+	// (escrow order created) or the listing expires with no sale. Mirrors the
+	// payment service's marketplace auto-release cron. Tied to sigCtx so it
+	// stops cleanly on shutdown. Interval/delay/batch are env-tunable.
+	runAuctionCloseCron(
+		sigCtx,
+		listingService,
+		envDuration("AUCTION_CLOSE_INTERVAL", 30*time.Second),
+		envDuration("AUCTION_CLOSE_INITIAL_DELAY", 15*time.Second),
+		envInt("AUCTION_CLOSE_BATCH", 100),
+	)
 
 	go func() {
 		slog.Info("job service starting", "port", port)
