@@ -722,6 +722,8 @@ start_gateway() {
         "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT" \
         "REDIS_URL=redis://localhost:$REDIS_PORT" \
         "RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH:-50}" \
+        "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
+        "MEILISEARCH_API_KEY=masterKey" \
         "ENABLE_LIVE_AUCTION=${ENABLE_LIVE_AUCTION:-true}"
 
     success "Gateway ready"
