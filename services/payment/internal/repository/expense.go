@@ -48,8 +48,12 @@ func (r *PostgresRepository) ListExpenses(ctx context.Context, providerID string
 	// Get total count and total amount.
 	var totalCount int
 	var totalCents int64
+	// SUM(bigint) returns numeric, which can exceed int64 range and fail the
+	// scan into totalCents — a single poisoned/legacy row would then 500 the
+	// whole list. Clamp to int64 max so the aggregate is always scannable; the
+	// create path caps individual amounts so a realistic total never nears this.
 	err := r.pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*), COALESCE(SUM(amount_cents), 0) FROM provider_expenses WHERE %s`, whereClause),
+		fmt.Sprintf(`SELECT COUNT(*), LEAST(COALESCE(SUM(amount_cents), 0), 9223372036854775807)::bigint FROM provider_expenses WHERE %s`, whereClause),
 		args...,
 	).Scan(&totalCount, &totalCents)
 	if err != nil {

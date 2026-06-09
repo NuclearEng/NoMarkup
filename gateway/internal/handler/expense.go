@@ -67,8 +67,11 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "description is required")
 		return
 	}
-	if req.AmountCents <= 0 {
-		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
+	// Bound the amount to the platform cap. Without an upper bound, a handful of
+	// near-int64-max expenses overflow the BIGINT SUM in ListExpenses and 500 the
+	// provider's entire expense list until the poisoned rows are deleted.
+	if msg := validateMoneyCents("amount_cents", req.AmountCents); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	if req.ExpenseDate == "" {
