@@ -115,7 +115,10 @@ describe('CreditScoreCard', () => {
     expect(screen.getByLabelText('Risk grade: C')).toBeDefined();
   });
 
-  it('handles a zero advance limit without dividing by zero', () => {
+  it('handles a zero advance limit without dividing by zero (shows a full, labeled bar)', () => {
+    // No limit at all ($0 max, $0 available) is a fully-utilized state: the bar
+    // must render FULL (100%) and clearly labeled, never a blank track that
+    // reads as broken next to "$0 available".
     vi.mocked(useCreditLimit).mockReturnValue({
       data: {
         max_advance_cents: 0,
@@ -127,7 +130,30 @@ describe('CreditScoreCard', () => {
     } as unknown as ReturnType<typeof useCreditLimit>);
     render(<CreditScoreCard />);
     const bar = screen.getByRole('progressbar');
-    expect(bar.getAttribute('aria-valuenow')).toBe('0');
+    expect(bar.getAttribute('aria-valuenow')).toBe('100');
+    expect(bar.style.width).toBe('100%');
+    expect(bar.getAttribute('aria-label')).toMatch(/fully utilized/i);
+  });
+
+  it('shows a full, labeled bar when credit is fully utilized (0 available)', () => {
+    // Limit reached: outstanding == max, $0 available.
+    vi.mocked(useCreditLimit).mockReturnValue({
+      data: {
+        max_advance_cents: 500000,
+        total_outstanding_cents: 500000,
+        available_cents: 0,
+        risk_score: 0.6,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCreditLimit>);
+    render(<CreditScoreCard />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('100');
+    // The track is never left blank — width is the full 100%.
+    expect(bar.style.width).toBe('100%');
+    // Intuitive copy for the boundary state.
+    expect(screen.getByText('Fully utilized')).toBeDefined();
+    expect(screen.getByText('$0 available')).toBeDefined();
   });
 
   it('renders an improvement link to /provider/advances', () => {

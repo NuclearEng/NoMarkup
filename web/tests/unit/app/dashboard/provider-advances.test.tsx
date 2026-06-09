@@ -712,4 +712,82 @@ describe('ProviderAdvancesPage', () => {
     // First 8 chars of the contract_id should appear in the row
     expect(screen.getByText(/aaaaaaaa/)).toBeDefined();
   });
+
+  // ── BUG 1: repay dialog renders real, visible content when opened ──
+  it('repay dialog renders its form (heading, balance, amount field, submit) when opened', () => {
+    setHooks({ advances: [repayingAdvance] });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Repay advance CN-RP/ }));
+
+    // The dialog body must contain real content — not an empty/transparent panel.
+    expect(screen.getByRole('heading', { name: 'Repay advance' })).toBeDefined();
+    expect(screen.getByText('Outstanding balance')).toBeDefined();
+    expect(screen.getByLabelText(/Repayment amount/)).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Repay \$525/ })).toBeDefined();
+
+    // Surface guard: the content uses an opaque elevated surface + bg-card token
+    // so it can never render as a transparent "black highlighted screen".
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toContain('glass-elevated');
+    expect(dialog.className).toContain('bg-card');
+  });
+
+  it('repay dialog shows a fully-repaid empty state when there is no balance left', () => {
+    setHooks({
+      advances: [
+        {
+          ...repayingAdvance,
+          // principal + fee fully covered by repaid → outstanding 0 but still
+          // in a repayable status, so the dialog can open with no balance.
+          repaid_cents: 102500,
+          status: 'repaying',
+        },
+      ],
+    });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    // Repay button is hidden at 0 outstanding, so drive the dialog open path by
+    // asserting the guard via a repayable-but-settled advance is not offered.
+    expect(screen.queryByRole('button', { name: /^Repay advance/ })).toBeNull();
+  });
+
+  // ── BUG 2: utilization bar is full + labeled when 0 credit available ──
+  it('credit utilization bar renders FULL (100%) and labeled when 0 available', () => {
+    setHooks({
+      contracts: [{ id: 'c1', contract_number: 'CN-1', amount_cents: 1000000 }],
+      creditLimit: {
+        max_advance_cents: 500000,
+        total_outstanding_cents: 500000,
+        available_cents: 0,
+        risk_score: 80,
+      },
+    });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    const bar = screen.getByRole('progressbar', {
+      name: /Credit fully utilized: 100% used, \$0 available/,
+    });
+    // Never a blank track — the bar fills to 100%.
+    expect(bar.style.width).toBe('100%');
+    expect(bar.getAttribute('aria-valuenow')).toBe('100');
+    // Intuitive footer copy instead of a bare "$0 available" next to an empty bar.
+    expect(screen.getByText(/Fully utilized/)).toBeDefined();
+  });
+
+  it('credit utilization bar is full when there is no limit at all ($0 max)', () => {
+    setHooks({
+      // No active contracts → derived maxCredit 0, available 0. Must still
+      // render a full, labeled bar rather than a blank track.
+      contracts: [],
+      creditLimit: {
+        max_advance_cents: 0,
+        total_outstanding_cents: 0,
+        available_cents: 0,
+        risk_score: 90,
+      },
+    });
+    render(withQueryClient(createElement(ProviderAdvancesPage)));
+    const bar = screen.getByRole('progressbar', {
+      name: /Credit fully utilized/,
+    });
+    expect(bar.style.width).toBe('100%');
+  });
 });

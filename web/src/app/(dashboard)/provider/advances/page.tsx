@@ -249,8 +249,14 @@ function CreditExplanation({
 }) {
   const [expanded, setExpanded] = useState(false);
   const maxCredit = Math.round(totalContractValue * MAX_CREDIT_UTILIZATION);
-  const utilizationPercent =
-    maxCredit > 0 ? Math.min(100, Math.round((outstanding / maxCredit) * 100)) : 0;
+  // No headroom left to borrow (limit reached, or no limit at all) → show a
+  // full bar, never a blank track next to "$0 available".
+  const fullyUtilized = availableCredit <= 0;
+  const utilizationPercent = fullyUtilized
+    ? 100
+    : maxCredit > 0
+      ? Math.min(100, Math.round((outstanding / maxCredit) * 100))
+      : 0;
 
   return (
     <div className="glass glass-highlight rounded-xl">
@@ -289,7 +295,9 @@ function CreditExplanation({
             {/* Credit utilization bar */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-white/40">Credit utilization</span>
+                <span className="text-white/40">
+                  {fullyUtilized ? 'Credit utilization — fully utilized' : 'Credit utilization'}
+                </span>
                 <span className="text-white/60 tabular-nums">{String(utilizationPercent)}%</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
@@ -307,7 +315,11 @@ function CreditExplanation({
                   aria-valuenow={utilizationPercent}
                   aria-valuemin={0}
                   aria-valuemax={100}
-                  aria-label="Credit utilization"
+                  aria-label={
+                    fullyUtilized
+                      ? 'Credit fully utilized: 100% used, $0 available'
+                      : `Credit utilization: ${String(utilizationPercent)}% used`
+                  }
                 />
               </div>
             </div>
@@ -465,9 +477,18 @@ function RepayDialog({
 
   const ref = advance.contract_number ?? advance.contract_id.slice(0, 8);
 
+  const fullyRepaid = outstanding <= 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass max-w-md">
+      {/*
+        glass-elevated (not bare `glass`): the elevated surface is more opaque
+        and carries a stronger drop-shadow so the panel lifts clearly off the
+        bg-black/80 overlay. The explicit bg-card is a hard floor — it guarantees
+        an opaque surface even if backdrop-filter is unsupported, so the dialog
+        can never render as a transparent "black highlighted screen" (the bug).
+      */}
+      <DialogContent className="glass-elevated max-w-md bg-card">
         <DialogHeader>
           <DialogTitle className="text-white/90">Repay advance</DialogTitle>
           <DialogDescription className="text-white/50">
@@ -476,7 +497,33 @@ function RepayDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/*
+          Defensive empty state: if this advance has no outstanding balance
+          (e.g. a concurrent repayment settled it while the dialog was open),
+          render a clear, actionable message instead of a zero-amount form.
+        */}
+        {fullyRepaid ? (
+          <div className="space-y-4">
+            <div
+              className="rounded-lg border border-white/5 bg-white/[0.02] p-4 text-sm text-white/60"
+              role="status"
+            >
+              This advance is fully repaid — there is no remaining balance to pay down.
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                className="min-h-[44px]"
+                onClick={() => {
+                  onOpenChange(false);
+                }}
+              >
+                Close
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
           {/* Outstanding summary — value is text + tabular, never color-only */}
           <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] p-3 text-sm">
             <span className="text-white/50">Outstanding balance</span>
@@ -533,6 +580,7 @@ function RepayDialog({
             </Button>
           </DialogFooter>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -567,6 +615,17 @@ export default function ProviderAdvancesPage() {
     Math.round(totalContractValue * MAX_CREDIT_UTILIZATION) - outstanding,
   );
   const maxCredit = creditLimitData?.max_advance_cents ?? Math.round(totalContractValue * MAX_CREDIT_UTILIZATION);
+
+  // Fully utilized = no available credit left. True both when outstanding has
+  // reached the limit AND when there is no limit at all (maxCredit === 0). The
+  // utilization bar must render FULL + clearly labeled in this state — a blank
+  // track next to "$0 available" reads as broken (ISSUE: utilization bar bug).
+  const fullyUtilized = availableCredit <= 0;
+  const utilizationPercent = fullyUtilized
+    ? 100
+    : maxCredit > 0
+      ? Math.min(100, Math.round((outstanding / maxCredit) * 100))
+      : 0;
 
   /** Parse the dollar input to cents for fee preview */
   const requestAmountCents = useMemo(() => {
@@ -696,22 +755,28 @@ export default function ProviderAdvancesPage() {
           <div
             className={cn(
               'h-full rounded-full transition-all duration-500',
-              maxCredit > 0 && outstanding / maxCredit < 0.5
+              utilizationPercent < 50
                 ? 'bg-emerald-500/60'
-                : maxCredit > 0 && outstanding / maxCredit < 0.8
+                : utilizationPercent < 80
                   ? 'bg-amber-500/60'
                   : 'bg-red-500/60',
             )}
-            style={{ width: maxCredit > 0 ? `${String(Math.min(100, Math.round((outstanding / maxCredit) * 100)))}%` : '0%' }}
+            style={{ width: `${String(utilizationPercent)}%` }}
             role="progressbar"
-            aria-valuenow={outstanding}
+            aria-valuenow={utilizationPercent}
             aria-valuemin={0}
-            aria-valuemax={maxCredit}
-            aria-label="Credit utilization"
+            aria-valuemax={100}
+            aria-label={
+              fullyUtilized
+                ? 'Credit fully utilized: 100% used, $0 available'
+                : `Credit utilization: ${String(utilizationPercent)}% used`
+            }
           />
         </div>
         <p className="mt-2 text-xs text-white/40">
-          {formatCents(availableCredit)} available
+          {fullyUtilized
+            ? `Fully utilized • ${formatCents(outstanding)} of ${formatCents(maxCredit)} used • $0 available`
+            : `${formatCents(availableCredit)} available`}
         </p>
       </div>
 

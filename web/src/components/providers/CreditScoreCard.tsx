@@ -65,10 +65,20 @@ export function CreditScoreCard() {
     : Math.max(0, maxAdvanceCents - outstandingCents);
   const riskScore = Number.isFinite(creditLimit.risk_score) ? creditLimit.risk_score : 1;
 
+  // Fully utilized = no headroom left to borrow. This is true both when the
+  // limit is reached (outstanding >= max) AND when there is simply no limit at
+  // all (maxAdvanceCents === 0, e.g. a grade-D provider). In every "0 available"
+  // case the bar must read as FULL and clearly labeled, never as a blank track —
+  // an empty bar next to "$0 available" reads as broken.
+  const fullyUtilized = availableCents <= 0;
   const utilizationRatio =
-    maxAdvanceCents > 0 ? outstandingCents / maxAdvanceCents : 0;
-  const utilizationPercent = Math.min(100, Math.round(utilizationRatio * 100));
-  const colors = getUtilizationColor(utilizationRatio);
+    maxAdvanceCents > 0 ? outstandingCents / maxAdvanceCents : fullyUtilized ? 1 : 0;
+  // Render the bar full (100%) whenever credit is exhausted, even if the raw
+  // ratio is 0 because the limit itself is 0.
+  const utilizationPercent = fullyUtilized
+    ? 100
+    : Math.min(100, Math.round(utilizationRatio * 100));
+  const colors = getUtilizationColor(fullyUtilized ? 1 : utilizationRatio);
   const grade = getRiskGrade(riskScore);
 
   return (
@@ -95,7 +105,7 @@ export function CreditScoreCard() {
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Utilized</span>
+            <span>{fullyUtilized ? 'Fully utilized' : 'Utilized'}</span>
             <span>{String(utilizationPercent)}%</span>
           </div>
           <div className="h-2 w-full rounded-full bg-white/[0.06] overflow-hidden">
@@ -106,12 +116,18 @@ export function CreditScoreCard() {
               aria-valuenow={utilizationPercent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`Credit utilization: ${String(utilizationPercent)}%`}
+              aria-label={
+                fullyUtilized
+                  ? 'Credit fully utilized: 100% used, $0 available'
+                  : `Credit utilization: ${String(utilizationPercent)}%`
+              }
             />
           </div>
           <div className="flex items-center justify-between text-xs text-zinc-500">
             <span>{formatCents(outstandingCents)} used</span>
-            <span>{formatCents(availableCents)} available</span>
+            <span>
+              {fullyUtilized ? '$0 available' : `${formatCents(availableCents)} available`}
+            </span>
           </div>
         </div>
 
