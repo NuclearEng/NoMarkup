@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -89,7 +90,14 @@ func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// The admin UI posts {action: "uphold"|"dismiss", notes}. Accept that as
+	// the primary contract while staying backward-compatible with the original
+	// {uphold: bool, resolution_notes} shape so older callers keep working.
+	// Without this, the UI's "Uphold & Remove Review" silently resolved every
+	// flag as a dismiss (uphold defaulted false) and dropped the notes.
 	var body struct {
+		Action          string `json:"action"`
+		Notes           string `json:"notes"`
 		Uphold          bool   `json:"uphold"`
 		ResolutionNotes string `json:"resolution_notes"`
 	}
@@ -97,11 +105,29 @@ func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	uphold := body.Uphold
+	if action := strings.ToLower(strings.TrimSpace(body.Action)); action != "" {
+		switch action {
+		case "uphold":
+			uphold = true
+		case "dismiss":
+			uphold = false
+		default:
+			writeError(w, http.StatusBadRequest, "action must be 'uphold' or 'dismiss'")
+			return
+		}
+	}
+
+	notes := body.ResolutionNotes
+	if notes == "" {
+		notes = body.Notes
+	}
+
 	resp, err := h.reviewClient.AdminResolveFlag(r.Context(), &reviewv1.AdminResolveFlagRequest{
 		FlagId:          flagID,
 		AdminId:         claims.UserID,
-		Uphold:          body.Uphold,
-		ResolutionNotes: body.ResolutionNotes,
+		Uphold:          uphold,
+		ResolutionNotes: notes,
 	})
 	if err != nil {
 		writeGRPCError(w, err)

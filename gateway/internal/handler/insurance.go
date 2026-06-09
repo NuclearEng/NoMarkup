@@ -390,13 +390,9 @@ func (h *InsuranceHandler) AdminListClaims(w http.ResponseWriter, r *http.Reques
 		"claims": claimsList,
 	}
 	if pg := resp.GetPagination(); pg != nil {
-		result["pagination"] = map[string]interface{}{
-			"total_count": pg.TotalCount,
-			"page":        pg.Page,
-			"page_size":   pg.PageSize,
-			"total_pages": pg.TotalPages,
-			"has_next":    pg.HasNext,
-		}
+		// camelCase to match the PaginationResponse TS contract the admin
+		// DataTable reads (totalPages/hasNext). See admin advances for context.
+		result["pagination"] = paginationToJSON(pg)
 	}
 
 	writeJSON(w, http.StatusOK, result)

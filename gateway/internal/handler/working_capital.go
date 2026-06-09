@@ -444,13 +444,10 @@ func (h *WorkingCapitalHandler) AdminListAdvances(w http.ResponseWriter, r *http
 		"advances": advances,
 	}
 	if pg := resp.GetPagination(); pg != nil {
-		result["pagination"] = map[string]interface{}{
-			"total_count": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
-			"page_size":   pg.GetPageSize(),
-			"total_pages": pg.GetTotalPages(),
-			"has_next":    pg.GetHasNext(),
-		}
+		// Emit camelCase pagination to match the shared PaginationResponse TS
+		// contract that the admin DataTable reads (totalPages/hasNext). Snake
+		// case here left totalPages undefined, silently hiding the pager.
+		result["pagination"] = paginationToJSON(pg)
 	}
 
 	writeJSON(w, http.StatusOK, result)
