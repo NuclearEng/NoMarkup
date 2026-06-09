@@ -363,11 +363,12 @@ impl ImagingService for ImagingServiceImpl {
             .await
         {
             Ok((url, is_valid, actual_ct)) => {
-                let err = if is_valid {
-                    String::new()
-                } else {
-                    format!("unsupported content type: {actual_ct}")
-                };
+                // On the invalid path, carry the bare detected content type
+                // (e.g. "application/octet-stream") in `error`. The gateway
+                // surfaces it to the web client as `actual_content_type`, which
+                // renders it inline ("detected content type \"...\""), so a
+                // prefixed sentence would read awkwardly there.
+                let err = if is_valid { String::new() } else { actual_ct };
                 (url, is_valid, err)
             }
             Err(ImagingError::NotFound(msg)) => {

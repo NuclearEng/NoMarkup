@@ -109,12 +109,18 @@ func (h *ImageHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Field names match the web client's typed ConfirmUploadResponse
+	// (web/src/types ConfirmUploadResponse + useImageUpload). The imaging
+	// proto names these source_url/valid/error; the gateway is the HTTP
+	// contract boundary, so we expose them as confirmed_url/content_type_valid
+	// here. A mismatch silently breaks EVERY upload: the hook reads
+	// content_type_valid (undefined → falsy) and fails the upload as
+	// "rejected", and confirmed_url would be undefined so the preview <Image>
+	// renders an empty src.
 	result := map[string]interface{}{
-		"source_url": resp.GetSourceUrl(),
-		"valid":      resp.GetValid(),
-	}
-	if resp.GetError() != "" {
-		result["error"] = resp.GetError()
+		"confirmed_url":       resp.GetSourceUrl(),
+		"content_type_valid":  resp.GetValid(),
+		"actual_content_type": resp.GetError(),
 	}
 
 	writeJSON(w, http.StatusOK, result)

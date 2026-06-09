@@ -397,26 +397,25 @@ impl ImagePipeline {
         object_key: &str,
         _user_id: &str,
     ) -> Result<(String, bool, String), ImagingError> {
-        let head = self
-            .s3_client
-            .head_object()
-            .bucket(&self.bucket)
-            .key(object_key)
-            .send()
-            .await
-            .map_err(|e| {
-                let msg = format!("{e}");
-                if msg.contains("NoSuchKey") || msg.contains("NotFound") || msg.contains("404") {
-                    ImagingError::NotFound(format!("object not found: {object_key}"))
-                } else {
-                    ImagingError::S3Error(format!("HEAD {object_key}: {e}"))
-                }
-            })?;
+        // Download the object and sniff its REAL format from the magic bytes.
+        // We deliberately do NOT trust the stored Content-Type metadata: that
+        // value is whatever the client declared on the presigned PUT, so a
+        // text/binary file renamed `.jpg` and uploaded with
+        // `Content-Type: image/jpeg` would otherwise pass validation. Sniffing
+        // the bytes is the actual server-side MIME check (CLAUDE.md §6: never
+        // trust client-supplied content type; validate server-side).
+        let bytes = self.download_from_s3(object_key).await?;
 
-        let actual_ct = head
-            .content_type()
-            .unwrap_or("application/octet-stream")
-            .to_string();
+        let actual_ct = match image::guess_format(&bytes) {
+            Ok(ImgFmt::Jpeg) => "image/jpeg",
+            Ok(ImgFmt::Png) => "image/png",
+            Ok(ImgFmt::WebP) => "image/webp",
+            // Any other decodable-or-not format is rejected. `application/octet-stream`
+            // is a deliberate "unknown / not an allowed image" sentinel that fails
+            // the ALLOWED_MIME_TYPES check below.
+            _ => "application/octet-stream",
+        }
+        .to_string();
 
         let valid = ALLOWED_MIME_TYPES.contains(&actual_ct.as_str());
         let url = self.public_url(object_key);
