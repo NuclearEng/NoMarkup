@@ -58,6 +58,16 @@ impl BiddingEngine {
         .await?
         .ok_or(BidError::JobNotFound)?;
 
+        // A customer must not bid on their own job. Self-bidding lets the owner
+        // pollute their own sealed-bid pool, inflate bid_count, trigger their own
+        // offer-accepted threshold, and award themselves. Symmetric with the
+        // forward path's seller-can't-bid guard (forward.rs).
+        if job.customer_id == provider_id {
+            return Err(BidError::PermissionDenied(
+                "you cannot bid on your own job".into(),
+            ));
+        }
+
         if job.status != "active" {
             return Err(BidError::AuctionNotActive);
         }
@@ -404,6 +414,13 @@ impl BiddingEngine {
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(BidError::JobNotFound)?;
+
+        // A customer must not accept the offer on their own job (self-dealing).
+        if job.customer_id == provider_id {
+            return Err(BidError::PermissionDenied(
+                "you cannot bid on your own job".into(),
+            ));
+        }
 
         let offer_cents = job
             .offer_accepted_cents
