@@ -54,6 +54,7 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Orders & escrow** — buyer/seller order lifecycle (seller-confirm, pickup-confirm, auto-release), readable via `/orders/{id}` and `/me/orders`
 - **Local pickup** — 25-mile radius, Mapbox pickup maps, PostGIS-backed geo
 - **Watchlist, Follows, Saved Searches & Feed** — watch listings (live heart state), follow sellers (hydrated follow state + follower counts), save searches, personalized feed
+- **Wishlist & price alerts** — save what you're hunting for (keyword + a max price + optional category); when a matching listing goes live at or under your ceiling, you get a "bid now" notification linking straight to it
 - **Double-blind reviews** — both parties rate across 8 dimensions; neither review publishes until *both* are submitted (no retaliation bias), then they surface on each profile
 - **City selector** — best-in-class market picker: use-my-location (→ nearest launched market by haversine), recent picks, nearby markets, and type-to-search; only launched cities surface ("more cities coming soon")
 
@@ -69,7 +70,8 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Instant Payout** — ledger-backed + idempotent, with eligibility (cleared funds only), verified-provider gate, and per-txn/daily caps; configurable fee (default 1.5%, $1 min)
 - **Repayment** — providers pay down advances directly (ownership-scoped, idempotent) in addition to auto-offset from payouts
 - **Business Suite** — expense tracking, invoice generation, and an institution-grade 1099-NEC tax center (decrypted PII) with a printable summary
-- **Dispute Resolution** — evidence-collected disputes backed by the contract service, party-access enforced, admin queue + resolution
+- **Change Orders** — on an active contract the provider proposes a scope/price adjustment; the customer approves or rejects; on approval the contract amount + milestone reconcile atomically (provider-proposes / customer-responds authz, single-apply under concurrency)
+- **Dispute Resolution** — evidence-collected disputes backed by the contract service, party-access enforced, admin queue + resolution; completion-guarantee + insurance-claim payouts are capped at coverage server-side
 
 ### Insurance
 - **Per-job products** — property damage, workmanship warranty, completion guarantee, liability — risk-adjusted by category, with a full claims lifecycle
@@ -82,6 +84,8 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Feature flags** — optional/financial features (BNPL, instant payout, insurance, advances, lead-gen, insurance-competition, legal) are admin-togglable from `/admin/flags`. Enforced fail-closed at the gateway (`RequireFlag` → 503 when off, cache-invalidated for instant propagation) **and** hidden in the UI
 - **Geographic rollout control** — markets launch by city / state / country via an admin Markets tool (flips `markets.is_active`); the public catalog is active-gated so coverage expands market-by-market for liquidity density. King County, WA is the live launch market. Catalog (~432 US + MX cities) crawled from craigslist + geocoded; see `docs/operations/provisioning-checklist.md`
 - **Trust Scoring** — multi-dimensional provider trust with tier badges
+- **Notifications** — in-app notifications for the events that matter (new message, new bid, bid awarded, offer received/countered, dispute filed/resolved, payout, wishlist match), each routed to the correct recipient with a deep link; per-type **and** per-channel (in-app / email / push / SMS) preferences are enforced (a disabled channel is honestly dropped), and external senders fail soft when unconfigured
+- **Privacy & Safety** — GDPR/CCPA self-service: **data export** (strictly owner-scoped — only your own data, counterparties redacted to display name) and **account deletion** (30-day grace, then PII anonymized while FKs are preserved). Report a user or message → an admin moderation queue; block enforced at the messaging boundary
 - **Brand Gold + Full Dark Mode** — glass-morphism design system, cinematic `#070b14` theme across 60+ pages
 - **Best-in-Class Mobile** — fixed bottom tab bar, `100dvh`, notch-safe, 44px targets, works at 320px
 - **Accessibility** — WCAG 2.2 AA: focus rings, `aria-live`, `prefers-reduced-motion`
@@ -146,7 +150,7 @@ Other security posture:
 - **Sessions:** 15-min access tokens; **single-use refresh tokens** (atomic rotation — concurrent refresh yields exactly one winner); **role-based idle timeouts** (customer 60m / provider 120m / admin 30m, sliding, reset by requests + WS heartbeat); password-reset tokens are single-use (hash-bound, self-invalidating)
 - Every endpoint authenticated **and** authorized; all get-by-id reads owner/party-scoped (no cross-tenant IDOR); all mutations scope writes by owner; PII projected out of public reads (license numbers masked)
 - WebSocket: channel-membership / job-participant authz on subscribe, CSWSH origin allowlist, spectator anonymization + 3s delay, and **socket lifetime bounded to the token `exp`** (no streaming on an expired/revoked session)
-- **Concurrency-safe** money paths (`FOR UPDATE` / advisory locks / WHERE-guards): no lost bids, double-binds, over-repays, or daily-cap breaches under load
+- **Concurrency-safe** money paths (`FOR UPDATE` / advisory locks / WHERE-guards): no lost bids, double-binds, over-repays, or daily-cap breaches under load. Every Stripe transfer (advance, installment, insurance/guarantee, goods payout) carries a **deterministic idempotency key** so a retry or race never double-pays; refunds are capped at the captured amount, payouts at coverage; escrow release stamps `released_at` + the transfer id on every path. Verified exactly-once across the full money surface under concurrent load
 - **Abuse limits:** tiered per-IP rate limiting (auth / public-read / standard), 1 MB request-body cap, field-length limits, and paginated/clamped list reads
 - Parameterized SQL only; idempotency keys on payment/bid mutations; Stripe event dedup prevents replay
 - **Typed errors, never a leaky 500:** every predictable condition (draft cap, ownership, validation, missing resource) maps to a specific 4xx with an intuitive message; domain errors are mapped at the gRPC boundary, internals are never exposed
