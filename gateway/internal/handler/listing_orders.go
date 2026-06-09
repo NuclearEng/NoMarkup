@@ -509,7 +509,7 @@ func (h *ListingOrdersHandler) ReportNoShow(w http.ResponseWriter, r *http.Reque
 		UPDATE users
 		   SET no_show_count = no_show_count + 1,
 		       no_show_cooldown_until = CASE
-		           WHEN no_show_count + 1 >= $2 THEN now() + ($3 || ' days')::interval
+		           WHEN no_show_count + 1 >= $2 THEN now() + make_interval(days => $3)
 		           ELSE no_show_cooldown_until
 		       END,
 		       updated_at = now()
