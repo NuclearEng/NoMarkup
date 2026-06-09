@@ -23,6 +23,10 @@ service UserService {
   rpc SendPhoneOTP(SendPhoneOTPRequest) returns (SendPhoneOTPResponse);
   rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+  // ChangePassword is the authenticated, self-service password change. Unlike
+  // ResetPassword (token-driven, for users who can't sign in) it re-authenticates
+  // the caller by requiring their current password, then rotates all sessions.
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
 
   // OAuth
   rpc FindOrCreateByOAuth(FindOrCreateByOAuthRequest) returns (FindOrCreateByOAuthResponse);
@@ -180,6 +184,16 @@ message ResetPasswordRequest {
 }
 
 message ResetPasswordResponse {
+  bool success = 1;
+}
+
+message ChangePasswordRequest {
+  string user_id = 1;
+  string current_password = 2;
+  string new_password = 3;
+}
+
+message ChangePasswordResponse {
   bool success = 1;
 }
 

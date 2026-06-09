@@ -953,6 +953,60 @@ func TestAuth_ResetPassword(t *testing.T) {
 	})
 }
 
+func TestAuth_ChangePassword(t *testing.T) {
+	t.Parallel()
+
+	// A real argon2id hash of the known current password so verifyPassword
+	// inside ChangePassword exercises the genuine re-auth gate.
+	currentHash, err := hashPassword("CurrentPass1!")
+	require.NoError(t, err)
+
+	t.Run("correct current password updates hash and revokes sessions", func(t *testing.T) {
+		t.Parallel()
+		var storedHash string
+		var revoked bool
+		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: currentHash}, nil
+			},
+			updatePasswordFn: func(_ context.Context, _ string, hash string) error {
+				storedHash = hash
+				return nil
+			},
+			revokeAllUserTokensFn: func(_ context.Context, _ string) error {
+				revoked = true
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		err := auth.ChangePassword(context.Background(), "user-1", "CurrentPass1!", "BrandNewPass2!")
+		require.NoError(t, err)
+		assert.True(t, verifyPassword("BrandNewPass2!", storedHash))
+		assert.True(t, revoked, "all sessions must be revoked after a password change")
+	})
+
+	t.Run("wrong current password is rejected with ErrInvalidCredentials and does not write", func(t *testing.T) {
+		t.Parallel()
+		wrote := false
+		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: currentHash}, nil
+			},
+			updatePasswordFn: func(_ context.Context, _ string, _ string) error {
+				wrote = true
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		err := auth.ChangePassword(context.Background(), "user-1", "WrongPass9!", "BrandNewPass2!")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidCredentials))
+		assert.False(t, wrote, "password must not be updated when the current password is wrong")
+	})
+}
+
 // --- Profile tests ---
 
 func TestProfile_GetUser(t *testing.T) {

@@ -246,6 +246,27 @@ func (s *Server) ResetPassword(ctx context.Context, req *userv1.ResetPasswordReq
 	return &userv1.ResetPasswordResponse{Success: true}, nil
 }
 
+// ChangePassword handles the authenticated self-service password change. The
+// caller is identified by user_id (set by the gateway from the verified JWT
+// claims, never from client input) and must supply their current password.
+func (s *Server) ChangePassword(ctx context.Context, req *userv1.ChangePasswordRequest) (*userv1.ChangePasswordResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetCurrentPassword() == "" {
+		return nil, status.Error(codes.InvalidArgument, "current_password is required")
+	}
+	if req.GetNewPassword() == "" {
+		return nil, status.Error(codes.InvalidArgument, "new_password is required")
+	}
+
+	if err := s.auth.ChangePassword(ctx, req.GetUserId(), req.GetCurrentPassword(), req.GetNewPassword()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.ChangePasswordResponse{Success: true}, nil
+}
+
 // sendPasswordResetEmail dispatches a password-reset email via the notification
 // service. Failures are logged but not propagated.
 func (s *Server) sendPasswordResetEmail(ctx context.Context, userID, email, resetToken string) {

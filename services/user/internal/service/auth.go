@@ -400,6 +400,43 @@ func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) err
 	return nil
 }
 
+// ChangePassword performs an authenticated, self-service password change. It
+// re-authenticates the caller by verifying their CURRENT password (the
+// re-auth gate required by CLAUDE.md §6 — a stolen access token must not be
+// enough to silently take over an account by changing its password), then
+// replaces the hash and revokes every existing refresh token so all other
+// sessions are invalidated. Returns ErrInvalidCredentials when the current
+// password is wrong so the gateway can surface a clean 401/403.
+func (a *Auth) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	user, err := a.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+
+	if !verifyPassword(currentPassword, user.PasswordHash) {
+		slog.WarnContext(ctx, "change password rejected: current password mismatch", "user_id", userID)
+		return fmt.Errorf("change password: %w", domain.ErrInvalidCredentials)
+	}
+
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+
+	if err := a.repo.UpdatePassword(ctx, userID, hash); err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+
+	// Invalidate all existing sessions after a password change — same posture
+	// as ResetPassword: a password change logs out every device.
+	if err := a.repo.RevokeAllUserTokens(ctx, userID); err != nil {
+		slog.Warn("failed to revoke tokens after password change", "user_id", userID, "error", err)
+	}
+
+	slog.Info("password changed", "user_id", userID)
+	return nil
+}
+
 // passwordHashBinding derives a short, stable fingerprint of the user's current
 // password hash. It is folded into the reset-token HMAC payload so the token is
 // cryptographically bound to the password that was in effect when the token was

@@ -133,6 +133,11 @@ func New(
 		r.Post("/resend-verification", authHandler.ResendVerification)
 		r.Post("/request-password-reset", authHandler.RequestPasswordReset)
 		r.Post("/reset-password", authHandler.ResetPassword)
+		// Authenticated self-service password change. Behind the auth
+		// middleware (identity comes from the JWT, not the body) and gated on
+		// the current password as a re-auth check. The token-driven
+		// reset-password route above is for users who CAN'T sign in.
+		r.With(authMW.Handler).Post("/change-password", authHandler.ChangePassword)
 
 		// OAuth routes (public, no auth required).
 		r.Get("/oauth/google", oauthHandler.InitGoogleOAuth)

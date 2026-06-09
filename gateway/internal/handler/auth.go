@@ -589,6 +589,69 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// ChangePassword handles POST /api/v1/auth/change-password. This is the
+// AUTHENTICATED self-service password change (distinct from the token-driven
+// reset-password flow): the route is mounted behind the auth middleware, the
+// user is taken from the verified JWT claims (never the body), and the
+// current password is required as a re-auth gate (CLAUDE.md §6 — a stolen
+// access token alone must not be enough to change the password). The
+// user-service rotates all sessions on success.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req changePasswordRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if strings.TrimSpace(req.CurrentPassword) == "" {
+		writeError(w, http.StatusBadRequest, "current_password is required")
+		return
+	}
+	// Apply the same strength rules as registration so a change can't weaken
+	// the account below the signup bar.
+	if len(req.NewPassword) < 8 {
+		writeError(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+	if !isStrongPassword(req.NewPassword) {
+		writeError(w, http.StatusBadRequest, "new password must include letters and at least one number or symbol")
+		return
+	}
+	if req.NewPassword == req.CurrentPassword {
+		writeError(w, http.StatusBadRequest, "new password must be different from your current password")
+		return
+	}
+
+	resp, err := h.userClient.ChangePassword(r.Context(), &userv1.ChangePasswordRequest{
+		UserId:          claims.UserID,
+		CurrentPassword: req.CurrentPassword,
+		NewPassword:     req.NewPassword,
+	})
+	if err != nil {
+		// A wrong current password comes back as Unauthenticated from the
+		// service; surface it as a 401 with an intuitive message rather than a
+		// generic 500 (CLAUDE.md §15 — a predictable condition is never a 500).
+		if st, ok := status.FromError(err); ok && st.Code() == codes.Unauthenticated {
+			writeError(w, http.StatusUnauthorized, "Current password is incorrect")
+			return
+		}
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
+}
+
 // --- MFA ---
 
 // EnableMFA handles POST /api/v1/auth/mfa/enable.
