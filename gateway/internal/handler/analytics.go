@@ -33,15 +33,30 @@ func (h *AnalyticsHandler) GetMarketRange(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "category_id is required")
 		return
 	}
+	// Validate the UUID at the gateway boundary so a malformed id is a clean 400
+	// rather than a Postgres cast error surfacing as a 500 from the analytics
+	// service (§6/§15: validate at the boundary, fail closed on a 4xx).
+	if !isValidUUID(categoryID) {
+		writeError(w, http.StatusBadRequest, "category_id must be a valid UUID")
+		return
+	}
 
 	req := &analyticsv1.GetMarketRangeRequest{
 		CategoryId: categoryID,
 	}
 
 	if sid := q.Get("subcategory_id"); sid != "" {
+		if !isValidUUID(sid) {
+			writeError(w, http.StatusBadRequest, "subcategory_id must be a valid UUID")
+			return
+		}
 		req.SubcategoryId = &sid
 	}
 	if stid := q.Get("service_type_id"); stid != "" {
+		if !isValidUUID(stid) {
+			writeError(w, http.StatusBadRequest, "service_type_id must be a valid UUID")
+			return
+		}
 		req.ServiceTypeId = &stid
 	}
 
