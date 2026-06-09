@@ -123,7 +123,7 @@ export function StripeOnboarding() {
             <StatusIndicator enabled={accountStatus.payouts_enabled} label="Payouts enabled" />
           </div>
 
-          {accountStatus.requirements.length > 0 ? (
+          {accountStatus.requirements && accountStatus.requirements.length > 0 ? (
             <div className="rounded-md bg-muted p-3">
               <p className="text-xs font-medium text-muted-foreground">Pending requirements:</p>
               <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">

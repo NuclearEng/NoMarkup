@@ -42,11 +42,15 @@ func (h *PaymentHandler) CreateStripeAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Body is optional: the frontend "Connect with Stripe" action sends none and
+	// the payment service derives email/business_name from the user record. An
+	// empty/absent body must not 400 (was "invalid request body: EOF").
 	var req struct {
 		Email        string `json:"email"`
 		BusinessName string `json:"business_name"`
 	}
-	if !decodeJSON(w, r, &req) {
+	if err := decodeJSONOptional(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 

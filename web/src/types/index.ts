@@ -634,7 +634,8 @@ export interface StripeAccountStatus {
   charges_enabled: boolean;
   payouts_enabled: boolean;
   details_submitted: boolean;
-  requirements: string[];
+  // The gateway returns null (not []) when there are no pending requirements.
+  requirements: string[] | null;
 }
 
 export interface PaymentsResponse {
