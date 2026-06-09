@@ -60,6 +60,15 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
   const [bidBondReq, setBidBondReq] = useState<{ bond_amount_cents: number } | null>(null);
   const [pendingBid, setPendingBid] = useState<{ amount: number; max?: number } | null>(null);
 
+  // `formatRelativeTime` reads `new Date()`, so the SSR-computed "Posted …"/bid
+  // timestamps differ from the client's first render across a minute/hour
+  // boundary → hydration mismatch (this island is server-rendered via
+  // `initialData`). Gate the relative-time labels behind a mounted flag.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Best-Offer ("Make an offer") modal open state. Only ever rendered for a
   // non-seller on an active listing (gated in the JSX below).
   const [offerModalOpen, setOfferModalOpen] = useState(false);
@@ -233,7 +242,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
               </div>
             </div>
             <p className="text-sm text-zinc-400">
-              Posted {formatRelativeTime(new Date(listing.created_at))}
+              Posted {mounted ? formatRelativeTime(new Date(listing.created_at)) : null}
             </p>
           </div>
 
@@ -314,7 +323,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                           {formatCents(bid.amount_cents)}
                         </span>
                         <span className="text-xs text-zinc-500">
-                          {formatRelativeTime(new Date(bid.created_at))}
+                          {mounted ? formatRelativeTime(new Date(bid.created_at)) : null}
                         </span>
                       </div>
                     </li>

@@ -3,7 +3,7 @@
 import { Clock, MapPin, Tag, Users } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +64,17 @@ export const ListingCard = memo(function ListingCard({
   listing,
   asStaticCard = false,
 }: ListingCardProps) {
+  // `formatRelativeTime` reads `new Date()`, so the SSR-computed "posted" label
+  // differs from the client's first render whenever the two land on opposite
+  // sides of a minute/hour boundary → hydration mismatch (this card is
+  // server-rendered inside the seeded marketplace grid). Gate it behind a
+  // mounted flag — server + first client paint render nothing, then the real
+  // relative time fills in post-mount. Mirrors JobCard.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const heroPhoto = useMemo(
     () => (listing.photos ?? []).find((p) => p.sort_order === 0) ?? listing.photos?.[0] ?? null,
     [listing.photos],
@@ -190,7 +201,7 @@ export const ListingCard = memo(function ListingCard({
               </span>
             )}
             <span className="text-xs text-zinc-500">
-              {formatRelativeTime(new Date(listing.created_at))}
+              {mounted ? formatRelativeTime(new Date(listing.created_at)) : null}
             </span>
           </div>
         </div>
