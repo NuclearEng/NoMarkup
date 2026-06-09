@@ -15,6 +15,7 @@ const orderState: {
 } = { data: undefined, isLoading: false, isError: false, refetch: vi.fn() };
 
 const confirmPickup = { mutate: vi.fn(), isPending: false };
+const sellerConfirm = { mutate: vi.fn(), isPending: false };
 const disputeOrder = { mutate: vi.fn(), isPending: false };
 
 vi.mock('next/navigation', () => ({
@@ -34,7 +35,16 @@ vi.mock('next/link', () => ({
 vi.mock('@/hooks/useListings', () => ({
   useListingOrder: () => orderState,
   useConfirmPickup: () => confirmPickup,
+  useSellerConfirm: () => sellerConfirm,
   useDisputeOrder: () => disputeOrder,
+}));
+
+// The page reads the current user to pick the buyer vs seller confirm action.
+// Default to the buyer (matches the mock order's buyer_id) so existing assertions
+// about the buyer "Confirm pickup" button hold.
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (selector: (s: { user: { id: string } }) => unknown) =>
+    selector({ user: { id: 'me' } }),
 }));
 
 import OrderDetailPage from '@/app/(dashboard)/orders/[id]/page';
