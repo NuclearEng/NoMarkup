@@ -601,14 +601,41 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 		newEscrow = "refunded"
 	}
 	if newEscrow != "" {
-		if _, err := tx.Exec(r.Context(), `
-			UPDATE listing_orders lo
-			   SET escrow_status = $1, updated_at = now()
-			  FROM marketplace_disputes md
-			 WHERE md.id = $2 AND lo.id = md.listing_order_id`, newEscrow, id); err != nil {
-			slog.Error("update listing_order escrow failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to update escrow")
-			return
+		// On a release_to_seller / no_action resolution we must stamp the
+		// release the same way the buyer/seller pickup handshake does:
+		//   - released_at = now()  (otherwise the row is a "released with NULL
+		//     released_at" zombie that violates the escrow invariant and is
+		//     invisible to buyer-facing completed_at/released_at projections)
+		//   - seller_payout_cents = amount_cents - fee_cents  (so the row
+		//     satisfies amount = fee + payout; without this it stays 0 and the
+		//     payout split is wrong)
+		// The payment-service auto-release worker still fires the actual Stripe
+		// transfer keyed on escrow_status='released' AND stripe_transfer_id IS
+		// NULL; this UPDATE only fixes the durable row state. The refunded
+		// branch leaves released_at/payout untouched (no payout owed).
+		if newEscrow == "released" {
+			if _, err := tx.Exec(r.Context(), `
+				UPDATE listing_orders lo
+				   SET escrow_status = $1,
+				       released_at = now(),
+				       seller_payout_cents = GREATEST(lo.amount_cents - lo.fee_cents, 0),
+				       updated_at = now()
+				  FROM marketplace_disputes md
+				 WHERE md.id = $2 AND lo.id = md.listing_order_id`, newEscrow, id); err != nil {
+				slog.Error("update listing_order escrow failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "failed to update escrow")
+				return
+			}
+		} else {
+			if _, err := tx.Exec(r.Context(), `
+				UPDATE listing_orders lo
+				   SET escrow_status = $1, updated_at = now()
+				  FROM marketplace_disputes md
+				 WHERE md.id = $2 AND lo.id = md.listing_order_id`, newEscrow, id); err != nil {
+				slog.Error("update listing_order escrow failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "failed to update escrow")
+				return
+			}
 		}
 	}
 
