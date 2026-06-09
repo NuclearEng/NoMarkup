@@ -591,6 +591,10 @@ export interface ContractsResponse {
 export interface Payment {
   id: string;
   contract_id: string;
+  // Friendly NM-… contract reference, enriched server-side by joining the
+  // contracts table. Absent (fail-soft) if the lookup misses; UI falls back to
+  // a truncated contract_id.
+  contract_number?: string;
   milestone_id?: string;
   recurring_instance_id?: string;
   customer_id: string;
@@ -680,6 +684,9 @@ export interface Review {
   id: string;
   contract_id: string;
   reviewer_id: string;
+  // Reviewer's public display name, enriched server-side via the user service.
+  // Absent (fail-soft) if the lookup misses; UI falls back to a truncated id.
+  reviewer_name?: string;
   reviewee_id: string;
   direction: string;
   overall_rating: number;
@@ -698,6 +705,9 @@ export interface ReviewResponseData {
   id: string;
   review_id: string;
   responder_id: string;
+  // Responder's public display name, enriched server-side via the user service.
+  // Absent (fail-soft) if the lookup misses; UI falls back to a truncated id.
+  responder_name?: string;
   comment: string;
   created_at: string;
 }
@@ -2164,6 +2174,11 @@ export interface TaxEstimateResponse {
 export const LISTING_STATUS = {
   DRAFT: 'draft',
   ACTIVE: 'active',
+  // ENDED is a read-time effective status emitted by the gateway for an
+  // auction whose deadline has passed but which no close-worker has swept to
+  // sold/expired yet. It is display-only (never persisted) and means "bidding
+  // is over, awaiting settlement" — distinct from EXPIRED (closed with no bids).
+  ENDED: 'ended',
   SOLD: 'sold',
   EXPIRED: 'expired',
   CANCELLED: 'cancelled',

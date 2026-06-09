@@ -379,6 +379,11 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			s := condition.String
 			l.Condition = &s
 		}
+		// Lazy past-deadline transition (see effectiveListingStatus): a
+		// just-ended auction still has status='active' in the row until a
+		// close-worker sweeps it; show 'ended' so the card badge matches the
+		// expired countdown rather than reading 'active'.
+		l.Status = effectiveListingStatus(l.Status, l.AuctionEndsAt)
 		l.Photos = []listingPhotoJSON{}
 		results = append(results, l)
 		ids = append(ids, l.ID)
@@ -515,6 +520,10 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		t := endsAt.Time
 		d.AuctionEndsAt = &t
 	}
+	// Lazy past-deadline transition: an 'active' auction whose deadline has
+	// elapsed reads as 'ended' (no close-worker flips it). Keeps the badge
+	// from contradicting the "Auction Closed" countdown on the detail page.
+	d.Status = effectiveListingStatus(d.Status, d.AuctionEndsAt)
 	if trustTier.Valid {
 		s := trustTier.String
 		d.SellerTrustTier = &s
@@ -893,3 +902,22 @@ func jsonRawOrNull(v interface{}) json.RawMessage {
 }
 
 var _ = jsonRawOrNull // silence unused
+
+// effectiveListingStatus computes the display status for a listing, lazily
+// transitioning an `active` auction whose deadline has already passed to
+// `ended`. There is no background worker that flips ended auctions (the
+// CloseListingAuction transition exists in the job service but is never
+// invoked outside tests), so without this read-time evaluation the UI shows
+// a contradictory "active" badge alongside an "Auction Closed" countdown.
+//
+// We deliberately emit `ended` (not `sold`) here: this is display-only and
+// must not fabricate a winner. The real sold/expired transition + escrow
+// order creation still belongs to CloseListingAuction when it is wired to a
+// worker. `ended` tells the client "bidding is over"; the bid action-gate
+// already 409s on a past-deadline auction independently of this value.
+func effectiveListingStatus(rawStatus string, auctionEndsAt *time.Time) string {
+	if rawStatus == "active" && auctionEndsAt != nil && auctionEndsAt.Before(time.Now()) {
+		return "ended"
+	}
+	return rawStatus
+}

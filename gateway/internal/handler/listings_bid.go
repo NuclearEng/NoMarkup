@@ -943,6 +943,9 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 			s := condition.String
 			l.Condition = &s
 		}
+		// Lazy past-deadline transition (see effectiveListingStatus): a
+		// seller's own ended auction reads as 'ended', not a stale 'active'.
+		l.Status = effectiveListingStatus(l.Status, l.AuctionEndsAt)
 		l.Photos = []listingPhotoJSON{}
 		results = append(results, l)
 	}

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +13,7 @@ import (
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ContractHandler handles HTTP endpoints for contracts.
@@ -865,7 +867,7 @@ func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
 		"bid_id":              c.GetBidId(),
 		"amount_cents":        c.GetAmountCents(),
 		"payment_timing":      contractPaymentTimingToString(c.GetPaymentTiming()),
-		"status":              contractStatusToString(c.GetStatus()),
+		"status":              effectiveContractStatus(contractStatusToString(c.GetStatus()), c.GetAcceptanceDeadline()),
 		"customer_accepted":   c.GetCustomerAccepted(),
 		"provider_accepted":   c.GetProviderAccepted(),
 		"acceptance_deadline": formatTimestamp(c.GetAcceptanceDeadline()),
@@ -934,6 +936,22 @@ func protoChangeOrderToJSON(co *contractv1.ChangeOrder) map[string]interface{} {
 }
 
 // --- Enum conversions ---
+
+// effectiveContractStatus lazily transitions a contract still awaiting
+// acceptance past its acceptance_deadline to 'abandoned'. The acceptance
+// window is enforced on the write path (ContractService.AcceptContract returns
+// ErrDeadlineExpired once the deadline passes), but no worker flips the stored
+// status, so the contract keeps displaying 'pending_acceptance' — a stale,
+// contradictory "awaiting acceptance" on a window that has already lapsed.
+//
+// 'abandoned' is an existing allowed status meaning the acceptance window
+// lapsed; this is display-only and does not mutate the contract or move funds.
+func effectiveContractStatus(rawStatus string, acceptanceDeadline *timestamppb.Timestamp) string {
+	if rawStatus == "pending_acceptance" && acceptanceDeadline != nil && acceptanceDeadline.AsTime().Before(time.Now()) {
+		return "abandoned"
+	}
+	return rawStatus
+}
 
 func contractStatusToString(s contractv1.ContractStatus) string {
 	switch s {

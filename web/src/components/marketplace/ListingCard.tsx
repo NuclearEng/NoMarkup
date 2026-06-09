@@ -37,6 +37,8 @@ function getStatusVariant(
     case LISTING_STATUS.CANCELLED:
     case LISTING_STATUS.EXPIRED:
       return 'cancelled';
+    case LISTING_STATUS.ENDED:
+      return 'secondary';
     default:
       return 'secondary';
   }
@@ -51,6 +53,8 @@ function getStatusBorderColor(status: string): string {
     case LISTING_STATUS.CANCELLED:
     case LISTING_STATUS.EXPIRED:
       return 'border-l-red-400 dark:border-l-red-500';
+    case LISTING_STATUS.ENDED:
+      return 'border-l-zinc-400 dark:border-l-zinc-500';
     default:
       return 'border-l-border';
   }

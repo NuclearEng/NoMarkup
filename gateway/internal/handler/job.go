@@ -744,7 +744,7 @@ func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 		"customer_id":            j.GetCustomerId(),
 		"title":                  j.GetTitle(),
 		"description":            j.GetDescription(),
-		"status":                 jobStatusToString(j.GetStatus()),
+		"status":                 effectiveJobStatus(jobStatusToString(j.GetStatus()), j.GetAuctionEndsAt()),
 		"schedule_type":          scheduleTypeToString(j.GetScheduleType()),
 		"is_recurring":           j.GetIsRecurring(),
 		"auction_duration_hours": j.GetAuctionDurationHours(),
@@ -941,6 +941,25 @@ func stringToJobStatus(s string) jobv1.JobStatus {
 	default:
 		return jobv1.JobStatus_JOB_STATUS_UNSPECIFIED
 	}
+}
+
+// effectiveJobStatus lazily transitions a still-'active' service-job auction
+// whose bidding deadline has passed to 'closed'. The job service has no
+// background worker that flips expired auctions (CloseAuction is only invoked
+// by the customer via gRPC), so without this read-time evaluation a job past
+// its auction_ends_at keeps reading 'active' forever — the same stale-state
+// contradiction as goods listings (active badge + "Auction Closed" countdown).
+//
+// 'closed' (not 'awarded'/'expired') is deliberate: it is an existing allowed
+// status meaning "bidding is over, pending award", does not fabricate a winner,
+// and lets the owner still award the winning bid (web canAward allows 'closed').
+// The bid action-gate in the bidding engine already 409s on a past-deadline
+// auction independently of this display value.
+func effectiveJobStatus(rawStatus string, auctionEndsAt *timestamppb.Timestamp) string {
+	if rawStatus == "active" && auctionEndsAt != nil && auctionEndsAt.AsTime().Before(time.Now()) {
+		return "closed"
+	}
+	return rawStatus
 }
 
 func jobStatusToString(s jobv1.JobStatus) string {

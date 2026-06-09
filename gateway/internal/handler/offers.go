@@ -295,10 +295,24 @@ func (h *OffersHandler) ListOffersForListing(w http.ResponseWriter, r *http.Requ
 			s := msg.String
 			o.Message = &s
 		}
+		o.Status = effectiveOfferStatus(o.Status, o.ExpiresAt)
 		out = append(out, o)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"offers": out})
+}
+
+// effectiveOfferStatus lazily reflects offer expiry: a 'pending' (or
+// 'countered') offer past its expires_at reads as 'expired'. The expiry sweep
+// is best-effort and may lag, so without this a lapsed offer keeps showing as
+// 'pending' / actionable. Display-only; the accept path independently blocks
+// accepting an expired offer (expires_at > now() guard) so the gate and the
+// badge stay consistent.
+func effectiveOfferStatus(rawStatus string, expiresAt time.Time) string {
+	if (rawStatus == "pending" || rawStatus == "countered") && expiresAt.Before(time.Now()) {
+		return "expired"
+	}
+	return rawStatus
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -595,9 +609,12 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		// Guarded statement: claim the offer (pending|countered → accepted). Under
 		// the listing lock this can't race another accept on the same listing, but
 		// we keep the status guard so a stale/duplicate action is still a clean 409.
+		// The `expires_at > now()` guard blocks accepting an offer past its expiry:
+		// no worker flips an expired-but-pending offer to 'expired', so without this
+		// a seller could still accept a stale offer (the expiry sweep is best-effort).
 		atag, err := tx.Exec(r.Context(),
 			`UPDATE listing_offers SET status='accepted', updated_at=now()
-			  WHERE id=$1 AND status IN ('pending','countered')`,
+			  WHERE id=$1 AND status IN ('pending','countered') AND expires_at > now()`,
 			offerID,
 		)
 		if err != nil {
@@ -606,7 +623,19 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if atag.RowsAffected() == 0 {
-			writeError(w, http.StatusConflict, "offer is no longer pending")
+			// Either already actioned (pending guard) or past expiry. Disambiguate
+			// for an accurate, actionable client message instead of a wrong "pending".
+			var stillPending bool
+			var expired bool
+			_ = tx.QueryRow(r.Context(),
+				`SELECT status IN ('pending','countered'), expires_at <= now()
+				   FROM listing_offers WHERE id=$1`, offerID,
+			).Scan(&stillPending, &expired)
+			if stillPending && expired {
+				writeError(w, http.StatusConflict, "offer has expired")
+			} else {
+				writeError(w, http.StatusConflict, "offer is no longer pending")
+			}
 			return
 		}
 
@@ -725,5 +754,6 @@ func (h *OffersHandler) loadOffer(ctx context.Context, id string) *offerJSON {
 		s := msg.String
 		o.Message = &s
 	}
+	o.Status = effectiveOfferStatus(o.Status, o.ExpiresAt)
 	return &o
 }
