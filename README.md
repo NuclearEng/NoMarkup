@@ -53,7 +53,8 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Buy-It-Now** — instant purchase that closes the auction and opens an escrow order
 - **Orders & escrow** — buyer/seller order lifecycle (seller-confirm, pickup-confirm, auto-release), readable via `/orders/{id}` and `/me/orders`
 - **Local pickup** — 25-mile radius, Mapbox pickup maps, PostGIS-backed geo
-- **Watchlist, Follows & Feed** — watch listings, follow sellers, personalized feed
+- **Watchlist, Follows, Saved Searches & Feed** — watch listings (live heart state), follow sellers (hydrated follow state + follower counts), save searches, personalized feed
+- **Double-blind reviews** — both parties rate across 8 dimensions; neither review publishes until *both* are submitted (no retaliation bias), then they surface on each profile
 - **City selector** — best-in-class market picker: use-my-location (→ nearest launched market by haversine), recent picks, nearby markets, and type-to-search; only launched cities surface ("more cities coming soon")
 
 ### AI-Powered Job Posting
