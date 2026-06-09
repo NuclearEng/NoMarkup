@@ -712,6 +712,8 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "maximum revision count reached")
 	case errors.Is(err, domain.ErrInvalidStatusTransition):
 		return status.Error(codes.FailedPrecondition, "invalid status transition")
+	case errors.Is(err, domain.ErrGuaranteeNotCompleted):
+		return status.Error(codes.FailedPrecondition, "guarantee claims require a completed contract")
 	case errors.Is(err, domain.ErrJobNotFound):
 		return status.Error(codes.NotFound, "job not found")
 	case errors.Is(err, domain.ErrDisputeNotFound):

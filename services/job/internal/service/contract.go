@@ -501,6 +501,12 @@ func (s *ContractService) OpenDispute(
 	if contract.Status != "active" && contract.Status != "completed" {
 		return nil, fmt.Errorf("open dispute: %w", domain.ErrInvalidStatusTransition)
 	}
+	// A NoMarkup Guarantee claim covers delivered work, so it requires a
+	// COMPLETED contract. A regular mid-job dispute may be opened while active,
+	// but a guarantee claim on an active, never-completed contract is invalid.
+	if isGuaranteeClaim && contract.Status != "completed" {
+		return nil, fmt.Errorf("open dispute: %w", domain.ErrGuaranteeNotCompleted)
+	}
 
 	dispute := &domain.Dispute{
 		ContractID:       contractID,

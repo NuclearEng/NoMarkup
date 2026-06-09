@@ -18,6 +18,7 @@ var (
 	ErrMilestoneNotFound       = errors.New("milestone not found")
 	ErrMaxRevisions            = errors.New("maximum revision count reached")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
+	ErrGuaranteeNotCompleted   = errors.New("guarantee claims require a completed contract")
 	ErrDisputeNotFound         = errors.New("dispute not found")
 	ErrDisputeAlreadyResolved  = errors.New("dispute is already resolved")
 	ErrInvalidResolutionType   = errors.New("invalid resolution type")
