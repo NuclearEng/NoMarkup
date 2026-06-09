@@ -140,7 +140,7 @@ export default function OrderDetailPage() {
           }
           className="capitalize"
         >
-          {order.status.replace(/_/g, ' ')}
+          {(order.status ?? '').replace(/_/g, ' ')}
         </Badge>
       </div>
 

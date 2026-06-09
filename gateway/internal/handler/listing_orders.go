@@ -617,23 +617,77 @@ func (h *ListingOrdersHandler) FileListingDispute(w http.ResponseWriter, r *http
 
 // orderResponse is the read shape returned by GetOrder / ListMyOrders.
 // Money is integer cents (per CLAUDE.md). Nullable DB columns are emitted
-// as empty strings / zero so the JSON shape is stable for every caller.
+// as JSON null (pointer fields) so the web ListingOrder type can guard them.
+//
+// The projection JOINs listings (title, photo, pickup location) and the
+// seller's users row (display_name) so the order-detail page has everything
+// it needs in one read. Several fields are dual-emitted under both the raw
+// DB name (back-compat for existing consumers) and the name the web
+// ListingOrder type expects:
+//   - order id        → order_id (legacy) AND id (web)
+//   - escrow_status   → escrow_status (legacy) AND status (web, mapped to the
+//     pending/paid/picked_up/completed/disputed/cancelled lifecycle)
+//   - fee_cents       → fee_cents (legacy) AND platform_fee_cents (web)
+//   - released_at     → released_at (legacy) AND completed_at (web)
+//   - pickup_confirmed_at → pickup_confirmed_at (legacy) AND picked_up_at (web)
 type orderResponse struct {
-	OrderID           string `json:"order_id"`
-	ListingID         string `json:"listing_id"`
-	BuyerID           string `json:"buyer_id"`
-	SellerID          string `json:"seller_id"`
-	EscrowStatus      string `json:"escrow_status"`
-	AmountCents       int64  `json:"amount_cents"`
-	FeeCents          int64  `json:"fee_cents"`
-	SellerPayoutCents int64  `json:"seller_payout_cents"`
-	PaymentIntentID   string `json:"payment_intent_id"`
-	DisputeID         string `json:"dispute_id,omitempty"`
-	PickupConfirmedAt string `json:"pickup_confirmed_at,omitempty"`
-	SellerConfirmedAt string `json:"seller_confirmed_at,omitempty"`
-	ReleasedAt        string `json:"released_at,omitempty"`
-	CreatedAt         string `json:"created_at"`
-	UpdatedAt         string `json:"updated_at"`
+	ID                string  `json:"id"`
+	OrderID           string  `json:"order_id"`
+	ListingID         string  `json:"listing_id"`
+	ListingTitle      string  `json:"listing_title"`
+	ListingPhotoURL   *string `json:"listing_photo_url"`
+	BuyerID           string  `json:"buyer_id"`
+	SellerID          string  `json:"seller_id"`
+	SellerDisplayName string  `json:"seller_display_name"`
+	PickupAddress     string  `json:"pickup_address"`
+	PickupZip         string  `json:"pickup_zip"`
+	PickupCity        *string `json:"pickup_city"`
+	PickupState       *string `json:"pickup_state"`
+	EscrowStatus      string  `json:"escrow_status"`
+	Status            string  `json:"status"`
+	AmountCents       int64   `json:"amount_cents"`
+	FeeCents          int64   `json:"fee_cents"`
+	PlatformFeeCents  int64   `json:"platform_fee_cents"`
+	SellerPayoutCents int64   `json:"seller_payout_cents"`
+	PaymentIntentID   string  `json:"payment_intent_id"`
+	DisputeID         string  `json:"dispute_id,omitempty"`
+	ChannelID         *string `json:"channel_id"`
+	// paid_at is the moment escrow was funded. listing_orders has no
+	// dedicated paid_at column — an order row only exists once it is funded
+	// (escrow_status starts at 'held'), so created_at is the funding time.
+	PaidAt              *string `json:"paid_at"`
+	PickupConfirmedAt   *string `json:"pickup_confirmed_at"`
+	PickedUpAt          *string `json:"picked_up_at"`
+	SellerConfirmedAt   *string `json:"seller_confirmed_at"`
+	ReleasedAt          *string `json:"released_at"`
+	CompletedAt         *string `json:"completed_at"`
+	DisputeWindowEndsAt *string `json:"dispute_window_ends_at"`
+	CreatedAt           string  `json:"created_at"`
+	UpdatedAt           string  `json:"updated_at"`
+}
+
+// escrowToOrderStatus maps the listing_orders.escrow_status state machine onto
+// the buyer-facing lifecycle the web ListingOrder type uses
+// (pending/paid/picked_up/completed/disputed/cancelled). An unknown DB value
+// falls back to "pending" rather than emitting an empty string (the page
+// renders the status, so it must never be blank).
+func escrowToOrderStatus(escrow string) string {
+	switch escrow {
+	case "pending_payment":
+		return "pending"
+	case "held":
+		return "paid"
+	case "pickup_confirmed":
+		return "picked_up"
+	case "released":
+		return "completed"
+	case "disputed":
+		return "disputed"
+	case "refunded", "partially_refunded":
+		return "cancelled"
+	default:
+		return "pending"
+	}
 }
 
 // nullTimeRFC3339 renders a nullable timestamp as RFC3339, or "" if NULL.
@@ -644,52 +698,114 @@ func nullTimeRFC3339(t sql.NullTime) string {
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
+// nullTimeRFC3339Ptr renders a nullable timestamp as an RFC3339 string
+// pointer, or nil if NULL — so it serialises to JSON null rather than "".
+func nullTimeRFC3339Ptr(t sql.NullTime) *string {
+	if !t.Valid {
+		return nil
+	}
+	s := t.Time.UTC().Format(time.RFC3339)
+	return &s
+}
+
+// nullStringPtr returns a *string for a sql.NullString — nil (→ JSON null)
+// when the column is NULL, otherwise a pointer to the value.
+func nullStringPtr(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	v := s.String
+	return &v
+}
+
 // scanOrder maps a listing_orders row (in the canonical column order used by
 // orderSelectColumns) onto an orderResponse. Shared by GetOrder and
 // ListMyOrders so the read shape stays identical across both endpoints.
 func scanOrder(row pgx.Row) (orderResponse, error) {
 	var (
-		id, listingID, buyerID, sellerID, escrowStatus string
-		amountCents, feeCents, sellerPayoutCents       int64
-		paymentIntentID, disputeID                     sql.NullString
-		pickupConfirmedAt, sellerConfirmedAt           sql.NullTime
-		releasedAt, createdAt, updatedAt               sql.NullTime
+		id, listingID, buyerID, sellerID, escrowStatus  string
+		amountCents, feeCents, sellerPayoutCents        int64
+		listingTitle, pickupAddress, pickupZip          string
+		sellerDisplayName                               string
+		listingPhotoURL, pickupCity, pickupState        sql.NullString
+		paymentIntentID, disputeID                      sql.NullString
+		pickupConfirmedAt, sellerConfirmedAt            sql.NullTime
+		releasedAt, autoReleaseAt, createdAt, updatedAt sql.NullTime
 	)
 	if err := row.Scan(
 		&id, &listingID, &buyerID, &sellerID, &escrowStatus,
 		&amountCents, &feeCents, &sellerPayoutCents,
+		&listingTitle, &listingPhotoURL,
+		&sellerDisplayName,
+		&pickupAddress, &pickupZip, &pickupCity, &pickupState,
 		&paymentIntentID, &disputeID,
-		&pickupConfirmedAt, &sellerConfirmedAt, &releasedAt,
+		&pickupConfirmedAt, &sellerConfirmedAt, &releasedAt, &autoReleaseAt,
 		&createdAt, &updatedAt,
 	); err != nil {
 		return orderResponse{}, err
 	}
 	return orderResponse{
+		ID:                id,
 		OrderID:           id,
 		ListingID:         listingID,
+		ListingTitle:      listingTitle,
+		ListingPhotoURL:   nullStringPtr(listingPhotoURL),
 		BuyerID:           buyerID,
 		SellerID:          sellerID,
+		SellerDisplayName: sellerDisplayName,
+		PickupAddress:     pickupAddress,
+		PickupZip:         pickupZip,
+		PickupCity:        nullStringPtr(pickupCity),
+		PickupState:       nullStringPtr(pickupState),
 		EscrowStatus:      escrowStatus,
+		Status:            escrowToOrderStatus(escrowStatus),
 		AmountCents:       amountCents,
 		FeeCents:          feeCents,
+		PlatformFeeCents:  feeCents,
 		SellerPayoutCents: sellerPayoutCents,
 		PaymentIntentID:   paymentIntentID.String,
 		DisputeID:         disputeID.String,
-		PickupConfirmedAt: nullTimeRFC3339(pickupConfirmedAt),
-		SellerConfirmedAt: nullTimeRFC3339(sellerConfirmedAt),
-		ReleasedAt:        nullTimeRFC3339(releasedAt),
-		CreatedAt:         nullTimeRFC3339(createdAt),
-		UpdatedAt:         nullTimeRFC3339(updatedAt),
+		// listing_orders carries no chat channel reference (the marketplace
+		// chat channel is keyed elsewhere); emit null so the page shows its
+		// "chat opens once pickup is confirmed" affordance.
+		ChannelID: nil,
+		// An order row only exists once escrow is funded, so created_at is the
+		// funding (paid) time.
+		PaidAt:              nullTimeRFC3339Ptr(createdAt),
+		PickupConfirmedAt:   nullTimeRFC3339Ptr(pickupConfirmedAt),
+		PickedUpAt:          nullTimeRFC3339Ptr(pickupConfirmedAt),
+		SellerConfirmedAt:   nullTimeRFC3339Ptr(sellerConfirmedAt),
+		ReleasedAt:          nullTimeRFC3339Ptr(releasedAt),
+		CompletedAt:         nullTimeRFC3339Ptr(releasedAt),
+		DisputeWindowEndsAt: nullTimeRFC3339Ptr(autoReleaseAt),
+		CreatedAt:           nullTimeRFC3339(createdAt),
+		UpdatedAt:           nullTimeRFC3339(updatedAt),
 	}, nil
 }
 
-// orderSelectColumns is the canonical projection consumed by scanOrder.
+// orderSelectColumns is the canonical projection consumed by scanOrder. It
+// must be SELECTed against orderSelectFrom (which provides the o/l/su/zc
+// aliases). The LEFT JOINs make listing photo + zip city/state optional so a
+// listing with no photo or an unknown zip still returns the order.
 const orderSelectColumns = `
-	id::text, listing_id::text, buyer_id::text, seller_id::text, escrow_status,
-	amount_cents, fee_cents, seller_payout_cents,
-	payment_intent_id, dispute_id::text,
-	pickup_confirmed_at, seller_confirmed_at, released_at,
-	created_at, updated_at`
+	o.id::text, o.listing_id::text, o.buyer_id::text, o.seller_id::text, o.escrow_status,
+	o.amount_cents, o.fee_cents, o.seller_payout_cents,
+	l.title,
+	(SELECT lp.url FROM listing_photos lp
+	   WHERE lp.listing_id = l.id ORDER BY lp.sort_order ASC, lp.created_at ASC LIMIT 1),
+	su.display_name,
+	l.pickup_address, l.pickup_zip_code, zc.city, zc.state,
+	o.payment_intent_id, o.dispute_id::text,
+	o.pickup_confirmed_at, o.seller_confirmed_at, o.released_at, o.auto_release_at,
+	o.created_at, o.updated_at`
+
+// orderSelectFrom is the FROM/JOIN clause that backs orderSelectColumns.
+// Parameterized callers append their own WHERE/ORDER BY.
+const orderSelectFrom = `
+	FROM listing_orders o
+	JOIN listings l ON l.id = o.listing_id
+	JOIN users su ON su.id = o.seller_id
+	LEFT JOIN zip_codes zc ON zc.zip = l.pickup_zip_code`
 
 // GetOrder handles GET /api/v1/orders/{id}.
 //
@@ -712,7 +828,7 @@ func (h *ListingOrdersHandler) GetOrder(w http.ResponseWriter, r *http.Request) 
 	}
 
 	order, err := scanOrder(h.db.QueryRow(r.Context(),
-		`SELECT `+orderSelectColumns+` FROM listing_orders WHERE id = $1`, orderID))
+		`SELECT `+orderSelectColumns+orderSelectFrom+` WHERE o.id = $1`, orderID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "order not found")
@@ -754,10 +870,9 @@ func (h *ListingOrdersHandler) ListMyOrders(w http.ResponseWriter, r *http.Reque
 	}
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT `+orderSelectColumns+`
-		   FROM listing_orders
-		  WHERE buyer_id = $1 OR seller_id = $1
-		  ORDER BY created_at DESC`, claims.UserID)
+		`SELECT `+orderSelectColumns+orderSelectFrom+`
+		  WHERE o.buyer_id = $1 OR o.seller_id = $1
+		  ORDER BY o.created_at DESC`, claims.UserID)
 	if err != nil {
 		slog.Error("list my orders: query", "user_id", claims.UserID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
