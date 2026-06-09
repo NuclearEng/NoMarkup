@@ -1,7 +1,7 @@
 'use client';
 
 import { Package, SlidersHorizontal, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ListingFilters } from '@/components/marketplace/ListingFilters';
 import { RecentlyViewed } from '@/components/marketplace/RecentlyViewed';
@@ -59,6 +59,15 @@ export function ListingBrowseClient({
   );
   const [filters, setFilters] = useState<SearchListingsParams>(seedFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Time-relative bucketing depends on Date.now(), which differs between the
+  // server render and client hydration and would reshuffle the grid (hydration
+  // mismatch). Gate it behind a mounted flag: server + first client paint use a
+  // deterministic time (everything buckets as "later"), then we recompute the
+  // real buckets after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Seed only the initial-filter query so first paint renders the server grid.
   // When `filters` changes the query key changes — no seed there — and TanStack
@@ -95,7 +104,9 @@ export function ListingBrowseClient({
   // and the bucket labels follow whatever the user last fetched. The per-card
   // CountdownClock handles second-by-second drift.
   const buckets = useMemo(() => {
-    const now = Date.now();
+    // Before mount, now=0 → every auction buckets as "later", so the server and
+    // first client render produce identical markup. After mount it's real time.
+    const now = mounted ? Date.now() : 0;
     const all = (data?.listings ?? []) as Array<Listing & { watcher_count?: number }>;
     const critical: typeof all = [];
     const urgent: typeof all = [];
@@ -107,7 +118,7 @@ export function ListingBrowseClient({
       else later.push(l);
     }
     return { critical, urgent, later };
-  }, [data]);
+  }, [data, mounted]);
 
   const closingSoonCount = buckets.critical.length + buckets.urgent.length;
   const totalWatchers = (data?.listings ?? []).reduce(
