@@ -529,7 +529,17 @@ func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request
 	grpcReq := &userv1.SearchProvidersRequest{}
 
 	if catIDs := q.Get("category_ids"); catIDs != "" {
-		grpcReq.CategoryIds = splitCommas(catIDs)
+		ids := splitCommas(catIDs)
+		// The category filter runs as `category_id = ANY($n)` against a uuid
+		// column; a non-UUID value makes Postgres fail to parse and 500s. Reject
+		// malformed ids at the boundary with a 400.
+		for _, id := range ids {
+			if !isValidUUID(id) {
+				writeError(w, http.StatusBadRequest, "invalid category id")
+				return
+			}
+		}
+		grpcReq.CategoryIds = ids
 	}
 
 	if lat := q.Get("latitude"); lat != "" {
