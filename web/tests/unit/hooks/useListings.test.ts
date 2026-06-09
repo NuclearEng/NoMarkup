@@ -510,6 +510,7 @@ describe('useListingOrder / useConfirmPickup / useDisputeOrder', () => {
     channel_id: 'ch-1',
     paid_at: new Date().toISOString(),
     picked_up_at: null,
+    seller_confirmed_at: null,
     completed_at: null,
     dispute_window_ends_at: null,
     created_at: new Date().toISOString(),
@@ -528,8 +529,8 @@ describe('useListingOrder / useConfirmPickup / useDisputeOrder', () => {
     expect(result.current.data?.id).toBe('o-1');
   });
 
-  it('useConfirmPickup posts the confirm endpoint', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ order: mockOrder });
+  it('useConfirmPickup posts the confirm endpoint and reports escrow release when both confirmed', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ escrow_status: 'released', both_confirmed: true });
     const { result } = renderHook(() => useConfirmPickup(), {
       wrapper: createWrapper(queryClient),
     });
@@ -539,6 +540,23 @@ describe('useListingOrder / useConfirmPickup / useDisputeOrder', () => {
     });
     expect(api.post).toHaveBeenCalledWith('/api/v1/orders/o-1/confirm-pickup');
     expect(toastSuccess).toHaveBeenCalledWith('Pickup confirmed — escrow released to seller');
+  });
+
+  it('useConfirmPickup reports a waiting state when the seller has not confirmed yet', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      escrow_status: 'pickup_confirmed',
+      both_confirmed: false,
+    });
+    const { result } = renderHook(() => useConfirmPickup(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate('o-1');
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(toastSuccess).toHaveBeenCalledWith(
+      'Pickup confirmed — waiting on the seller to confirm before escrow releases',
+    );
   });
 
   it('useDisputeOrder posts the file-dispute endpoint with reason enum + description', async () => {

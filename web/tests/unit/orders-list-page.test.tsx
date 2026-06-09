@@ -85,6 +85,7 @@ function makeOrder(over: Partial<ListingOrder>): ListingOrder {
     channel_id: null,
     paid_at: null,
     picked_up_at: null,
+    seller_confirmed_at: null,
     completed_at: null,
     dispute_window_ends_at: null,
     created_at: '2026-06-01T00:00:00Z',

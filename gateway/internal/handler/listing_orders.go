@@ -182,8 +182,16 @@ func (h *ListingOrdersHandler) ConfirmPickup(w http.ResponseWriter, r *http.Requ
 	// wait for the seller's call.
 	bothConfirmed := sellerConfirmedAt.Valid
 	nextStatus := "pickup_confirmed"
+	// When the handshake completes synchronously we stamp released_at so the
+	// order is a fully-formed 'released' row (not a "released with NULL
+	// released_at" zombie). This keeps the buyer-facing completed_at /
+	// released_at non-NULL and matches the auto-release path's stamp. The
+	// actual Stripe transfer is still reconciled by the payment-service
+	// worker keyed on the released state.
+	var releasedAt interface{}
 	if bothConfirmed {
 		nextStatus = "released"
+		releasedAt = now
 	}
 
 	if _, err := tx.Exec(r.Context(), `
@@ -193,10 +201,11 @@ func (h *ListingOrdersHandler) ConfirmPickup(w http.ResponseWriter, r *http.Requ
 		       seller_payout_cents = $4,
 		       handoff_photo_url = COALESCE(NULLIF($5, ''), handoff_photo_url),
 		       selfie_url        = COALESCE(NULLIF($6, ''), selfie_url),
+		       released_at = COALESCE($7, released_at),
 		       updated_at = now()
 		 WHERE id = $1`,
 		orderID, nextStatus, now, sellerPayout,
-		body.HandoffPhotoURL, body.SelfieURL,
+		body.HandoffPhotoURL, body.SelfieURL, releasedAt,
 	); err != nil {
 		slog.Error("confirm pickup: update", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -303,17 +312,24 @@ func (h *ListingOrdersHandler) SellerConfirm(w http.ResponseWriter, r *http.Requ
 	// completes the handshake — flip to 'released'.
 	nextStatus := escrowStatus
 	bothConfirmed := pickupConfirmedAt.Valid
+	// Stamp released_at only when this seller-side ack completes the
+	// handshake (buyer already confirmed → flip to 'released'). Mirrors the
+	// buyer-side completion in ConfirmPickup so a synchronously-released
+	// order always carries a release timestamp.
+	var releasedAt interface{}
 	if bothConfirmed && escrowStatus == "pickup_confirmed" {
 		nextStatus = "released"
+		releasedAt = now
 	}
 
 	if _, err := tx.Exec(r.Context(), `
 		UPDATE listing_orders
 		   SET seller_confirmed_at = $2,
 		       escrow_status = $3,
+		       released_at = COALESCE($4, released_at),
 		       updated_at = now()
 		 WHERE id = $1`,
-		orderID, now, nextStatus,
+		orderID, now, nextStatus, releasedAt,
 	); err != nil {
 		slog.Error("seller confirm: update", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")

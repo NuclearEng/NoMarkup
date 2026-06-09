@@ -394,9 +394,18 @@ export function useConfirmPickup() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (orderId: string) =>
-      api.post<{ order: ListingOrder }>(`/api/v1/orders/${orderId}/confirm-pickup`),
-    onSuccess: (_data, orderId) => {
-      toast.success('Pickup confirmed — escrow released to seller');
+      api.post<{ escrow_status: string; both_confirmed: boolean }>(
+        `/api/v1/orders/${orderId}/confirm-pickup`,
+      ),
+    onSuccess: (data, orderId) => {
+      // Escrow only releases once BOTH parties confirm. If the seller hasn't
+      // confirmed yet the buyer's confirmation is recorded but funds stay in
+      // escrow — don't claim they were released.
+      toast.success(
+        data.both_confirmed
+          ? 'Pickup confirmed — escrow released to seller'
+          : 'Pickup confirmed — waiting on the seller to confirm before escrow releases',
+      );
       void qc.invalidateQueries({ queryKey: ['listingOrders', orderId] });
     },
     onError: explainListingFailure('Failed to confirm pickup'),

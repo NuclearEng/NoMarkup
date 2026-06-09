@@ -41,7 +41,31 @@ const (
 
 	// minBidIncrement: smallest legal increment over the current high bid.
 	listingMinIncrementCents int64 = 100
+
+	// listingPlatformFeeBps is the marketplace platform fee in basis points.
+	// v1 = 5% rounded up, identical to the canonical auction-close path in
+	// services/job/internal/repository/listing_repo.go (feeBps = 500). Every
+	// closeout path (auction win, buy-now, accepted offer) MUST charge the
+	// same fee so the platform-revenue invariant in
+	// docs/operations/marketplace-escrow.md holds — the fee is permanent
+	// platform revenue and the seller payout is amount − fee.
+	listingPlatformFeeBps int64 = 500
 )
+
+// listingPlatformFeeCents computes the platform fee on a closeout amount,
+// rounding any fractional cent UP (so the platform never under-charges).
+// Mirrors the auction-close computation exactly. amountCents must be > 0;
+// a non-positive amount yields 0.
+func listingPlatformFeeCents(amountCents int64) int64 {
+	if amountCents <= 0 {
+		return 0
+	}
+	fee := amountCents * listingPlatformFeeBps / 10000
+	if amountCents*listingPlatformFeeBps%10000 != 0 {
+		fee++
+	}
+	return fee
+}
 
 type placeListingBidRequest struct {
 	AmountCents    int64  `json:"amount_cents"`
@@ -1133,15 +1157,18 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the escrow order row. The pickup-confirmation flow at
-	// /api/v1/orders/{id}/confirm-pickup takes over from here.
+	// /api/v1/orders/{id}/confirm-pickup takes over from here. The platform
+	// fee is charged identically to the auction-close path — buy-now is not
+	// a fee-free closeout.
+	feeCents := listingPlatformFeeCents(buyNowCents.Int64)
 	var orderID string
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO listing_orders (
 			listing_id, seller_id, buyer_id,
 			amount_cents, fee_cents, escrow_status
-		) VALUES ($1, $2, $3, $4, 0, 'held')
+		) VALUES ($1, $2, $3, $4, $5, 'held')
 		RETURNING id`,
-		id, sellerID, claims.UserID, buyNowCents.Int64,
+		id, sellerID, claims.UserID, buyNowCents.Int64, feeCents,
 	).Scan(&orderID)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "buy-now: insert listing_orders failed", "error", err)

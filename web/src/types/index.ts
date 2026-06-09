@@ -2461,6 +2461,11 @@ export interface ListingOrder {
   channel_id: string | null;
   paid_at: string | null;
   picked_up_at: string | null;
+  // seller_confirmed_at is the seller half of the mutual pickup handshake
+  // (set by POST /orders/{id}/seller-confirm). picked_up_at is the buyer
+  // half (POST /orders/{id}/confirm-pickup). Escrow releases only once both
+  // are set; the order page uses them to gate each party's confirm button.
+  seller_confirmed_at: string | null;
   completed_at: string | null;
   dispute_window_ends_at: string | null;
   created_at: string;

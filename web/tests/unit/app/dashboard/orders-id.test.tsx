@@ -67,6 +67,7 @@ const mockOrder: ListingOrder = {
   channel_id: 'ch-1',
   paid_at: new Date().toISOString(),
   picked_up_at: null,
+  seller_confirmed_at: null,
   completed_at: null,
   dispute_window_ends_at: null,
   created_at: new Date().toISOString(),
@@ -121,6 +122,21 @@ describe('OrderDetailPage', () => {
     const btn = screen.getByRole('button', { name: /Confirm pickup/i });
     fireEvent.click(btn);
     expect(confirmPickup.mutate).toHaveBeenCalledWith('o-1');
+  });
+
+  it('disables the confirm button and shows a waiting label once the buyer has confirmed', () => {
+    // Buyer already confirmed (picked_up_at set) but the seller has not — the
+    // order sits at picked_up. The buyer must not see an enabled confirm
+    // button (clicking it would 409 server-side).
+    orderState.data = {
+      ...mockOrder,
+      status: LISTING_ORDER_STATUS.PICKED_UP,
+      picked_up_at: new Date().toISOString(),
+    };
+    render(withQueryClient(createElement(OrderDetailPage)));
+    const btn = screen.getByRole('button', { name: /Waiting for the other party/i });
+    if (!(btn instanceof HTMLButtonElement)) throw new Error('expected button');
+    expect(btn.disabled).toBe(true);
   });
 
   it('renders the order summary with formatted totals', () => {

@@ -99,8 +99,19 @@ export default function OrderDetailPage() {
   // (/confirm-pickup is buyer-only and 403s the seller). Escrow releases once
   // both sides have confirmed.
   const isSeller = currentUserId !== undefined && currentUserId === order.seller_id;
-  const canConfirmPickup =
+  // Each party confirms once. Track whether THIS caller has already confirmed
+  // their half so we don't show an enabled button that 409s on re-click:
+  //   - buyer half  → picked_up_at (set by /confirm-pickup)
+  //   - seller half → seller_confirmed_at (set by /seller-confirm)
+  const alreadyConfirmed = isSeller
+    ? order.seller_confirmed_at !== null
+    : order.picked_up_at !== null;
+  // The order is still open for confirmation while escrow is held (paid) or
+  // the buyer has confirmed but the seller has not (picked_up). Once released
+  // (completed) or disputed, neither party can confirm.
+  const handshakeOpen =
     order.status === LISTING_ORDER_STATUS.PAID || order.status === LISTING_ORDER_STATUS.PICKED_UP;
+  const canConfirmPickup = handshakeOpen && !alreadyConfirmed;
   const canDispute =
     order.status === LISTING_ORDER_STATUS.PICKED_UP &&
     order.dispute_window_ends_at !== null &&
@@ -224,9 +235,11 @@ export default function OrderDetailPage() {
                 <CheckCircle className="mr-2 h-4 w-4" aria-hidden="true" />
                 {order.status === LISTING_ORDER_STATUS.COMPLETED
                   ? 'Pickup confirmed'
-                  : isSeller
-                    ? 'Confirm handoff'
-                    : 'Confirm pickup (releases escrow)'}
+                  : alreadyConfirmed
+                    ? 'Waiting for the other party'
+                    : isSeller
+                      ? 'Confirm handoff'
+                      : 'Confirm pickup (releases escrow)'}
               </Button>
 
               <Button

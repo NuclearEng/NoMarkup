@@ -615,15 +615,19 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 			slog.WarnContext(r.Context(), "accept offer: sibling reject failed (non-fatal)", "error", err)
 		}
 
-		// Mint the order — same shape as buy-now.
+		// Mint the order — same shape as buy-now, including the platform fee.
+		// An accepted offer is a real closeout and is charged the same 5%
+		// platform fee as an auction win / buy-now (see
+		// listingPlatformFeeCents); it is not a fee-free path.
+		feeCents := listingPlatformFeeCents(amountCents)
 		var orderID string
 		if err := tx.QueryRow(r.Context(), `
 			INSERT INTO listing_orders (
 				listing_id, seller_id, buyer_id,
 				amount_cents, fee_cents, escrow_status
-			) VALUES ($1, $2, $3, $4, 0, 'held')
+			) VALUES ($1, $2, $3, $4, $5, 'held')
 			RETURNING id::text`,
-			listingID, sellerID, buyerID, amountCents,
+			listingID, sellerID, buyerID, amountCents, feeCents,
 		).Scan(&orderID); err != nil {
 			slog.ErrorContext(r.Context(), "accept offer: insert listing_orders failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to create order")
