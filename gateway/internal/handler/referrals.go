@@ -249,11 +249,19 @@ func (h *ReferralsHandler) RedeemReferralCode(w http.ResponseWriter, r *http.Req
 	// legacy state machine; activation flips it to 'first_transaction' →
 	// 'credited' on the redeemer's first completed transaction (handled by
 	// a separate worker — out of scope for this handler).
+	//
+	// referral_code is UNIQUE (migration 001), and the referrer's canonical
+	// "issued" row already holds `code`. Reusing `code` on the binding row
+	// would always collide with that canonical row → every redeem would 409.
+	// The binding row only needs attribution (referrer_id, referred_id), so
+	// we give it a derived, globally-unique code: the shared code plus the
+	// redeemer's id. The canonical issued row keeps the shareable `code`.
+	bindingCode := code + ":" + claims.UserID
 	_, err := h.db.Exec(r.Context(), `
 		INSERT INTO referrals
 		  (referrer_id, referred_id, referral_code, referral_type, status, credit_cents, expires_at)
 		VALUES ($1, $2, $3, 'customer', 'signed_up', $4, now() + interval '90 days')`,
-		referrerID, claims.UserID, code, referralDefaultCreditCents,
+		referrerID, claims.UserID, bindingCode, referralDefaultCreditCents,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {

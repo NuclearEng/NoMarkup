@@ -28,7 +28,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { useEnableRole } from '@/hooks/useProfile';
-import { getApiErrorMessage } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { registerSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
@@ -53,10 +53,26 @@ export function RegisterForm() {
     },
   });
 
+  // A referral code arrives via the share link (/register?ref=CODE). After a
+  // successful registration the new account is authenticated, so we redeem the
+  // code to attribute the referral. Best-effort: a bad/expired code or a
+  // network blip must never block account creation, so failures are swallowed.
+  async function attributeReferral() {
+    if (typeof window === 'undefined') return;
+    const code = new URLSearchParams(window.location.search).get('ref')?.trim();
+    if (!code) return;
+    try {
+      await api.post('/api/v1/me/referrals/redeem', { code: code.toUpperCase() });
+    } catch {
+      // Non-fatal: the user can still redeem manually from /me/referrals.
+    }
+  }
+
   async function onSubmit(values: RegisterFormValues) {
     setFormError(null);
     try {
       await register(values.email, values.password, values.displayName);
+      await attributeReferral();
       if (intent === 'provider') {
         await enableRole.mutateAsync(USER_ROLE.PROVIDER);
         router.push('/provider/onboarding');

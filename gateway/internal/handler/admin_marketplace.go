@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -878,19 +879,28 @@ func parseDirectPagination(q map[string][]string, defaultPage, defaultSize, maxS
 	return page, size
 }
 
-// clientIP returns the request remote IP for fraud-trail. We strip the
-// port and fall back to "" (NULL) if it's malformed — listing_reports.ip_address
-// is nullable.
+// clientIP returns the request remote IP for the fraud-trail, stripped of
+// its port. It returns nil (SQL NULL) when the address is empty or not a
+// valid IP — listing_reports.ip_address is a nullable inet, and feeding it a
+// non-inet string (e.g. the bracketed "[::1]" you get from naive last-colon
+// splitting of an IPv6 RemoteAddr) makes the `$n::inet` cast fail with a 500.
+//
+// net.SplitHostPort handles both "127.0.0.1:54321" and "[::1]:54321",
+// returning the host WITHOUT brackets ("::1"), which casts cleanly to inet.
 func clientIP(r *http.Request) interface{} {
 	addr := r.RemoteAddr
 	if addr == "" {
 		return nil
 	}
-	// strip :port if present
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[:i]
-		}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// No port present — treat the whole value as the host.
+		host = addr
 	}
-	return addr
+	if net.ParseIP(host) == nil {
+		// Not a valid IP (e.g. still bracketed, or garbage) — store NULL
+		// rather than 500 on the inet cast.
+		return nil
+	}
+	return host
 }
