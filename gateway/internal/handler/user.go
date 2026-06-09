@@ -136,6 +136,15 @@ func (h *UserHandler) EnableRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid role")
 		return
 	}
+	// Self-service role enablement may grant ONLY customer/provider. A user
+	// must never be able to elevate themselves to admin via this endpoint.
+	// The user-service already rejects role=="admin" (defense in depth), but
+	// we fail closed at the gateway boundary too so the privilege field a
+	// client controls is never forwarded as an admin grant. (§6 authz, §15.)
+	if role == commonv1.UserRole_USER_ROLE_ADMIN {
+		writeError(w, http.StatusForbidden, "admin role cannot be self-assigned")
+		return
+	}
 
 	resp, err := h.userClient.EnableRole(r.Context(), &userv1.EnableRoleRequest{
 		UserId: claims.UserID,
