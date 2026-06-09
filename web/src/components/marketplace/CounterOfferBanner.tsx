@@ -52,7 +52,16 @@ export function CounterOfferBanner({ listingId, className }: CounterOfferBannerP
     return (
       <Card className={className}>
         <CardContent className="p-4 text-sm text-destructive">
-          Failed to load offers.
+          Failed to load offers.{' '}
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            onClick={() => {
+              void offers.refetch();
+            }}
+          >
+            Retry
+          </button>
         </CardContent>
       </Card>
     );
@@ -96,7 +105,7 @@ export function CounterOfferBanner({ listingId, className }: CounterOfferBannerP
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">
+        <CardTitle className="text-base" aria-live="polite">
           Pending offers ({String(open.length)})
         </CardTitle>
       </CardHeader>

@@ -96,12 +96,12 @@ export function useLogCookieConsent() {
   return useMutation({
     mutationFn: (input: CookieConsentInput) =>
       api.post<CookieConsentResponse>('/api/v1/cookie-consent', input),
-    onError: (err: unknown) => {
-      // Banner Save is best-effort — never block the user's session.
-      if (err instanceof ApiError) {
-        // eslint-disable-next-line no-console -- dev-only diagnostic; ApiError already logged upstream
-        console.warn('cookie consent log failed', err.userMessage('cookie consent failed'));
-      }
+    onError: () => {
+      // Banner Save is best-effort — never block the user's session. We
+      // intentionally swallow the error: the consent is already persisted
+      // locally via writeConsentCookie, so a failed server-side audit log
+      // has no user-facing impact and must not surface a toast or a
+      // console line in production (§9/§13). The server logs its own 4xx/5xx.
     },
   });
 }

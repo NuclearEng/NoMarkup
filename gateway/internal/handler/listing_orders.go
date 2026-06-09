@@ -254,6 +254,7 @@ func (h *ListingOrdersHandler) SellerConfirm(w http.ResponseWriter, r *http.Requ
 
 	tx, err := h.db.BeginTx(r.Context(), pgx.TxOptions{})
 	if err != nil {
+		slog.Error("seller confirm: begin tx", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -320,6 +321,7 @@ func (h *ListingOrdersHandler) SellerConfirm(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
+		slog.Error("seller confirm: commit", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -382,6 +384,7 @@ func (h *ListingOrdersHandler) ReportNoShow(w http.ResponseWriter, r *http.Reque
 
 	tx, err := h.db.BeginTx(r.Context(), pgx.TxOptions{})
 	if err != nil {
+		slog.Error("report no-show: begin tx", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -401,6 +404,7 @@ func (h *ListingOrdersHandler) ReportNoShow(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusNotFound, "order not found")
 			return
 		}
+		slog.Error("report no-show: select", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -455,6 +459,7 @@ func (h *ListingOrdersHandler) ReportNoShow(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
+		slog.Error("report no-show: commit", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -528,6 +533,7 @@ func (h *ListingOrdersHandler) FileListingDispute(w http.ResponseWriter, r *http
 
 	tx, err := h.db.BeginTx(r.Context(), pgx.TxOptions{})
 	if err != nil {
+		slog.Error("file dispute: begin tx", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -548,6 +554,7 @@ func (h *ListingOrdersHandler) FileListingDispute(w http.ResponseWriter, r *http
 			writeError(w, http.StatusNotFound, "order not found")
 			return
 		}
+		slog.Error("file dispute: select", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -596,6 +603,7 @@ func (h *ListingOrdersHandler) FileListingDispute(w http.ResponseWriter, r *http
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
+		slog.Error("file dispute: commit", "order_id", orderID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}

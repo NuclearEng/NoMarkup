@@ -284,7 +284,7 @@ function DisputeCard({ dispute }: DisputeCardProps) {
 
 export function GoodsDisputesPanel() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
-  const { data, isLoading, isError } = useAdminGoodsDisputes({
+  const { data, isLoading, isError, refetch } = useAdminGoodsDisputes({
     status: statusFilter,
     page: 1,
     page_size: 50,
@@ -321,7 +321,18 @@ export function GoodsDisputesPanel() {
         <EmptyState
           icon={<AnimatedIllustration type="error" size="sm" />}
           title="Failed to load goods disputes"
-          description="Please try refreshing the page."
+          description="Something went wrong while loading disputes. Check your connection and try again."
+          action={
+            <Button
+              variant="default"
+              className="min-h-[44px]"
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              Retry
+            </Button>
+          }
         />
       ) : isLoading ? (
         <div className="space-y-3" aria-busy="true" aria-label="Loading goods disputes">

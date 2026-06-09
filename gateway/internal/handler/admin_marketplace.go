@@ -507,6 +507,13 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 		return
 	}
 
+	// Negative amounts are never valid — reject before opening a tx so a
+	// malformed body can't persist nonsense (defensive; the client also bounds).
+	if body.RefundToBuyerCents < 0 || body.TransferToSellerCents < 0 {
+		writeError(w, http.StatusBadRequest, "refund and transfer amounts must not be negative")
+		return
+	}
+
 	tx, err := h.db.BeginTx(r.Context(), pgx.TxOptions{})
 	if err != nil {
 		slog.Error("begin tx failed", "error", err)
@@ -514,6 +521,30 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	// Cap the recorded refund at the order's captured amount — server-side, so a
+	// client bypass (or a future caller) can't record a refund larger than what
+	// was paid. The real Stripe refund is independently capped in the payment
+	// service (over-refund guard), but the dispute row drives escrow + audit and
+	// must never claim more than the order total. Fail closed on a missing order.
+	var orderAmountCents int64
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(lo.amount_cents, 0)
+		  FROM marketplace_disputes md
+		  JOIN listing_orders lo ON lo.id = md.listing_order_id
+		 WHERE md.id = $1`, id).Scan(&orderAmountCents); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "goods dispute not found")
+			return
+		}
+		slog.Error("resolve goods dispute: order amount lookup failed", "dispute_id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to resolve")
+		return
+	}
+	if body.RefundToBuyerCents > orderAmountCents {
+		writeError(w, http.StatusUnprocessableEntity, "refund cannot exceed the order amount")
+		return
+	}
 
 	// Update the dispute row — but ONLY if it is not already in a terminal
 	// state. Without this guard an already-resolved dispute could be
