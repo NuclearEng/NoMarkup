@@ -108,6 +108,13 @@ func New(
 
 	// Global middleware stack
 	r.Use(middleware.Recovery)
+	// Route HEAD to the matching GET handler and return headers only. Without
+	// this, chi answers HEAD on a GET-only public route with 405 (or 401 where it
+	// falls through to an authed mount), which breaks CDN cache validation and
+	// uptime monitors that probe public endpoints with HEAD. (chi's built-in
+	// middleware.GetHead misses subrouter-root "/" registrations like
+	// /api/v1/categories and /api/v1/jobs, so we rewrite unconditionally here.)
+	r.Use(headAsGet)
 	r.Use(middleware.Metrics)
 	r.Use(middleware.Logging)
 	r.Use(middleware.CORS(allowedOrigins, production))
@@ -1182,3 +1189,27 @@ func optionalAuth(authMW *middleware.AuthMiddleware, next http.HandlerFunc) http
 		next.ServeHTTP(w, r)
 	}
 }
+
+// headAsGet routes HEAD requests through the matching GET handler and discards
+// the response body, so HEAD returns the same status and headers as GET with no
+// payload. This keeps HEAD working uniformly across directly-registered routes
+// and subrouter-root ("/") registrations, which chi's middleware.GetHead does
+// not. CDNs and uptime monitors rely on HEAD for public cache/health probes.
+func headAsGet(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			r.Method = http.MethodGet
+			next.ServeHTTP(headerOnlyWriter{ResponseWriter: w}, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// headerOnlyWriter swallows the response body so a HEAD request (rewritten to
+// GET by headAsGet) emits status + headers but no payload.
+type headerOnlyWriter struct {
+	http.ResponseWriter
+}
+
+func (h headerOnlyWriter) Write(b []byte) (int, error) { return len(b), nil }
