@@ -461,6 +461,46 @@ func (r *PostgresRepository) CancelJob(ctx context.Context, jobID string, custom
 	return r.GetJob(ctx, jobID)
 }
 
+// categorySubtreeFilter builds a WHERE fragment that matches any job whose
+// category, subcategory, or service-type column falls anywhere within the
+// subtree(s) rooted at the supplied category ids. A recursive CTE expands each
+// id to itself plus all descendants, so filtering by a top-level category (e.g.
+// the `legal` root) correctly includes jobs filed under its children (matter
+// types like Consultation / Contract Review). Without this expansion an exact
+// `IN` match silently drops child-categorized jobs — see the legal landing's
+// "Open legal cases" query, which filters by the legal subtree root.
+//
+// It returns the SQL clause, the positional args to append, and the next free
+// placeholder index. startIdx is the first placeholder number to use.
+func categorySubtreeFilter(categoryIDs []string, startIdx int) (string, []interface{}, int) {
+	placeholders := make([]string, len(categoryIDs))
+	args := make([]interface{}, len(categoryIDs))
+	argIdx := startIdx
+	for i, catID := range categoryIDs {
+		placeholders[i] = fmt.Sprintf("$%d", argIdx)
+		args[i] = catID
+		argIdx++
+	}
+	ph := strings.Join(placeholders, ",")
+	// A correlated EXISTS over a recursive expansion of the requested category
+	// ids. The recursive CTE yields each requested id plus all descendants, and
+	// the row matches if any of the job's three category columns is in that set.
+	// This makes a top-level filter (e.g. the legal root) include child-filed
+	// jobs, which an exact IN match would drop.
+	clause := fmt.Sprintf(
+		`EXISTS (
+			WITH RECURSIVE cat_subtree AS (
+				SELECT id FROM service_categories WHERE id IN (%s)
+				UNION ALL
+				SELECT sc.id FROM service_categories sc
+				JOIN cat_subtree cs ON sc.parent_id = cs.id
+			)
+			SELECT 1 FROM cat_subtree
+			WHERE cat_subtree.id IN (j.category_id, j.subcategory_id, j.service_type_id)
+		)`, ph)
+	return clause, args, argIdx
+}
+
 func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error) {
 	// Build the query dynamically.
 	where := []string{"j.status = 'active'", "j.deleted_at IS NULL"}
@@ -468,14 +508,10 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 	argIdx := 1
 
 	if len(input.CategoryIDs) > 0 {
-		placeholders := make([]string, len(input.CategoryIDs))
-		for i, catID := range input.CategoryIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, catID)
-			argIdx++
-		}
-		where = append(where, fmt.Sprintf("(j.category_id IN (%s) OR j.subcategory_id IN (%s) OR j.service_type_id IN (%s))",
-			strings.Join(placeholders, ","), strings.Join(placeholders, ","), strings.Join(placeholders, ",")))
+		clause, clauseArgs, next := categorySubtreeFilter(input.CategoryIDs, argIdx)
+		where = append(where, clause)
+		args = append(args, clauseArgs...)
+		argIdx = next
 	}
 
 	if input.Latitude != 0 && input.Longitude != 0 && input.RadiusKm > 0 {
@@ -631,16 +667,10 @@ func (r *PostgresRepository) GetJobsOnMap(ctx context.Context, input domain.GetJ
 	}
 
 	if len(input.CategoryIDs) > 0 {
-		placeholders := make([]string, len(input.CategoryIDs))
-		for i, catID := range input.CategoryIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, catID)
-			argIdx++
-		}
-		ph := strings.Join(placeholders, ",")
-		where = append(where, fmt.Sprintf(
-			"(j.category_id IN (%s) OR j.subcategory_id IN (%s) OR j.service_type_id IN (%s))",
-			ph, ph, ph))
+		clause, clauseArgs, next := categorySubtreeFilter(input.CategoryIDs, argIdx)
+		where = append(where, clause)
+		args = append(args, clauseArgs...)
+		argIdx = next
 	}
 
 	if input.MaxPriceCents != nil {

@@ -3,12 +3,26 @@
 import { ArrowRight, Gavel, Scale, ShieldCheck } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { useId, useMemo, useState } from 'react';
 
 import { JobCard } from '@/components/jobs/JobCard';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useCategoryTree } from '@/hooks/useCategories';
 import { useSearchJobs } from '@/hooks/useJobs';
 import type { JobsResponse } from '@/types';
+
+// Sentinel value for the "all practice areas" option. The shadcn Select can't
+// use an empty-string value, so we use an explicit token and translate it back
+// to "no practice-area filter" (browse the whole legal subtree) on change.
+const ALL_PRACTICE_AREAS = 'all';
 
 interface LegalLandingClientProps {
   /** Server-fetched first page of open legal jobs — seeds the browse list so
@@ -35,21 +49,49 @@ const HOW_IT_WORKS = [
 ] as const;
 
 export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandingClientProps) {
+  const practiceAreaSelectId = useId();
+
+  // The practice-area dropdown is sourced from the canonical legal subcategories
+  // (level-2 children of the `legal` root) — the same set the intake form posts
+  // jobs under, so every selectable area maps to jobs that can actually exist.
+  // We deliberately don't invent areas of law that have no category, which would
+  // filter to an empty list. Because the jobs search expands a category to its
+  // whole subtree, selecting a matter type also surfaces its level-3 jobs.
+  const { data: tree } = useCategoryTree();
+  const practiceAreas = useMemo(() => {
+    const legalRoot = tree?.find((c) => c.slug === 'legal');
+    return legalRoot?.children ?? [];
+  }, [tree]);
+
+  // Selected practice area (a legal subcategory id), or the ALL sentinel.
+  const [practiceArea, setPracticeArea] = useState<string>(ALL_PRACTICE_AREAS);
+
+  // The effective category filter: a specific subcategory when chosen, otherwise
+  // the legal subtree root (browse all open legal cases).
+  const filterCategoryId =
+    practiceArea === ALL_PRACTICE_AREAS ? legalCategoryId : practiceArea;
+
+  // Only the unfiltered (root) view matches the server-seeded first page, so we
+  // gate initialData on that to avoid showing root results under a narrowed
+  // filter. Distinct params key a distinct cache entry, so the filtered query
+  // fetches fresh and the root view stays instant.
+  const isRootView = practiceArea === ALL_PRACTICE_AREAS;
+
   // Browse the open legal jobs. Seeded from the server fetch so the first paint
   // is real content. Only enabled query params the legal vertical needs.
   const { data, isLoading, isError, refetch } = useSearchJobs(
     {
       page: 1,
       page_size: 12,
-      ...(legalCategoryId ? { category_id: legalCategoryId } : {}),
+      ...(filterCategoryId ? { category_id: filterCategoryId } : {}),
     },
     // Seed the cache with the server-fetched first page so SSR and the client's
     // first paint render identical data (no skeleton flash, no immediate
-    // refetch). Mirrors the marketplace browse island.
-    { initialData: initialJobs },
+    // refetch). Mirrors the marketplace browse island. Only seed the root view.
+    isRootView ? { initialData: initialJobs } : undefined,
   );
 
-  const jobs = data?.jobs ?? initialJobs.jobs;
+  const jobs = data?.jobs ?? (isRootView ? initialJobs.jobs : []);
 
   // The post-job CTA goes to the dedicated, legal-tailored intake form (not the
   // generic 3-level service-category wizard). The form picks the legal matter
@@ -113,16 +155,45 @@ export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandin
 
       {/* Open legal cases */}
       <section id="open-cases" aria-labelledby="open-cases-heading" className="scroll-mt-20">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <h2 id="open-cases-heading" className="text-2xl font-bold text-zinc-100">
             Open legal cases
           </h2>
-          <Button asChild variant="ghost" className="min-h-[44px]">
-            <Link href={'/jobs' as Route}>
-              See all jobs
-              <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-end gap-3">
+            {practiceAreas.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor={practiceAreaSelectId}
+                  className="text-sm font-medium text-zinc-300"
+                >
+                  Practice area
+                </label>
+                <Select value={practiceArea} onValueChange={setPracticeArea}>
+                  <SelectTrigger
+                    id={practiceAreaSelectId}
+                    className="min-h-[44px] w-56"
+                    aria-label="Filter open legal cases by practice area"
+                  >
+                    <SelectValue placeholder="All practice areas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_PRACTICE_AREAS}>All practice areas</SelectItem>
+                    {practiceAreas.map((area) => (
+                      <SelectItem key={area.id} value={area.id}>
+                        {area.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            <Button asChild variant="ghost" className="min-h-[44px]">
+              <Link href={'/jobs' as Route}>
+                See all jobs
+                <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {isLoading && jobs.length === 0 ? (
