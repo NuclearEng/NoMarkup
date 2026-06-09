@@ -695,6 +695,12 @@ func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]
 	}
 
 	result := map[string]interface{}{
+		// The public provider identifier IS the user id — the profile route is
+		// /api/v1/providers/{id} where {id} is the user id. Expose it as `id` too
+		// so the web's provider cards have a stable React key and link to
+		// /providers/{id} instead of /providers/undefined (broken nav + duplicate
+		// null keys).
+		"id":                 p.GetUserId(),
 		"user_id":            p.GetUserId(),
 		"display_name":       p.GetDisplayName(),
 		"business_name":      p.GetBusinessName(),
