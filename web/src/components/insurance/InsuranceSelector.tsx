@@ -1,6 +1,8 @@
 'use client';
 
 import { CheckCircle2, Loader2, Shield } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -9,12 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useInsuranceProducts, useInsuranceQuote, usePurchaseInsurance } from '@/hooks/useInsurance';
+import { usePaymentMethods } from '@/hooks/usePayments';
 import { formatCents } from '@/lib/utils';
 import type { InsuranceProduct } from '@/types';
 
 interface InsuranceSelectorProps {
   contractId: string;
-  paymentMethodId: string;
   onComplete?: () => void;
   className?: string;
 }
@@ -23,11 +25,13 @@ function InsuranceProductCard({
   product,
   contractId,
   paymentMethodId,
+  canPurchase,
   onPurchased,
 }: {
   product: InsuranceProduct;
   contractId: string;
   paymentMethodId: string;
+  canPurchase: boolean;
   onPurchased: () => void;
 }) {
   const { data: quoteData, isLoading: quoteLoading } = useInsuranceQuote(contractId, product.id);
@@ -115,7 +119,7 @@ function InsuranceProductCard({
         <Button
           className="min-h-[44px] w-full"
           onClick={handlePurchase}
-          disabled={purchaseInsurance.isPending || !quote}
+          disabled={purchaseInsurance.isPending || !quote || !canPurchase}
         >
           {purchaseInsurance.isPending ? (
             <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" />
@@ -133,14 +137,18 @@ function InsuranceProductCard({
 
 export function InsuranceSelector({
   contractId,
-  paymentMethodId,
   onComplete,
   className,
 }: InsuranceSelectorProps) {
   const insuranceEnabled = useFeatureFlag('per_job_insurance');
   const { data: productsData, isLoading, isError } = useInsuranceProducts();
+  const { data: methodsData, isLoading: methodsLoading } = usePaymentMethods();
 
   const products = productsData?.products ?? [];
+  const methods = methodsData?.payment_methods ?? [];
+  // Premium is charged via a Stripe PaymentIntent; we pay it with the customer's
+  // default saved method (or their only method). Mirrors InstallmentPlanSelector.
+  const defaultMethod = methods.find((m) => m.is_default) ?? methods[0];
 
   // Hide the "add insurance" step when the per_job_insurance flag is off. The
   // gateway also enforces this (503), so this is the UX layer that keeps the
@@ -177,13 +185,27 @@ export function InsuranceSelector({
           </p>
         </div>
 
+        {!methodsLoading && !defaultMethod ? (
+          <p className="text-sm text-zinc-300">
+            Add a{' '}
+            <Link
+              href={'/settings/payment-methods' as Route}
+              className="text-[var(--brand-gold)] hover:underline"
+            >
+              payment method
+            </Link>{' '}
+            to purchase insurance for this contract.
+          </p>
+        ) : null}
+
         <div className="grid gap-4 sm:grid-cols-2">
           {products.map((product) => (
             <InsuranceProductCard
               key={product.id}
               product={product}
               contractId={contractId}
-              paymentMethodId={paymentMethodId}
+              paymentMethodId={defaultMethod?.id ?? ''}
+              canPurchase={!!defaultMethod}
               onPurchased={() => {
                 onComplete?.();
               }}

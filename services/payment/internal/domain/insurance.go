@@ -16,6 +16,12 @@ var (
 	ErrClaimExceedsCoverage     = errors.New("claim amount exceeds coverage")
 	ErrClaimNotReviewable       = errors.New("claim is not in reviewable state")
 	ErrClaimantNotPolicyholder  = errors.New("only the policyholder may file a claim against this policy")
+	// ErrInsuranceContractNotFound is returned when the referenced contract does
+	// not exist (or has been soft-deleted).
+	ErrInsuranceContractNotFound = errors.New("contract not found")
+	// ErrContractNotOwned is returned when the authenticated customer does not own
+	// the contract they are trying to insure (payment-integrity / IDOR guard).
+	ErrContractNotOwned = errors.New("contract is not owned by this customer")
 )
 
 // InsuranceProduct represents a type of insurance available on the platform.
@@ -96,12 +102,25 @@ type InsuranceQuote struct {
 }
 
 // PurchaseInsuranceInput holds the data needed to purchase an insurance policy.
+//
+// Only ContractID, ProductID and CustomerID are trusted client inputs.
+// ProviderID and ContractAmountCents are DERIVED server-side from the contract
+// (never trusted from the client) — see InsuranceService.PurchaseInsurance.
 type PurchaseInsuranceInput struct {
 	ContractID string
 	ProductID  string
 	CustomerID string
-	ProviderID string
-	ContractAmountCents int64
+}
+
+// ContractForInsurance is the minimal contract projection the insurance flow
+// needs to verify ownership and derive the premium server-side.
+type ContractForInsurance struct {
+	ID           string
+	CustomerID   string
+	ProviderID   string
+	AmountCents  int64
+	CategorySlug string
+	Status       string
 }
 
 // FileInsuranceClaimInput holds the data needed to file an insurance claim.
@@ -145,6 +164,9 @@ type InsuranceRepository interface {
 	AdminListInsuranceClaims(ctx context.Context, statusFilter string, page, pageSize int) ([]*InsuranceClaim, int, error)
 	UpdateInsuranceClaimReview(ctx context.Context, id string, status string, approvedAmountCents *int64, assessorNotes string, denialReason string, reviewerID string) error
 	UpdateInsuranceClaimPayout(ctx context.Context, id string, payoutCents int64, stripeTransferID string) error
+
+	// Contracts (read-only projection for ownership + premium derivation)
+	GetContractForInsurance(ctx context.Context, contractID string) (*ContractForInsurance, error)
 
 	// Sequences
 	NextPolicyNumber(ctx context.Context) (string, error)

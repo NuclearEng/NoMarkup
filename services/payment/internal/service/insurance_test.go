@@ -29,6 +29,7 @@ type mockInsuranceRepo struct {
 	adminListInsuranceClaimsFn      func(ctx context.Context, statusFilter string, page, pageSize int) ([]*domain.InsuranceClaim, int, error)
 	updateInsuranceClaimReviewFn    func(ctx context.Context, id string, status string, approved *int64, notes, denial, reviewer string) error
 	updateInsuranceClaimPayoutFn    func(ctx context.Context, id string, payoutCents int64, transferID string) error
+	getContractForInsuranceFn       func(ctx context.Context, contractID string) (*domain.ContractForInsurance, error)
 	nextPolicyNumberFn              func(ctx context.Context) (string, error)
 	nextClaimNumberFn               func(ctx context.Context) (string, error)
 }
@@ -116,6 +117,12 @@ func (m *mockInsuranceRepo) UpdateInsuranceClaimPayout(ctx context.Context, id s
 		return m.updateInsuranceClaimPayoutFn(ctx, id, payoutCents, transferID)
 	}
 	return nil
+}
+func (m *mockInsuranceRepo) GetContractForInsurance(ctx context.Context, contractID string) (*domain.ContractForInsurance, error) {
+	if m.getContractForInsuranceFn != nil {
+		return m.getContractForInsuranceFn(ctx, contractID)
+	}
+	return nil, domain.ErrInsuranceContractNotFound
 }
 func (m *mockInsuranceRepo) NextPolicyNumber(ctx context.Context) (string, error) {
 	if m.nextPolicyNumberFn != nil {
@@ -358,10 +365,24 @@ func TestInsuranceService_PurchaseInsurance(t *testing.T) {
 		Active:               true,
 	}
 
+	// ownedContract returns a contract owned by cust-1, with provider prov-1 and a
+	// $10,000 amount, so the derived premium ($150 base) is deterministic.
+	ownedContract := &domain.ContractForInsurance{
+		ID:          "c1",
+		CustomerID:  "cust-1",
+		ProviderID:  "prov-1",
+		AmountCents: 1000000,
+		Status:      "active",
+	}
+
 	t.Run("happy_path_creates_policy_pending_payment", func(t *testing.T) {
 		t.Parallel()
 		var captured *domain.InsurancePolicy
 		repo := &mockInsuranceRepo{
+			getContractForInsuranceFn: func(_ context.Context, _ string) (*domain.ContractForInsurance, error) {
+				c := *ownedContract
+				return &c, nil
+			},
 			getInsuranceProductFn: func(_ context.Context, _ string) (*domain.InsuranceProduct, error) {
 				p := *productActive
 				return &p, nil
@@ -376,11 +397,9 @@ func TestInsuranceService_PurchaseInsurance(t *testing.T) {
 		}
 		svc := newTestInsuranceService(repo)
 		policy, clientSecret, err := svc.PurchaseInsurance(context.Background(), domain.PurchaseInsuranceInput{
-			ContractID:          "c1",
-			ProductID:           "p1",
-			CustomerID:          "cust-1",
-			ProviderID:          "prov-1",
-			ContractAmountCents: 1000000,
+			ContractID: "c1",
+			ProductID:  "p1",
+			CustomerID: "cust-1",
 		})
 		require.NoError(t, err)
 		require.NotNil(t, policy)
@@ -389,20 +408,71 @@ func TestInsuranceService_PurchaseInsurance(t *testing.T) {
 		assert.NotEmpty(t, clientSecret)
 		require.NotNil(t, captured)
 		assert.Equal(t, policy.ID, captured.ID)
+		// Provider + premium are derived from the contract, not from client input.
+		assert.Equal(t, "prov-1", captured.ProviderID, "provider must be derived from the contract")
+		assert.Equal(t, int64(15000), captured.PremiumCents, "$10k × 1.5% premium derived from contract amount")
+		assert.Equal(t, int64(1000000), captured.CoverageAmountCents)
+	})
+
+	t.Run("rejects_non_owned_contract", func(t *testing.T) {
+		t.Parallel()
+		var createCalled bool
+		repo := &mockInsuranceRepo{
+			getContractForInsuranceFn: func(_ context.Context, _ string) (*domain.ContractForInsurance, error) {
+				// Contract belongs to someone else.
+				c := *ownedContract
+				c.CustomerID = "other-customer"
+				return &c, nil
+			},
+			createInsurancePolicyFn: func(_ context.Context, _ *domain.InsurancePolicy) error {
+				createCalled = true
+				return nil
+			},
+		}
+		svc := newTestInsuranceService(repo)
+		_, _, err := svc.PurchaseInsurance(context.Background(), domain.PurchaseInsuranceInput{
+			ContractID: "c1",
+			ProductID:  "p1",
+			CustomerID: "cust-1", // not the contract's customer
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrContractNotOwned)
+		assert.False(t, createCalled, "must not create a policy for a non-owned contract")
+	})
+
+	t.Run("rejects_missing_contract", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockInsuranceRepo{
+			getContractForInsuranceFn: func(_ context.Context, _ string) (*domain.ContractForInsurance, error) {
+				return nil, domain.ErrInsuranceContractNotFound
+			},
+		}
+		svc := newTestInsuranceService(repo)
+		_, _, err := svc.PurchaseInsurance(context.Background(), domain.PurchaseInsuranceInput{
+			ContractID: "missing",
+			ProductID:  "p1",
+			CustomerID: "cust-1",
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrInsuranceContractNotFound)
 	})
 
 	t.Run("propagates_quote_error", func(t *testing.T) {
 		t.Parallel()
 		repo := &mockInsuranceRepo{
+			getContractForInsuranceFn: func(_ context.Context, _ string) (*domain.ContractForInsurance, error) {
+				c := *ownedContract
+				return &c, nil
+			},
 			getInsuranceProductFn: func(_ context.Context, _ string) (*domain.InsuranceProduct, error) {
 				return nil, errors.New("missing")
 			},
 		}
 		svc := newTestInsuranceService(repo)
 		_, _, err := svc.PurchaseInsurance(context.Background(), domain.PurchaseInsuranceInput{
-			ContractID:          "c1",
-			ProductID:           "p1",
-			ContractAmountCents: 100,
+			ContractID: "c1",
+			ProductID:  "p1",
+			CustomerID: "cust-1",
 		})
 		require.Error(t, err)
 	})
@@ -410,6 +480,10 @@ func TestInsuranceService_PurchaseInsurance(t *testing.T) {
 	t.Run("propagates_policy_number_error", func(t *testing.T) {
 		t.Parallel()
 		repo := &mockInsuranceRepo{
+			getContractForInsuranceFn: func(_ context.Context, _ string) (*domain.ContractForInsurance, error) {
+				c := *ownedContract
+				return &c, nil
+			},
 			getInsuranceProductFn: func(_ context.Context, _ string) (*domain.InsuranceProduct, error) {
 				p := *productActive
 				return &p, nil
@@ -420,12 +494,64 @@ func TestInsuranceService_PurchaseInsurance(t *testing.T) {
 		}
 		svc := newTestInsuranceService(repo)
 		_, _, err := svc.PurchaseInsurance(context.Background(), domain.PurchaseInsuranceInput{
-			ContractID:          "c1",
-			ProductID:           "p1",
-			ContractAmountCents: 1000000,
+			ContractID: "c1",
+			ProductID:  "p1",
+			CustomerID: "cust-1",
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "seq exhausted")
+	})
+}
+
+// --- GetQuoteForContract ---
+
+func TestInsuranceService_GetQuoteForContract(t *testing.T) {
+	t.Parallel()
+
+	productActive := &domain.InsuranceProduct{
+		ID:                   "p1",
+		Name:                 "Workmanship",
+		CoverageType:         "workmanship_warranty",
+		BaseRateBPS:          150,
+		MinPremiumCents:      1000,
+		CoverageDurationDays: 365,
+		DeductibleCents:      5000,
+		Active:               true,
+	}
+
+	t.Run("derives_amount_and_category_from_contract", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockInsuranceRepo{
+			getContractForInsuranceFn: func(_ context.Context, _ string) (*domain.ContractForInsurance, error) {
+				return &domain.ContractForInsurance{
+					ID: "c1", CustomerID: "cust-1", ProviderID: "prov-1",
+					AmountCents: 1000000, CategorySlug: "roofing", Status: "active",
+				}, nil
+			},
+			getInsuranceProductFn: func(_ context.Context, _ string) (*domain.InsuranceProduct, error) {
+				p := *productActive
+				return &p, nil
+			},
+		}
+		svc := newTestInsuranceService(repo)
+		q, err := svc.GetQuoteForContract(context.Background(), "p1", "c1")
+		require.NoError(t, err)
+		// $10k × 1.5% = $150 base, × 1.5 (roofing) = $225.
+		assert.Equal(t, int64(22500), q.PremiumCents,
+			"premium must derive from the server-side contract amount and category")
+	})
+
+	t.Run("propagates_missing_contract", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockInsuranceRepo{
+			getContractForInsuranceFn: func(_ context.Context, _ string) (*domain.ContractForInsurance, error) {
+				return nil, domain.ErrInsuranceContractNotFound
+			},
+		}
+		svc := newTestInsuranceService(repo)
+		_, err := svc.GetQuoteForContract(context.Background(), "p1", "missing")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrInsuranceContractNotFound)
 	})
 }
 

@@ -15,7 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useInsurancePolicy } from '@/hooks/useInsurance';
+import { useInsurancePolicy, useInsuranceProducts } from '@/hooks/useInsurance';
 import { cn, formatCents } from '@/lib/utils';
 import type { InsuranceClaimStatus, InsurancePolicyStatus } from '@/types';
 import { INSURANCE_POLICY_STATUS } from '@/types';
@@ -62,6 +62,9 @@ export default function InsurancePolicyDetailPage() {
   const params = useParams<{ id: string }>();
   const policyId = params.id;
   const { data, isLoading, isError } = useInsurancePolicy(policyId);
+  // The policy response is flat (product_id only); resolve the product details
+  // client-side. Guarded so a missing product never crashes the page.
+  const { data: productsData } = useInsuranceProducts();
   const [showClaimForm, setShowClaimForm] = useState(false);
 
   if (isLoading) {
@@ -97,6 +100,13 @@ export default function InsurancePolicyDetailPage() {
   const policy = data.policy;
   const isActive = policy.status === INSURANCE_POLICY_STATUS.ACTIVE;
   const policyStatus = policy.status as InsurancePolicyStatus;
+  // Resolve the product for display. Defensive: if products haven't loaded or
+  // the product is missing, fall back to sensible placeholders rather than
+  // crashing on a nested-field access.
+  const product = productsData?.products.find((p) => p.id === policy.product_id);
+  const productName = product?.name ?? 'Insurance Policy';
+  const productCoverageType = product?.coverage_type ?? '—';
+  const productDescription = product?.description ?? 'Coverage details are unavailable.';
 
   return (
     <PageTransition>
@@ -125,7 +135,7 @@ export default function InsurancePolicyDetailPage() {
                 {POLICY_STATUS_LABELS[policyStatus]}
               </Badge>
             </div>
-            <p className="mt-1 text-zinc-300">{policy.product.name}</p>
+            <p className="mt-1 text-zinc-300">{productName}</p>
           </div>
         </div>
 
@@ -158,7 +168,7 @@ export default function InsurancePolicyDetailPage() {
             <Separator className="bg-white/5" />
             <div className="flex items-center justify-between">
               <span className="text-sm text-zinc-300">Coverage Type</span>
-              <span className="text-sm">{policy.product.coverage_type}</span>
+              <span className="text-sm">{productCoverageType}</span>
             </div>
           </CardContent>
         </Card>
@@ -219,7 +229,7 @@ export default function InsurancePolicyDetailPage() {
             <CardTitle className="gold-text text-base">Product Details</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-zinc-300">{policy.product.description}</p>
+            <p className="text-sm text-zinc-300">{productDescription}</p>
           </CardContent>
         </Card>
       </div>

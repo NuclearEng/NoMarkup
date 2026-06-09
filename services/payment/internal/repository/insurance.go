@@ -408,6 +408,33 @@ func (r *PostgresRepository) UpdateInsuranceClaimPayout(ctx context.Context, id 
 	return nil
 }
 
+// --- Contracts (read-only projection) ---
+
+// GetContractForInsurance loads the minimal contract fields the insurance flow
+// needs to verify ownership and derive the premium server-side. The category
+// slug is best-effort (NULL/empty when the job's category has no slug or the
+// join misses) — the premium calc treats an empty slug as the default 1.0x
+// risk multiplier, so a missing slug never fails the purchase.
+func (r *PostgresRepository) GetContractForInsurance(ctx context.Context, contractID string) (*domain.ContractForInsurance, error) {
+	c := &domain.ContractForInsurance{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT c.id, c.customer_id, c.provider_id, c.amount_cents, c.status,
+		       COALESCE(sc.slug, '')
+		FROM contracts c
+		JOIN jobs j ON j.id = c.job_id
+		LEFT JOIN service_categories sc ON sc.id = j.category_id
+		WHERE c.id = $1 AND c.deleted_at IS NULL`, contractID).Scan(
+		&c.ID, &c.CustomerID, &c.ProviderID, &c.AmountCents, &c.Status, &c.CategorySlug,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get contract for insurance: %w", domain.ErrInsuranceContractNotFound)
+		}
+		return nil, fmt.Errorf("get contract for insurance: %w", err)
+	}
+	return c, nil
+}
+
 // --- Sequences ---
 
 func (r *PostgresRepository) NextPolicyNumber(ctx context.Context) (string, error) {

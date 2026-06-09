@@ -77,7 +77,7 @@ const mockQuote: InsuranceQuote = {
 const mockPolicy: InsurancePolicy = {
   id: 'pol-1',
   policy_number: 'P-001',
-  product: mockProduct,
+  product_id: 'prod-1',
   contract_id: 'c-1',
   coverage_amount_cents: 100000,
   premium_cents: 2500,

@@ -11,6 +11,11 @@ vi.mock('@/hooks/useInsurance', () => ({
   usePurchaseInsurance: vi.fn(),
 }));
 
+// The selector resolves the customer's default payment method internally.
+vi.mock('@/hooks/usePayments', () => ({
+  usePaymentMethods: vi.fn(),
+}));
+
 // per_job_insurance flag — default ON; toggled per-test for the gating case.
 let insuranceEnabled = true;
 vi.mock('@/hooks/useFeatureFlags', () => ({
@@ -20,10 +25,12 @@ vi.mock('@/hooks/useFeatureFlags', () => ({
 
 const { useInsuranceProducts, useInsuranceQuote, usePurchaseInsurance } =
   await import('@/hooks/useInsurance');
+const { usePaymentMethods } = await import('@/hooks/usePayments');
 
 const useProducts = vi.mocked(useInsuranceProducts);
 const useQuote = vi.mocked(useInsuranceQuote);
 const usePurchase = vi.mocked(usePurchaseInsurance);
+const useMethods = vi.mocked(usePaymentMethods);
 
 const product = {
   id: 'prod-1',
@@ -61,6 +68,11 @@ describe('InsuranceSelector', () => {
     vi.clearAllMocks();
     insuranceEnabled = true;
     usePurchase.mockReturnValue(defaultPurchase());
+    // Default: a single saved payment method 'pm1' so purchase is enabled.
+    useMethods.mockReturnValue({
+      data: { payment_methods: [{ id: 'pm1', is_default: true }] },
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePaymentMethods>);
   });
 
   it('renders nothing when the per_job_insurance flag is OFF', () => {
@@ -78,7 +90,6 @@ describe('InsuranceSelector', () => {
     const { container } = render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
     expect(screen.queryByText('Protect Your Project')).not.toBeInTheDocument();
@@ -98,7 +109,6 @@ describe('InsuranceSelector', () => {
     const { container } = render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
     expect(container.firstChild).toBeNull();
@@ -117,7 +127,6 @@ describe('InsuranceSelector', () => {
     const { container } = render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
     // skeleton placeholders render as div elements
@@ -138,7 +147,6 @@ describe('InsuranceSelector', () => {
     render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
 
@@ -170,7 +178,6 @@ describe('InsuranceSelector', () => {
     render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
 
@@ -200,7 +207,6 @@ describe('InsuranceSelector', () => {
     render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
         onComplete,
       }),
     );
@@ -222,7 +228,6 @@ describe('InsuranceSelector', () => {
     const { container } = render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
     expect(container.firstChild).toBeNull();
@@ -242,7 +247,6 @@ describe('InsuranceSelector', () => {
     render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
 
@@ -271,7 +275,6 @@ describe('InsuranceSelector', () => {
     render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
 
@@ -299,7 +302,6 @@ describe('InsuranceSelector', () => {
     render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
 
@@ -336,7 +338,6 @@ describe('InsuranceSelector', () => {
     render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
         onComplete,
       }),
     );
@@ -380,7 +381,6 @@ describe('InsuranceSelector', () => {
     const { container } = render(
       createElement(InsuranceSelector, {
         contractId: 'c1',
-        paymentMethodId: 'pm1',
       }),
     );
 

@@ -40,11 +40,13 @@ func (s *Server) GetInsuranceQuote(ctx context.Context, req *paymentv1.GetInsura
 	if req.GetProductId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "product_id is required")
 	}
-	if req.GetContractAmountCents() <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "contract_amount_cents must be positive")
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract_id is required")
 	}
 
-	quote, err := s.insuranceSvc.GetInsuranceQuote(ctx, req.GetProductId(), req.GetContractAmountCents(), req.GetCategorySlug())
+	// SECURITY: the premium is derived from the server-side contract amount, not
+	// from any client-supplied value.
+	quote, err := s.insuranceSvc.GetQuoteForContract(ctx, req.GetProductId(), req.GetContractId())
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
@@ -67,16 +69,14 @@ func (s *Server) PurchaseInsurance(ctx context.Context, req *paymentv1.PurchaseI
 	if req.GetCustomerId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
 	}
-	if req.GetContractAmountCents() <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "contract_amount_cents must be positive")
-	}
+	// NOTE: provider_id and contract_amount_cents from the request are IGNORED.
+	// They are derived server-side from the contract (payment-integrity guard);
+	// trusting the client here is the original IDOR/amount-tampering hole.
 
 	input := domain.PurchaseInsuranceInput{
-		ContractID:          req.GetContractId(),
-		ProductID:           req.GetProductId(),
-		CustomerID:          req.GetCustomerId(),
-		ProviderID:          req.GetProviderId(),
-		ContractAmountCents: req.GetContractAmountCents(),
+		ContractID: req.GetContractId(),
+		ProductID:  req.GetProductId(),
+		CustomerID: req.GetCustomerId(),
 	}
 
 	policy, clientSecret, err := s.insuranceSvc.PurchaseInsurance(ctx, input)
@@ -405,6 +405,10 @@ func mapInsuranceError(err error) error {
 		return status.Error(codes.FailedPrecondition, "claim is not in reviewable state")
 	case errors.Is(err, domain.ErrClaimantNotPolicyholder):
 		return status.Error(codes.PermissionDenied, "only the policyholder may file a claim against this policy")
+	case errors.Is(err, domain.ErrInsuranceContractNotFound):
+		return status.Error(codes.NotFound, "contract not found")
+	case errors.Is(err, domain.ErrContractNotOwned):
+		return status.Error(codes.PermissionDenied, "contract is not owned by this customer")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

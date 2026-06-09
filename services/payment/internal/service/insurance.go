@@ -77,10 +77,50 @@ func (s *InsuranceService) GetInsuranceQuote(ctx context.Context, productID stri
 	}, nil
 }
 
+// GetQuoteForContract derives the premium for a product against a contract.
+// The contract amount and category are read server-side from the contract
+// (never trusted from the client), so the premium cannot be manipulated by the
+// caller. Ownership is enforced at purchase time (PurchaseInsurance), which is
+// the security boundary that actually creates a policy and charges the card;
+// the quote is a read-only premium preview.
+func (s *InsuranceService) GetQuoteForContract(ctx context.Context, productID, contractID string) (*domain.InsuranceQuote, error) {
+	contract, err := s.repo.GetContractForInsurance(ctx, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("quote contract for insurance: %w", err)
+	}
+	return s.GetInsuranceQuote(ctx, productID, contract.AmountCents, contract.CategorySlug)
+}
+
+// loadOwnedContract loads a contract and verifies the authenticated customer
+// owns it. Returns ErrInsuranceContractNotFound when missing and
+// ErrContractNotOwned when the caller is not the contract's customer — the
+// core payment-integrity / IDOR guard for the per-job insurance flow.
+func (s *InsuranceService) loadOwnedContract(ctx context.Context, contractID, customerID string) (*domain.ContractForInsurance, error) {
+	contract, err := s.repo.GetContractForInsurance(ctx, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("load contract for insurance: %w", err)
+	}
+	if contract.CustomerID != customerID {
+		return nil, fmt.Errorf("load contract for insurance: %w", domain.ErrContractNotOwned)
+	}
+	return contract, nil
+}
+
 // PurchaseInsurance creates a policy and a Stripe PaymentIntent for the premium.
+//
+// SECURITY: the premium, coverage amount and provider are DERIVED from the
+// server-side contract — never from client input. The caller must own the
+// contract (verified via loadOwnedContract). This prevents a customer from
+// insuring an arbitrary/non-owned contract or supplying an arbitrary amount.
 func (s *InsuranceService) PurchaseInsurance(ctx context.Context, input domain.PurchaseInsuranceInput) (*domain.InsurancePolicy, string, error) {
-	// Get the quote for this product and contract.
-	quote, err := s.GetInsuranceQuote(ctx, input.ProductID, input.ContractAmountCents, "")
+	// Load + verify ownership of the contract, then derive amount/provider/category.
+	contract, err := s.loadOwnedContract(ctx, input.ContractID, input.CustomerID)
+	if err != nil {
+		return nil, "", fmt.Errorf("purchase insurance contract: %w", err)
+	}
+
+	// Get the quote using the server-derived contract amount and category.
+	quote, err := s.GetInsuranceQuote(ctx, input.ProductID, contract.AmountCents, contract.CategorySlug)
 	if err != nil {
 		return nil, "", fmt.Errorf("purchase insurance quote: %w", err)
 	}
@@ -106,7 +146,7 @@ func (s *InsuranceService) PurchaseInsurance(ctx context.Context, input domain.P
 		ProductID:             input.ProductID,
 		ContractID:            input.ContractID,
 		CustomerID:            input.CustomerID,
-		ProviderID:            input.ProviderID,
+		ProviderID:            contract.ProviderID,
 		CoverageAmountCents:   quote.CoverageAmountCents,
 		PremiumCents:          quote.PremiumCents,
 		DeductibleCents:       quote.DeductibleCents,

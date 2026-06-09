@@ -36,8 +36,25 @@ vi.mock('@/components/insurance/InsuranceClaimForm', () => ({
     ),
 }));
 
+// The page resolves the product from useInsuranceProducts (the policy response
+// is flat with product_id only). Default product list maps prod-1 → Basic
+// Liability; individual tests can override productsState.
+const productsState: { data: { products: Record<string, unknown>[] } | undefined } = {
+  data: {
+    products: [
+      {
+        id: 'prod-1',
+        name: 'Basic Liability',
+        coverage_type: 'liability',
+        description: 'Covers property damage caused during work.',
+      },
+    ],
+  },
+};
+
 vi.mock('@/hooks/useInsurance', () => ({
   useInsurancePolicy: () => policyState,
+  useInsuranceProducts: () => productsState,
 }));
 
 const { default: InsurancePolicyPage } = await import(
@@ -56,11 +73,7 @@ function makePolicy(overrides: Record<string, unknown> = {}): Record<string, unk
     expiration_date: '2027-04-01T00:00:00Z',
     status: 'active',
     created_at: '2026-04-01T00:00:00Z',
-    product: {
-      name: 'Basic Liability',
-      coverage_type: 'liability',
-      description: 'Covers property damage caused during work.',
-    },
+    product_id: 'prod-1',
     ...overrides,
   };
 }
@@ -69,6 +82,16 @@ beforeEach(() => {
   policyState.data = undefined;
   policyState.isLoading = true;
   policyState.isError = false;
+  productsState.data = {
+    products: [
+      {
+        id: 'prod-1',
+        name: 'Basic Liability',
+        coverage_type: 'liability',
+        description: 'Covers property damage caused during work.',
+      },
+    ],
+  };
 });
 
 afterEach(() => {
@@ -191,18 +214,30 @@ describe('InsurancePolicyPage', () => {
 
   it('renders the Coverage Type and Premium Paid rows in the details card', () => {
     policyState.isLoading = false;
-    policyState.data = {
-      policy: makePolicy({
-        product: {
+    policyState.data = { policy: makePolicy({ product_id: 'prod-2' }) };
+    productsState.data = {
+      products: [
+        {
+          id: 'prod-2',
           name: 'Workers Comp',
           coverage_type: 'workers_comp',
           description: 'Workers compensation coverage.',
         },
-      }),
+      ],
     };
     render(withQueryClient(createElement(InsurancePolicyPage)));
     expect(screen.getByText('Premium Paid')).toBeDefined();
     expect(screen.getByText('Coverage Type')).toBeDefined();
     expect(screen.getByText('workers_comp')).toBeDefined();
+  });
+
+  it('does not crash and falls back gracefully when the product is missing', () => {
+    policyState.isLoading = false;
+    policyState.data = { policy: makePolicy({ product_id: 'unknown-prod' }) };
+    productsState.data = { products: [] };
+    render(withQueryClient(createElement(InsurancePolicyPage)));
+    // Header still renders; product name falls back to a placeholder.
+    expect(screen.getByRole('heading', { name: 'POL-100' })).toBeDefined();
+    expect(screen.getByText('Insurance Policy')).toBeDefined();
   });
 });

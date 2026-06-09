@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
 import { GuaranteeCoverage } from '@/components/contracts/GuaranteeCoverage';
+import { InsuranceSelector } from '@/components/insurance/InsuranceSelector';
 import { InstallmentPlanSelector } from '@/components/payments/InstallmentPlanSelector';
 import { InstallmentSchedule } from '@/components/payments/InstallmentSchedule';
 import {
@@ -337,6 +338,15 @@ export default function ContractDetailPage() {
 
       {/* Installment Schedule */}
       {installments.length > 0 ? <InstallmentSchedule installments={installments} /> : null}
+
+      {/* Per-job insurance: let the customer buy optional coverage for this
+          contract. Shown to the customer on an ACTIVE (payable) contract; the
+          selector self-gates on the per_job_insurance flag (and resolves the
+          customer's default payment method internally), and the gateway derives
+          the premium/provider server-side after an ownership check. */}
+      {contract.status === CONTRACT_STATUS.ACTIVE && isCustomer ? (
+        <InsuranceSelector contractId={contract.id} />
+      ) : null}
 
       {/* Action buttons based on status and role */}
       {contract.status === CONTRACT_STATUS.ACTIVE && (isCustomer || isProvider) ? (

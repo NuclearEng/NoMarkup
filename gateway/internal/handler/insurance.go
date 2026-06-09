@@ -55,13 +55,16 @@ func (h *InsuranceHandler) ListProducts(w http.ResponseWriter, r *http.Request) 
 }
 
 type getQuoteRequest struct {
-	ProductID           string `json:"product_id"`
-	ContractID          string `json:"contract_id"`
-	ContractAmountCents int64  `json:"contract_amount_cents"`
-	CategorySlug        string `json:"category_slug"`
+	ProductID  string `json:"product_id"`
+	ContractID string `json:"contract_id"`
 }
 
 // GetQuote handles POST /api/v1/insurance/quote.
+//
+// The premium is derived entirely server-side from the contract (amount +
+// category). The client supplies only product_id + contract_id — any
+// client-supplied amount is intentionally not accepted (price calc is
+// server-side, CLAUDE.md §6).
 func (h *InsuranceHandler) GetQuote(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -74,11 +77,20 @@ func (h *InsuranceHandler) GetQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate UUIDs up front so a malformed id returns a clear 400 rather than a
+	// 500 from a downstream cast/lookup failure.
+	if !isValidUUID(req.ProductID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance product id")
+		return
+	}
+	if !isValidUUID(req.ContractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+
 	resp, err := h.client.GetInsuranceQuote(r.Context(), &paymentv1.GetInsuranceQuoteRequest{
-		ProductId:           req.ProductID,
-		ContractId:          req.ContractID,
-		ContractAmountCents: req.ContractAmountCents,
-		CategorySlug:        req.CategorySlug,
+		ProductId:  req.ProductID,
+		ContractId: req.ContractID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -100,13 +112,18 @@ func (h *InsuranceHandler) GetQuote(w http.ResponseWriter, r *http.Request) {
 }
 
 type purchaseInsuranceRequest struct {
-	ProductID           string `json:"product_id"`
-	ContractID          string `json:"contract_id"`
-	ProviderID          string `json:"provider_id"`
-	ContractAmountCents int64  `json:"contract_amount_cents"`
+	ProductID       string `json:"product_id"`
+	ContractID      string `json:"contract_id"`
+	PaymentMethodID string `json:"payment_method_id"`
 }
 
 // PurchaseInsurance handles POST /api/v1/insurance/purchase.
+//
+// SECURITY: customer_id comes from the JWT (claims), and provider_id + the
+// premium amount are DERIVED server-side from the contract by the payment
+// service after verifying the caller owns the contract. The client supplies
+// only product_id, contract_id and (its own) payment_method_id — never a
+// provider or an amount. This closes the original IDOR / amount-tampering hole.
 func (h *InsuranceHandler) PurchaseInsurance(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -119,31 +136,25 @@ func (h *InsuranceHandler) PurchaseInsurance(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Validate required fields up front so a missing field returns a clear 400
-	// rather than a 500 from a downstream FK / NOT NULL violation at insert time.
-	if req.ProductID == "" {
-		writeError(w, http.StatusBadRequest, "product_id is required")
+	// Validate UUIDs up front so a missing/malformed id returns a clear 400
+	// rather than a 500 from a downstream cast / FK lookup failure.
+	if !isValidUUID(req.ProductID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance product id")
 		return
 	}
-	if req.ContractID == "" {
-		writeError(w, http.StatusBadRequest, "contract_id is required")
+	if !isValidUUID(req.ContractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
-	if req.ProviderID == "" {
-		writeError(w, http.StatusBadRequest, "provider_id is required")
-		return
-	}
-	if req.ContractAmountCents <= 0 {
-		writeError(w, http.StatusBadRequest, "contract_amount_cents must be greater than zero")
+	if req.PaymentMethodID == "" {
+		writeError(w, http.StatusBadRequest, "payment_method_id is required")
 		return
 	}
 
 	resp, err := h.client.PurchaseInsurance(r.Context(), &paymentv1.PurchaseInsuranceRequest{
-		ProductId:           req.ProductID,
-		ContractId:          req.ContractID,
-		CustomerId:          claims.UserID,
-		ProviderId:          req.ProviderID,
-		ContractAmountCents: req.ContractAmountCents,
+		ProductId:  req.ProductID,
+		ContractId: req.ContractID,
+		CustomerId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)

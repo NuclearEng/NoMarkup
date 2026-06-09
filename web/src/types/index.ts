@@ -1952,7 +1952,10 @@ export interface InsuranceQuote {
 export interface InsurancePolicy {
   id: string;
   policy_number: string;
-  product: InsuranceProduct;
+  // The gateway returns a FLAT policy carrying only product_id — the product
+  // object is looked up client-side (useInsuranceProducts). It is not nested in
+  // the policy response.
+  product_id: string;
   contract_id: string;
   coverage_amount_cents: number;
   premium_cents: number;
