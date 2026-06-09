@@ -16,6 +16,7 @@ var (
 	ErrTokenRevoked             = errors.New("token revoked")
 	ErrAccountSuspended         = errors.New("account suspended")
 	ErrAccountBanned            = errors.New("account banned")
+	ErrCannotSuspendBanned      = errors.New("cannot suspend a banned account")
 	ErrAccountDeactivated       = errors.New("account deactivated")
 	ErrProviderProfileNotFound  = errors.New("provider profile not found")
 	ErrInvalidRole              = errors.New("invalid role")

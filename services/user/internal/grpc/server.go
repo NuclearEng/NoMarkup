@@ -1477,6 +1477,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.PermissionDenied, "account suspended")
 	case errors.Is(err, domain.ErrAccountBanned):
 		return status.Error(codes.PermissionDenied, "account banned")
+	case errors.Is(err, domain.ErrCannotSuspendBanned):
+		return status.Error(codes.FailedPrecondition, "cannot suspend a banned account")
 	case errors.Is(err, domain.ErrAccountDeactivated):
 		return status.Error(codes.PermissionDenied, "account deactivated")
 	case errors.Is(err, domain.ErrProviderProfileNotFound):

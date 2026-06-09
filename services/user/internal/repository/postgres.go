@@ -812,14 +812,28 @@ func (r *PostgresRepository) suspendOrBanWithRevoke(ctx context.Context, userID,
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Ban is the most severe terminal moderation state; a later suspend must not
+	// silently downgrade a banned account back to merely suspended. The NOT(...)
+	// clause blocks only the suspend->banned downgrade; ban still escalates a
+	// suspended account normally.
 	tag, err := tx.Exec(ctx, `
 		UPDATE users
 		SET status = $2, suspension_reason = $3, updated_at = now()
-		WHERE id = $1 AND deleted_at IS NULL`, userID, newStatus, reason)
+		WHERE id = $1 AND deleted_at IS NULL
+		  AND NOT ($2 = 'suspended' AND status = 'banned')`, userID, newStatus, reason)
 	if err != nil {
 		return fmt.Errorf("%s: update status: %w", opName, err)
 	}
 	if tag.RowsAffected() == 0 {
+		// 0 rows means the user is missing OR a banned account was protected from
+		// a suspend downgrade — distinguish so the caller gets the right status.
+		if newStatus == "suspended" {
+			var current string
+			if e := tx.QueryRow(ctx,
+				`SELECT status FROM users WHERE id = $1 AND deleted_at IS NULL`, userID).Scan(&current); e == nil && current == "banned" {
+				return fmt.Errorf("%s: %w", opName, domain.ErrCannotSuspendBanned)
+			}
+		}
 		return fmt.Errorf("%s: %w", opName, domain.ErrUserNotFound)
 	}
 
