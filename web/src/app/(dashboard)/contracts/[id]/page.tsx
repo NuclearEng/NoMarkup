@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  Heart,
   Loader2,
   Play,
   Shield,
@@ -24,6 +25,7 @@ import {
   getPaymentTimingLabel,
   getStatusLabel,
   getStatusVariant,
+  TipWidget,
 } from '@/components/contracts/ContractCard';
 import { MilestoneTracker } from '@/components/contracts/MilestoneTracker';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
@@ -551,6 +553,34 @@ export default function ContractDetailPage() {
                 Watch Replay
               </Button>
             </Link>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Tip the provider (for completed contracts, customer only).
+          Mirrors the list-card affordance so a customer who lands on the
+          detail page after completion can tip from here too. Shows the
+          composer when untipped; a thank-you acknowledgment once recorded. */}
+      {contract.status === CONTRACT_STATUS.COMPLETED && isCustomer ? (
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+          <CardHeader>
+            <h3 className="gold-text flex items-center gap-2 text-sm font-semibold">
+              <Heart className="h-4 w-4 text-rose-400" aria-hidden="true" />
+              Tip your provider
+            </h3>
+          </CardHeader>
+          <CardContent>
+            {(contract.tip_amount_cents ?? 0) > 0 ? (
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
+                <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                You tipped {formatCents(contract.tip_amount_cents ?? 0)} — thanks for the love.
+              </div>
+            ) : (
+              <TipWidget
+                contractId={contract.id}
+                suggestedAmountCents={contract.amount_cents}
+              />
+            )}
           </CardContent>
         </Card>
       ) : null}

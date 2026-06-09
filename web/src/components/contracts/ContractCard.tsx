@@ -1,5 +1,6 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { Clock, FileText, Heart } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
@@ -262,6 +263,7 @@ interface TipWidgetProps {
  * the gateway handler comment and tracked in PLAN §6.5.
  */
 function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [customDollars, setCustomDollars] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -290,6 +292,10 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
         amount_cents: amountCents,
       });
       setSuccess(true);
+      // Refresh the contract (detail) and contracts (list) so the recorded
+      // tip is reflected and the widget retires itself on next render.
+      void queryClient.invalidateQueries({ queryKey: ['contract', contractId] });
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       toast.success(`Tip sent — ${formatCents(amountCents)} on its way to your provider. Thank you!`);
     } catch (err) {
       const message = getApiErrorMessage(err, 'Failed to record tip');
@@ -328,7 +334,7 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
   return (
     <div
       className="space-y-2 rounded-md border border-zinc-700 bg-zinc-900/50 p-2"
-      onClickCapture={stop}
+      onClick={stop}
       role="group"
       aria-label="Tip composer"
     >
@@ -396,4 +402,4 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
   );
 }
 
-export { getStatusLabel, getStatusVariant, getPaymentTimingLabel };
+export { getStatusLabel, getStatusVariant, getPaymentTimingLabel, TipWidget };
