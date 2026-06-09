@@ -516,7 +516,8 @@ describe('useListingOrder / useConfirmPickup / useDisputeOrder', () => {
   };
 
   it('useListingOrder fetches the order detail', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ order: mockOrder });
+    // Gateway returns the order at the top level (not a { order } envelope).
+    vi.mocked(api.get).mockResolvedValueOnce(mockOrder);
     const { result } = renderHook(() => useListingOrder('o-1'), {
       wrapper: createWrapper(queryClient),
     });
