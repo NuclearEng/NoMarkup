@@ -762,6 +762,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "auction duration must be between 1 and 168 hours")
 	case errors.Is(err, domain.ErrInvalidAuctionType):
 		return status.Error(codes.InvalidArgument, "auction type must be one of: sealed, live")
+	case errors.Is(err, domain.ErrInvalidStartingBid):
+		return status.Error(codes.InvalidArgument, "starting bid must be a positive amount in cents")
 	case errors.Is(err, domain.ErrDraftLimitExceeded):
 		// Predictable user condition (10-draft cap, FR-3.11) — must not 500.
 		return status.Error(codes.FailedPrecondition, "maximum of 10 draft jobs allowed")

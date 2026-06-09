@@ -21,6 +21,7 @@ var (
 	ErrMissingCategory     = errors.New("category is required")
 	ErrInvalidDuration     = errors.New("auction duration must be between 1 and 168 hours")
 	ErrInvalidAuctionType  = errors.New("auction type must be one of: sealed, live")
+	ErrInvalidStartingBid  = errors.New("starting bid must be a positive amount in cents")
 	ErrDraftLimitExceeded  = errors.New("maximum of 10 draft jobs allowed")
 	ErrNotRepostable       = errors.New("job must be in closed or expired status to repost")
 	ErrNotAwarded          = errors.New("job is not in awarded status")

@@ -63,6 +63,15 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 			return nil, domain.ErrInvalidAuctionType
 		}
 	}
+	// Money is positive cents. A negative or zero starting bid (or accepted-offer
+	// price) corrupts the reverse auction: the bid handler rejects every positive
+	// bid as "exceeds starting bid", leaving a live-looking but un-biddable job.
+	if input.StartingBidCents != nil && *input.StartingBidCents <= 0 {
+		return nil, domain.ErrInvalidStartingBid
+	}
+	if input.OfferAcceptedCents != nil && *input.OfferAcceptedCents <= 0 {
+		return nil, domain.ErrInvalidStartingBid
+	}
 	if input.ScheduleType == "" {
 		input.ScheduleType = "flexible"
 	}
@@ -101,6 +110,12 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 func (s *JobService) UpdateJob(ctx context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error) {
 	if customerID == "" {
 		return nil, fmt.Errorf("update job: %w", domain.ErrNotOwner)
+	}
+	if input.StartingBidCents != nil && *input.StartingBidCents <= 0 {
+		return nil, fmt.Errorf("update job: %w", domain.ErrInvalidStartingBid)
+	}
+	if input.OfferAcceptedCents != nil && *input.OfferAcceptedCents <= 0 {
+		return nil, fmt.Errorf("update job: %w", domain.ErrInvalidStartingBid)
 	}
 	job, err := s.repo.UpdateJob(ctx, jobID, customerID, input)
 	if err != nil {

@@ -239,6 +239,41 @@ func TestJobService_CreateJob(t *testing.T) {
 			},
 		},
 		{
+			// Regression: /qa 2026-06-09 — a negative starting bid was accepted,
+			// creating a live job that rejected every positive bid as "exceeds
+			// starting bid" (un-biddable). Money is positive cents.
+			name: "negative_starting_bid_returns_error",
+			input: func() domain.CreateJobInput {
+				i := validCreateInput()
+				neg := int64(-99999)
+				i.StartingBidCents = &neg
+				return i
+			}(),
+			wantErr: domain.ErrInvalidStartingBid,
+		},
+		{
+			name: "zero_offer_accepted_returns_error",
+			input: func() domain.CreateJobInput {
+				i := validCreateInput()
+				zero := int64(0)
+				i.OfferAcceptedCents = &zero
+				return i
+			}(),
+			wantErr: domain.ErrInvalidStartingBid,
+		},
+		{
+			name: "positive_starting_bid_is_valid",
+			input: func() domain.CreateJobInput {
+				i := validCreateInput()
+				pos := int64(25000)
+				i.StartingBidCents = &pos
+				return i
+			}(),
+			repoFn: func(_ context.Context, _ domain.CreateJobInput) (*domain.Job, error) {
+				return &domain.Job{ID: "job-bid", Status: "draft"}, nil
+			},
+		},
+		{
 			name:  "repo_error_propagates",
 			input: validCreateInput(),
 			repoFn: func(_ context.Context, _ domain.CreateJobInput) (*domain.Job, error) {
@@ -265,7 +300,8 @@ func TestJobService_CreateJob(t *testing.T) {
 				if errors.Is(tt.wantErr, domain.ErrMissingTitle) ||
 					errors.Is(tt.wantErr, domain.ErrMissingDescription) ||
 					errors.Is(tt.wantErr, domain.ErrMissingCategory) ||
-					errors.Is(tt.wantErr, domain.ErrInvalidDuration) {
+					errors.Is(tt.wantErr, domain.ErrInvalidDuration) ||
+					errors.Is(tt.wantErr, domain.ErrInvalidStartingBid) {
 					assert.True(t, errors.Is(err, tt.wantErr), "expected %v, got %v", tt.wantErr, err)
 				}
 				return
