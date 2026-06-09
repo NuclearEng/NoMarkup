@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -160,6 +161,21 @@ func (s *PaymentService) handlePaymentIntentSucceeded(ctx context.Context, event
 				"order_id", pi.Metadata["listing_order_id"],
 			)
 			if err := s.marketplaceHook.HandleListingPaymentIntentSucceeded(ctx, pi.ID); err != nil {
+				// A missing order (the PI isn't a tracked listing order) or an
+				// unexpected escrow state (already past pending_payment) are not
+				// server faults Stripe should retry on — a 500 here triggers a
+				// retry storm for up to 3 days. Log and ack (return nil), the
+				// same fail-safe posture every other handler uses on a miss.
+				// Genuine infra errors (DB down, etc.) still propagate as a
+				// retryable error.
+				if errors.Is(err, ErrListingOrderNotFound) || errors.Is(err, ErrInvalidEscrowState) {
+					slog.Warn("listing payment_intent.succeeded not actionable, acking",
+						"pi_id", pi.ID,
+						"order_id", pi.Metadata["listing_order_id"],
+						"error", err,
+					)
+					return nil
+				}
 				return fmt.Errorf("handle listing payment succeeded: %w", err)
 			}
 			return nil

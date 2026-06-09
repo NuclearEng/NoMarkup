@@ -318,6 +318,16 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 		Destination:       stripe.String(destinationAccountID),
 		SourceTransaction: stripe.String(paymentIntentID),
 	}
+	// Stamp the originating PaymentIntent in transfer metadata. The
+	// transfer.created webhook (handleTransferCreated) looks up the local
+	// payment by t.Metadata["payment_intent_id"]; without this, every
+	// transfer.created delivery hits the "no payment_intent_id metadata"
+	// branch and never reconciles the transfer ID / released status. The
+	// synchronous ReleaseEscrow path already stamps these, so this makes the
+	// webhook a working backstop rather than dead code.
+	if paymentIntentID != "" {
+		params.AddMetadata("payment_intent_id", paymentIntentID)
+	}
 
 	t, err := transfer.New(params)
 	if err != nil {

@@ -334,6 +334,68 @@ func TestHandleWebhook_ChargeRefunded(t *testing.T) {
 	})
 }
 
+// --- marketplace payment_intent.succeeded fail-safe ---
+
+// fakeMarketplaceHook lets a test control what HandleListingPaymentIntentSucceeded returns.
+type fakeMarketplaceHook struct {
+	err    error
+	called bool
+}
+
+func (f *fakeMarketplaceHook) HandleListingPaymentIntentSucceeded(_ context.Context, _ string) error {
+	f.called = true
+	return f.err
+}
+
+func TestHandleWebhook_MarketplacePI_FailsSafeOnMiss(t *testing.T) {
+	t.Parallel()
+
+	marketplacePI := func(id string) stripe.Event {
+		return newEvent(t, "evt_"+id, "payment_intent.succeeded", stripe.PaymentIntent{
+			ID:       id,
+			Metadata: map[string]string{"marketplace_flow": "goods-v1", "listing_order_id": "ord_1"},
+		})
+	}
+
+	cases := []struct {
+		name      string
+		hookErr   error
+		wantError bool
+	}{
+		// A missing order or an unexpected escrow state must be acked (nil) so
+		// Stripe doesn't retry-storm for 3 days on a non-retryable condition.
+		{"not_found_is_acked", ErrListingOrderNotFound, false},
+		{"invalid_state_is_acked", ErrInvalidEscrowState, false},
+		// A genuine infra error must still surface so Stripe retries.
+		{"infra_error_is_retried", errors.New("db connection lost"), true},
+		// Success acks.
+		{"success_is_acked", nil, false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			repo := &mockPaymentRepo{
+				recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+				markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			}
+			svc := newTestPaymentService(repo, nil)
+			hook := &fakeMarketplaceHook{err: tc.hookErr}
+			svc.SetMarketplaceHandler(hook)
+			svc.SetWebhookValidator(&fakeWebhookValidator{event: marketplacePI("pi_mkt")})
+
+			err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+			assert.True(t, hook.called, "marketplace hook should be invoked for goods-v1 PI")
+			if tc.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 // --- subscription event delegation (no handler set) ---
 
 func TestHandleWebhook_SubscriptionEvent_NoHandler_NoOp(t *testing.T) {
