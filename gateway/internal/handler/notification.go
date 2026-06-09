@@ -98,6 +98,12 @@ func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "notification id required")
 		return
 	}
+	// Validate the path UUID before the service call so a malformed id
+	// returns 400 instead of a 500 from downstream.
+	if !isValidUUID(notificationID) {
+		writeError(w, http.StatusBadRequest, "invalid notification id")
+		return
+	}
 
 	_, err := h.notifClient.MarkAsRead(r.Context(), &notificationv1.MarkAsReadRequest{
 		NotificationId: notificationID,

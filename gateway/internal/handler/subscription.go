@@ -180,6 +180,14 @@ func (h *SubscriptionHandler) ChangeTier(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Validate the UUID before the gRPC call so a malformed new_tier_id
+	// returns 400 (not a 500 from the downstream service). A valid-but-missing
+	// UUID still correctly 404s downstream.
+	if !isValidUUID(req.NewTierID) {
+		writeError(w, http.StatusBadRequest, "invalid tier id")
+		return
+	}
+
 	resp, err := h.client.ChangeSubscriptionTier(r.Context(), &subscriptionv1.ChangeSubscriptionTierRequest{
 		UserId:          claims.UserID,
 		NewTierId:       req.NewTierID,

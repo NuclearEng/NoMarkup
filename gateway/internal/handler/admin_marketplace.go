@@ -515,7 +515,13 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
 
-	// Update the dispute row.
+	// Update the dispute row — but ONLY if it is not already in a terminal
+	// state. Without this guard an already-resolved dispute could be
+	// re-resolved, silently re-flipping escrow (e.g. refund_full → 'refunded',
+	// then a second no_action flipping it back to 'released'). The escrow
+	// UPDATE below is gated on this same transition (same tx), so if the
+	// dispute does not transition, escrow is never touched. Mirrors the
+	// file-side "dispute already open" guard in listing_orders.go.
 	tag, err := tx.Exec(r.Context(), `
 		UPDATE marketplace_disputes
 		   SET status = 'resolved',
@@ -526,7 +532,8 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 		       resolved_by = $5,
 		       resolved_at = now(),
 		       updated_at = now()
-		 WHERE id = $6`,
+		 WHERE id = $6
+		   AND status NOT IN ('resolved', 'closed')`,
 		body.Resolution,
 		body.RefundToBuyerCents, body.TransferToSellerCents,
 		body.Notes, claims.UserID, id)
@@ -536,7 +543,21 @@ func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeError(w, http.StatusNotFound, "goods dispute not found")
+		// 0 rows either means the dispute does not exist (404) or it is
+		// already terminal (409). Disambiguate so the admin sees the right
+		// error. Escrow is NOT touched in either case.
+		var existing string
+		err := tx.QueryRow(r.Context(),
+			`SELECT status FROM marketplace_disputes WHERE id = $1`, id).Scan(&existing)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeError(w, http.StatusNotFound, "goods dispute not found")
+		case err != nil:
+			slog.Error("resolve goods dispute lookup failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to resolve")
+		default:
+			writeError(w, http.StatusConflict, "dispute already resolved")
+		}
 		return
 	}
 
