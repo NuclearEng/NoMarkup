@@ -397,7 +397,11 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
           {submitting ? '...' : 'Send'}
         </Button>
       </div>
-      {error ? <p className="text-destructive text-xs">{error}</p> : null}
+      {error ? (
+        <p className="text-destructive text-xs" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

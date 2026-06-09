@@ -144,7 +144,13 @@ export function InsuranceClaimForm({
                 setValue('claim_type', val, { shouldValidate: true });
               }}
             >
-              <SelectTrigger id="claim-type" className="min-h-[44px]" aria-label="Select claim type">
+              <SelectTrigger
+                id="claim-type"
+                className="min-h-[44px]"
+                aria-label="Select claim type"
+                aria-invalid={errors.claim_type ? true : undefined}
+                aria-describedby={errors.claim_type ? 'claim-type-error' : undefined}
+              >
                 <SelectValue placeholder="Select claim type" />
               </SelectTrigger>
               <SelectContent>
@@ -156,7 +162,7 @@ export function InsuranceClaimForm({
               </SelectContent>
             </Select>
             {errors.claim_type ? (
-              <p className="text-xs text-destructive" role="alert">
+              <p id="claim-type-error" className="text-xs text-destructive" role="alert">
                 {errors.claim_type.message}
               </p>
             ) : null}

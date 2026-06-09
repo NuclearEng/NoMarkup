@@ -28,7 +28,10 @@ function OfferCountdown({ expiresAt }: { expiresAt: string }) {
         : 'text-emerald-400';
 
   return (
-    <span className={`font-mono text-sm font-semibold tabular-nums ${urgencyClass}`}>
+    <span
+      className={`font-mono text-sm font-semibold tabular-nums ${urgencyClass}`}
+      aria-label={isExpired ? 'Offer expired' : `Offer expires in ${timeLeft}`}
+    >
       {isExpired ? 'Expired' : timeLeft}
     </span>
   );
@@ -55,10 +58,7 @@ function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) 
                 </Badge>
               ) : null}
 
-              <span
-                className="flex items-center gap-1 text-xs text-zinc-400"
-                aria-label={`Offer expires in ${expiresAt}`}
-              >
+              <span className="flex items-center gap-1 text-xs text-zinc-400">
                 <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                 <OfferCountdown expiresAt={expiresAt} />
               </span>
