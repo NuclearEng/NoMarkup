@@ -1,9 +1,13 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// jsdom does not implement scrollIntoView — provide a no-op shim.
+// jsdom does not implement scrollIntoView — install a spy so we can assert the
+// thread scrolls the newest message into view on send/new-message.
+const scrollIntoViewSpy = vi.fn();
 beforeAll(() => {
-  Element.prototype.scrollIntoView = function () { /* noop */ };
+  Element.prototype.scrollIntoView = scrollIntoViewSpy;
+  // jsdom returns 0 for layout metrics; that makes the near-bottom check read
+  // "at bottom" by default, which is the realistic state right after open.
 });
 
 const markReadMutate = vi.fn(() => Promise.resolve({}));
@@ -71,6 +75,7 @@ function makeMsg(overrides: Partial<ChatMessage> = {}): ChatMessage {
 beforeEach(() => {
   mockAuth();
   markReadMutate.mockClear();
+  scrollIntoViewSpy.mockClear();
 });
 
 afterEach(() => {
@@ -338,5 +343,102 @@ describe('MessageThread', () => {
     render(<MessageThread channelId="chan-1" />);
     expect(screen.getByText(/Proposed Terms/)).toBeDefined();
     expect(screen.queryByText('Scope')).toBeNull();
+  });
+
+  // ---- ORDERING + SCROLL-ON-SEND (chat scroll bug) ----
+
+  it('renders oldest→newest with the newest message at the bottom even when the API returns newest-first', () => {
+    // The gateway returns messages ORDER BY created_at DESC (newest first).
+    // The thread must normalize to ascending so the newest bubble is last.
+    const older = makeMsg({ id: 'older', content: 'older message', created_at: '2026-04-01T11:00:00Z' });
+    const newer = makeMsg({ id: 'newer', content: 'newer message', created_at: '2026-04-01T11:05:00Z' });
+    setMessages({ messages: [newer, older], has_more: false });
+
+    render(<MessageThread channelId="chan-1" />);
+
+    const log = screen.getByRole('log');
+    const html = log.innerHTML;
+    // "older message" must appear before "newer message" in DOM order.
+    expect(html.indexOf('older message')).toBeLessThan(html.indexOf('newer message'));
+  });
+
+  it('uses the genuinely-oldest message as the load-older cursor even when the API order is newest-first', () => {
+    const useMessagesMock = vi.mocked(useMessages);
+    const older = makeMsg({ id: 'older', created_at: '2026-04-01T11:00:00Z' });
+    const newer = makeMsg({ id: 'newer', created_at: '2026-04-01T11:05:00Z' });
+    // API order is newest-first: [newer, older].
+    setMessages({ messages: [newer, older], has_more: true });
+
+    render(<MessageThread channelId="chan-1" />);
+    fireEvent.click(screen.getByText('Load older messages'));
+
+    const lastCall = useMessagesMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    if (lastCall) {
+      const opts = lastCall[1] as { before?: string } | undefined;
+      // Must page before the OLDEST message, not the first array element.
+      expect(opts?.before).toBe('older');
+    }
+  });
+
+  it('scrolls the newest message into view when the user sends a new message', async () => {
+    setMessages({ messages: sampleMessages, has_more: false });
+    const { rerender } = render(<MessageThread channelId="chan-1" />);
+    scrollIntoViewSpy.mockClear();
+
+    // Simulate a new own message arriving (e.g. after send → query refetch).
+    const withNew = [
+      ...sampleMessages,
+      makeMsg({
+        id: 'msg-3',
+        sender_id: 'user-me',
+        content: 'my brand new message',
+        created_at: '2026-04-01T11:10:00Z',
+      }),
+    ];
+    setMessages({ messages: withNew, has_more: false });
+    rerender(<MessageThread channelId="chan-1" />);
+
+    await waitFor(() => {
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+    });
+    // The newest own message is rendered (it is the scroll target at the bottom).
+    expect(screen.getByText('my brand new message')).toBeDefined();
+  });
+
+  it('does not yank the reader down for an incoming message when scrolled away from the bottom', async () => {
+    setMessages({ messages: sampleMessages, has_more: false });
+    const { rerender, container } = render(<MessageThread channelId="chan-1" />);
+
+    // The initial-load + first-message effects schedule a rAF scroll; flush it
+    // so the assertion below only observes behavior from the incoming message.
+    await new Promise((resolve) => { requestAnimationFrame(() => { resolve(null); }); });
+
+    // Force the scroll container to report being scrolled far from the bottom.
+    const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement | null;
+    expect(scrollEl).not.toBeNull();
+    if (scrollEl) {
+      Object.defineProperty(scrollEl, 'scrollHeight', { value: 2000, configurable: true });
+      Object.defineProperty(scrollEl, 'clientHeight', { value: 400, configurable: true });
+      Object.defineProperty(scrollEl, 'scrollTop', { value: 0, configurable: true });
+    }
+    scrollIntoViewSpy.mockClear();
+
+    // An INCOMING message (from the other party) arrives while scrolled up.
+    const withIncoming = [
+      ...sampleMessages,
+      makeMsg({
+        id: 'incoming-1',
+        sender_id: 'user-other',
+        content: 'incoming while reading history',
+        created_at: '2026-04-01T11:20:00Z',
+      }),
+    ];
+    setMessages({ messages: withIncoming, has_more: false });
+    rerender(<MessageThread channelId="chan-1" />);
+
+    // Give any rAF a chance to fire, then assert we did NOT auto-scroll.
+    await new Promise((resolve) => { requestAnimationFrame(() => { resolve(null); }); });
+    expect(scrollIntoViewSpy).not.toHaveBeenCalled();
   });
 });

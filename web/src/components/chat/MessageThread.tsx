@@ -227,6 +227,8 @@ export function MessageThread({ channelId }: { channelId: string }) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
+  const prevLastMessageIdRef = useRef<string | null>(null);
+  const didInitialScrollRef = useRef(false);
   const user = useAuthStore((state) => state.user);
   const markRead = useMarkRead();
   // A channel has exactly two parties, so label incoming bubbles with the other
@@ -242,7 +244,16 @@ export function MessageThread({ channelId }: { channelId: string }) {
     page_size: 20,
   });
 
-  const messages = data?.messages ?? [];
+  // The gateway returns messages newest-first (ORDER BY created_at DESC).
+  // Conventional chat renders oldest→newest with the newest at the bottom, so
+  // normalize to ascending order here. This also makes messages[0] the OLDEST
+  // message (the correct `before` cursor for load-older pagination) and makes
+  // the bottom sentinel line up with the newest message (the scroll target).
+  const messages = [...(data?.messages ?? [])].sort((a, b) => {
+    const delta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    // Stable tiebreak on id so equal timestamps keep a deterministic order.
+    return delta !== 0 ? delta : a.id.localeCompare(b.id);
+  });
   const hasMore = data?.has_more ?? false;
 
   // Determine the last message read by the other party.
@@ -290,17 +301,48 @@ export function MessageThread({ channelId }: { channelId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (messages.length > prevMessageCountRef.current && !beforeCursor) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-    prevMessageCountRef.current = messages.length;
-  }, [messages.length, beforeCursor]);
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageId = lastMessage?.id ?? null;
+  const lastMessageIsOwn = !!lastMessage && lastMessage.sender_id === user?.id;
 
-  // Scroll to bottom on initial load
+  // Auto-scroll the newest message into view when a new one arrives.
+  //
+  // Messages are ordered oldest→newest, so the bottom sentinel sits just below
+  // the newest message — scrolling it into view reveals what was just sent.
+  // We scope the scroll to the message-list container (not the page) and run it
+  // after paint so the new bubble exists in the DOM before we scroll to it.
+  //
+  // Standard chat etiquette: always follow your OWN sent message, but only
+  // auto-follow an INCOMING message if the reader is already near the bottom —
+  // otherwise we'd rudely yank someone reading older history back down.
   useEffect(() => {
-    if (!isLoading && messages.length > 0 && !beforeCursor) {
+    const grew = messages.length > prevMessageCountRef.current;
+    const lastChanged = lastMessageId !== prevLastMessageIdRef.current;
+    prevMessageCountRef.current = messages.length;
+    prevLastMessageIdRef.current = lastMessageId;
+
+    // Loading an older page prepends messages — never scroll to the bottom then.
+    if (beforeCursor || !grew || !lastChanged || !lastMessageId) return;
+
+    const container = scrollContainerRef.current;
+    const nearBottom =
+      !container ||
+      container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+
+    if (lastMessageIsOwn || nearBottom) {
+      // Defer to the next frame so the new bubble has painted before we scroll.
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+  }, [messages.length, lastMessageId, lastMessageIsOwn, beforeCursor]);
+
+  // Scroll to bottom on initial load only (the newest message), without
+  // animation. Subsequent new messages are handled by the effect above so this
+  // one-shot jump never fights the incoming-message near-bottom guard.
+  useEffect(() => {
+    if (!didInitialScrollRef.current && !isLoading && messages.length > 0 && !beforeCursor) {
+      didInitialScrollRef.current = true;
       bottomRef.current?.scrollIntoView({ behavior: 'auto' });
     }
   }, [isLoading, messages.length, beforeCursor]);
