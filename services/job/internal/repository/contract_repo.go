@@ -219,7 +219,7 @@ func (r *PostgresRepository) StartWork(ctx context.Context, contractID string) (
 
 // ListContracts lists contracts for a user with optional status filter and pagination.
 func (r *PostgresRepository) ListContracts(ctx context.Context, userID string, statusFilter *string, page, pageSize int) ([]*domain.Contract, *domain.Pagination, error) {
-	where := "(c.customer_id = $1 OR c.provider_id = $1)"
+	where := "(c.customer_id = $1 OR c.provider_id = $1) AND c.deleted_at IS NULL"
 	args := []interface{}{userID}
 	argIdx := 2
 
