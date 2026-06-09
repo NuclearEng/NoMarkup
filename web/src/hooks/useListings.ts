@@ -352,6 +352,32 @@ export function useCreateListingDraft() {
   });
 }
 
+/**
+ * The authenticated user's "my orders" index — every goods order on which the
+ * caller is EITHER the buyer or the seller, newest first.
+ *
+ * The gateway (GET /api/v1/me/orders → ListMyOrders in
+ * gateway/internal/handler/listing_orders.go) wraps the array in an envelope:
+ * `{ "orders": [...] }` (unlike the singular GET /orders/{id}, which returns the
+ * order at the top level). We unwrap `.orders` here and default to `[]` so the
+ * page always receives an array even on an empty/edge response.
+ *
+ * Each row is the enriched ListingOrder shape (listing_title, listing_photo_url,
+ * seller_display_name, status, amount_cents, pickup_*, created_at, plus
+ * buyer_id/seller_id). Because the endpoint mixes both roles into one list, the
+ * page derives the caller's per-order role by comparing the current user's id
+ * against buyer_id / seller_id — there is no separate buyer/seller endpoint.
+ */
+export function useMyOrders() {
+  return useQuery({
+    queryKey: ['listingOrders', 'mine'],
+    queryFn: () =>
+      api
+        .get<{ orders: ListingOrder[] }>('/api/v1/me/orders')
+        .then((res) => res.orders ?? []),
+  });
+}
+
 export function useListingOrder(orderId: string) {
   return useQuery({
     queryKey: ['listingOrders', orderId],
