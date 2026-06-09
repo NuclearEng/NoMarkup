@@ -15,8 +15,13 @@ vi.mock('@/stores/chat-store', () => ({
   useChatStore: vi.fn(),
 }));
 
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: vi.fn(),
+}));
+
 import { ChannelList } from '@/components/chat/ChannelList';
 import { useChannels } from '@/hooks/useChannels';
+import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
 import type { Channel } from '@/types';
 import { CHANNEL_STATUS, CHANNEL_TYPE } from '@/types';
@@ -30,11 +35,22 @@ function mockStore(activeId: string | null = null) {
   }) as unknown as typeof useChatStore);
 }
 
+// Mocks the auth store so ChannelList can read the logged-in user's id and pick
+// the correct "other party". Pass the viewer's user id.
+function mockAuth(currentUserId: string | undefined) {
+  vi.mocked(useAuthStore).mockImplementation(((selector: unknown) => {
+    const state = { user: currentUserId ? { id: currentUserId } : null } as unknown;
+    return (selector as (s: unknown) => unknown)(state);
+  }) as unknown as typeof useAuthStore);
+}
+
 const sampleChannel: Channel = {
   id: 'chan-1',
   job_id: 'job-1',
   customer_id: 'cust-alice',
   provider_id: 'prov-bob',
+  customer_name: 'Alice Customer',
+  provider_name: 'Bob Provider',
   status: CHANNEL_STATUS.ACTIVE,
   channel_type: CHANNEL_TYPE.PRE_AWARD,
   unread_count: 2,
@@ -55,6 +71,8 @@ const sampleChannel: Channel = {
 
 beforeEach(() => {
   mockStore(null);
+  // Default viewer is the customer (cust-alice) → other party is the provider.
+  mockAuth('cust-alice');
 });
 
 afterEach(() => {
@@ -112,7 +130,7 @@ describe('ChannelList', () => {
       isError: false,
     } as unknown as ReturnType<typeof useChannels>);
     render(<ChannelList />);
-    const button = screen.getByRole('button', { name: /Open conversation with prov-bob/ });
+    const button = screen.getByRole('button', { name: /Open conversation with Bob Provider/ });
     expect(button.getAttribute('aria-current')).toBe('true');
   });
 
@@ -125,7 +143,7 @@ describe('ChannelList', () => {
       isError: false,
     } as unknown as ReturnType<typeof useChannels>);
     render(<ChannelList />);
-    await user.click(screen.getByRole('button', { name: /Open conversation with prov-bob/ }));
+    await user.click(screen.getByRole('button', { name: /Open conversation with Bob Provider/ }));
     expect(setActiveChannel).toHaveBeenCalledWith('chan-1');
   });
 
@@ -154,6 +172,58 @@ describe('ChannelList', () => {
     render(<ChannelList />);
     await user.type(screen.getByLabelText('Search conversations'), 'Hi there');
     expect(screen.getByText('Hi there!')).toBeDefined();
+  });
+
+  it("shows the OTHER party's display name (provider) when the viewer is the customer", () => {
+    mockAuth('cust-alice');
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [sampleChannel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    // The provider's name is shown, NOT the viewer's own (customer) name and
+    // NOT a raw UUID.
+    expect(screen.getByText('Bob Provider')).toBeDefined();
+    expect(screen.queryByText('Alice Customer')).toBeNull();
+    expect(screen.queryByText('prov-bob')).toBeNull();
+    expect(screen.queryByText('cust-alice')).toBeNull();
+    // aria-label uses the name too.
+    expect(
+      screen.getByRole('button', { name: /Open conversation with Bob Provider/ }),
+    ).toBeDefined();
+  });
+
+  it("shows the OTHER party's display name (customer) when the viewer is the provider", () => {
+    mockAuth('prov-bob');
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [sampleChannel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    // Provider viewing their own chat must see the CUSTOMER, not themselves.
+    expect(screen.getByText('Alice Customer')).toBeDefined();
+    expect(screen.queryByText('Bob Provider')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: /Open conversation with Alice Customer/ }),
+    ).toBeDefined();
+  });
+
+  it('falls back to a friendly placeholder (never a UUID) when the name is missing', () => {
+    const channel: Channel = {
+      ...sampleChannel,
+      provider_name: undefined,
+    };
+    mockAuth('cust-alice');
+    vi.mocked(useChannels).mockReturnValue({
+      data: { channels: [channel], pagination: { page: 1, page_size: 50, total: 1 } },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useChannels>);
+    render(<ChannelList />);
+    expect(screen.getByText('Conversation')).toBeDefined();
+    expect(screen.queryByText('prov-bob')).toBeNull();
   });
 
   it('renders Contract and Support channel-type labels', () => {

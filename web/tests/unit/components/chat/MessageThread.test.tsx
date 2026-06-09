@@ -11,6 +11,17 @@ const markReadMutate = vi.fn(() => Promise.resolve({}));
 vi.mock('@/hooks/useChannels', () => ({
   useMessages: vi.fn(),
   useMarkRead: () => ({ mutateAsync: markReadMutate, isPending: false }),
+  // MessageThread reads the channel to resolve sender display names for bubbles.
+  useChannel: () => ({
+    data: {
+      channel: {
+        customer_id: 'cust-1',
+        provider_id: 'prov-1',
+        customer_name: 'Jane Customer',
+        provider_name: 'Mike Provider',
+      },
+    },
+  }),
 }));
 
 vi.mock('@/stores/auth-store', () => ({

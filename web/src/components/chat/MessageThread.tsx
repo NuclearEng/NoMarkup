@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { useMarkRead, useMessages } from '@/hooks/useChannels';
+import { useChannel, useMarkRead, useMessages } from '@/hooks/useChannels';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { MESSAGE_TYPE } from '@/types';
@@ -146,10 +146,12 @@ function ReadReceipt({ isOwnMessage, isRead }: { isOwnMessage: boolean; isRead: 
 function MessageBubble({
   message,
   isOwnMessage,
+  senderLabel,
   isLastRead,
 }: {
   message: ChatMessage;
   isOwnMessage: boolean;
+  senderLabel: string;
   isLastRead: boolean;
 }) {
   if (message.message_type === MESSAGE_TYPE.SYSTEM) {
@@ -172,11 +174,11 @@ function MessageBubble({
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium"
         aria-hidden="true"
       >
-        {message.sender_id.charAt(0).toUpperCase()}
+        {(senderLabel.charAt(0) || '?').toUpperCase()}
       </div>
       <div className={cn('min-w-0 max-w-[85%] sm:max-w-[70%]', isOwnMessage ? 'items-end' : 'items-start')}>
         <div className="mb-0.5 flex min-w-0 items-center gap-2">
-          <span className="truncate text-xs font-medium text-muted-foreground">{message.sender_id}</span>
+          <span className="truncate text-xs font-medium text-muted-foreground">{senderLabel}</span>
         </div>
         {message.is_deleted ? (
           <div
@@ -227,6 +229,13 @@ export function MessageThread({ channelId }: { channelId: string }) {
   const prevMessageCountRef = useRef(0);
   const user = useAuthStore((state) => state.user);
   const markRead = useMarkRead();
+  // A channel has exactly two parties, so label incoming bubbles with the other
+  // party's display name (own bubbles say "You") instead of the raw sender UUID.
+  const { data: channelData } = useChannel(channelId);
+  const channel = channelData?.channel;
+  const otherPartyName =
+    (user?.id === channel?.customer_id ? channel?.provider_name : channel?.customer_name) ??
+    'Member';
 
   const { data, isLoading, isError } = useMessages(channelId, {
     before: beforeCursor,
@@ -371,6 +380,7 @@ export function MessageThread({ channelId }: { channelId: string }) {
               <MessageBubble
                 message={message}
                 isOwnMessage={user?.id === message.sender_id}
+                senderLabel={user?.id === message.sender_id ? 'You' : otherPartyName}
                 isLastRead={message.id === lastReadOwnMessageId}
               />
             </div>

@@ -58,6 +58,17 @@ function ActiveThread({ channelId }: { channelId: string }) {
     return data.channel.customer_id;
   })();
 
+  // The other party's display name (resolved by the gateway). Falls back to a
+  // friendly placeholder, never a raw UUID.
+  const otherPartyName = (() => {
+    if (!data?.channel || !me) return null;
+    const name =
+      data.channel.customer_id === me.id
+        ? data.channel.provider_name
+        : data.channel.customer_name;
+    return name && name.trim() ? name : 'Conversation';
+  })();
+
   const isBlocked = (() => {
     if (!otherPartyId) return false;
     return (blocksQuery.data?.blocks ?? []).some(
@@ -69,7 +80,16 @@ function ActiveThread({ channelId }: { channelId: string }) {
     <div className="flex h-full flex-col">
       <RelayBanner />
       {otherPartyId ? (
-        <div className="flex items-center justify-end border-b border-white/[0.06] px-3 py-1.5">
+        <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-sm font-medium"
+              aria-hidden="true"
+            >
+              {(otherPartyName ?? 'C').charAt(0).toUpperCase()}
+            </div>
+            <span className="truncate text-sm font-medium">{otherPartyName}</span>
+          </div>
           <BlockButton userId={otherPartyId} isBlocked={isBlocked} />
         </div>
       ) : null}

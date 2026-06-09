@@ -257,7 +257,7 @@ func main() {
 	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient, dbPool)
 	expenseHandler := handler.NewExpenseHandler(paymentClient)
 	taxHandler := handler.NewTaxHandler(paymentClient)
-	chatHandler := handler.NewChatHandler(chatClient, authMW, cfg.ChatWSAddr, cfg.InternalWSSecret, dbPool)
+	chatHandler := handler.NewChatHandler(chatClient, userClient, authMW, cfg.ChatWSAddr, cfg.InternalWSSecret, dbPool)
 	chatRelayHandler := handler.NewChatRelayHandler(dbPool)
 	userBlocksHandler := handler.NewUserBlocksHandler(dbPool)
 	chatTemplatesHandler := handler.NewChatTemplatesHandler(dbPool)

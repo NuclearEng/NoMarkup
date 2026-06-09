@@ -10,9 +10,30 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useChannels } from '@/hooks/useChannels';
 import { cn, formatRelativeTime } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
 import { CHANNEL_TYPE } from '@/types';
 import type { Channel } from '@/types';
+
+// Friendly fallback shown when the other party's display name can't be
+// resolved. Never fall back to a raw UUID — that's the bug we're fixing.
+const OTHER_PARTY_FALLBACK = 'Conversation';
+
+/**
+ * Picks the conversation's "other party" relative to the logged-in user.
+ * If the viewer is the customer, the other party is the provider, and vice
+ * versa. Returns the resolved display name (falling back to a friendly
+ * placeholder, never a UUID) plus the id for keys/labels.
+ */
+function otherParty(
+  channel: Channel,
+  currentUserId: string | undefined,
+): { id: string; name: string } {
+  const viewerIsCustomer = currentUserId === channel.customer_id;
+  const id = viewerIsCustomer ? channel.provider_id : channel.customer_id;
+  const name = viewerIsCustomer ? channel.provider_name : channel.customer_name;
+  return { id, name: name && name.trim() ? name : OTHER_PARTY_FALLBACK };
+}
 
 function channelTypeLabel(channelType: string): string {
   switch (channelType) {
@@ -32,7 +53,15 @@ function truncateMessage(content: string, maxLength: number): string {
   return content.slice(0, maxLength) + '...';
 }
 
-function ChannelListItem({ channel, isActive }: { channel: Channel; isActive: boolean }) {
+function ChannelListItem({
+  channel,
+  isActive,
+  currentUserId,
+}: {
+  channel: Channel;
+  isActive: boolean;
+  currentUserId: string | undefined;
+}) {
   const setActiveChannel = useChatStore((state) => state.setActiveChannel);
   const lastMessagePreview = channel.last_message
     ? truncateMessage(channel.last_message.content, 50)
@@ -41,7 +70,7 @@ function ChannelListItem({ channel, isActive }: { channel: Channel; isActive: bo
     ? formatRelativeTime(new Date(channel.last_message.created_at))
     : formatRelativeTime(new Date(channel.created_at));
 
-  const otherPartyId = channel.provider_id || channel.customer_id;
+  const { name: otherPartyName } = otherParty(channel, currentUserId);
 
   return (
     <button
@@ -53,15 +82,15 @@ function ChannelListItem({ channel, isActive }: { channel: Channel; isActive: bo
           ? 'border-primary bg-primary/5'
           : 'border-transparent hover:bg-muted',
       )}
-      aria-label={`Open conversation with ${otherPartyId}`}
+      aria-label={`Open conversation with ${otherPartyName}`}
       aria-current={isActive ? 'true' : undefined}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium">
-        {otherPartyId.charAt(0).toUpperCase()}
+        {otherPartyName.charAt(0).toUpperCase()}
       </div>
       <div className="flex-1 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{otherPartyId}</span>
+          <span className="truncate text-sm font-medium">{otherPartyName}</span>
           <span className="shrink-0 text-xs text-muted-foreground">{lastMessageTime}</span>
         </div>
         <p className="truncate text-xs text-muted-foreground">{lastMessagePreview}</p>
@@ -100,6 +129,7 @@ function ChannelListSkeleton() {
 export function ChannelList() {
   const [searchQuery, setSearchQuery] = useState('');
   const activeChannelId = useChatStore((state) => state.activeChannelId);
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const { data, isLoading, isError } = useChannels({ page: 1, per_page: 50 });
 
   const channels = data?.channels ?? [];
@@ -107,9 +137,8 @@ export function ChannelList() {
   const filteredChannels = searchQuery
     ? channels.filter((channel) => {
         const query = searchQuery.toLowerCase();
-        const matchesParty =
-          channel.customer_id.toLowerCase().includes(query) ||
-          channel.provider_id.toLowerCase().includes(query);
+        const { name } = otherParty(channel, currentUserId);
+        const matchesParty = name.toLowerCase().includes(query);
         const matchesMessage = channel.last_message?.content
           .toLowerCase()
           .includes(query);
@@ -165,6 +194,7 @@ export function ChannelList() {
                 key={channel.id}
                 channel={channel}
                 isActive={activeChannelId === channel.id}
+                currentUserId={currentUserId}
               />
             ))}
           </div>

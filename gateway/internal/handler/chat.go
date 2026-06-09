@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"nhooyr.io/websocket"
@@ -35,6 +36,7 @@ const maxMessageContentLen = 2000
 // nil-safe DB pattern; the gRPC service still runs).
 type ChatHandler struct {
 	chatClient     chatv1.ChatServiceClient
+	userClient     userv1.UserServiceClient
 	authMW         *middleware.AuthMiddleware
 	chatWSAddr     string
 	internalSecret string // shared secret presented to the chat WS backend
@@ -44,9 +46,15 @@ type ChatHandler struct {
 // NewChatHandler creates a new ChatHandler. internalSecret is the shared secret
 // presented to the chat WS backend on dial (defense-in-depth so the backend can
 // reject connections that did not transit the gateway).
-func NewChatHandler(chatClient chatv1.ChatServiceClient, authMW *middleware.AuthMiddleware, chatWSAddr, internalSecret string, db *pgxpool.Pool) *ChatHandler {
+//
+// userClient is used to resolve the customer/provider display names that enrich
+// the channel JSON (so the web client renders a name instead of a raw UUID). It
+// is optional — when nil, name enrichment is skipped and the channel list still
+// works (fail-soft).
+func NewChatHandler(chatClient chatv1.ChatServiceClient, userClient userv1.UserServiceClient, authMW *middleware.AuthMiddleware, chatWSAddr, internalSecret string, db *pgxpool.Pool) *ChatHandler {
 	return &ChatHandler{
 		chatClient:     chatClient,
+		userClient:     userClient,
 		authMW:         authMW,
 		chatWSAddr:     chatWSAddr,
 		internalSecret: internalSecret,
@@ -100,9 +108,17 @@ func (h *ChatHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Collect every participant id across the page, then resolve unique ids to
+	// display names in one batch (dedup avoids N×2 GetUser calls).
+	ids := make([]string, 0, len(resp.GetChannels())*2)
+	for _, ch := range resp.GetChannels() {
+		ids = append(ids, ch.GetCustomerId(), ch.GetProviderId())
+	}
+	names := h.resolveParticipantNames(r.Context(), ids...)
+
 	channels := make([]map[string]interface{}, 0, len(resp.GetChannels()))
 	for _, ch := range resp.GetChannels() {
-		channels = append(channels, protoChannelToJSON(ch))
+		channels = append(channels, protoChannelToJSON(ch, names))
 	}
 
 	result := map[string]interface{}{
@@ -148,7 +164,9 @@ func (h *ChatHandler) GetChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoChannelToJSON(resp.GetChannel()))
+	ch := resp.GetChannel()
+	names := h.resolveParticipantNames(r.Context(), ch.GetCustomerId(), ch.GetProviderId())
+	writeJSON(w, http.StatusOK, protoChannelToJSON(ch, names))
 }
 
 // ListMessages handles GET /api/v1/channels/{id}/messages.
@@ -528,7 +546,13 @@ func proxyWebSocket(ctx context.Context, src, dst *websocket.Conn, onInbound ...
 
 // --- Proto to JSON conversion helpers ---
 
-func protoChannelToJSON(ch *chatv1.Channel) map[string]interface{} {
+// protoChannelToJSON projects a chat Channel into the gateway's JSON shape.
+//
+// names resolves participant ids → display_name so the web client can render a
+// human-readable name instead of a raw UUID. It is built once per request via
+// resolveParticipantNames and may be nil/partial (fail-soft): a missing entry
+// simply omits customer_name / provider_name for that channel.
+func protoChannelToJSON(ch *chatv1.Channel, names map[string]string) map[string]interface{} {
 	if ch == nil {
 		return map[string]interface{}{}
 	}
@@ -545,11 +569,59 @@ func protoChannelToJSON(ch *chatv1.Channel) map[string]interface{} {
 		"updated_at":   formatTimestamp(ch.GetUpdatedAt()),
 	}
 
+	if names != nil {
+		if name := names[ch.GetCustomerId()]; name != "" {
+			result["customer_name"] = name
+		}
+		if name := names[ch.GetProviderId()]; name != "" {
+			result["provider_name"] = name
+		}
+	}
+
 	if ch.GetLastMessage() != nil {
 		result["last_message"] = protoMessageToJSON(ch.GetLastMessage())
 	}
 
 	return result
+}
+
+// resolveParticipantNames resolves a set of user ids to their public display
+// names via the user gRPC service. It dedupes ids (so a list with N channels
+// makes at most one GetUser call per unique participant, not N×2) and is
+// fail-soft: a lookup error or empty display_name leaves that id out of the
+// returned map rather than failing the whole channel response. Only the
+// public-safe display_name is surfaced — no other PII.
+//
+// Returns nil when there is no user client configured or no ids to resolve.
+func (h *ChatHandler) resolveParticipantNames(ctx context.Context, ids ...string) map[string]string {
+	if h.userClient == nil {
+		return nil
+	}
+
+	unique := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			unique[id] = struct{}{}
+		}
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+
+	names := make(map[string]string, len(unique))
+	for id := range unique {
+		resp, err := h.userClient.GetUser(ctx, &userv1.GetUserRequest{UserId: id})
+		if err != nil {
+			slog.WarnContext(ctx, "chat: resolve participant name failed",
+				"user_id", id, "error", err)
+			continue // fail soft — omit this name
+		}
+		if name := resp.GetUser().GetDisplayName(); name != "" {
+			names[id] = name
+		}
+	}
+
+	return names
 }
 
 func protoMessageToJSON(m *chatv1.Message) map[string]interface{} {

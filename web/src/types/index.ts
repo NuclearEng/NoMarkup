@@ -747,6 +747,10 @@ export interface Channel {
   job_id: string;
   customer_id: string;
   provider_id: string;
+  /** Public display name of the customer, resolved by the gateway. May be absent if unresolved. */
+  customer_name?: string;
+  /** Public display name of the provider, resolved by the gateway. May be absent if unresolved. */
+  provider_name?: string;
   status: string;
   channel_type: string;
   last_message?: ChatMessage;
