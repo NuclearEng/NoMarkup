@@ -345,9 +345,11 @@ describe('useChangeTier', () => {
   it('changes the subscription tier', async () => {
     const upgradedSub = { ...mockSubscription, tier_id: 'tier-2' };
     // ChangeTier is a POST to /subscriptions/change-tier (not PATCH) —
-    // matches the gateway router (`r.Post("/change-tier", ...)`).
+    // matches the gateway router (`r.Post("/change-tier", ...)`). The hook
+    // returns the full response so the UI can surface the proration amount.
     vi.mocked(api.post).mockResolvedValueOnce({
       subscription: upgradedSub,
+      proration_amount_cents: 1234,
     });
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -363,7 +365,8 @@ describe('useChangeTier', () => {
 
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(result.current.data?.tier_id).toBe('tier-2');
+    expect(result.current.data?.subscription.tier_id).toBe('tier-2');
+    expect(result.current.data?.proration_amount_cents).toBe(1234);
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/subscriptions/change-tier',
       { new_tier_id: 'tier-2', billing_interval: 'annual' },
@@ -378,7 +381,9 @@ describe('useChangeTier', () => {
   });
 
   it('handles tier change error', async () => {
-    vi.mocked(api.patch).mockRejectedValueOnce(
+    // ChangeTier is a POST (matches the gateway router), so the failure must be
+    // injected on api.post — not api.patch.
+    vi.mocked(api.post).mockRejectedValueOnce(
       new Error('Downgrade not allowed'),
     );
 

@@ -12,7 +12,8 @@ const tier: SubscriptionTier = {
   slug: 'pro',
   monthly_price_cents: 49_00,
   annual_price_cents: 490_00,
-  fee_discount_percentage: 5,
+  // fee_discount_percentage is a fraction (0.05 = 5% off), per the proto contract.
+  fee_discount_percentage: 0.05,
   max_active_bids: 50,
   max_service_categories: 5,
   portfolio_image_limit: 25,

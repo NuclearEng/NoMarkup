@@ -76,14 +76,14 @@ export function useChangeTier() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Return the full response so callers can surface the proration amount the
+    // gateway computes for the plan change.
     mutationFn: (input: ChangeTierInput) =>
-      api
-        .post<{ subscription: Subscription }>(
-          '/api/v1/subscriptions/change-tier',
-          input,
-          idempotencyHeader(),
-        )
-        .then((res) => res.subscription),
+      api.post<{ subscription: Subscription; proration_amount_cents: number }>(
+        '/api/v1/subscriptions/change-tier',
+        input,
+        idempotencyHeader(),
+      ),
     onSuccess: () => {
       toast.success('Plan changed');
       void queryClient.invalidateQueries({ queryKey: ['subscription'] });

@@ -369,6 +369,26 @@ export default function SubscriptionPage() {
           {changeTier.isSuccess ? (
             <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg p-3 text-sm">
               Plan changed successfully.
+              {changeTier.data && changeTier.data.proration_amount_cents > 0 ? (
+                <>
+                  {' '}
+                  A prorated charge of{' '}
+                  <span className="font-semibold">
+                    {formatCents(changeTier.data.proration_amount_cents)}
+                  </span>{' '}
+                  applies for the rest of this billing period.
+                </>
+              ) : null}
+              {changeTier.data && changeTier.data.proration_amount_cents < 0 ? (
+                <>
+                  {' '}
+                  A prorated credit of{' '}
+                  <span className="font-semibold">
+                    {formatCents(Math.abs(changeTier.data.proration_amount_cents))}
+                  </span>{' '}
+                  will be applied to your next invoice.
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>

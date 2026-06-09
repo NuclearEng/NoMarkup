@@ -36,6 +36,8 @@ const tiers = [
     monthly_price_cents: 49_00,
     annual_price_cents: 490_00,
     featured_placement: true,
+    // fraction (0.10 = 10% off) — should render as "10%", not "0.1%".
+    fee_discount_percentage: 0.1,
   }),
   makeTier({
     id: 'elite',
@@ -77,6 +79,8 @@ describe('SubscriptionTierComparison', () => {
     expect(screen.getByText('Service categories')).toBeDefined();
     expect(screen.getByText('Portfolio images')).toBeDefined();
     expect(screen.getByText('Fee discount')).toBeDefined();
+    // The Pro tier's 0.10 fraction must display as a whole-number percent.
+    expect(screen.getByText('10%')).toBeDefined();
   });
 
   it('marks the current tier and disables its CTA', () => {

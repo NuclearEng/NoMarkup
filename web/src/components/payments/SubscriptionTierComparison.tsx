@@ -28,9 +28,11 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     label: 'Fee discount',
+    // fee_discount_percentage is a fraction (e.g. 0.10 = 10% off), so scale to
+    // a whole-number percentage for display — matching the usage fee readout.
     getValue: (t) =>
       t.fee_discount_percentage > 0
-        ? `${String(t.fee_discount_percentage)}%`
+        ? `${String(Math.round(t.fee_discount_percentage * 100))}%`
         : '-',
   },
   {

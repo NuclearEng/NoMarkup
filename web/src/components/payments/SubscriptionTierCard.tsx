@@ -29,7 +29,9 @@ function getFeatures(tier: SubscriptionTier): FeatureItem[] {
       included: true,
     },
     {
-      label: `${String(tier.fee_discount_percentage)}% fee discount`,
+      // fee_discount_percentage is a fraction (e.g. 0.10 = 10% off), matching
+      // the proto contract and the usage display in the subscription page.
+      label: `${String(Math.round(tier.fee_discount_percentage * 100))}% fee discount`,
       included: tier.fee_discount_percentage > 0,
     },
     { label: 'Featured placement', included: tier.featured_placement },
