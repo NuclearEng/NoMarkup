@@ -204,6 +204,26 @@ func (r *PostgresRepository) GetContractDetail(ctx context.Context, contractID s
 	return cd, nil
 }
 
+// GetContractForPayment loads the parties + amount of a non-deleted contract so
+// the payment and installment flows can reconcile client-supplied values
+// (amount, provider) against the source of truth instead of trusting the body.
+func (r *PostgresRepository) GetContractForPayment(ctx context.Context, contractID string) (*domain.ContractForPayment, error) {
+	c := &domain.ContractForPayment{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, customer_id, provider_id, amount_cents, status
+		FROM contracts
+		WHERE id = $1 AND deleted_at IS NULL`, contractID).Scan(
+		&c.ID, &c.CustomerID, &c.ProviderID, &c.AmountCents, &c.Status,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get contract for payment: %w", domain.ErrContractNotFound)
+		}
+		return nil, fmt.Errorf("get contract for payment: %w", err)
+	}
+	return c, nil
+}
+
 // GetMilestonesForContract fetches milestones for a contract.
 func (r *PostgresRepository) GetMilestonesForContract(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error) {
 	rows, err := r.pool.Query(ctx, `

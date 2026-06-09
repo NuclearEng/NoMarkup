@@ -346,6 +346,18 @@ type ContractDetail struct {
 	CreatedAt       time.Time
 }
 
+// ContractForPayment holds the minimal contract fields needed to reconcile a
+// payment server-side: the parties (to authorize the payer and derive the
+// payee) and the contract amount (to bound the charge). Never trust the client
+// for these — see PaymentService.CreatePayment.
+type ContractForPayment struct {
+	ID          string
+	CustomerID  string
+	ProviderID  string
+	AmountCents int64
+	Status      string
+}
+
 // MilestoneDetail holds milestone info for invoice line items.
 type MilestoneDetail struct {
 	ID          string
@@ -369,6 +381,9 @@ type PaymentRepository interface {
 	UpdateRefund(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
 	GetStripeAccountID(ctx context.Context, userID string) (string, error)
 	SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error
+	// GetContractForPayment loads the parties + amount of a non-deleted contract
+	// so payment/installment flows can reconcile client input server-side.
+	GetContractForPayment(ctx context.Context, contractID string) (*ContractForPayment, error)
 	// SetStripeOnboardingComplete flips the provider_profiles.stripe_onboarding_complete
 	// flag for the user owning the given Stripe Connect account ID. Wired off
 	// the account.updated webhook so the local DB stays in sync with Stripe.

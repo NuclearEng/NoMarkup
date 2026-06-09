@@ -146,3 +146,78 @@ func TestPaymentService_DisburseAdvance_IdempotentTransferOnRepeat(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, transfer1, transfer2, "repeat disburse of the same advance must dedup the platform transfer (no double payout)")
 }
+
+// --- CreatePayment contract reconciliation guard ---
+//
+// Regression: /qa 2026-06-09 found CreatePayment trusted the client's
+// amount_cents and provider_id with no contract reconciliation — a customer
+// could charge $10,000,000 (or an int64-overflowing value) against a $700
+// contract and direct the payout at an arbitrary provider. The fix loads the
+// contract server-side, bounds the amount, and derives the payee.
+func reconcileRepo(contractAmount int64) *mockPaymentRepo {
+	return &mockPaymentRepo{
+		getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+			return &domain.ContractForPayment{
+				ID:          contractID,
+				CustomerID:  "cust-1",
+				ProviderID:  "prov-real",
+				AmountCents: contractAmount,
+				Status:      "active",
+			}, nil
+		},
+		getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) { return defaultFeeConfig(), nil },
+		getFeeConfigFn:        func(_ context.Context, _ string) (*domain.FeeConfig, error) { return nil, domain.ErrFeeConfigNotFound },
+		getStripeAccountIDFn:  func(_ context.Context, _ string) (string, error) { return "acct_prov_real", nil },
+		createPaymentFn:       func(_ context.Context, _ *domain.Payment) error { return nil },
+		updateStripeFieldsFn:  func(_ context.Context, _, _, _, _ string) error { return nil },
+		getPaymentFn:          func(_ context.Context, _ string) (*domain.Payment, error) { return &domain.Payment{Status: "pending"}, nil },
+	}
+}
+
+func TestPaymentService_CreatePayment_RejectsOverchargeAboveContract(t *testing.T) {
+	t.Parallel()
+	svc := newTestPaymentService(reconcileRepo(70000), nil) // $700 contract
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    1_000_000_000, // $10M
+		IdempotencyKey: "k1",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidAmount), "amount above the contract total must be rejected")
+}
+
+func TestPaymentService_CreatePayment_RejectsNonOwnerCustomer(t *testing.T) {
+	t.Parallel()
+	svc := newTestPaymentService(reconcileRepo(70000), nil)
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-attacker", // not the contract's customer
+		ProviderID:     "prov-1",
+		AmountCents:    5000,
+		IdempotencyKey: "k2",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrContractNotOwned), "a non-owning customer must not pay on the contract")
+}
+
+func TestPaymentService_CreatePayment_DerivesProviderFromContract(t *testing.T) {
+	t.Parallel()
+	var stored *domain.Payment
+	repo := reconcileRepo(70000)
+	repo.createPaymentFn = func(_ context.Context, p *domain.Payment) error { stored = p; return nil }
+	repo.getPaymentFn = func(_ context.Context, _ string) (*domain.Payment, error) { return stored, nil }
+	svc := newTestPaymentService(repo, nil)
+
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-attacker-controlled", // must be ignored
+		AmountCents:    5000,
+		IdempotencyKey: "k3",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Equal(t, "prov-real", stored.ProviderID, "payee must come from the contract, never the client body")
+}

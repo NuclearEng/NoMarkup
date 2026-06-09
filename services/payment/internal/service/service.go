@@ -140,6 +140,28 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 		return nil, "", fmt.Errorf("create payment: %w", domain.ErrInvalidAmount)
 	}
 
+	// Reconcile against the contract server-side. The client supplies amount and
+	// provider_id, but neither may be trusted (§6: all price calculations are
+	// server-side). Without this, a customer could charge any amount against a
+	// contract — e.g. $10M on a $700 job, or a near-int64-max value that wraps
+	// the fee math — and could direct the payout at an arbitrary provider.
+	contract, err := s.repo.GetContractForPayment(ctx, input.ContractID)
+	if err != nil {
+		return nil, "", fmt.Errorf("create payment: %w", err)
+	}
+	// The payer must be the contract's customer.
+	if input.CustomerID != contract.CustomerID {
+		return nil, "", fmt.Errorf("create payment: %w", domain.ErrContractNotOwned)
+	}
+	// The amount may never exceed the contract total. Partial milestone and
+	// installment payments are <= the total, so this bound permits them while
+	// rejecting overcharge and overflow inputs.
+	if input.AmountCents > contract.AmountCents {
+		return nil, "", fmt.Errorf("create payment: amount exceeds contract: %w", domain.ErrInvalidAmount)
+	}
+	// Derive the payee from the contract; never trust the client's provider_id.
+	input.ProviderID = contract.ProviderID
+
 	// Calculate fees.
 	breakdown, err := s.CalculateFees(ctx, input.AmountCents, input.CategoryID)
 	if err != nil {

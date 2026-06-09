@@ -47,6 +47,7 @@ type mockPaymentRepo struct {
 	getProviderProfileFn  func(ctx context.Context, providerID string) (string, string, error)
 	// Invoice methods
 	getContractDetailFn        func(ctx context.Context, contractID string) (*domain.ContractDetail, error)
+	getContractForPaymentFn    func(ctx context.Context, contractID string) (*domain.ContractForPayment, error)
 	getMilestonesForContractFn func(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error)
 	getPaymentsForContractFn   func(ctx context.Context, contractID string) ([]*domain.Payment, error)
 	// Stripe customer ID + admin list/details/revenue
@@ -320,6 +321,21 @@ func (m *mockPaymentRepo) GetContractDetail(ctx context.Context, contractID stri
 		return m.getContractDetailFn(ctx, contractID)
 	}
 	return nil, nil
+}
+func (m *mockPaymentRepo) GetContractForPayment(ctx context.Context, contractID string) (*domain.ContractForPayment, error) {
+	if m.getContractForPaymentFn != nil {
+		return m.getContractForPaymentFn(ctx, contractID)
+	}
+	// Default fixture matches the common CreatePayment test inputs (cust-1 paying
+	// prov-1) with a high enough cap that legitimate amounts reconcile. Tests that
+	// exercise reconciliation failures override getContractForPaymentFn.
+	return &domain.ContractForPayment{
+		ID:          contractID,
+		CustomerID:  "cust-1",
+		ProviderID:  "prov-1",
+		AmountCents: 100_000_000,
+		Status:      "active",
+	}, nil
 }
 func (m *mockPaymentRepo) GetMilestonesForContract(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error) {
 	if m.getMilestonesForContractFn != nil {
