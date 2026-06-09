@@ -1479,6 +1479,10 @@ func mapDomainError(err error) error {
 		return status.Error(codes.PermissionDenied, "account banned")
 	case errors.Is(err, domain.ErrCannotSuspendBanned):
 		return status.Error(codes.FailedPrecondition, "cannot suspend a banned account")
+	case errors.Is(err, domain.ErrInvalidDocumentType):
+		return status.Error(codes.InvalidArgument, "invalid document type")
+	case errors.Is(err, domain.ErrMissingFileName):
+		return status.Error(codes.InvalidArgument, "file_name is required")
 	case errors.Is(err, domain.ErrAccountDeactivated):
 		return status.Error(codes.PermissionDenied, "account deactivated")
 	case errors.Is(err, domain.ErrProviderProfileNotFound):

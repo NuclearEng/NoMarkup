@@ -25,6 +25,8 @@ var (
 	ErrInvalidOTP               = errors.New("invalid OTP code")
 	ErrOTPExpired               = errors.New("OTP code expired")
 	ErrDocumentNotFound         = errors.New("document not found")
+	ErrInvalidDocumentType      = errors.New("invalid document type")
+	ErrMissingFileName          = errors.New("file_name is required")
 	ErrInvalidMFACode           = errors.New("invalid MFA code")
 	ErrMFANotSetup              = errors.New("MFA not set up")
 	ErrMFAAlreadyEnabled        = errors.New("MFA already enabled")

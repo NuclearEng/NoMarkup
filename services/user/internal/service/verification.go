@@ -25,14 +25,11 @@ func (v *Verification) UploadDocument(ctx context.Context, userID string, docTyp
 	if userID == "" {
 		return nil, fmt.Errorf("upload document: user_id is required")
 	}
-	if docType == "" {
-		return nil, fmt.Errorf("upload document: document_type is required")
-	}
-	if !isValidDocumentType(docType) {
-		return nil, fmt.Errorf("upload document: invalid document type %q", docType)
+	if docType == "" || !isValidDocumentType(docType) {
+		return nil, fmt.Errorf("upload document: %w", domain.ErrInvalidDocumentType)
 	}
 	if fileName == "" {
-		return nil, fmt.Errorf("upload document: file_name is required")
+		return nil, fmt.Errorf("upload document: %w", domain.ErrMissingFileName)
 	}
 
 	doc := &domain.Document{
