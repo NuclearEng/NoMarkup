@@ -2,11 +2,51 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// objectKeyOwner extracts the owning user-id segment from a storage object key
+// or full URL. Every imaging key is namespaced "{context}/{userID}/...", so the
+// owner is the second path segment. A full URL (scheme://host/bucket/key) is
+// reduced to its key first. Returns "" when the shape is unexpected so callers
+// fail closed.
+func objectKeyOwner(sourceURL string) string {
+	key := sourceURL
+	if i := strings.Index(key, "://"); i >= 0 {
+		rest := key[i+3:]
+		if s := strings.IndexByte(rest, '/'); s >= 0 {
+			path := rest[s+1:] // drop host
+			if b := strings.IndexByte(path, '/'); b >= 0 {
+				key = path[b+1:] // drop bucket
+			} else {
+				key = path
+			}
+		}
+	}
+	parts := strings.SplitN(key, "/", 3)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[1]
+}
+
+// requireOwnedObject enforces that the storage object identified by sourceURL
+// belongs to userID. The imaging service trusts the caller-supplied source_url
+// and never checks ownership, so without this gate any authenticated user could
+// read and reprocess another user's stored object — including private
+// verification documents (ID/SSN scans). Writes a 403 and returns false on a
+// cross-tenant or unexpectedly-shaped key (fails closed).
+func requireOwnedObject(w http.ResponseWriter, sourceURL, userID string) bool {
+	if owner := objectKeyOwner(sourceURL); owner == "" || owner != userID {
+		writeError(w, http.StatusForbidden, "source object does not belong to you")
+		return false
+	}
+	return true
+}
 
 // ImageHandler handles HTTP endpoints for the imaging pipeline.
 type ImageHandler struct {
@@ -98,6 +138,9 @@ func (h *ImageHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "object_key is required")
 		return
 	}
+	if !requireOwnedObject(w, body.ObjectKey, claims.UserID) {
+		return
+	}
 
 	resp, err := h.imagingClient.ConfirmUpload(r.Context(), &imagingv1.ConfirmUploadRequest{
 		ObjectKey: body.ObjectKey,
@@ -129,7 +172,7 @@ func (h *ImageHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 // ProcessImage handles POST /api/v1/images/process.
 // Body: { "source_url": "...", "context": "job_photo", "options": { ... } }
 func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
@@ -146,6 +189,9 @@ func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 
 	if body.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
 		return
 	}
 
@@ -189,7 +235,7 @@ func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 
 // ProcessJobPhotos handles POST /api/v1/images/process/job-photos.
 func (h *ImageHandler) ProcessJobPhotos(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
@@ -209,6 +255,11 @@ func (h *ImageHandler) ProcessJobPhotos(w http.ResponseWriter, r *http.Request) 
 	if len(body.SourceURLs) == 0 {
 		writeError(w, http.StatusBadRequest, "source_urls is required")
 		return
+	}
+	for _, u := range body.SourceURLs {
+		if !requireOwnedObject(w, u, claims.UserID) {
+			return
+		}
 	}
 
 	resp, err := h.imagingClient.ProcessJobPhotos(r.Context(), &imagingv1.ProcessJobPhotosRequest{
@@ -259,6 +310,10 @@ func (h *ImageHandler) ProcessAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
+		return
+	}
+
 	resp, err := h.imagingClient.ProcessAvatar(r.Context(), &imagingv1.ProcessAvatarRequest{
 		UserId:    claims.UserID,
 		SourceUrl: body.SourceURL,
@@ -300,6 +355,10 @@ func (h *ImageHandler) ProcessPortfolio(w http.ResponseWriter, r *http.Request) 
 	}
 	if body.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
 		return
 	}
 
@@ -345,6 +404,10 @@ func (h *ImageHandler) ProcessDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
 		return
 	}
 
