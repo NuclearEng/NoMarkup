@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -67,14 +69,20 @@ func providerResponseKey(jobID, providerID string) string {
 
 // InstantMatchHandler handles instant match endpoints.
 type InstantMatchHandler struct {
-	jobClient jobv1.JobServiceClient
-	bidClient bidv1.BidServiceClient
-	cache     *cache.Client
+	jobClient      jobv1.JobServiceClient
+	bidClient      bidv1.BidServiceClient
+	contractClient contractv1.ContractServiceClient
+	cache          *cache.Client
 }
 
-// NewInstantMatchHandler creates a new InstantMatchHandler.
-func NewInstantMatchHandler(jobClient jobv1.JobServiceClient, bidClient bidv1.BidServiceClient, cacheClient *cache.Client) *InstantMatchHandler {
-	return &InstantMatchHandler{jobClient: jobClient, bidClient: bidClient, cache: cacheClient}
+// NewInstantMatchHandler creates a new InstantMatchHandler. contractClient
+// (optional) is used to mint the contract row immediately after an offer is
+// accepted — without it, accepting an instant-match offer only awards the bid
+// and flips the job to `awarded`, leaving the offer→contract pipeline severed
+// (the customer/provider never get a contract to accept). This mirrors
+// BidHandler.AwardBid's saga step 2.
+func NewInstantMatchHandler(jobClient jobv1.JobServiceClient, bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient, cacheClient *cache.Client) *InstantMatchHandler {
+	return &InstantMatchHandler{jobClient: jobClient, bidClient: bidClient, contractClient: contractClient, cache: cacheClient}
 }
 
 // CreateInstantMatch handles POST /api/v1/jobs/{id}/instant-match.
@@ -119,6 +127,18 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Instant-match accept awards the job at the customer's
+	// offer_accepted_cents (see bidding engine accept_offer_price). Without
+	// that price set, every provider's accept would fail downstream with
+	// "job has no offer accepted price". Reject up front with a clear,
+	// customer-actionable message instead of fanning out an offer that can
+	// never be accepted.
+	if job.OfferAcceptedCents == nil || job.GetOfferAcceptedCents() <= 0 {
+		writeError(w, http.StatusBadRequest,
+			"set an accept-now price on this job before requesting an instant match")
+		return
+	}
+
 	now := time.Now().UTC()
 	expiresAt := now.Add(instantMatchOfferTTL)
 
@@ -128,10 +148,11 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 		OfferSentAt: now.Format(time.RFC3339),
 		ExpiresAt:   expiresAt.Format(time.RFC3339),
 		JobTitle:    job.GetTitle(),
-	}
-
-	if job.StartingBidCents != nil {
-		rec.AmountCents = job.GetStartingBidCents()
+		// Show providers the price they will actually be awarded on accept —
+		// the offer_accepted_cents the engine uses — NOT starting_bid_cents.
+		// Surfacing the starting bid here let a provider accept for a
+		// different (lower) amount than the card advertised.
+		AmountCents: job.GetOfferAcceptedCents(),
 	}
 
 	redisKey := jobOfferKey(jobID)
@@ -340,15 +361,65 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	awardedBid := bidResp.GetBid()
+
+	// Saga step 2: now that the bid is awarded, mint the contract row so the
+	// instant-match accept → contract pipeline is wired end-to-end (same as
+	// BidHandler.AwardBid). Without this, accepting an instant-match offer left
+	// the job `awarded` with an awarded bid but NO contract — the customer and
+	// provider had nothing to accept and no escrow could be funded.
+	//
+	// We need the job's customer_id (the contract's other party); the accept
+	// claims only carry the provider. Fetch the job to resolve it.
+	contractID := ""
+	if h.contractClient != nil {
+		jobResp, jobErr := h.jobClient.GetJob(ctx, &jobv1.GetJobRequest{
+			JobId:            jobID,
+			RequestingUserId: claims.UserID,
+		})
+		if jobErr != nil {
+			// The bid is already awarded; the contract is missing. Don't 500
+			// the provider — log loudly for ops recovery and return the award.
+			slog.Error("instant match: failed to load job for contract creation (manual recovery required)",
+				"job_id", jobID,
+				"provider_id", claims.UserID,
+				"bid_id", awardedBid.GetId(),
+				"error", jobErr,
+			)
+		} else if job := jobResp.GetJob().GetJob(); job != nil {
+			contractResp, contractErr := h.contractClient.CreateContractFromAward(ctx, &contractv1.CreateContractFromAwardRequest{
+				JobId:         jobID,
+				BidId:         awardedBid.GetId(),
+				CustomerId:    job.GetCustomerId(),
+				ProviderId:    awardedBid.GetProviderId(),
+				AmountCents:   awardedBid.GetAmountCents(),
+				PaymentTiming: commonv1.PaymentTiming_PAYMENT_TIMING_COMPLETION,
+			})
+			if contractErr != nil {
+				slog.Error("instant match: contract creation after accept failed (manual recovery required)",
+					"job_id", jobID,
+					"provider_id", claims.UserID,
+					"bid_id", awardedBid.GetId(),
+					"amount_cents", awardedBid.GetAmountCents(),
+					"error", contractErr,
+				)
+			} else {
+				contractID = contractResp.GetContract().GetId()
+			}
+		}
+	}
+
 	slog.Info("instant match offer accepted",
 		"job_id", jobID,
 		"provider_id", claims.UserID,
-		"bid_id", bidResp.GetBid().GetId(),
+		"bid_id", awardedBid.GetId(),
+		"contract_id", contractID,
 	)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status": "accepted",
-		"bid":    protoBidToJSON(bidResp.GetBid()),
+		"status":      "accepted",
+		"bid":         protoBidToJSON(awardedBid),
+		"contract_id": contractID,
 	})
 }
 

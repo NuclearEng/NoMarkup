@@ -15,6 +15,11 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+// useAcceptOffer routes to /contracts/{id} on success.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),

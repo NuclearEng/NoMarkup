@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import { api, getApiErrorMessage } from '@/lib/api';
@@ -6,7 +7,6 @@ import { api, getApiErrorMessage } from '@/lib/api';
 interface ProviderOffer {
   job_id: string;
   job_title: string;
-  job_location: string;
   expires_at: string;
   amount_cents: number;
 }
@@ -30,13 +30,22 @@ export function useProviderOffers() {
 
 export function useAcceptOffer(jobId: string) {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   return useMutation({
     mutationFn: () =>
-      api.post<{ status: string }>(`/api/v1/provider/offers/${jobId}/accept`),
-    onSuccess: () => {
-      toast.success('Offer accepted! The customer will be notified.');
+      api.post<{ status: string; contract_id?: string }>(
+        `/api/v1/provider/offers/${jobId}/accept`,
+      ),
+    onSuccess: (data) => {
+      toast.success('Offer accepted! A contract is ready for you to review.');
       void queryClient.invalidateQueries({ queryKey: ['provider-offers'] });
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      // Accepting an instant-match offer mints a contract; take the provider
+      // straight to it so the "becomes a contract" transition is tangible.
+      if (data.contract_id) {
+        router.push(`/contracts/${data.contract_id}`);
+      }
     },
     onError: (err) => {
       toast.error(getApiErrorMessage(err, 'Failed to accept offer. It may have already expired.'));

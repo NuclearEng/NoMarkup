@@ -288,7 +288,7 @@ func main() {
 	installmentHandler := handler.NewInstallmentHandler(paymentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
-	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, cacheClient)
+	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, contractClient, cacheClient)
 	disputeHandler := handler.NewDisputeHandler(contractClient, dbPool)
 	piiCipher, err := gatewaycrypto.FromEnv()
 	if err != nil {
