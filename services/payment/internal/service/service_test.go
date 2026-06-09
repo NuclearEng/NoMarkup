@@ -57,6 +57,7 @@ type mockPaymentRepo struct {
 	// Installment methods
 	createInstallmentPlanFn             func(ctx context.Context, plan *domain.InstallmentPlan) error
 	getInstallmentPlanFn                func(ctx context.Context, planID string) (*domain.InstallmentPlan, error)
+	hasActiveInstallmentPlanForContractFn func(ctx context.Context, contractID string) (bool, error)
 	listInstallmentPlansFn              func(ctx context.Context, userID, statusFilter string, page, pageSize int) ([]*domain.InstallmentPlan, int, error)
 	createScheduledInstallmentsFn       func(ctx context.Context, installments []domain.ScheduledInstallment) error
 	getDueInstallmentsFn                func(ctx context.Context, now time.Time) ([]domain.ScheduledInstallment, error)
@@ -205,6 +206,12 @@ func (m *mockPaymentRepo) GetInstallmentPlan(ctx context.Context, planID string)
 		return m.getInstallmentPlanFn(ctx, planID)
 	}
 	return nil, domain.ErrInstallmentPlanNotFound
+}
+func (m *mockPaymentRepo) HasActiveInstallmentPlanForContract(ctx context.Context, contractID string) (bool, error) {
+	if m.hasActiveInstallmentPlanForContractFn != nil {
+		return m.hasActiveInstallmentPlanForContractFn(ctx, contractID)
+	}
+	return false, nil
 }
 func (m *mockPaymentRepo) ListInstallmentPlans(ctx context.Context, userID, statusFilter string, page, pageSize int) ([]*domain.InstallmentPlan, int, error) {
 	if m.listInstallmentPlansFn != nil {

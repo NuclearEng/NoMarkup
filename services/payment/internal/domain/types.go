@@ -295,6 +295,7 @@ var (
 	ErrAdvanceNotApproved      = errors.New("advance is not in approved status")
 	ErrAdvanceDeclined         = errors.New("credit score is below the minimum to qualify for an advance")
 	ErrInstallmentPlanNotFound = errors.New("installment plan not found")
+	ErrInstallmentPlanExists   = errors.New("an active installment plan already exists for this contract")
 	ErrInvalidInstallmentCount = errors.New("installment count must be 3 or 6")
 	ErrTaxFormNotFound         = errors.New("tax form not found")
 	ErrContractNotFound        = errors.New("contract not found")
@@ -396,6 +397,7 @@ type PaymentRepository interface {
 	// Installment plan operations
 	CreateInstallmentPlan(ctx context.Context, plan *InstallmentPlan) error
 	GetInstallmentPlan(ctx context.Context, planID string) (*InstallmentPlan, error)
+	HasActiveInstallmentPlanForContract(ctx context.Context, contractID string) (bool, error)
 	ListInstallmentPlans(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*InstallmentPlan, int, error)
 	CreateScheduledInstallments(ctx context.Context, installments []ScheduledInstallment) error
 	GetDueInstallments(ctx context.Context, dueDate time.Time) ([]ScheduledInstallment, error)

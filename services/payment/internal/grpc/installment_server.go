@@ -164,6 +164,11 @@ func mapInstallmentError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrInstallmentPlanNotFound):
 		return status.Error(codes.NotFound, "installment plan not found")
+	case errors.Is(err, domain.ErrInstallmentPlanExists):
+		// One active plan per contract. The provider is paid in full on plan
+		// creation, so a duplicate would double-pay — reject as a conflict, not a
+		// 500. AlreadyExists → 409 at the gateway.
+		return status.Error(codes.AlreadyExists, "an active installment plan already exists for this contract")
 	case errors.Is(err, domain.ErrInvalidInstallmentCount):
 		return status.Error(codes.InvalidArgument, "installment count must be 3 or 6")
 	case errors.Is(err, domain.ErrInvalidAmount):

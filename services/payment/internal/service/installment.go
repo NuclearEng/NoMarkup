@@ -51,6 +51,22 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 		return nil, "", fmt.Errorf("create installment plan fee rate: %w", err)
 	}
 
+	// Fail closed: at most one ACTIVE plan per contract. CreateInstallmentPlan
+	// pays the provider in full immediately, so a second plan for the same
+	// contract would pay the provider twice for one job. The web UI hides the
+	// selector once a plan exists, but the invariant must hold at the server
+	// boundary too (a direct API call or double-submit would otherwise slip
+	// through). The DB partial-unique index is the atomic backstop for the
+	// concurrent race; this pre-check yields a friendly conflict in the common
+	// case, BEFORE any money moves or rows are written.
+	hasActive, err := s.repo.HasActiveInstallmentPlanForContract(ctx, input.ContractID)
+	if err != nil {
+		return nil, "", fmt.Errorf("create installment plan check existing: %w", err)
+	}
+	if hasActive {
+		return nil, "", fmt.Errorf("create installment plan: %w", domain.ErrInstallmentPlanExists)
+	}
+
 	bnplFeeCents := int64(float64(input.TotalAmountCents) * feeRate)
 	totalWithFeeCents := input.TotalAmountCents + bnplFeeCents
 
