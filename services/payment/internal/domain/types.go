@@ -9,6 +9,7 @@ import (
 // Sentinel errors for payment domain.
 var (
 	ErrPaymentNotFound       = errors.New("payment not found")
+	ErrWebhookSignature      = errors.New("webhook signature verification failed")
 	ErrIdempotencyConflict   = errors.New("idempotency key conflict")
 	ErrInvalidAmount         = errors.New("invalid amount")
 	ErrInvalidStatus         = errors.New("invalid status transition")

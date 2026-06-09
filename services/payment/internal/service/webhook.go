@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
@@ -76,7 +77,10 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, sign
 
 	event, err := s.webhookValidator.ConstructEvent(payload, signature)
 	if err != nil {
-		return fmt.Errorf("webhook signature verification failed: %w", err)
+		// A missing/malformed/mismatched signature is client-side bad input, not
+		// a server fault. Wrap a distinguishable sentinel so the gRPC/gateway
+		// layer can return 400 rather than a misleading 500 (CLAUDE.md §15).
+		return fmt.Errorf("%w: %v", domain.ErrWebhookSignature, err)
 	}
 
 	// Dedup: record the event.id before processing. If it already exists,

@@ -866,6 +866,52 @@ func TestPaymentService_CreateRefund(t *testing.T) {
 			refundCents: 0,
 			wantErr:     domain.ErrInvalidStatus,
 		},
+		{
+			name: "over_refund_exceeding_amount_rejected",
+			payment: &domain.Payment{
+				ID:                    "pay-4",
+				Status:                "completed",
+				AmountCents:           60000,
+				StripePaymentIntentID: "pi_over",
+			},
+			refundCents: 999999, // far more than the 60000 held
+			wantErr:     domain.ErrInvalidAmount,
+		},
+		{
+			name: "negative_refund_rejected",
+			payment: &domain.Payment{
+				ID:                    "pay-5",
+				Status:                "escrow",
+				AmountCents:           10000,
+				StripePaymentIntentID: "pi_neg",
+			},
+			refundCents: -100,
+			wantErr:     domain.ErrInvalidAmount,
+		},
+		{
+			name: "refund_capped_at_remaining_after_prior_partial",
+			payment: &domain.Payment{
+				ID:                    "pay-6",
+				Status:                "escrow",
+				AmountCents:           10000,
+				RefundAmountCents:     7000, // 3000 remaining
+				StripePaymentIntentID: "pi_partial",
+			},
+			refundCents: 5000, // would push cumulative to 12000 > 10000
+			wantErr:     domain.ErrInvalidAmount,
+		},
+		{
+			name: "remaining_partial_refund_accumulates_to_full",
+			payment: &domain.Payment{
+				ID:                    "pay-7",
+				Status:                "escrow",
+				AmountCents:           10000,
+				RefundAmountCents:     6000, // 4000 remaining
+				StripePaymentIntentID: "pi_acc",
+			},
+			refundCents: 4000, // exactly remaining -> cumulative 10000 -> fully refunded
+			wantStatus:  "refunded",
+		},
 	}
 
 	for _, tt := range tests {

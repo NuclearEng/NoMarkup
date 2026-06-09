@@ -360,26 +360,55 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidStatus)
 	}
 
-	// Determine refund amount: 0 means full refund.
-	refundAmount := amountCents
-	if refundAmount == 0 {
-		refundAmount = payment.AmountCents
+	// Server-side amount authority: the refund amount is supplied by the caller
+	// (gateway forwards a client-controlled amount_cents, and the refund route is
+	// reachable by the payment's customer/provider, not just admins). It MUST be
+	// bounded here or a party could trigger an arbitrary Stripe refund exceeding
+	// what was ever escrowed. A negative amount is also rejected outright.
+	if amountCents < 0 {
+		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
 	}
 
-	// Create Stripe refund.
-	refundID, err := s.stripe.CreateRefund(ctx, payment.StripePaymentIntentID, amountCents)
+	// Determine refund amount: 0 means full refund of the remaining (un-refunded)
+	// balance, never more than the held amount.
+	alreadyRefunded := payment.RefundAmountCents
+	remaining := payment.AmountCents - alreadyRefunded
+	if remaining <= 0 {
+		// Nothing left to refund — the payment is already fully refunded.
+		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
+	}
+
+	refundAmount := amountCents
+	if refundAmount == 0 {
+		refundAmount = remaining
+	}
+
+	// Cap at the remaining balance: this single refund plus all prior refunds can
+	// never exceed payment.AmountCents. This is the escrow invariant that keeps a
+	// payment from refunding more than was captured.
+	if refundAmount > remaining {
+		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
+	}
+
+	// The cumulative refunded total persisted on the payment.
+	totalRefunded := alreadyRefunded + refundAmount
+
+	// Create Stripe refund. Pass the validated per-call amount (0 => full
+	// remaining, which Stripe treats as the full remaining PaymentIntent balance).
+	stripeAmount := refundAmount
+	refundID, err := s.stripe.CreateRefund(ctx, payment.StripePaymentIntentID, stripeAmount)
 	if err != nil {
 		return nil, fmt.Errorf("create refund stripe: %w", err)
 	}
 
-	// Determine status: full refund or partial.
+	// Determine status: full refund (cumulative reaches the held amount) or partial.
 	refundStatus := "refunded"
-	if refundAmount < payment.AmountCents {
+	if totalRefunded < payment.AmountCents {
 		refundStatus = "partially_refunded"
 	}
 
 	now := time.Now()
-	if err := s.repo.UpdateRefund(ctx, paymentID, refundAmount, reason, now, refundID, refundStatus); err != nil {
+	if err := s.repo.UpdateRefund(ctx, paymentID, totalRefunded, reason, now, refundID, refundStatus); err != nil {
 		return nil, err
 	}
 

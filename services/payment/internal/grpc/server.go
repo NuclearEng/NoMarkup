@@ -287,6 +287,13 @@ func (s *Server) CreateRefund(ctx context.Context, req *paymentv1.CreateRefundRe
 func (s *Server) HandleStripeWebhook(ctx context.Context, req *paymentv1.HandleStripeWebhookRequest) (*paymentv1.HandleStripeWebhookResponse, error) {
 	err := s.svc.HandleWebhook(ctx, []byte(req.GetPayload()), req.GetSignature())
 	if err != nil {
+		// A signature verification failure is bad client input — surface it as
+		// InvalidArgument so the gateway returns 400 rather than a misleading 500.
+		// Stripe itself treats any non-2xx as "retry", so a forged caller still
+		// gets nothing; this only improves the status for the predictable case.
+		if errors.Is(err, domain.ErrWebhookSignature) {
+			return nil, status.Error(codes.InvalidArgument, "invalid webhook signature")
+		}
 		return nil, status.Errorf(codes.Internal, "webhook processing failed: %v", err)
 	}
 	return &paymentv1.HandleStripeWebhookResponse{Processed: true}, nil
