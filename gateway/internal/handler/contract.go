@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -13,11 +16,45 @@ import (
 // ContractHandler handles HTTP endpoints for contracts.
 type ContractHandler struct {
 	contractClient contractv1.ContractServiceClient
+	// db is used to read fields that live on the contracts table but are not
+	// carried by the contract proto/domain (e.g. tip_amount_cents, added by the
+	// Wave 5 services-polish tip feature without a proto regen). It may be nil
+	// in tests; the tip enrichment degrades to absent rather than erroring.
+	db *pgxpool.Pool
 }
 
 // NewContractHandler creates a new ContractHandler.
-func NewContractHandler(contractClient contractv1.ContractServiceClient) *ContractHandler {
-	return &ContractHandler{contractClient: contractClient}
+func NewContractHandler(contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *ContractHandler {
+	return &ContractHandler{contractClient: contractClient, db: db}
+}
+
+// tipAmountsByContract reads tip_amount_cents for the given contract ids in a
+// single query. The tip lives on the contracts table directly (migration 046)
+// but is not part of the contract proto, so the gateway projects it in. A nil
+// db or query error returns an empty map — the tip simply won't be enriched,
+// which is the correct fail-soft behavior for a display-only field.
+func (h *ContractHandler) tipAmountsByContract(ctx context.Context, ids []string) map[string]int64 {
+	out := make(map[string]int64, len(ids))
+	if h.db == nil || len(ids) == 0 {
+		return out
+	}
+	rows, err := h.db.Query(ctx,
+		`SELECT id, tip_amount_cents FROM contracts WHERE id = ANY($1)`, ids)
+	if err != nil {
+		slog.ErrorContext(ctx, "tip enrichment query failed", "error", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var tip int64
+		if err := rows.Scan(&id, &tip); err != nil {
+			slog.ErrorContext(ctx, "tip enrichment scan failed", "error", err)
+			return out
+		}
+		out[id] = tip
+	}
+	return out
 }
 
 // GetContract handles GET /api/v1/contracts/{id}.
@@ -44,6 +81,9 @@ func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := protoContractToJSON(resp.GetContract())
+	if id := resp.GetContract().GetId(); id != "" {
+		result["tip_amount_cents"] = h.tipAmountsByContract(r.Context(), []string{id})[id]
+	}
 	if len(resp.GetChangeOrders()) > 0 {
 		orders := make([]map[string]interface{}, 0, len(resp.GetChangeOrders()))
 		for _, co := range resp.GetChangeOrders() {
@@ -149,9 +189,19 @@ func (h *ContractHandler) ListContracts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	ids := make([]string, 0, len(resp.GetContracts()))
+	for _, c := range resp.GetContracts() {
+		if id := c.GetId(); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	tips := h.tipAmountsByContract(r.Context(), ids)
+
 	contracts := make([]map[string]interface{}, 0, len(resp.GetContracts()))
 	for _, c := range resp.GetContracts() {
-		contracts = append(contracts, protoContractToJSON(c))
+		jc := protoContractToJSON(c)
+		jc["tip_amount_cents"] = tips[c.GetId()]
+		contracts = append(contracts, jc)
 	}
 
 	result := map[string]interface{}{
