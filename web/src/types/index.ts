@@ -424,7 +424,9 @@ export interface TrustScoreSummary {
 export interface ReviewSummary {
   average_rating: number;
   review_count: number;
-  on_time_rate: number;
+  // null when on-time rate is unknown (no review carries a timeliness rating);
+  // the UI hides the stat in that case rather than showing a misleading "0%".
+  on_time_rate: number | null;
 }
 
 export interface BidWithProvider {
@@ -1000,6 +1002,8 @@ export const NOTIFICATION_TYPE = {
   TIER_DOWNGRADE: 'tier_downgrade',
   // Pre-matching
   JOB_MATCHED: 'job_matched',
+  // Marketplace wishlist
+  WISHLIST_MATCH: 'wishlist_match',
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
 

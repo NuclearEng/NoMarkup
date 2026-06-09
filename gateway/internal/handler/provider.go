@@ -462,8 +462,10 @@ func (h *ProviderHandler) trustScoreSummary(ctx context.Context, userID string) 
 }
 
 // reviewSummary aggregates a provider's PUBLISHED reviews (matching the trust
-// engine's filter) into {average_rating, review_count, on_time_rate}. Errors
-// degrade to nil so the profile still renders without a rating stat.
+// engine's filter) into {average_rating, review_count, on_time_rate}. The
+// on_time_rate is derived from reviews.timeliness_rating (>= 4 of 5 = on time)
+// and is null when no review carries a timeliness rating (unknown, not 0%).
+// Errors degrade to nil so the profile still renders without a rating stat.
 func (h *ProviderHandler) reviewSummary(ctx context.Context, userID string) map[string]interface{} {
 	if h.db == nil {
 		return nil
@@ -481,19 +483,43 @@ func (h *ProviderHandler) reviewSummary(ctx context.Context, userID string) map[
 	if count == 0 {
 		return nil
 	}
-	// on_time_rate lives on the provider profile; surface it alongside so the
-	// client's ReviewSummary shape is complete. Best-effort.
-	var onTimeRate float64
-	_ = h.db.QueryRow(ctx,
-		`SELECT COALESCE(on_time_rate, 0)::float8 FROM provider_profiles WHERE user_id = $1`,
-		userID,
-	).Scan(&onTimeRate)
 
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"average_rating": avg,
 		"review_count":   count,
-		"on_time_rate":   onTimeRate,
+		"on_time_rate":   nil,
 	}
+
+	// On-time rate is derived from the double-blind reviews' timeliness_rating
+	// (1-5) as a proxy: the share of timeliness-rated reviews scored "on time"
+	// (>= 4 of 5). We do NOT read provider_profiles.on_time_rate — that column
+	// is never populated, and there is no contract deadline signal to compute it
+	// from (contracts.schedule_json carries no agreed deadline in current data),
+	// so reading it would COALESCE a real NULL into a misleading "0%".
+	//
+	// When no published review carries a timeliness_rating the rate is genuinely
+	// UNKNOWN, so we leave on_time_rate as null rather than assert 0% — the
+	// client hides the stat in that case. Only reviews with a non-null
+	// timeliness_rating count toward the denominator.
+	var rated int
+	var onTime int
+	if err := h.db.QueryRow(ctx,
+		`SELECT COUNT(timeliness_rating),
+		        COUNT(timeliness_rating) FILTER (WHERE timeliness_rating >= 4)
+		   FROM reviews
+		  WHERE reviewee_id = $1
+		    AND status = 'published'
+		    AND timeliness_rating IS NOT NULL`,
+		userID,
+	).Scan(&rated, &onTime); err != nil {
+		slog.WarnContext(ctx, "provider on-time rate failed", "error", err, "user_id", userID)
+		return result
+	}
+	if rated > 0 {
+		result["on_time_rate"] = float64(onTime) / float64(rated)
+	}
+
+	return result
 }
 
 // SearchProviders handles GET /api/v1/providers/search.

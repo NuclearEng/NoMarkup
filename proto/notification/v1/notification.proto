@@ -101,6 +101,8 @@ enum NotificationType {
   NOTIFICATION_TYPE_WIN_STREAK = 39;
   // Pre-matching
   NOTIFICATION_TYPE_JOB_MATCHED = 40;
+  // Marketplace wishlist
+  NOTIFICATION_TYPE_WISHLIST_MATCH = 41;
 }
 
 message Notification {

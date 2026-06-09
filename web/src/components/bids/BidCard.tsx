@@ -526,10 +526,16 @@ export const BidCard = memo(function BidCard({
                   </span>
                   {review_summary ? (
                     <>
-                      <span aria-hidden="true" className="text-border">
-                        |
-                      </span>
-                      <span>{String(Math.round(review_summary.on_time_rate * 100))}% on-time</span>
+                      {review_summary.on_time_rate !== null ? (
+                        <>
+                          <span aria-hidden="true" className="text-border">
+                            |
+                          </span>
+                          <span>
+                            {String(Math.round(review_summary.on_time_rate * 100))}% on-time
+                          </span>
+                        </>
+                      ) : null}
                       <span aria-hidden="true" className="text-border">
                         |
                       </span>

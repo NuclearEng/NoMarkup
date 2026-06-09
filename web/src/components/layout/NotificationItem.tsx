@@ -47,6 +47,8 @@ const NOTIFICATION_ICON_MAP: Partial<Record<NotificationType, string>> = {
   [NOTIFICATION_TYPE.TIER_DOWNGRADE]: '\uD83D\uDEE1',
   // Pre-matching
   [NOTIFICATION_TYPE.JOB_MATCHED]: '\uD83C\uDFAF',
+  // Marketplace wishlist (price/availability alert) \u2014 gift icon
+  [NOTIFICATION_TYPE.WISHLIST_MATCH]: '\uD83C\uDF81',
 };
 
 const DEFAULT_ICON = '\uD83D\uDD14';

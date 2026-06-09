@@ -471,6 +471,8 @@ func notificationTypeToString(nt notificationv1.NotificationType) string {
 		return "recurring_upcoming"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY:
 		return "recurring_instance_ready"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH:
+		return "wishlist_match"
 	default:
 		return "unspecified"
 	}
@@ -542,6 +544,8 @@ func stringToNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_UPCOMING
 	case "recurring_instance_ready":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY
+	case "wishlist_match":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}

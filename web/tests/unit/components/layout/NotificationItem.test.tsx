@@ -66,4 +66,19 @@ describe('NotificationItem', () => {
     // Compact variant adds px-3 py-2.5 — verify class is present somewhere.
     expect(container.querySelector('.px-3')).not.toBeNull();
   });
+
+  it('renders the gift icon for a wishlist_match notification (not the default bell)', () => {
+    const wishlist: Notification = {
+      ...baseNotification,
+      notification_type: NOTIFICATION_TYPE.WISHLIST_MATCH,
+      title: 'A road bike is available for $250',
+      body: 'A listing matching "road bike" just went live at $250 — bid now before it\'s gone.',
+      action_url: '/marketplace/listing-1',
+    };
+    render(<NotificationItem notification={wishlist} />);
+    // Gift icon for the wishlist price/availability alert.
+    expect(screen.getByText('🎁')).toBeDefined();
+    // The generic default bell icon must NOT be used for a known type.
+    expect(screen.queryByText('🔔')).toBeNull();
+  });
 });

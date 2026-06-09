@@ -138,12 +138,14 @@ export default function ProviderProfilePage() {
                 Rating ({String(provider.review_summary.review_count)})
               </p>
             </div>
-            <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
-              <p className="text-2xl font-bold text-zinc-100">
-                {Math.round(provider.review_summary.on_time_rate * 100)}%
-              </p>
-              <p className="text-xs text-zinc-500">On-Time Rate</p>
-            </div>
+            {provider.review_summary.on_time_rate !== null ? (
+              <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
+                <p className="text-2xl font-bold text-zinc-100">
+                  {Math.round(provider.review_summary.on_time_rate * 100)}%
+                </p>
+                <p className="text-xs text-zinc-500">On-Time Rate</p>
+              </div>
+            ) : null}
           </>
         ) : null}
         <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">

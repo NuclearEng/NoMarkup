@@ -511,8 +511,12 @@ describe('NOTIFICATION_TYPE', () => {
     expect(NOTIFICATION_TYPE.TIER_DOWNGRADE).toBe('tier_downgrade');
   });
 
-  it('has exactly 26 notification types', () => {
-    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(26);
+  it('has expected marketplace wishlist notification', () => {
+    expect(NOTIFICATION_TYPE.WISHLIST_MATCH).toBe('wishlist_match');
+  });
+
+  it('has exactly 27 notification types', () => {
+    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(27);
   });
 
   it('includes JOB_MATCHED (pre-matching)', () => {

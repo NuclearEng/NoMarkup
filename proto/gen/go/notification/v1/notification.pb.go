@@ -134,6 +134,8 @@ const (
 	NotificationType_NOTIFICATION_TYPE_WIN_STREAK                  NotificationType = 39
 	// Pre-matching
 	NotificationType_NOTIFICATION_TYPE_JOB_MATCHED NotificationType = 40
+	// Marketplace wishlist
+	NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH NotificationType = 41
 )
 
 // Enum value maps for NotificationType.
@@ -180,6 +182,7 @@ var (
 		38: "NOTIFICATION_TYPE_NEAR_MISS",
 		39: "NOTIFICATION_TYPE_WIN_STREAK",
 		40: "NOTIFICATION_TYPE_JOB_MATCHED",
+		41: "NOTIFICATION_TYPE_WISHLIST_MATCH",
 	}
 	NotificationType_value = map[string]int32{
 		"NOTIFICATION_TYPE_UNSPECIFIED":                 0,
@@ -223,6 +226,7 @@ var (
 		"NOTIFICATION_TYPE_NEAR_MISS":                   38,
 		"NOTIFICATION_TYPE_WIN_STREAK":                  39,
 		"NOTIFICATION_TYPE_JOB_MATCHED":                 40,
+		"NOTIFICATION_TYPE_WISHLIST_MATCH":              41,
 	}
 )
 
@@ -1868,7 +1872,7 @@ const file_notification_v1_notification_proto_rawDesc = "" +
 	"\x19NOTIFICATION_CHANNEL_PUSH\x10\x01\x12\x1e\n" +
 	"\x1aNOTIFICATION_CHANNEL_EMAIL\x10\x02\x12\x1c\n" +
 	"\x18NOTIFICATION_CHANNEL_SMS\x10\x03\x12\x1f\n" +
-	"\x1bNOTIFICATION_CHANNEL_IN_APP\x10\x04*\x83\r\n" +
+	"\x1bNOTIFICATION_CHANNEL_IN_APP\x10\x04*\xa9\r\n" +
 	"\x10NotificationType\x12!\n" +
 	"\x1dNOTIFICATION_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19NOTIFICATION_TYPE_NEW_BID\x10\x01\x12!\n" +
@@ -1911,7 +1915,8 @@ const file_notification_v1_notification_proto_rawDesc = "" +
 	"-NOTIFICATION_TYPE_LIVE_AUCTION_SNIPE_EXTENDED\x10%\x12\x1f\n" +
 	"\x1bNOTIFICATION_TYPE_NEAR_MISS\x10&\x12 \n" +
 	"\x1cNOTIFICATION_TYPE_WIN_STREAK\x10'\x12!\n" +
-	"\x1dNOTIFICATION_TYPE_JOB_MATCHED\x10(*\x80\x01\n" +
+	"\x1dNOTIFICATION_TYPE_JOB_MATCHED\x10(\x12$\n" +
+	" NOTIFICATION_TYPE_WISHLIST_MATCH\x10)*\x80\x01\n" +
 	"\x0eDevicePlatform\x12\x1f\n" +
 	"\x1bDEVICE_PLATFORM_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13DEVICE_PLATFORM_IOS\x10\x01\x12\x1b\n" +
