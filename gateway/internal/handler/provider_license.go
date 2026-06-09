@@ -210,7 +210,9 @@ func (h *ProviderLicenseHandler) ListProviderVerifiedLicenses(w http.ResponseWri
 		writeError(w, http.StatusInternalServerError, "failed to list licenses")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"licenses": licenses})
+	// Public SEO read (anonymous-reachable provider profile data), no per-caller
+	// variance — edge-cacheable per §14. Verified licenses change rarely.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"licenses": licenses}, 300, 600)
 }
 
 // ListPendingLicenses handles GET /api/v1/admin/licenses?status=pending (admin).

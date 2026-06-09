@@ -561,7 +561,10 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	// Public job browse — no per-caller variance (this route has no auth), so it
+	// is edge-cacheable per §14. Short TTL since auctions move; live bid state is
+	// fetched separately by the client island.
+	writeCachedJSON(w, r, http.StatusOK, result, 15, 60)
 }
 
 // GetJob handles GET /api/v1/jobs/{id} (public with optional auth).
@@ -771,9 +774,10 @@ func (h *JobHandler) MapView(w http.ResponseWriter, r *http.Request) {
 		pins = append(pins, entry)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	// Public map pins — no per-caller variance, edge-cacheable per §14.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{
 		"pins": pins,
-	})
+	}, 30, 120)
 }
 
 // protoJobToJSON converts a proto Job to a JSON-friendly map.

@@ -279,7 +279,9 @@ func (h *ReviewHandler) ListReviewsForUser(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	// Public SEO read (anonymous-reachable seller reviews), no per-caller variance
+	// — edge-cacheable per §14. Sibling /users/{id}/followers already caches.
+	writeCachedJSON(w, r, http.StatusOK, result, 60, 300)
 }
 
 type respondToReviewRequest struct {

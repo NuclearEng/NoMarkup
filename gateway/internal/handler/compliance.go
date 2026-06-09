@@ -161,7 +161,8 @@ func (h *ComplianceHandler) GetCurrentToS(w http.ResponseWriter, r *http.Request
 		s := bodyURL.String
 		row.BodyURL = &s
 	}
-	writeJSON(w, http.StatusOK, row)
+	// Public, near-static legal document pointer — edge-cacheable per §14.
+	writeCachedJSON(w, r, http.StatusOK, row, 300, 3600)
 }
 
 // ─────────────────────────────────────────────────────────────────────────

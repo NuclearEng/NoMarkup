@@ -98,7 +98,9 @@ func (h *AnalyticsHandler) GetMarketRange(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	// Public SEO-friendly fair-price data, same class as /api/v1/pricing (which
+	// caches) — no per-caller variance, edge-cacheable per §14.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{
 		"has_data":       true,
 		"category_id":    mr.GetCategoryId(),
 		"subcategory_id": mr.GetSubcategoryId(),
@@ -111,7 +113,7 @@ func (h *AnalyticsHandler) GetMarketRange(w http.ResponseWriter, r *http.Request
 		"source":         mr.GetSource(),
 		"confidence":     mr.GetConfidence(),
 		"computed_at":    formatTimestamp(mr.GetComputedAt()),
-	})
+	}, 300, 600)
 }
 
 // GetMarketTrends handles GET /api/v1/analytics/market/trends.
