@@ -82,6 +82,14 @@ func (h *WorkspaceHandler) CheckIn(w http.ResponseWriter, r *http.Request) {
 	key := fmt.Sprintf("contract:checkin:%s:%s", contractID, claims.UserID)
 	h.cache.SetJSON(r.Context(), key, data, workSessionTTL)
 
+	// A fresh check-in starts a new work session, so any prior check-out for
+	// this contract must be cleared. Otherwise GetWorkSession keeps reporting
+	// status "checked_out" (with the stale duration) even though the provider
+	// is now checked in, and the UI shows the green "complete" box with no way
+	// to check out again — stranding the new session.
+	checkoutKey := fmt.Sprintf("contract:checkout:%s:%s", contractID, claims.UserID)
+	h.cache.Delete(r.Context(), checkoutKey)
+
 	slog.Info("provider checked in",
 		"contract_id", contractID,
 		"user_id", claims.UserID,
@@ -256,7 +264,13 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 		Filename:      filename,
 		MimeType:      detectedMIME,
 		FileSizeBytes: int32(header.Size), //nolint:gosec // file size bounded by maxUploadSize
-		Context:       "completion_photo",
+		// Completion (before/after) photos are job evidence; the imaging service
+		// only accepts a fixed set of contexts (avatar, portfolio, job_photo,
+		// document, review_photo, listing). "completion_photo" is not one of them
+		// and was rejected with a 400, which silently blocked the entire
+		// before/after upload — and therefore "Mark Complete", which is gated on
+		// an after-photo. job_photo is the correct, already-supported context.
+		Context: "job_photo",
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -301,7 +315,7 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 	confirmResp, err := h.imagingClient.ConfirmUpload(r.Context(), &imagingv1.ConfirmUploadRequest{
 		ObjectKey: uploadResp.GetObjectKey(),
 		UserId:    claims.UserID,
-		Context:   "completion_photo",
+		Context:   "job_photo",
 	})
 	if err != nil {
 		writeGRPCError(w, err)
