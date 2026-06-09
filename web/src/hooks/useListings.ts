@@ -377,6 +377,22 @@ export function useConfirmPickup() {
   });
 }
 
+// The seller's half of the mutual pickup handshake. /confirm-pickup is buyer-only
+// (403 for the seller); the seller confirms via /seller-confirm. Escrow releases
+// once both sides have confirmed.
+export function useSellerConfirm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) =>
+      api.post<{ order: ListingOrder }>(`/api/v1/orders/${orderId}/seller-confirm`),
+    onSuccess: (_data, orderId) => {
+      toast.success('Handoff confirmed');
+      void qc.invalidateQueries({ queryKey: ['listingOrders', orderId] });
+    },
+    onError: explainListingFailure('Failed to confirm handoff'),
+  });
+}
+
 export function useDisputeOrder() {
   const qc = useQueryClient();
   return useMutation({

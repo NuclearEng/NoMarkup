@@ -26,8 +26,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useConfirmPickup, useDisputeOrder, useListingOrder } from '@/hooks/useListings';
+import {
+  useConfirmPickup,
+  useDisputeOrder,
+  useListingOrder,
+  useSellerConfirm,
+} from '@/hooks/useListings';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
 import { LISTING_ORDER_STATUS } from '@/types';
 
 // Must match the backend allow-list in
@@ -48,7 +54,9 @@ export default function OrderDetailPage() {
 
   const { data: order, isLoading, isError, refetch } = useListingOrder(orderId);
   const confirmPickup = useConfirmPickup();
+  const sellerConfirm = useSellerConfirm();
   const disputeOrder = useDisputeOrder();
+  const currentUserId = useAuthStore((s) => s.user?.id);
 
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
@@ -87,6 +95,10 @@ export default function OrderDetailPage() {
     );
   }
 
+  // The seller confirms via /seller-confirm; the buyer via /confirm-pickup
+  // (/confirm-pickup is buyer-only and 403s the seller). Escrow releases once
+  // both sides have confirmed.
+  const isSeller = currentUserId !== undefined && currentUserId === order.seller_id;
   const canConfirmPickup =
     order.status === LISTING_ORDER_STATUS.PAID || order.status === LISTING_ORDER_STATUS.PICKED_UP;
   const canDispute =
@@ -95,7 +107,11 @@ export default function OrderDetailPage() {
     new Date(order.dispute_window_ends_at).getTime() > Date.now();
 
   function handleConfirmPickup() {
-    confirmPickup.mutate(orderId);
+    if (isSeller) {
+      sellerConfirm.mutate(orderId);
+    } else {
+      confirmPickup.mutate(orderId);
+    }
   }
 
   const disputeValid =
@@ -202,13 +218,15 @@ export default function OrderDetailPage() {
               <Button
                 type="button"
                 onClick={handleConfirmPickup}
-                disabled={!canConfirmPickup || confirmPickup.isPending}
+                disabled={!canConfirmPickup || confirmPickup.isPending || sellerConfirm.isPending}
                 className="min-h-[48px] w-full bg-emerald-600 text-white hover:bg-emerald-700"
               >
                 <CheckCircle className="mr-2 h-4 w-4" aria-hidden="true" />
                 {order.status === LISTING_ORDER_STATUS.COMPLETED
                   ? 'Pickup confirmed'
-                  : 'Confirm pickup (releases escrow)'}
+                  : isSeller
+                    ? 'Confirm handoff'
+                    : 'Confirm pickup (releases escrow)'}
               </Button>
 
               <Button
