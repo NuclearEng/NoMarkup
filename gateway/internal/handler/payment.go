@@ -35,6 +35,38 @@ func NewPaymentHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool
 	return &PaymentHandler{paymentClient: paymentClient, db: db}
 }
 
+// contractNumbersByID reads the human-readable contract_number for the given
+// contract ids in a single parameterized query. The payment proto carries only
+// the contract UUID, so the gateway projects the friendly NM-… number in for the
+// payment-history rows — without it the row falls back to a truncated UUID
+// ("Contract: 00000000…"). A nil db or query error returns an empty map
+// (fail-soft: the number simply isn't enriched and the UI keeps its fallback).
+// Mirrors WorkingCapitalHandler.contractNumbersByID for the advances list.
+func (h *PaymentHandler) contractNumbersByID(ctx context.Context, ids []string) map[string]string {
+	out := make(map[string]string, len(ids))
+	if h.db == nil || len(ids) == 0 {
+		return out
+	}
+	rows, err := h.db.Query(ctx,
+		`SELECT id::text, contract_number FROM contracts WHERE id = ANY($1)`, ids)
+	if err != nil {
+		slog.ErrorContext(ctx, "payment contract_number enrichment query failed", "error", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, number string
+		if err := rows.Scan(&id, &number); err != nil {
+			slog.ErrorContext(ctx, "payment contract_number enrichment scan failed", "error", err)
+			return out
+		}
+		if number != "" {
+			out[id] = number
+		}
+	}
+	return out
+}
+
 // CreateStripeAccount handles POST /api/v1/providers/me/stripe/account.
 func (h *PaymentHandler) CreateStripeAccount(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
@@ -381,9 +413,24 @@ func (h *PaymentHandler) ListPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve every payment's contract_number in one batch query so the history
+	// rows show the friendly NM-… reference instead of a raw contract UUID. Dedup
+	// is handled by the WHERE id = ANY query; fail-soft (missing → UUID fallback).
+	contractIDs := make([]string, 0, len(resp.GetPayments()))
+	for _, p := range resp.GetPayments() {
+		if cid := p.GetContractId(); cid != "" {
+			contractIDs = append(contractIDs, cid)
+		}
+	}
+	contractNumbers := h.contractNumbersByID(r.Context(), contractIDs)
+
 	payments := make([]map[string]interface{}, 0, len(resp.GetPayments()))
 	for _, p := range resp.GetPayments() {
-		payments = append(payments, protoPaymentToJSON(p))
+		jc := protoPaymentToJSON(p)
+		if n := contractNumbers[p.GetContractId()]; n != "" {
+			jc["contract_number"] = n
+		}
+		payments = append(payments, jc)
 	}
 
 	result := map[string]interface{}{

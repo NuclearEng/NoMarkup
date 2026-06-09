@@ -45,7 +45,7 @@ function PaymentRow({ payment }: { payment: Payment }) {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span className="whitespace-nowrap text-sm text-muted-foreground">{createdDate}</span>
               <span className="text-xs text-muted-foreground">
-                Contract: {payment.contract_id.slice(0, 8)}...
+                Contract: {payment.contract_number ?? `${payment.contract_id.slice(0, 8)}...`}
               </span>
             </div>
           </div>

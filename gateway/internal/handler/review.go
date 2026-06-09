@@ -12,6 +12,7 @@ import (
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -19,7 +20,12 @@ import (
 type ReviewHandler struct {
 	reviewClient reviewv1.ReviewServiceClient
 	trustClient  trustv1.TrustServiceClient
-	db           *pgxpool.Pool
+	// userClient resolves reviewer/responder display names that enrich a review
+	// response, so the web client renders a human-readable name instead of a raw
+	// UUID (mirrors the chat channel-name and contract party-name enrichment). It
+	// may be nil in tests; enrichment then degrades to absent.
+	userClient userv1.UserServiceClient
+	db         *pgxpool.Pool
 }
 
 // NewReviewHandler creates a new ReviewHandler.
@@ -32,8 +38,46 @@ type ReviewHandler struct {
 // db is the gateway pool, passed only so the emitNotification seam can write the
 // reviewee's "a review was submitted" in-app row (and gate it on their prefs).
 // nil-safe.
-func NewReviewHandler(reviewClient reviewv1.ReviewServiceClient, trustClient trustv1.TrustServiceClient, db *pgxpool.Pool) *ReviewHandler {
-	return &ReviewHandler{reviewClient: reviewClient, trustClient: trustClient, db: db}
+func NewReviewHandler(reviewClient reviewv1.ReviewServiceClient, trustClient trustv1.TrustServiceClient, userClient userv1.UserServiceClient, db *pgxpool.Pool) *ReviewHandler {
+	return &ReviewHandler{reviewClient: reviewClient, trustClient: trustClient, userClient: userClient, db: db}
+}
+
+// resolveReviewerNames resolves a set of user ids → public display_name via the
+// user gRPC service, deduping ids so a list makes at most one GetUser call per
+// unique user (mirrors the chat and contract enrichment). It is fail-soft: a
+// lookup error or empty display_name leaves that id out of the map rather than
+// failing the review response. Only the public-safe display_name is surfaced —
+// no other PII. Returns nil when there is no user client configured or no ids to
+// resolve.
+func (h *ReviewHandler) resolveReviewerNames(ctx context.Context, ids ...string) map[string]string {
+	if h.userClient == nil {
+		return nil
+	}
+
+	unique := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			unique[id] = struct{}{}
+		}
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+
+	names := make(map[string]string, len(unique))
+	for id := range unique {
+		resp, err := h.userClient.GetUser(ctx, &userv1.GetUserRequest{UserId: id})
+		if err != nil {
+			slog.WarnContext(ctx, "review: resolve reviewer name failed",
+				"user_id", id, "error", err)
+			continue // fail soft — omit this name
+		}
+		if name := resp.GetUser().GetDisplayName(); name != "" {
+			names[id] = name
+		}
+	}
+
+	return names
 }
 
 // createReviewRequest is the JSON request body for creating a review.
@@ -116,7 +160,8 @@ func (h *ReviewHandler) CreateReview(w http.ResponseWriter, r *http.Request) {
 		"contract", review.GetContractId(),
 	)
 
-	writeJSON(w, http.StatusCreated, protoReviewToJSON(review))
+	names := h.resolveReviewerNames(r.Context(), review.GetReviewerId(), review.GetResponse().GetResponderId())
+	writeJSON(w, http.StatusCreated, protoReviewToJSON(review, names))
 }
 
 // recomputeTrustScore asynchronously triggers a trust-score recomputation for a
@@ -155,7 +200,9 @@ func (h *ReviewHandler) GetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoReviewToJSON(resp.GetReview()))
+	review := resp.GetReview()
+	names := h.resolveReviewerNames(r.Context(), review.GetReviewerId(), review.GetResponse().GetResponderId())
+	writeJSON(w, http.StatusOK, protoReviewToJSON(review, names))
 }
 
 // ListReviewsForUser handles GET /api/v1/users/{id}/reviews.
@@ -204,9 +251,17 @@ func (h *ReviewHandler) ListReviewsForUser(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Resolve every reviewer/responder name in one batch (the helper dedupes), so
+	// a page of N reviews makes at most one GetUser call per unique user — not N.
+	ids := make([]string, 0, len(resp.GetReviews())*2)
+	for _, rev := range resp.GetReviews() {
+		ids = append(ids, rev.GetReviewerId(), rev.GetResponse().GetResponderId())
+	}
+	names := h.resolveReviewerNames(r.Context(), ids...)
+
 	reviews := make([]map[string]interface{}, 0, len(resp.GetReviews()))
 	for _, rev := range resp.GetReviews() {
-		reviews = append(reviews, protoReviewToJSON(rev))
+		reviews = append(reviews, protoReviewToJSON(rev, names))
 	}
 
 	result := map[string]interface{}{
@@ -260,7 +315,9 @@ func (h *ReviewHandler) RespondToReview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, protoReviewResponseToJSON(resp.GetResponse()))
+	response := resp.GetResponse()
+	names := h.resolveReviewerNames(r.Context(), response.GetResponderId())
+	writeJSON(w, http.StatusCreated, protoReviewResponseToJSON(response, names))
 }
 
 type flagReviewRequest struct {
@@ -339,7 +396,11 @@ func (h *ReviewHandler) GetReviewEligibility(w http.ResponseWriter, r *http.Requ
 
 // --- Proto to JSON conversion helpers ---
 
-func protoReviewToJSON(r *reviewv1.Review) map[string]interface{} {
+// protoReviewToJSON projects a review into the gateway's JSON shape. names maps
+// user id → public display_name so the web client can render the reviewer's (and
+// responder's) name instead of a raw UUID; it may be nil/partial (fail-soft) and
+// a missing entry simply omits reviewer_name / responder_name for that review.
+func protoReviewToJSON(r *reviewv1.Review, names map[string]string) map[string]interface{} {
 	if r == nil {
 		return map[string]interface{}{}
 	}
@@ -354,6 +415,12 @@ func protoReviewToJSON(r *reviewv1.Review) map[string]interface{} {
 		"comment":        r.GetComment(),
 		"is_flagged":     r.GetIsFlagged(),
 		"created_at":     formatTimestamp(r.GetCreatedAt()),
+	}
+
+	if names != nil {
+		if name := names[r.GetReviewerId()]; name != "" {
+			result["reviewer_name"] = name
+		}
 	}
 
 	if r.GetQualityRating() > 0 {
@@ -374,23 +441,32 @@ func protoReviewToJSON(r *reviewv1.Review) map[string]interface{} {
 	}
 
 	if r.GetResponse() != nil {
-		result["response"] = protoReviewResponseToJSON(r.GetResponse())
+		result["response"] = protoReviewResponseToJSON(r.GetResponse(), names)
 	}
 
 	return result
 }
 
-func protoReviewResponseToJSON(r *reviewv1.ReviewResponse) map[string]interface{} {
+// protoReviewResponseToJSON projects a review response. names maps user id →
+// display_name so the responder is rendered by name, not UUID; nil/partial is
+// fail-soft (responder_name simply absent).
+func protoReviewResponseToJSON(r *reviewv1.ReviewResponse, names map[string]string) map[string]interface{} {
 	if r == nil {
 		return map[string]interface{}{}
 	}
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"id":           r.GetId(),
 		"review_id":    r.GetReviewId(),
 		"responder_id": r.GetResponderId(),
 		"comment":      r.GetComment(),
 		"created_at":   formatTimestamp(r.GetCreatedAt()),
 	}
+	if names != nil {
+		if name := names[r.GetResponderId()]; name != "" {
+			result["responder_name"] = name
+		}
+	}
+	return result
 }
 
 // --- Enum conversions ---

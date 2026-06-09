@@ -69,7 +69,7 @@ function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) 
             <div className="flex shrink-0 gap-2">
               <Button
                 size="sm"
-                className="min-h-[36px] bg-emerald-600 text-white hover:bg-emerald-700"
+                className="min-h-[44px] bg-emerald-600 px-4 text-white hover:bg-emerald-700"
                 onClick={() => void accept.mutateAsync()}
                 disabled={isPending}
                 aria-label={`Accept offer for ${jobTitle}`}
@@ -80,7 +80,7 @@ function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) 
               <Button
                 size="sm"
                 variant="outline"
-                className="min-h-[36px]"
+                className="min-h-[44px] px-4"
                 onClick={() => void decline.mutateAsync()}
                 disabled={isPending}
                 aria-label={`Decline offer for ${jobTitle}`}
@@ -112,8 +112,8 @@ function OffersSkeleton() {
                 <Skeleton className="h-4 w-1/3" />
               </div>
               <div className="flex shrink-0 gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
+                <Skeleton className="h-11 w-20" />
+                <Skeleton className="h-11 w-20" />
               </div>
             </div>
           </CardContent>

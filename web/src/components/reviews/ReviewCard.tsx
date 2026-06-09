@@ -93,7 +93,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
-              {review.reviewer_id.slice(0, 8)}...
+              {review.reviewer_name ?? `${review.reviewer_id.slice(0, 8)}...`}
             </p>
             <p className="text-xs text-muted-foreground">{directionLabel}</p>
           </div>
@@ -168,7 +168,8 @@ export function ReviewCard({ review }: ReviewCardProps) {
           <div className="rounded-lg border bg-muted/50 p-3">
             <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <MessageSquare className="h-3 w-3" aria-hidden="true" />
-              Response from {review.response.responder_id.slice(0, 8)}...
+              Response from{' '}
+              {review.response.responder_name ?? `${review.response.responder_id.slice(0, 8)}...`}
               <span className="ml-auto">
                 {formatRelativeTime(new Date(review.response.created_at))}
               </span>

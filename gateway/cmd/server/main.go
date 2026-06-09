@@ -234,7 +234,7 @@ func main() {
 
 	// Review service lives on the same gRPC server as the job service.
 	reviewClient := reviewv1.NewReviewServiceClient(jobConn)
-	reviewHandler := handler.NewReviewHandler(reviewClient, trustClient, dbPool)
+	reviewHandler := handler.NewReviewHandler(reviewClient, trustClient, userClient, dbPool)
 
 	// Subscription service lives on the same gRPC server as the payment service.
 	subscriptionClient := subscriptionv1.NewSubscriptionServiceClient(paymentConn)

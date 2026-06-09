@@ -347,7 +347,7 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
             variant="outline"
             size="sm"
             disabled={submitting}
-            className="h-8 text-xs"
+            className="min-h-[44px] px-3 text-xs"
             onClick={(e) => {
               stop(e);
               void submit(p.amount_cents);
@@ -377,14 +377,14 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
               setCustomDollars(e.target.value);
             }}
             onClick={stop}
-            className="h-8 pl-5 text-xs"
+            className="min-h-[44px] pl-5 text-xs"
             aria-label="Custom tip amount in dollars"
           />
         </div>
         <Button
           type="button"
           size="sm"
-          className="h-8 text-xs"
+          className="min-h-[44px] px-4 text-xs"
           disabled={submitting || !customDollars}
           onClick={(e) => {
             stop(e);
