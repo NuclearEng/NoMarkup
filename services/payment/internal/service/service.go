@@ -166,7 +166,16 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 		CustomerID:          input.CustomerID,
 		ProviderID:          input.ProviderID,
 		AmountCents:         input.AmountCents,
-		PlatformFeeCents:    breakdown.PlatformFeeCents,
+		// Ledger invariant: the persisted split MUST sum to amount_cents so the
+		// payments table self-reconciles (no cents created/destroyed). The
+		// payments row has no lead_gen_fee_cents column, so the lead-gen slice —
+		// which is platform-retained on the Stripe side (folded into totalFee
+		// below) — is folded into the stored platform fee here. The real money
+		// movement is unchanged (platform keeps platform+guarantee+leadgen either
+		// way); this only ensures platform_fee+guarantee_fee+provider_payout ==
+		// amount_cents on the persisted record. When lead-gen is disabled
+		// LeadGenFeeCents is 0, so this is a no-op.
+		PlatformFeeCents:    breakdown.PlatformFeeCents + breakdown.LeadGenFeeCents,
 		GuaranteeFeeCents:   breakdown.GuaranteeFeeCents,
 		ProviderPayoutCents: breakdown.ProviderPayoutCents,
 		IdempotencyKey:      idempotencyKey,

@@ -698,6 +698,72 @@ func TestPaymentService_CreatePayment(t *testing.T) {
 	}
 }
 
+// TestPaymentService_CreatePayment_LeadGenLedgerReconciles is the regression
+// guard for the money-ledger invariant: the persisted payment split
+// (platform_fee + guarantee_fee + provider_payout) MUST equal amount_cents so
+// the payments table self-reconciles with no cents created or destroyed. The
+// payments row has no lead_gen_fee_cents column, so when lead-gen is enabled the
+// lead-gen slice is folded into the stored platform fee. Real Stripe money
+// movement (platform retains platform+guarantee+leadgen) is unchanged.
+func TestPaymentService_CreatePayment_LeadGenLedgerReconciles(t *testing.T) {
+	t.Parallel()
+
+	var stored *domain.Payment
+	repo := &mockPaymentRepo{
+		getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+			return &domain.FeeConfig{
+				ID:                  "fc-leadgen",
+				FeePercentage:       0.08, // 800 on 10000
+				GuaranteePercentage: 0.02, // 200 on 10000
+				MinFeeCents:         100,
+				LeadGenEnabled:      true,
+				LeadGenPercentage:   0.10, // 1000 on 10000
+				Active:              true,
+			}, nil
+		},
+		getFeeConfigFn: func(_ context.Context, _ string) (*domain.FeeConfig, error) {
+			return nil, domain.ErrFeeConfigNotFound
+		},
+		getStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+			return "acct_prov_1", nil
+		},
+		createPaymentFn: func(_ context.Context, p *domain.Payment) error {
+			stored = p
+			return nil
+		},
+		updateStripeFieldsFn: func(_ context.Context, _, _, _, _ string) error { return nil },
+		getPaymentFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+			if stored != nil {
+				return stored, nil
+			}
+			return nil, domain.ErrPaymentNotFound
+		},
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	payment, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    10000,
+		IdempotencyKey: "idem-leadgen",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+
+	// The persisted split must sum to amount_cents exactly — no cents lost to the
+	// lead-gen slice. platform(800)+leadgen(1000)=1800 folded, guarantee=200,
+	// payout=8000 → 1800+200+8000 = 10000.
+	assert.Equal(t, int64(1800), stored.PlatformFeeCents)
+	assert.Equal(t, int64(200), stored.GuaranteeFeeCents)
+	assert.Equal(t, int64(8000), stored.ProviderPayoutCents)
+	assert.Equal(t,
+		payment.AmountCents,
+		stored.PlatformFeeCents+stored.GuaranteeFeeCents+stored.ProviderPayoutCents,
+		"persisted payment split must reconcile to amount_cents",
+	)
+}
+
 // --- ProcessPayment tests ---
 
 func TestPaymentService_ProcessPayment(t *testing.T) {
