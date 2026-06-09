@@ -51,11 +51,10 @@ export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandin
 
   const jobs = data?.jobs ?? initialJobs.jobs;
 
-  // The post-job CTA deep-links into the existing flow, pre-filtering to the
-  // legal category when we resolved one (the form reads ?category_id=).
-  const postJobHref = (
-    legalCategoryId ? `/jobs/new?category_id=${legalCategoryId}` : '/jobs/new'
-  ) as Route;
+  // The post-job CTA goes to the dedicated, legal-tailored intake form (not the
+  // generic 3-level service-category wizard). The form picks the legal matter
+  // type itself, so no category_id needs to be passed.
+  const postJobHref = '/jobs/new/legal' as Route;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">

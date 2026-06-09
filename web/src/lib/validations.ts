@@ -188,6 +188,42 @@ export const jobPostingSchema = z
 
 export type JobPostingFormValues = z.infer<typeof jobPostingSchema>;
 
+// Legal intake schema — a tight, legal-tailored alternative to the generic
+// job-posting wizard. Maps onto the same CreateJobInput at submit time (the
+// matter type IS a legal service category, so the created job lands in the
+// legal vertical). Money is dollars in the form, converted to integer cents
+// before the mutation (and re-validated server-side in the gateway).
+export const LEGAL_URGENCY = ['urgent', 'soon', 'flexible'] as const;
+export type LegalUrgency = (typeof LEGAL_URGENCY)[number];
+
+export const LEGAL_CONTACT_PREFERENCE = ['platform', 'phone', 'video'] as const;
+export type LegalContactPreference = (typeof LEGAL_CONTACT_PREFERENCE)[number];
+
+export const legalIntakeSchema = z.object({
+  // The matter type is a legal service category id (level-2 of the legal subtree).
+  matterCategoryId: z.string().min(1, 'Select the type of legal help you need'),
+  title: jobTitleSchema,
+  description: jobDescriptionSchema,
+  // 2-letter US state code — the jurisdiction the matter falls under.
+  jurisdiction: z
+    .string()
+    .min(1, 'Select the state your matter is in')
+    .max(2, 'Use the 2-letter state code'),
+  urgency: z.enum(LEGAL_URGENCY, { required_error: 'Choose a timeline' }),
+  // Budget is the customer's max — optional, positive whole dollars.
+  budgetDollars: z
+    .number({ invalid_type_error: 'Enter a number' })
+    .positive('Budget must be greater than $0')
+    .max(1_000_000, 'Budget is too large')
+    .optional()
+    .or(z.literal(0).transform(() => undefined)),
+  contactPreference: z.enum(LEGAL_CONTACT_PREFERENCE, {
+    required_error: 'Choose a contact preference',
+  }),
+});
+
+export type LegalIntakeFormValues = z.infer<typeof legalIntakeSchema>;
+
 // Bid schemas
 export const bidSchema = z.object({
   amountDollars: z.number().positive('Bid amount must be positive'),
