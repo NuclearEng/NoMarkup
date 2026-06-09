@@ -245,6 +245,12 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "channel id required")
 		return
 	}
+	// Validate the UUID up front like GetChannel/ListMessages do; otherwise a
+	// non-UUID id reaches the uuid-typed block-check query and 500s.
+	if !isValidUUID(channelID) {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
 
 	var req sendMessageRequest
 	if !decodeJSON(w, r, &req) {
