@@ -120,8 +120,9 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 	}
 
 	// Pay provider in full immediately via platform transfer (account validated
-	// up front, before any rows were written).
-	transferID, err := s.stripe.CreatePlatformTransfer(ctx, input.TotalAmountCents, "usd", providerAccountID)
+	// up front, before any rows were written). Deterministic idempotency key keyed
+	// on the plan id so a retry of this provider payout never double-pays.
+	transferID, err := s.stripe.CreatePlatformTransfer(ctx, input.TotalAmountCents, "usd", providerAccountID, "installment-provider-payout:"+planID)
 	if err != nil {
 		slog.Error("failed to create platform transfer for BNPL",
 			"plan_id", planID,

@@ -291,6 +291,7 @@ type CreateInstallmentPlanInput struct {
 var (
 	ErrExpenseNotFound         = errors.New("expense not found")
 	ErrAdvanceNotFound         = errors.New("advance not found")
+	ErrAdvanceNotApproved      = errors.New("advance is not in approved status")
 	ErrAdvanceDeclined         = errors.New("credit score is below the minimum to qualify for an advance")
 	ErrInstallmentPlanNotFound = errors.New("installment plan not found")
 	ErrInvalidInstallmentCount = errors.New("installment count must be 3 or 6")

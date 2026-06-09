@@ -343,7 +343,11 @@ func (s *PaymentService) DisburseAdvance(ctx context.Context, advanceID string, 
 		return nil, "", fmt.Errorf("disburse advance: %w", err)
 	}
 	if advance.Status != "approved" {
-		return nil, "", fmt.Errorf("disburse advance: advance is not in approved status (current: %s)", advance.Status)
+		// Predictable state-machine conflict (already disbursed, still pending
+		// review, rejected, …) — typed sentinel so the gRPC layer maps it to a
+		// clean 422, never a 500. Covers the SEQUENTIAL repeat-disburse case; the
+		// concurrent case is caught by the guarded UPDATE below.
+		return nil, "", fmt.Errorf("disburse advance: not approved (current status: %s): %w", advance.Status, domain.ErrAdvanceNotApproved)
 	}
 
 	// Get provider's Stripe account ID.
@@ -353,14 +357,30 @@ func (s *PaymentService) DisburseAdvance(ctx context.Context, advanceID string, 
 	}
 
 	// Transfer from platform balance to provider.
-	transferID, err := s.stripe.CreatePlatformTransfer(ctx, advance.AdvanceAmountCents, "usd", stripeAccountID)
+	//
+	// DOUBLE-PAYOUT GUARD: the status check above is a non-locking read, so two
+	// concurrent disbursements for the same advance can both reach this point. We
+	// pass a DETERMINISTIC idempotency key ("advance-disburse:<id>") so Stripe (and
+	// the dev store) dedupe the racing/retried transfer to a SINGLE money movement
+	// — the loser gets back the same transfer id rather than firing a second payout.
+	// The DB-side single-disbursement invariant is enforced by the guarded UPDATE
+	// below (WHERE status='approved').
+	idempotencyKey := "advance-disburse:" + advanceID
+	transferID, err := s.stripe.CreatePlatformTransfer(ctx, advance.AdvanceAmountCents, "usd", stripeAccountID, idempotencyKey)
 	if err != nil {
 		return nil, "", fmt.Errorf("disburse advance transfer: %w", err)
 	}
 
-	// Update advance record with disbursement info.
+	// Update advance record with disbursement info. The guarded UPDATE
+	// (WHERE status='approved') yields ErrAdvanceNotFound if a concurrent
+	// disbursement already claimed it; surface a typed "not approved" sentinel so
+	// the gRPC layer maps the loser to a clean 422 (FailedPrecondition) instead of
+	// a 500. No second payout happened — the transfer above was deduped by key.
 	updated, err := s.repo.UpdateAdvanceDisbursement(ctx, advanceID, transferID)
 	if err != nil {
+		if errors.Is(err, domain.ErrAdvanceNotFound) {
+			return nil, "", fmt.Errorf("disburse advance: advance is no longer in approved status (already disbursed): %w", domain.ErrAdvanceNotApproved)
+		}
 		return nil, "", fmt.Errorf("disburse advance update: %w", err)
 	}
 

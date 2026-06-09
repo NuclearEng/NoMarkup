@@ -329,9 +329,19 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 // CreatePlatformTransfer transfers funds from the platform's Stripe balance to a
 // provider's Connect account. Unlike CreateTransfer, no SourceTransaction is set
 // because the funds come from the platform balance (e.g. for advance disbursements).
-func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents int64, currency string, destinationAccountID string) (string, error) {
+// idempotencyKey is mandatory and MUST be deterministic per logical payout
+// (e.g. "advance-disburse:<advanceID>"). It is passed straight through to
+// Stripe so a retried or racing duplicate call returns the SAME transfer
+// rather than moving money twice — closing the double-payout window when two
+// concurrent disbursements both pass a non-locking status check before the
+// guarded DB write rejects the loser. In dev mode the in-memory store keys on
+// it to give the same dedup semantics.
+func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents int64, currency string, destinationAccountID string, idempotencyKey string) (string, error) {
+	if idempotencyKey == "" {
+		return "", fmt.Errorf("create platform transfer: idempotency key required")
+	}
 	if s.devMode {
-		return s.DevStore().RecordAdvance(destinationAccountID, amountCents), nil
+		return s.DevStore().RecordAdvance(idempotencyKey, destinationAccountID, amountCents), nil
 	}
 
 	params := &stripe.TransferParams{
@@ -339,6 +349,7 @@ func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents 
 		Currency:    stripe.String(currency),
 		Destination: stripe.String(destinationAccountID),
 	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
 
 	t, err := transfer.New(params)
 	if err != nil {

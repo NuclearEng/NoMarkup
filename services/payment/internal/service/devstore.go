@@ -19,6 +19,7 @@ type DevStore struct {
 	subscriptions  map[string]devSubscription        // subscriptionID -> record
 	customerSubs   map[string]string                 // customerKey -> subscriptionID
 	advances       map[string]devAdvance             // advanceID -> record
+	advanceKeys    map[string]string                 // idempotencyKey -> transfer id (dedup)
 	setupIntents   map[string]string                 // clientSecret -> customerKey
 }
 
@@ -43,6 +44,7 @@ func newDevStore() *DevStore {
 		subscriptions:  make(map[string]devSubscription),
 		customerSubs:   make(map[string]string),
 		advances:       make(map[string]devAdvance),
+		advanceKeys:    make(map[string]string),
 		setupIntents:   make(map[string]string),
 	}
 }
@@ -158,9 +160,16 @@ func (d *DevStore) CancelSubscription(subscriptionID string) bool {
 
 // --- Advances ---
 
-func (d *DevStore) RecordAdvance(providerID string, amountCts int64) string {
+// RecordAdvance records a dev-mode platform transfer, deduped by idempotencyKey.
+// A repeated (or racing) call with the same key returns the SAME transfer id and
+// records nothing new — mirroring Stripe's idempotency-key semantics so the dev
+// path exhibits the same no-double-payout guarantee as production.
+func (d *DevStore) RecordAdvance(idempotencyKey, providerID string, amountCts int64) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if existing, ok := d.advanceKeys[idempotencyKey]; ok {
+		return existing
+	}
 	id := "tr_platform_dev_" + uuid.NewString()
 	d.advances[id] = devAdvance{
 		ID:         id,
@@ -168,5 +177,6 @@ func (d *DevStore) RecordAdvance(providerID string, amountCts int64) string {
 		AmountCts:  amountCts,
 		CreatedAt:  time.Now().UTC(),
 	}
+	d.advanceKeys[idempotencyKey] = id
 	return id
 }

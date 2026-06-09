@@ -341,9 +341,10 @@ func (s *InsuranceService) ReviewInsuranceClaim(ctx context.Context, input domai
 		return nil, fmt.Errorf("review insurance claim approve: %w", err)
 	}
 
-	// Create platform transfer to claimant if payout > 0.
+	// Create platform transfer to claimant if payout > 0. Deterministic idempotency
+	// key keyed on the claim id so a retried claim review never double-pays out.
 	if payout > 0 {
-		transferID, err := s.stripe.CreatePlatformTransfer(ctx, payout, "usd", claim.ClaimantID)
+		transferID, err := s.stripe.CreatePlatformTransfer(ctx, payout, "usd", claim.ClaimantID, "insurance-claim-payout:"+input.ClaimID)
 		if err != nil {
 			slog.Error("failed to create insurance claim payout transfer",
 				"claim_id", input.ClaimID,

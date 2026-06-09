@@ -392,26 +392,47 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// CONCURRENCY (state-machine double-fire): the status read above is advisory.
+	// The authoritative transition guard lives in each mutating UPDATE's WHERE
+	// clause (`AND status IN ('pending','countered')`), evaluated atomically
+	// against the CURRENT row under the row lock the UPDATE takes. Two concurrent
+	// accepts (or any two terminal actions) on the same offer therefore cannot
+	// both apply: whichever commits first moves the offer out of the pending set,
+	// and the other's WHERE re-evaluates against the new value and matches zero
+	// rows — surfaced as a clean 409 with no second side effect (no second order,
+	// no second escrow flip).
 	switch action {
 	case "reject":
-		if _, err := h.db.Exec(r.Context(),
-			`UPDATE listing_offers SET status='rejected', updated_at=now() WHERE id=$1`,
+		tag, err := h.db.Exec(r.Context(),
+			`UPDATE listing_offers SET status='rejected', updated_at=now()
+			  WHERE id=$1 AND status IN ('pending','countered')`,
 			offerID,
-		); err != nil {
+		)
+		if err != nil {
 			slog.ErrorContext(r.Context(), "reject offer failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to reject offer")
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			writeError(w, http.StatusConflict, "offer is no longer pending")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"offer": h.loadOffer(r.Context(), offerID)})
 		return
 
 	case "withdraw":
-		if _, err := h.db.Exec(r.Context(),
-			`UPDATE listing_offers SET status='withdrawn', updated_at=now() WHERE id=$1`,
+		tag, err := h.db.Exec(r.Context(),
+			`UPDATE listing_offers SET status='withdrawn', updated_at=now()
+			  WHERE id=$1 AND status IN ('pending','countered')`,
 			offerID,
-		); err != nil {
+		)
+		if err != nil {
 			slog.ErrorContext(r.Context(), "withdraw offer failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to withdraw offer")
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			writeError(w, http.StatusConflict, "offer is no longer pending")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"offer": h.loadOffer(r.Context(), offerID)})
@@ -432,12 +453,21 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		}
 		defer func() { _ = tx.Rollback(r.Context()) }()
 
-		if _, err := tx.Exec(r.Context(),
-			`UPDATE listing_offers SET status='countered', updated_at=now() WHERE id=$1`,
+		// Status-guarded flip: if a concurrent action already moved this offer out
+		// of the pending set, this affects 0 rows → clean 409, and we never insert
+		// the counter-offer.
+		ctag, err := tx.Exec(r.Context(),
+			`UPDATE listing_offers SET status='countered', updated_at=now()
+			  WHERE id=$1 AND status IN ('pending','countered')`,
 			offerID,
-		); err != nil {
+		)
+		if err != nil {
 			slog.ErrorContext(r.Context(), "counter offer: parent flip failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to counter")
+			return
+		}
+		if ctag.RowsAffected() == 0 {
+			writeError(w, http.StatusConflict, "offer is no longer pending")
 			return
 		}
 
@@ -490,26 +520,70 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		}
 		defer func() { _ = tx.Rollback(r.Context()) }()
 
-		if _, err := tx.Exec(r.Context(),
-			`UPDATE listing_offers SET status='accepted', updated_at=now() WHERE id=$1`,
+		// FIRST: lock the listing row FOR UPDATE. This is the single serialization
+		// point for ALL accepts on this listing — same-offer double-accept AND
+		// two-different-offers races both contend here. The lock holder flips the
+		// listing to 'sold' and mints the order; any concurrent accept blocks here,
+		// then re-reads status='sold' below and bails with a clean 409 BEFORE
+		// flipping any offer or attempting the (UNIQUE listing_id) order insert —
+		// so the loser never hits a unique-violation 500. Mirrors listings_bid.go's
+		// BuyItNow / RetractBid which lock the listings row the same way.
+		var lockedListingStatus string
+		if err := tx.QueryRow(r.Context(),
+			`SELECT status FROM listings WHERE id=$1 FOR UPDATE`, listingID,
+		).Scan(&lockedListingStatus); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "listing not found")
+				return
+			}
+			slog.ErrorContext(r.Context(), "accept offer: lock listing failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to lock listing")
+			return
+		}
+		if lockedListingStatus != "active" {
+			writeError(w, http.StatusConflict, "listing is no longer active")
+			return
+		}
+
+		// Guarded statement: claim the offer (pending|countered → accepted). Under
+		// the listing lock this can't race another accept on the same listing, but
+		// we keep the status guard so a stale/duplicate action is still a clean 409.
+		atag, err := tx.Exec(r.Context(),
+			`UPDATE listing_offers SET status='accepted', updated_at=now()
+			  WHERE id=$1 AND status IN ('pending','countered')`,
 			offerID,
-		); err != nil {
+		)
+		if err != nil {
 			slog.ErrorContext(r.Context(), "accept offer: flip offer failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to accept offer")
 			return
 		}
+		if atag.RowsAffected() == 0 {
+			writeError(w, http.StatusConflict, "offer is no longer pending")
+			return
+		}
 
-		if _, err := tx.Exec(r.Context(), `
+		// Status-guarded listing flip: also require the listing still be 'active', so
+		// two concurrent accepts of DIFFERENT offers on the same listing can't both
+		// mint an order. The loser matches 0 rows here → 409, tx rolls back. (The
+		// listing_orders UNIQUE(listing_id) is the final backstop, but this guard
+		// turns the race into a clean reject instead of a unique-violation 500.)
+		ltag, err := tx.Exec(r.Context(), `
 			UPDATE listings
 			   SET status='sold',
 			       current_bid_cents=$2,
 			       current_bidder_id=$3,
 			       updated_at=now()
-			 WHERE id=$1`,
+			 WHERE id=$1 AND status='active'`,
 			listingID, amountCents, buyerID,
-		); err != nil {
+		)
+		if err != nil {
 			slog.ErrorContext(r.Context(), "accept offer: flip listing failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to close listing")
+			return
+		}
+		if ltag.RowsAffected() == 0 {
+			writeError(w, http.StatusConflict, "listing is no longer active")
 			return
 		}
 

@@ -136,11 +136,15 @@ func TestDevStore_RecordAdvance(t *testing.T) {
 	t.Parallel()
 
 	store := newDevStore()
-	id1 := store.RecordAdvance("provider-1", 50000)
+	id1 := store.RecordAdvance("key-1", "provider-1", 50000)
 	assert.True(t, strings.HasPrefix(id1, "tr_platform_dev_"))
 
-	id2 := store.RecordAdvance("provider-1", 25000)
-	assert.NotEqual(t, id1, id2, "each RecordAdvance call must yield a unique transfer ID")
+	id2 := store.RecordAdvance("key-2", "provider-1", 25000)
+	assert.NotEqual(t, id1, id2, "distinct idempotency keys must yield unique transfer IDs")
+
+	// Idempotency: the SAME key must return the SAME transfer id (no double payout).
+	id1again := store.RecordAdvance("key-1", "provider-1", 50000)
+	assert.Equal(t, id1, id1again, "a repeated idempotency key must dedup to the same transfer ID")
 }
 
 // --- Concurrency ---
@@ -167,7 +171,7 @@ func TestDevStore_ConcurrentAccess(t *testing.T) {
 				_ = store.ListPaymentMethods(userKey)
 				_ = store.DeletePaymentMethod(pm.ID)
 				_ = store.NewSetupIntent(userKey)
-				_ = store.RecordAdvance(userKey, 1000)
+				_ = store.RecordAdvance("idem-"+userKey+"-"+string(rune('0'+j%10)), userKey, 1000)
 				store.UpsertSubscription(userKey, "price_x", "pm_x")
 			}
 		}(i)

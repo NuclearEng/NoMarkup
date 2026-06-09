@@ -223,6 +223,11 @@ func mapAdvanceError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrAdvanceNotFound):
 		return status.Error(codes.NotFound, "advance not found")
+	case errors.Is(err, domain.ErrAdvanceNotApproved):
+		// Concurrent or repeated disbursement of an advance another request already
+		// claimed. Predictable state-machine conflict → 422 (FailedPrecondition),
+		// never a 500. No second payout fired (the transfer is idempotency-keyed).
+		return status.Error(codes.FailedPrecondition, "advance is no longer in approved status (it may already be disbursed)")
 	case errors.Is(err, service.ErrInsufficientCredit):
 		// Over-lending guard: the request is well-formed but exceeds available
 		// credit. FailedPrecondition → gateway 422 with an actionable message.
