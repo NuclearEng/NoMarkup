@@ -16,19 +16,24 @@ import { PageTransition } from '@/components/ui/page-transition';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useInsurancePolicy, useInsuranceProducts } from '@/hooks/useInsurance';
-import { cn, formatCents } from '@/lib/utils';
+import { cn, formatCents, humanizeStatus } from '@/lib/utils';
 import type { InsuranceClaimStatus, InsurancePolicyStatus } from '@/types';
 import { INSURANCE_POLICY_STATUS } from '@/types';
 
-const POLICY_STATUS_CLASSES: Record<InsurancePolicyStatus, string> = {
+// Keyed on plain strings: a policy can be `pending_payment` before its premium
+// is charged, which is outside the typed InsurancePolicyStatus union. Unknown
+// statuses fall back to a humanized label rather than rendering a raw slug.
+const POLICY_STATUS_CLASSES: Record<string, string> = {
   active: 'bg-green-500/10 text-green-300 border-green-500/30',
+  pending_payment: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
   expired: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
   cancelled: 'bg-red-500/10 text-red-300 border-red-500/30',
   claimed: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
 };
 
-const POLICY_STATUS_LABELS: Record<InsurancePolicyStatus, string> = {
+const POLICY_STATUS_LABELS: Record<string, string> = {
   active: 'Active',
+  pending_payment: 'Pending Payment',
   expired: 'Expired',
   cancelled: 'Cancelled',
   claimed: 'Claimed',
@@ -109,7 +114,7 @@ export default function InsurancePolicyDetailPage() {
   // crashing on a nested-field access.
   const product = productsData?.products.find((p) => p.id === policy.product_id);
   const productName = product?.name ?? 'Insurance Policy';
-  const productCoverageType = product?.coverage_type ?? '—';
+  const productCoverageType = product ? humanizeStatus(product.coverage_type) : '—';
   const productDescription = product?.description ?? 'Coverage details are unavailable.';
 
   return (
@@ -134,9 +139,13 @@ export default function InsurancePolicyDetailPage() {
               </h1>
               <Badge
                 variant="outline"
-                className={cn('text-xs', POLICY_STATUS_CLASSES[policyStatus])}
+                className={cn(
+                  'text-xs',
+                  POLICY_STATUS_CLASSES[policyStatus] ??
+                    'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+                )}
               >
-                {POLICY_STATUS_LABELS[policyStatus]}
+                {POLICY_STATUS_LABELS[policyStatus] ?? humanizeStatus(policyStatus)}
               </Badge>
             </div>
             <p className="mt-1 text-zinc-300">{productName}</p>

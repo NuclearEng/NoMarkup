@@ -225,7 +225,8 @@ describe('SubscriptionPage', () => {
     };
     render(withQueryClient(createElement(SubscriptionPage)));
     expect(screen.getByText('Invoice History')).toBeDefined();
-    expect(screen.getByText('paid')).toBeDefined();
+    // Invoice status is humanized for display ("paid" → "Paid").
+    expect(screen.getByText('Paid')).toBeDefined();
   });
 
   it('opens cancel confirmation when "Cancel Subscription" clicked', () => {

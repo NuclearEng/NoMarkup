@@ -198,7 +198,18 @@ describe('InsuranceQuoteCompare — request → compare → select', () => {
     await waitFor(() => {
       expect(screen.getByText("You're covered")).toBeInTheDocument();
     });
-    expect(screen.getByText(/POL-9001 is active/)).toBeInTheDocument();
+    // The confirmation names the insurer and humanizes the status instead of
+    // leaking the raw policy UUID / machine status. The copy spans multiple
+    // text nodes (interpolated insurer name), so match the leaf <p>'s
+    // normalized textContent rather than a single text node.
+    expect(
+      screen.getByText(
+        (_content, el) =>
+          el?.tagName === 'P' &&
+          el.textContent?.replace(/\s+/g, ' ').trim() ===
+            'Your policy with Acme Mutual is active.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('shows an empty state when no insurers compete', () => {

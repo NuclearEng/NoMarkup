@@ -219,7 +219,7 @@ describe('InsurancePolicyPage', () => {
       products: [
         {
           id: 'prod-2',
-          name: 'Workers Comp',
+          name: 'Builder Shield',
           coverage_type: 'workers_comp',
           description: 'Workers compensation coverage.',
         },
@@ -228,7 +228,8 @@ describe('InsurancePolicyPage', () => {
     render(withQueryClient(createElement(InsurancePolicyPage)));
     expect(screen.getByText('Premium Paid')).toBeDefined();
     expect(screen.getByText('Coverage Type')).toBeDefined();
-    expect(screen.getByText('workers_comp')).toBeDefined();
+    // Coverage type is humanized for display ("workers_comp" → "Workers Comp").
+    expect(screen.getByText('Workers Comp')).toBeDefined();
   });
 
   it('does not crash and falls back gracefully when the product is missing', () => {

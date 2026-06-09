@@ -230,7 +230,7 @@ func main() {
 	// bidHandler depends on the contract client so awarding a bid also creates
 	// a contract row in the same request (fixes severed customer-accept pipeline).
 	bidHandler := handler.NewBidHandler(bidClient, contractClient, dbPool)
-	contractHandler := handler.NewContractHandler(contractClient, dbPool)
+	contractHandler := handler.NewContractHandler(contractClient, userClient, dbPool)
 
 	// Review service lives on the same gRPC server as the job service.
 	reviewClient := reviewv1.NewReviewServiceClient(jobConn)

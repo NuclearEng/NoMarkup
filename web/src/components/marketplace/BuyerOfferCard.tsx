@@ -29,7 +29,7 @@ import {
   useListingOffers,
   useUpdateOffer,
 } from '@/hooks/useOffers';
-import { formatCents, formatRelativeTime } from '@/lib/utils';
+import { formatCents, formatRelativeTime, humanizeStatus } from '@/lib/utils';
 import type { Offer, OfferStatus } from '@/types';
 
 interface BuyerOfferCardProps {
@@ -168,7 +168,7 @@ export function BuyerOfferCard({ listingId, className }: BuyerOfferCardProps) {
             ) : null}
           </div>
           <Badge variant={statusBadgeVariant(liveOffer.status)}>
-            {liveOffer.status}
+            {humanizeStatus(liveOffer.status)}
           </Badge>
         </div>
 

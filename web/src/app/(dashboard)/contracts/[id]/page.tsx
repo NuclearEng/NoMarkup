@@ -238,7 +238,7 @@ export default function ContractDetailPage() {
             <div className="flex items-center justify-between">
               <span className="text-zinc-300 text-sm">Customer</span>
               <span className="text-sm font-medium">
-                {contract.customer_id.slice(0, 8)}...
+                {contract.customer_name ?? `${contract.customer_id.slice(0, 8)}...`}
                 {isCustomer ? ' (You)' : ''}
               </span>
             </div>
@@ -246,7 +246,7 @@ export default function ContractDetailPage() {
             <div className="flex items-center justify-between">
               <span className="text-zinc-300 text-sm">Provider</span>
               <span className="text-sm font-medium">
-                {contract.provider_id.slice(0, 8)}...
+                {contract.provider_name ?? `${contract.provider_id.slice(0, 8)}...`}
                 {isProvider ? ' (You)' : ''}
               </span>
             </div>

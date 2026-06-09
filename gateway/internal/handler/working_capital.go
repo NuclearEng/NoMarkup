@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -27,6 +28,37 @@ type WorkingCapitalHandler struct {
 // NewWorkingCapitalHandler creates a new WorkingCapitalHandler.
 func NewWorkingCapitalHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool.Pool) *WorkingCapitalHandler {
 	return &WorkingCapitalHandler{paymentClient: paymentClient, db: db}
+}
+
+// contractNumbersByID reads the human-readable contract_number for the given
+// contract ids in a single parameterized query. The advance proto carries only
+// the contract UUID, so the gateway projects the friendly number in — without
+// it the repay dialog and advance rows fall back to a truncated UUID ("Pay
+// down 00000000…"). A nil db or query error returns an empty map (fail-soft:
+// the number simply isn't enriched, and the UI keeps its UUID fallback).
+func (h *WorkingCapitalHandler) contractNumbersByID(ctx context.Context, ids []string) map[string]string {
+	out := make(map[string]string, len(ids))
+	if h.db == nil || len(ids) == 0 {
+		return out
+	}
+	rows, err := h.db.Query(ctx,
+		`SELECT id::text, contract_number FROM contracts WHERE id = ANY($1)`, ids)
+	if err != nil {
+		slog.ErrorContext(ctx, "advance contract_number enrichment query failed", "error", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, number string
+		if err := rows.Scan(&id, &number); err != nil {
+			slog.ErrorContext(ctx, "advance contract_number enrichment scan failed", "error", err)
+			return out
+		}
+		if number != "" {
+			out[id] = number
+		}
+	}
+	return out
 }
 
 type requestAdvanceRequest struct {
@@ -153,9 +185,23 @@ func (h *WorkingCapitalHandler) ListMyAdvances(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Resolve friendly contract numbers in one batched query so each row (and
+	// the repay dialog) shows the contract number instead of a truncated UUID.
+	contractIDs := make([]string, 0, len(resp.GetAdvances()))
+	for _, a := range resp.GetAdvances() {
+		if cid := a.GetContractId(); cid != "" {
+			contractIDs = append(contractIDs, cid)
+		}
+	}
+	numbers := h.contractNumbersByID(r.Context(), contractIDs)
+
 	advances := make([]map[string]interface{}, 0, len(resp.GetAdvances()))
 	for _, a := range resp.GetAdvances() {
-		advances = append(advances, protoAdvanceToJSON(a))
+		jc := protoAdvanceToJSON(a)
+		if n := numbers[a.GetContractId()]; n != "" {
+			jc["contract_number"] = n
+		}
+		advances = append(advances, jc)
 	}
 
 	result := map[string]interface{}{
@@ -213,8 +259,14 @@ func (h *WorkingCapitalHandler) GetAdvance(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	advanceJSON := protoAdvanceToJSON(advance)
+	if cid := advance.GetContractId(); cid != "" {
+		if n := h.contractNumbersByID(r.Context(), []string{cid})[cid]; n != "" {
+			advanceJSON["contract_number"] = n
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"advance": protoAdvanceToJSON(advance),
+		"advance": advanceJSON,
 	})
 }
 

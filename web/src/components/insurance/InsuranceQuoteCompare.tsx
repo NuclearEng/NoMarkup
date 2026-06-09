@@ -23,7 +23,7 @@ import {
   useRequestQuotes,
   useSelectQuote,
 } from '@/hooks/useInsuranceMarketplace';
-import { cn, formatCents } from '@/lib/utils';
+import { cn, formatCents, humanizeStatus } from '@/lib/utils';
 import type {
   InsuranceCompetitiveQuote,
   SelectInsuranceQuoteResponse,
@@ -216,7 +216,8 @@ function QuoteComparison({
                 You&apos;re covered
               </p>
               <p className="text-sm text-emerald-300/80">
-                Policy {boundPolicy.id} is {boundPolicy.status}.
+                Your policy with {boundPolicy.insurer_name} is{' '}
+                {humanizeStatus(boundPolicy.status).toLowerCase()}.
               </p>
             </div>
           </CardContent>

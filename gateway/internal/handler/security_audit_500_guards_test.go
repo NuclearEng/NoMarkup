@@ -226,7 +226,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			pattern: "/api/v1/milestones/{id}/submit",
 			path:    "/api/v1/milestones/" + bad + "/submit",
 			role:    "provider",
-			handler: NewContractHandler(nil, nil).SubmitMilestone,
+			handler: NewContractHandler(nil, nil, nil).SubmitMilestone,
 		},
 		{
 			name:    "contract ApproveMilestone",
@@ -234,7 +234,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			pattern: "/api/v1/milestones/{id}/approve",
 			path:    "/api/v1/milestones/" + bad + "/approve",
 			role:    "customer",
-			handler: NewContractHandler(nil, nil).ApproveMilestone,
+			handler: NewContractHandler(nil, nil, nil).ApproveMilestone,
 		},
 		{
 			name:    "contract RequestRevision",
@@ -243,7 +243,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			path:    "/api/v1/milestones/" + bad + "/revision",
 			role:    "customer",
 			body:    `{"revision_notes":"x"}`,
-			handler: NewContractHandler(nil, nil).RequestRevision,
+			handler: NewContractHandler(nil, nil, nil).RequestRevision,
 		},
 		{
 			name:    "contract GetContract",
@@ -251,7 +251,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			pattern: "/api/v1/contracts/{id}",
 			path:    "/api/v1/contracts/" + bad,
 			role:    "customer",
-			handler: NewContractHandler(nil, nil).GetContract,
+			handler: NewContractHandler(nil, nil, nil).GetContract,
 		},
 		{
 			name:    "instant-match CreateInstantMatch",

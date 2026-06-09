@@ -21,7 +21,7 @@ import {
   useUsage,
 } from '@/hooks/useSubscription';
 import { cn } from '@/lib/utils';
-import { formatCents } from '@/lib/utils';
+import { formatCents, humanizeStatus, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL, SUBSCRIPTION_STATUS } from '@/types';
 import type { BillingInterval } from '@/types';
 
@@ -198,7 +198,7 @@ export default function SubscriptionPage() {
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xl font-bold">{subscription.tier.name}</p>
+                <p className="text-xl font-bold">{subscriptionTierLabel(subscription.tier)}</p>
                 <p className="text-sm text-zinc-300">
                   {formatCents(subscription.current_price_cents)}/
                   {subscription.billing_interval === BILLING_INTERVAL.ANNUAL ? 'year' : 'month'}
@@ -435,7 +435,7 @@ export default function SubscriptionPage() {
                       variant={invoice.status === 'paid' ? 'default' : 'outline'}
                       className="text-xs"
                     >
-                      {invoice.status}
+                      {humanizeStatus(invoice.status)}
                     </Badge>
                   </div>
                   <div className="w-10">

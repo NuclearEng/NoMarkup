@@ -11,29 +11,36 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMyPolicies } from '@/hooks/useInsurance';
-import { cn, formatCents } from '@/lib/utils';
-import type { InsurancePolicyStatus } from '@/types';
+import { cn, formatCents, humanizeStatus } from '@/lib/utils';
 
-const POLICY_STATUS_CLASSES: Record<InsurancePolicyStatus, string> = {
+// A policy can also be `pending_payment` before its premium is charged (DB
+// state machine), which is not part of the typed InsurancePolicyStatus union.
+// Key on plain strings so every backend status maps to a class + friendly
+// label, and humanize any unknown status rather than leaking the raw slug.
+const POLICY_STATUS_CLASSES: Record<string, string> = {
   active: 'bg-green-500/10 text-green-300 border-green-500/30',
+  pending_payment: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
   expired: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
   cancelled: 'bg-red-500/10 text-red-300 border-red-500/30',
   claimed: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
 };
 
-const POLICY_STATUS_LABELS: Record<InsurancePolicyStatus, string> = {
+const POLICY_STATUS_LABELS: Record<string, string> = {
   active: 'Active',
+  pending_payment: 'Pending Payment',
   expired: 'Expired',
   cancelled: 'Cancelled',
   claimed: 'Claimed',
 };
 
+const POLICY_STATUS_FALLBACK_CLASS = 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30';
+
 function statusClass(status: string): string {
-  return POLICY_STATUS_CLASSES[status as InsurancePolicyStatus] ?? POLICY_STATUS_CLASSES.expired;
+  return POLICY_STATUS_CLASSES[status] ?? POLICY_STATUS_FALLBACK_CLASS;
 }
 
 function statusLabel(status: string): string {
-  return POLICY_STATUS_LABELS[status as InsurancePolicyStatus] ?? status;
+  return POLICY_STATUS_LABELS[status] ?? humanizeStatus(status);
 }
 
 export default function InsurancePoliciesPage() {

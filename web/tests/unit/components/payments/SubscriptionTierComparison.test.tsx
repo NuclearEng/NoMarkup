@@ -28,10 +28,12 @@ function makeTier(overrides: Partial<SubscriptionTier>): SubscriptionTier {
 }
 
 const tiers = [
-  makeTier({ id: 'basic', name: 'Basic', sort_order: 1, monthly_price_cents: 0 }),
+  makeTier({ id: 'basic', name: 'Basic', slug: 'basic', sort_order: 1, monthly_price_cents: 0 }),
   makeTier({
     id: 'pro',
     name: 'Pro',
+    // slug must track name — the display label resolves from slug first.
+    slug: 'pro',
     sort_order: 2,
     monthly_price_cents: 49_00,
     annual_price_cents: 490_00,
@@ -42,6 +44,7 @@ const tiers = [
   makeTier({
     id: 'elite',
     name: 'Elite',
+    slug: 'elite',
     sort_order: 3,
     monthly_price_cents: 99_00,
     annual_price_cents: 990_00,

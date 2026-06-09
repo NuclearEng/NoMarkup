@@ -15,6 +15,7 @@ import { useMyReferrals, useRedeemReferral, useReferralCode } from '@/hooks/useR
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { humanizeStatus } from '@/lib/utils';
 
 function formatDollars(cents: number): string {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -161,7 +162,7 @@ export default function ReferralsPage() {
                 <tbody>
                   {(listQ.data?.referrals ?? []).map((r) => (
                     <tr key={r.id} className="border-b border-white/5 last:border-0">
-                      <td className="px-3 py-2 whitespace-nowrap">{r.status}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{humanizeStatus(r.status)}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{formatDollars(r.credit_cents)}</td>
                       <td className="px-3 py-2 text-white/60 whitespace-nowrap">
                         {new Date(r.created_at).toLocaleDateString()}

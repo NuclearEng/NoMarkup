@@ -22,7 +22,7 @@ import {
   useListingOffers,
   useUpdateOffer,
 } from '@/hooks/useOffers';
-import { formatCents, formatRelativeTime } from '@/lib/utils';
+import { formatCents, formatRelativeTime, humanizeStatus } from '@/lib/utils';
 import type { Offer } from '@/types';
 
 interface CounterOfferBannerProps {
@@ -183,7 +183,7 @@ function OfferRow({
           ) : null}
         </div>
         <Badge variant={offer.status === 'pending' ? 'active' : 'secondary'}>
-          {offer.status}
+          {humanizeStatus(offer.status)}
         </Badge>
       </div>
 

@@ -10,12 +10,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // ContractHandler handles HTTP endpoints for contracts.
 type ContractHandler struct {
 	contractClient contractv1.ContractServiceClient
+	// userClient resolves the customer/provider display names that enrich a
+	// contract response, so the web client can render a human-readable party
+	// name instead of a raw UUID (mirrors the chat channel name enrichment).
+	// It may be nil in tests; enrichment then degrades to absent.
+	userClient userv1.UserServiceClient
 	// db is used to read fields that live on the contracts table but are not
 	// carried by the contract proto/domain (e.g. tip_amount_cents, added by the
 	// Wave 5 services-polish tip feature without a proto regen). It may be nil
@@ -24,8 +30,64 @@ type ContractHandler struct {
 }
 
 // NewContractHandler creates a new ContractHandler.
-func NewContractHandler(contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *ContractHandler {
-	return &ContractHandler{contractClient: contractClient, db: db}
+func NewContractHandler(contractClient contractv1.ContractServiceClient, userClient userv1.UserServiceClient, db *pgxpool.Pool) *ContractHandler {
+	return &ContractHandler{contractClient: contractClient, userClient: userClient, db: db}
+}
+
+// resolvePartyNames resolves a set of user ids → public display_name via the
+// user gRPC service, deduping ids so a list makes at most one GetUser call per
+// unique party. It is fail-soft: a lookup error or empty display_name leaves
+// that id out of the map rather than failing the contract response. Only the
+// public-safe display_name is surfaced — no other PII. Returns nil when there
+// is no user client configured or no ids to resolve.
+func (h *ContractHandler) resolvePartyNames(ctx context.Context, ids ...string) map[string]string {
+	if h.userClient == nil {
+		return nil
+	}
+
+	unique := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			unique[id] = struct{}{}
+		}
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+
+	names := make(map[string]string, len(unique))
+	for id := range unique {
+		resp, err := h.userClient.GetUser(ctx, &userv1.GetUserRequest{UserId: id})
+		if err != nil {
+			slog.WarnContext(ctx, "contract: resolve party name failed",
+				"user_id", id, "error", err)
+			continue // fail soft — omit this name
+		}
+		if name := resp.GetUser().GetDisplayName(); name != "" {
+			names[id] = name
+		}
+	}
+
+	return names
+}
+
+// enrichPartyNames adds customer_name / provider_name to an already-projected
+// contract JSON map, given the resolved id→name lookup. A missing entry simply
+// leaves that name absent (the web client falls back to a truncated id).
+func enrichPartyNames(jc map[string]interface{}, names map[string]string) {
+	if names == nil {
+		return
+	}
+	if id, ok := jc["customer_id"].(string); ok {
+		if name := names[id]; name != "" {
+			jc["customer_name"] = name
+		}
+	}
+	if id, ok := jc["provider_id"].(string); ok {
+		if name := names[id]; name != "" {
+			jc["provider_name"] = name
+		}
+	}
 }
 
 // tipAmountsByContract reads tip_amount_cents for the given contract ids in a
@@ -84,6 +146,11 @@ func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	if id := resp.GetContract().GetId(); id != "" {
 		result["tip_amount_cents"] = h.tipAmountsByContract(r.Context(), []string{id})[id]
 	}
+	// Enrich the "Parties" display with human-readable names so the UI shows the
+	// counterparty's display_name instead of a raw UUID.
+	c := resp.GetContract()
+	names := h.resolvePartyNames(r.Context(), c.GetCustomerId(), c.GetProviderId())
+	enrichPartyNames(result, names)
 	if len(resp.GetChangeOrders()) > 0 {
 		orders := make([]map[string]interface{}, 0, len(resp.GetChangeOrders()))
 		for _, co := range resp.GetChangeOrders() {
@@ -190,17 +257,23 @@ func (h *ContractHandler) ListContracts(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ids := make([]string, 0, len(resp.GetContracts()))
+	partyIDs := make([]string, 0, len(resp.GetContracts())*2)
 	for _, c := range resp.GetContracts() {
 		if id := c.GetId(); id != "" {
 			ids = append(ids, id)
 		}
+		partyIDs = append(partyIDs, c.GetCustomerId(), c.GetProviderId())
 	}
 	tips := h.tipAmountsByContract(r.Context(), ids)
+	// One batched, deduped resolve for every party across the page so each row
+	// can render the counterparty name instead of a raw UUID.
+	names := h.resolvePartyNames(r.Context(), partyIDs...)
 
 	contracts := make([]map[string]interface{}, 0, len(resp.GetContracts()))
 	for _, c := range resp.GetContracts() {
 		jc := protoContractToJSON(c)
 		jc["tip_amount_cents"] = tips[c.GetId()]
+		enrichPartyNames(jc, names)
 		contracts = append(contracts, jc)
 	}
 

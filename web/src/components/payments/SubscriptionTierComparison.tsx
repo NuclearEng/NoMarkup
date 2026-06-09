@@ -4,7 +4,7 @@ import { Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { formatCents } from '@/lib/utils';
+import { formatCents, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL } from '@/types';
 import type { BillingInterval, SubscriptionTier } from '@/types';
 
@@ -111,7 +111,7 @@ export function SubscriptionTierComparison({
                   )}
                 >
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold">{tier.name}</p>
+                    <p className="text-sm font-semibold">{subscriptionTierLabel(tier)}</p>
                     <p className="text-lg font-bold">{formatCents(monthlyEquivalent)}</p>
                     <p className="text-xs text-muted-foreground">
                       {billingInterval === BILLING_INTERVAL.ANNUAL
@@ -168,8 +168,8 @@ export function SubscriptionTierComparison({
                     onClick={() => { onSelectTier(tier.id); }}
                     aria-label={
                       isCurrent
-                        ? `Current plan - ${tier.name}`
-                        : `Select ${tier.name}`
+                        ? `Current plan - ${subscriptionTierLabel(tier)}`
+                        : `Select ${subscriptionTierLabel(tier)}`
                     }
                   >
                     {isCurrent ? 'Current' : 'Select'}

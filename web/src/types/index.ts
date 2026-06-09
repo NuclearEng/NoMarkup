@@ -545,6 +545,11 @@ export interface Contract {
   job_title: string;
   customer_id: string;
   provider_id: string;
+  // Gateway-enriched display names for the contract parties (resolved from the
+  // user service). Optional + fail-soft: absent when the lookup misses, in which
+  // case the UI falls back to a truncated id.
+  customer_name?: string;
+  provider_name?: string;
   bid_id: string;
   amount_cents: number;
   payment_timing: string;

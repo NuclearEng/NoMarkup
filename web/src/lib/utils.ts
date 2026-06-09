@@ -109,6 +109,56 @@ export function repaymentProgress(
   return { percent, outstandingCents, complete: false };
 }
 
+/**
+ * Title-Case a machine status/enum value for display.
+ *
+ * Turns `snake_case` / `kebab-case` / `SCREAMING_SNAKE` machine values into a
+ * human-readable label (`pending_payment` → "Pending Payment", `under_review`
+ * → "Under Review"). This is the safe default for any status/enum we surface to
+ * users when there is no curated copy for it — never render the raw slug.
+ *
+ * A nullish/empty input returns an empty string so callers can render it
+ * directly without leaking `undefined`. Already-spaced input is preserved and
+ * just re-cased word-by-word.
+ */
+export function humanizeStatus(value: string | null | undefined): string {
+  if (!value) return '';
+  return value
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Friendly display names for subscription tiers.
+ *
+ * The payment service stores the tier `name` as a machine slug (`free`,
+ * `pro_customer`, `pro_provider`) and the gateway passes it through verbatim,
+ * so rendering `tier.name` directly leaks the slug to users. Map the known
+ * slugs to curated copy; anything unknown falls back to a humanized form of the
+ * slug (so a future tier still reads sensibly instead of raw snake_case).
+ */
+const SUBSCRIPTION_TIER_LABELS: Record<string, string> = {
+  free: 'Free',
+  pro_customer: 'Pro (Customer)',
+  pro_provider: 'Pro (Provider)',
+};
+
+/**
+ * Resolve a subscription tier's user-facing name. Prefer the `slug` (stable
+ * machine key) for the lookup, falling back to `name` (which currently also
+ * carries the slug). Unknown tiers degrade to a humanized label.
+ */
+export function subscriptionTierLabel(tier: {
+  name?: string | null;
+  slug?: string | null;
+}): string {
+  const key = (tier.slug ?? tier.name ?? '').trim();
+  return SUBSCRIPTION_TIER_LABELS[key] ?? humanizeStatus(key);
+}
+
 export function formatRelativeTime(date: Date): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();

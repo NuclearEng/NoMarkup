@@ -5,7 +5,7 @@ import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { formatCents } from '@/lib/utils';
+import { formatCents, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL } from '@/types';
 import type { BillingInterval, SubscriptionTier } from '@/types';
 
@@ -81,6 +81,7 @@ export function SubscriptionTierCard({
       : tier.monthly_price_cents;
 
   const features = getFeatures(tier);
+  const tierLabel = subscriptionTierLabel(tier);
   const ctaLabel = getCtaLabel(tier.id, currentTierId, tier.sort_order, currentSortOrder);
 
   return (
@@ -97,7 +98,7 @@ export function SubscriptionTierCard({
       ) : null}
 
       <CardHeader className="text-center">
-        <CardTitle className="text-lg">{tier.name}</CardTitle>
+        <CardTitle className="text-lg">{tierLabel}</CardTitle>
         <div className="mt-2">
           <span className="text-3xl font-bold">{formatCents(monthlyEquivalent)}</span>
           <span className="text-sm text-muted-foreground">/mo</span>
@@ -142,7 +143,7 @@ export function SubscriptionTierCard({
           variant={isCurrent ? 'outline' : 'default'}
           disabled={isCurrent}
           onClick={() => { onSelect(tier.id); }}
-          aria-label={`${ctaLabel} - ${tier.name}`}
+          aria-label={`${ctaLabel} - ${tierLabel}`}
         >
           {ctaLabel}
         </Button>
