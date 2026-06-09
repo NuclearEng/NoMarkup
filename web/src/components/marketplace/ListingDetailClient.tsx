@@ -8,7 +8,10 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { BuyItNowButton } from '@/components/marketplace/BuyItNowButton';
+import { BuyerOfferCard } from '@/components/marketplace/BuyerOfferCard';
+import { CounterOfferBanner } from '@/components/marketplace/CounterOfferBanner';
 import { ListingBidPanel } from '@/components/marketplace/ListingBidPanel';
+import { OfferModal } from '@/components/marketplace/OfferModal';
 import { ListingPhotoCarousel } from '@/components/marketplace/ListingPhotoCarousel';
 import { SimilarListings } from '@/components/marketplace/SimilarListings';
 import { SnipeExtensionBanner } from '@/components/marketplace/SnipeExtensionBanner';
@@ -55,6 +58,10 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
   // is replayed once the bond is authorized.
   const [bidBondReq, setBidBondReq] = useState<{ bond_amount_cents: number } | null>(null);
   const [pendingBid, setPendingBid] = useState<{ amount: number; max?: number } | null>(null);
+
+  // Best-Offer ("Make an offer") modal open state. Only ever rendered for a
+  // non-seller on an active listing (gated in the JSX below).
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
 
   // Track this listing in localStorage so it shows up on the marketplace
   // homepage's "Recently viewed" rail. No-op when listingId is empty.
@@ -128,6 +135,16 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
 
   const isOwnListing = user?.id === listing.seller_id;
   const auctionExpired = isExpired || listing.status !== LISTING_STATUS.ACTIVE;
+
+  // ─── Best-Offer surfacing ────────────────────────────────────────
+  // Offers are only meaningful on an ACTIVE listing. The seller sees
+  // incoming offers (CounterOfferBanner); an authenticated non-seller can
+  // make an offer and track their own (BuyerOfferCard). The reference
+  // price is the live bid if any, else the starting price.
+  const listingIsActive = listing.status === LISTING_STATUS.ACTIVE;
+  const canMakeOffer = listingIsActive && isAuthenticated && !isOwnListing;
+  const showSellerOffers = listingIsActive && isOwnListing;
+  const offerReferenceCents = listing.current_bid_cents || listing.starting_price_cents;
 
   const sparklineSeries =
     bidHistory && bidHistory.bids.length > 0
@@ -406,6 +423,34 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
               );
             }}
           />
+
+          {/* ─── Best-Offer (negotiation) surface ─────────────────── */}
+          {/* Buyer: "Make an offer" entry point + their own offer status. */}
+          {canMakeOffer ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[44px] w-full gap-1.5"
+                onClick={() => {
+                  setOfferModalOpen(true);
+                }}
+              >
+                <Tag className="h-4 w-4" aria-hidden="true" />
+                Make an offer
+              </Button>
+              <BuyerOfferCard listingId={listingId} />
+              <OfferModal
+                listingId={listingId}
+                currentPriceCents={offerReferenceCents}
+                open={offerModalOpen}
+                onOpenChange={setOfferModalOpen}
+              />
+            </>
+          ) : null}
+
+          {/* Seller: incoming offers with Accept / Reject / Counter. */}
+          {showSellerOffers ? <CounterOfferBanner listingId={listingId} /> : null}
 
           {/* Seller card */}
           <Card variant="glass">

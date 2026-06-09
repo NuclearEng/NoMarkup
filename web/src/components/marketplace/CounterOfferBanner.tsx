@@ -16,7 +16,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useListingOffers, useUpdateOffer } from '@/hooks/useOffers';
+import {
+  awaitingPartyForDepth,
+  computeOfferDepths,
+  useListingOffers,
+  useUpdateOffer,
+} from '@/hooks/useOffers';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import type { Offer } from '@/types';
 
@@ -52,8 +57,15 @@ export function CounterOfferBanner({ listingId, className }: CounterOfferBannerP
       </Card>
     );
   }
-  const open = (offers.data?.offers ?? []).filter(
-    (o) => o.status === 'pending' || o.status === 'countered',
+  // Only surface offers that are actually awaiting the SELLER's response.
+  // A seller's own counter (odd chain depth) is awaiting the BUYER, so it
+  // must not render Accept/Reject/Counter here (the gateway would 403).
+  const allOffers = offers.data?.offers ?? [];
+  const depths = computeOfferDepths(allOffers);
+  const open = allOffers.filter(
+    (o) =>
+      o.status === 'pending' &&
+      awaitingPartyForDepth(depths.get(o.id) ?? 0) === 'seller',
   );
   if (open.length === 0) return null;
 

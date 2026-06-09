@@ -4,6 +4,7 @@
 // what the server passes in. The seed means there is no first-paint loading
 // state; the error path is exercised by forcing the query into an error state.
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -59,11 +60,30 @@ vi.mock('@/hooks/useCountdown', () => ({
   useCountdown: () => ({ timeLeft: '2d 4h', isExpired: false, totalSeconds: 100_000 }),
 }));
 
+// Mutable auth state so individual tests can pose as anon / buyer / seller.
+const authState: { user: { id: string } | null; isAuthenticated: boolean } = {
+  user: null,
+  isAuthenticated: false,
+};
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: (selector: (state: unknown) => unknown) => {
-    const state = { user: null, isAuthenticated: false };
-    return selector(state);
-  },
+  useAuthStore: (selector: (state: unknown) => unknown) => selector(authState),
+}));
+
+// Offer child components are exercised in their own suites; here we stub
+// them to assert the parent's gating/wiring (which surface renders when).
+vi.mock('@/components/marketplace/OfferModal', () => ({
+  OfferModal: ({ open }: { open: boolean }) =>
+    open
+      ? createElement('div', { 'data-testid': 'offer-modal' }, 'offer modal')
+      : null,
+}));
+vi.mock('@/components/marketplace/BuyerOfferCard', () => ({
+  BuyerOfferCard: () =>
+    createElement('div', { 'data-testid': 'buyer-offer-card' }, 'buyer offer'),
+}));
+vi.mock('@/components/marketplace/CounterOfferBanner', () => ({
+  CounterOfferBanner: () =>
+    createElement('div', { 'data-testid': 'counter-offer-banner' }, 'seller offers'),
 }));
 
 vi.mock('@/components/marketplace/ListingPhotoCarousel', () => ({
@@ -138,6 +158,8 @@ beforeEach(() => {
   listingState.isLoading = false;
   listingState.isError = false;
   listingState.refetch = vi.fn();
+  authState.user = null;
+  authState.isAuthenticated = false;
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -196,5 +218,57 @@ describe('ListingDetailClient', () => {
     renderClient();
     const link = screen.getByText(/Watch live/i).closest('a');
     expect(link?.getAttribute('href')).toBe('/marketplace/l-1/spectate');
+  });
+});
+
+describe('ListingDetailClient — Best-Offer wiring', () => {
+  it('shows a buyer the Make-an-offer button + own-offer card (not the seller banner)', () => {
+    authState.user = { id: 'buyer-9' };
+    authState.isAuthenticated = true;
+    renderClient(); // seller is 's-1', viewer is buyer-9 → buyer surface
+    expect(screen.getByRole('button', { name: /make an offer/i })).toBeDefined();
+    expect(screen.getByTestId('buyer-offer-card')).toBeDefined();
+    expect(screen.queryByTestId('counter-offer-banner')).toBeNull();
+  });
+
+  it('opens the OfferModal when the buyer clicks Make an offer', async () => {
+    authState.user = { id: 'buyer-9' };
+    authState.isAuthenticated = true;
+    renderClient();
+    expect(screen.queryByTestId('offer-modal')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /make an offer/i }));
+    expect(screen.getByTestId('offer-modal')).toBeDefined();
+  });
+
+  it('shows the seller the CounterOfferBanner (not the buyer surface)', () => {
+    authState.user = { id: 's-1' }; // matches detail.seller_id
+    authState.isAuthenticated = true;
+    renderClient();
+    expect(screen.getByTestId('counter-offer-banner')).toBeDefined();
+    expect(screen.queryByRole('button', { name: /make an offer/i })).toBeNull();
+    expect(screen.queryByTestId('buyer-offer-card')).toBeNull();
+  });
+
+  it('hides all offer UI for an anonymous (unauthenticated) viewer', () => {
+    renderClient();
+    expect(screen.queryByRole('button', { name: /make an offer/i })).toBeNull();
+    expect(screen.queryByTestId('buyer-offer-card')).toBeNull();
+    expect(screen.queryByTestId('counter-offer-banner')).toBeNull();
+  });
+
+  it('hides all offer UI on a non-active (sold) listing even for a buyer', () => {
+    authState.user = { id: 'buyer-9' };
+    authState.isAuthenticated = true;
+    renderClient({ ...detail, status: LISTING_STATUS.SOLD });
+    expect(screen.queryByRole('button', { name: /make an offer/i })).toBeNull();
+    expect(screen.queryByTestId('buyer-offer-card')).toBeNull();
+    expect(screen.queryByTestId('counter-offer-banner')).toBeNull();
+  });
+
+  it('hides the seller banner on a non-active listing', () => {
+    authState.user = { id: 's-1' };
+    authState.isAuthenticated = true;
+    renderClient({ ...detail, status: LISTING_STATUS.SOLD });
+    expect(screen.queryByTestId('counter-offer-banner')).toBeNull();
   });
 });

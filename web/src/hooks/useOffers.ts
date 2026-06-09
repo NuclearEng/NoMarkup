@@ -61,6 +61,54 @@ export function useCreateOffer(listingId: string) {
   });
 }
 
+/**
+ * Compute, for every offer in a listing's offer set, who the offer is
+ * currently *awaiting* — mirroring the gateway's depth-parity rule in
+ * handler/offers.go::offerParticipantsForDepth.
+ *
+ * A counter-chain alternates authorship: the root (depth 0) is the
+ * buyer's opening offer and awaits the SELLER; the seller's counter
+ * (depth 1) awaits the BUYER; the buyer's counter (depth 2) awaits the
+ * seller; and so on. So even depth → awaiting seller, odd depth →
+ * awaiting buyer. The author is always the other participant.
+ *
+ * The API never returns `depth` directly, but every row carries
+ * `parent_offer_id`, so we reconstruct depth by walking parents. Returns
+ * a Map keyed by offer id. Orphaned parents (the buyer only sees their
+ * own rows, but a seller counter shares their `buyer_id` so the buyer
+ * sees the whole chain) fall back to depth 0.
+ */
+export type AwaitingParty = 'buyer' | 'seller';
+
+export function computeOfferDepths(offers: Offer[]): Map<string, number> {
+  const byId = new Map(offers.map((o) => [o.id, o]));
+  const depths = new Map<string, number>();
+  const depthOf = (offer: Offer, seen: Set<string>): number => {
+    const cached = depths.get(offer.id);
+    if (cached !== undefined) return cached;
+    if (!offer.parent_offer_id || seen.has(offer.id)) {
+      depths.set(offer.id, 0);
+      return 0;
+    }
+    const parent = byId.get(offer.parent_offer_id);
+    if (!parent) {
+      depths.set(offer.id, 0);
+      return 0;
+    }
+    seen.add(offer.id);
+    const d = depthOf(parent, seen) + 1;
+    depths.set(offer.id, d);
+    return d;
+  };
+  for (const o of offers) depthOf(o, new Set());
+  return depths;
+}
+
+/** Which participant an offer currently awaits, from its chain depth. */
+export function awaitingPartyForDepth(depth: number): AwaitingParty {
+  return depth % 2 === 1 ? 'buyer' : 'seller';
+}
+
 export type OfferAction = 'accept' | 'reject' | 'counter' | 'withdraw';
 
 export interface UpdateOfferInput {
