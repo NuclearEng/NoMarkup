@@ -192,7 +192,7 @@ func (s *AnalyticsServer) GetProviderEarnings(ctx context.Context, req *analytic
 func (s *AnalyticsServer) GetCustomerSpending(ctx context.Context, req *analyticsv1.GetCustomerSpendingRequest) (*analyticsv1.GetCustomerSpendingResponse, error) {
 	startDate, endDate := parseDateRange(req.GetDateRange())
 
-	points, categories, totalSpending, err := s.svc.GetCustomerSpending(ctx, req.GetCustomerId(), startDate, endDate, req.GetGroupBy())
+	points, categories, totalSpending, totalSavings, err := s.svc.GetCustomerSpending(ctx, req.GetCustomerId(), startDate, endDate, req.GetGroupBy())
 	if err != nil {
 		return nil, mapAnalyticsError(err)
 	}
@@ -228,7 +228,7 @@ func (s *AnalyticsServer) GetCustomerSpending(ctx context.Context, req *analytic
 		TotalSpentCents:     totalSpending,
 		TotalJobs:           totalJobs,
 		AverageJobCostCents: avgJobCost,
-		TotalSavingsCents:   0, // Savings vs market median computed when market data available.
+		TotalSavingsCents:   totalSavings, // Sum of (market median - paid) per job, floored at 0.
 		CategoryBreakdown:   protoCategories,
 	}, nil
 }

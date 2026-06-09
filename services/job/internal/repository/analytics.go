@@ -214,10 +214,20 @@ func (r *PostgresRepository) GetProviderEarnings(ctx context.Context, providerID
 		truncUnit = "month"
 	}
 
+	// Earnings here is the provider-side GROSS basis (payout + provider-borne
+	// fees), and fees is the sum of those same provider-borne fees, so that the
+	// server's net = earnings - fees lands exactly on provider_payout_cents (the
+	// money the provider actually receives). Sourcing earnings from
+	// provider_payout_cents directly — which is already net of every fee — and
+	// then subtracting fees again double-counted the platform fee and understated
+	// both displayed net earnings and the provider's taxable 1099 income.
+	// provider_payout = amount - platform_fee - guarantee_fee - lead_gen_fee
+	// (see services/payment fee model), and lead_gen has no column here, so the
+	// provider-borne fees we can attribute are platform_fee + guarantee_fee.
 	query := fmt.Sprintf(`
 		SELECT date_trunc('%s', p.created_at) AS period_start,
-		       COALESCE(SUM(p.provider_payout_cents), 0)::bigint AS earnings,
-		       COALESCE(SUM(p.platform_fee_cents), 0)::bigint AS fees,
+		       COALESCE(SUM(p.provider_payout_cents + p.platform_fee_cents + p.guarantee_fee_cents), 0)::bigint AS earnings,
+		       COALESCE(SUM(p.platform_fee_cents + p.guarantee_fee_cents), 0)::bigint AS fees,
 		       COUNT(*)::int AS job_count
 		FROM payments p
 		WHERE p.provider_id = $1
@@ -246,7 +256,7 @@ func (r *PostgresRepository) GetProviderEarnings(ctx context.Context, providerID
 	return points, nil
 }
 
-func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, error) {
+func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
 	truncUnit := "month"
 	switch groupBy {
 	case "day":
@@ -272,7 +282,7 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 
 	rows, err := r.pool.Query(ctx, query, customerID, startDate, endDate)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("customer spending: %w", err)
+		return nil, nil, 0, 0, fmt.Errorf("customer spending: %w", err)
 	}
 	defer rows.Close()
 
@@ -281,7 +291,7 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		var dp domain.SpendingDataPoint
 		err := rows.Scan(&dp.PeriodStart, &dp.AmountCents, &dp.JobCount)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("customer spending scan: %w", err)
+			return nil, nil, 0, 0, fmt.Errorf("customer spending scan: %w", err)
 		}
 		points = append(points, dp)
 	}
@@ -305,7 +315,7 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		LIMIT 50`,
 		customerID, startDate, endDate)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("customer spending categories: %w", err)
+		return nil, nil, 0, 0, fmt.Errorf("customer spending categories: %w", err)
 	}
 	defer catRows.Close()
 
@@ -314,7 +324,7 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		var cs domain.CategorySpending
 		err := catRows.Scan(&cs.CategoryID, &cs.CategoryName, &cs.TotalSpentCents, &cs.JobCount)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("customer spending categories scan: %w", err)
+			return nil, nil, 0, 0, fmt.Errorf("customer spending categories scan: %w", err)
 		}
 		categories = append(categories, cs)
 	}
@@ -329,10 +339,38 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		  AND created_at >= $2 AND created_at <= $3`,
 		customerID, startDate, endDate).Scan(&totalSpending)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("customer spending total: %w", err)
+		return nil, nil, 0, 0, fmt.Errorf("customer spending total: %w", err)
 	}
 
-	return points, categories, totalSpending, nil
+	// Total savings vs. market median. For each paid job, savings is the amount
+	// the customer paid below the market median for that job's service type (or
+	// category, if no service-type-level range exists), floored at 0 so a job
+	// paid above market never reduces the headline number. Jobs with no market
+	// reference contribute 0 (LEFT JOIN LATERAL → NULL → COALESCE 0), so the
+	// figure is honest: it only credits savings we can actually substantiate
+	// against real market data, never a fabricated baseline.
+	var totalSavings int64
+	err = r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(GREATEST(0, mr.median_cents - p.amount_cents)), 0)::bigint
+		FROM payments p
+		JOIN contracts c ON c.id = p.contract_id
+		JOIN jobs j ON j.id = c.job_id
+		LEFT JOIN LATERAL (
+			SELECT m.median_cents
+			FROM market_ranges m
+			WHERE m.service_type_id IN (j.service_type_id, j.category_id)
+			ORDER BY m.computed_at DESC
+			LIMIT 1
+		) mr ON true
+		WHERE p.customer_id = $1
+		  AND p.status IN ('completed', 'released', 'escrow')
+		  AND p.created_at >= $2 AND p.created_at <= $3`,
+		customerID, startDate, endDate).Scan(&totalSavings)
+	if err != nil {
+		return nil, nil, 0, 0, fmt.Errorf("customer spending savings: %w", err)
+	}
+
+	return points, categories, totalSpending, totalSavings, nil
 }
 
 func (r *PostgresRepository) RecordTransaction(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error {

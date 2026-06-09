@@ -43,8 +43,9 @@ func (s *AnalyticsService) GetProviderEarnings(ctx context.Context, providerID s
 	return s.repo.GetProviderEarnings(ctx, providerID, startDate, endDate, groupBy)
 }
 
-// GetCustomerSpending returns spending analytics for a customer.
-func (s *AnalyticsService) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, error) {
+// GetCustomerSpending returns spending analytics for a customer, including
+// total savings vs. market median.
+func (s *AnalyticsService) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
 	if groupBy == "" {
 		groupBy = "month"
 	}
