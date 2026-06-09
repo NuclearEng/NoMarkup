@@ -30,6 +30,7 @@ func (r *MarketplaceRepository) GetListingOrder(ctx context.Context, orderID str
 		       lo.amount_cents, lo.fee_cents, lo.tax_cents, lo.seller_payout_cents,
 		       lo.escrow_status, COALESCE(lo.payment_intent_id,''),
 		       COALESCE(lo.idempotency_key,''),
+		       COALESCE(lo.stripe_transfer_id,''),
 		       COALESCE(l.pickup_zip_code,''),
 		       lo.pickup_confirmed_at, lo.released_at, lo.auto_release_at,
 		       lo.dispute_id, lo.created_at, lo.updated_at
@@ -43,6 +44,7 @@ func (r *MarketplaceRepository) GetListingOrder(ctx context.Context, orderID str
 		&o.AmountCents, &o.FeeCents, &o.TaxCents, &o.SellerPayoutCents,
 		&o.EscrowStatus, &o.PaymentIntentID,
 		&o.IdempotencyKey,
+		&o.StripeTransferID,
 		&o.PickupZipCode,
 		&o.PickupConfirmedAt, &o.ReleasedAt, &o.AutoReleaseAt,
 		&disputeID, &o.CreatedAt, &o.UpdatedAt,
@@ -134,22 +136,38 @@ func (r *MarketplaceRepository) UpdateListingOrderDispute(ctx context.Context, o
 	return nil
 }
 
-// ListListingOrdersForAutoRelease returns held orders older than `before` with
-// no open dispute. Bounded by limit.
+// ListListingOrdersForAutoRelease returns the orders that still owe the seller
+// a payout, with no open dispute, bounded by limit. Two kinds qualify:
+//
+//  1. escrow_status='held' past the auto-release window (created_at < before) —
+//     the buyer never confirmed pickup nor disputed, so we assume pickup and
+//     release after 14 days.
+//  2. escrow_status='released' with stripe_transfer_id IS NULL — the order was
+//     released synchronously by the gateway pickup handshake (buyer + seller
+//     both confirmed) but the Stripe Connect transfer to the seller was never
+//     fired. These have no time window: they should be paid out on the next
+//     tick. This is the disconnect the money-bug fix closes.
+//
+// Disputed/refunded orders never appear (status filter), so they never pay out.
 func (r *MarketplaceRepository) ListListingOrdersForAutoRelease(ctx context.Context, before time.Time, limit int) ([]*service.MarketplaceListingOrder, error) {
 	const q = `
 		SELECT lo.id, lo.listing_id, lo.seller_id, lo.buyer_id,
 		       lo.amount_cents, lo.fee_cents, lo.tax_cents, lo.seller_payout_cents,
 		       lo.escrow_status, COALESCE(lo.payment_intent_id,''),
 		       COALESCE(lo.idempotency_key,''),
+		       COALESCE(lo.stripe_transfer_id,''),
 		       COALESCE(l.pickup_zip_code,''),
 		       lo.pickup_confirmed_at, lo.released_at, lo.auto_release_at,
 		       lo.dispute_id, lo.created_at, lo.updated_at
 		  FROM listing_orders lo
 		  JOIN listings l ON l.id = lo.listing_id
-		 WHERE lo.escrow_status = 'held'
-		   AND lo.dispute_id IS NULL
-		   AND lo.created_at < $1
+		 WHERE lo.dispute_id IS NULL
+		   AND lo.stripe_transfer_id IS NULL
+		   AND (
+		         (lo.escrow_status = 'held' AND lo.created_at < $1)
+		         OR
+		         (lo.escrow_status = 'released')
+		       )
 		 ORDER BY lo.created_at ASC
 		 LIMIT $2`
 	rows, err := r.pool.Query(ctx, q, before, limit)
@@ -165,6 +183,7 @@ func (r *MarketplaceRepository) ListListingOrdersForAutoRelease(ctx context.Cont
 		if err := rows.Scan(&o.ID, &o.ListingID, &o.SellerID, &o.BuyerID,
 			&o.AmountCents, &o.FeeCents, &o.TaxCents, &o.SellerPayoutCents,
 			&o.EscrowStatus, &o.PaymentIntentID, &o.IdempotencyKey,
+			&o.StripeTransferID,
 			&o.PickupZipCode,
 			&o.PickupConfirmedAt, &o.ReleasedAt, &o.AutoReleaseAt,
 			&disputeID, &o.CreatedAt, &o.UpdatedAt,
@@ -175,6 +194,29 @@ func (r *MarketplaceRepository) ListListingOrdersForAutoRelease(ctx context.Cont
 		out = append(out, o)
 	}
 	return out, rows.Err()
+}
+
+// MarkListingOrderTransferred stamps the Stripe Connect transfer id on a
+// paid-out order. The partial index idx_listing_orders_unpaid_released keys off
+// stripe_transfer_id IS NULL, so writing a non-null value here removes the order
+// from the worker's reconcile set permanently — the durable double-pay guard.
+//
+// Idempotent: a re-stamp with the same transfer id (deterministic per order via
+// the 'listing-release:<id>' Stripe key) is a harmless no-op write.
+func (r *MarketplaceRepository) MarkListingOrderTransferred(ctx context.Context, orderID, transferID string) error {
+	const q = `
+		UPDATE listing_orders
+		   SET stripe_transfer_id = $2,
+		       updated_at = now()
+		 WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q, orderID, transferID)
+	if err != nil {
+		return fmt.Errorf("mark listing order transferred: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return service.ErrListingOrderNotFound
+	}
+	return nil
 }
 
 // CreateMarketplaceDispute inserts a row in marketplace_disputes.

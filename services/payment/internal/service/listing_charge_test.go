@@ -20,6 +20,14 @@ type mockMarketplaceRepo struct {
 	disputes  map[string]*MarketplaceDispute
 	taxIncs   []taxIncrement
 	notifyLog []string
+	// transferStamps records each MarkListingOrderTransferred call so tests can
+	// assert "exactly one seller payout per order" / idempotency.
+	transferStamps []transferStamp
+}
+
+type transferStamp struct {
+	orderID    string
+	transferID string
 }
 
 type taxIncrement struct {
@@ -116,13 +124,18 @@ func (m *mockMarketplaceRepo) ListListingOrdersForAutoRelease(_ context.Context,
 	defer m.mu.Unlock()
 	var out []*MarketplaceListingOrder
 	for _, o := range m.orders {
-		if o.EscrowStatus != "held" {
-			continue
-		}
+		// Mirror the SQL: pay out either 'held' past-window orders OR
+		// handshake-'released' orders that have no transfer yet. Never an order
+		// with an open dispute or one already paid out.
 		if o.DisputeID != nil && *o.DisputeID != "" {
 			continue
 		}
-		if !o.CreatedAt.Before(before) {
+		if o.StripeTransferID != "" {
+			continue
+		}
+		eligible := (o.EscrowStatus == "held" && o.CreatedAt.Before(before)) ||
+			o.EscrowStatus == "released"
+		if !eligible {
 			continue
 		}
 		cp := *o
@@ -132,6 +145,18 @@ func (m *mockMarketplaceRepo) ListListingOrdersForAutoRelease(_ context.Context,
 		}
 	}
 	return out, nil
+}
+
+func (m *mockMarketplaceRepo) MarkListingOrderTransferred(_ context.Context, orderID, transferID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.orders[orderID]
+	if !ok {
+		return ErrListingOrderNotFound
+	}
+	o.StripeTransferID = transferID
+	m.transferStamps = append(m.transferStamps, transferStamp{orderID: orderID, transferID: transferID})
+	return nil
 }
 
 func (m *mockMarketplaceRepo) CreateMarketplaceDispute(_ context.Context, d *MarketplaceDispute) error {
@@ -544,6 +569,108 @@ func TestAutoRelease_idempotent_second_run(t *testing.T) {
 	count, err = svc.AutoReleaseListingOrders(context.Background(), 10)
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
+}
+
+// ====== Handshake-released payout reconciliation (the money-bug fix) ======
+
+// TestAutoRelease_pays_handshake_released_order is the regression test for the
+// money bug: the gateway pickup handshake flips an order straight to 'released'
+// (no Stripe call). The worker must pick that order up — even though it is NOT
+// 'held' and has no time window — and fire exactly one seller transfer of
+// amount−fee. A second run must be a no-op (no double-pay).
+func TestAutoRelease_pays_handshake_released_order(t *testing.T) {
+	t.Parallel()
+	svc, repo, _ := newMarketplaceFixture()
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	svc.SetClock(func() time.Time { return now })
+
+	// Order released seconds ago by the gateway handshake — NOT held, NOT past
+	// any 14-day window, and crucially stripe_transfer_id is empty (never paid).
+	rel := time.Date(2026, 6, 1, 11, 59, 0, 0, time.UTC)
+	o := newOrder("handshake", "released", 50000, 2500)
+	o.PaymentIntentID = "pi_handshake"
+	o.CreatedAt = now.Add(-2 * time.Hour) // recent — would be ineligible under the old 'held + window' query
+	o.ReleasedAt = &rel
+	repo.addOrder(o)
+
+	count, err := svc.AutoReleaseListingOrders(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "the handshake-released order must be paid out")
+
+	// Exactly one transfer recorded, of amount − fee.
+	require.Len(t, repo.transferStamps, 1, "exactly one seller payout")
+	assert.Equal(t, "handshake", repo.transferStamps[0].orderID)
+	assert.NotEmpty(t, repo.transferStamps[0].transferID)
+
+	got, _ := repo.GetListingOrder(context.Background(), "handshake")
+	assert.Equal(t, "released", got.EscrowStatus)
+	assert.Equal(t, int64(47500), got.SellerPayoutCents, "seller payout = amount − fee = 50000 − 2500")
+	assert.NotEmpty(t, got.StripeTransferID, "transfer id stamped so it never pays again")
+
+	// 1099-K accumulated exactly once.
+	require.Len(t, repo.taxIncs, 1)
+	assert.Equal(t, int64(47500), repo.taxIncs[0].cents)
+
+	// Idempotency: a second worker run must NOT pay again.
+	count, err = svc.AutoReleaseListingOrders(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count, "second run is a no-op — no double-pay")
+	require.Len(t, repo.transferStamps, 1, "still exactly one payout after re-run")
+	require.Len(t, repo.taxIncs, 1, "1099-K not double-counted")
+}
+
+// TestAutoRelease_skips_disputed_and_refunded_orders proves a disputed or
+// refunded order never pays out, even though the worker now also scans
+// 'released' orders.
+func TestAutoRelease_skips_disputed_and_refunded_orders(t *testing.T) {
+	t.Parallel()
+	svc, repo, _ := newMarketplaceFixture()
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	svc.SetClock(func() time.Time { return now })
+
+	// Disputed order — frozen, must never pay out.
+	disp := newOrder("disp-pay", "disputed", 50000, 2500)
+	disp.PaymentIntentID = "pi_disp_pay"
+	dID := "open-dispute"
+	disp.DisputeID = &dID
+	repo.addOrder(disp)
+
+	// Refunded order — money already went back to the buyer.
+	ref := newOrder("ref-pay", "refunded", 50000, 2500)
+	ref.PaymentIntentID = "pi_ref_pay"
+	repo.addOrder(ref)
+
+	count, err := svc.AutoReleaseListingOrders(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count, "neither disputed nor refunded orders pay out")
+	require.Len(t, repo.transferStamps, 0, "no seller transfer for disputed/refunded")
+}
+
+// TestReleaseToSeller_double_release_does_not_double_pay proves the guard: an
+// order that already carries a transfer id is never paid a second time, even if
+// releaseToSeller is somehow re-invoked (e.g. confirm-pickup race).
+func TestReleaseToSeller_double_release_does_not_double_pay(t *testing.T) {
+	t.Parallel()
+	svc, repo, _ := newMarketplaceFixture()
+
+	o := newOrder("dbl", "held", 50000, 2500)
+	o.PaymentIntentID = "pi_dbl"
+	repo.addOrder(o)
+
+	// First confirm pickup → one payout.
+	_, err := svc.ConfirmPickup(context.Background(), o.ID, o.BuyerID, "buyer")
+	require.NoError(t, err)
+	require.Len(t, repo.transferStamps, 1)
+
+	// Now the worker also sweeps it (it's 'released' with a transfer id) — must
+	// be a no-op.
+	count, err := svc.AutoReleaseListingOrders(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+	require.Len(t, repo.transferStamps, 1, "still exactly one payout — no double-pay")
+	require.Len(t, repo.taxIncs, 1, "1099-K counted once")
 }
 
 // ====== Charge re-entry idempotency ======

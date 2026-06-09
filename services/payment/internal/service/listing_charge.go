@@ -70,6 +70,7 @@ type MarketplaceListingOrder struct {
 	EscrowStatus      string
 	PaymentIntentID   string
 	IdempotencyKey    string
+	StripeTransferID  string // Stripe Connect transfer id once the seller is paid (empty = not yet paid out)
 	PickupZipCode     string
 	PickupConfirmedAt *time.Time
 	ReleasedAt        *time.Time
@@ -107,6 +108,10 @@ type MarketplaceRepository interface {
 	UpdateListingOrderPaymentIntent(ctx context.Context, orderID, paymentIntentID, idempotencyKey string, taxCents int64, autoReleaseAt time.Time) error
 	UpdateListingOrderDispute(ctx context.Context, orderID string, disputeID *string) error
 	ListListingOrdersForAutoRelease(ctx context.Context, before time.Time, limit int) ([]*MarketplaceListingOrder, error)
+	// MarkListingOrderTransferred stamps the Stripe Connect transfer id on a
+	// paid-out order. This is the durable "already paid" marker that lets the
+	// auto-release worker reconcile handshake-released orders exactly once.
+	MarkListingOrderTransferred(ctx context.Context, orderID, transferID string) error
 
 	CreateMarketplaceDispute(ctx context.Context, d *MarketplaceDispute) error
 	GetMarketplaceDispute(ctx context.Context, disputeID string) (*MarketplaceDispute, error)
@@ -406,6 +411,18 @@ func (s *MarketplaceService) ConfirmPickup(ctx context.Context, orderID, actorUs
 // updates the order to released. Also stamps the seller_tax_forms 1099-K
 // running total.
 func (s *MarketplaceService) releaseToSeller(ctx context.Context, order *MarketplaceListingOrder, pickupConfirmedAt *time.Time) error {
+	// Double-pay guard: if this order already carries a transfer id, the seller
+	// was already paid (e.g. a prior handshake-release or auto-release). Never
+	// fire a second transfer. The deterministic Stripe idempotency key below is
+	// the second line of defense; this is the first.
+	if order.StripeTransferID != "" {
+		slog.Info("release to seller: order already paid out, skipping",
+			"order_id", order.ID,
+			"transfer_id", order.StripeTransferID,
+		)
+		return nil
+	}
+
 	sellerPayout := order.AmountCents - order.FeeCents
 	if sellerPayout < 0 {
 		sellerPayout = 0
@@ -430,11 +447,21 @@ func (s *MarketplaceService) releaseToSeller(ctx context.Context, order *Marketp
 	if err != nil {
 		return fmt.Errorf("release to seller transfer: %w", err)
 	}
-	_ = transferID // logged inside StripeService
 
 	now := s.now()
+	// Move the order to 'released' and stamp the payout amount + timestamps.
+	// For a handshake-released order (already 'released' before the worker ran)
+	// this is a harmless re-stamp of the same status; the important side effect
+	// is recording the transfer id below so the order is never paid twice.
 	if err := s.repo.UpdateListingOrderEscrowStatus(ctx, order.ID, "released", &now, pickupConfirmedAt, sellerPayout); err != nil {
 		return fmt.Errorf("release to seller update status: %w", err)
+	}
+
+	// Record the Stripe transfer id — the durable "already paid" marker the
+	// worker query filters on (stripe_transfer_id IS NULL). MUST happen so a
+	// retry/second release never double-pays.
+	if err := s.repo.MarkListingOrderTransferred(ctx, order.ID, transferID); err != nil {
+		return fmt.Errorf("release to seller record transfer: %w", err)
 	}
 
 	// 1099-K accumulation. Errors here MUST NOT fail the release.
@@ -663,8 +690,21 @@ func (s *MarketplaceService) AutoReleaseListingOrders(ctx context.Context, batch
 
 	released := 0
 	for _, o := range orders {
-		// Defense in depth — repo query already filters, but recheck.
-		if o.EscrowStatus != "held" || (o.DisputeID != nil && *o.DisputeID != "") {
+		// Defense in depth — repo query already filters, but recheck. We pay out
+		// two kinds of order here:
+		//   - 'held' past the auto-release window (buyer never confirmed)
+		//   - 'released' via the gateway pickup handshake but not yet paid out
+		//     (stripe_transfer_id still empty) — the bug this fix closes.
+		// Disputed/refunded orders are excluded by the status check, so they
+		// never pay out. Already-paid orders (transfer id set) are skipped by
+		// releaseToSeller's own guard.
+		if o.EscrowStatus != "held" && o.EscrowStatus != "released" {
+			continue
+		}
+		if o.DisputeID != nil && *o.DisputeID != "" {
+			continue
+		}
+		if o.StripeTransferID != "" {
 			continue
 		}
 		if err := s.releaseToSeller(ctx, o, nil); err != nil {

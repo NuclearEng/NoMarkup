@@ -26,12 +26,16 @@ import (
 //
 // It performs auth + ownership validation, then writes the state transition
 // to listing_orders / marketplace_disputes via direct SQL. The actual Stripe
-// transfer is performed by a payment-service-side worker that polls for
-// orders with escrow_status='pickup_confirmed' and released_at IS NULL.
+// Connect transfer to the seller is performed by the payment-service
+// auto-release worker, which reconciles orders in escrow_status='released'
+// that have not yet been paid out (stripe_transfer_id IS NULL) and pays
+// amount_cents − fee_cents to the seller. (It also still releases 'held'
+// orders past the 14-day window.)
 //
 // This split keeps the gateway hot path off Stripe (which can hang under
 // outages) while still giving the buyer immediate confirmation. The worker
-// reconciles asynchronously, with idempotency keys preventing double-pay.
+// reconciles asynchronously; the stripe_transfer_id marker + a deterministic
+// idempotency key ('listing-release:<order_id>') prevent any double-pay.
 //
 // Thread-safe; the handler holds no per-request mutable state.
 type ListingOrdersHandler struct {
