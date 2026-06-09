@@ -39,6 +39,12 @@ const (
 	// snipeExtension: how much time the auction is bumped on a snipe.
 	listingSnipeExtension = 30 * time.Second
 
+	// maxSnipeExtensions caps how many times anti-snipe may bump the deadline.
+	// Without it, repeated last-second bids extend the auction forever (griefing
+	// / closeout DoS). Matches the Rust forward.rs MAX_SNIPE_EXTENSIONS. After the
+	// cap, late bids still register but no longer extend the deadline.
+	listingMaxSnipeExtensions = 5
+
 	// minBidIncrement: smallest legal increment over the current high bid.
 	listingMinIncrementCents int64 = 100
 
@@ -659,11 +665,14 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 		return bid, 0, 0, false, time.Time{}, false, 0, http.StatusInternalServerError, "cascade produced no bids"
 	}
 
-	// Snipe extension: based on the LAST cascade step's wall clock.
+	// Snipe extension: based on the LAST cascade step's wall clock. Capped at
+	// listingMaxSnipeExtensions so repeated last-second bids can't keep the
+	// auction open indefinitely; past the cap the bid still lands but the
+	// deadline is left alone.
 	now := time.Now()
 	endsAt := auctionEndsAt.Time
 	snipeApplied = false
-	if endsAt.Sub(now) <= listingSnipeWindow {
+	if endsAt.Sub(now) <= listingSnipeWindow && snipeCount < listingMaxSnipeExtensions {
 		endsAt = endsAt.Add(listingSnipeExtension)
 		snipeApplied = true
 		snipeCount++
