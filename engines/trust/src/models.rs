@@ -172,7 +172,7 @@ pub fn all_tier_requirements() -> Vec<TierRequirement> {
             min_reviews: 0,
             min_rating: 0.0,
             requires_verification: false,
-            description: "New accounts or those with score below 50".into(),
+            description: "New accounts or those with a score below 0.50".into(),
         },
         TierRequirement {
             tier: TrustTier::Rising,

@@ -714,7 +714,10 @@ func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]
 	if ts := p.GetTrustScore(); ts != nil {
 		result["trust_score"] = map[string]interface{}{
 			"overall_score": ts.GetOverallScore(),
-			"tier":          ts.GetTier().String(),
+			// Use the same clean serialization as the provider profile
+			// (trustTierToString -> "rising"), not the raw proto enum
+			// ("TRUST_TIER_RISING"), so the same field has one contract everywhere.
+			"tier": trustTierToString(ts.GetTier()),
 		}
 	}
 
