@@ -330,6 +330,16 @@ func (h *ListingOrdersHandler) SellerConfirm(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusConflict, "order has open dispute")
 		return
 	}
+	// Guard against confirming a terminal order. seller_confirmed_at alone is not
+	// enough: the auto-release worker releases held orders past the pickup window
+	// WITHOUT stamping seller_confirmed_at, so a 'released' order can have a NULL
+	// seller_confirmed_at. Without this, that order could be seller-confirmed
+	// after the fact — corrupting the audit trail and firing a duplicate
+	// "payment released" notification. Only held / pickup_confirmed may advance.
+	if escrowStatus != "held" && escrowStatus != "pickup_confirmed" {
+		writeError(w, http.StatusConflict, fmt.Sprintf("cannot confirm pickup from status %q", escrowStatus))
+		return
+	}
 	if sellerConfirmedAt.Valid {
 		writeError(w, http.StatusConflict, "seller already confirmed")
 		return
