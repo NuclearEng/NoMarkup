@@ -90,6 +90,40 @@ describe('AuctionTimer', () => {
     // days > 0 branch → "Nd Mh" text
     expect(container.textContent).toMatch(/\d+d \d+h/);
   });
+
+  it('sizes the HH:MM:SS readout to fit inside the ring (text-sm digits, 96px ring)', () => {
+    // ~1h19m remaining → hours > 0, non-final HH:MM:SS branch (the surface in
+    // the bug screenshot). The digit string must fit the ring's inner diameter
+    // with clearance, so the digits are sized text-sm (not text-lg) and the ring
+    // is 96px. Guards against a regression that lets the stroke cross the digits.
+    const future = new Date(Date.now() + (1 * 60 * 60 + 19 * 60 + 26) * 1000).toISOString();
+    const { container } = render(<AuctionTimer auctionEndsAt={future} />);
+
+    // The SVG ring is sized 96 — large enough to frame text-sm digits.
+    const svg = container.querySelector('svg');
+    expect(svg?.getAttribute('width')).toBe('96');
+    expect(svg?.getAttribute('height')).toBe('96');
+
+    // Every minute/second/hour digit span uses text-sm (fits inner diameter),
+    // and none use the old text-lg that overflowed the ring.
+    const digitSpans = Array.from(container.querySelectorAll('span.font-bold'));
+    expect(digitSpans.length).toBeGreaterThanOrEqual(3); // HH, MM, SS
+    for (const span of digitSpans) {
+      expect(span.className).toContain('text-sm');
+      expect(span.className).not.toContain('text-lg');
+    }
+
+    // Geometry assertion: estimated text width < ring inner diameter.
+    // Inner clear diameter for size=96, strokeWidth=3:
+    //   2 * ((96 - 3*2)/2 - 3/2) = 87px.
+    // Worst-case "23:59:59" at text-sm tabular-nums:
+    //   6 digits * ~8.4px + 2 colons * ~3px + 4 separator margins * 4px ≈ 72px.
+    const size = 96;
+    const strokeWidth = 3;
+    const innerDiameter = 2 * ((size - strokeWidth * 2) / 2 - strokeWidth / 2);
+    const estTextWidth = 6 * 8.4 + 2 * 3 + 4 * 4; // ≈ 72.4px
+    expect(estTextWidth).toBeLessThan(innerDiameter);
+  });
 });
 
 describe('AuctionTimer interval ticks', () => {

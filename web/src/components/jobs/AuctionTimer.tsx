@@ -310,9 +310,16 @@ export const AuctionTimer = memo(function AuctionTimer({
     );
   }
 
-  // Full variant with ring and animated digits
+  // Full variant with ring and animated digits.
+  // Ring geometry: the HH:MM:SS digit string must fit INSIDE the ring's inner
+  // diameter with clear padding so the circular stroke never crosses a digit.
+  // At ringSize=96 / strokeWidth=3 the inner clear diameter is
+  //   2 * ((96 - 3*2)/2 - 3/2) = 87px.
+  // The widest readout "23:59:59" at text-sm (14px) tabular-nums is ~72px wide
+  // (6 digits ~50px + 2 colons ~6px + separator margins ~16px), leaving ~7px of
+  // clearance on each side. The compact (no-ring) variant is unaffected.
   const { days, hours, minutes, seconds } = timeRemaining;
-  const ringSize = 80;
+  const ringSize = 96;
 
   return (
     <div
@@ -360,26 +367,29 @@ export const AuctionTimer = memo(function AuctionTimer({
             ) : isFinalMinute ? (
               // Final minute: large seconds display with animated digits
               <div className="flex items-baseline">
-                <span className="text-2xl font-black tabular-nums">
+                <span className="text-3xl font-black tabular-nums">
                   <AnimatedDigit value={pad(seconds)} />
                 </span>
                 <span className="ml-0.5 text-xs font-medium opacity-70">s</span>
               </div>
             ) : (
+              // HH:MM:SS readout. Sized text-sm (with text-xs colons) so the full
+              // "23:59:59" string stays inside the ring's inner diameter and the
+              // gold stroke frames the time instead of crossing the edge digits.
               <div className="flex items-baseline tabular-nums">
                 {hours > 0 ? (
                   <>
-                    <span className="text-lg font-bold">
+                    <span className="text-sm font-bold">
                       <AnimatedDigit value={pad(hours)} />
                     </span>
-                    <span className="mx-0.5 text-sm font-medium opacity-50">:</span>
+                    <span className="mx-0.5 text-xs font-medium opacity-50">:</span>
                   </>
                 ) : null}
-                <span className="text-lg font-bold">
+                <span className="text-sm font-bold">
                   <AnimatedDigit value={pad(minutes)} />
                 </span>
-                <span className="mx-0.5 text-sm font-medium opacity-50">:</span>
-                <span className="text-lg font-bold">
+                <span className="mx-0.5 text-xs font-medium opacity-50">:</span>
+                <span className="text-sm font-bold">
                   <AnimatedDigit value={pad(seconds)} />
                 </span>
               </div>
