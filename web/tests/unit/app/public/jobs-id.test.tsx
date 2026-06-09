@@ -397,7 +397,9 @@ describe('(public)/jobs/[id]/page', () => {
     expect(screen.getByTestId('bid-activity')).toBeDefined();
   });
 
-  it('renders the BidPlacementPanel for a provider with no existing bid', () => {
+  it('renders BidForm for a provider with no existing bid (first-bid path)', () => {
+    // Sealed auctions never populate lowest_bid_cents, so the first-bid UI is
+    // BidForm (which handles both first + lower bids), not BidPlacementPanel.
     setAuth({
       user: { id: 'prov-new', roles: ['provider'] },
       isAuthenticated: true,
@@ -407,7 +409,7 @@ describe('(public)/jobs/[id]/page', () => {
       bids: [],
     });
     render(createElement(JobDetailPage));
-    expect(screen.getByTestId('bid-placement')).toBeDefined();
+    expect(screen.getAllByTestId('bid-form').length).toBeGreaterThan(0);
   });
 
   it('renders MarketRangeDisplay when market_range has a sample size', () => {
@@ -486,25 +488,6 @@ describe('(public)/jobs/[id]/page', () => {
     });
     render(createElement(JobDetailPage));
     expect(screen.getByText('Instant Accept Price')).toBeDefined();
-  });
-
-  it('fires placeBid.mutate when BidPlacementPanel onPlaceBid invokes', () => {
-    const placeBidMutate = vi.fn();
-    setAuth({
-      user: { id: 'prov-new', roles: ['provider'] },
-      isAuthenticated: true,
-    });
-    setHooks({
-      job: { ...baseJob, lowest_bid_cents: 50000, starting_bid_cents: 100000 },
-      bids: [],
-      placeBidMutate,
-    });
-    render(createElement(JobDetailPage));
-    fireEvent.click(screen.getByTestId('bid-placement'));
-    expect(placeBidMutate).toHaveBeenCalledWith({
-      jobId: 'test-id',
-      input: { amount_cents: 7777 },
-    });
   });
 
   it('renders the static map without the address overlay when location_address is missing', () => {

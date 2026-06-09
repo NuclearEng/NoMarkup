@@ -276,12 +276,15 @@ func (s *ContractService) MarkComplete(ctx context.Context, contractID, provider
 		return nil, fmt.Errorf("mark complete: %w", err)
 	}
 
-	// Update job status.
-	if err := s.contractRepo.UpdateJobStatus(ctx, updated.JobID, "completed"); err != nil {
-		slog.Warn("failed to update job status to completed", "job_id", updated.JobID, "error", err)
-	}
+	// Do NOT move the job to "completed" here. The provider has only marked
+	// work done; the contract is still active and awaiting customer approval
+	// (or 7-day auto-release). The job is finalised to "completed" in
+	// ApproveCompletion, when escrow would release. Marking it completed now
+	// would diverge the job from a still-active contract and let the customer
+	// see a finished job while the approval step is still pending.
 
-	slog.Info("contract marked complete", "contract_id", contractID, "provider_id", providerID)
+	slog.Info("contract marked complete by provider, awaiting customer approval",
+		"contract_id", contractID, "provider_id", providerID)
 	return updated, nil
 }
 
@@ -323,6 +326,18 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 	}
 
 	for _, c := range contracts {
+		// Finalise the contract first (active+completed_at → completed), the
+		// same terminal transition a customer approval performs. Without this
+		// the contract would stay 'active' forever and be re-selected on every
+		// sweep. Only after the contract is terminal do we finalise the job.
+		if _, err := s.contractRepo.ApproveCompletion(ctx, c.ID); err != nil {
+			slog.Warn("auto release: failed to complete contract",
+				"contract_id", c.ID,
+				"job_id", c.JobID,
+				"error", err,
+			)
+			continue
+		}
 		if err := s.contractRepo.UpdateJobCompleted(ctx, c.JobID); err != nil {
 			slog.Warn("auto release: failed to update job completed",
 				"contract_id", c.ID,

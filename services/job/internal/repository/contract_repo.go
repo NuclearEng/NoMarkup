@@ -421,8 +421,18 @@ func (r *PostgresRepository) RequestRevision(ctx context.Context, milestoneID st
 
 // MarkComplete marks a contract as completed.
 func (r *PostgresRepository) MarkComplete(ctx context.Context, contractID string) (*domain.Contract, error) {
+	// The provider marking work complete is the FIRST half of a two-party
+	// completion handshake, not the terminal transition. It stamps
+	// completed_at but deliberately keeps status = 'active' so the customer's
+	// "Approve Completion / Request Revision" step is still reachable. The
+	// frontend (CompletionFlow) keys "awaiting customer approval" off
+	// (status == 'active' && completed_at != null); flipping straight to
+	// 'completed' here made ApproveCompletion (which requires an active
+	// contract) return 422 and hid the customer's approval UI entirely.
+	// Customer approval (or the 7-day auto-release) is what flips status to
+	// 'completed'. Re-stamping is idempotent on an already-marked contract.
 	tag, err := r.pool.Exec(ctx, `
-		UPDATE contracts SET status = 'completed', completed_at = now(), updated_at = now()
+		UPDATE contracts SET completed_at = now(), updated_at = now()
 		WHERE id = $1 AND status = 'active'`, contractID)
 	if err != nil {
 		return nil, fmt.Errorf("mark complete: %w", err)
@@ -519,6 +529,13 @@ func (r *PostgresRepository) UpdateJobStatus(ctx context.Context, jobID string, 
 // GetContractsAwaitingApproval returns contracts where the provider marked complete
 // and the completed_at timestamp is older than the specified duration.
 // This supports the auto-release scheduled job for Slice 8.
+//
+// A provider-marked-complete contract awaiting customer approval is status
+// 'active' with completed_at set (the customer-approval handshake flips it to
+// 'completed'). This query therefore selects active+completed_at contracts —
+// matching the half-open state MarkComplete produces — so the 7-day
+// auto-release can finalise contracts the customer never got around to
+// approving.
 func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]domain.Contract, error) {
 	cutoff := time.Now().Add(-olderThan)
 	rows, err := r.pool.Query(ctx, `
@@ -528,7 +545,7 @@ func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, o
 		       acceptance_deadline, accepted_at, started_at, completed_at,
 		       cancelled_at, created_at, updated_at
 		FROM contracts
-		WHERE status = 'completed' AND completed_at IS NOT NULL AND completed_at <= $1`, cutoff)
+		WHERE status = 'active' AND completed_at IS NOT NULL AND completed_at <= $1`, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("get contracts awaiting approval: %w", err)
 	}

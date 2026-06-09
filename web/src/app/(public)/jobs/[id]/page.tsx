@@ -23,7 +23,6 @@ import { useParams } from 'next/navigation';
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
 import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
-import { BidPlacementPanel } from '@/components/bids/BidPlacementPanel';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
 import { GradientMesh } from '@/components/landing/GradientMesh';
@@ -42,7 +41,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useAuctionTerminal } from '@/hooks/useAuctionTerminal';
-import { useBidCount, useBidsForJob, usePlaceBid } from '@/hooks/useBids';
+import { useBidCount, useBidsForJob } from '@/hooks/useBids';
 import { useCountdown } from '@/hooks/useCountdown';
 import { useJob } from '@/hooks/useJobs';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
@@ -71,8 +70,6 @@ export default function JobDetailPage() {
 
   // Fetch bids for this job — only when authenticated (endpoint requires auth)
   const { data: bidsData } = useBidsForJob(isAuthenticated ? jobId : '');
-  const placeBid = usePlaceBid();
-
   // Find the current provider's existing bid (if any)
   const existingBid =
     isProvider && user && bidsData
@@ -586,8 +583,15 @@ export default function JobDetailPage() {
                   </span>
                 </div>
 
-                {/* Bidding section based on user role */}
-                {canBid && existingBid !== null ? (
+                {/* Bidding section based on user role. BidForm handles both
+                    the first bid (existingBid === null) and lowering an
+                    existing bid, so it must render for any provider who can
+                    bid — not only when they already have a bid. Gating it on
+                    `existingBid !== null` left providers with no way to place a
+                    first bid on sealed jobs, where `lowest_bid_cents` is never
+                    populated and so the BidPlacementPanel fallback below also
+                    never rendered. */}
+                {canBid ? (
                   <BidForm
                     jobId={jobId}
                     existingBid={existingBid}
@@ -612,17 +616,12 @@ export default function JobDetailPage() {
               </CardContent>
             </Card>
 
-            {/* BidPlacementPanel — shown for providers placing a new bid */}
-            {canBid && existingBid === null && job.lowest_bid_cents && job.starting_bid_cents ? (
-              <BidPlacementPanel
-                currentLowest={job.lowest_bid_cents}
-                startingPrice={job.starting_bid_cents}
-                onPlaceBid={(amountCents) => {
-                  placeBid.mutate({ jobId, input: { amount_cents: amountCents } });
-                }}
-                isSubmitting={placeBid.isPending}
-              />
-            ) : null}
+            {/* BidPlacementPanel was previously the only first-bid affordance,
+                but it requires a `lowest_bid_cents` that sealed jobs never set,
+                so it silently never rendered. The BidForm above now owns the
+                place-a-bid flow for every can-bid case (and dedupes the UI), so
+                this panel is intentionally removed rather than left as dead,
+                never-true JSX. */}
 
             {/* Bid activity feed — historical bids for sealed auctions */}
             {bidsData && bidsData.bids.length > 0 ? (
