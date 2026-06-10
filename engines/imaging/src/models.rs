@@ -74,13 +74,18 @@ pub struct ProcessingOptions {
     /// JPEG/WebP quality 1-100. Default: 85.
     pub quality: u8,
     pub format: ImageFormat,
-    // Plumbed through from the gRPC request and defaulted true, but the MVP
-    // resize/encode pipeline does not yet apply EXIF stripping or auto-orient,
-    // so the binary never reads these. Tracked as a follow-up; kept on the
-    // options contract so the wire shape is stable when the pipeline lands.
-    #[allow(dead_code)]
+    /// Remove EXIF metadata (privacy). Stripping is the only supported mode:
+    /// the pipeline re-encodes every output (decode → transform → encode),
+    /// which drops all metadata — EXIF/GPS/XMP/IPTC — regardless of this
+    /// flag; no output path copies original bytes. `false` does NOT
+    /// round-trip metadata (the pipeline logs when it is requested). Kept on
+    /// the wire contract for forward compatibility.
     pub strip_exif: bool,
-    #[allow(dead_code)]
+    /// Apply the EXIF orientation tag to the pixels before resize/encode,
+    /// then strip (matches the proto contract: "apply EXIF orientation then
+    /// strip"). Without this, camera-rotated photos would display sideways
+    /// once their orientation tag is stripped. Fail-soft: unreadable or
+    /// garbage EXIF is treated as orientation 1 (no transform).
     pub auto_orient: bool,
     pub generate_blur_hash: bool,
 }

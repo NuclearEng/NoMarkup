@@ -1,15 +1,26 @@
 /// Image processing pipeline backed by the `image` crate and AWS S3-compatible
 /// (`MinIO`) object storage.
 ///
-/// Handles resize, format conversion, EXIF stripping (by re-encoding),
+/// Handles resize, format conversion, EXIF stripping, EXIF auto-orientation,
 /// `BlurHash` generation, and context-specific processing pipelines for job
 /// photos, portfolio images, avatars, and documents.
+///
+/// # Metadata (privacy) invariant
+///
+/// Every byte sequence this pipeline uploads or returns is produced by a full
+/// decode → transform → re-encode cycle. The `image` crate's encoders write no
+/// EXIF/XMP/IPTC, so **no output can carry the original's metadata** (camera
+/// GPS coordinates in particular). There is deliberately no pass-through path
+/// that copies original bytes. Because the EXIF orientation tag is dropped
+/// with the rest of the metadata, the decoder applies it to the pixels first
+/// (see [`decode_image`]), so stripped outputs still display upright.
 use std::io::Cursor;
 
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView, ImageFormat as ImgFmt};
+use image::metadata::Orientation;
+use image::{DynamicImage, GenericImageView, ImageDecoder, ImageFormat as ImgFmt, ImageReader};
 use uuid::Uuid;
 
 use crate::models::{
@@ -59,7 +70,20 @@ impl ImagePipeline {
         let _timer = crate::metrics::IMAGE_PROCESSING_DURATION.start_timer();
         let raw = self.download_from_s3(source_key).await?;
         validate_image_format(&raw)?;
-        let img = decode_image(&raw)?;
+
+        // Stripping is the only supported mode: the output below is always a
+        // re-encode (which drops all metadata), never a copy of the original
+        // bytes. `strip_exif=false` cannot round-trip metadata — surface that
+        // instead of silently ignoring the flag.
+        if !opts.strip_exif {
+            tracing::debug!(
+                source = source_key,
+                "strip_exif=false requested, but every output is re-encoded; \
+                 original metadata is not preserved"
+            );
+        }
+
+        let img = decode_image_with_orientation(&raw, opts.auto_orient)?;
         let (orig_w, orig_h) = img.dimensions();
 
         let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
@@ -149,6 +173,17 @@ impl ImagePipeline {
             let img = decode_image(&raw)?;
             let blur_hash = compute_blur_hash(&img);
 
+            // Privacy: never hand back the raw upload's URL. The raw object
+            // retains whatever EXIF the camera wrote — including GPS
+            // coordinates — so exposing it as `original_url` would leak the
+            // customer's location. Re-encode the original at full resolution
+            // (metadata-free, orientation already applied by decode_image)
+            // and return that sanitized copy as the "original".
+            let original_encoded = encode_image(&img, ImageFormat::Jpeg, 90)?;
+            let original_key = format!("{job_id}/original/{}.jpg", Uuid::now_v7());
+            self.upload_to_s3(&original_key, &original_encoded, "image/jpeg")
+                .await?;
+
             let large = self
                 .create_variant(
                     &img,
@@ -184,7 +219,7 @@ impl ImagePipeline {
                 .await?;
 
             results.push(ProcessedJobPhoto {
-                original_url: self.public_url(source_key),
+                original_url: self.public_url(&original_key),
                 large,
                 medium,
                 thumbnail,
@@ -580,9 +615,45 @@ fn validate_image_format(data: &[u8]) -> Result<(), ImagingError> {
     }
 }
 
-/// Decode raw bytes into a `DynamicImage`.
+/// Decode raw bytes into a `DynamicImage`, applying the EXIF orientation tag
+/// to the pixels (auto-orient always on — this is the right default for every
+/// context pipeline, since all outputs are re-encoded without metadata and
+/// would otherwise display sideways for camera-rotated photos).
 fn decode_image(data: &[u8]) -> Result<DynamicImage, ImagingError> {
-    image::load_from_memory(data).map_err(|e| ImagingError::DecodeError(e.to_string()))
+    decode_image_with_orientation(data, true)
+}
+
+/// Decode raw bytes into a `DynamicImage`.
+///
+/// When `auto_orient` is true, the EXIF orientation tag is read from the
+/// metadata (the `image` crate does NOT apply it on decode for JPEG) and the
+/// corresponding rotation/flip is applied to the pixels, so re-encoded outputs
+/// — which carry no EXIF — still display upright.
+///
+/// Fail-soft: a missing, unreadable, or garbage EXIF segment is treated as
+/// orientation 1 (no transform); it never fails the decode.
+fn decode_image_with_orientation(
+    data: &[u8],
+    auto_orient: bool,
+) -> Result<DynamicImage, ImagingError> {
+    let mut decoder = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| ImagingError::DecodeError(e.to_string()))?
+        .into_decoder()
+        .map_err(|e| ImagingError::DecodeError(e.to_string()))?;
+
+    // Must be read before consuming the decoder. unwrap_or = fail-soft on
+    // corrupt EXIF.
+    let orientation = if auto_orient {
+        decoder.orientation().unwrap_or(Orientation::NoTransforms)
+    } else {
+        Orientation::NoTransforms
+    };
+
+    let mut img = DynamicImage::from_decoder(decoder)
+        .map_err(|e| ImagingError::DecodeError(e.to_string()))?;
+    img.apply_orientation(orientation);
+    Ok(img)
 }
 
 /// Resize an image according to the given mode and maximum dimensions.
@@ -1098,6 +1169,194 @@ mod tests {
     fn decode_invalid_bytes_returns_error() {
         let result = decode_image(&[0, 1, 2, 3]);
         assert!(result.is_err());
+    }
+
+    // ------------------------------------------------------------------
+    // EXIF stripping + auto-orient
+    // ------------------------------------------------------------------
+
+    /// Build a minimal EXIF APP1 segment (marker + length + "Exif\0\0" +
+    /// little-endian TIFF block) carrying an orientation tag (0x0112) and a
+    /// GPS IFD (0x8825) with a GPSLatitudeRef entry — i.e. exactly the kind
+    /// of location-bearing metadata a phone camera writes.
+    fn exif_app1_segment(orientation: u16) -> Vec<u8> {
+        let mut tiff = Vec::new();
+        // TIFF header: byte order, magic 42, IFD0 offset 8.
+        tiff.extend_from_slice(b"II");
+        tiff.extend_from_slice(&42u16.to_le_bytes());
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        // IFD0 (at offset 8): 2 entries.
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        // Entry 1 — Orientation (0x0112), SHORT, count 1, inline value.
+        tiff.extend_from_slice(&0x0112u16.to_le_bytes());
+        tiff.extend_from_slice(&3u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&orientation.to_le_bytes());
+        tiff.extend_from_slice(&[0, 0]);
+        // Entry 2 — GPS IFD pointer (0x8825), LONG, count 1, offset 38.
+        tiff.extend_from_slice(&0x8825u16.to_le_bytes());
+        tiff.extend_from_slice(&4u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&38u32.to_le_bytes());
+        // Next-IFD offset: none.
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        // GPS IFD (at offset 38): 1 entry — GPSLatitudeRef (0x0001), ASCII "N\0".
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        tiff.extend_from_slice(&0x0001u16.to_le_bytes());
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        tiff.extend_from_slice(&2u32.to_le_bytes());
+        tiff.extend_from_slice(b"N\0\0\0");
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut app1 = vec![0xFF, 0xE1];
+        // Segment length covers the length field itself + payload.
+        let len = 2 + 6 + tiff.len();
+        app1.extend_from_slice(&(len as u16).to_be_bytes());
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(&tiff);
+        app1
+    }
+
+    /// Splice an APP1 segment into a freshly encoded JPEG, right after SOI —
+    /// the position the EXIF spec mandates.
+    fn splice_app1(jpeg: &[u8], app1: &[u8]) -> Vec<u8> {
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "fixture must start with SOI");
+        let mut out = Vec::with_capacity(jpeg.len() + app1.len());
+        out.extend_from_slice(&jpeg[..2]);
+        out.extend_from_slice(app1);
+        out.extend_from_slice(&jpeg[2..]);
+        out
+    }
+
+    /// Encode a `w`x`h` test image as JPEG with an EXIF segment carrying the
+    /// given orientation plus a GPS tag.
+    fn jpeg_with_exif(w: u32, h: u32, orientation: u16) -> Vec<u8> {
+        let jpeg = encode_image(&make_test_image(w, h), ImageFormat::Jpeg, 90)
+            .expect("encode EXIF fixture");
+        splice_app1(&jpeg, &exif_app1_segment(orientation))
+    }
+
+    fn contains_subsequence(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    #[test]
+    fn exif_fixture_actually_carries_exif_and_gps() {
+        // Sanity-check the fixture builder: if this fails, the strip tests
+        // below prove nothing.
+        let bytes = jpeg_with_exif(64, 32, 6);
+        assert!(contains_subsequence(&bytes, b"Exif"));
+        // GPS IFD pointer tag (0x8825 little-endian, type LONG) as laid out
+        // by exif_app1_segment.
+        assert!(contains_subsequence(&bytes, &[0x25, 0x88, 0x04, 0x00]));
+        // And the decoder agrees there is an orientation to apply.
+        let mut decoder = ImageReader::new(Cursor::new(bytes.as_slice()))
+            .with_guessed_format()
+            .expect("guess format")
+            .into_decoder()
+            .expect("decoder");
+        assert_eq!(
+            decoder.orientation().expect("read orientation"),
+            Orientation::Rotate90
+        );
+    }
+
+    #[test]
+    fn pipeline_output_strips_exif_and_gps_for_every_format() {
+        let input = jpeg_with_exif(64, 32, 1);
+        assert!(contains_subsequence(&input, b"Exif"));
+
+        // Same composition as every pipeline path: decode → resize → encode.
+        let img = decode_image(&input).expect("decode");
+        let resized = resize_image(&img, 32, 32, ResizeMode::Fit);
+
+        for fmt in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::WebP] {
+            let out = encode_image(&resized, fmt, DEFAULT_QUALITY).expect("encode");
+            assert!(
+                !contains_subsequence(&out, b"Exif"),
+                "{fmt:?} output must not contain an EXIF segment"
+            );
+            assert!(
+                !contains_subsequence(&out, &[0x25, 0x88, 0x04, 0x00]),
+                "{fmt:?} output must not contain the GPS IFD entry"
+            );
+        }
+    }
+
+    #[test]
+    fn full_size_reencode_strips_exif() {
+        // The job-photo "original" path re-encodes WITHOUT resizing — make
+        // sure that path is metadata-free too.
+        let input = jpeg_with_exif(64, 32, 1);
+        let img = decode_image(&input).expect("decode");
+        let out = encode_image(&img, ImageFormat::Jpeg, 90).expect("encode");
+        assert!(!contains_subsequence(&out, b"Exif"));
+    }
+
+    #[test]
+    fn auto_orient_rotates_orientation_6_dimensions() {
+        // Orientation 6 = 90° CW: an 80x40 landscape must come out 40x80.
+        let input = jpeg_with_exif(80, 40, 6);
+        let img = decode_image(&input).expect("decode");
+        assert_eq!(img.dimensions(), (40, 80));
+    }
+
+    #[test]
+    fn auto_orient_orientation_3_keeps_dimensions() {
+        // Orientation 3 = 180°: dimensions unchanged, decode still succeeds.
+        let input = jpeg_with_exif(80, 40, 3);
+        let img = decode_image(&input).expect("decode");
+        assert_eq!(img.dimensions(), (80, 40));
+    }
+
+    #[test]
+    fn auto_orient_disabled_ignores_orientation_tag() {
+        let input = jpeg_with_exif(80, 40, 6);
+        let img = decode_image_with_orientation(&input, false).expect("decode");
+        assert_eq!(img.dimensions(), (80, 40));
+    }
+
+    #[test]
+    fn oriented_image_survives_reencode_with_rotated_dimensions() {
+        // End-to-end: rotated camera shot → pipeline → upright, EXIF-free.
+        let input = jpeg_with_exif(80, 40, 6);
+        let img = decode_image(&input).expect("decode");
+        let out = encode_image(&img, ImageFormat::Jpeg, DEFAULT_QUALITY).expect("encode");
+        assert!(!contains_subsequence(&out, b"Exif"));
+        let roundtrip = decode_image(&out).expect("decode output");
+        assert_eq!(roundtrip.dimensions(), (40, 80));
+    }
+
+    #[test]
+    fn garbage_exif_payload_decodes_without_panic() {
+        // Valid APP1 framing, "Exif\0\0" magic, garbage TIFF body.
+        let jpeg =
+            encode_image(&make_test_image(48, 24), ImageFormat::Jpeg, 90).expect("encode fixture");
+        let mut app1 = vec![0xFF, 0xE1];
+        let garbage = [0xABu8; 40];
+        app1.extend_from_slice(&((2 + 6 + garbage.len()) as u16).to_be_bytes());
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(&garbage);
+        let input = splice_app1(&jpeg, &app1);
+
+        // Fail-soft: garbage EXIF → orientation 1, decode still succeeds.
+        let img = decode_image(&input).expect("decode with garbage EXIF");
+        assert_eq!(img.dimensions(), (48, 24));
+    }
+
+    #[test]
+    fn out_of_range_orientation_values_are_treated_as_identity() {
+        // EXIF orientation is only defined for 1..=8; 0 and 9+ are invalid
+        // tag values and must fall back to no-transform, never panic.
+        for orientation in [0u16, 9, 99, u16::MAX] {
+            let input = jpeg_with_exif(80, 40, orientation);
+            let img = decode_image(&input).expect("decode");
+            assert_eq!(
+                img.dimensions(),
+                (80, 40),
+                "invalid orientation {orientation} must not transform"
+            );
+        }
     }
 
     // ------------------------------------------------------------------
