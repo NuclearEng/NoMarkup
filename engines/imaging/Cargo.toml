@@ -26,7 +26,10 @@ tracing-opentelemetry.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 image = "0.25"
-aws-sdk-s3 = "1"
+# default-features = false drops the legacy `rustls` feature (hyper 0.14 + rustls 0.21 +
+# rustls-webpki 0.101, which has unfixable RUSTSEC advisories on the 0.101 line).
+# `default-https-client` is the supported hyper 1.x + rustls 0.23 stack.
+aws-sdk-s3 = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio", "sigv4a"] }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 prometheus.workspace = true
 hyper.workspace = true

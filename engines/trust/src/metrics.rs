@@ -135,7 +135,7 @@ mod tests {
         let families = REGISTRY.gather();
         let names: Vec<&str> = families
             .iter()
-            .map(prometheus::proto::MetricFamily::get_name)
+            .map(prometheus::proto::MetricFamily::name)
             .collect();
         assert!(names.contains(&"trust_score_computation_duration_seconds"));
         assert!(names.contains(&"trust_scores_recomputed_total"));

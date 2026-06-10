@@ -36,7 +36,8 @@ tracing-opentelemetry = "0.28"
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 redis = { version = "0.27", features = ["tokio-comp", "aio"] }
-prometheus = "0.13"
+# 0.14+ required: 0.13 depends on protobuf 2.x (RUSTSEC-2024-0437, fixed in protobuf >= 3.7.2)
+prometheus = "0.14"
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http = "1"

@@ -135,7 +135,7 @@ mod tests {
         let families = REGISTRY.gather();
         let names: Vec<&str> = families
             .iter()
-            .map(prometheus::proto::MetricFamily::get_name)
+            .map(prometheus::proto::MetricFamily::name)
             .collect();
         assert!(names.contains(&"image_processing_duration_seconds"));
         assert!(names.contains(&"images_processed_total"));
