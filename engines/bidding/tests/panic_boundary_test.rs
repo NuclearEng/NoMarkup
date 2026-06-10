@@ -82,8 +82,7 @@ struct PanickingService;
 impl Service<Request<tonic::body::BoxBody>> for PanickingService {
     type Response = Response<tonic::body::BoxBody>;
     type Error = Infallible;
-    type Future =
-        std::future::Ready<Result<Self::Response, Self::Error>>;
+    type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -99,8 +98,7 @@ impl Service<Request<tonic::body::BoxBody>> for PanickingService {
 /// exact wiring used in every engine's `main.rs`.
 #[tokio::test]
 async fn catch_panic_layer_converts_handler_panic_to_grpc_internal() {
-    let mut svc =
-        CatchPanicLayer::custom(handle_panic).layer(PanickingService);
+    let mut svc = CatchPanicLayer::custom(handle_panic).layer(PanickingService);
 
     let req = Request::builder()
         .method(http::Method::POST)

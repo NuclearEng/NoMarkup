@@ -53,9 +53,7 @@ pub fn init() {
     Lazy::force(&FRAUD_ALERTS_CREATED_TOTAL);
 }
 
-async fn handle_request(
-    req: Request<Incoming>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
     if req.method() != Method::GET {
         return Ok(Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
@@ -135,7 +133,10 @@ mod tests {
         FRAUD_ALERTS_CREATED_TOTAL.inc();
 
         let families = REGISTRY.gather();
-        let names: Vec<&str> = families.iter().map(prometheus::proto::MetricFamily::get_name).collect();
+        let names: Vec<&str> = families
+            .iter()
+            .map(prometheus::proto::MetricFamily::get_name)
+            .collect();
         assert!(names.contains(&"fraud_scoring_duration_seconds"));
         assert!(names.contains(&"fraud_alerts_created_total"));
     }
@@ -143,6 +144,10 @@ mod tests {
     #[test]
     fn buckets_cover_slo_budget() {
         // SLO: p99 < 50ms. The 50ms bucket boundary must exist.
-        assert!(FRAUD_BUCKETS.iter().any(|&b| (b - 0.05).abs() < f64::EPSILON));
+        assert!(
+            FRAUD_BUCKETS
+                .iter()
+                .any(|&b| (b - 0.05).abs() < f64::EPSILON)
+        );
     }
 }

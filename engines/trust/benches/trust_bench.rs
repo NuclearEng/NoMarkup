@@ -1,10 +1,10 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use nomarkup_trust_engine::models::DimensionScores;
 use nomarkup_trust_engine::scoring::{
+    DecayConfig, FeedbackInput, FraudInput, ReviewDataPoint, RiskInput, ScoreTier, VolumeInput,
     composite_score, compute_feedback_score, compute_fraud_score, compute_risk_score,
-    compute_volume_score, decay_weight, recency_weighted_average, DecayConfig, FeedbackInput,
-    FraudInput, ReviewDataPoint, RiskInput, ScoreTier, VolumeInput,
+    compute_volume_score, decay_weight, recency_weighted_average,
 };
 
 // ---------------------------------------------------------------------------
@@ -16,7 +16,7 @@ fn make_reviews(n: usize) -> Vec<ReviewDataPoint> {
     (0..n)
         .map(|i| ReviewDataPoint {
             rating: 1.0 + (i % 5) as f64, // Ratings 1-5 cycling.
-            age_days: i as f64 * 7.0,      // One review per week.
+            age_days: i as f64 * 7.0,     // One review per week.
         })
         .collect()
 }

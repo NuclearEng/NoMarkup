@@ -230,10 +230,7 @@ fn bid_error_messages_are_descriptive() {
         (BidError::BidNotActive, "not in active"),
         (BidError::BidNotFound, "not found"),
         (BidError::JobNotFound, "not found"),
-        (
-            BidError::InvalidAmount("test".into()),
-            "test",
-        ),
+        (BidError::InvalidAmount("test".into()), "test"),
         (
             BidError::AboveStartingBid {
                 amount: 10000,
@@ -241,10 +238,7 @@ fn bid_error_messages_are_descriptive() {
             },
             "starting bid",
         ),
-        (
-            BidError::PermissionDenied("denied".into()),
-            "denied",
-        ),
+        (BidError::PermissionDenied("denied".into()), "denied"),
     ];
 
     for (err, expected_substring) in errors {

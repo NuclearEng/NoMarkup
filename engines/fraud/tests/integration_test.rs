@@ -3,10 +3,10 @@
 //! These tests exercise the pure behavioral scoring functions and model types
 //! without requiring a database connection.
 
+use chrono::Utc;
 use fraud::models::{
     CheckResult, FraudDecision, FraudError, FraudSignalRow, RiskLevel, SignalType,
 };
-use chrono::Utc;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -29,7 +29,11 @@ fn signal_type_proto_roundtrip_all_variants() {
 
     for (proto_val, expected_type) in &variants {
         let parsed = SignalType::from_proto_i32(*proto_val);
-        assert_eq!(parsed, Some(*expected_type), "Proto {proto_val} should parse");
+        assert_eq!(
+            parsed,
+            Some(*expected_type),
+            "Proto {proto_val} should parse"
+        );
 
         let back = expected_type.to_proto_i32();
         assert_eq!(back, *proto_val, "Round-trip failed for {expected_type:?}");
@@ -65,7 +69,10 @@ fn signal_type_db_roundtrip() {
 
         // The round-trip might not be exact (db types are broader), but
         // it should always produce a valid SignalType.
-        assert!(parsed.to_proto_i32() > 0, "Invalid proto for {signal_type:?}");
+        assert!(
+            parsed.to_proto_i32() > 0,
+            "Invalid proto for {signal_type:?}"
+        );
     }
 }
 
@@ -127,10 +134,22 @@ fn risk_level_proto_values() {
 
 #[test]
 fn fraud_decision_from_risk_level() {
-    assert_eq!(FraudDecision::from_risk_level(RiskLevel::Low), FraudDecision::Allow);
-    assert_eq!(FraudDecision::from_risk_level(RiskLevel::Medium), FraudDecision::AllowWithReview);
-    assert_eq!(FraudDecision::from_risk_level(RiskLevel::High), FraudDecision::Challenge);
-    assert_eq!(FraudDecision::from_risk_level(RiskLevel::Critical), FraudDecision::Block);
+    assert_eq!(
+        FraudDecision::from_risk_level(RiskLevel::Low),
+        FraudDecision::Allow
+    );
+    assert_eq!(
+        FraudDecision::from_risk_level(RiskLevel::Medium),
+        FraudDecision::AllowWithReview
+    );
+    assert_eq!(
+        FraudDecision::from_risk_level(RiskLevel::High),
+        FraudDecision::Challenge
+    );
+    assert_eq!(
+        FraudDecision::from_risk_level(RiskLevel::Critical),
+        FraudDecision::Block
+    );
 }
 
 #[test]

@@ -63,9 +63,7 @@ pub fn init() {
     Lazy::force(&BIDS_AWARDED_TOTAL);
 }
 
-async fn handle_request(
-    req: Request<Incoming>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
     if req.method() != Method::GET {
         return Ok(Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
@@ -149,7 +147,10 @@ mod tests {
         BIDS_AWARDED_TOTAL.inc();
 
         let families = REGISTRY.gather();
-        let names: Vec<&str> = families.iter().map(prometheus::proto::MetricFamily::get_name).collect();
+        let names: Vec<&str> = families
+            .iter()
+            .map(prometheus::proto::MetricFamily::get_name)
+            .collect();
         assert!(names.contains(&"bid_processing_duration_seconds"));
         assert!(names.contains(&"bids_awarded_total"));
     }
@@ -158,7 +159,11 @@ mod tests {
     fn buckets_cover_slo_budget() {
         // SLO: p99 < 1ms. We need at least one bucket boundary at or below 1ms
         // and meaningful resolution below that.
-        assert!(BID_BUCKETS.iter().any(|&b| (b - 0.001).abs() < f64::EPSILON));
+        assert!(
+            BID_BUCKETS
+                .iter()
+                .any(|&b| (b - 0.001).abs() < f64::EPSILON)
+        );
         assert!(BID_BUCKETS.iter().any(|&b| b < 0.001));
     }
 }

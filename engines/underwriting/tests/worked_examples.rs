@@ -2,7 +2,7 @@
 //! deterministic and asserted exactly; the mid-tier offer is asserted in a band
 //! (its exact cents depend on the derived velocity ratio).
 
-use underwriting::model::{underwrite, Features, UnderwritingTier};
+use underwriting::model::{Features, UnderwritingTier, underwrite};
 
 fn base() -> Features {
     Features {
@@ -44,7 +44,11 @@ fn example_a_new_thin_file_declined() {
     assert_eq!(d.max_credit_cents, 0);
     assert_eq!(d.available_credit_cents, 0);
     assert_eq!(d.tier, UnderwritingTier::Ineligible);
-    assert!(d.binding_gate.starts_with("TIER"), "gate was {}", d.binding_gate);
+    assert!(
+        d.binding_gate.starts_with("TIER"),
+        "gate was {}",
+        d.binding_gate
+    );
     assert_eq!(d.fee_bps, 0);
 }
 
@@ -105,7 +109,11 @@ fn example_c_top_rated_hits_absolute_cap() {
     assert_eq!(d.binding_cap, "absolute_max");
     assert_eq!(d.tier, UnderwritingTier::Elite);
     // Pristine provider → near the fee floor.
-    assert!(d.fee_bps <= 800, "fee {} should be near the floor", d.fee_bps);
+    assert!(
+        d.fee_bps <= 800,
+        "fee {} should be near the floor",
+        d.fee_bps
+    );
     assert!(d.risk_score < 0.05);
 }
 
@@ -127,7 +135,11 @@ fn example_d_disputed_declined() {
     let d = underwrite(&f);
     assert!(!d.approved);
     assert_eq!(d.max_credit_cents, 0);
-    assert!(d.binding_gate.starts_with("DISPUTE"), "gate was {}", d.binding_gate);
+    assert!(
+        d.binding_gate.starts_with("DISPUTE"),
+        "gate was {}",
+        d.binding_gate
+    );
 }
 
 // Outstanding reduces available credit but not the limit.

@@ -2,8 +2,8 @@
 //! (the §8 numerical hot-path budget). It is a pure CPU function, so this is the
 //! whole cost of a decision (the surrounding gRPC + feature-gather is I/O).
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use underwriting::model::{underwrite, Features};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use underwriting::model::{Features, underwrite};
 
 fn elite_features() -> Features {
     Features {

@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use std::collections::HashMap;
 
@@ -6,8 +6,8 @@ use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 use nomarkup_fraud_engine::behavioral::{
-    compute_composite_risk, score_bid_patterns, score_fingerprint, score_ip_geolocation,
     BidRecord, FingerprintAttributes, IpSessionRecord, RiskThresholds, SessionInfo,
+    compute_composite_risk, score_bid_patterns, score_fingerprint, score_ip_geolocation,
 };
 
 // ---------------------------------------------------------------------------
@@ -70,17 +70,12 @@ fn make_bid_records(n: usize, jobs: usize) -> Vec<BidRecord> {
 /// Build customer ID mapping and session data for shill detection.
 fn make_customer_context(
     bids: &[BidRecord],
-) -> (
-    HashMap<Uuid, Uuid>,
-    HashMap<Uuid, Vec<SessionInfo>>,
-) {
+) -> (HashMap<Uuid, Uuid>, HashMap<Uuid, Vec<SessionInfo>>) {
     let mut customer_ids: HashMap<Uuid, Uuid> = HashMap::new();
     let mut customer_sessions: HashMap<Uuid, Vec<SessionInfo>> = HashMap::new();
 
     for bid in bids {
-        let customer_id = *customer_ids
-            .entry(bid.job_id)
-            .or_insert_with(Uuid::now_v7);
+        let customer_id = *customer_ids.entry(bid.job_id).or_insert_with(Uuid::now_v7);
 
         customer_sessions.entry(customer_id).or_insert_with(|| {
             vec![SessionInfo {
@@ -160,13 +155,7 @@ fn bench_score_bid_patterns(c: &mut Criterion) {
             BenchmarkId::new("bids_x_jobs", format!("{bid_count}x{job_count}")),
             &(bids, customer_ids, customer_sessions),
             |b, (bids, cids, csess)| {
-                b.iter(|| {
-                    score_bid_patterns(
-                        black_box(bids),
-                        black_box(cids),
-                        black_box(csess),
-                    )
-                });
+                b.iter(|| score_bid_patterns(black_box(bids), black_box(cids), black_box(csess)));
             },
         );
     }

@@ -338,8 +338,7 @@ impl FraudDetector {
             .await?;
 
             let shared_score: f64 = if shared_device.count > 0 {
-                reasons
-                    .push("Bidder and job poster share the same device fingerprint".into());
+                reasons.push("Bidder and job poster share the same device fingerprint".into());
                 0.5
             } else {
                 0.0
@@ -469,15 +468,13 @@ impl FraudDetector {
             Some(reference_type)
         };
 
-        let row = sqlx::query_as::<_, FraudSignalRow>(
-            &format!(
-                "INSERT INTO fraud_signals \
+        let row = sqlx::query_as::<_, FraudSignalRow>(&format!(
+            "INSERT INTO fraud_signals \
                    (user_id, signal_type, signal_subtype, severity, confidence, \
                     description, evidence_json, related_entity_id, related_entity_type) \
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
                  RETURNING {RETURNING_COLS}"
-            ),
-        )
+        ))
         .bind(user_id)
         .bind(signal_type.as_db_str())
         .bind(signal_type.as_subtype_str())
@@ -513,10 +510,7 @@ impl FraudDetector {
             "fraud signal recorded"
         );
 
-        Ok(RecordedSignal {
-            row,
-            alert_created,
-        })
+        Ok(RecordedSignal { row, alert_created })
     }
 
     /// Batch record multiple fraud signals.
@@ -527,7 +521,16 @@ impl FraudDetector {
     #[allow(clippy::too_many_arguments)]
     pub async fn batch_record_signals(
         &self,
-        signals: Vec<(Uuid, SignalType, f64, String, String, String, String, String)>,
+        signals: Vec<(
+            Uuid,
+            SignalType,
+            f64,
+            String,
+            String,
+            String,
+            String,
+            String,
+        )>,
     ) -> Result<(i32, i32), FraudError> {
         let mut recorded = 0i32;
         let mut alerts_created = 0i32;
@@ -644,27 +647,29 @@ impl FraudDetector {
 
         // Anomaly 2: Different country than recent sessions.
         if let Some(country) = geo_country
-            && !country.is_empty() {
-                let recent_country: Option<GeoCountryRow> = sqlx::query_as(
-                    "SELECT geo_country FROM user_sessions \
+            && !country.is_empty()
+        {
+            let recent_country: Option<GeoCountryRow> = sqlx::query_as(
+                "SELECT geo_country FROM user_sessions \
                      WHERE user_id = $1 \
                        AND geo_country IS NOT NULL \
                        AND session_start >= now() - interval '7 days' \
                        AND session_start < now() - interval '1 minute' \
                      ORDER BY session_start DESC LIMIT 1",
-                )
-                .bind(user_id)
-                .fetch_optional(&self.pool)
-                .await?;
+            )
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?;
 
-                if let Some(prev) = recent_country
-                    && prev.geo_country != country {
-                        anomalies.push(format!(
-                            "Geo mismatch: session from {} but recent sessions from {}",
-                            country, prev.geo_country
-                        ));
-                    }
+            if let Some(prev) = recent_country
+                && prev.geo_country != country
+            {
+                anomalies.push(format!(
+                    "Geo mismatch: session from {} but recent sessions from {}",
+                    country, prev.geo_country
+                ));
             }
+        }
 
         // Anomaly 3: Multiple concurrent IPs.
         let concurrent_ips: CountRow = sqlx::query_as(
@@ -710,25 +715,24 @@ impl FraudDetector {
         let offset = i64::from((page - 1).max(0)) * i64::from(page_size.max(1));
         let limit = i64::from(page_size.clamp(1, 100));
 
-        let rows = sqlx::query_as::<_, UserSessionRow>(
-            &format!(
-                "{SESSION_SELECT} \
+        let rows = sqlx::query_as::<_, UserSessionRow>(&format!(
+            "{SESSION_SELECT} \
                  WHERE user_id = $1 \
                  ORDER BY session_start DESC \
                  LIMIT $2 OFFSET $3"
-            ),
-        )
+        ))
         .bind(user_id)
         .bind(limit)
         .bind(offset)
         .fetch_all(&self.pool)
         .await?;
 
-        let count: CountRow =
-            sqlx::query_as("SELECT COUNT(*)::bigint AS count FROM user_sessions WHERE user_id = $1")
-                .bind(user_id)
-                .fetch_one(&self.pool)
-                .await?;
+        let count: CountRow = sqlx::query_as(
+            "SELECT COUNT(*)::bigint AS count FROM user_sessions WHERE user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
 
         Ok((rows, count.count))
     }
@@ -775,20 +779,18 @@ impl FraudDetector {
         .await?;
 
         // Last signal timestamp.
-        let last_signal: TimestampRow = sqlx::query_as(
-            "SELECT MAX(created_at) AS ts FROM fraud_signals WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let last_signal: TimestampRow =
+            sqlx::query_as("SELECT MAX(created_at) AS ts FROM fraud_signals WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         // Last reviewed timestamp.
-        let last_reviewed: TimestampRow = sqlx::query_as(
-            "SELECT MAX(reviewed_at) AS ts FROM fraud_signals WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let last_reviewed: TimestampRow =
+            sqlx::query_as("SELECT MAX(reviewed_at) AS ts FROM fraud_signals WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         // Calculate risk score: based on signal count, severity, and recency.
         let risk_score = self.calculate_risk_score(user_id).await?;
@@ -863,7 +865,11 @@ impl FraudDetector {
         .await?;
 
         // Weighted score: high=0.4 per signal, medium=0.2, low=0.05. Capped at 1.0.
-        let score = (low.count as f64).mul_add(0.05, (high.count as f64).mul_add(0.4, medium.count as f64 * 0.2))
+        let score = (low.count as f64)
+            .mul_add(
+                0.05,
+                (high.count as f64).mul_add(0.4, medium.count as f64 * 0.2),
+            )
             .clamp(0.0, 1.0);
 
         Ok(score)
@@ -879,13 +885,11 @@ impl FraudDetector {
     ///
     /// Returns `FraudError` on database errors.
     pub async fn get_signal(&self, signal_id: Uuid) -> Result<FraudSignalRow, FraudError> {
-        sqlx::query_as::<_, FraudSignalRow>(&format!(
-            "{SIGNAL_SELECT} WHERE id = $1"
-        ))
-        .bind(signal_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| FraudError::SignalNotFound(signal_id.to_string()))
+        sqlx::query_as::<_, FraudSignalRow>(&format!("{SIGNAL_SELECT} WHERE id = $1"))
+            .bind(signal_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| FraudError::SignalNotFound(signal_id.to_string()))
     }
 
     // -----------------------------------------------------------------------
@@ -899,10 +903,7 @@ impl FraudDetector {
     /// (which may be a JSON blob or an opaque hash).  If parsing fails, a
     /// default mid-range score is returned to avoid blocking legitimate users.
     #[must_use]
-    pub fn score_device_fingerprint(
-        device_fingerprint: &str,
-        user_agent: &str,
-    ) -> f64 {
+    pub fn score_device_fingerprint(device_fingerprint: &str, user_agent: &str) -> f64 {
         let attrs = parse_fingerprint_attributes(device_fingerprint, user_agent);
         behavioral::score_fingerprint(&attrs)
     }
@@ -996,11 +997,10 @@ impl FraudDetector {
             .fetch_all(&self.pool)
             .await?;
 
-            let count: CountRow = sqlx::query_as(
-                "SELECT COUNT(*)::bigint AS count FROM fraud_signals",
-            )
-            .fetch_one(&self.pool)
-            .await?;
+            let count: CountRow =
+                sqlx::query_as("SELECT COUNT(*)::bigint AS count FROM fraud_signals")
+                    .fetch_one(&self.pool)
+                    .await?;
 
             (rows, count.count)
         };
@@ -1043,12 +1043,11 @@ impl FraudDetector {
 
         if result.rows_affected() == 0 {
             // Distinguish a missing alert (404) from an already-terminal one (400).
-            let exists: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM fraud_signals WHERE id = $1)",
-            )
-            .bind(signal_id)
-            .fetch_one(&self.pool)
-            .await?;
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM fraud_signals WHERE id = $1)")
+                    .bind(signal_id)
+                    .fetch_one(&self.pool)
+                    .await?;
             if exists {
                 return Err(FraudError::InvalidArgument(
                     "alert is already resolved".to_string(),
@@ -1067,11 +1066,9 @@ impl FraudDetector {
     /// Returns `FraudError` on database errors.
     #[allow(clippy::cast_possible_truncation)]
     pub async fn admin_get_dashboard_stats(&self) -> Result<DashboardStats, FraudError> {
-        let total: CountRow = sqlx::query_as(
-            "SELECT COUNT(*)::bigint AS count FROM fraud_signals",
-        )
-        .fetch_one(&self.pool)
-        .await?;
+        let total: CountRow = sqlx::query_as("SELECT COUNT(*)::bigint AS count FROM fraud_signals")
+            .fetch_one(&self.pool)
+            .await?;
 
         let open: CountRow = sqlx::query_as(
             "SELECT COUNT(*)::bigint AS count FROM fraud_signals \
@@ -1288,9 +1285,7 @@ fn is_disposable_email(email: &str) -> bool {
 
     if let Some(domain) = email.rsplit('@').next() {
         let domain_lower = domain.to_lowercase();
-        DISPOSABLE_DOMAINS
-            .iter()
-            .any(|d| domain_lower == *d)
+        DISPOSABLE_DOMAINS.iter().any(|d| domain_lower == *d)
     } else {
         false
     }
@@ -1454,13 +1449,22 @@ mod tests {
 
     #[test]
     fn fraud_decision_from_risk_levels() {
-        assert_eq!(FraudDecision::from_risk_level(RiskLevel::Low), FraudDecision::Allow);
+        assert_eq!(
+            FraudDecision::from_risk_level(RiskLevel::Low),
+            FraudDecision::Allow
+        );
         assert_eq!(
             FraudDecision::from_risk_level(RiskLevel::Medium),
             FraudDecision::AllowWithReview
         );
-        assert_eq!(FraudDecision::from_risk_level(RiskLevel::High), FraudDecision::Challenge);
-        assert_eq!(FraudDecision::from_risk_level(RiskLevel::Critical), FraudDecision::Block);
+        assert_eq!(
+            FraudDecision::from_risk_level(RiskLevel::High),
+            FraudDecision::Challenge
+        );
+        assert_eq!(
+            FraudDecision::from_risk_level(RiskLevel::Critical),
+            FraudDecision::Block
+        );
     }
 
     #[test]
@@ -1520,7 +1524,9 @@ mod tests {
     #[test]
     fn signal_type_proto_roundtrip() {
         for i in 1..=9 {
-            let st = if let Some(s) = SignalType::from_proto_i32(i) { s } else {
+            let st = if let Some(s) = SignalType::from_proto_i32(i) {
+                s
+            } else {
                 tracing::warn!(value = i, "skipping unknown signal type proto value");
                 continue;
             };

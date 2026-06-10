@@ -7,12 +7,12 @@
 //! tests.
 
 use bidding::forward::{
-    place_forward_bid, should_extend_for_snipe, validate_forward_bid, MAX_SNIPE_EXTENSIONS,
+    MAX_SNIPE_EXTENSIONS, place_forward_bid, should_extend_for_snipe, validate_forward_bid,
 };
 use bidding::models::BidError;
 use chrono::{Duration, Utc};
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::sync::Arc;
 use tokio::task::JoinSet;
@@ -31,8 +31,10 @@ fn lower_bid_is_rejected_pure() {
 #[test]
 fn equal_bid_is_rejected_pure() {
     let err = validate_forward_bid(2000, 1000, Some(2000)).unwrap_err();
-    assert!(matches!(err, BidError::BelowMinimum),
-        "forward auction must reject equal bids — strict greater-than semantics");
+    assert!(
+        matches!(err, BidError::BelowMinimum),
+        "forward auction must reject equal bids — strict greater-than semantics"
+    );
 }
 
 #[test]
@@ -53,16 +55,28 @@ fn snipe_extension_fires_inside_60s_window() {
     assert!(should_extend_for_snipe(now + Duration::seconds(30), now, 0));
     assert!(should_extend_for_snipe(now + Duration::seconds(59), now, 0));
     assert!(should_extend_for_snipe(now + Duration::seconds(60), now, 0));
-    assert!(!should_extend_for_snipe(now + Duration::seconds(61), now, 0));
+    assert!(!should_extend_for_snipe(
+        now + Duration::seconds(61),
+        now,
+        0
+    ));
 }
 
 #[test]
 fn snipe_extension_capped_at_max() {
     let now = Utc::now();
     let ends_at = now + Duration::seconds(30);
-    assert!(should_extend_for_snipe(ends_at, now, MAX_SNIPE_EXTENSIONS - 1));
+    assert!(should_extend_for_snipe(
+        ends_at,
+        now,
+        MAX_SNIPE_EXTENSIONS - 1
+    ));
     assert!(!should_extend_for_snipe(ends_at, now, MAX_SNIPE_EXTENSIONS));
-    assert!(!should_extend_for_snipe(ends_at, now, MAX_SNIPE_EXTENSIONS + 1));
+    assert!(!should_extend_for_snipe(
+        ends_at,
+        now,
+        MAX_SNIPE_EXTENSIONS + 1
+    ));
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -137,9 +151,7 @@ async fn concurrent_forward_bids_serialize_correctly() {
             let pool = pool_arc.clone();
             let bidder = *bidder;
             let amount = 2000 + i as i64;
-            set.spawn(async move {
-                place_forward_bid(&*pool, listing, bidder, amount).await
-            });
+            set.spawn(async move { place_forward_bid(&*pool, listing, bidder, amount).await });
         }
 
         let mut accepted = 0i64;
@@ -160,13 +172,12 @@ async fn concurrent_forward_bids_serialize_correctly() {
         .fetch_one(&pool)
         .await
         .expect("count");
-        let (listing_bid_count, listing_current): (i32, Option<i64>) = sqlx::query_as(
-            "SELECT bid_count, current_bid_cents FROM listings WHERE id = $1",
-        )
-        .bind(listing)
-        .fetch_one(&pool)
-        .await
-        .expect("listing");
+        let (listing_bid_count, listing_current): (i32, Option<i64>) =
+            sqlx::query_as("SELECT bid_count, current_bid_cents FROM listings WHERE id = $1")
+                .bind(listing)
+                .fetch_one(&pool)
+                .await
+                .expect("listing");
 
         assert_eq!(
             db_count, accepted as i64,

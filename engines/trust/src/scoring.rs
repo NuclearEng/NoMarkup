@@ -51,8 +51,7 @@ pub fn decay_weight(age_days: f64, config: &DecayConfig) -> f64 {
     if age_days <= 0.0 {
         return 1.0;
     }
-    if !age_days.is_finite() || !config.half_life_days.is_finite() || config.half_life_days <= 0.0
-    {
+    if !age_days.is_finite() || !config.half_life_days.is_finite() || config.half_life_days <= 0.0 {
         return config.min_weight;
     }
 
@@ -263,13 +262,12 @@ pub fn compute_volume_score(input: &VolumeInput) -> f64 {
     };
 
     // Response time: inverse linear. 0h = 1.0, 24h+ = 0.0.
-    let response_component = if input.avg_response_time_hours <= 0.0
-        || !input.avg_response_time_hours.is_finite()
-    {
-        0.5 // Unknown: neutral
-    } else {
-        (1.0 - input.avg_response_time_hours / 24.0).clamp(0.0, 1.0)
-    };
+    let response_component =
+        if input.avg_response_time_hours <= 0.0 || !input.avg_response_time_hours.is_finite() {
+            0.5 // Unknown: neutral
+        } else {
+            (1.0 - input.avg_response_time_hours / 24.0).clamp(0.0, 1.0)
+        };
 
     let score = jobs_component * 0.40
         + recency_component * 0.20
@@ -377,8 +375,13 @@ pub const WEIGHT_FRAUD: f64 = 0.20;
 /// If inputs are outside range, the output is clamped.
 #[must_use]
 pub fn composite_score(feedback: f64, volume: f64, risk: f64, fraud: f64) -> f64 {
-    let raw =
-        fraud.mul_add(WEIGHT_FRAUD, risk.mul_add(WEIGHT_RISK, feedback.mul_add(WEIGHT_FEEDBACK, volume * WEIGHT_VOLUME)));
+    let raw = fraud.mul_add(
+        WEIGHT_FRAUD,
+        risk.mul_add(
+            WEIGHT_RISK,
+            feedback.mul_add(WEIGHT_FEEDBACK, volume * WEIGHT_VOLUME),
+        ),
+    );
     raw.clamp(0.0, 1.0)
 }
 
@@ -554,10 +557,7 @@ mod tests {
         ];
         let avg = recency_weighted_average(&reviews, &config).unwrap();
         // Should be very close to 5.0 since the old review has negligible weight.
-        assert!(
-            avg > 4.5,
-            "expected avg close to 5.0, got {avg}"
-        );
+        assert!(avg > 4.5, "expected avg close to 5.0, got {avg}");
     }
 
     #[test]
@@ -1049,10 +1049,7 @@ mod tests {
         assert!((bayesian_confidence(0) - 0.0).abs() < f64::EPSILON);
         assert!((bayesian_confidence(5) - 0.5).abs() < f64::EPSILON);
         let c20 = bayesian_confidence(20);
-        assert!(
-            (c20 - 0.8).abs() < f64::EPSILON,
-            "expected 0.8, got {c20}"
-        );
+        assert!((c20 - 0.8).abs() < f64::EPSILON, "expected 0.8, got {c20}");
     }
 
     #[test]

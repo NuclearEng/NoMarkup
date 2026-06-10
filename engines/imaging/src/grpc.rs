@@ -371,9 +371,7 @@ impl ImagingService for ImagingServiceImpl {
                 let err = if is_valid { String::new() } else { actual_ct };
                 (url, is_valid, err)
             }
-            Err(ImagingError::NotFound(msg)) => {
-                (String::new(), false, msg)
-            }
+            Err(ImagingError::NotFound(msg)) => (String::new(), false, msg),
             Err(e) => return Err(imaging_error_to_status(e)),
         };
 
@@ -394,7 +392,10 @@ impl ImagingService for ImagingServiceImpl {
 fn url_to_key(url: &str) -> String {
     // URLs like "http://localhost:9000/nomarkup/avatars/user1/raw/file.jpg"
     // We need to extract "avatars/user1/raw/file.jpg".
-    if let Some(rest) = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")) {
+    if let Some(rest) = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+    {
         // Skip host, then skip bucket name (first path segment after host).
         if let Some(path_start) = rest.find('/') {
             let path = &rest[path_start + 1..];

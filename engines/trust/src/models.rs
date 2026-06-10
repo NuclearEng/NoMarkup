@@ -95,7 +95,11 @@ impl DimensionScores {
     /// Feedback: 35%, Volume: 20%, Risk: 25%, Fraud: 20%.
     #[must_use]
     pub fn overall(&self) -> f64 {
-        self.fraud.mul_add(0.20, self.risk.mul_add(0.25, self.feedback.mul_add(0.35, self.volume * 0.20)))
+        self.fraud.mul_add(
+            0.20,
+            self.risk
+                .mul_add(0.25, self.feedback.mul_add(0.35, self.volume * 0.20)),
+        )
     }
 }
 
@@ -236,7 +240,10 @@ mod tests {
 
     #[test]
     fn tier_from_db_str_known_values() {
-        assert_eq!(TrustTier::from_db_str("under_review"), TrustTier::UnderReview);
+        assert_eq!(
+            TrustTier::from_db_str("under_review"),
+            TrustTier::UnderReview
+        );
         assert_eq!(TrustTier::from_db_str("new"), TrustTier::New);
         assert_eq!(TrustTier::from_db_str("rising"), TrustTier::Rising);
         assert_eq!(TrustTier::from_db_str("trusted"), TrustTier::Trusted);
@@ -366,7 +373,12 @@ mod tests {
     fn tier_requirements_thresholds_ascending() {
         let reqs = all_tier_requirements();
         // Filter to the ordered tiers (New, Rising, Trusted, TopRated).
-        let ordered = [TrustTier::New, TrustTier::Rising, TrustTier::Trusted, TrustTier::TopRated];
+        let ordered = [
+            TrustTier::New,
+            TrustTier::Rising,
+            TrustTier::Trusted,
+            TrustTier::TopRated,
+        ];
         let ordered_reqs: Vec<&TierRequirement> = ordered
             .iter()
             .filter_map(|t| reqs.iter().find(|r| r.tier == *t))

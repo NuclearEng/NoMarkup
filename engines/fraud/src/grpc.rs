@@ -200,13 +200,9 @@ impl FraudService for FraudServiceImpl {
         let mut signals = Vec::with_capacity(req.signals.len());
         for s in &req.signals {
             let user_id = parse_uuid(&s.user_id, "user_id")?;
-            let signal_type =
-                SignalType::from_proto_i32(s.signal_type).ok_or_else(|| {
-                    Status::invalid_argument(format!(
-                        "invalid signal_type: {}",
-                        s.signal_type
-                    ))
-                })?;
+            let signal_type = SignalType::from_proto_i32(s.signal_type).ok_or_else(|| {
+                Status::invalid_argument(format!("invalid signal_type: {}", s.signal_type))
+            })?;
 
             signals.push((
                 user_id,
@@ -355,11 +351,11 @@ impl FraudService for FraudServiceImpl {
 
         // Map optional proto status filter to DB status strings.
         let status_filter: Option<Vec<&str>> = req.status_filter.map(|s| match s {
-            1 => vec!["pending"],                        // OPEN
-            2 => vec!["confirmed"],                      // INVESTIGATING
-            3 => vec!["actioned"],                       // RESOLVED_FRAUD
-            4 => vec!["dismissed"],                      // RESOLVED_LEGITIMATE
-            5 => vec!["dismissed"],                      // DISMISSED
+            1 => vec!["pending"],   // OPEN
+            2 => vec!["confirmed"], // INVESTIGATING
+            3 => vec!["actioned"],  // RESOLVED_FRAUD
+            4 => vec!["dismissed"], // RESOLVED_LEGITIMATE
+            5 => vec!["dismissed"], // DISMISSED
             _ => vec!["pending", "confirmed", "actioned", "dismissed"],
         });
 
@@ -391,10 +387,10 @@ impl FraudService for FraudServiceImpl {
                 signal.id = format!("signal-{}", row.id);
                 let risk_level = RiskLevel::from_db_severity(&row.severity);
                 let alert_status = match row.status.as_str() {
-                    "pending" => 1,    // OPEN
-                    "confirmed" => 2,  // INVESTIGATING
-                    "actioned" => 3,   // RESOLVED_FRAUD
-                    "dismissed" => 4,  // RESOLVED_LEGITIMATE
+                    "pending" => 1,   // OPEN
+                    "confirmed" => 2, // INVESTIGATING
+                    "actioned" => 3,  // RESOLVED_FRAUD
+                    "dismissed" => 4, // RESOLVED_LEGITIMATE
                     _ => 0,
                 };
 
@@ -448,9 +444,9 @@ impl FraudService for FraudServiceImpl {
 
         // Map proto AlertStatus to DB status string.
         let new_status = match req.new_status {
-            3 => "actioned",           // RESOLVED_FRAUD
-            4 | 5 => "dismissed",      // RESOLVED_LEGITIMATE / DISMISSED
-            2 => "confirmed",          // INVESTIGATING
+            3 => "actioned",      // RESOLVED_FRAUD
+            4 | 5 => "dismissed", // RESOLVED_LEGITIMATE / DISMISSED
+            2 => "confirmed",     // INVESTIGATING
             _ => return Err(Status::invalid_argument("invalid new_status")),
         };
 
@@ -509,32 +505,30 @@ impl FraudService for FraudServiceImpl {
             .await
             .map_err(fraud_error_to_status)?;
 
-        Ok(Response::new(
-            fraud_proto::AdminGetFraudDashboardResponse {
-                total_alerts: stats.total_alerts,
-                open_alerts: stats.open_alerts,
-                critical_alerts: stats.critical_alerts,
-                users_restricted: stats.users_restricted,
-                users_banned: stats.users_banned,
-                signal_breakdown: stats
-                    .signal_breakdown
-                    .into_iter()
-                    .map(|(signal_type, count)| {
-                        let percentage = if stats.total_alerts > 0 {
-                            f64::from(count) / f64::from(stats.total_alerts)
-                        } else {
-                            0.0
-                        };
-                        fraud_proto::FraudSignalBreakdown {
-                            signal_type: signal_type.to_proto_i32(),
-                            count,
-                            percentage,
-                        }
-                    })
-                    .collect(),
-                false_positive_rate: stats.false_positive_rate,
-            },
-        ))
+        Ok(Response::new(fraud_proto::AdminGetFraudDashboardResponse {
+            total_alerts: stats.total_alerts,
+            open_alerts: stats.open_alerts,
+            critical_alerts: stats.critical_alerts,
+            users_restricted: stats.users_restricted,
+            users_banned: stats.users_banned,
+            signal_breakdown: stats
+                .signal_breakdown
+                .into_iter()
+                .map(|(signal_type, count)| {
+                    let percentage = if stats.total_alerts > 0 {
+                        f64::from(count) / f64::from(stats.total_alerts)
+                    } else {
+                        0.0
+                    };
+                    fraud_proto::FraudSignalBreakdown {
+                        signal_type: signal_type.to_proto_i32(),
+                        count,
+                        percentage,
+                    }
+                })
+                .collect(),
+            false_positive_rate: stats.false_positive_rate,
+        }))
     }
 }
 

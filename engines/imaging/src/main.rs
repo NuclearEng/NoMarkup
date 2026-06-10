@@ -45,16 +45,16 @@ mod models;
 
 use std::sync::Arc;
 
+use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry::KeyValue;
-use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_otlp::SpanExporter;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::runtime::Tokio;
 use opentelemetry_sdk::trace::TracerProvider;
-use opentelemetry_sdk::Resource;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -116,14 +116,11 @@ fn init_tracing(service_name: &str) {
             return;
         };
 
-        let name = std::env::var("OTEL_SERVICE_NAME")
-            .unwrap_or_else(|_| service_name.to_string());
+        let name = std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| service_name.to_string());
 
         let provider = TracerProvider::builder()
             .with_batch_exporter(exporter, Tokio)
-            .with_resource(
-                Resource::new([KeyValue::new("service.name", name.clone())]),
-            )
+            .with_resource(Resource::new([KeyValue::new("service.name", name.clone())]))
             .build();
 
         global::set_tracer_provider(provider.clone());
@@ -160,10 +157,7 @@ async fn main() -> anyhow::Result<()> {
     // Configure S3 client for MinIO. The AWS SDK reads credentials from
     // standard environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
     // or falls back to instance metadata / credential chain.
-    let s3_config = aws_config::from_env()
-        .endpoint_url(&endpoint)
-        .load()
-        .await;
+    let s3_config = aws_config::from_env().endpoint_url(&endpoint).load().await;
 
     let s3_client = aws_sdk_s3::Client::from_conf(
         aws_sdk_s3::config::Builder::from(&s3_config)

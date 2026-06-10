@@ -158,13 +158,19 @@ pub async fn place_forward_bid(
             "seller cannot bid on own listing".into(),
         ));
     }
-    validate_forward_bid(amount_cents, row.starting_price_cents, row.current_bid_cents)?;
+    validate_forward_bid(
+        amount_cents,
+        row.starting_price_cents,
+        row.current_bid_cents,
+    )?;
 
     // Outbid the prior high bid.
-    sqlx::query("UPDATE listing_bids SET status = 'outbid' WHERE listing_id = $1 AND status = 'active'")
-        .bind(listing_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE listing_bids SET status = 'outbid' WHERE listing_id = $1 AND status = 'active'",
+    )
+    .bind(listing_id)
+    .execute(&mut *tx)
+    .await?;
 
     // Insert the new bid.
     let bid_id: Uuid = sqlx::query_scalar(
@@ -269,8 +275,10 @@ mod tests {
     #[test]
     fn equal_to_current_high_is_rejected() {
         let err = validate_forward_bid(2000, 1000, Some(2000)).unwrap_err();
-        assert!(matches!(err, BidError::BelowMinimum),
-            "forward auction must reject equal bids — only strictly-higher bids win");
+        assert!(
+            matches!(err, BidError::BelowMinimum),
+            "forward auction must reject equal bids — only strictly-higher bids win"
+        );
     }
 
     #[test]

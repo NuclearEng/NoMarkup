@@ -46,17 +46,17 @@ mod models;
 
 use std::sync::Arc;
 
+use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry::KeyValue;
-use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_otlp::SpanExporter;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::runtime::Tokio;
 use opentelemetry_sdk::trace::TracerProvider;
-use opentelemetry_sdk::Resource;
 use sqlx::postgres::PgPoolOptions;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -118,14 +118,11 @@ fn init_tracing(service_name: &str) {
             return;
         };
 
-        let name = std::env::var("OTEL_SERVICE_NAME")
-            .unwrap_or_else(|_| service_name.to_string());
+        let name = std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| service_name.to_string());
 
         let provider = TracerProvider::builder()
             .with_batch_exporter(exporter, Tokio)
-            .with_resource(
-                Resource::new([KeyValue::new("service.name", name.clone())]),
-            )
+            .with_resource(Resource::new([KeyValue::new("service.name", name.clone())]))
             .build();
 
         global::set_tracer_provider(provider.clone());
@@ -153,8 +150,8 @@ fn init_tracing(service_name: &str) {
 async fn main() -> anyhow::Result<()> {
     init_tracing("fraud-engine");
 
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://localhost:5433/nomarkup".into());
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://localhost:5433/nomarkup".into());
     let port = std::env::var("FRAUD_ENGINE_PORT").unwrap_or_else(|_| "50056".into());
     let addr = format!("0.0.0.0:{port}").parse()?;
 

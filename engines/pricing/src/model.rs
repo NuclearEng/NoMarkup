@@ -200,7 +200,11 @@ fn compute_cell(txns: &[&Txn], as_of: i64) -> Option<Cell> {
     let sum_w: f64 = pts.iter().map(|p| p.1).sum();
     let sum_w2: f64 = pts.iter().map(|p| p.1 * p.1).sum();
     // Kish effective sample size.
-    let n_eff = if sum_w2 > 0.0 { sum_w * sum_w / sum_w2 } else { 0.0 };
+    let n_eff = if sum_w2 > 0.0 {
+        sum_w * sum_w / sum_w2
+    } else {
+        0.0
+    };
 
     let m_log = weighted_quantile(&pairs, 0.5);
     let p25_log = weighted_quantile(&pairs, 0.25);
@@ -232,7 +236,9 @@ fn compute_cell(txns: &[&Txn], as_of: i64) -> Option<Cell> {
 fn in_level(t: &Txn, q: &Query, level: u32) -> bool {
     match level {
         0 => !q.zip.is_empty() && t.zip == q.zip && t.category_id == q.category_id,
-        1 => !q.market_id.is_empty() && t.market_id == q.market_id && t.category_id == q.category_id,
+        1 => {
+            !q.market_id.is_empty() && t.market_id == q.market_id && t.category_id == q.category_id
+        }
         2 => {
             !q.market_id.is_empty()
                 && !q.parent_category_id.is_empty()
@@ -269,14 +275,25 @@ pub fn fair_price(txns: &[Txn], q: &Query) -> FairPrice {
     }
 
     // Global price range of the candidate set (for the boundedness invariant).
-    let min_price = filtered.iter().map(|t| t.cleared_price_cents).min().unwrap_or(1);
-    let max_price = filtered.iter().map(|t| t.cleared_price_cents).max().unwrap_or(1);
+    let min_price = filtered
+        .iter()
+        .map(|t| t.cleared_price_cents)
+        .min()
+        .unwrap_or(1);
+    let max_price = filtered
+        .iter()
+        .map(|t| t.cleared_price_cents)
+        .max()
+        .unwrap_or(1);
 
     // 2. Compute each hierarchy level's cell.
     let cells: Vec<Option<Cell>> = (0..NUM_LEVELS)
         .map(|level| {
-            let level_txns: Vec<&Txn> =
-                filtered.iter().copied().filter(|t| in_level(t, q, level)).collect();
+            let level_txns: Vec<&Txn> = filtered
+                .iter()
+                .copied()
+                .filter(|t| in_level(t, q, level))
+                .collect();
             compute_cell(&level_txns, q.as_of)
         })
         .collect();

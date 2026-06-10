@@ -5,8 +5,8 @@
 
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use imaging::models::{
-    ImageFormat, ImageVariant, ImagingError, ProcessingOptions, ResizeMode, UploadContext,
-    ALLOWED_MIME_TYPES, DEFAULT_QUALITY, MAX_FILE_SIZE_BYTES,
+    ALLOWED_MIME_TYPES, DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
+    MAX_FILE_SIZE_BYTES, ProcessingOptions, ResizeMode, UploadContext,
 };
 
 /// Helper: create a solid-color test image of the given dimensions.
@@ -35,11 +35,8 @@ fn process_pipeline_resize_and_encode_jpeg() {
     assert!(h <= 600);
 
     let mut buf = std::io::Cursor::new(Vec::new());
-    let encoder =
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, DEFAULT_QUALITY);
-    resized
-        .write_with_encoder(encoder)
-        .expect("encode JPEG");
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, DEFAULT_QUALITY);
+    resized.write_with_encoder(encoder).expect("encode JPEG");
     let encoded = buf.into_inner();
     assert!(!encoded.is_empty());
 }
@@ -152,10 +149,16 @@ fn image_format_mime_mapping() {
 
 #[test]
 fn image_format_from_mime_all_supported() {
-    assert_eq!(ImageFormat::from_mime("image/jpeg"), Some(ImageFormat::Jpeg));
+    assert_eq!(
+        ImageFormat::from_mime("image/jpeg"),
+        Some(ImageFormat::Jpeg)
+    );
     assert_eq!(ImageFormat::from_mime("image/jpg"), Some(ImageFormat::Jpeg));
     assert_eq!(ImageFormat::from_mime("image/png"), Some(ImageFormat::Png));
-    assert_eq!(ImageFormat::from_mime("image/webp"), Some(ImageFormat::WebP));
+    assert_eq!(
+        ImageFormat::from_mime("image/webp"),
+        Some(ImageFormat::WebP)
+    );
 }
 
 #[test]

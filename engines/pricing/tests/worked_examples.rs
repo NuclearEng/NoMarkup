@@ -1,6 +1,6 @@
 //! Spec worked examples as regression fixtures.
 
-use pricing::model::{fair_price, Query, Side, Txn};
+use pricing::model::{Query, Side, Txn, fair_price};
 
 const AS_OF: i64 = 1_750_000_000;
 
@@ -39,7 +39,12 @@ fn dense_stable_cell() {
     let mut txns = Vec::new();
     for i in 0..60 {
         // prices clustered ~$110–$160 in the target ZIP, recent, trusted.
-        txns.push(t(11_000 + (i % 50) * 100, (i % 90) as i64, "78701", 2 + (i % 3) as u32));
+        txns.push(t(
+            11_000 + (i % 50) * 100,
+            (i % 90) as i64,
+            "78701",
+            2 + (i % 3) as u32,
+        ));
     }
     let fp = fair_price(&txns, &q("78701"));
     assert!(fp.has_data);
@@ -67,14 +72,21 @@ fn sparse_cell_shrinks_to_parent() {
 
     let fp = fair_price(&txns, &q("78701"));
     assert!(fp.has_data);
-    assert_eq!(fp.level_used, 0, "local cell exists (2 txns) so level 0 is used");
+    assert_eq!(
+        fp.level_used, 0,
+        "local cell exists (2 txns) so level 0 is used"
+    );
     // With n_eff≈2, B≈0.2 → estimate leans hard on the ~$150 metro parent.
     assert!(
         (13_000..=17_000).contains(&fp.price_cents),
         "sparse estimate {} should sit near the metro parent (~$150)",
         fp.price_cents
     );
-    assert!(fp.confidence < 0.33, "thin cell should be LOW confidence, got {}", fp.confidence);
+    assert!(
+        fp.confidence < 0.33,
+        "thin cell should be LOW confidence, got {}",
+        fp.confidence
+    );
     assert_eq!(fp.confidence_label, "low");
 }
 
@@ -88,7 +100,10 @@ fn empty_local_falls_back_to_metro() {
     // Query a ZIP with no local txns.
     let fp = fair_price(&txns, &q("99999"));
     assert!(fp.has_data, "should fall back to the metro cell");
-    assert_eq!(fp.level_used, 1, "level 1 (market × category) supplies the estimate");
+    assert_eq!(
+        fp.level_used, 1,
+        "level 1 (market × category) supplies the estimate"
+    );
     assert!((13_000..=17_000).contains(&fp.price_cents));
 }
 
@@ -117,7 +132,9 @@ fn trend_tracks_recent_prices() {
 // Determinism incl. label.
 #[test]
 fn deterministic() {
-    let txns: Vec<Txn> = (0..40).map(|i| t(15_000 + (i % 10) * 200, (i % 80) as i64, "78701", 3)).collect();
+    let txns: Vec<Txn> = (0..40)
+        .map(|i| t(15_000 + (i % 10) * 200, (i % 80) as i64, "78701", 3))
+        .collect();
     let a = fair_price(&txns, &q("78701"));
     let b = fair_price(&txns, &q("78701"));
     assert_eq!(a, b);

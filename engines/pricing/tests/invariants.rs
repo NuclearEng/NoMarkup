@@ -1,6 +1,6 @@
 //! Property-based invariants — the guardrails that must hold for EVERY input.
 
-use pricing::model::{fair_price, Query, Side, Txn};
+use pricing::model::{Query, Side, Txn, fair_price};
 use proptest::prelude::*;
 
 const AS_OF: i64 = 1_750_000_000;

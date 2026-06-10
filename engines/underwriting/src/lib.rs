@@ -12,4 +12,4 @@ pub mod proto {
     tonic::include_proto!("nomarkup.underwriting.v1");
 }
 
-pub use model::{underwrite, Decision, Features, Reason, UnderwritingTier, MODEL_VERSION};
+pub use model::{Decision, Features, MODEL_VERSION, Reason, UnderwritingTier, underwrite};

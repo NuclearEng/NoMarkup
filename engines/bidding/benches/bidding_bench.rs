@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use chrono::Utc;
 use uuid::Uuid;
@@ -69,13 +69,9 @@ fn bench_rank_bids(c: &mut Criterion) {
     // Benchmark with different sizes to see scaling behavior.
     for size in [10, 50, 100, 500, 1000] {
         let bids = make_bids(size);
-        group.bench_with_input(
-            BenchmarkId::from_parameter(size),
-            &bids,
-            |b, bids| {
-                b.iter(|| rank_bids(black_box(bids)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(size), &bids, |b, bids| {
+            b.iter(|| rank_bids(black_box(bids)));
+        });
     }
 
     group.finish();

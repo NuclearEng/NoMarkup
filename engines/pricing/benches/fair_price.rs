@@ -1,8 +1,8 @@
 //! Criterion benchmark — a fair-price estimate over a realistic candidate set
 //! must be sub-millisecond (one O(n log n) sort dominates).
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use pricing::model::{fair_price, Query, Side, Txn};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use pricing::model::{Query, Side, Txn, fair_price};
 
 fn txn(price: i64, age_days: i64, zip: &str, tier: u32) -> Txn {
     Txn {

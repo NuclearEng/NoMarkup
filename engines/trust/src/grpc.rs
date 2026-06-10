@@ -28,8 +28,8 @@ use uuid::Uuid;
 
 use crate::engine::TrustScorer;
 use crate::models::{
-    all_tier_requirements, FeedbackDetails, FraudDetails, RiskDetails, TrustError,
-    TrustScoreHistoryRow, TrustScoreRow, TrustTier, VolumeDetails,
+    FeedbackDetails, FraudDetails, RiskDetails, TrustError, TrustScoreHistoryRow, TrustScoreRow,
+    TrustTier, VolumeDetails, all_tier_requirements,
 };
 
 /// gRPC service implementation wrapping the trust scoring engine.
@@ -53,7 +53,11 @@ impl TrustService for TrustServiceImpl {
         let req = request.into_inner();
         let user_id = parse_uuid(&req.user_id, "user_id")?;
 
-        match self.engine.compute_score(user_id, &req.trigger_reason).await {
+        match self
+            .engine
+            .compute_score(user_id, &req.trigger_reason)
+            .await
+        {
             Ok((row, tier_changed, previous_tier)) => {
                 info!(
                     user_id = %user_id,
@@ -149,12 +153,10 @@ impl TrustService for TrustServiceImpl {
                 let previous_overall = rows
                     .get(i + 1)
                     .map_or(0.0, |prev| prev.overall_score / 100.0);
-                let previous_tier = rows
-                    .get(i + 1)
-                    .map_or(
-                        nomarkup::common::v1::TrustTier::Unspecified as i32,
-                        |_prev| nomarkup::common::v1::TrustTier::Unspecified as i32,
-                    );
+                let previous_tier = rows.get(i + 1).map_or(
+                    nomarkup::common::v1::TrustTier::Unspecified as i32,
+                    |_prev| nomarkup::common::v1::TrustTier::Unspecified as i32,
+                );
                 history_row_to_proto(row, previous_overall, previous_tier)
             })
             .collect();
@@ -285,9 +287,11 @@ impl TrustService for TrustServiceImpl {
             .await
             .map_err(trust_error_to_status)?;
 
-        Ok(Response::new(trust_proto::AdminOverrideTrustScoreResponse {
-            score: Some(score_row_to_proto(&row)),
-        }))
+        Ok(Response::new(
+            trust_proto::AdminOverrideTrustScoreResponse {
+                score: Some(score_row_to_proto(&row)),
+            },
+        ))
     }
 
     async fn admin_get_trust_breakdown(
@@ -441,21 +445,25 @@ fn count_data_points(row: &TrustScoreRow) -> i32 {
     let mut count = 0i32;
 
     if let Some(ref details) = row.feedback_details
-        && let Ok(fd) = serde_json::from_value::<FeedbackDetails>(details.clone()) {
-            count += fd.total_reviews;
-        }
+        && let Ok(fd) = serde_json::from_value::<FeedbackDetails>(details.clone())
+    {
+        count += fd.total_reviews;
+    }
     if let Some(ref details) = row.volume_details
-        && let Ok(vd) = serde_json::from_value::<VolumeDetails>(details.clone()) {
-            count += vd.total_jobs_completed;
-        }
+        && let Ok(vd) = serde_json::from_value::<VolumeDetails>(details.clone())
+    {
+        count += vd.total_jobs_completed;
+    }
     if let Some(ref details) = row.risk_details
-        && let Ok(rd) = serde_json::from_value::<RiskDetails>(details.clone()) {
-            count += rd.cancellations + rd.disputes_filed + rd.late_deliveries + rd.no_shows;
-        }
+        && let Ok(rd) = serde_json::from_value::<RiskDetails>(details.clone())
+    {
+        count += rd.cancellations + rd.disputes_filed + rd.late_deliveries + rd.no_shows;
+    }
     if let Some(ref details) = row.fraud_details
-        && let Ok(fd) = serde_json::from_value::<FraudDetails>(details.clone()) {
-            count += fd.fraud_signals_detected;
-        }
+        && let Ok(fd) = serde_json::from_value::<FraudDetails>(details.clone())
+    {
+        count += fd.fraud_signals_detected;
+    }
 
     count
 }
@@ -477,7 +485,11 @@ fn tier_to_proto_i32(tier: &TrustTier) -> i32 {
     tier_str_to_proto_i32(tier.as_db_str())
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap
+)]
 const fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: dt.timestamp(),

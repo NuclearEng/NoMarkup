@@ -13,8 +13,9 @@ use image::{DynamicImage, GenericImageView, ImageFormat as ImgFmt};
 use uuid::Uuid;
 
 use crate::models::{
-    ImageFormat, ImageVariant, ImagingError, ProcessedJobPhoto, ProcessingOptions, ResizeMode,
-    UploadContext, ALLOWED_MIME_TYPES, DEFAULT_QUALITY, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
+    ALLOWED_MIME_TYPES, DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
+    MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS, ProcessedJobPhoto, ProcessingOptions, ResizeMode,
+    UploadContext,
 };
 
 /// Core image pipeline — stateless beyond the S3 client handle.
@@ -32,7 +33,11 @@ impl ImagePipeline {
     /// * `public_url_base` – base URL for constructing public object URLs,
     ///   e.g. `"http://localhost:9000/nomarkup"`
     #[must_use]
-    pub const fn new(s3_client: aws_sdk_s3::Client, bucket: String, public_url_base: String) -> Self {
+    pub const fn new(
+        s3_client: aws_sdk_s3::Client,
+        bucket: String,
+        public_url_base: String,
+    ) -> Self {
         Self {
             s3_client,
             bucket,
@@ -145,10 +150,26 @@ impl ImagePipeline {
             let blur_hash = compute_blur_hash(&img);
 
             let large = self
-                .create_variant(&img, source_key, job_id, "large", 1200, 1200, ResizeMode::Fit)
+                .create_variant(
+                    &img,
+                    source_key,
+                    job_id,
+                    "large",
+                    1200,
+                    1200,
+                    ResizeMode::Fit,
+                )
                 .await?;
             let medium = self
-                .create_variant(&img, source_key, job_id, "medium", 600, 600, ResizeMode::Fit)
+                .create_variant(
+                    &img,
+                    source_key,
+                    job_id,
+                    "medium",
+                    600,
+                    600,
+                    ResizeMode::Fit,
+                )
                 .await?;
             let thumbnail = self
                 .create_variant(
@@ -186,7 +207,15 @@ impl ImagePipeline {
         let blur_hash = compute_blur_hash(&img);
 
         let full = self
-            .create_variant(&img, source_key, user_id, "full", 1600, 1600, ResizeMode::Fit)
+            .create_variant(
+                &img,
+                source_key,
+                user_id,
+                "full",
+                1600,
+                1600,
+                ResizeMode::Fit,
+            )
             .await?;
         let display = self
             .create_variant(
@@ -280,10 +309,7 @@ impl ImagePipeline {
 
         // Re-encode at original size (strips EXIF, auto-orients).
         let encoded = encode_image(&img, ImageFormat::Jpeg, 90)?;
-        let dest_key = format!(
-            "documents/{user_id}/processed/{}.jpg",
-            Uuid::now_v7()
-        );
+        let dest_key = format!("documents/{user_id}/processed/{}.jpg", Uuid::now_v7());
         self.upload_to_s3(&dest_key, &encoded, "image/jpeg").await?;
 
         let processed = ImageVariant {
@@ -341,8 +367,8 @@ impl ImagePipeline {
         }
 
         // Determine extension from MIME type.
-        let ext = ImageFormat::from_mime(mime_type)
-            .map_or("bin", super::models::ImageFormat::extension);
+        let ext =
+            ImageFormat::from_mime(mime_type).map_or("bin", super::models::ImageFormat::extension);
 
         // Sanitize filename: take only the stem of the original filename.
         let stem = std::path::Path::new(filename)
@@ -501,10 +527,7 @@ impl ImagePipeline {
         let encoded = encode_image(&resized, ImageFormat::Jpeg, DEFAULT_QUALITY)?;
         let (rw, rh) = resized.dimensions();
 
-        let dest_key = format!(
-            "{context_id}/{variant_name}/{}.jpg",
-            Uuid::now_v7()
-        );
+        let dest_key = format!("{context_id}/{variant_name}/{}.jpg", Uuid::now_v7());
         self.upload_to_s3(&dest_key, &encoded, "image/jpeg").await?;
 
         Ok(ImageVariant {
@@ -526,11 +549,13 @@ impl ImagePipeline {
             .map_or("img", |(s, _)| s);
 
         // Derive directory from source key.
-        let dir = source_key
-            .rsplit_once('/')
-            .map_or("misc", |(d, _)| d);
+        let dir = source_key.rsplit_once('/').map_or("misc", |(d, _)| d);
 
-        format!("{dir}/{variant}/{stem}_{}.{}", Uuid::now_v7(), fmt.extension())
+        format!(
+            "{dir}/{variant}/{stem}_{}.{}",
+            Uuid::now_v7(),
+            fmt.extension()
+        )
     }
 
     /// Construct the public URL for an object key.
@@ -602,7 +627,11 @@ fn resize_image(img: &DynamicImage, max_w: u32, max_h: u32, mode: ResizeMode) ->
 }
 
 /// Encode a `DynamicImage` to bytes in the specified format and quality.
-fn encode_image(img: &DynamicImage, fmt: ImageFormat, quality: u8) -> Result<Vec<u8>, ImagingError> {
+fn encode_image(
+    img: &DynamicImage,
+    fmt: ImageFormat,
+    quality: u8,
+) -> Result<Vec<u8>, ImagingError> {
     let mut buf = Cursor::new(Vec::new());
 
     match fmt {
@@ -787,8 +816,8 @@ fn encode_ac(r: f64, g: f64, b: f64, max_ac: f64) -> u32 {
 mod tests {
     use super::*;
     use crate::models::{
-        ImageFormat, ImagingError, ProcessingOptions, ResizeMode, UploadContext,
-        ALLOWED_MIME_TYPES, DEFAULT_QUALITY, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
+        ALLOWED_MIME_TYPES, DEFAULT_QUALITY, ImageFormat, ImagingError, MAX_FILE_SIZE_BYTES,
+        PRESIGN_EXPIRY_SECS, ProcessingOptions, ResizeMode, UploadContext,
     };
     use image::{DynamicImage, RgbaImage};
 
@@ -818,10 +847,16 @@ mod tests {
 
     #[test]
     fn image_format_from_mime() {
-        assert_eq!(ImageFormat::from_mime("image/jpeg"), Some(ImageFormat::Jpeg));
+        assert_eq!(
+            ImageFormat::from_mime("image/jpeg"),
+            Some(ImageFormat::Jpeg)
+        );
         assert_eq!(ImageFormat::from_mime("image/jpg"), Some(ImageFormat::Jpeg));
         assert_eq!(ImageFormat::from_mime("image/png"), Some(ImageFormat::Png));
-        assert_eq!(ImageFormat::from_mime("image/webp"), Some(ImageFormat::WebP));
+        assert_eq!(
+            ImageFormat::from_mime("image/webp"),
+            Some(ImageFormat::WebP)
+        );
         assert_eq!(ImageFormat::from_mime("image/gif"), None);
         assert_eq!(ImageFormat::from_mime("text/html"), None);
     }
@@ -862,15 +897,30 @@ mod tests {
 
     #[test]
     fn upload_context_from_str() {
-        assert_eq!(UploadContext::from_str_context("avatar"), Some(UploadContext::Avatar));
-        assert_eq!(UploadContext::from_str_context("portfolio"), Some(UploadContext::Portfolio));
-        assert_eq!(UploadContext::from_str_context("job_photo"), Some(UploadContext::JobPhoto));
-        assert_eq!(UploadContext::from_str_context("document"), Some(UploadContext::Document));
+        assert_eq!(
+            UploadContext::from_str_context("avatar"),
+            Some(UploadContext::Avatar)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("portfolio"),
+            Some(UploadContext::Portfolio)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("job_photo"),
+            Some(UploadContext::JobPhoto)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("document"),
+            Some(UploadContext::Document)
+        );
         assert_eq!(
             UploadContext::from_str_context("review_photo"),
             Some(UploadContext::ReviewPhoto)
         );
-        assert_eq!(UploadContext::from_str_context("listing"), Some(UploadContext::Listing));
+        assert_eq!(
+            UploadContext::from_str_context("listing"),
+            Some(UploadContext::Listing)
+        );
         assert_eq!(UploadContext::from_str_context("unknown"), None);
     }
 
@@ -1150,7 +1200,12 @@ mod tests {
         // BlurHash format: 1 (size flag) + 1 (max AC) + 4 (DC) + (4*3-1)*2 (AC) = 28
         let img = make_test_image(64, 64);
         let hash = compute_blur_hash(&img);
-        assert_eq!(hash.len(), 28, "4x3 BlurHash should be 28 chars, got {}", hash.len());
+        assert_eq!(
+            hash.len(),
+            28,
+            "4x3 BlurHash should be 28 chars, got {}",
+            hash.len()
+        );
     }
 
     #[test]

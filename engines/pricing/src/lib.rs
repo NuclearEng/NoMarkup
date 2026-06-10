@@ -12,4 +12,4 @@ pub mod proto {
     tonic::include_proto!("nomarkup.pricing.v1");
 }
 
-pub use model::{fair_price, FairPrice, Query, Side, Txn, MODEL_VERSION};
+pub use model::{FairPrice, MODEL_VERSION, Query, Side, Txn, fair_price};

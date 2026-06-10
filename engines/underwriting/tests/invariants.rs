@@ -4,7 +4,7 @@
 //! deterministic decision.
 
 use proptest::prelude::*;
-use underwriting::model::{underwrite, Features};
+use underwriting::model::{Features, underwrite};
 
 const CAP_ABS: i64 = 2_500_000;
 const MIN_OFFER: i64 = 25_000;

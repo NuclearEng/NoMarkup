@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use image::{DynamicImage, RgbaImage};
 
 /// Create a solid-color test image of the given dimensions.
@@ -18,15 +18,11 @@ fn bench_resize(c: &mut Criterion) {
     let img_1080 = make_test_image(1920, 1080);
 
     c.bench_function("resize_fit_1080p_to_800x600", |b| {
-        b.iter(|| {
-            img_1080.resize(800, 600, image::imageops::FilterType::Lanczos3)
-        });
+        b.iter(|| img_1080.resize(800, 600, image::imageops::FilterType::Lanczos3));
     });
 
     c.bench_function("resize_exact_1080p_to_200x200", |b| {
-        b.iter(|| {
-            img_1080.resize_exact(200, 200, image::imageops::FilterType::Lanczos3)
-        });
+        b.iter(|| img_1080.resize_exact(200, 200, image::imageops::FilterType::Lanczos3));
     });
 }
 
@@ -90,8 +86,7 @@ fn bench_blurhash_computation(c: &mut Criterion) {
                     for y in 0..sh {
                         for x in 0..sw {
                             let basis =
-                                (std::f64::consts::PI * (i as f64) * (x as f64) / sw as f64)
-                                    .cos()
+                                (std::f64::consts::PI * (i as f64) * (x as f64) / sw as f64).cos()
                                     * (std::f64::consts::PI * (j as f64) * (y as f64) / sh as f64)
                                         .cos();
                             let px = &pixels[y * sw + x];

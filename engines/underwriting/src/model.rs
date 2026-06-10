@@ -210,15 +210,51 @@ pub fn underwrite(f: &Features) -> Decision {
 
     // Reasons sorted by |contribution| desc — the ECOA "principal reasons".
     let mut reasons = vec![
-        Reason { code: "REPAYMENT", label: "On-time repayment history", contribution: c_repay },
-        Reason { code: "DISPUTE_RATE", label: "Recent dispute rate", contribution: c_dispute },
-        Reason { code: "FRAUD", label: "Fraud signal", contribution: c_fraud },
-        Reason { code: "TRUST", label: "Overall trust score", contribution: c_trust },
-        Reason { code: "FEEDBACK", label: "Customer feedback", contribution: c_feedback },
-        Reason { code: "VELOCITY", label: "Earnings trajectory", contribution: c_velocity },
-        Reason { code: "CONSISTENCY", label: "Months of consistent activity", contribution: c_consistency },
-        Reason { code: "TENURE", label: "Account age", contribution: c_tenure },
-        Reason { code: "THIN_FILE", label: "Advance track record", contribution: c_thinfile },
+        Reason {
+            code: "REPAYMENT",
+            label: "On-time repayment history",
+            contribution: c_repay,
+        },
+        Reason {
+            code: "DISPUTE_RATE",
+            label: "Recent dispute rate",
+            contribution: c_dispute,
+        },
+        Reason {
+            code: "FRAUD",
+            label: "Fraud signal",
+            contribution: c_fraud,
+        },
+        Reason {
+            code: "TRUST",
+            label: "Overall trust score",
+            contribution: c_trust,
+        },
+        Reason {
+            code: "FEEDBACK",
+            label: "Customer feedback",
+            contribution: c_feedback,
+        },
+        Reason {
+            code: "VELOCITY",
+            label: "Earnings trajectory",
+            contribution: c_velocity,
+        },
+        Reason {
+            code: "CONSISTENCY",
+            label: "Months of consistent activity",
+            contribution: c_consistency,
+        },
+        Reason {
+            code: "TENURE",
+            label: "Account age",
+            contribution: c_tenure,
+        },
+        Reason {
+            code: "THIN_FILE",
+            label: "Advance track record",
+            contribution: c_thinfile,
+        },
     ];
     // Deterministic order: |contribution| desc, then code asc to break ties.
     reasons.sort_by(|a, b| {
@@ -231,17 +267,32 @@ pub fn underwrite(f: &Features) -> Decision {
 
     // ── Approval gates (first failing gate is binding). ──────────────────────
     let binding_gate: Option<(&str, String)> = if tier_is_gated(&f.trust_tier) {
-        Some(("TIER", format!("Account tier not yet eligible ({})", f.trust_tier)))
+        Some((
+            "TIER",
+            format!("Account tier not yet eligible ({})", f.trust_tier),
+        ))
     } else if trust_fraud < FRAUD_GATE {
         Some(("FRAUD", "Open fraud signal on the account".to_string()))
     } else if dispute > DISPUTE_GATE {
-        Some(("DISPUTE", format!("Recent dispute rate too high ({:.0}%)", dispute * 100.0)))
+        Some((
+            "DISPUTE",
+            format!("Recent dispute rate too high ({:.0}%)", dispute * 100.0),
+        ))
     } else if active_months < MIN_ACTIVE_MONTHS {
-        Some(("ACTIVITY", "Needs at least 3 months of completed work".to_string()))
+        Some((
+            "ACTIVITY",
+            "Needs at least 3 months of completed work".to_string(),
+        ))
     } else if t365 < ACTIVITY_FLOOR_CENTS {
-        Some(("ACTIVITY", "Trailing-year earnings below the $500 minimum".to_string()))
+        Some((
+            "ACTIVITY",
+            "Trailing-year earnings below the $500 minimum".to_string(),
+        ))
     } else if pd > PD_CEILING {
-        Some(("RISK", "Risk score above the eligibility ceiling".to_string()))
+        Some((
+            "RISK",
+            "Risk score above the eligibility ceiling".to_string(),
+        ))
     } else {
         None
     };
@@ -319,7 +370,11 @@ pub fn underwrite(f: &Features) -> Decision {
         holdback_pct: if limit > 0 { holdback_pct } else { 0 },
         risk_score: pd,
         binding_gate: String::new(),
-        binding_cap: if limit > 0 { binding_cap.to_string() } else { String::new() },
+        binding_cap: if limit > 0 {
+            binding_cap.to_string()
+        } else {
+            String::new()
+        },
         reasons,
         decision_hash: String::new(),
         model_version,

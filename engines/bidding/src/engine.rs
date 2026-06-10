@@ -73,18 +73,20 @@ impl BiddingEngine {
         }
 
         if let Some(ends_at) = job.auction_ends_at
-            && ends_at <= Utc::now() {
-                return Err(BidError::AuctionClosed);
-            }
+            && ends_at <= Utc::now()
+        {
+            return Err(BidError::AuctionClosed);
+        }
 
         // Validate bid does not exceed the starting bid (maximum price cap).
         if let Some(starting_bid) = job.starting_bid_cents
-            && amount_cents > starting_bid {
-                return Err(BidError::AboveStartingBid {
-                    amount: amount_cents,
-                    starting_bid,
-                });
-            }
+            && amount_cents > starting_bid
+        {
+            return Err(BidError::AboveStartingBid {
+                amount: amount_cents,
+                starting_bid,
+            });
+        }
 
         // Check if bid amount meets the offer-accepted threshold for auto-accept.
         let is_offer_accepted = job
@@ -159,20 +161,21 @@ impl BiddingEngine {
 
         // Publish to Redis for live streaming (fire-and-forget)
         if job.auction_type == "live"
-            && let Some(ref mut redis_conn) = self.redis.clone() {
-                let event = serde_json::json!({
-                    "type": "bid_placed",
-                    "job_id": job_id.to_string(),
-                    "amount_cents": amount_cents,
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                });
-                let topic = format!("auction:{job_id}");
-                let _ = redis::cmd("PUBLISH")
-                    .arg(&topic)
-                    .arg(event.to_string())
-                    .query_async::<()>(redis_conn)
-                    .await;
-            }
+            && let Some(ref mut redis_conn) = self.redis.clone()
+        {
+            let event = serde_json::json!({
+                "type": "bid_placed",
+                "job_id": job_id.to_string(),
+                "amount_cents": amount_cents,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
+            let topic = format!("auction:{job_id}");
+            let _ = redis::cmd("PUBLISH")
+                .arg(&topic)
+                .arg(event.to_string())
+                .query_async::<()>(redis_conn)
+                .await;
+        }
 
         tracing::info!(
             bid_id = %bid.id,
@@ -241,7 +244,7 @@ impl BiddingEngine {
 
         // Live auction: record event and check anti-snipe
         let auction_type: String = sqlx::query_scalar(
-            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)"
+            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)",
         )
         .bind(bid_id)
         .fetch_one(&self.pool)
@@ -309,11 +312,7 @@ impl BiddingEngine {
     /// # Errors
     ///
     /// Returns `BidError` if the bid is not found, not owned, or not active.
-    pub async fn withdraw_bid(
-        &self,
-        bid_id: Uuid,
-        provider_id: Uuid,
-    ) -> Result<Bid, BidError> {
+    pub async fn withdraw_bid(&self, bid_id: Uuid, provider_id: Uuid) -> Result<Bid, BidError> {
         let existing = self.get_bid(bid_id).await?;
 
         if existing.provider_id != provider_id {
@@ -341,7 +340,7 @@ impl BiddingEngine {
 
         // Live auction: record withdrawal event
         let auction_type: String = sqlx::query_scalar(
-            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)"
+            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)",
         )
         .bind(bid_id)
         .fetch_one(&self.pool)
@@ -434,9 +433,10 @@ impl BiddingEngine {
         }
 
         if let Some(ends_at) = job.auction_ends_at
-            && ends_at <= Utc::now() {
-                return Err(BidError::AuctionClosed);
-            }
+            && ends_at <= Utc::now()
+        {
+            return Err(BidError::AuctionClosed);
+        }
 
         // Backstop guard, still under the FOR UPDATE lock: if any offer-accepted
         // bid already exists for this job, the offer has been claimed. This
@@ -643,13 +643,15 @@ impl BiddingEngine {
             "asc" => "ASC",
             _ => {
                 // Default direction: ASC for price, DESC for created_at.
-                if column == "amount_cents" { "ASC" } else { "DESC" }
+                if column == "amount_cents" {
+                    "ASC"
+                } else {
+                    "DESC"
+                }
             }
         };
 
-        let query = format!(
-            "SELECT * FROM bids WHERE job_id = $1 ORDER BY {column} {direction}"
-        );
+        let query = format!("SELECT * FROM bids WHERE job_id = $1 ORDER BY {column} {direction}");
 
         let bids = sqlx::query_as::<_, Bid>(&query)
             .bind(job_id)
@@ -923,11 +925,13 @@ impl BiddingEngine {
         .ok_or(BidError::JobNotFound)?;
 
         if row.3 != "live" {
-            return Err(BidError::FeatureNotEnabled("live auctions not enabled for this job".into()));
+            return Err(BidError::FeatureNotEnabled(
+                "live auctions not enabled for this job".into(),
+            ));
         }
 
         let lowest: Option<i64> = sqlx::query_scalar(
-            "SELECT MIN(amount_cents) FROM bids WHERE job_id = $1 AND status = 'active'"
+            "SELECT MIN(amount_cents) FROM bids WHERE job_id = $1 AND status = 'active'",
         )
         .bind(job_id)
         .fetch_one(&self.pool)
@@ -1114,10 +1118,7 @@ mod tests {
     #[test]
     fn rank_bids_equal_amounts_stable() {
         let p = Uuid::now_v7();
-        let bids = vec![
-            make_bid(2000, p, "active"),
-            make_bid(2000, p, "active"),
-        ];
+        let bids = vec![make_bid(2000, p, "active"), make_bid(2000, p, "active")];
 
         let ranked = rank_bids(&bids);
         assert_eq!(ranked.len(), 2);
@@ -1174,10 +1175,7 @@ mod tests {
             BidError::AuctionClosed.to_string(),
             "auction is closed or not active"
         );
-        assert_eq!(
-            BidError::BidNotFound.to_string(),
-            "bid not found"
-        );
+        assert_eq!(BidError::BidNotFound.to_string(), "bid not found");
         assert_eq!(
             BidError::AlreadyBid.to_string(),
             "provider already has an active bid on this job"

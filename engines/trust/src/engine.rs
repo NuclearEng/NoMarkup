@@ -15,8 +15,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::{
-    all_tier_requirements, DimensionScores, FeedbackDetails, FraudDetails, RiskDetails,
-    TrustError, TrustScoreHistoryRow, TrustScoreRow, TrustTier, VolumeDetails,
+    DimensionScores, FeedbackDetails, FraudDetails, RiskDetails, TrustError, TrustScoreHistoryRow,
+    TrustScoreRow, TrustTier, VolumeDetails, all_tier_requirements,
 };
 use crate::scoring::{
     self, DecayConfig, FeedbackInput, FraudInput, ReviewDataPoint, RiskInput, VolumeInput,
@@ -156,8 +156,7 @@ impl TrustScorer {
                     .fetch_optional(&self.pool)
                     .await?;
 
-            let user_row = user_row
-                .ok_or_else(|| TrustError::UserNotFound(user_id.to_string()))?;
+            let user_row = user_row.ok_or_else(|| TrustError::UserNotFound(user_id.to_string()))?;
 
             if user_row.roles.contains(&"provider".to_string()) {
                 "provider".to_string()
@@ -292,10 +291,7 @@ impl TrustScorer {
     ///
     /// Returns `TrustError` on database errors.
     #[allow(clippy::cast_possible_truncation)]
-    pub async fn batch_compute(
-        &self,
-        user_ids: &[Uuid],
-    ) -> Result<(i32, i32), TrustError> {
+    pub async fn batch_compute(&self, user_ids: &[Uuid]) -> Result<(i32, i32), TrustError> {
         let mut computed = 0i32;
         let mut tier_changes = 0i32;
 
@@ -481,10 +477,7 @@ impl TrustScorer {
     /// Queries the reviews table for the user's reviews, computes recency-weighted
     /// average rating, rating trend, and dispute impact, then delegates to the
     /// pure scoring function.
-    async fn compute_feedback(
-        &self,
-        user_id: Uuid,
-    ) -> Result<(f64, FeedbackDetails), TrustError> {
+    async fn compute_feedback(&self, user_id: Uuid) -> Result<(f64, FeedbackDetails), TrustError> {
         // Get review statistics for this user (where they are the reviewee).
         let stats: ReviewStatsRow = sqlx::query_as(
             "SELECT \
@@ -577,10 +570,7 @@ impl TrustScorer {
     /// Queries contracts for completed count, recent activity, repeat customers,
     /// completion rate, and response time, then delegates to the pure scoring function.
     #[allow(clippy::cast_possible_truncation)]
-    async fn compute_volume(
-        &self,
-        user_id: Uuid,
-    ) -> Result<(f64, VolumeDetails), TrustError> {
+    async fn compute_volume(&self, user_id: Uuid) -> Result<(f64, VolumeDetails), TrustError> {
         // Total completed contracts.
         let completed: CountRow = sqlx::query_as(
             "SELECT COUNT(*)::bigint as count FROM contracts \
@@ -681,10 +671,7 @@ impl TrustScorer {
     /// Queries cancellations, disputes, late deliveries, no-shows, then delegates
     /// to the pure scoring function.
     #[allow(clippy::cast_possible_truncation)]
-    async fn compute_risk(
-        &self,
-        user_id: Uuid,
-    ) -> Result<(f64, RiskDetails), TrustError> {
+    async fn compute_risk(&self, user_id: Uuid) -> Result<(f64, RiskDetails), TrustError> {
         // Cancellations initiated by this user.
         let cancellations: CountRow = sqlx::query_as(
             "SELECT COUNT(*)::bigint as count FROM contracts \
@@ -776,10 +763,7 @@ impl TrustScorer {
     ///
     /// Queries `fraud_signals` table, then delegates to the pure scoring function.
     #[allow(clippy::cast_possible_truncation)]
-    async fn compute_fraud(
-        &self,
-        user_id: Uuid,
-    ) -> Result<(f64, FraudDetails), TrustError> {
+    async fn compute_fraud(&self, user_id: Uuid) -> Result<(f64, FraudDetails), TrustError> {
         // Count fraud signals for this user.
         let signals: CountRow = sqlx::query_as(
             "SELECT COUNT(*)::bigint as count FROM fraud_signals \
@@ -820,8 +804,7 @@ impl TrustScorer {
             fraud_signals_detected: i32_from_i64(signals.count),
             fraud_probability,
             has_active_flags,
-            last_review_outcome: last_outcome
-                .map_or_else(|| "cleared".to_string(), |r| r.outcome),
+            last_review_outcome: last_outcome.map_or_else(|| "cleared".to_string(), |r| r.outcome),
         };
 
         // Delegate to pure scoring function.
@@ -880,34 +863,34 @@ impl TrustScorer {
         // Top Rated: 85+, 25+ jobs, 15+ reviews, 4.5+ rating, verification.
         if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::TopRated)
             && overall >= req.min_overall_score
-                && volume.total_jobs_completed >= req.min_completed_jobs
-                && feedback.total_reviews >= req.min_reviews
-                && feedback.average_rating >= req.min_rating
-                && (!req.requires_verification || is_verified)
-            {
-                return TrustTier::TopRated;
-            }
+            && volume.total_jobs_completed >= req.min_completed_jobs
+            && feedback.total_reviews >= req.min_reviews
+            && feedback.average_rating >= req.min_rating
+            && (!req.requires_verification || is_verified)
+        {
+            return TrustTier::TopRated;
+        }
 
         // Trusted: 70+, 10+ jobs, 5+ reviews, 4.0+ rating, verification.
         if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::Trusted)
             && overall >= req.min_overall_score
-                && volume.total_jobs_completed >= req.min_completed_jobs
-                && feedback.total_reviews >= req.min_reviews
-                && feedback.average_rating >= req.min_rating
-                && (!req.requires_verification || is_verified)
-            {
-                return TrustTier::Trusted;
-            }
+            && volume.total_jobs_completed >= req.min_completed_jobs
+            && feedback.total_reviews >= req.min_reviews
+            && feedback.average_rating >= req.min_rating
+            && (!req.requires_verification || is_verified)
+        {
+            return TrustTier::Trusted;
+        }
 
         // Rising: 50+, 3+ jobs, 2+ reviews.
         if let Some(req) = requirements.iter().find(|r| r.tier == TrustTier::Rising)
             && overall >= req.min_overall_score
-                && volume.total_jobs_completed >= req.min_completed_jobs
-                && feedback.total_reviews >= req.min_reviews
-                && (!req.requires_verification || is_verified)
-            {
-                return TrustTier::Rising;
-            }
+            && volume.total_jobs_completed >= req.min_completed_jobs
+            && feedback.total_reviews >= req.min_reviews
+            && (!req.requires_verification || is_verified)
+        {
+            return TrustTier::Rising;
+        }
 
         TrustTier::New
     }

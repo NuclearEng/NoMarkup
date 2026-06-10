@@ -53,9 +53,7 @@ pub fn init() {
     Lazy::force(&IMAGES_PROCESSED_TOTAL);
 }
 
-async fn handle_request(
-    req: Request<Incoming>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
     if req.method() != Method::GET {
         return Ok(Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
@@ -135,7 +133,10 @@ mod tests {
         IMAGES_PROCESSED_TOTAL.inc();
 
         let families = REGISTRY.gather();
-        let names: Vec<&str> = families.iter().map(prometheus::proto::MetricFamily::get_name).collect();
+        let names: Vec<&str> = families
+            .iter()
+            .map(prometheus::proto::MetricFamily::get_name)
+            .collect();
         assert!(names.contains(&"image_processing_duration_seconds"));
         assert!(names.contains(&"images_processed_total"));
     }
@@ -143,6 +144,10 @@ mod tests {
     #[test]
     fn buckets_cover_slo_budget() {
         // SLO: p99 < 200ms. The 200ms bucket boundary must exist.
-        assert!(IMAGE_BUCKETS.iter().any(|&b| (b - 0.2).abs() < f64::EPSILON));
+        assert!(
+            IMAGE_BUCKETS
+                .iter()
+                .any(|&b| (b - 0.2).abs() < f64::EPSILON)
+        );
     }
 }
