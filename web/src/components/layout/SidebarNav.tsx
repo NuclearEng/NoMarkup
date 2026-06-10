@@ -62,19 +62,29 @@ export const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: '/admin' as Route, label: 'Admin', icon: Shield },
 ];
 
+// Ordered by workflow priority, not feature catalogue: the core service-job
+// loop first (post → track → contract → message → pay), then the goods/commerce
+// loop (browse → orders → sell), then discovery (watchlist/wishlist/searches/
+// feed), then account. Previously the discovery features outranked the core
+// workflow and Post Job / My Jobs sat dead last — the primary customer action
+// was the hardest to find.
 export const COMMON_NAV_ITEMS: NavItem[] = [
+  // Core services workflow (the primary, original product surface)
+  { href: '/jobs/new' as Route, label: 'Post Job', icon: PlusCircle },
+  { href: '/jobs/mine' as Route, label: 'My Jobs', icon: Briefcase },
+  { href: '/contracts' as Route, label: 'Contracts', icon: FileText },
+  { href: '/messages' as Route, label: 'Messages', icon: MessageSquare },
+  { href: '/payments' as Route, label: 'Payments', icon: CreditCard },
+  // Goods / marketplace workflow
   { href: '/marketplace' as Route, label: 'Marketplace', icon: Gavel },
+  { href: '/orders' as Route, label: 'Orders', icon: Package },
+  { href: '/sell/new' as Route, label: 'Sell an Item', icon: Tag },
+  // Discovery & saved
   { href: '/me/watchlist' as Route, label: 'Watchlist', icon: Heart },
   { href: '/me/wishlist' as Route, label: 'Wishlist', icon: Sparkles },
   { href: '/me/saved-searches' as Route, label: 'Saved Searches', icon: Bookmark },
   { href: '/me/feed' as Route, label: 'My Feed', icon: Rss },
-  { href: '/sell/new' as Route, label: 'Sell an Item', icon: Tag },
-  { href: '/orders' as Route, label: 'Orders', icon: Package },
-  { href: '/contracts' as Route, label: 'Contracts', icon: FileText },
-  { href: '/payments' as Route, label: 'Payments', icon: CreditCard },
-  { href: '/messages' as Route, label: 'Messages', icon: MessageSquare },
-  { href: '/jobs/mine' as Route, label: 'My Jobs', icon: Briefcase },
-  { href: '/jobs/new' as Route, label: 'Post Job', icon: PlusCircle },
+  // Account
   { href: '/settings/security' as Route, label: 'Settings', icon: Settings },
 ];
 
