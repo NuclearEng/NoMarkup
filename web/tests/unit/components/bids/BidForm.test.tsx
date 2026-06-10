@@ -53,6 +53,14 @@ vi.mock('@/components/bids/BidSuggestion', () => ({
 vi.mock('@/components/jobs/MarketRangeDisplay', () => ({
   MarketRangeDisplay: () => <div data-testid="mock-market-range" />,
 }));
+// The Fair-Price band pulls its own data layer (TanStack Query) — stub the hook
+// so these bid-behavior tests don't need a QueryClientProvider.
+vi.mock('@/hooks/useAnalytics', () => ({
+  useFairPrice: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+vi.mock('@/components/analytics/FairPriceBand', () => ({
+  FairPriceBand: () => null,
+}));
 
 const { usePlaceBid, useUpdateBid, useAcceptOffer } = await import('@/hooks/useBids');
 
