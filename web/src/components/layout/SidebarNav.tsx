@@ -2,7 +2,6 @@
 
 import {
   Banknote,
-  BarChart3,
   Bookmark,
   Briefcase,
   Building2,
@@ -56,10 +55,11 @@ export const PROVIDER_NAV_ITEMS: NavItem[] = [
   { href: '/provider/challenges' as Route, label: 'Challenges', icon: Trophy },
 ];
 
+// A single entry point into the admin console. The console has its own
+// dedicated sidebar (AdminSidebar) for all sub-sections, so surfacing
+// Users/Disputes/etc. here too would just duplicate that nav.
 export const ADMIN_NAV_ITEMS: NavItem[] = [
-  { href: '/admin' as Route, label: 'Admin Panel', icon: Shield },
-  { href: '/admin/users' as Route, label: 'Manage Users', icon: Users },
-  { href: '/admin/disputes' as Route, label: 'Disputes', icon: BarChart3 },
+  { href: '/admin' as Route, label: 'Admin', icon: Shield },
 ];
 
 export const COMMON_NAV_ITEMS: NavItem[] = [
@@ -135,6 +135,12 @@ export function SidebarNav() {
   // we don't flash a sidebar that then disappears if the session fails to
   // restore.
   if (isHydrating || !isAuthenticated) return null;
+
+  // The admin console (/admin/*) renders its OWN dedicated sidebar
+  // (AdminSidebar) via the admin layout. Showing this consumer sidebar there
+  // too produced two stacked sidebars with overlapping links; suppress it so
+  // the admin console is a single, focused nav (with its own "back to app" link).
+  if (pathname.startsWith('/admin')) return null;
 
   const activeHref = activeNavHref(
     pathname,
