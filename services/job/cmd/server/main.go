@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -97,6 +98,11 @@ func main() {
 	meiliHost := os.Getenv("MEILISEARCH_HOST")
 	meiliKey := os.Getenv("MEILISEARCH_API_KEY")
 
+	// Trust-tiered search ranking (MOVE B2): a higher seller/provider trust tier
+	// becomes a modest, explainable ranking signal. Behind the TRUST_RANKING
+	// flag, default OFF (fail closed → current ordering unchanged).
+	trustRanking := envBool("TRUST_RANKING", false)
+
 	var searchEngine *service.SearchEngine
 	var listingSearchEngine *service.ListingSearchEngine
 	if meiliHost != "" {
@@ -113,8 +119,16 @@ func main() {
 		if err != nil {
 			slog.Warn("failed to initialize listing search engine, continuing without listing search", "error", err)
 		} else {
+			// Apply the trust-ranking mode BEFORE first index use so the ranking
+			// rules + sortable attributes are configured for the chosen mode.
+			lse.SetTrustRanking(trustRanking)
+			if trustRanking {
+				if err := lse.ConfigureIndex(); err != nil {
+					slog.Error("failed to re-configure listings index for trust ranking", "error", err)
+				}
+			}
 			listingSearchEngine = lse
-			slog.Info("listings search index ready", "host", meiliHost)
+			slog.Info("listings search index ready", "host", meiliHost, "trust_ranking", trustRanking)
 		}
 	}
 	// Wire up dependencies.
@@ -126,7 +140,7 @@ func main() {
 	// gateway/internal/handler/listings.go) but the service hooks fire
 	// from any gRPC writes and from the reindex-listings CLI backfill.
 	listingRepo := repository.NewListingPostgresRepository(pool)
-	listingHydrate := buildListingHydrator(pool)
+	listingHydrate := buildListingHydrator(pool, trustRanking)
 	listingService := service.NewListingService(listingRepo).WithSearch(listingSearchEngine, listingHydrate)
 
 	// Optional Redis client — used only for the best-effort auction-close
@@ -304,7 +318,7 @@ func loggingUnaryInterceptor(ctx context.Context, req interface{}, info *grpclib
 //
 // Schema note: the `condition` column is added by Agent H in migration 040.
 // We probe via information_schema once at startup; if absent we omit it.
-func buildListingHydrator(pool *pgxpool.Pool) service.ListingHydrator {
+func buildListingHydrator(pool *pgxpool.Pool, trustRanking bool) service.ListingHydrator {
 	hasCondition := false
 	{
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -336,6 +350,19 @@ func buildListingHydrator(pool *pgxpool.Pool) service.ListingHydrator {
 				extras.Condition = cond
 			}
 		}
+		// Trust-tiered ranking (MOVE B2): read the seller's provider trust tier
+		// from trust_scores so the indexer can emit a numeric trust_rank. Only
+		// when the flag is on (skip the lookup otherwise). Fail-soft: a missing
+		// row / error leaves TrustTier empty → trust_rank 0 → no boost.
+		if trustRanking && l.SellerID != "" {
+			var tier string
+			if err := pool.QueryRow(ctx, `
+				SELECT tier FROM trust_scores
+				 WHERE user_id = $1 AND role = 'provider'`, l.SellerID,
+			).Scan(&tier); err == nil {
+				extras.TrustTier = tier
+			}
+		}
 		return extras
 	}
 }
@@ -358,4 +385,19 @@ func loggingStreamInterceptor(srv interface{}, ss grpclib.ServerStream, info *gr
 		)
 	}
 	return err
+}
+
+// envBool reads a boolean feature-flag env var. Recognizes 1/true/t/yes/on
+// (case-insensitive) as true; everything else (including unset) returns def.
+// Used to gate optional behavior fail-closed at startup.
+func envBool(key string, def bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch v {
+	case "":
+		return def
+	case "1", "true", "t", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

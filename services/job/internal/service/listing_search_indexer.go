@@ -40,6 +40,11 @@ const listingsIndexUID = "listings"
 // ListingSearchEngine wraps Meilisearch for listing search indexing.
 type ListingSearchEngine struct {
 	client meilisearch.ServiceManager
+	// trustRanking gates the trust-tiered ranking signal (MOVE B2). When false
+	// (the default / fail-closed state) the `trust_rank` attribute is omitted
+	// from documents and the `trust_rank:desc` ranking rule is not configured,
+	// so ordering is identical to the legacy behavior.
+	trustRanking bool
 }
 
 // NewListingSearchEngine creates a new Meilisearch search engine for listings.
@@ -52,6 +57,23 @@ func NewListingSearchEngine(host, apiKey string) (*ListingSearchEngine, error) {
 		return nil, fmt.Errorf("configure listing search index: %w", err)
 	}
 	return se, nil
+}
+
+// SetTrustRanking toggles the trust-tiered ranking signal. Must be called
+// BEFORE ConfigureIndex (or trigger a re-configure) so the ranking rules /
+// sortable attributes reflect the chosen mode. Wired from TRUST_RANKING at
+// startup; defaults off (fail closed).
+func (se *ListingSearchEngine) SetTrustRanking(enabled bool) {
+	se.trustRanking = enabled
+}
+
+// TrustRankingEnabled reports whether the trust ranking signal is on. Exported
+// so the hydrator wiring can avoid the (cheap) trust lookup when it's off.
+func (se *ListingSearchEngine) TrustRankingEnabled() bool {
+	if se == nil {
+		return false
+	}
+	return se.trustRanking
 }
 
 // ConfigureIndex sets up the Meilisearch `listings` index with searchable,
@@ -84,14 +106,39 @@ func (se *ListingSearchEngine) ConfigureIndex() error {
 		return fmt.Errorf("update filterable attributes: %w", err)
 	}
 
-	if _, err = index.UpdateSortableAttributes(&[]string{
+	sortable := []string{
 		"auction_ends_at", "current_bid_cents", "starting_price_cents",
 		"bid_count", "watcher_count",
-	}); err != nil {
+	}
+	if se.trustRanking {
+		sortable = append(sortable, "trust_rank")
+	}
+	if _, err = index.UpdateSortableAttributes(&sortable); err != nil {
 		return fmt.Errorf("update sortable attributes: %w", err)
 	}
 
+	// Trust-tiered ranking (MOVE B2): append `trust_rank:desc` AFTER the default
+	// relevancy rules so text relevance always dominates and trust only breaks
+	// ties among comparable hits — a modest, explainable nudge, never a
+	// dominant factor. When the flag is off we RESET to the Meilisearch default
+	// rules so toggling off restores legacy ordering exactly (fail closed).
+	rankingRules := defaultMeiliRankingRules()
+	if se.trustRanking {
+		rankingRules = append(rankingRules, "trust_rank:desc")
+	}
+	if _, err = index.UpdateRankingRules(&rankingRules); err != nil {
+		return fmt.Errorf("update ranking rules: %w", err)
+	}
+
 	return nil
+}
+
+// defaultMeiliRankingRules returns Meilisearch's built-in ranking rules in
+// their canonical order. We set them explicitly so the trust rule can be
+// appended deterministically (and so disabling the flag restores the exact
+// default chain rather than whatever was previously persisted on the index).
+func defaultMeiliRankingRules() []string {
+	return []string{"words", "typo", "proximity", "attribute", "sort", "exactness"}
 }
 
 // ListingIndexDocument is the canonical shape stored in Meilisearch for a
@@ -130,7 +177,7 @@ type MeiliGeo struct {
 
 // IndexListing adds or updates a listing in the search index.
 func (se *ListingSearchEngine) IndexListing(ctx context.Context, l *domain.Listing, hydrate ListingHydrator) error {
-	doc := buildListingDoc(l, hydrate)
+	doc := buildListingDoc(l, hydrate, se.trustRanking)
 	if _, err := se.client.Index(listingsIndexUID).AddDocuments([]map[string]interface{}{doc}, nil); err != nil {
 		return fmt.Errorf("index listing: %w", err)
 	}
@@ -182,9 +229,14 @@ type ListingExtraFields struct {
 	PickupCity   string
 	PickupState  string
 	Condition    string
+	// TrustTier is the seller's trust tier (new|rising|trusted|top_rated|
+	// under_review), read from trust_scores at index time. Only consulted when
+	// the trust-ranking flag is on; empty otherwise. The indexer converts it to
+	// the numeric `trust_rank` attribute via trustRankForTier.
+	TrustTier string
 }
 
-func buildListingDoc(l *domain.Listing, hydrate ListingHydrator) map[string]interface{} {
+func buildListingDoc(l *domain.Listing, hydrate ListingHydrator, trustRanking bool) map[string]interface{} {
 	current := l.StartingPriceCents
 	if l.CurrentBidCents != nil {
 		current = *l.CurrentBidCents
@@ -213,6 +265,12 @@ func buildListingDoc(l *domain.Listing, hydrate ListingHydrator) map[string]inte
 			"lng": l.Longitude,
 		}
 	}
+	// Trust-tiered ranking signal (MOVE B2): when the flag is on, every active
+	// document carries a numeric trust_rank so the `trust_rank:desc` ranking
+	// rule has a consistent attribute to sort on. Default 0 (no boost) so a
+	// seller whose tier we can't resolve simply isn't nudged. When the flag is
+	// off we never write the attribute (fail closed → legacy ordering).
+	var tier string
 	if hydrate != nil {
 		extras := hydrate(context.Background(), l)
 		if extras.CategoryName != "" {
@@ -230,6 +288,10 @@ func buildListingDoc(l *domain.Listing, hydrate ListingHydrator) map[string]inte
 		if extras.Condition != "" {
 			doc["condition"] = extras.Condition
 		}
+		tier = extras.TrustTier
+	}
+	if trustRanking {
+		doc["trust_rank"] = trustRankForTier(tier)
 	}
 	return doc
 }

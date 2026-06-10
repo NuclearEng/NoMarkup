@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -65,6 +66,18 @@ func main() {
 	if err != nil {
 		slog.Error("initialize listing search engine", "error", err)
 		os.Exit(3)
+	}
+
+	// Trust-tiered ranking (MOVE B2): mirror the running service's mode so a
+	// backfill produces consistent trust_rank attributes + ranking rules. Off by
+	// default (fail closed).
+	trustRanking := envBool("TRUST_RANKING", false)
+	se.SetTrustRanking(trustRanking)
+	if trustRanking {
+		if err := se.ConfigureIndex(); err != nil {
+			slog.Error("re-configure listings index for trust ranking", "error", err)
+			os.Exit(3)
+		}
 	}
 
 	hasCondition := columnExists(ctx, pool, "listings", "condition")
@@ -121,6 +134,17 @@ func main() {
 			CategorySlug: slug,
 			Condition:    condition,
 		}
+		// Trust-tiered ranking: read the seller's provider tier so IndexListing
+		// emits trust_rank. Only when the flag is on; fail-soft on missing row.
+		if trustRanking && l.SellerID != "" {
+			var tier string
+			if err := pool.QueryRow(ctx, `
+				SELECT tier FROM trust_scores
+				 WHERE user_id = $1 AND role = 'provider'`, l.SellerID,
+			).Scan(&tier); err == nil {
+				extras.TrustTier = tier
+			}
+		}
 		hydrate := func(_ context.Context, _ *domain.Listing) service.ListingExtraFields {
 			return extras
 		}
@@ -156,4 +180,17 @@ func conditionSelect(has bool) string {
 		return "COALESCE(l.condition,'')"
 	}
 	return "''::text"
+}
+
+// envBool reads a boolean env flag: 1/true/t/yes/on → true; else def.
+func envBool(key string, def bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch v {
+	case "":
+		return def
+	case "1", "true", "t", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
