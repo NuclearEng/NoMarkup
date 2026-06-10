@@ -16,6 +16,13 @@ vi.mock('@/components/layout/Header', () => ({
   Header: () => createElement('header', { 'data-testid': 'site-header' }, 'NoMarkup'),
 }));
 
+// MobileTabBar pulls its own data layer (feature-flag queries); stub it so this
+// layout smoke test doesn't need a QueryClientProvider. (It renders null when
+// logged out anyway.)
+vi.mock('@/components/layout/MobileTabBar', () => ({
+  MobileTabBar: () => null,
+}));
+
 const { default: PublicLayout } = await import('@/app/(public)/layout');
 
 describe('(public)/layout', () => {

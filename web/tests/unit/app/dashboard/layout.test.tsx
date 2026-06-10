@@ -114,12 +114,13 @@ describe('DashboardLayout', () => {
     expect(screen.getAllByText('Challenges').length).toBeGreaterThan(0);
   });
 
-  it('renders admin-specific nav items when user has admin role', () => {
+  it('renders the single Admin entry when user has admin role', () => {
     authStoreState.user = { id: 'u3', roles: ['admin'] };
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
-    expect(screen.getAllByText('Admin Panel').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Manage Users').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Disputes').length).toBeGreaterThan(0);
+    // The consumer sidebar collapses admin nav to one "Admin" entry point; the
+    // full admin nav (Users/Disputes/…) lives in the dedicated /admin console.
+    expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Manage Users')).toBeNull();
   });
 
   it('does not render provider nav items for a customer-only user', () => {
@@ -280,16 +281,14 @@ describe('DashboardLayout', () => {
     expect(nav.textContent).toMatch(/Jobs/);
   });
 
-  it('falls back to non-provider, non-admin nav when user is null', () => {
-    // Forces the `?? false` branches in `isProvider`/`isAdmin` (lines 165-166).
+  it('renders no nav when the user is null (logged out)', () => {
+    // Forces the `?? false` branches in isProvider/isAdmin; with no user both the
+    // SidebarNav and the MobileTabBar render null — nav only shows when authed.
     authStoreState.user = null;
     render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
-    // No provider or admin nav items should render.
     expect(screen.queryByText('Provider Dashboard')).toBeNull();
-    expect(screen.queryByText('Admin Panel')).toBeNull();
-    // Customer primary-tab "Jobs" should render (the customer fallback).
-    const nav = screen.getByRole('navigation', { name: /Main navigation/i });
-    expect(nav.textContent).toMatch(/Jobs/);
+    expect(screen.queryByText('Admin')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: /Main navigation/i })).toBeNull();
   });
 
   it('clicking a More-drawer nav link closes the drawer', () => {
