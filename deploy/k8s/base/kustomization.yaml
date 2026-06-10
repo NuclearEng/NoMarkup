@@ -37,6 +37,10 @@ resources:
   - trust/service.yaml
   - imaging/deployment.yaml
   - imaging/service.yaml
+  - underwriting/deployment.yaml
+  - underwriting/service.yaml
+  - pricing/deployment.yaml
+  - pricing/service.yaml
   # Ingress
   - ingress.yaml
   # Storage

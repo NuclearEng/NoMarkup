@@ -33,6 +33,12 @@ spec:
           env:
             - name: PAYMENT_SERVICE_PORT
               value: "50054"
+            # In-cluster engine addresses — binary defaults are localhost,
+            # which fails closed in k8s (no working-capital offers).
+            - name: TRUST_ENGINE_ADDR
+              value: "trust:50057"
+            - name: UNDERWRITING_ENGINE_ADDR
+              value: "underwriting:50060"
           envFrom:
             - configMapRef:
                 name: nomarkup-config

@@ -101,10 +101,10 @@ configMapGenerator:
       # Audit S2 — mandatory env vars (services fail-closed without these).
       # JWT issuer/audience pin the JWT validator to this environment so a
       # token minted for production cannot be accepted in staging.
-      - JWT_ISSUER=https://auth.staging.nomarkup.com
+      - JWT_ISSUER=https://auth.staging.no-markup.com
       - JWT_AUDIENCE=nomarkup-staging
       # CSWSH defense — only these origins may upgrade to a WebSocket.
-      - WS_ALLOWED_ORIGINS=https://staging.nomarkup.com,https://app.staging.nomarkup.com
+      - WS_ALLOWED_ORIGINS=https://staging.no-markup.com,https://app.staging.no-markup.com
       # XFF trust boundary — only requests from these CIDRs may set the
       # X-Forwarded-For header that the rate limiter / audit log trusts.
       - TRUSTED_PROXIES=10.0.0.0/8

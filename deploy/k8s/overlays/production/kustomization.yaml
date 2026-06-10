@@ -105,10 +105,10 @@ configMapGenerator:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - MEILISEARCH_URL=http://meilisearch:7700
       # Audit S2 — mandatory env vars (services fail-closed without these).
-      - JWT_ISSUER=https://auth.nomarkup.com
+      - JWT_ISSUER=https://auth.no-markup.com
       - JWT_AUDIENCE=nomarkup-production
       # CSWSH defense — only these origins may upgrade to a WebSocket.
-      - WS_ALLOWED_ORIGINS=https://nomarkup.com,https://app.nomarkup.com
+      - WS_ALLOWED_ORIGINS=https://no-markup.com,https://app.no-markup.com
       # XFF trust boundary — only requests from these CIDRs may set the
       # X-Forwarded-For header that the rate limiter / audit log trusts.
       - TRUSTED_PROXIES=10.0.0.0/8
