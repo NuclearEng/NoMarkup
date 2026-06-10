@@ -54,6 +54,7 @@ FRAUD_PORT=${FRAUD_PORT:-50056}
 TRUST_PORT=${TRUST_PORT:-50057}
 IMAGING_PORT=${IMAGING_PORT:-50058}
 NOTIFICATION_PORT=${NOTIFICATION_PORT:-50059}
+UNDERWRITING_PORT=${UNDERWRITING_PORT:-50060}
 WEB_PORT=${WEB_PORT:-3000}
 
 # ── Database ─────────────────────────────────────────────────────
@@ -662,7 +663,9 @@ start_services() {
         "ENVIRONMENT=development" \
         "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
         "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
-        "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
+        "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}" \
+        "TRUST_ENGINE_ADDR=localhost:$TRUST_PORT" \
+        "UNDERWRITING_ENGINE_ADDR=localhost:$UNDERWRITING_PORT"
 
     start_go_service chat "$ROOT/services/chat" "$CHAT_PORT" \
         "CHAT_SERVICE_PORT=$CHAT_PORT" \
@@ -697,6 +700,9 @@ start_engines() {
         "AWS_ACCESS_KEY_ID=minioadmin" \
         "AWS_SECRET_ACCESS_KEY=minioadmin" \
         "AWS_REGION=us-east-1"
+
+    start_rust_engine underwriting nomarkup-underwriting-engine "$UNDERWRITING_PORT" \
+        "UNDERWRITING_ENGINE_PORT=$UNDERWRITING_PORT"
 
     success "Rust engines ready"
 }
@@ -784,7 +790,9 @@ cmd_up() {
                 "ENVIRONMENT=development" \
                 "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
                 "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
-                "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
+                "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}" \
+                "TRUST_ENGINE_ADDR=localhost:$TRUST_PORT" \
+                "UNDERWRITING_ENGINE_ADDR=localhost:$UNDERWRITING_PORT"
             ;;
         chat)
             start_go_service chat "$ROOT/services/chat" "$CHAT_PORT" \
@@ -872,6 +880,7 @@ cmd_status() {
         "fraud:$FRAUD_PORT:rust"
         "trust:$TRUST_PORT:rust"
         "imaging:$IMAGING_PORT:rust"
+        "underwriting:$UNDERWRITING_PORT:rust"
         "gateway:$GATEWAY_PORT:go"
         "web:$WEB_PORT:node"
     )
