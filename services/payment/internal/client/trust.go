@@ -65,11 +65,30 @@ func (c *TrustClient) GetProviderTrust(
 		return 0, 0, 0, "", fmt.Errorf("get trust score for provider %q: empty score in response", providerID)
 	}
 
-	return score.GetOverallScore(),
-		score.GetFeedbackScore(),
-		score.GetFraudScore(),
+	return normalizeTrustScore(score.GetOverallScore()),
+		normalizeTrustScore(score.GetFeedbackScore()),
+		normalizeTrustScore(score.GetFraudScore()),
 		mapTrustTier(score.GetTier()),
 		nil
+}
+
+// normalizeTrustScore coerces a trust dimension to the engine's 0..1 contract.
+// The trust engine computes scores in 0..1, but legacy/seed rows can carry a
+// 0..100 value; a value > 1.0 can only be that 0..100 scale, so recover it by
+// /100 rather than letting the underwriting engine clamp it to a
+// non-discriminating 1.0 (which would silently neutralize the trust dimension).
+// Anything still out of range is clamped to [0, 1].
+func normalizeTrustScore(v float64) float64 {
+	if v > 1.0 {
+		v /= 100.0
+	}
+	if v < 0 {
+		return 0
+	}
+	if v > 1.0 {
+		return 1.0
+	}
+	return v
 }
 
 // mapTrustTier converts a common.v1.TrustTier enum to the lowercase string the
