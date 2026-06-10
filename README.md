@@ -26,14 +26,14 @@ Open [http://localhost:3000](http://localhost:3000). The gateway listens on `:80
 web/           Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui
 gateway/       Go API gateway (Chi, JWT auth, rate limiting, validation, edge-cache)
 services/      Go microservices (user, job/contract, payment, chat)
-engines/       Rust performance-critical services (bidding, fraud, trust, search, imaging, geo)
+engines/       Rust performance-critical services (bidding, fraud, trust, underwriting, search, imaging, geo)
 proto/         Protobuf definitions (shared gRPC contracts, v1)
 database/      golang-migrate migrations + seed
 ml/            Python ML training (fraud, pricing — not deployed)
 deploy/        Docker, Kubernetes, Terraform
 ```
 
-Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC service mesh. Go owns CRUD, orchestration, Stripe, and WebSocket fan-out; Rust is reserved for sub-millisecond / high-throughput paths (bidding, fraud heuristics, trust scoring, search, image pipeline, geo). Data layer: PostgreSQL 16 + PostGIS, Redis 7, Meilisearch. The public catalog/data layer is edge-cached (the app HTML can't be — a per-request CSP nonce forces dynamic rendering); authed reads stay uncached.
+Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC service mesh. Go owns CRUD, orchestration, Stripe, and WebSocket fan-out; Rust is reserved for sub-millisecond / high-throughput / numerical paths (bidding, fraud heuristics, trust scoring, working-capital underwriting, search, image pipeline, geo). Data layer: PostgreSQL 16 + PostGIS, Redis 7, Meilisearch. The public catalog/data layer is edge-cached (the app HTML can't be — a per-request CSP nonce forces dynamic rendering); authed reads stay uncached.
 
 ## Key Features
 
@@ -65,7 +65,7 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 
 ### Provider Workspace & Financial OS
 - **Daily Workspace** — today's jobs + 7-day calendar, GPS check-in/out with duration, before/after completion photos
-- **Working Capital Advances** — risk-based APR (3–15% by credit grade) + a flat 3% origination fee, shown as a transparent line-item breakdown; auto-deducted from payouts
+- **Working Capital Advances** — sized + priced by a deterministic **Rust underwriting engine** (`engines/underwriting`, gRPC). An additive logistic scorecard + cash-flow exposure sizing + risk-banded factor pricing, underwritten from *un-forgeable, escrow-settled* signals (windowed released earnings, repayment record, dispute rate, the trust graph) — never self-reported, so fabricating a limit costs real platform fees. The line is hard-capped at `min(35% of trailing-year, $25k)`; the fee bands 1.06–1.18 on default probability. Every decision is a **pure function** (no DB/clock/RNG → reproducible), carries a SHA-256 tamper-evidence hash + signed per-feature reasons (ECOA/Reg-B explainability), enforces 18 invariants verified by a 4,000-case proptest suite, **fails closed**, and runs in **~1.4 µs**. Auto-deducted from future payouts via a risk-scaled holdback
 - **BNPL** — 3/6-installment plans; provider paid immediately, platform collects installments
 - **Instant Payout** — ledger-backed + idempotent, with eligibility (cleared funds only), verified-provider gate, and per-txn/daily caps; configurable fee (default 1.5%, $1 min)
 - **Repayment** — providers pay down advances directly (ownership-scoped, idempotent) in addition to auto-offset from payouts
