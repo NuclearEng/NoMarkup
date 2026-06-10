@@ -59,6 +59,8 @@ import type {
 } from '@/types';
 import { ADVANCE_BINDING_CAP, ADVANCE_STATUS, ADVANCE_TIER } from '@/types';
 
+import { outstandingCents } from './advance-helpers';
+
 // ────────────────────────────────────────
 // Constants
 // ────────────────────────────────────────
@@ -753,9 +755,8 @@ function AdvancesEmptyState() {
  * a manual repayment can be — the gateway 422s anything larger
  * ("Repayment amount exceeds the outstanding balance").
  */
-export function outstandingCents(advance: WorkingCapitalAdvance): number {
-  return Math.max(0, advance.advance_amount_cents + advance.fee_cents - advance.repaid_cents);
-}
+// outstandingCents moved to ./advance-helpers (a page.tsx may only export the
+// default component + framework fields; a stray named export fails `next build`).
 
 /** Statuses where a manual early repayment is allowed (still has a balance). */
 function isRepayable(status: AdvanceStatus): boolean {

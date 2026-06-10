@@ -82,9 +82,10 @@ const { useContracts } = await import('@/hooks/useContracts');
 const { useCreditLimit, useMyAdvances, useRepayAdvance, useRequestAdvance } = await import(
   '@/hooks/useWorkingCapital'
 );
-const { default: ProviderAdvancesPage, outstandingCents } = await import(
+const { default: ProviderAdvancesPage } = await import(
   '@/app/(dashboard)/provider/advances/page'
 );
+const { outstandingCents } = await import('@/app/(dashboard)/provider/advances/advance-helpers');
 
 function setHooks(opts: {
   advances?: unknown[];
