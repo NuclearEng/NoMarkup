@@ -5,22 +5,11 @@ import Link from 'next/link';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 
-import {
-  Briefcase,
-  Gavel,
-  Home,
-  MapPin,
-  MessageSquare,
-  PlusCircle,
-  Scale,
-  Search,
-  Zap,
-} from 'lucide-react';
+import { Gavel, MapPin, PlusCircle, Scale, Zap } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useAuthStore } from '@/stores/auth-store';
-import { USER_ROLE } from '@/types';
 
 import { MarketChip } from '@/components/location/MarketChip';
 
@@ -31,7 +20,6 @@ export function Header() {
   const router = useRouter();
   const { user, isAuthenticated, isHydrating, logout } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   // Legal services vertical — entry point hidden only when the flag is
   // explicitly OFF (fail-open).
   const legalEnabled = useFeatureFlag('legal_services');
@@ -170,94 +158,15 @@ export function Header() {
             <MarketChip className="w-full" />
             {isHydrating ? null : isAuthenticated ? (
               <>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-sm">
+                {/* Account utilities only — the bottom tab bar (MobileTabBar) is
+                    the single mobile navigation system, so the header menu no
+                    longer repeats the nav links. */}
+                <div className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2.5">
+                  <span className="truncate text-sm font-medium text-zinc-200">
                     {user?.displayName ?? user?.email}
                   </span>
                   <NotificationBell />
                 </div>
-
-                {/* Quick nav links */}
-                <div className="grid grid-cols-2 gap-2">
-                  <Link
-                    href={'/dashboard' as Route}
-                    className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-                    onClick={() => { setMobileMenuOpen(false); }}
-                  >
-                    <Home className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
-                    Dashboard
-                  </Link>
-                  <Link
-                    href={'/jobs/mine' as Route}
-                    className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-                    onClick={() => { setMobileMenuOpen(false); }}
-                  >
-                    <Briefcase className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
-                    My Jobs
-                  </Link>
-                  <Link
-                    href={'/jobs' as Route}
-                    className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-                    onClick={() => { setMobileMenuOpen(false); }}
-                  >
-                    <Search className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
-                    Browse Jobs
-                  </Link>
-                  <Link
-                    href={'/marketplace' as Route}
-                    className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-                    onClick={() => { setMobileMenuOpen(false); }}
-                  >
-                    <Gavel className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
-                    Marketplace
-                  </Link>
-                  <Link
-                    href={'/messages' as Route}
-                    className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-                    onClick={() => { setMobileMenuOpen(false); }}
-                  >
-                    <MessageSquare className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
-                    Messages
-                  </Link>
-                  {legalEnabled ? (
-                    <Link
-                      href={'/legal' as Route}
-                      className="flex min-h-[44px] items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-                      onClick={() => { setMobileMenuOpen(false); }}
-                    >
-                      <Scale className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
-                      Legal
-                    </Link>
-                  ) : null}
-                </div>
-
-                <Link
-                  href={'/jobs/new' as Route}
-                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[var(--brand-gold)]/10 px-3 py-2 text-sm font-semibold text-[var(--brand-gold)] transition-colors hover:bg-[var(--brand-gold)]/20"
-                  onClick={() => { setMobileMenuOpen(false); }}
-                >
-                  <PlusCircle className="h-4 w-4" aria-hidden="true" />
-                  Post a Job
-                </Link>
-
-                {isProvider ? (
-                  <Link
-                    href={'/provider' as Route}
-                    className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
-                    onClick={() => { setMobileMenuOpen(false); }}
-                  >
-                    Provider Dashboard
-                  </Link>
-                ) : null}
-
-                <Link
-                  href="/demo/auction"
-                  className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/20 hover:text-amber-300"
-                  onClick={() => { setMobileMenuOpen(false); }}
-                >
-                  <Zap className="h-3.5 w-3.5" aria-hidden="true" />
-                  Live Demo
-                </Link>
 
                 <Button
                   variant="outline"
