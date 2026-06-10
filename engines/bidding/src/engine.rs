@@ -984,6 +984,10 @@ struct JobRow {
     auction_ends_at: Option<DateTime<Utc>>,
     customer_id: Uuid,
     auction_type: String,
+    // Selected by the JobRow query for row-shape parity, but the snipe-extension
+    // logic re-reads the live count in its own atomic UPDATE (TOCTOU-safe), so it
+    // is never read off this struct. Same situation as `id` above.
+    #[allow(dead_code)]
     snipe_extension_count: i32,
 }
 
@@ -1021,6 +1025,9 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 /// Returns `Ok(())` when `amount_cents > 0`, or `BidError::InvalidAmount` otherwise.
 /// This is the same check used inside `place_bid` and `update_bid`, extracted for
 /// testability and benchmarking.
+// Part of the lib's public, unit/integration/bench-tested surface; the gRPC
+// binary inlines the equivalent check, so it is unused in the `bin` target only.
+#[allow(dead_code)]
 #[must_use]
 pub fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
     if amount_cents <= 0 {
@@ -1034,6 +1041,9 @@ pub fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
 /// Rank bids by amount ascending (lowest bid wins in a reverse auction).
 ///
 /// Returns a new `Vec<Bid>` sorted from lowest to highest `amount_cents`.
+// Lib/test/bench surface; the gRPC binary ranks via SQL `ORDER BY`, so this is
+// unused in the `bin` target only.
+#[allow(dead_code)]
 #[must_use]
 pub fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
     let mut sorted = bids.to_vec();
@@ -1044,6 +1054,9 @@ pub fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
 /// Determine whether a bid qualifies as an "offer accepted" bid.
 ///
 /// Returns `true` when the offer threshold is set and `amount_cents` is at or below it.
+// Lib/test/bench surface; the gRPC binary derives this inline in `place_bid`, so
+// this standalone helper is unused in the `bin` target only.
+#[allow(dead_code)]
 #[must_use]
 pub fn is_offer_accepted(offer_accepted_cents: Option<i64>, amount_cents: i64) -> bool {
     offer_accepted_cents.is_some_and(|offer| amount_cents <= offer)

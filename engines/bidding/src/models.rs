@@ -96,6 +96,11 @@ pub enum BidError {
     #[error("permission denied: {0}")]
     PermissionDenied(String),
 
+    // Reserved variant of the versioned BidError contract: it is exhaustively
+    // handled in the gRPC status mapper but the current anti-snipe path stops
+    // extending silently (SQL guard `snipe_extension_count < 3`) rather than
+    // erroring, so it is not yet constructed. Kept for forward compatibility.
+    #[allow(dead_code)]
     #[error("snipe extension limit reached for job {job_id}")]
     SnipeExtensionLimitReached { job_id: String },
 

@@ -3,8 +3,8 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use chrono::Utc;
 use uuid::Uuid;
 
-use nomarkup_bidding_engine::engine::{is_offer_accepted, rank_bids, validate_bid_amount};
-use nomarkup_bidding_engine::models::{Bid, BidUpdate};
+use bidding::engine::{is_offer_accepted, rank_bids, validate_bid_amount};
+use bidding::models::{Bid, BidUpdate};
 
 // ---------------------------------------------------------------------------
 // Helpers

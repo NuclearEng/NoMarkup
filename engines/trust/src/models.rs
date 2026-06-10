@@ -15,6 +15,9 @@ pub enum TrustTier {
 
 impl TrustTier {
     /// Parse from the database text representation.
+    // Lib/test surface (round-trip tested against `as_db_str`); the binary only
+    // writes tiers via `as_db_str`, so this parser is unused in the `bin` target.
+    #[allow(dead_code)]
     #[must_use]
     pub fn from_db_str(s: &str) -> Self {
         match s {
@@ -93,6 +96,9 @@ pub struct DimensionScores {
 impl DimensionScores {
     /// Compute weighted overall score.
     /// Feedback: 35%, Volume: 20%, Risk: 25%, Fraud: 20%.
+    // Lib/test/bench surface; the binary computes the composite via
+    // `scoring::composite_score`, so this convenience method is unused in `bin`.
+    #[allow(dead_code)]
     #[must_use]
     pub fn overall(&self) -> f64 {
         self.fraud.mul_add(

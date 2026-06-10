@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
-use nomarkup_fraud_engine::behavioral::{
+use fraud::behavioral::{
     BidRecord, FingerprintAttributes, IpSessionRecord, RiskThresholds, SessionInfo,
     compute_composite_risk, score_bid_patterns, score_fingerprint, score_ip_geolocation,
 };

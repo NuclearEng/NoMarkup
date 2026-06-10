@@ -151,7 +151,7 @@ async fn concurrent_forward_bids_serialize_correctly() {
             let pool = pool_arc.clone();
             let bidder = *bidder;
             let amount = 2000 + i as i64;
-            set.spawn(async move { place_forward_bid(&*pool, listing, bidder, amount).await });
+            set.spawn(async move { place_forward_bid(&pool, listing, bidder, amount).await });
         }
 
         let mut accepted = 0i64;
@@ -180,7 +180,7 @@ async fn concurrent_forward_bids_serialize_correctly() {
                 .expect("listing");
 
         assert_eq!(
-            db_count, accepted as i64,
+            db_count, accepted,
             "iter {iter}: accepted={accepted} but listing_bids row count={db_count}"
         );
         assert_eq!(

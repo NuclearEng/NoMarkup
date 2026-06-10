@@ -474,7 +474,9 @@ impl ImagePipeline {
                 // error text doesn't contain "NoSuchKey", so a brittle string match
                 // mislabelled every missing object as an S3Error -> 500 instead of a
                 // 404. is_no_such_key() is the stable, version-safe check.
-                if e.as_service_error().is_some_and(|se| se.is_no_such_key()) {
+                if e.as_service_error()
+                    .is_some_and(aws_sdk_s3::operation::get_object::GetObjectError::is_no_such_key)
+                {
                     ImagingError::NotFound(format!("object not found: {key}"))
                 } else {
                     ImagingError::S3Error(format!("GET {key}: {e}"))

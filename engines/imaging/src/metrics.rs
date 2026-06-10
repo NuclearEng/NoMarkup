@@ -5,6 +5,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 
 use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
@@ -12,16 +13,15 @@ use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
-use once_cell::sync::Lazy;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Registry, TextEncoder};
 use tokio::net::TcpListener;
 
 /// Buckets matched to the imaging SLO budget (CLAUDE.md §8 — p99 < 200ms).
 const IMAGE_BUCKETS: &[f64] = &[0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0];
 
-pub static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
+pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
-pub static IMAGE_PROCESSING_DURATION: Lazy<Histogram> = Lazy::new(|| {
+pub static IMAGE_PROCESSING_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     let h = Histogram::with_opts(
         HistogramOpts::new(
             "image_processing_duration_seconds",
@@ -36,7 +36,7 @@ pub static IMAGE_PROCESSING_DURATION: Lazy<Histogram> = Lazy::new(|| {
     h
 });
 
-pub static IMAGES_PROCESSED_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static IMAGES_PROCESSED_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     let c = IntCounter::new(
         "images_processed_total",
         "Total number of images successfully processed by the imaging pipeline.",
@@ -49,8 +49,8 @@ pub static IMAGES_PROCESSED_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 pub fn init() {
-    Lazy::force(&IMAGE_PROCESSING_DURATION);
-    Lazy::force(&IMAGES_PROCESSED_TOTAL);
+    LazyLock::force(&IMAGE_PROCESSING_DURATION);
+    LazyLock::force(&IMAGES_PROCESSED_TOTAL);
 }
 
 async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {

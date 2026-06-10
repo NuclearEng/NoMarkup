@@ -139,7 +139,7 @@ fn outliers_and_low_trust_do_not_move_estimate() {
             market_id: "mkt".into(),
             zip: "A".into(),
             cleared_price_cents: 500_000,
-            settled_at: AS_OF - 1 * 86_400,
+            settled_at: AS_OF - 86_400,
             trust_tier: 0,
             instant_match: false,
             condition: 4,

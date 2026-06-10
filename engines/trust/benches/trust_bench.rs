@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
-use nomarkup_trust_engine::models::DimensionScores;
-use nomarkup_trust_engine::scoring::{
+use trust::models::DimensionScores;
+use trust::scoring::{
     DecayConfig, FeedbackInput, FraudInput, ReviewDataPoint, RiskInput, ScoreTier, VolumeInput,
     composite_score, compute_feedback_score, compute_fraud_score, compute_risk_score,
     compute_volume_score, decay_weight, recency_weighted_average,

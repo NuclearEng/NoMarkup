@@ -41,6 +41,9 @@ impl ImageFormat {
     }
 
     /// Convert the `image` crate's output format enum.
+    // Lib/test surface; the binary's libvips encode path selects the format
+    // directly, so this `image`-crate mapping is unused in the `bin` target.
+    #[allow(dead_code)]
     #[must_use]
     pub const fn to_image_format(self) -> image::ImageFormat {
         match self {
@@ -71,7 +74,13 @@ pub struct ProcessingOptions {
     /// JPEG/WebP quality 1-100. Default: 85.
     pub quality: u8,
     pub format: ImageFormat,
+    // Plumbed through from the gRPC request and defaulted true, but the MVP
+    // resize/encode pipeline does not yet apply EXIF stripping or auto-orient,
+    // so the binary never reads these. Tracked as a follow-up; kept on the
+    // options contract so the wire shape is stable when the pipeline lands.
+    #[allow(dead_code)]
     pub strip_exif: bool,
+    #[allow(dead_code)]
     pub auto_orient: bool,
     pub generate_blur_hash: bool,
 }

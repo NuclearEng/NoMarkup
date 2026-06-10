@@ -5,6 +5,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 
 use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
@@ -12,16 +13,15 @@ use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
-use once_cell::sync::Lazy;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Registry, TextEncoder};
 use tokio::net::TcpListener;
 
 /// Buckets matched to the trust-scoring SLO budget (CLAUDE.md §8 — p99 < 5ms).
 const TRUST_BUCKETS: &[f64] = &[0.001, 0.005, 0.01, 0.05, 0.1];
 
-pub static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
+pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
-pub static TRUST_SCORE_COMPUTATION_DURATION: Lazy<Histogram> = Lazy::new(|| {
+pub static TRUST_SCORE_COMPUTATION_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     let h = Histogram::with_opts(
         HistogramOpts::new(
             "trust_score_computation_duration_seconds",
@@ -36,7 +36,7 @@ pub static TRUST_SCORE_COMPUTATION_DURATION: Lazy<Histogram> = Lazy::new(|| {
     h
 });
 
-pub static TRUST_SCORES_RECOMPUTED_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static TRUST_SCORES_RECOMPUTED_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     let c = IntCounter::new(
         "trust_scores_recomputed_total",
         "Total number of trust scores successfully recomputed and persisted.",
@@ -49,8 +49,8 @@ pub static TRUST_SCORES_RECOMPUTED_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 pub fn init() {
-    Lazy::force(&TRUST_SCORE_COMPUTATION_DURATION);
-    Lazy::force(&TRUST_SCORES_RECOMPUTED_TOTAL);
+    LazyLock::force(&TRUST_SCORE_COMPUTATION_DURATION);
+    LazyLock::force(&TRUST_SCORES_RECOMPUTED_TOTAL);
 }
 
 async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {

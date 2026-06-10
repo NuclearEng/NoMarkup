@@ -5,6 +5,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 
 use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
@@ -12,16 +13,15 @@ use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
-use once_cell::sync::Lazy;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Registry, TextEncoder};
 use tokio::net::TcpListener;
 
 /// Buckets matched to the fraud-scoring SLO budget (CLAUDE.md §8 — p99 < 50ms).
 const FRAUD_BUCKETS: &[f64] = &[0.005, 0.01, 0.05, 0.1, 0.5, 1.0];
 
-pub static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
+pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
-pub static FRAUD_SCORING_DURATION: Lazy<Histogram> = Lazy::new(|| {
+pub static FRAUD_SCORING_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     let h = Histogram::with_opts(
         HistogramOpts::new(
             "fraud_scoring_duration_seconds",
@@ -36,7 +36,7 @@ pub static FRAUD_SCORING_DURATION: Lazy<Histogram> = Lazy::new(|| {
     h
 });
 
-pub static FRAUD_ALERTS_CREATED_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static FRAUD_ALERTS_CREATED_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     let c = IntCounter::new(
         "fraud_alerts_created_total",
         "Total number of fraud alerts created (signal recorded with alert threshold reached).",
@@ -49,8 +49,8 @@ pub static FRAUD_ALERTS_CREATED_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 pub fn init() {
-    Lazy::force(&FRAUD_SCORING_DURATION);
-    Lazy::force(&FRAUD_ALERTS_CREATED_TOTAL);
+    LazyLock::force(&FRAUD_SCORING_DURATION);
+    LazyLock::force(&FRAUD_ALERTS_CREATED_TOTAL);
 }
 
 async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {

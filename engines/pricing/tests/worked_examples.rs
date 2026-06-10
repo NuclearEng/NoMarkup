@@ -41,7 +41,7 @@ fn dense_stable_cell() {
         // prices clustered ~$110–$160 in the target ZIP, recent, trusted.
         txns.push(t(
             11_000 + (i % 50) * 100,
-            (i % 90) as i64,
+            i % 90,
             "78701",
             2 + (i % 3) as u32,
         ));
@@ -64,7 +64,7 @@ fn sparse_cell_shrinks_to_parent() {
     let mut txns = Vec::new();
     // 200 metro txns (other ZIPs) clustered ~$150.
     for i in 0..200 {
-        txns.push(t(14_000 + (i % 20) * 100, (i % 120) as i64, "78704", 3));
+        txns.push(t(14_000 + (i % 20) * 100, i % 120, "78704", 3));
     }
     // 2 wildly-disagreeing txns in the target ZIP.
     txns.push(t(9_000, 5, "78701", 3));
@@ -95,7 +95,7 @@ fn sparse_cell_shrinks_to_parent() {
 fn empty_local_falls_back_to_metro() {
     let mut txns = Vec::new();
     for i in 0..50 {
-        txns.push(t(14_000 + (i % 20) * 100, (i % 100) as i64, "78704", 3));
+        txns.push(t(14_000 + (i % 20) * 100, i % 100, "78704", 3));
     }
     // Query a ZIP with no local txns.
     let fp = fair_price(&txns, &q("99999"));
@@ -113,10 +113,10 @@ fn trend_tracks_recent_prices() {
     let mut txns = Vec::new();
     // Old cheap prices (~$60, ~1y ago) and recent expensive (~$120, last month).
     for i in 0..20 {
-        txns.push(t(6_000 + (i % 5) * 100, 330 + (i % 20) as i64, "78701", 3)); // old, cheap
+        txns.push(t(6_000 + (i % 5) * 100, 330 + i % 20, "78701", 3)); // old, cheap
     }
     for i in 0..20 {
-        txns.push(t(12_000 + (i % 5) * 100, 5 + (i % 20) as i64, "78701", 3)); // recent, pricey
+        txns.push(t(12_000 + (i % 5) * 100, 5 + i % 20, "78701", 3)); // recent, pricey
     }
     let fp = fair_price(&txns, &q("78701"));
     assert!(fp.has_data);
@@ -133,7 +133,7 @@ fn trend_tracks_recent_prices() {
 #[test]
 fn deterministic() {
     let txns: Vec<Txn> = (0..40)
-        .map(|i| t(15_000 + (i % 10) * 200, (i % 80) as i64, "78701", 3))
+        .map(|i| t(15_000 + (i % 10) * 200, i % 80, "78701", 3))
         .collect();
     let a = fair_price(&txns, &q("78701"));
     let b = fair_price(&txns, &q("78701"));

@@ -392,6 +392,11 @@ pub fn composite_score(feedback: f64, volume: f64, risk: f64, fraud: f64) -> f64
 /// - MEDIUM: 26-50
 /// - HIGH:   51-75
 /// - ELITE:  76-100
+///
+// Lib/test/bench surface: the binary persists the numeric overall score and the
+// DB derives the tier label, so this Rust-side classifier is exercised only by
+// the unit tests, proptests, and benches — unused in the `bin` target.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScoreTier {
     Low,
@@ -400,6 +405,7 @@ pub enum ScoreTier {
     Elite,
 }
 
+#[allow(dead_code)]
 impl ScoreTier {
     /// Determine the tier from a 0-100 score.
     #[must_use]
