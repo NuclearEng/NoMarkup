@@ -67,9 +67,15 @@ jobs:
       - name: Install Playwright browsers
         working-directory: web
         run: npx playwright install --with-deps chromium
+      # Run ONLY the project whose browser + system deps the step above
+      # installs. The bare `playwright test` also ran webkit/firefox with no
+      # deps installed — webkit failed on every API-dependent spec (and there
+      # is no backend stack in this job; the specs are written backend-tolerant
+      # and chromium passes 68/68). Cross-browser E2E stays available locally
+      # via `npx playwright test`.
       - name: Run E2E tests
         working-directory: web
-        run: npx playwright test
+        run: npx playwright test --project=chromium
 
   # ── Proto Drift Guard ─────────────────────────────────────────
   # Ensures generated proto code matches the .proto sources. A broken or
