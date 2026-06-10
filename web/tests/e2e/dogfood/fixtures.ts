@@ -1,14 +1,29 @@
 import { expect, type Page } from '@playwright/test';
 
+import { HAS_STACK, NO_STACK_REASON } from '../helpers/stack';
+
 /* ------------------------------------------------------------------ */
 /*  Seed credentials — read from environment variables                */
 /*  Set SEED_PASSWORD in .env.local or CI environment                 */
+/*                                                                    */
+/*  IMPORTANT: this must stay lazy (called inside a test, never at    */
+/*  module scope) so importing this file can never break non-dogfood  */
+/*  suites. When SEED_PASSWORD is unset, playwright.config.ts ignores */
+/*  dogfood/** entirely (`testIgnore`), so the throw below is only    */
+/*  reachable if that gate is bypassed — fail loudly in that case.    */
 /* ------------------------------------------------------------------ */
 function getSeedPassword(): string {
   const pw = process.env['SEED_PASSWORD'];
-  if (!pw) throw new Error('SEED_PASSWORD env var is required to run dogfood tests');
+  if (!pw) {
+    throw new Error(
+      `Dogfood spec ran without a seeded stack: ${NO_STACK_REASON}. ` +
+        'Start the local stack (bin/dev) and set SEED_PASSWORD in .env.local or the CI env.',
+    );
+  }
   return pw;
 }
+
+export { HAS_STACK, NO_STACK_REASON };
 
 const EMAILS = {
   customer: 'customer@nomarkup.com',

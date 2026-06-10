@@ -19,6 +19,8 @@ import { expect, test } from '@playwright/test';
  * Playwright doesn't have inline. See `e2e-results.md` for the gap list.
  */
 
+import { HAS_STACK, NO_STACK_REASON } from './helpers/stack';
+
 const SEED_PASSWORD = process.env['SEED_PASSWORD'] ?? 'Password123!';
 
 const BUYER = { email: 'customer@nomarkup.com', password: SEED_PASSWORD };
@@ -54,6 +56,11 @@ async function loginViaAPI(
 test.describe('Goods marketplace', () => {
   test.describe('Anonymous browsing', () => {
     test('anonymous visitor sees the marketplace and a sign-in CTA on bid', async ({ page }) => {
+      // Asserts API-backed content (listing cards OR the server-rendered
+      // empty state) — backendless the page renders neither, only an error
+      // boundary, so this test inherently needs the stack.
+      test.skip(!HAS_STACK, NO_STACK_REASON);
+
       await page.goto('/marketplace');
       await page.waitForLoadState('networkidle');
 
@@ -94,12 +101,16 @@ test.describe('Goods marketplace', () => {
     });
 
     test('anonymous visitor can report a listing via the public API', async ({ page }) => {
+      // Direct request to the gateway on :8080 — connection-refused (no
+      // stack) would throw, not 4xx/5xx, so this can only run stackful.
+      test.skip(!HAS_STACK, NO_STACK_REASON);
+
       // Use the API directly to verify the endpoint we wired exists. The
       // frontend "Report this listing" button is owned by the parallel
       // frontend agent; we still want backend coverage today.
       await page.goto('/marketplace');
-      const listings = await page
-        .request.get('http://localhost:8080/api/v1/listings/00000000-0000-0000-0000-000000001000/photos')
+      const listings = await page.request
+        .get('http://localhost:8080/api/v1/listings/00000000-0000-0000-0000-000000001000/photos')
         .catch(() => null);
       // We don't strictly need the listing photos endpoint — fall through to
       // calling /report with a known seed listing UUID.
@@ -121,6 +132,10 @@ test.describe('Goods marketplace', () => {
   });
 
   test.describe('Buyer flow', () => {
+    // loginViaAPI hits the gateway on :8080 — backendless the request throws
+    // (connection refused) before its `return false` guard can fire.
+    test.skip(!HAS_STACK, NO_STACK_REASON);
+
     test('logged-in buyer can navigate marketplace and view bid UI', async ({ page }) => {
       const ok = await loginViaAPI(page, BUYER);
       test.skip(!ok, 'Live stack auth not available; skipping.');
@@ -137,8 +152,12 @@ test.describe('Goods marketplace', () => {
         await page.waitForLoadState('networkidle');
 
         // Either a bid input or a "place bid" button should be visible.
-        const bidInput = page.locator('input[name="bid"], input[type="number"][name*="amount"]').first();
-        const placeBidBtn = page.getByRole('button', { name: /place bid|increase bid|bid \$/i }).first();
+        const bidInput = page
+          .locator('input[name="bid"], input[type="number"][name*="amount"]')
+          .first();
+        const placeBidBtn = page
+          .getByRole('button', { name: /place bid|increase bid|bid \$/i })
+          .first();
         const hasInput = await bidInput.isVisible().catch(() => false);
         const hasBtn = await placeBidBtn.isVisible().catch(() => false);
         expect(hasInput || hasBtn).toBeTruthy();
@@ -159,6 +178,9 @@ test.describe('Goods marketplace', () => {
   });
 
   test.describe('Seller flow', () => {
+    // Same as Buyer flow: seed-account login via the gateway is required.
+    test.skip(!HAS_STACK, NO_STACK_REASON);
+
     test('seller can reach the new-listing wizard', async ({ page }) => {
       const ok = await loginViaAPI(page, SELLER);
       test.skip(!ok, 'Live stack auth not available; skipping.');
@@ -187,7 +209,9 @@ test.describe('Goods marketplace', () => {
 
       // Provider seed has at least 5 listings as seller — should render.
       const rows = await page.getByRole('row').count();
-      const cards = await page.locator('article, [role="article"], [data-testid="listing-card"]').count();
+      const cards = await page
+        .locator('article, [role="article"], [data-testid="listing-card"]')
+        .count();
       const hasEmpty = await page.getByText(/no listings yet|haven't listed/i).count();
       expect(rows + cards + hasEmpty).toBeGreaterThan(0);
     });
