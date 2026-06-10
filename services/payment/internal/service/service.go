@@ -8,8 +8,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	underwritingv1 "github.com/nomarkup/nomarkup/proto/underwriting/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
+
+// Underwriter sizes a provider's working-capital line via the deterministic
+// underwriting engine (Rust). Injected optionally; when absent, credit-limit
+// computation fails closed (see ComputeCreditLimit).
+type Underwriter interface {
+	Underwrite(ctx context.Context, f *underwritingv1.ProviderFeatures) (*underwritingv1.UnderwriteResponse, error)
+}
+
+// ProviderTrustSource fetches a provider's trust dimensions from the trust
+// engine — an underwriting input the provider cannot self-report.
+type ProviderTrustSource interface {
+	GetProviderTrust(ctx context.Context, providerID string) (overall, feedback, fraud float64, tier string, err error)
+}
 
 // SubscriptionWebhookHandler allows the payment service to delegate subscription
 // webhook events to the subscription service without creating a circular dependency.
@@ -38,6 +52,8 @@ type PaymentService struct {
 	installmentHook  InstallmentPaymentHandler
 	marketplaceHook  MarketplacePaymentHandler
 	webhookValidator WebhookEventValidator
+	underwriter      Underwriter
+	trust            ProviderTrustSource
 }
 
 // NewPaymentService creates a new payment service.
@@ -59,6 +75,18 @@ func (s *PaymentService) SetInstallmentPaymentHandler(h InstallmentPaymentHandle
 // SetMarketplaceHandler wires the goods-marketplace webhook delegate.
 func (s *PaymentService) SetMarketplaceHandler(h MarketplacePaymentHandler) {
 	s.marketplaceHook = h
+}
+
+// SetUnderwriter wires the deterministic underwriting engine. When set,
+// ComputeCreditLimit underwrites through it; when nil, it fails closed.
+func (s *PaymentService) SetUnderwriter(u Underwriter) {
+	s.underwriter = u
+}
+
+// SetTrustSource wires the trust-engine client used to gather underwriting
+// inputs.
+func (s *PaymentService) SetTrustSource(t ProviderTrustSource) {
+	s.trust = t
 }
 
 // CalculateFees computes the fee breakdown for a given amount.

@@ -22,6 +22,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
 
+	paymentclient "github.com/nomarkup/nomarkup/services/payment/internal/client"
 	"github.com/nomarkup/nomarkup/services/payment/internal/crypto"
 	paymentgrpc "github.com/nomarkup/nomarkup/services/payment/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/payment/internal/repository"
@@ -153,6 +154,25 @@ func main() {
 	stripeSvc := service.NewStripeService(env)
 	paymentSvc := service.NewPaymentService(repo, stripeSvc)
 	paymentSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))
+
+	// Working-capital underwriting: dial the trust + underwriting engines. Dials
+	// are lazy, so an engine being down doesn't block startup — ComputeCreditLimit
+	// fails closed (no offer) at request time if a call errors.
+	trustAddr := envOrDefault("TRUST_ENGINE_ADDR", "localhost:50057")
+	if trustClient, err := paymentclient.NewTrustClient(trustAddr); err != nil {
+		slog.Error("failed to create trust client; underwriting will fail closed", "error", err, "addr", trustAddr)
+	} else {
+		paymentSvc.SetTrustSource(trustClient)
+		defer func() { _ = trustClient.Close() }()
+	}
+	uwAddr := envOrDefault("UNDERWRITING_ENGINE_ADDR", "localhost:50060")
+	if uwClient, err := paymentclient.NewUnderwritingClient(uwAddr); err != nil {
+		slog.Error("failed to create underwriting client; underwriting will fail closed", "error", err, "addr", uwAddr)
+	} else {
+		paymentSvc.SetUnderwriter(uwClient)
+		defer func() { _ = uwClient.Close() }()
+	}
+
 	grpcServer := paymentgrpc.NewServer(paymentSvc)
 
 	// Wire up subscription service (shares same repo and stripe service).
@@ -295,4 +315,12 @@ func loggingStreamInterceptor(srv interface{}, ss grpclib.ServerStream, info *gr
 		)
 	}
 	return err
+}
+
+// envOrDefault returns the env var value or a fallback when unset/empty.
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

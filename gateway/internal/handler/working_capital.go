@@ -614,7 +614,27 @@ func (h *WorkingCapitalHandler) GetCreditLimit(w http.ResponseWriter, r *http.Re
 		"avg_job_value_cents":  resp.GetAvgJobValueCents(),
 		"on_time_rate":         resp.GetOnTimeRate(),
 		"last_computed_at":     nil,
+		// Underwriting-engine decision (deterministic, explainable, auditable).
+		"approved":                resp.GetApproved(),
+		"tier":                    resp.GetTier(),
+		"available_advance_cents": resp.GetAvailableAdvanceCents(),
+		"fee_bps":                 resp.GetFeeBps(),
+		"factor_rate":             resp.GetFactorRate(),
+		"holdback_pct":            resp.GetHoldbackPct(),
+		"binding_cap":             resp.GetBindingCap(),
+		"binding_gate":            resp.GetBindingGate(),
+		"decision_hash":           resp.GetDecisionHash(),
+		"model_version":           resp.GetModelVersion(),
 	}
+	reasons := make([]map[string]interface{}, 0, len(resp.GetReasons()))
+	for _, rr := range resp.GetReasons() {
+		reasons = append(reasons, map[string]interface{}{
+			"code":         rr.GetCode(),
+			"label":        rr.GetLabel(),
+			"contribution": rr.GetContribution(),
+		})
+	}
+	result["reasons"] = reasons
 	if resp.GetLastComputedAt() != nil {
 		result["last_computed_at"] = formatTimestamp(resp.GetLastComputedAt())
 	}

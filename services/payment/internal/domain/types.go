@@ -211,8 +211,35 @@ type CreditLimit struct {
 	TotalEarningsCents    int64
 	AvgJobValueCents      int64
 	OnTimeRate            *float64
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// Underwriting decision fields — persisted output of the Rust underwriting
+	// engine (nomarkup.underwriting.v1). These are set by the service layer from
+	// the engine's decision and stored alongside the computed features so the
+	// most recent decision is auditable and re-displayable without re-running the
+	// engine. Zero values are the safe "no decision yet" defaults.
+	Approved              bool    // engine approved this provider for an advance
+	Tier                  string  // risk/eligibility tier label (e.g. "bronze", "silver")
+	AvailableAdvanceCents int64   // advance amount the engine made available (cents)
+	FeeBps                int32   // origination fee in basis points
+	FactorRate            float64 // repayment factor rate (e.g. 1.1200)
+	HoldbackPct           int32   // percent of future payouts held back for repayment
+	BindingCap            string  // which input bound the available amount (audit/explainability)
+	DecisionHash          string  // hash of the engine's input+output for reproducibility/audit
+	ModelVersion          string  // version of the underwriting engine/model that produced the decision
+	// Transient (not persisted) — the explainable decision detail, recomputed on
+	// each ComputeCreditLimit call for display. BindingGate is the decisive reason
+	// when not approved; Reasons are the signed per-feature contributions.
+	BindingGate string                 `json:"-"`
+	Reasons     []CreditDecisionReason `json:"-"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// CreditDecisionReason is one signed, explainable contribution to an
+// underwriting decision (ECOA/Reg-B adverse-action transparency).
+type CreditDecisionReason struct {
+	Code         string
+	Label        string
+	Contribution float64
 }
 
 // AdvanceRepayment represents a single repayment deduction against an advance.
@@ -416,6 +443,12 @@ type PaymentRepository interface {
 	GetActiveAdvancesForProvider(ctx context.Context, providerID string) ([]*Advance, error)
 	GetCreditLimit(ctx context.Context, providerID string) (*CreditLimit, error)
 	UpsertCreditLimit(ctx context.Context, limit *CreditLimit) error
+
+	// Underwriting feature queries — un-forgeable, windowed inputs to the Rust
+	// underwriting engine. asOf anchors every window for deterministic, auditable
+	// feature vectors (NOT time.Now). See repository/underwriting_features.go.
+	GetUnderwritingEarnings(ctx context.Context, providerID string, asOf time.Time) (t30, t90, t365 int64, activeMonths int, err error)
+	GetProviderDisputeRate90d(ctx context.Context, providerID string, asOf time.Time) (rate float64, err error)
 
 	// Installment plan operations
 	CreateInstallmentPlan(ctx context.Context, plan *InstallmentPlan) error

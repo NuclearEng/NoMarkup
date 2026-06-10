@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   Banknote,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   CreditCard,
@@ -10,7 +11,10 @@ import {
   HelpCircle,
   Info,
   Loader2,
+  Lock,
   RefreshCw,
+  ShieldCheck,
+  Sparkles,
   TrendingUp,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -37,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useContracts } from '@/hooks/useContracts';
 import {
   useCreditLimit,
@@ -45,8 +50,14 @@ import {
   useRequestAdvance,
 } from '@/hooks/useWorkingCapital';
 import { cn, formatCents, repaymentProgress } from '@/lib/utils';
-import type { AdvanceStatus, CreditLimit, WorkingCapitalAdvance } from '@/types';
-import { ADVANCE_STATUS } from '@/types';
+import type {
+  AdvanceStatus,
+  AdvanceTier,
+  CreditDecisionReason,
+  CreditLimit,
+  WorkingCapitalAdvance,
+} from '@/types';
+import { ADVANCE_BINDING_CAP, ADVANCE_STATUS, ADVANCE_TIER } from '@/types';
 
 // ────────────────────────────────────────
 // Constants
@@ -112,6 +123,127 @@ function formatDate(dateStr: string): string {
   });
 }
 
+/**
+ * Headroom returned by the credit-limit decision. Prefers the decision-engine
+ * field (`available_advance_cents`) and falls back to the legacy `available_cents`.
+ */
+function availableFromCreditLimit(cl: CreditLimit): number {
+  return cl.available_advance_cents ?? cl.available_cents;
+}
+
+/** Whether the decision engine populated this response (vs. a legacy payload). */
+function hasDecision(cl: CreditLimit | undefined): cl is CreditLimit {
+  return cl !== undefined && cl.approved !== undefined;
+}
+
+// Tier presentation. Color is never the sole signal — every tier also carries a
+// distinct label and (where it matters) an icon, per WCAG 2.2 (never color alone).
+const TIER_META: Record<
+  AdvanceTier,
+  { label: string; badgeClass: string }
+> = {
+  [ADVANCE_TIER.INELIGIBLE]: {
+    label: 'Ineligible',
+    badgeClass: 'border-white/15 bg-white/5 text-white/60',
+  },
+  [ADVANCE_TIER.STARTER]: {
+    label: 'Starter',
+    badgeClass: 'border-sky-500/30 bg-sky-500/10 text-sky-200',
+  },
+  [ADVANCE_TIER.STANDARD]: {
+    label: 'Standard',
+    badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+  },
+  [ADVANCE_TIER.PREMIUM]: {
+    label: 'Premium',
+    badgeClass: 'border-violet-500/30 bg-violet-500/10 text-violet-200',
+  },
+  [ADVANCE_TIER.ELITE]: {
+    label: 'Elite',
+    badgeClass:
+      'border-[var(--brand-gold)]/40 bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]',
+  },
+};
+
+function tierMeta(tier: AdvanceTier | undefined) {
+  return (tier && TIER_META[tier]) ?? TIER_META[ADVANCE_TIER.STANDARD];
+}
+
+/**
+ * Human-readable fee from the repayment factor rate. factor_rate 1.085 → "8.5%".
+ * Falls back to basis points when no factor rate is present.
+ */
+function feePercentLabel(cl: CreditLimit): string | null {
+  if (typeof cl.factor_rate === 'number' && cl.factor_rate > 1) {
+    return `${((cl.factor_rate - 1) * 100).toFixed(1)}%`;
+  }
+  if (typeof cl.fee_bps === 'number') {
+    return `${(cl.fee_bps / 100).toFixed(1)}%`;
+  }
+  return null;
+}
+
+/** "Repay $X per $100 advanced", derived from the factor rate. */
+function repayPer100Label(cl: CreditLimit): string | null {
+  if (typeof cl.factor_rate === 'number' && cl.factor_rate > 1) {
+    return `$${(cl.factor_rate * 100).toFixed(2)} per $100`;
+  }
+  return null;
+}
+
+/** "How to grow your limit" copy, derived from the binding constraint. */
+function growLimitHint(cl: CreditLimit): string {
+  switch (cl.binding_cap) {
+    case ADVANCE_BINDING_CAP.ABSOLUTE_MAX:
+      return "You're at the $25k platform maximum — the highest line we offer today.";
+    case ADVANCE_BINDING_CAP.REVENUE_35PCT:
+      return 'Capped at 35% of your trailing-year earnings — complete more work to raise it.';
+    case ADVANCE_BINDING_CAP.RISK_MULTIPLE:
+      return 'Based on your risk-adjusted earnings — a stronger trust score and clean repayment history raise it.';
+    default:
+      return 'Complete more work and keep a clean repayment history to grow your available credit over time.';
+  }
+}
+
+/**
+ * Plain-language guidance for the most common negative factors, keyed by the
+ * reason `code` prefix. Generic fallback uses the engine's own `label`.
+ */
+function reasonGuidance(reason: CreditDecisionReason): string {
+  const code = reason.code.toUpperCase();
+  if (code.startsWith('DISPUTE')) {
+    return 'Resolve open disputes and keep new ones low — dispute rate weighs heavily.';
+  }
+  if (code.startsWith('TENURE') || code.startsWith('AGE')) {
+    return 'Keep completing jobs — your line grows as your track record lengthens.';
+  }
+  if (code.startsWith('VOLUME') || code.startsWith('EARNINGS') || code.startsWith('REVENUE')) {
+    return 'More completed contract value raises the ceiling on your line.';
+  }
+  if (code.startsWith('ONTIME') || code.startsWith('LATE') || code.startsWith('DELIVERY')) {
+    return 'Deliver on schedule — your on-time rate is a strong positive signal.';
+  }
+  if (code.startsWith('REPAY') || code.startsWith('DEFAULT') || code.startsWith('DELINQ')) {
+    return 'Repay advances on time — repayment history is the biggest lever you control.';
+  }
+  if (code.startsWith('TRUST')) {
+    return 'Build your trust score through verified, well-reviewed work.';
+  }
+  return reason.label;
+}
+
+/** The top negative drivers (contribution > 0 = raises risk), worst first. */
+function topNegativeReasons(
+  reasons: CreditDecisionReason[] | undefined,
+  limit: number,
+): CreditDecisionReason[] {
+  if (!reasons) return [];
+  return reasons
+    .filter((r) => r.contribution > 0)
+    .sort((a, b) => b.contribution - a.contribution)
+    .slice(0, limit);
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     if (error.message.includes('403') || error.message.includes('Forbidden')) {
@@ -131,6 +263,208 @@ function getErrorMessage(error: unknown): string {
     }
   }
   return 'Failed to request advance. Please try again.';
+}
+
+// ────────────────────────────────────────
+// AuditLine — small, explainable-decision trust footer
+// ────────────────────────────────────────
+
+function AuditLine({ modelVersion }: { modelVersion?: string }) {
+  return (
+    <div className="mt-4 flex items-center gap-1.5 text-xs text-white/35">
+      <ShieldCheck className="h-3.5 w-3.5 text-white/30" aria-hidden="true" />
+      <span>Explainable decision</span>
+      {modelVersion ? (
+        <>
+          <span aria-hidden="true">&middot;</span>
+          <span className="tabular-nums">{modelVersion}</span>
+        </>
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-white/40 hover:text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60"
+          aria-label="About this decision"
+        >
+          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+        </TooltipTrigger>
+        <TooltipContent>
+          Every credit decision is explainable and auditable. We record the exact factors and a
+          decision hash{modelVersion ? ` (model ${modelVersion})` : ''} so it can always be reviewed.
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────
+// CreditDecisionCard — rich, explainable underwriting decision
+// ────────────────────────────────────────
+
+function ApprovedDecision({ creditLimit }: { creditLimit: CreditLimit }) {
+  const available = availableFromCreditLimit(creditLimit);
+  const tier = tierMeta(creditLimit.tier);
+  const feePct = feePercentLabel(creditLimit);
+  const repayPer100 = repayPer100Label(creditLimit);
+
+  return (
+    <section
+      className="glass glass-highlight rounded-xl p-5 sm:p-6"
+      aria-labelledby="credit-decision-heading"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+          <h2 id="credit-decision-heading" className="text-sm font-medium text-white/70">
+            Your working capital line
+          </h2>
+        </div>
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold',
+            tier.badgeClass,
+          )}
+        >
+          {creditLimit.tier === ADVANCE_TIER.ELITE ? (
+            <Sparkles className="h-3 w-3" aria-hidden="true" />
+          ) : null}
+          {tier.label} tier
+        </span>
+      </div>
+
+      {/* Available credit — the primary number */}
+      <div className="mt-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-white/40">
+          Available to advance
+        </p>
+        <p className="gold-text mt-1 text-4xl font-bold tabular-nums sm:text-5xl">
+          {formatCents(available)}
+        </p>
+        <p className="mt-1.5 text-sm text-white/50 tabular-nums">
+          {formatCents(creditLimit.max_advance_cents)} total line
+          {creditLimit.total_outstanding_cents > 0
+            ? ` • ${formatCents(creditLimit.total_outstanding_cents)} outstanding`
+            : ''}
+        </p>
+      </div>
+
+      {/* Pricing + holdback terms */}
+      <dl className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
+          <dt className="text-xs text-white/40">Advance fee</dt>
+          <dd className="mt-0.5 text-sm font-semibold text-white/80 tabular-nums">
+            {feePct ? `${feePct} fee` : 'Shown at request'}
+          </dd>
+          {repayPer100 ? (
+            <p className="mt-0.5 text-xs text-white/40">Repay {repayPer100} advanced</p>
+          ) : null}
+        </div>
+        <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
+          <dt className="text-xs text-white/40">Automatic repayment</dt>
+          <dd className="mt-0.5 text-sm font-semibold text-white/80 tabular-nums">
+            {typeof creditLimit.holdback_pct === 'number'
+              ? `${String(creditLimit.holdback_pct)}% holdback`
+              : 'On each payout'}
+          </dd>
+          {typeof creditLimit.holdback_pct === 'number' ? (
+            <p className="mt-0.5 text-xs text-white/40">
+              We collect {String(creditLimit.holdback_pct)}% of each payout
+            </p>
+          ) : null}
+        </div>
+        <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
+          <dt className="text-xs text-white/40">Tier</dt>
+          <dd className="mt-0.5 text-sm font-semibold text-white/80">{tier.label}</dd>
+          <p className="mt-0.5 text-xs text-white/40">Better history unlocks higher tiers</p>
+        </div>
+      </dl>
+
+      {/* How to grow your limit */}
+      <div className="mt-4 flex items-start gap-2 rounded-lg bg-white/[0.02] p-3 text-xs text-white/50">
+        <TrendingUp
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--brand-gold)]/70"
+          aria-hidden="true"
+        />
+        <span>
+          <span className="font-medium text-white/70">How to grow your limit: </span>
+          {growLimitHint(creditLimit)}
+        </span>
+      </div>
+
+      <AuditLine modelVersion={creditLimit.model_version} />
+    </section>
+  );
+}
+
+function DeclinedDecision({ creditLimit }: { creditLimit: CreditLimit }) {
+  const blockers = topNegativeReasons(creditLimit.reasons, 3);
+
+  return (
+    <section
+      className="glass-tinted-amber rounded-xl border p-5 sm:p-6"
+      aria-labelledby="credit-decision-heading"
+      role="status"
+    >
+      <div className="flex items-center gap-2">
+        <Lock className="h-4 w-4 text-amber-300" aria-hidden="true" />
+        <h2 id="credit-decision-heading" className="text-sm font-medium text-white/80">
+          No line available yet
+        </h2>
+      </div>
+
+      <p className="mt-3 text-sm text-white/70">
+        {creditLimit.binding_gate
+          ? creditLimit.binding_gate
+          : "You're not eligible for a working-capital advance right now."}{' '}
+        This is based on your current account signals — it can change as you complete more work.
+      </p>
+
+      {blockers.length > 0 ? (
+        <div className="mt-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-white/40">
+            What&apos;s holding it back
+          </p>
+          <ul className="mt-2 space-y-2">
+            {blockers.map((reason) => (
+              <li key={reason.code} className="flex items-start gap-2 text-sm">
+                <AlertCircle
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0">
+                  <span className="font-medium text-white/80">{reason.label}</span>
+                  <span className="mt-0.5 block text-xs text-white/50">
+                    {reasonGuidance(reason)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex items-start gap-2 rounded-lg bg-white/[0.02] p-3 text-xs text-white/50">
+        <TrendingUp
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--brand-gold)]/70"
+          aria-hidden="true"
+        />
+        <span>
+          Keep completing jobs on time and repaying any balances — we re-check eligibility
+          automatically, no application needed.
+        </span>
+      </div>
+
+      <AuditLine modelVersion={creditLimit.model_version} />
+    </section>
+  );
+}
+
+function CreditDecisionCard({ creditLimit }: { creditLimit: CreditLimit }) {
+  return creditLimit.approved ? (
+    <ApprovedDecision creditLimit={creditLimit} />
+  ) : (
+    <DeclinedDecision creditLimit={creditLimit} />
+  );
 }
 
 // ────────────────────────────────────────
@@ -610,11 +944,17 @@ export default function ProviderAdvancesPage() {
 
   const awardedContracts = contractsData?.contracts ?? [];
   const totalContractValue = awardedContracts.reduce((sum, c) => sum + c.amount_cents, 0);
-  const availableCredit = creditLimitData?.available_cents ?? Math.max(
-    0,
-    Math.round(totalContractValue * MAX_CREDIT_UTILIZATION) - outstanding,
-  );
-  const maxCredit = creditLimitData?.max_advance_cents ?? Math.round(totalContractValue * MAX_CREDIT_UTILIZATION);
+  const availableCredit =
+    (creditLimitData ? availableFromCreditLimit(creditLimitData) : undefined) ??
+    Math.max(0, Math.round(totalContractValue * MAX_CREDIT_UTILIZATION) - outstanding);
+  const maxCredit =
+    creditLimitData?.max_advance_cents ??
+    Math.round(totalContractValue * MAX_CREDIT_UTILIZATION);
+
+  // Rich decision present? (vs. a legacy credit-limit payload.)
+  const decision = hasDecision(creditLimitData) ? creditLimitData : undefined;
+  // A provider with no line (declined) can't request — hide the request surface.
+  const canRequest = !decision || decision.approved === true;
 
   // Fully utilized = no available credit left. True both when outstanding has
   // reached the limit AND when there is no limit at all (maxCredit === 0). The
@@ -743,7 +1083,12 @@ export default function ProviderAdvancesPage() {
         />
       </div>
 
-      {/* Credit Limit Progress */}
+      {/* Rich, explainable underwriting decision (when the engine populated it) */}
+      {decision ? <CreditDecisionCard creditLimit={decision} /> : null}
+
+      {/* Credit Limit Progress — legacy heuristic view (no decision engine data) */}
+      {decision ? null : (
+      <>
       <div className="glass glass-highlight rounded-xl p-5">
         <div className="mb-3 flex items-center justify-between">
           <p className="text-sm font-medium text-white/70">Credit Utilization</p>
@@ -786,8 +1131,11 @@ export default function ProviderAdvancesPage() {
         outstanding={outstanding}
         availableCredit={availableCredit}
       />
+      </>
+      )}
 
-      {/* Request advance form */}
+      {/* Request advance form — hidden when the provider has no line (declined) */}
+      {canRequest ? (
       <div className="glass glass-highlight rounded-xl">
         <div className="border-b border-white/5 px-5 py-4">
           <h2 className="text-base font-semibold text-white/80">Request Advance</h2>
@@ -890,6 +1238,7 @@ export default function ProviderAdvancesPage() {
           </form>
         </div>
       </div>
+      ) : null}
 
       {/* Advances list */}
       <div className="glass glass-highlight rounded-xl">

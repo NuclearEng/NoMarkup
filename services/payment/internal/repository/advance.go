@@ -287,16 +287,25 @@ func (r *PostgresRepository) GetActiveAdvancesForProvider(ctx context.Context, p
 
 func (r *PostgresRepository) GetCreditLimit(ctx context.Context, providerID string) (*domain.CreditLimit, error) {
 	cl := &domain.CreditLimit{}
+	// factor_rate is a nullable NUMERIC; scan into a pointer so a NULL (no
+	// decision yet) maps to the domain's zero value rather than erroring.
+	var factorRate *float64
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, provider_id, max_advance_cents, total_outstanding_cents,
 		       risk_score, last_computed_at, jobs_completed,
 		       total_earnings_cents, avg_job_value_cents, on_time_rate,
+		       approved, COALESCE(tier, ''), available_advance_cents,
+		       fee_bps, factor_rate, holdback_pct,
+		       COALESCE(binding_cap, ''), COALESCE(decision_hash, ''), COALESCE(model_version, ''),
 		       created_at, updated_at
 		FROM provider_credit_limits
 		WHERE provider_id = $1`, providerID).Scan(
 		&cl.ID, &cl.ProviderID, &cl.MaxAdvanceCents, &cl.TotalOutstandingCents,
 		&cl.RiskScore, &cl.LastComputedAt, &cl.JobsCompleted,
 		&cl.TotalEarningsCents, &cl.AvgJobValueCents, &cl.OnTimeRate,
+		&cl.Approved, &cl.Tier, &cl.AvailableAdvanceCents,
+		&cl.FeeBps, &factorRate, &cl.HoldbackPct,
+		&cl.BindingCap, &cl.DecisionHash, &cl.ModelVersion,
 		&cl.CreatedAt, &cl.UpdatedAt,
 	)
 	if err != nil {
@@ -306,16 +315,29 @@ func (r *PostgresRepository) GetCreditLimit(ctx context.Context, providerID stri
 		}
 		return nil, fmt.Errorf("get credit limit: %w", err)
 	}
+	if factorRate != nil {
+		cl.FactorRate = *factorRate
+	}
 	return cl, nil
 }
 
 func (r *PostgresRepository) UpsertCreditLimit(ctx context.Context, limit *domain.CreditLimit) error {
+	// factor_rate stores NULL when no decision has set it (zero value), keeping
+	// "1.0000" (a real factor rate) distinct from "never underwritten".
+	var factorRate *float64
+	if limit.FactorRate != 0 {
+		factorRate = &limit.FactorRate
+	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO provider_credit_limits (
 			provider_id, max_advance_cents, total_outstanding_cents,
 			risk_score, last_computed_at, jobs_completed,
-			total_earnings_cents, avg_job_value_cents, on_time_rate
-		) VALUES ($1, $2, $3, $4, now(), $5, $6, $7, $8)
+			total_earnings_cents, avg_job_value_cents, on_time_rate,
+			approved, tier, available_advance_cents,
+			fee_bps, factor_rate, holdback_pct,
+			binding_cap, decision_hash, model_version
+		) VALUES ($1, $2, $3, $4, now(), $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (provider_id) DO UPDATE SET
 			max_advance_cents = EXCLUDED.max_advance_cents,
 			total_outstanding_cents = EXCLUDED.total_outstanding_cents,
@@ -324,10 +346,22 @@ func (r *PostgresRepository) UpsertCreditLimit(ctx context.Context, limit *domai
 			jobs_completed = EXCLUDED.jobs_completed,
 			total_earnings_cents = EXCLUDED.total_earnings_cents,
 			avg_job_value_cents = EXCLUDED.avg_job_value_cents,
-			on_time_rate = EXCLUDED.on_time_rate`,
+			on_time_rate = EXCLUDED.on_time_rate,
+			approved = EXCLUDED.approved,
+			tier = EXCLUDED.tier,
+			available_advance_cents = EXCLUDED.available_advance_cents,
+			fee_bps = EXCLUDED.fee_bps,
+			factor_rate = EXCLUDED.factor_rate,
+			holdback_pct = EXCLUDED.holdback_pct,
+			binding_cap = EXCLUDED.binding_cap,
+			decision_hash = EXCLUDED.decision_hash,
+			model_version = EXCLUDED.model_version`,
 		limit.ProviderID, limit.MaxAdvanceCents, limit.TotalOutstandingCents,
 		limit.RiskScore, limit.JobsCompleted,
 		limit.TotalEarningsCents, limit.AvgJobValueCents, limit.OnTimeRate,
+		limit.Approved, limit.Tier, limit.AvailableAdvanceCents,
+		limit.FeeBps, factorRate, limit.HoldbackPct,
+		limit.BindingCap, limit.DecisionHash, limit.ModelVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert credit limit: %w", err)

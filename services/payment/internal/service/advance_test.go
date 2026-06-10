@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	underwritingv1 "github.com/nomarkup/nomarkup/proto/underwriting/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -236,6 +237,11 @@ func TestPaymentService_RequestAdvance(t *testing.T) {
 			},
 		}
 		svc := newTestPaymentService(repo, nil)
+		// Engine grants an $830 line; with $800 outstanding only $30 is available,
+		// below the $500 requested → the over-credit guard must fire.
+		svc.SetUnderwriter(&mockUnderwriter{fn: func(_ context.Context, _ *underwritingv1.ProviderFeatures) (*underwritingv1.UnderwriteResponse, error) {
+			return &underwritingv1.UnderwriteResponse{Approved: true, MaxCreditCents: 83_000, AvailableCreditCents: 3_000, FactorRate: 1.1}, nil
+		}})
 
 		adv, err := svc.RequestAdvance(context.Background(), "prov-1", "contract-1", 50_000)
 		require.Error(t, err)
@@ -252,22 +258,22 @@ func TestPaymentService_ReviewAdvance(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		advanceID    string
-		reviewerID   string
-		action       string
-		reason       string
-		wantErr      bool
-		errContains  string
-		wantStatus   string
+		name          string
+		advanceID     string
+		reviewerID    string
+		action        string
+		reason        string
+		wantErr       bool
+		errContains   string
+		wantStatus    string
 		wantHasReason bool
 	}{
 		{
-			name:        "approve_happy",
-			advanceID:   "adv-1",
-			reviewerID:  "admin-1",
-			action:      "approve",
-			wantStatus:  "approved",
+			name:       "approve_happy",
+			advanceID:  "adv-1",
+			reviewerID: "admin-1",
+			action:     "approve",
+			wantStatus: "approved",
 		},
 		{
 			name:          "reject_with_reason",
@@ -279,11 +285,11 @@ func TestPaymentService_ReviewAdvance(t *testing.T) {
 			wantHasReason: true,
 		},
 		{
-			name:        "reject_without_reason",
-			advanceID:   "adv-1",
-			reviewerID:  "admin-1",
-			action:      "reject",
-			wantStatus:  "rejected",
+			name:       "reject_without_reason",
+			advanceID:  "adv-1",
+			reviewerID: "admin-1",
+			action:     "reject",
+			wantStatus: "rejected",
 		},
 		{
 			name:        "missing_advance_id",
@@ -509,64 +515,122 @@ func TestPaymentService_GetAdvance(t *testing.T) {
 func TestPaymentService_ComputeCreditLimit(t *testing.T) {
 	t.Parallel()
 
-	t.Run("zero_history_yields_zero_limit", func(t *testing.T) {
-		t.Parallel()
-		var captured *domain.CreditLimit
-		repo := &mockPaymentRepo{
+	// The underwriting MATH is exhaustively tested in the Rust engine's proptest
+	// suite. These Go tests verify the WIRING: feature-gather → engine → mapping,
+	// and the fail-closed paths.
+
+	baseRepo := func(captured **domain.CreditLimit) *mockPaymentRepo {
+		return &mockPaymentRepo{
 			listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
+				return []*domain.Payment{{ProviderPayoutCents: 500000}}, 1, nil
+			},
+			listAdvancesFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Advance, int, error) {
 				return nil, 0, nil
 			},
 			getActiveAdvancesFn: func(_ context.Context, _ string) ([]*domain.Advance, error) {
-				return nil, nil
+				return []*domain.Advance{{AdvanceAmountCents: 1000000, FeeCents: 25000, RepaidCents: 0}}, nil
 			},
 			upsertCreditLimitFn: func(_ context.Context, limit *domain.CreditLimit) error {
-				captured = limit
+				*captured = limit
 				return nil
 			},
 			getCreditLimitFn: func(_ context.Context, _ string) (*domain.CreditLimit, error) {
-				return captured, nil
+				return *captured, nil
 			},
 		}
-		svc := newTestPaymentService(repo, nil)
+	}
+
+	t.Run("maps_engine_decision", func(t *testing.T) {
+		t.Parallel()
+		var captured *domain.CreditLimit
+		svc := newTestPaymentService(baseRepo(&captured), nil)
+		svc.SetUnderwriter(&mockUnderwriter{fn: func(_ context.Context, _ *underwritingv1.ProviderFeatures) (*underwritingv1.UnderwriteResponse, error) {
+			return &underwritingv1.UnderwriteResponse{
+				Approved:             true,
+				Tier:                 underwritingv1.UnderwritingTier_UNDERWRITING_TIER_PREMIUM,
+				MaxCreditCents:       300000,
+				AvailableCreditCents: 175000,
+				FeeBps:               850,
+				FactorRate:           1.085,
+				HoldbackPct:          10,
+				RiskScore:            0.07,
+				BindingCap:           "risk_multiple",
+				DecisionHash:         "abc123",
+				ModelVersion:         "uw-v1.0.0",
+				Reasons: []*underwritingv1.DecisionReason{
+					{Code: "REPAYMENT", Label: "On-time repayment history", Contribution: -1.04},
+				},
+			}, nil
+		}})
 
 		limit, err := svc.ComputeCreditLimit(context.Background(), "prov-1")
 		require.NoError(t, err)
-		assert.Equal(t, int64(0), limit.MaxAdvanceCents)
-		assert.Equal(t, int64(0), limit.TotalEarningsCents)
-		assert.Equal(t, 0, limit.JobsCompleted)
-		// No history → max risk score
-		assert.InDelta(t, 100.0, limit.RiskScore, 0.001)
+		assert.True(t, limit.Approved)
+		assert.Equal(t, "premium", limit.Tier)
+		assert.Equal(t, int64(300000), limit.MaxAdvanceCents)
+		assert.Equal(t, int64(175000), limit.AvailableAdvanceCents)
+		assert.Equal(t, int32(850), limit.FeeBps)
+		assert.InDelta(t, 1.085, limit.FactorRate, 0.0001)
+		assert.Equal(t, int32(10), limit.HoldbackPct)
+		assert.InDelta(t, 0.07, limit.RiskScore, 0.0001)
+		assert.Equal(t, "risk_multiple", limit.BindingCap)
+		assert.Equal(t, "abc123", limit.DecisionHash)
+		assert.Equal(t, "uw-v1.0.0", limit.ModelVersion)
+		require.Len(t, limit.Reasons, 1)
+		assert.Equal(t, "REPAYMENT", limit.Reasons[0].Code)
 	})
 
-	t.Run("max_advance_capped_at_25k", func(t *testing.T) {
+	t.Run("gathers_outstanding_and_trust_features", func(t *testing.T) {
 		t.Parallel()
-		// Build 100 payments of $10k each → $1M total, $1M/6 ≈ $166k/month,
-		// half of that = $83k → should cap at $25k.
-		payments := make([]*domain.Payment, 100)
-		for i := range payments {
-			payments[i] = &domain.Payment{ProviderPayoutCents: 1000000}
-		}
 		var captured *domain.CreditLimit
-		repo := &mockPaymentRepo{
-			listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
-				return payments, len(payments), nil
-			},
-			getActiveAdvancesFn: func(_ context.Context, _ string) ([]*domain.Advance, error) {
-				return nil, nil
-			},
-			upsertCreditLimitFn: func(_ context.Context, limit *domain.CreditLimit) error {
-				captured = limit
-				return nil
-			},
-			getCreditLimitFn: func(_ context.Context, _ string) (*domain.CreditLimit, error) {
-				return captured, nil
-			},
-		}
-		svc := newTestPaymentService(repo, nil)
+		var gotFeatures *underwritingv1.ProviderFeatures
+		svc := newTestPaymentService(baseRepo(&captured), nil)
+		svc.SetTrustSource(&mockTrustSource{fn: func(_ context.Context, _ string) (float64, float64, float64, string, error) {
+			return 0.8, 0.81, 0.99, "trusted", nil
+		}})
+		svc.SetUnderwriter(&mockUnderwriter{fn: func(_ context.Context, f *underwritingv1.ProviderFeatures) (*underwritingv1.UnderwriteResponse, error) {
+			gotFeatures = f
+			return &underwritingv1.UnderwriteResponse{Approved: true, MaxCreditCents: 100000, AvailableCreditCents: 100000, FactorRate: 1.1}, nil
+		}})
+
+		_, err := svc.ComputeCreditLimit(context.Background(), "prov-1")
+		require.NoError(t, err)
+		require.NotNil(t, gotFeatures)
+		// Outstanding = principal+fee-repaid = 1_025_000, sourced server-side.
+		assert.Equal(t, int64(1025000), gotFeatures.OutstandingAdvanceCents)
+		// Trust dimensions flow from the trust source.
+		assert.InDelta(t, 0.8, gotFeatures.TrustOverall, 0.0001)
+		assert.InDelta(t, 0.99, gotFeatures.TrustFraud, 0.0001)
+		assert.Equal(t, "trusted", gotFeatures.TrustTier)
+	})
+
+	t.Run("fail_closed_without_engine", func(t *testing.T) {
+		t.Parallel()
+		var captured *domain.CreditLimit
+		// Construct directly so NO underwriter/trust is wired.
+		svc := NewPaymentService(baseRepo(&captured), &StripeService{devMode: true})
+
 		limit, err := svc.ComputeCreditLimit(context.Background(), "prov-1")
 		require.NoError(t, err)
-		assert.Equal(t, int64(maxCreditCents), limit.MaxAdvanceCents,
-			"max advance should be capped at $25,000")
+		assert.False(t, limit.Approved)
+		assert.Equal(t, "ineligible", limit.Tier)
+		assert.Equal(t, int64(0), limit.MaxAdvanceCents)
+		assert.Contains(t, limit.BindingGate, "UNAVAILABLE")
+	})
+
+	t.Run("fail_closed_on_trust_error", func(t *testing.T) {
+		t.Parallel()
+		var captured *domain.CreditLimit
+		svc := newTestPaymentService(baseRepo(&captured), nil)
+		svc.SetTrustSource(&mockTrustSource{fn: func(_ context.Context, _ string) (float64, float64, float64, string, error) {
+			return 0, 0, 0, "", errors.New("trust engine down")
+		}})
+
+		limit, err := svc.ComputeCreditLimit(context.Background(), "prov-1")
+		require.NoError(t, err)
+		assert.False(t, limit.Approved)
+		assert.Equal(t, int64(0), limit.MaxAdvanceCents)
+		assert.Contains(t, limit.BindingGate, "UNAVAILABLE")
 	})
 
 	t.Run("missing_provider_id", func(t *testing.T) {
@@ -575,39 +639,5 @@ func TestPaymentService_ComputeCreditLimit(t *testing.T) {
 		_, err := svc.ComputeCreditLimit(context.Background(), "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "provider_id is required")
-	})
-
-	t.Run("outstanding_advances_subtract_from_available", func(t *testing.T) {
-		t.Parallel()
-		// 60 payments × $10k → $600k earnings, $100k/month, max advance = $50k → capped at $25k.
-		// Outstanding $10k → available should be effectively reduced (but available isn't
-		// returned directly; we verify TotalOutstandingCents is set on the response).
-		payments := make([]*domain.Payment, 60)
-		for i := range payments {
-			payments[i] = &domain.Payment{ProviderPayoutCents: 1000000}
-		}
-		var captured *domain.CreditLimit
-		repo := &mockPaymentRepo{
-			listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
-				return payments, len(payments), nil
-			},
-			getActiveAdvancesFn: func(_ context.Context, _ string) ([]*domain.Advance, error) {
-				return []*domain.Advance{
-					{AdvanceAmountCents: 1000000, FeeCents: 25000, RepaidCents: 0},
-				}, nil
-			},
-			upsertCreditLimitFn: func(_ context.Context, limit *domain.CreditLimit) error {
-				captured = limit
-				return nil
-			},
-			getCreditLimitFn: func(_ context.Context, _ string) (*domain.CreditLimit, error) {
-				return captured, nil
-			},
-		}
-		svc := newTestPaymentService(repo, nil)
-		limit, err := svc.ComputeCreditLimit(context.Background(), "prov-1")
-		require.NoError(t, err)
-		assert.Equal(t, int64(1025000), limit.TotalOutstandingCents,
-			"outstanding should be principal + fee - repaid")
 	})
 }

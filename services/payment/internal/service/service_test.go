@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	underwritingv1 "github.com/nomarkup/nomarkup/proto/underwriting/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,17 +15,17 @@ import (
 // --- Mock Payment Repository ---
 
 type mockPaymentRepo struct {
-	createPaymentFn       func(ctx context.Context, payment *domain.Payment) error
-	getPaymentFn          func(ctx context.Context, id string) (*domain.Payment, error)
-	updatePaymentStatusFn func(ctx context.Context, id string, status string) error
-	listPaymentsFn        func(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error)
-	getFeeConfigFn        func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
-	getDefaultFeeConfigFn func(ctx context.Context) (*domain.FeeConfig, error)
-	findByStripePIFn      func(ctx context.Context, paymentIntentID string) (*domain.Payment, error)
-	updateStripeFieldsFn  func(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
-	updateRefundFn        func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
-	getStripeAccountIDFn         func(ctx context.Context, userID string) (string, error)
-	setStripeAccountIDFn         func(ctx context.Context, userID string, stripeAccountID string) error
+	createPaymentFn               func(ctx context.Context, payment *domain.Payment) error
+	getPaymentFn                  func(ctx context.Context, id string) (*domain.Payment, error)
+	updatePaymentStatusFn         func(ctx context.Context, id string, status string) error
+	listPaymentsFn                func(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error)
+	getFeeConfigFn                func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
+	getDefaultFeeConfigFn         func(ctx context.Context) (*domain.FeeConfig, error)
+	findByStripePIFn              func(ctx context.Context, paymentIntentID string) (*domain.Payment, error)
+	updateStripeFieldsFn          func(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
+	updateRefundFn                func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
+	getStripeAccountIDFn          func(ctx context.Context, userID string) (string, error)
+	setStripeAccountIDFn          func(ctx context.Context, userID string, stripeAccountID string) error
 	setStripeOnboardingCompleteFn func(ctx context.Context, stripeAccountID string, complete bool) error
 	// Expense methods
 	createExpenseFn func(ctx context.Context, expense *domain.Expense) error
@@ -56,16 +57,16 @@ type mockPaymentRepo struct {
 	adminGetPaymentDetailsFn func(ctx context.Context, paymentID string) (*domain.Payment, error)
 	getRevenueReportFn       func(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*domain.RevenueReport, error)
 	// Installment methods
-	createInstallmentPlanFn             func(ctx context.Context, plan *domain.InstallmentPlan) error
-	getInstallmentPlanFn                func(ctx context.Context, planID string) (*domain.InstallmentPlan, error)
+	createInstallmentPlanFn               func(ctx context.Context, plan *domain.InstallmentPlan) error
+	getInstallmentPlanFn                  func(ctx context.Context, planID string) (*domain.InstallmentPlan, error)
 	hasActiveInstallmentPlanForContractFn func(ctx context.Context, contractID string) (bool, error)
-	listInstallmentPlansFn              func(ctx context.Context, userID, statusFilter string, page, pageSize int) ([]*domain.InstallmentPlan, int, error)
-	createScheduledInstallmentsFn       func(ctx context.Context, installments []domain.ScheduledInstallment) error
-	getDueInstallmentsFn                func(ctx context.Context, now time.Time) ([]domain.ScheduledInstallment, error)
-	updateScheduledInstallmentStatusFn  func(ctx context.Context, instID, status string, piID *string) error
-	updateInstallmentPlanStatusFn       func(ctx context.Context, planID, status string) error
-	updateInstallmentPlanProviderPaidFn func(ctx context.Context, planID, transferID string) error
-	getScheduledInstallmentsForPlanFn   func(ctx context.Context, planID string) ([]domain.ScheduledInstallment, error)
+	listInstallmentPlansFn                func(ctx context.Context, userID, statusFilter string, page, pageSize int) ([]*domain.InstallmentPlan, int, error)
+	createScheduledInstallmentsFn         func(ctx context.Context, installments []domain.ScheduledInstallment) error
+	getDueInstallmentsFn                  func(ctx context.Context, now time.Time) ([]domain.ScheduledInstallment, error)
+	updateScheduledInstallmentStatusFn    func(ctx context.Context, instID, status string, piID *string) error
+	updateInstallmentPlanStatusFn         func(ctx context.Context, planID, status string) error
+	updateInstallmentPlanProviderPaidFn   func(ctx context.Context, planID, transferID string) error
+	getScheduledInstallmentsForPlanFn     func(ctx context.Context, planID string) ([]domain.ScheduledInstallment, error)
 	// Stripe event dedup methods.
 	recordStripeEventStartFn   func(ctx context.Context, eventID, eventType string) (bool, error)
 	markStripeEventProcessedFn func(ctx context.Context, eventID string) error
@@ -286,6 +287,14 @@ func (m *mockPaymentRepo) UpsertCreditLimit(ctx context.Context, limit *domain.C
 	return nil
 }
 
+// Underwriting feature-gathering stubs (satisfy the interface).
+func (m *mockPaymentRepo) GetUnderwritingEarnings(ctx context.Context, providerID string, asOf time.Time) (t30, t90, t365 int64, activeMonths int, err error) {
+	return 0, 0, 0, 0, nil
+}
+func (m *mockPaymentRepo) GetProviderDisputeRate90d(ctx context.Context, providerID string, asOf time.Time) (float64, error) {
+	return 0, nil
+}
+
 // Tax-form stubs (satisfy interface — hookable via fn fields).
 func (m *mockPaymentRepo) CreateTaxForm(ctx context.Context, tf *domain.TaxForm) error {
 	if m.createTaxFormFn != nil {
@@ -398,7 +407,57 @@ func newTestPaymentService(repo *mockPaymentRepo, stripe *mockStripeService) *Pa
 	// Since tests mock at the repo level and StripeService is a concrete struct,
 	// we'll create a dev-mode StripeService which provides stubs.
 	ss := &StripeService{devMode: true}
-	return NewPaymentService(repo, ss)
+	svc := NewPaymentService(repo, ss)
+	// Wire a healthy default underwriter + trust source so advance-flow tests
+	// (which only need the available-credit guard to clear) work. Tests that
+	// exercise specific underwriting outcomes override these.
+	svc.SetUnderwriter(healthyUnderwriter())
+	svc.SetTrustSource(healthyTrust())
+	return svc
+}
+
+// mockUnderwriter / mockTrustSource let tests control the underwriting decision
+// without standing up the Rust engine.
+type mockUnderwriter struct {
+	fn func(ctx context.Context, f *underwritingv1.ProviderFeatures) (*underwritingv1.UnderwriteResponse, error)
+}
+
+func (m *mockUnderwriter) Underwrite(ctx context.Context, f *underwritingv1.ProviderFeatures) (*underwritingv1.UnderwriteResponse, error) {
+	return m.fn(ctx, f)
+}
+
+type mockTrustSource struct {
+	fn func(ctx context.Context, providerID string) (overall, feedback, fraud float64, tier string, err error)
+}
+
+func (m *mockTrustSource) GetProviderTrust(ctx context.Context, providerID string) (float64, float64, float64, string, error) {
+	return m.fn(ctx, providerID)
+}
+
+// healthyUnderwriter approves a generous line — used by advance-flow tests that
+// only need the available-credit guard to pass.
+func healthyUnderwriter() *mockUnderwriter {
+	return &mockUnderwriter{fn: func(_ context.Context, _ *underwritingv1.ProviderFeatures) (*underwritingv1.UnderwriteResponse, error) {
+		return &underwritingv1.UnderwriteResponse{
+			Approved:             true,
+			Tier:                 underwritingv1.UnderwritingTier_UNDERWRITING_TIER_ELITE,
+			MaxCreditCents:       2_500_000,
+			AvailableCreditCents: 2_500_000,
+			FeeBps:               650,
+			FactorRate:           1.065,
+			HoldbackPct:          8,
+			RiskScore:            0.02,
+			BindingCap:           "absolute_max",
+			DecisionHash:         "testhash",
+			ModelVersion:         "uw-test",
+		}, nil
+	}}
+}
+
+func healthyTrust() *mockTrustSource {
+	return &mockTrustSource{fn: func(_ context.Context, _ string) (float64, float64, float64, string, error) {
+		return 0.95, 0.95, 1.0, "top_rated", nil
+	}}
 }
 
 // --- CalculateFees tests ---
@@ -519,7 +578,7 @@ func TestPaymentService_CalculateFees(t *testing.T) {
 			}(),
 			wantPlatformFee:    5000,
 			wantGuaranteeFee:   2000,
-			wantLeadGenFee:     3000, // capped
+			wantLeadGenFee:     3000,  // capped
 			wantProviderPayout: 90000, // 100000 - 5000 - 2000 - 3000
 		},
 		{
@@ -1212,9 +1271,9 @@ func TestPaymentService_GetFeeConfig(t *testing.T) {
 			// Must succeed with the standard default config (5%), not error —
 			// otherwise the admin fee-config read 500s on a predictable
 			// empty-state.
-			name:          "nil_category_no_default_row_returns_standard_default",
-			categoryID:    nil,
-			defaultErr:    domain.ErrFeeConfigNotFound,
+			name:           "nil_category_no_default_row_returns_standard_default",
+			categoryID:     nil,
+			defaultErr:     domain.ErrFeeConfigNotFound,
 			wantPercentage: domain.DefaultFeeConfig().FeePercentage,
 		},
 		{

@@ -643,6 +643,14 @@ message GetCreditLimitRequest {
   string provider_id = 1;
 }
 
+// One explainable, signed contribution to the underwriting decision (ECOA/Reg-B
+// adverse-action transparency). + raises risk, − lowers it.
+message CreditDecisionReason {
+  string code = 1;
+  string label = 2;
+  double contribution = 3;
+}
+
 message GetCreditLimitResponse {
   string provider_id = 1;
   int64 max_advance_cents = 2;
@@ -654,6 +662,18 @@ message GetCreditLimitResponse {
   int64 avg_job_value_cents = 8;
   double on_time_rate = 9;
   google.protobuf.Timestamp last_computed_at = 10;
+
+  // Underwriting-engine decision (deterministic, explainable, tamper-evident).
+  bool approved = 11;
+  string tier = 12;            // ineligible|starter|standard|premium|elite
+  int32 fee_bps = 13;          // advance fee in basis points (600..1800)
+  double factor_rate = 14;     // 1.06..1.18
+  int32 holdback_pct = 15;     // % of each future payout auto-collected (8..20)
+  string binding_cap = 16;     // absolute_max|revenue_35pct|risk_multiple
+  string binding_gate = 17;    // decisive reason when not approved
+  repeated CreditDecisionReason reasons = 18;
+  string decision_hash = 19;   // SHA-256 over (features||decision||model_version)
+  string model_version = 20;
 }
 
 // ============================================================

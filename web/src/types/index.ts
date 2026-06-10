@@ -1630,11 +1630,76 @@ export interface WorkingCapitalAdvance {
   created_at: string;
 }
 
+/** Underwriting tier returned by the credit-limit decision engine. */
+export const ADVANCE_TIER = {
+  INELIGIBLE: 'ineligible',
+  STARTER: 'starter',
+  STANDARD: 'standard',
+  PREMIUM: 'premium',
+  ELITE: 'elite',
+} as const;
+export type AdvanceTier = (typeof ADVANCE_TIER)[keyof typeof ADVANCE_TIER];
+
+/** Why the credit line lands where it does (the binding constraint). */
+export const ADVANCE_BINDING_CAP = {
+  ABSOLUTE_MAX: 'absolute_max',
+  REVENUE_35PCT: 'revenue_35pct',
+  RISK_MULTIPLE: 'risk_multiple',
+} as const;
+export type AdvanceBindingCap = (typeof ADVANCE_BINDING_CAP)[keyof typeof ADVANCE_BINDING_CAP];
+
+/**
+ * A single signed contributor to the underwriting decision. `contribution` is
+ * signed: positive raises risk (hurts the line), negative lowers it (helps).
+ */
+export interface CreditDecisionReason {
+  code: string;
+  label: string;
+  contribution: number;
+}
+
 export interface CreditLimit {
   max_advance_cents: number;
   total_outstanding_cents: number;
+  /**
+   * Legacy field name for headroom. The new decision engine returns
+   * `available_advance_cents`; older gateways return `available_cents`.
+   * Read both with a fallback.
+   */
   available_cents: number;
+  /**
+   * Probability-of-default-like score, 0..1, higher = riskier. (Older
+   * responses sent an unbounded/0..100 score; the page only renders the
+   * derived tier/fee, so the raw value is not surfaced directly.)
+   */
   risk_score: number;
+
+  // ── Decision-engine fields (additive; optional so legacy responses parse) ──
+  approved?: boolean;
+  tier?: AdvanceTier;
+  /** Preferred headroom field from the decision engine. */
+  available_advance_cents?: number;
+  /** Advance fee in basis points (600..1800). */
+  fee_bps?: number;
+  /** Repayment multiplier on principal (1.06..1.18). */
+  factor_rate?: number;
+  /** Percent of each future payout auto-collected to repay (8..20). */
+  holdback_pct?: number;
+  /** Which constraint is binding the limit. */
+  binding_cap?: AdvanceBindingCap;
+  /** When declined, the decisive reason in plain language. */
+  binding_gate?: string;
+  /** Signed explainability factors (+ raises risk, − lowers it). */
+  reasons?: CreditDecisionReason[];
+  /** Stable hash of the decision inputs/outputs for audit. */
+  decision_hash?: string;
+  /** Underwriting model version, e.g. "uw-2026.06.1". */
+  model_version?: string;
+
+  // ── Underwriting inputs the engine may echo back (optional). ──
+  jobs_completed?: number;
+  total_earnings_cents?: number;
+  on_time_rate?: number | null;
 }
 
 export interface AdvancesResponse {

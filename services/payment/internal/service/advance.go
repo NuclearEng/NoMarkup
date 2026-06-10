@@ -8,8 +8,10 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
+	underwritingv1 "github.com/nomarkup/nomarkup/proto/underwriting/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
@@ -174,7 +176,8 @@ func (s *PaymentService) providerCreditScore(ctx context.Context, providerID str
 // advanceFeeAPR is the annual percentage rate charged on working capital
 // advances (3% APR). Simple interest, prorated over the expected term (not
 // compounded):
-//   fee = amount × APR × (termDays / 365)
+//
+//	fee = amount × APR × (termDays / 365)
 const advanceFeeAPR = 0.03
 
 // defaultAdvanceTermDays is the assumed time-to-repayment when the contract
@@ -395,108 +398,228 @@ func (s *PaymentService) DisburseAdvance(ctx context.Context, advanceID string, 
 	return updated, transferID, nil
 }
 
-// ComputeCreditLimit calculates and persists a provider's working capital credit limit.
+// ComputeCreditLimit underwrites and persists a provider's working-capital
+// credit limit via the deterministic underwriting engine (nomarkup.underwriting.v1).
+//
+// All underwriting inputs are gathered server-side from un-forgeable, escrow-
+// SETTLED data (released earnings windows, repayment record, dispute rate, the
+// trust graph) — the provider self-reports none of them. The engine is a pure,
+// deterministic function with hard invariants and a tamper-evidence hash; this
+// method only gathers features and persists the decision.
+//
+// Fail-closed: if the engine or trust source is unavailable, we surface a
+// no-offer decision (never a borrower-facing 500) and log for the operator.
 func (s *PaymentService) ComputeCreditLimit(ctx context.Context, providerID string) (*domain.CreditLimit, error) {
 	if providerID == "" {
 		return nil, fmt.Errorf("compute credit limit: provider_id is required")
 	}
 
-	// Query provider's payment history for completed jobs.
+	// Lifetime settled earnings (display) + outstanding exposure + repayment
+	// record — all from our own ledgers.
 	payments, _, err := s.repo.ListPayments(ctx, providerID, "released", 1, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("compute credit limit list payments: %w", err)
 	}
-
 	jobsCompleted := len(payments)
 	var totalEarningsCents int64
 	for _, p := range payments {
 		totalEarningsCents += p.ProviderPayoutCents
 	}
-
 	var avgJobValueCents int64
 	if jobsCompleted > 0 {
 		avgJobValueCents = totalEarningsCents / int64(jobsCompleted)
 	}
 
-	// Estimate average monthly earnings over last 6 months.
-	// Use total earnings / 6 as a rough estimate.
-	avgMonthlyEarnings := totalEarningsCents / 6
-	if avgMonthlyEarnings < 0 {
-		avgMonthlyEarnings = 0
-	}
-
-	// Max advance = min(50% of avg monthly earnings, $25k cap).
-	maxAdvance := avgMonthlyEarnings / 2
-	if maxAdvance > maxCreditCents {
-		maxAdvance = maxCreditCents
-	}
-
-	// Get total outstanding advances.
 	activeAdvances, err := s.repo.GetActiveAdvancesForProvider(ctx, providerID)
 	if err != nil {
 		return nil, fmt.Errorf("compute credit limit get active advances: %w", err)
 	}
-
 	var totalOutstanding int64
 	for _, adv := range activeAdvances {
-		remaining := (adv.AdvanceAmountCents + adv.FeeCents) - adv.RepaidCents
-		if remaining > 0 {
+		if remaining := (adv.AdvanceAmountCents + adv.FeeCents) - adv.RepaidCents; remaining > 0 {
 			totalOutstanding += remaining
 		}
 	}
 
-	// Subtract outstanding from max advance for available amount.
-	availableAdvance := maxAdvance - totalOutstanding
-	if availableAdvance < 0 {
-		availableAdvance = 0
-	}
-
-	// Simple risk score: higher completion count = lower risk.
-	riskScore := math.Max(0, 100.0-float64(jobsCompleted)*5.0)
-	if riskScore < 0 {
-		riskScore = 0
-	}
-
-	// Repayment history → on-time rate, a key input to the business credit
-	// score surfaced on the credit-limit response (and used for pricing).
 	allAdvances, _, err := s.repo.ListAdvances(ctx, providerID, "", 1, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("compute credit limit list advances: %w", err)
 	}
 	onTimeRate := onTimeRateFromAdvances(allAdvances)
+	onTimeVal := 0.5 // neutral prior; the engine re-applies it for thin-file
+	if onTimeRate != nil {
+		onTimeVal = *onTimeRate
+	}
 
-	limit := &domain.CreditLimit{
+	// The display/feature fields common to every return path below.
+	base := &domain.CreditLimit{
 		ProviderID:            providerID,
-		MaxAdvanceCents:       maxAdvance,
 		TotalOutstandingCents: totalOutstanding,
-		RiskScore:             riskScore,
 		JobsCompleted:         jobsCompleted,
 		TotalEarningsCents:    totalEarningsCents,
 		AvgJobValueCents:      avgJobValueCents,
 		OnTimeRate:            onTimeRate,
 	}
 
+	// Fail closed when the engine/trust client isn't wired (config error).
+	if s.underwriter == nil || s.trust == nil {
+		slog.Error("underwriting unavailable: engine/trust client not wired", "provider_id", providerID)
+		return s.persistCreditLimit(ctx, failClosed(base, "Underwriting is temporarily unavailable. Please try again shortly."))
+	}
+
+	asOf := time.Now().UTC()
+
+	// Un-forgeable settled-earnings windows + activity + dispute rate.
+	t30, t90, t365, activeMonths, err := s.repo.GetUnderwritingEarnings(ctx, providerID, asOf)
+	if err != nil {
+		return nil, fmt.Errorf("compute credit limit earnings: %w", err)
+	}
+	disputeRate, err := s.repo.GetProviderDisputeRate90d(ctx, providerID, asOf)
+	if err != nil {
+		return nil, fmt.Errorf("compute credit limit dispute rate: %w", err)
+	}
+
+	// Trust dimensions from the trust engine (fail closed on error).
+	trustOverall, trustFeedback, trustFraud, trustTier, err := s.trust.GetProviderTrust(ctx, providerID)
+	if err != nil {
+		slog.Error("underwriting: trust fetch failed; failing closed", "provider_id", providerID, "error", err)
+		return s.persistCreditLimit(ctx, failClosed(base, "Could not verify your trust signals. Please try again shortly."))
+	}
+
+	// Account-tenure proxy derived from settled active months (un-gameable),
+	// pending a dedicated account-age source; 6+ active months clears the
+	// <180-day new-account penalty.
+	tenureDays := int32(activeMonths) * 30
+
+	features := &underwritingv1.ProviderFeatures{
+		ProviderId:                 providerID,
+		TrustOverall:               trustOverall,
+		TrustFeedback:              trustFeedback,
+		TrustFraud:                 trustFraud,
+		TrustTier:                  trustTier,
+		Trailing_30DEarningsCents:  t30,
+		Trailing_90DEarningsCents:  t90,
+		Trailing_365DEarningsCents: t365,
+		CompletedJobs_90D:          0, // not used by the model; 90d count not gathered
+		ActiveMonths:               int32(activeMonths),
+		OnTimeRepaymentRate:        onTimeVal,
+		PriorAdvancesCount:         int32(len(allAdvances)),
+		DisputeRate_90D:            disputeRate,
+		AccountTenureDays:          tenureDays,
+		OutstandingAdvanceCents:    totalOutstanding,
+		AsOfUnix:                   asOf.Unix(),
+	}
+
+	decision, err := s.underwriter.Underwrite(ctx, features)
+	if err != nil {
+		slog.Error("underwriting: engine call failed; failing closed", "provider_id", providerID, "error", err)
+		return s.persistCreditLimit(ctx, failClosed(base, "Underwriting is temporarily unavailable. Please try again shortly."))
+	}
+
+	limit := base
+	limit.MaxAdvanceCents = decision.GetMaxCreditCents()
+	limit.RiskScore = decision.GetRiskScore()
+	limit.Approved = decision.GetApproved()
+	limit.Tier = underwritingTierString(decision.GetTier())
+	limit.AvailableAdvanceCents = decision.GetAvailableCreditCents()
+	limit.FeeBps = decision.GetFeeBps()
+	limit.FactorRate = decision.GetFactorRate()
+	limit.HoldbackPct = decision.GetHoldbackPct()
+	limit.BindingCap = decision.GetBindingCap()
+	limit.DecisionHash = decision.GetDecisionHash()
+	limit.ModelVersion = decision.GetModelVersion()
+	limit.BindingGate = decision.GetBindingGate()
+	limit.Reasons = protoReasonsToDomain(decision.GetReasons())
+
+	slog.Info("credit limit underwritten",
+		"provider_id", providerID,
+		"approved", limit.Approved,
+		"tier", limit.Tier,
+		"max_advance_cents", limit.MaxAdvanceCents,
+		"risk_score", limit.RiskScore,
+		"model_version", limit.ModelVersion,
+		"decision_hash", limit.DecisionHash,
+	)
+
+	return s.persistCreditLimit(ctx, limit)
+}
+
+// failClosed marks a credit limit as a no-offer decision with a borrower-safe
+// reason (used when underwriting inputs can't be gathered).
+func failClosed(l *domain.CreditLimit, msg string) *domain.CreditLimit {
+	l.Approved = false
+	l.Tier = "ineligible"
+	l.MaxAdvanceCents = 0
+	l.AvailableAdvanceCents = 0
+	l.BindingGate = "UNAVAILABLE: " + msg
+	return l
+}
+
+// persistCreditLimit upserts the decision, re-fetches the persisted row (for ID
+// + timestamps), and overlays the transient explainability fields that aren't
+// stored.
+func (s *PaymentService) persistCreditLimit(ctx context.Context, limit *domain.CreditLimit) (*domain.CreditLimit, error) {
 	if err := s.repo.UpsertCreditLimit(ctx, limit); err != nil {
 		return nil, fmt.Errorf("compute credit limit upsert: %w", err)
 	}
-
-	// Re-fetch to get computed timestamps and ID.
-	persisted, err := s.repo.GetCreditLimit(ctx, providerID)
+	persisted, err := s.repo.GetCreditLimit(ctx, limit.ProviderID)
 	if err != nil {
 		return nil, fmt.Errorf("compute credit limit refetch: %w", err)
 	}
-
-	// Merge the available advance into the response (it's derived, not stored).
-	persisted.MaxAdvanceCents = maxAdvance
-	persisted.TotalOutstandingCents = totalOutstanding
-
-	slog.Info("credit limit computed",
-		"provider_id", providerID,
-		"max_advance_cents", maxAdvance,
-		"total_outstanding_cents", totalOutstanding,
-		"available_advance_cents", availableAdvance,
-		"jobs_completed", jobsCompleted,
-	)
-
+	if persisted == nil {
+		// Refetch returned nothing (shouldn't happen after a successful upsert);
+		// fall back to the just-computed value rather than crash.
+		persisted = limit
+	}
+	// The refetch supplies the DB-assigned ID + timestamps; the just-computed
+	// decision is authoritative for every other field (and the explainability
+	// fields aren't persisted at all). Overlay them so the returned value always
+	// reflects this run's decision regardless of read lag.
+	persisted.MaxAdvanceCents = limit.MaxAdvanceCents
+	persisted.TotalOutstandingCents = limit.TotalOutstandingCents
+	persisted.AvailableAdvanceCents = limit.AvailableAdvanceCents
+	persisted.RiskScore = limit.RiskScore
+	persisted.JobsCompleted = limit.JobsCompleted
+	persisted.TotalEarningsCents = limit.TotalEarningsCents
+	persisted.AvgJobValueCents = limit.AvgJobValueCents
+	persisted.OnTimeRate = limit.OnTimeRate
+	persisted.Approved = limit.Approved
+	persisted.Tier = limit.Tier
+	persisted.FeeBps = limit.FeeBps
+	persisted.FactorRate = limit.FactorRate
+	persisted.HoldbackPct = limit.HoldbackPct
+	persisted.BindingCap = limit.BindingCap
+	persisted.DecisionHash = limit.DecisionHash
+	persisted.ModelVersion = limit.ModelVersion
+	persisted.BindingGate = limit.BindingGate
+	persisted.Reasons = limit.Reasons
 	return persisted, nil
+}
+
+// underwritingTierString maps the engine's tier enum to a lowercase label.
+func underwritingTierString(t underwritingv1.UnderwritingTier) string {
+	switch t {
+	case underwritingv1.UnderwritingTier_UNDERWRITING_TIER_STARTER:
+		return "starter"
+	case underwritingv1.UnderwritingTier_UNDERWRITING_TIER_STANDARD:
+		return "standard"
+	case underwritingv1.UnderwritingTier_UNDERWRITING_TIER_PREMIUM:
+		return "premium"
+	case underwritingv1.UnderwritingTier_UNDERWRITING_TIER_ELITE:
+		return "elite"
+	default:
+		return "ineligible"
+	}
+}
+
+func protoReasonsToDomain(rs []*underwritingv1.DecisionReason) []domain.CreditDecisionReason {
+	out := make([]domain.CreditDecisionReason, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, domain.CreditDecisionReason{
+			Code:         r.GetCode(),
+			Label:        r.GetLabel(),
+			Contribution: r.GetContribution(),
+		})
+	}
+	return out
 }

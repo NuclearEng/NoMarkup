@@ -147,6 +147,20 @@ func (s *Server) GetCreditLimit(ctx context.Context, req *paymentv1.GetCreditLim
 	if available < 0 {
 		available = 0
 	}
+	// Prefer the engine's available figure when present; the derived value above
+	// covers rows written before the underwriting engine existed.
+	if limit.AvailableAdvanceCents > 0 {
+		available = limit.AvailableAdvanceCents
+	}
+
+	reasons := make([]*paymentv1.CreditDecisionReason, 0, len(limit.Reasons))
+	for _, r := range limit.Reasons {
+		reasons = append(reasons, &paymentv1.CreditDecisionReason{
+			Code:         r.Code,
+			Label:        r.Label,
+			Contribution: r.Contribution,
+		})
+	}
 
 	resp := &paymentv1.GetCreditLimitResponse{
 		ProviderId:            limit.ProviderID,
@@ -157,6 +171,17 @@ func (s *Server) GetCreditLimit(ctx context.Context, req *paymentv1.GetCreditLim
 		JobsCompleted:         int32(limit.JobsCompleted),
 		TotalEarningsCents:    limit.TotalEarningsCents,
 		AvgJobValueCents:      limit.AvgJobValueCents,
+		// Underwriting-engine decision.
+		Approved:     limit.Approved,
+		Tier:         limit.Tier,
+		FeeBps:       limit.FeeBps,
+		FactorRate:   limit.FactorRate,
+		HoldbackPct:  limit.HoldbackPct,
+		BindingCap:   limit.BindingCap,
+		BindingGate:  limit.BindingGate,
+		Reasons:      reasons,
+		DecisionHash: limit.DecisionHash,
+		ModelVersion: limit.ModelVersion,
 	}
 	if limit.OnTimeRate != nil {
 		resp.OnTimeRate = *limit.OnTimeRate
