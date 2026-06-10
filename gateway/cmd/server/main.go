@@ -233,6 +233,9 @@ func main() {
 	// Wire the trust engine so the customer-facing bid list shows each bidder's
 	// real computed trust score (otherwise it renders without a trust gauge).
 	bidHandler.SetTrustClient(trustClient)
+	// Wire the user service so the bid list resolves each bidder's display name
+	// + avatar (the bidding engine returns those empty by design).
+	bidHandler.SetUserClient(userClient)
 	contractHandler := handler.NewContractHandler(contractClient, userClient, dbPool)
 
 	// Review service lives on the same gRPC server as the job service.

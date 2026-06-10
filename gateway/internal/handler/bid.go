@@ -15,6 +15,7 @@ import (
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -29,6 +30,7 @@ type BidHandler struct {
 	bidClient      bidv1.BidServiceClient
 	contractClient contractv1.ContractServiceClient
 	trustClient    trustv1.TrustServiceClient
+	userClient     userv1.UserServiceClient
 	db             *pgxpool.Pool
 }
 
@@ -48,6 +50,48 @@ func NewBidHandler(bidClient bidv1.BidServiceClient, contractClient contractv1.C
 // trust card), matching the gateway's nil-safe degradation pattern.
 func (h *BidHandler) SetTrustClient(c trustv1.TrustServiceClient) {
 	h.trustClient = c
+}
+
+// SetUserClient wires the user service into the bid handler so the bid list can
+// resolve each bidder's display name + avatar (the bidding engine returns empty
+// provider fields by design and punts enrichment here). Without it, every bid
+// card — and the award confirmation ("Award this job to <name> at $X") — renders
+// a blank provider name. Nil-safe: an unset client makes enrichment a no-op.
+func (h *BidHandler) SetUserClient(c userv1.UserServiceClient) {
+	h.userClient = c
+}
+
+// resolveProviderNames resolves a set of provider user ids to their public
+// display_name + avatar_url via the user service, deduping ids so a bid list
+// makes at most one GetUser call per unique provider. Fail-soft: a nil client or
+// any lookup error simply omits that provider (the card falls back to a blank
+// name), never failing the bid list.
+func (h *BidHandler) resolveProviderNames(ctx context.Context, ids []string) map[string]map[string]string {
+	out := make(map[string]map[string]string)
+	if h.userClient == nil {
+		return out
+	}
+	seen := make(map[string]struct{})
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		resp, err := h.userClient.GetUser(ctx, &userv1.GetUserRequest{UserId: id})
+		if err != nil {
+			slog.WarnContext(ctx, "bid list: resolve provider name failed", "provider_id", id, "error", err)
+			continue
+		}
+		u := resp.GetUser()
+		out[id] = map[string]string{
+			"display_name": u.GetDisplayName(),
+			"avatar_url":   u.GetAvatarUrl(),
+		}
+	}
+	return out
 }
 
 type placeBidRequest struct {
@@ -436,14 +480,29 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	trustByProvider := h.batchTrustScores(r.Context(), providerIDs)
+	// The bidding engine returns empty provider name/avatar by design; resolve
+	// them from the user service so the bid cards and the award confirmation show
+	// who is actually bidding (the endpoint is already job-owner-only).
+	namesByProvider := h.resolveProviderNames(r.Context(), providerIDs)
 
 	bids := make([]map[string]interface{}, 0, len(resp.GetBids()))
 	for _, bwp := range resp.GetBids() {
+		pid := bwp.GetBid().GetProviderId()
+		displayName := bwp.GetProviderDisplayName()
+		avatarURL := bwp.GetProviderAvatarUrl()
+		if n, ok := namesByProvider[pid]; ok {
+			if displayName == "" {
+				displayName = n["display_name"]
+			}
+			if avatarURL == "" {
+				avatarURL = n["avatar_url"]
+			}
+		}
 		entry := map[string]interface{}{
 			"bid":                    protoBidToJSON(bwp.GetBid()),
-			"provider_display_name":  bwp.GetProviderDisplayName(),
+			"provider_display_name":  displayName,
 			"provider_business_name": bwp.GetProviderBusinessName(),
-			"provider_avatar_url":    bwp.GetProviderAvatarUrl(),
+			"provider_avatar_url":    avatarURL,
 			"jobs_completed":         bwp.GetJobsCompleted(),
 			// Real trust score, fetched above. nil when the provider has no
 			// score yet or the trust engine was unreachable (fail-soft) — the
