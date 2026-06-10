@@ -64,16 +64,7 @@ describe('ProviderLayout', () => {
     expect(container.querySelector('.animate-spin')).toBeTruthy();
   });
 
-  it('marks the current nav item as active when pathname matches', () => {
-    mockState.user = { id: 'u1', roles: ['provider'] };
-    mockState.isHydrating = false;
-    mockPathname.value = '/provider/offers';
-    const { container } = render(
-      withQueryClient(createElement(ProviderLayout, { children: 'CHILD' })),
-    );
-    const activeLink = container.querySelector('a[aria-current="page"]');
-    expect(activeLink).toBeTruthy();
-    expect(activeLink?.getAttribute('href')).toBe('/provider/offers');
-    mockPathname.value = '/provider';
-  });
+  // The in-page provider nav tab (a one-item "Instant Offers" bar) was removed —
+  // provider section nav now lives in the main sidebar group, and the provider
+  // layout just renders its children. (No active-nav-item assertion here anymore.)
 });
