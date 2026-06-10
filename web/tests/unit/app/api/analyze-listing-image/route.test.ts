@@ -6,9 +6,13 @@ const messagesCreate = vi.fn();
 
 vi.mock('@anthropic-ai/sdk', () => {
   return {
-    default: vi.fn().mockImplementation(() => ({
-      messages: { create: messagesCreate },
-    })),
+    // Vitest 4 constructs mock implementations with Reflect.construct, so the
+    // `new Anthropic(...)` call needs a constructible `function` implementation.
+    default: vi.fn().mockImplementation(function () {
+      return {
+        messages: { create: messagesCreate },
+      };
+    }),
   };
 });
 

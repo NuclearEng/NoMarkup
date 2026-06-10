@@ -65,23 +65,32 @@ function resetMaps(): void {
   });
 
   MapMock.mockReset();
-  MapMock.mockImplementation(() => mapInstance);
+  // Vitest 4 constructs mock implementations with Reflect.construct, so mocks
+  // invoked with `new` (the mapbox constructors) need constructible `function`
+  // implementations — arrow functions throw "is not a constructor".
+  MapMock.mockImplementation(function () {
+    return mapInstance;
+  });
 
   NavigationControlMock.mockReset();
 
   PopupMock.mockReset();
-  PopupMock.mockImplementation(() => ({
-    setDOMContent: vi.fn().mockReturnThis(),
-    remove: vi.fn(),
-  }));
+  PopupMock.mockImplementation(function () {
+    return {
+      setDOMContent: vi.fn().mockReturnThis(),
+      remove: vi.fn(),
+    };
+  });
 
   MarkerMock.mockReset();
-  MarkerMock.mockImplementation(() => ({
-    setLngLat: vi.fn().mockReturnThis(),
-    setPopup: vi.fn().mockReturnThis(),
-    addTo: vi.fn().mockReturnThis(),
-    remove: vi.fn(),
-  }));
+  MarkerMock.mockImplementation(function () {
+    return {
+      setLngLat: vi.fn().mockReturnThis(),
+      setPopup: vi.fn().mockReturnThis(),
+      addTo: vi.fn().mockReturnThis(),
+      remove: vi.fn(),
+    };
+  });
 }
 
 const ORIGINAL_TOKEN = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];

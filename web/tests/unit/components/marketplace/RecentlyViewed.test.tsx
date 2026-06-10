@@ -51,8 +51,11 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+// Vitest 4's parameterless `vi.fn` mock type defaults to a void-returning
+// procedure, so the Promise-returning implementations below need the real
+// function shape on the mock type.
 const { api } = (await import('@/lib/api')) as unknown as {
-  api: { getPublic: ReturnType<typeof vi.fn> };
+  api: { getPublic: ReturnType<typeof vi.fn<(path: string) => Promise<unknown>>> };
 };
 
 function makeDetail(over: Partial<ListingDetail> = {}): ListingDetail {

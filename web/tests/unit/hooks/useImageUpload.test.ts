@@ -94,7 +94,9 @@ beforeEach(() => {
   lastXhr = null;
   vi.stubGlobal(
     'XMLHttpRequest',
-    vi.fn(() => {
+    // Vitest 4 constructs mock implementations with Reflect.construct, so the
+    // `new XMLHttpRequest()` call needs a constructible `function` implementation.
+    vi.fn(function () {
       const x = makeFakeXHR();
       lastXhr = x;
       return x;

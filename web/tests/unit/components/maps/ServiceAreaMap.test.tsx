@@ -73,7 +73,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetMapInstance();
   MapMock.mockReset();
-  MapMock.mockImplementation(() => mapInstance);
+  // Vitest 4 constructs mock implementations with Reflect.construct, so the
+  // `new mapboxgl.Map(...)` call needs a constructible `function` implementation.
+  MapMock.mockImplementation(function () {
+    return mapInstance;
+  });
 });
 
 afterEach(() => {

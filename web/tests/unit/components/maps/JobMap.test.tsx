@@ -85,18 +85,25 @@ function resetMapInstance(): void {
 
 function resetMapboxConstructors(): void {
   MapMock.mockReset();
-  MapMock.mockImplementation(() => mapInstance);
+  // Vitest 4 constructs mock implementations with Reflect.construct, so mocks
+  // invoked with `new` (the mapbox constructors) need constructible `function`
+  // implementations — arrow functions throw "is not a constructor".
+  MapMock.mockImplementation(function () {
+    return mapInstance;
+  });
 
   NavigationControlMock.mockReset();
 
   PopupMock.mockReset();
-  PopupMock.mockImplementation(() => ({
-    setDOMContent: vi.fn().mockReturnThis(),
-  }));
+  PopupMock.mockImplementation(function () {
+    return {
+      setDOMContent: vi.fn().mockReturnThis(),
+    };
+  });
 
   markerEvents.length = 0;
   MarkerMock.mockReset();
-  MarkerMock.mockImplementation((el: HTMLElement) => {
+  MarkerMock.mockImplementation(function (el: HTMLElement) {
     const entry: { el: HTMLElement; clickCb?: () => void } = { el };
     markerEvents.push(entry);
     el.addEventListener = ((_evt: string, cb: () => void): void => {
@@ -110,9 +117,11 @@ function resetMapboxConstructors(): void {
   });
 
   LngLatBoundsMock.mockReset();
-  LngLatBoundsMock.mockImplementation(() => ({
-    extend: vi.fn(),
-  }));
+  LngLatBoundsMock.mockImplementation(function () {
+    return {
+      extend: vi.fn(),
+    };
+  });
 }
 
 beforeEach(() => {
@@ -452,7 +461,7 @@ describe('JobMap — token-set / map render branch', () => {
   it('falls back to the static UI when the dynamic mapbox import fails', async () => {
     // Make the Map constructor throw — initMap's try/catch will set mapError,
     // exercising the catch branch at lines 123-127.
-    MapMock.mockImplementation(() => {
+    MapMock.mockImplementation(function () {
       throw new Error('mapbox boom');
     });
     const { container } = render(<JobMap jobs={[makeJob()]} />);
