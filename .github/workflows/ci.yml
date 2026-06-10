@@ -88,11 +88,14 @@ jobs:
           cache: false
       - name: Install protoc + plugins
         run: |
-          PROTOC_VERSION=25.1
+          PROTOC_VERSION=34.1
           curl -sSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
           sudo unzip -o /tmp/protoc.zip -d /usr/local
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          # Pin codegen plugins to the versions that produced the committed
+          # proto/gen stubs (headers: protoc-gen-go v1.36.11, grpc v1.6.1) so the
+          # drift check is deterministic — @latest had bumped grpc to 1.6.2.
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
       - run: make verify-proto
 
   # ── Go Gateway ────────────────────────────────────────────────
@@ -140,6 +143,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: engines
+      # The engines' build.rs uses prost-build, which shells out to protoc at
+      # compile time — clippy/test fail with "Could not find protoc" without it.
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=34.1
+          curl -sSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local
       - run: cd engines && cargo fmt --all -- --check
       - run: cd engines && cargo clippy --all-targets -- -D warnings
       - run: cd engines && cargo test --all
