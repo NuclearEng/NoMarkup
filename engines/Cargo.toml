@@ -5,6 +5,7 @@ members = [
     "fraud",
     "trust",
     "imaging",
+    "underwriting",
 ]
 
 [workspace.package]

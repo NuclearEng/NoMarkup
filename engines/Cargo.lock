@@ -2534,6 +2534,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomarkup-underwriting-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "hex",
+ "http 1.4.0",
+ "http-body-util",
+ "hyper 1.8.1",
+ "hyper-util",
+ "once_cell",
+ "prometheus",
+ "proptest",
+ "prost",
+ "prost-types",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tonic-health",
+ "tower 0.4.13",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "noop_proc_macro"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
