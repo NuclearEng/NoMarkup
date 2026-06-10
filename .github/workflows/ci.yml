@@ -21,8 +21,8 @@ jobs:
     name: Web Lint & Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -36,8 +36,8 @@ jobs:
     needs: web-lint-typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -55,8 +55,8 @@ jobs:
     needs: [web-lint-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -87,8 +87,8 @@ jobs:
     name: Verify Proto Generation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
@@ -110,8 +110,8 @@ jobs:
     name: Gateway Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: gateway/go.sum
@@ -128,8 +128,8 @@ jobs:
       matrix:
         service: [user, job, payment, chat, notification]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: services/${{ matrix.service }}/go.sum
@@ -142,11 +142,14 @@ jobs:
     name: Rust Engine Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # SHA-pinned: the toolchain can no longer come from the ref name
+      # (@stable), so it MUST be passed via the `toolchain` input (required at v1).
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
+          toolchain: stable
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: engines
       # The engines' build.rs uses prost-build, which shells out to protoc at
@@ -167,23 +170,28 @@ jobs:
     needs: [web-test, e2e-test, gateway-test, services-test, engines-test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # ── Build verification (non-Docker) ──
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci && npm run build
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          # setup-go caches by default (since v4); without a path it looks for a
+          # repo-root go.sum that doesn't exist in this monorepo.
+          cache-dependency-path: gateway/go.sum
       - run: cd gateway && go build ./cmd/server
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: engines
       # Same as engines-test: prost build.rs needs protoc at compile time.
@@ -196,7 +204,7 @@ jobs:
 
       # ── Docker image builds ──
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       # The Rust engines share ONE multi-target Dockerfile (engines.Dockerfile,
       # third field = build target) — per-engine Dockerfiles do not exist.

@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Provisioning gate (fail-closed)
         # The production deploy is a placeholder until the Kubernetes cluster is
@@ -62,10 +62,13 @@ jobs:
           echo "   docker build -f deploy/docker/payment.Dockerfile -t nomarkup/payment:${{ steps.version.outputs.VERSION }} ."
           echo "   docker build -f deploy/docker/chat.Dockerfile -t nomarkup/chat:${{ steps.version.outputs.VERSION }} ."
           echo "   docker build -f deploy/docker/notification.Dockerfile -t nomarkup/notification:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/bidding.Dockerfile -t nomarkup/bidding:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/fraud.Dockerfile -t nomarkup/fraud:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/trust.Dockerfile -t nomarkup/trust:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/imaging.Dockerfile -t nomarkup/imaging:${{ steps.version.outputs.VERSION }} ."
+          echo "   # Rust engines share ONE multi-target Dockerfile (per-engine Dockerfiles do not exist):"
+          echo "   docker build -f deploy/docker/engines.Dockerfile --target bidding -t nomarkup/bidding:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/engines.Dockerfile --target fraud -t nomarkup/fraud:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/engines.Dockerfile --target trust -t nomarkup/trust:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/engines.Dockerfile --target imaging -t nomarkup/imaging:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/engines.Dockerfile --target underwriting -t nomarkup/underwriting:${{ steps.version.outputs.VERSION }} ."
+          echo "   docker build -f deploy/docker/engines.Dockerfile --target pricing -t nomarkup/pricing:${{ steps.version.outputs.VERSION }} ."
           echo ""
           echo "2. Push images to container registry:"
           echo "   docker push nomarkup/*:${{ steps.version.outputs.VERSION }}"
@@ -88,13 +91,18 @@ jobs:
           echo "   kubectl set image deployment/fraud fraud=nomarkup/fraud:${{ steps.version.outputs.VERSION }} -n nomarkup"
           echo "   kubectl set image deployment/trust trust=nomarkup/trust:${{ steps.version.outputs.VERSION }} -n nomarkup"
           echo "   kubectl set image deployment/imaging imaging=nomarkup/imaging:${{ steps.version.outputs.VERSION }} -n nomarkup"
+          echo "   # NOTE: underwriting + pricing have images (engines.Dockerfile targets) but no"
+          echo "   # deploy/k8s/base manifests yet — add Deployments/Services before adding"
+          echo "   # kubectl set image lines for them."
           echo ""
           echo "6. Verify rollout:"
           echo "   kubectl rollout status deployment --namespace=nomarkup --timeout=300s"
           echo ""
-          echo "7. Run smoke tests:"
-          echo "   curl -f https://api.nomarkup.com/health"
-          echo "   curl -f https://nomarkup.com"
+          echo "7. Run smoke tests (production zone is no-markup.com — hyphenated; the"
+          echo "   non-hyphen nomarkup.com is NOT owned. Ingress is single-host path-routed:"
+          echo "   the gateway lives under /api/, there is no api. subdomain):"
+          echo "   curl -f https://no-markup.com/                  # web via ingress"
+          echo "   curl -f https://no-markup.com/api/v1/markets    # gateway via ingress (public read)"
           echo ""
           echo "============================================="
           echo "  Deployment placeholder complete."
