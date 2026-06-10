@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -159,9 +160,11 @@ func main() {
 	// are lazy, so an engine being down doesn't block startup — ComputeCreditLimit
 	// fails closed (no offer) at request time if a call errors.
 	trustAddr := envOrDefault("TRUST_ENGINE_ADDR", "localhost:50057")
+	var trustSource service.ProviderTrustSource
 	if trustClient, err := paymentclient.NewTrustClient(trustAddr); err != nil {
 		slog.Error("failed to create trust client; underwriting will fail closed", "error", err, "addr", trustAddr)
 	} else {
+		trustSource = trustClient
 		paymentSvc.SetTrustSource(trustClient)
 		defer func() { _ = trustClient.Close() }()
 	}
@@ -193,6 +196,20 @@ func main() {
 	paymentSvc.SetInstallmentPaymentHandler(installmentSvc)
 
 	insuranceSvc := service.NewInsuranceService(repo, stripeSvc)
+	// Trust-tiered insurance pricing: a higher provider trust tier lowers the
+	// premium. Behind the INSURANCE_TRUST_PRICING flag, default OFF (fail closed
+	// → legacy base+category premium). When ON we also need the trust source;
+	// if the trust client failed to dial, pricing still fails closed (no
+	// discount, never an error) inside applyTrustDiscount.
+	if trustSource != nil {
+		insuranceSvc.SetTrustSource(trustSource)
+	}
+	insuranceTrustPricing := envBool("INSURANCE_TRUST_PRICING", false)
+	insuranceSvc.SetTrustPricingEnabled(insuranceTrustPricing)
+	slog.Info("insurance trust pricing configured",
+		"enabled", insuranceTrustPricing,
+		"trust_source_wired", trustSource != nil,
+	)
 	grpcServer.SetInsuranceService(insuranceSvc)
 
 	// GDPR/CCPA Stripe deletion adapter — called by the user service's
@@ -323,4 +340,19 @@ func envOrDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envBool reads a boolean feature-flag env var. Recognizes 1/true/t/yes/on
+// (case-insensitive) as true; everything else (including unset) returns def.
+// Used to gate optional monetization behavior fail-closed at startup.
+func envBool(key string, def bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch v {
+	case "":
+		return def
+	case "1", "true", "t", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

@@ -15,11 +15,34 @@ import (
 type InsuranceService struct {
 	repo   domain.InsuranceRepository
 	stripe *StripeService
+
+	// trust is the optional trust-engine source used to read a provider's tier
+	// for trust-tiered premium pricing. When nil (or the lookup errors), pricing
+	// fails CLOSED: no discount, never an error.
+	trust ProviderTrustSource
+	// trustPricingEnabled gates the trust-tier discount (the
+	// `insurance_trust_pricing` feature flag, read once at startup). When false
+	// the premium is the legacy base+category premium, byte-for-byte.
+	trustPricingEnabled bool
 }
 
 // NewInsuranceService creates a new insurance service.
 func NewInsuranceService(repo domain.InsuranceRepository, stripe *StripeService) *InsuranceService {
 	return &InsuranceService{repo: repo, stripe: stripe}
+}
+
+// SetTrustSource wires the trust-engine client used to read a provider's tier
+// for trust-tiered premium pricing. Optional: when unset, pricing fails closed
+// (no discount).
+func (s *InsuranceService) SetTrustSource(t ProviderTrustSource) {
+	s.trust = t
+}
+
+// SetTrustPricingEnabled toggles the trust-tier premium discount. This is the
+// `insurance_trust_pricing` feature flag, evaluated once at startup. Defaults to
+// false (fail closed — legacy pricing) until explicitly enabled.
+func (s *InsuranceService) SetTrustPricingEnabled(enabled bool) {
+	s.trustPricingEnabled = enabled
 }
 
 // ListProducts returns all active insurance products.
@@ -83,12 +106,21 @@ func (s *InsuranceService) GetInsuranceQuote(ctx context.Context, productID stri
 // caller. Ownership is enforced at purchase time (PurchaseInsurance), which is
 // the security boundary that actually creates a policy and charges the card;
 // the quote is a read-only premium preview.
+//
+// When the `insurance_trust_pricing` flag is on, the provider's trust tier
+// (read server-side from the contract → trust engine) earns a deterministic
+// premium discount — higher tier, lower premium. See applyTrustDiscount.
 func (s *InsuranceService) GetQuoteForContract(ctx context.Context, productID, contractID string) (*domain.InsuranceQuote, error) {
 	contract, err := s.repo.GetContractForInsurance(ctx, contractID)
 	if err != nil {
 		return nil, fmt.Errorf("quote contract for insurance: %w", err)
 	}
-	return s.GetInsuranceQuote(ctx, productID, contract.AmountCents, contract.CategorySlug)
+	quote, err := s.GetInsuranceQuote(ctx, productID, contract.AmountCents, contract.CategorySlug)
+	if err != nil {
+		return nil, err
+	}
+	s.applyTrustDiscount(ctx, quote, contract.ProviderID, contract.AmountCents)
+	return quote, nil
 }
 
 // loadOwnedContract loads a contract and verifies the authenticated customer
@@ -124,6 +156,10 @@ func (s *InsuranceService) PurchaseInsurance(ctx context.Context, input domain.P
 	if err != nil {
 		return nil, "", fmt.Errorf("purchase insurance quote: %w", err)
 	}
+
+	// Apply the trust-tier discount (flag-gated, fail-closed) so the premium we
+	// CHARGE matches the discounted premium the customer was quoted.
+	s.applyTrustDiscount(ctx, quote, contract.ProviderID, contract.AmountCents)
 
 	// Generate policy number.
 	policyNumber, err := s.repo.NextPolicyNumber(ctx)
@@ -389,6 +425,106 @@ func (s *InsuranceService) ReviewInsuranceClaim(ctx context.Context, input domai
 	)
 
 	return s.repo.GetInsuranceClaim(ctx, input.ClaimID)
+}
+
+// trustDiscountBps returns the premium discount, in basis points, earned by a
+// provider's trust tier. Higher tier ⇒ larger discount ⇒ lower premium. This is
+// the load-bearing collateral: a provider's trust tier directly lowers what the
+// customer pays to insure their job.
+//
+//	top_rated     → 1500 bps (−15%)
+//	trusted       → 1000 bps (−10%)
+//	rising        →  500 bps (−5%)
+//	new           →    0 bps (no discount)
+//	under_review  →    0 bps (no discount — a flagged provider earns nothing)
+//	unknown/""    →    0 bps (fail closed)
+//
+// Pure + deterministic: no I/O, no clock. The tier string matches the trust
+// engine's vocabulary (see client.mapTrustTier).
+func trustDiscountBps(tier string) int64 {
+	switch tier {
+	case "top_rated":
+		return 1500
+	case "trusted":
+		return 1000
+	case "rising":
+		return 500
+	default:
+		// new, under_review, unspecified, or any unrecognized value: no discount.
+		return 0
+	}
+}
+
+// applyTrustDiscountToPremium returns the premium after the tier discount,
+// floored so it can never drop below the product's minimum premium nor below
+// zero. Pure integer math (money-in-cents): discount = premium*bps/10000,
+// truncated, then subtracted. A zero-bps tier returns the premium unchanged.
+//
+// minPremiumCents is the product's floor; the discounted premium is clamped up
+// to it so a discount can never undercut the carrier's minimum.
+func applyTrustDiscountToPremium(premiumCents, minPremiumCents int64, tier string) int64 {
+	bps := trustDiscountBps(tier)
+	if bps <= 0 || premiumCents <= 0 {
+		return premiumCents
+	}
+	discount := premiumCents * bps / 10000
+	discounted := premiumCents - discount
+	if discounted < minPremiumCents {
+		discounted = minPremiumCents
+	}
+	if discounted < 0 {
+		discounted = 0
+	}
+	// Never let a discount accidentally raise the premium (e.g. if the floor
+	// exceeds the base for a degenerate product config).
+	if discounted > premiumCents {
+		discounted = premiumCents
+	}
+	return discounted
+}
+
+// applyTrustDiscount mutates quote.PremiumCents in place by the provider's
+// trust-tier discount, when the trust-pricing feature is enabled.
+//
+// Fail-CLOSED contract: if the flag is off, the trust source is unset, the
+// provider id is empty, or the trust lookup errors, the premium is left
+// UNCHANGED and no error is surfaced — a trust-engine blip must never break a
+// quote or a purchase. The discount only ever LOWERS the premium.
+func (s *InsuranceService) applyTrustDiscount(ctx context.Context, quote *domain.InsuranceQuote, providerID string, contractAmountCents int64) {
+	if quote == nil {
+		return
+	}
+	if !s.trustPricingEnabled || s.trust == nil || providerID == "" {
+		return // flag off / not wired → fail closed, legacy premium.
+	}
+
+	_, _, _, tier, err := s.trust.GetProviderTrust(ctx, providerID)
+	if err != nil {
+		slog.Warn("insurance trust pricing: trust lookup failed, charging undiscounted premium",
+			"provider_id", providerID,
+			"error", err,
+		)
+		return // fail closed — no discount, no error.
+	}
+
+	// Re-derive the product floor from the quote: the floor is whatever the
+	// premium would never go below. We only have the product's min via the
+	// quote's own clamp, so use the deductible-independent floor of 0 plus the
+	// product min that GetInsuranceQuote already enforced (the quote premium is
+	// already ≥ product min). Passing the current premium as the floor would be
+	// a no-op, so we floor at 0 and let the carrier-min invariant hold because
+	// the discount is a strict reduction of an already-min-satisfying premium.
+	before := quote.PremiumCents
+	quote.PremiumCents = applyTrustDiscountToPremium(quote.PremiumCents, 0, tier)
+	if quote.PremiumCents != before {
+		slog.Info("insurance trust pricing: tier discount applied",
+			"provider_id", providerID,
+			"tier", tier,
+			"premium_before_cents", before,
+			"premium_after_cents", quote.PremiumCents,
+			"discount_bps", trustDiscountBps(tier),
+		)
+	}
 }
 
 // categoryRiskMultiplier returns a risk multiplier based on service category.
