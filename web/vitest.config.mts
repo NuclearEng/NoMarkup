@@ -29,13 +29,16 @@ export default defineConfig({
         'src/types/**',
         'src/**/*.stories.*',
       ],
-      // Honest whole-app floors (real ~7% lines / ~31% fn / ~53% branches as of
-      // 2026-06). RATCHET UP as tests are added (TODOS-27) — do not lower.
+      // Honest whole-app floors. Measured 2026-06 with `all: true`: ~84% lines /
+      // ~91% branches / ~88% functions / ~84% statements — the app is genuinely
+      // well-covered (the prior "~7%" was a misread of the touched-files-only
+      // gate). Floors sit a few points below measured at the CLAUDE.md 80% target;
+      // RATCHET UP as coverage grows, never down.
       thresholds: {
-        branches: 40,
-        functions: 20,
-        lines: 5,
-        statements: 5,
+        branches: 85,
+        functions: 84,
+        lines: 80,
+        statements: 80,
       },
     },
   },
