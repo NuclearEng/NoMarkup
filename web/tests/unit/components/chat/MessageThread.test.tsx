@@ -415,7 +415,7 @@ describe('MessageThread', () => {
     await new Promise((resolve) => { requestAnimationFrame(() => { resolve(null); }); });
 
     // Force the scroll container to report being scrolled far from the bottom.
-    const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement | null;
+    const scrollEl = container.querySelector('.overflow-y-auto');
     expect(scrollEl).not.toBeNull();
     if (scrollEl) {
       Object.defineProperty(scrollEl, 'scrollHeight', { value: 2000, configurable: true });

@@ -189,7 +189,7 @@ function ResolveForm({ dispute }: ResolveFormProps) {
           type="text"
           className="min-h-[44px]"
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(e) => { setNotes(e.target.value); }}
           placeholder="Reason / internal note"
         />
       </div>
@@ -298,7 +298,7 @@ export function GoodsDisputesPanel() {
         <span className="text-sm font-medium text-zinc-300">Status:</span>
         <Select
           value={statusFilter ?? ALL_FILTER}
-          onValueChange={(v) => setStatusFilter(v === ALL_FILTER ? undefined : v)}
+          onValueChange={(v) => { setStatusFilter(v === ALL_FILTER ? undefined : v); }}
         >
           <SelectTrigger
             className="w-full min-h-[44px] sm:w-[180px]"
