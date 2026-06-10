@@ -198,28 +198,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # The Rust engines share ONE multi-target Dockerfile (engines.Dockerfile,
+      # third field = build target) — per-engine Dockerfiles do not exist.
       - name: Build Docker images (PR — no push)
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           images=(
-            "web:deploy/docker/web.Dockerfile"
-            "gateway:deploy/docker/gateway.Dockerfile"
-            "user:deploy/docker/user.Dockerfile"
-            "job:deploy/docker/job.Dockerfile"
-            "payment:deploy/docker/payment.Dockerfile"
-            "chat:deploy/docker/chat.Dockerfile"
-            "notification:deploy/docker/notification.Dockerfile"
-            "bidding:deploy/docker/bidding.Dockerfile"
-            "fraud:deploy/docker/fraud.Dockerfile"
-            "trust:deploy/docker/trust.Dockerfile"
-            "imaging:deploy/docker/imaging.Dockerfile"
+            "web:deploy/docker/web.Dockerfile:"
+            "gateway:deploy/docker/gateway.Dockerfile:"
+            "user:deploy/docker/user.Dockerfile:"
+            "job:deploy/docker/job.Dockerfile:"
+            "payment:deploy/docker/payment.Dockerfile:"
+            "chat:deploy/docker/chat.Dockerfile:"
+            "notification:deploy/docker/notification.Dockerfile:"
+            "bidding:deploy/docker/engines.Dockerfile:bidding"
+            "fraud:deploy/docker/engines.Dockerfile:fraud"
+            "trust:deploy/docker/engines.Dockerfile:trust"
+            "imaging:deploy/docker/engines.Dockerfile:imaging"
+            "underwriting:deploy/docker/engines.Dockerfile:underwriting"
+            "pricing:deploy/docker/engines.Dockerfile:pricing"
           )
           for entry in "${images[@]}"; do
             name="${entry%%:*}"
-            dockerfile="${entry#*:}"
+            rest="${entry#*:}"
+            dockerfile="${rest%%:*}"
+            target="${rest#*:}"
+            args=(-f "${dockerfile}" -t "nomarkup/${name}:ci")
+            if [ -n "${target}" ]; then args+=(--target "${target}"); fi
             echo "::group::Building nomarkup/${name}"
-            docker build -f "${dockerfile}" -t "nomarkup/${name}:ci" .
+            docker build "${args[@]}" .
             echo "::endgroup::"
           done
 
@@ -231,24 +239,30 @@ jobs:
         run: |
           set -euo pipefail
           images=(
-            "web:deploy/docker/web.Dockerfile"
-            "gateway:deploy/docker/gateway.Dockerfile"
-            "user:deploy/docker/user.Dockerfile"
-            "job:deploy/docker/job.Dockerfile"
-            "payment:deploy/docker/payment.Dockerfile"
-            "chat:deploy/docker/chat.Dockerfile"
-            "notification:deploy/docker/notification.Dockerfile"
-            "bidding:deploy/docker/bidding.Dockerfile"
-            "fraud:deploy/docker/fraud.Dockerfile"
-            "trust:deploy/docker/trust.Dockerfile"
-            "imaging:deploy/docker/imaging.Dockerfile"
+            "web:deploy/docker/web.Dockerfile:"
+            "gateway:deploy/docker/gateway.Dockerfile:"
+            "user:deploy/docker/user.Dockerfile:"
+            "job:deploy/docker/job.Dockerfile:"
+            "payment:deploy/docker/payment.Dockerfile:"
+            "chat:deploy/docker/chat.Dockerfile:"
+            "notification:deploy/docker/notification.Dockerfile:"
+            "bidding:deploy/docker/engines.Dockerfile:bidding"
+            "fraud:deploy/docker/engines.Dockerfile:fraud"
+            "trust:deploy/docker/engines.Dockerfile:trust"
+            "imaging:deploy/docker/engines.Dockerfile:imaging"
+            "underwriting:deploy/docker/engines.Dockerfile:underwriting"
+            "pricing:deploy/docker/engines.Dockerfile:pricing"
           )
           for entry in "${images[@]}"; do
             name="${entry%%:*}"
-            dockerfile="${entry#*:}"
+            rest="${entry#*:}"
+            dockerfile="${rest%%:*}"
+            target="${rest#*:}"
             tag="${REGISTRY}/${IMAGE_PREFIX}/${name}:${GITHUB_SHA::8}"
+            args=(-f "${dockerfile}" -t "${tag}")
+            if [ -n "${target}" ]; then args+=(--target "${target}"); fi
             echo "::group::Building and tagging ${tag}"
-            docker build -f "${dockerfile}" -t "${tag}" .
+            docker build "${args[@]}" .
             echo "Built ${tag} — push step requires docker login (configure DOCKER_REGISTRY secret)"
             echo "::endgroup::"
           done
