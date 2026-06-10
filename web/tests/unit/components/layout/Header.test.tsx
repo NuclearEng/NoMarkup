@@ -110,10 +110,13 @@ describe('Header', () => {
     expect(screen.getByTestId('notif-bell')).toBeDefined();
   });
 
-  it('renders Browse Jobs link when authenticated', () => {
+  it('authenticated desktop header is utilities-only (Post a Job CTA, no section nav)', () => {
     mockAuth({ isAuthenticated: true, user: baseUser });
     render(<Header />);
-    expect(screen.getByText('Browse Jobs')).toBeDefined();
+    // Section nav (Browse Jobs / Marketplace / Dashboard) moved to the sidebar;
+    // the authed header carries only the primary CTA + account utilities.
+    expect(screen.getByText('Post a Job')).toBeDefined();
+    expect(screen.queryByText('Browse Jobs')).toBeNull();
   });
 
   it('renders the Live Demo link in all states', () => {
@@ -131,14 +134,18 @@ describe('Header', () => {
     expect(hamburger.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('shows Provider Dashboard link in mobile menu for provider users', () => {
+  it('authenticated mobile menu is account-only (no section nav grid)', () => {
     mockAuth({
       isAuthenticated: true,
       user: { ...baseUser, roles: [USER_ROLE.PROVIDER, USER_ROLE.CUSTOMER] },
     });
     render(<Header />);
     fireEvent.click(screen.getByLabelText('Toggle navigation menu'));
-    expect(screen.getByText('Provider Dashboard')).toBeDefined();
+    // Nav lives in the bottom MobileTabBar now; the header menu is account-only
+    // (name + notifications + sign out).
+    expect(screen.getAllByRole('button', { name: /sign out/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Provider Dashboard')).toBeNull();
+    expect(screen.queryByText('My Jobs')).toBeNull();
   });
 
   it('logs out and navigates to login when desktop Sign out clicked', async () => {
@@ -163,26 +170,6 @@ describe('Header', () => {
       expect(logout).toHaveBeenCalled();
     });
     expect(push).toHaveBeenCalledWith('/login');
-  });
-
-  it('closes the mobile menu when a quick-nav link is clicked', async () => {
-    mockAuth({ isAuthenticated: true, user: baseUser });
-    const user = userEvent.setup();
-    render(<Header />);
-    const hamburger = screen.getByLabelText('Toggle navigation menu');
-    await user.click(hamburger);
-    expect(hamburger.getAttribute('aria-expanded')).toBe('true');
-    // Two "Dashboard" links now exist (desktop nav + mobile quick-nav). The
-    // mobile-menu one is rendered last in the DOM; click that to verify the
-    // menu closes on quick-nav selection.
-    const dashboardLinks = screen.getAllByText('Dashboard');
-    const dashboardLink = dashboardLinks[dashboardLinks.length - 1];
-    if (dashboardLink) {
-      await user.click(dashboardLink);
-    }
-    await waitFor(() => {
-      expect(hamburger.getAttribute('aria-expanded')).toBe('false');
-    });
   });
 
   it('toggles the hamburger icon between open and close states', async () => {
@@ -245,76 +232,10 @@ describe('Header', () => {
     });
   });
 
-  // ---- DEEPENING: invoke each mobile-link onClick handler ----
-
-  it('closes the mobile menu when My Jobs link is clicked', async () => {
-    mockAuth({ isAuthenticated: true, user: baseUser });
-    const user = userEvent.setup();
-    render(<Header />);
-    const hamburger = screen.getByLabelText('Toggle navigation menu');
-    await user.click(hamburger);
-    fireEvent.click(screen.getByText('My Jobs'));
-    await waitFor(() => {
-      expect(hamburger.getAttribute('aria-expanded')).toBe('false');
-    });
-  });
-
-  it('closes the mobile menu when mobile Browse Jobs link is clicked', async () => {
-    mockAuth({ isAuthenticated: true, user: baseUser });
-    const user = userEvent.setup();
-    render(<Header />);
-    const hamburger = screen.getByLabelText('Toggle navigation menu');
-    await user.click(hamburger);
-    // Multiple "Browse Jobs" — desktop + mobile. Click mobile (last).
-    const browseLinks = screen.getAllByText('Browse Jobs');
-    const mobileBrowse = browseLinks[browseLinks.length - 1];
-    if (mobileBrowse) fireEvent.click(mobileBrowse);
-    await waitFor(() => {
-      expect(hamburger.getAttribute('aria-expanded')).toBe('false');
-    });
-  });
-
-  it('closes the mobile menu when Messages link is clicked', async () => {
-    mockAuth({ isAuthenticated: true, user: baseUser });
-    const user = userEvent.setup();
-    render(<Header />);
-    await user.click(screen.getByLabelText('Toggle navigation menu'));
-    fireEvent.click(screen.getByText('Messages'));
-    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('closes the mobile menu when Post a Job link is clicked', async () => {
-    mockAuth({ isAuthenticated: true, user: baseUser });
-    const user = userEvent.setup();
-    render(<Header />);
-    await user.click(screen.getByLabelText('Toggle navigation menu'));
-    fireEvent.click(screen.getByText('Post a Job'));
-    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('closes the mobile menu when Provider Dashboard link is clicked', async () => {
-    mockAuth({
-      isAuthenticated: true,
-      user: { ...baseUser, roles: [USER_ROLE.PROVIDER, USER_ROLE.CUSTOMER] },
-    });
-    const user = userEvent.setup();
-    render(<Header />);
-    await user.click(screen.getByLabelText('Toggle navigation menu'));
-    fireEvent.click(screen.getByText('Provider Dashboard'));
-    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('closes the mobile menu when authenticated Live Demo link is clicked', async () => {
-    mockAuth({ isAuthenticated: true, user: baseUser });
-    const user = userEvent.setup();
-    render(<Header />);
-    await user.click(screen.getByLabelText('Toggle navigation menu'));
-    // Two Live Demo links (desktop + mobile). Last is mobile.
-    const liveDemos = screen.getAllByText('Live Demo');
-    const mobileDemo = liveDemos[liveDemos.length - 1];
-    if (mobileDemo) fireEvent.click(mobileDemo);
-    expect(screen.getByLabelText('Toggle navigation menu').getAttribute('aria-expanded')).toBe('false');
-  });
+  // The authed mobile menu is account-only now (nav lives in the bottom
+  // MobileTabBar), so the per-link close tests for Dashboard/My Jobs/Browse
+  // Jobs/Messages/Post a Job/Provider Dashboard/authed-Live-Demo were removed —
+  // those links no longer live in the header menu.
 
   it('closes the mobile menu when unauthenticated Live Demo link is clicked', async () => {
     mockAuth({ isAuthenticated: false });
