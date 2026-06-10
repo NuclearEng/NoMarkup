@@ -55,6 +55,7 @@ TRUST_PORT=${TRUST_PORT:-50057}
 IMAGING_PORT=${IMAGING_PORT:-50058}
 NOTIFICATION_PORT=${NOTIFICATION_PORT:-50059}
 UNDERWRITING_PORT=${UNDERWRITING_PORT:-50060}
+PRICING_PORT=${PRICING_PORT:-50061}
 WEB_PORT=${WEB_PORT:-3000}
 
 # ── Database ─────────────────────────────────────────────────────
@@ -704,6 +705,9 @@ start_engines() {
     start_rust_engine underwriting nomarkup-underwriting-engine "$UNDERWRITING_PORT" \
         "UNDERWRITING_ENGINE_PORT=$UNDERWRITING_PORT"
 
+    start_rust_engine pricing nomarkup-pricing-engine "$PRICING_PORT" \
+        "PRICING_ENGINE_PORT=$PRICING_PORT"
+
     success "Rust engines ready"
 }
 
@@ -881,6 +885,7 @@ cmd_status() {
         "trust:$TRUST_PORT:rust"
         "imaging:$IMAGING_PORT:rust"
         "underwriting:$UNDERWRITING_PORT:rust"
+        "pricing:$PRICING_PORT:rust"
         "gateway:$GATEWAY_PORT:go"
         "web:$WEB_PORT:node"
     )

@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package nomarkup.pricing.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/pricing/v1;pricingv1";
+
+// ============================================================
+// Pricing Service (Rust) — the Fair Price Index.
+//
+// Turns the corpus of escrow-SETTLED cleared prices into a per-(category ×
+// geography × time) fair price with a band, effective sample size, and a 0..1
+// confidence score. Powers the consumer "going rate" surface, live-auction
+// confidence bands, and a working-capital underwriting input.
+//
+// Model: log-space robust weighted median + weighted interpolated quantiles,
+// exponential half-life recency decay × capped trust weighting (anti-gaming),
+// unweighted IQR outlier fences, and empirical-Bayes hierarchical SHRINKAGE
+// (zip → metro → national; sub-category → category) so sparse cells fall back
+// gracefully instead of returning nothing.
+//
+// It is a PURE FUNCTION — no DB, no clock (the caller passes as_of), no RNG —
+// so an estimate is deterministic, reproducible, and auditable. The caller
+// pre-selects a candidate transaction set; the engine does the geo/category
+// bucketing + shrinkage internally.
+// ============================================================
+
+service PricingService {
+  // Compute the fair price for a (category × geo × time) cell. Pure, sub-ms.
+  rpc ComputeFairPrice(ComputeFairPriceRequest) returns (ComputeFairPriceResponse);
+}
+
+enum MarketSide {
+  MARKET_SIDE_UNSPECIFIED = 0;
+  MARKET_SIDE_SERVICE = 1; // services reverse-auction
+  MARKET_SIDE_GOOD = 2;    // goods forward-auction
+}
+
+// One settled, escrow-confirmed cleared price. The caller fills parent_category_id
+// (taxonomy parent) and market_id (resolved metro) so the engine can bucket and
+// fall back without a taxonomy lookup.
+message Transaction {
+  string category_id = 1;
+  string parent_category_id = 2;
+  string market_id = 3;
+  string zip = 4;
+  int64 cleared_price_cents = 5; // > 0, the escrow-settled price
+  int64 settled_at = 6;          // unix seconds
+  uint32 trust_tier = 7;         // counterparty trust tier, 0..=4 (4 = highest)
+  bool instant_match = 8;        // urgency / instant-match flag
+  uint32 condition = 9;          // goods condition 0..=4 (services pass 4)
+  MarketSide side = 10;
+}
+
+message FairPriceQuery {
+  string category_id = 1;
+  string parent_category_id = 2;
+  string zip = 3;
+  string market_id = 4;
+  int64 as_of = 5;               // unix seconds — anchors decay + windows
+  MarketSide side = 6;
+
+  // Optional exact-match covariate narrowing (applied before estimation).
+  optional bool want_instant = 7;
+  optional uint32 want_condition = 8;
+  optional uint32 want_trust_tier_min = 9;
+}
+
+message ComputeFairPriceRequest {
+  FairPriceQuery query = 1;
+  repeated Transaction transactions = 2; // caller-selected candidate set
+}
+
+message ComputeFairPriceResponse {
+  bool has_data = 1;             // false when every hierarchy level is empty
+
+  int64 price_cents = 2;         // the fair-price point estimate
+  int64 p25_cents = 3;           // dispersion band (the "going rate range")
+  int64 p75_cents = 4;
+  int64 ci_lo_cents = 5;         // confidence interval on the median
+  int64 ci_hi_cents = 6;
+
+  double n_eff = 7;              // Kish effective sample size of the local cell
+  double confidence = 8;         // 0..1 (size × dispersion × recency)
+  string confidence_label = 9;   // "high" | "medium" | "low"
+  uint32 level_used = 10;        // which hierarchy level supplied the local cell (0..5)
+  string model_version = 11;
+}

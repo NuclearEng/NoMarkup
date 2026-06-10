@@ -2499,6 +2499,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomarkup-pricing-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "proptest",
+ "prost",
+ "prost-types",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tonic-health",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "nomarkup-trust-engine"
 version = "0.1.0"
 dependencies = [
