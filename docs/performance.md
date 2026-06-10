@@ -32,6 +32,13 @@ THIS stack. Do not invent a Go-SSR or WASM layer unless it measurably beats the 
 - Heavy deps are **already lazy/route-isolated**: `mapbox-gl` (~454 kB) is in an async chunk, not
   in any First Load; `recharts` is confined to `/sell/analytics`. **Dependency-carving is
   exhausted — no headroom there.**
+- **Accepted budget overages (re-measured 2026-06-10, post-RSC conversions):** `/jobs/[id]`
+  **375 kB** and `/jobs/new` **309 kB** exceed the ≤300 kB interactive budget. Audited the island
+  tree: charts are hand-rolled (no recharts), no framer-motion/mapbox; the only notable dep is
+  `react-grid-layout`, which IS the live-auction terminal's core interaction — lazy-loading the
+  page's primary UI would trade LCP/CLS (the harder gates) for bytes. Accepted as the cost of the
+  product's most interactive surface. **Revisit if:** the terminal moves off react-grid-layout, or
+  a sub-surface of the page becomes non-interactive (then carve it to RSC).
 - **Validated:** the RSC pilot (`/marketplace` + `/marketplace/[id]`) left First Load JS flat
   (interactivity is irreducible) but delivered server-rendered first paint + SEO. On interactive
   pages, **RSC wins LCP/SEO, not bundle size.** Don't promise a JS cut from RSC on an interactive surface.
