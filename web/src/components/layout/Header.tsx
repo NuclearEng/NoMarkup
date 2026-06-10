@@ -55,63 +55,24 @@ export function Header() {
           <Logo />
         )}
 
-        {/* Desktop nav */}
+        {/* Desktop nav.
+            Authenticated: the sidebar owns section navigation, so the header is
+            a pure global-utility bar — city context, the one primary CTA
+            (Post a Job), notifications, account. No section links here, to avoid
+            duplicating the sidebar.
+            Logged-out: there is no sidebar, so the header carries the marketing
+            nav (Marketplace, Map, Legal, Live Demo) plus the auth CTAs. */}
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
           {/* Current-city switcher — reflects/updates the shared market context. */}
           <MarketChip className="max-w-[11rem]" />
-          {!isHydrating && isAuthenticated ? (
-            <>
-              <Link
-                href={'/dashboard' as Route}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-              >
-                <Home className="h-3.5 w-3.5" aria-hidden="true" />
-                Dashboard
-              </Link>
-              <Link
-                href={'/jobs' as Route}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-              >
-                <Search className="h-3.5 w-3.5" aria-hidden="true" />
-                Browse Jobs
-              </Link>
-            </>
-          ) : null}
-          {/* Marketplace (live goods auctions) — public so anyone, including
-              logged-out visitors, can find and watch live auctions. */}
-          <Link
-            href={'/marketplace' as Route}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-          >
-            <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
-            Marketplace
-          </Link>
-          <Link
-            href={'/marketplace/map' as Route}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-          >
-            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-            Map
-          </Link>
-          {/* Legal services vertical — public landing, gated by the flag. */}
-          {legalEnabled ? (
-            <Link
-              href={'/legal' as Route}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-            >
-              <Scale className="h-3.5 w-3.5" aria-hidden="true" />
-              Legal
-            </Link>
-          ) : null}
-          <Link
-            href="/demo/auction"
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300"
-          >
-            <Zap className="h-3.5 w-3.5" aria-hidden="true" />
-            Live Demo
-          </Link>
           {isHydrating ? null : isAuthenticated ? (
             <>
+              <Button size="sm" className="min-h-[44px]" asChild>
+                <Link href={'/jobs/new' as Route} className="gap-1.5">
+                  <PlusCircle className="h-4 w-4" aria-hidden="true" />
+                  Post a Job
+                </Link>
+              </Button>
               <NotificationBell />
               <span className="text-muted-foreground text-sm">
                 {user?.displayName ?? user?.email}
@@ -127,6 +88,38 @@ export function Header() {
             </>
           ) : (
             <>
+              {/* Marketplace (live goods auctions) — public so logged-out
+                  visitors can find and watch live auctions. */}
+              <Link
+                href={'/marketplace' as Route}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+              >
+                <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
+                Marketplace
+              </Link>
+              <Link
+                href={'/marketplace/map' as Route}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+              >
+                <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                Map
+              </Link>
+              {legalEnabled ? (
+                <Link
+                  href={'/legal' as Route}
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+                >
+                  <Scale className="h-3.5 w-3.5" aria-hidden="true" />
+                  Legal
+                </Link>
+              ) : null}
+              <Link
+                href="/demo/auction"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300"
+              >
+                <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+                Live Demo
+              </Link>
               <Button variant="ghost" size="sm" className="min-h-[44px]" asChild>
                 <Link href="/login">Sign in</Link>
               </Button>

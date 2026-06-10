@@ -15,6 +15,8 @@ import {
   Package,
   PlusCircle,
   Rss,
+  Scale,
+  Search,
   Settings,
   Shield,
   Sparkles,
@@ -49,6 +51,7 @@ export const PROVIDER_NAV_ITEMS: NavItem[] = [
   { href: '/provider' as Route, label: 'Provider Dashboard', icon: LayoutDashboard },
   { href: '/provider/workspace' as Route, label: 'Workspace', icon: Wrench },
   { href: '/bids' as Route, label: 'My Bids', icon: Gavel },
+  { href: '/provider/offers' as Route, label: 'Instant Offers', icon: Zap },
   { href: '/provider/team' as Route, label: 'Team', icon: Users },
   { href: '/provider/advances' as Route, label: 'Working Capital', icon: Banknote },
   { href: '/provider/business' as Route, label: 'Business Tools', icon: Building2 },
@@ -71,6 +74,7 @@ export const ADMIN_NAV_ITEMS: NavItem[] = [
 export const COMMON_NAV_ITEMS: NavItem[] = [
   // Core services workflow (the primary, original product surface)
   { href: '/jobs/new' as Route, label: 'Post Job', icon: PlusCircle },
+  { href: '/jobs' as Route, label: 'Browse Jobs', icon: Search },
   { href: '/jobs/mine' as Route, label: 'My Jobs', icon: Briefcase },
   { href: '/contracts' as Route, label: 'Contracts', icon: FileText },
   { href: '/messages' as Route, label: 'Messages', icon: MessageSquare },
@@ -87,6 +91,11 @@ export const COMMON_NAV_ITEMS: NavItem[] = [
   // Account
   { href: '/settings/security' as Route, label: 'Settings', icon: Settings },
 ];
+
+// The legal-services vertical is a flag-gated common destination (it used to
+// live only in the header). Appended after the common items, before account,
+// when the legal_services flag is on.
+const LEGAL_NAV_ITEM: NavItem = { href: '/legal' as Route, label: 'Legal', icon: Scale };
 
 // The single active nav href = the MOST-SPECIFIC (longest) item whose path the
 // current URL matches exactly or as a sub-path. This prevents a parent like
@@ -117,11 +126,22 @@ export function useNavItems(): NavItem[] {
     ? PROVIDER_NAV_ITEMS
     : PROVIDER_NAV_ITEMS.filter((item) => item.href !== '/provider/advances');
 
+  // Legal vertical is flag-gated; when on, slot it in just before Settings (the
+  // last common item) so account stays at the bottom.
+  const legalEnabled = useFeatureFlag('legal_services');
+  const commonItems = legalEnabled
+    ? [
+        ...COMMON_NAV_ITEMS.slice(0, -1),
+        LEGAL_NAV_ITEM,
+        COMMON_NAV_ITEMS[COMMON_NAV_ITEMS.length - 1] as NavItem,
+      ]
+    : COMMON_NAV_ITEMS;
+
   return [
     ...BASE_NAV_ITEMS,
     ...(isProvider ? providerNavItems : []),
     ...(isAdmin ? ADMIN_NAV_ITEMS : []),
-    ...COMMON_NAV_ITEMS,
+    ...commonItems,
   ];
 }
 
