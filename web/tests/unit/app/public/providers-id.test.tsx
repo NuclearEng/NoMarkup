@@ -72,10 +72,17 @@ vi.mock('@/hooks/useReviews', () => ({
 
 const { usePublicProviderProfile } = await import('@/hooks/useProviders');
 const { useReviewsForUser } = await import('@/hooks/useReviews');
-const { default: ProviderProfilePage } = await import('@/app/(public)/providers/[id]/page');
+// The page is now an async Server Component (server-fetch + JSON-LD); the
+// interactive UI lives in ProviderProfileClient, which consumes the same
+// usePublicProviderProfile hook (seeded via initialData). These tests drive
+// the rendered UI through that mocked hook, so they target the client island.
+const { ProviderProfileClient } = await import(
+  '@/app/(public)/providers/[id]/ProviderProfileClient'
+);
 
 function makeProvider(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    id: 'p1',
     user_id: 'u1',
     display_name: 'Jane Provider',
     business_name: 'Jane Plumbing Co',
@@ -88,6 +95,18 @@ function makeProvider(overrides: Record<string, unknown> = {}): Record<string, u
   };
 }
 
+// The client island requires providerId + initialProvider props. The mocked
+// hook overrides what actually renders, so a minimal stub initialProvider is
+// enough to satisfy the prop contract.
+function renderClient() {
+  return render(
+    createElement(ProviderProfileClient, {
+      providerId: 'test-id',
+      initialProvider: makeProvider() as never,
+    }),
+  );
+}
+
 describe('(public)/providers/[id]/page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -97,16 +116,21 @@ describe('(public)/providers/[id]/page', () => {
     } as unknown as ReturnType<typeof useReviewsForUser>);
   });
 
-  it('renders the loading skeleton', () => {
+  // The page is now RSC: the server fetches the profile and seeds the client
+  // island via initialData, so there is no first-paint loading skeleton — the
+  // island renders real content immediately. This asserts that no-skeleton
+  // behavior (the seeded data is present from the first render).
+  it('renders seeded content immediately with no loading skeleton', () => {
     vi.mocked(usePublicProviderProfile).mockReturnValue({
-      data: undefined,
-      isLoading: true,
+      data: makeProvider(),
+      isLoading: false,
       isError: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    const { container } = render(createElement(ProviderProfilePage));
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    const { container } = renderClient();
+    expect(container.querySelectorAll('.animate-pulse').length).toBe(0);
+    expect(screen.getByRole('heading', { name: 'Jane Plumbing Co' })).toBeDefined();
   });
 
   it('renders the error state with retry button', () => {
@@ -117,7 +141,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByText(/Failed to load provider profile/)).toBeDefined();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
   });
@@ -130,7 +154,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByRole('heading', { name: 'Jane Plumbing Co' })).toBeDefined();
     expect(screen.getByText('Service Categories')).toBeDefined();
     expect(screen.getByText('No reviews yet.')).toBeDefined();
@@ -146,7 +170,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByText(/Failed to load provider profile/)).toBeDefined();
   });
 
@@ -159,7 +183,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch,
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalledTimes(1);
   });
@@ -172,7 +196,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByRole('heading', { name: 'Jane Provider' })).toBeDefined();
     // The display_name secondary line is not rendered when business_name is absent.
     const headings = screen.getAllByRole('heading');
@@ -187,7 +211,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.queryByText('Verified')).toBeNull();
   });
 
@@ -203,7 +227,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     // Trust score appears twice (hero + stats grid), rendered as a percentage.
     expect(screen.getAllByText('87').length).toBeGreaterThanOrEqual(2);
     // Tier name title-cased and underscores swapped for spaces.
@@ -224,7 +248,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByText('4.7')).toBeDefined();
     expect(screen.getByText(/Rating \(12\)/)).toBeDefined();
     expect(screen.getByText('95%')).toBeDefined();
@@ -239,7 +263,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByTestId('response-time').textContent).toBe('Responds in 1 hr');
   });
 
@@ -251,7 +275,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByText('Hand-picked artisans for every job.')).toBeDefined();
   });
 
@@ -263,7 +287,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.queryByText('Service Categories')).toBeNull();
   });
 
@@ -294,7 +318,7 @@ describe('(public)/providers/[id]/page', () => {
       },
     } as unknown as ReturnType<typeof useReviewsForUser>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     expect(screen.getByText(/Outstanding work, very professional\./)).toBeDefined();
     expect(screen.getByText(/Good job overall\./)).toBeDefined();
     expect(screen.getByText('Provider Response')).toBeDefined();
@@ -312,7 +336,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     const btn = screen.getByTestId('follow-button');
     expect(btn.getAttribute('data-seller-id')).toBe('u1');
     expect(btn.getAttribute('data-initial-following')).toBe('true');
@@ -328,7 +352,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     const btn = screen.getByTestId('follow-button');
     expect(btn.getAttribute('data-initial-following')).toBe('false');
     expect(btn.getAttribute('data-current-user-id')).toBe('');
@@ -342,7 +366,7 @@ describe('(public)/providers/[id]/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof usePublicProviderProfile>);
 
-    render(createElement(ProviderProfilePage));
+    renderClient();
     // Stats grid trust score cell shows "--".
     const trustLabel = screen.getByText('Trust Score');
     const cell = trustLabel.parentElement;

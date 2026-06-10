@@ -56,7 +56,10 @@ export function useSearchProviders(params: SearchProvidersParams) {
   });
 }
 
-export function usePublicProviderProfile(id: string) {
+export function usePublicProviderProfile(
+  id: string,
+  options?: { initialData?: PublicProvider },
+) {
   return useQuery({
     queryKey: ['provider', id],
     // Gateway returns the provider at the top level (with response_time_label
@@ -66,5 +69,9 @@ export function usePublicProviderProfile(id: string) {
       return raw as unknown as PublicProvider;
     },
     enabled: !!id,
+    // Optional server-seeded profile (the RSC page passes its fetch result) so
+    // SSR + client first paint render the same data — no skeleton, no refetch
+    // flash. Mirrors useListing / the marketplace detail pattern.
+    ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
 }

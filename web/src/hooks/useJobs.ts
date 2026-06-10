@@ -79,11 +79,15 @@ export function useSearchJobs(
   });
 }
 
-export function useJob(id: string) {
+export function useJob(id: string, options?: { initialData?: JobDetail }) {
   return useQuery({
     queryKey: ['jobs', id],
     queryFn: () => api.getPublic<{ job: JobDetail }>(`/api/v1/jobs/${id}`).then((res) => res.job),
     enabled: !!id,
+    // Optional server-seeded detail (the RSC page passes its fetch result) so
+    // SSR + client first paint render the same data — no skeleton, no refetch
+    // flash. Mirrors useListing / the marketplace detail pattern.
+    ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
 }
 

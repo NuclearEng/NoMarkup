@@ -85,7 +85,11 @@ const { useAuctionTerminal } = await import('@/hooks/useAuctionTerminal');
 const { useBidCount, useBidsForJob, usePlaceBid } = await import('@/hooks/useBids');
 const { useCountdown } = await import('@/hooks/useCountdown');
 const { useAuthStore } = await import('@/stores/auth-store');
-const { default: JobDetailPage } = await import('@/app/(public)/jobs/[id]/page');
+// The page is now an async Server Component (server-fetch + JobPosting
+// JSON-LD); the interactive auction UI lives in JobDetailClient, which
+// consumes the same useJob hook (seeded via initialData). These tests drive
+// the rendered UI through that mocked hook, so they target the client island.
+const { JobDetailClient } = await import('@/app/(public)/jobs/[id]/JobDetailClient');
 
 const baseJob = {
   id: 'test-id',
@@ -159,6 +163,15 @@ function setHooks(opts: {
   } as unknown as ReturnType<typeof useAuctionTerminal>);
 }
 
+// The client island requires jobId + initialJob props. The mocked useJob hook
+// overrides what actually renders, so a minimal stub initialJob is enough to
+// satisfy the prop contract.
+function renderClient() {
+  return render(
+    createElement(JobDetailClient, { jobId: 'test-id', initialJob: baseJob as never }),
+  );
+}
+
 describe('(public)/jobs/[id]/page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -166,16 +179,20 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks();
   });
 
-  it('renders the loading skeleton', () => {
-    setHooks({ isLoading: true });
-    const { container } = render(createElement(JobDetailPage));
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+  // The page is now RSC: the server fetches the job and seeds the client island
+  // via initialData, so there is no first-paint loading skeleton — the island
+  // renders real content immediately. This asserts that no-skeleton behavior.
+  it('renders seeded content immediately with no loading skeleton', () => {
+    setHooks({ job: baseJob });
+    const { container } = renderClient();
+    expect(container.querySelectorAll('.animate-pulse').length).toBe(0);
+    expect(screen.getByRole('heading', { name: 'Replace water heater' })).toBeDefined();
   });
 
   it('renders the not-found state when the job fails to load', () => {
     const refetch = vi.fn();
     setHooks({ isError: true, refetch });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Job not found')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalled();
@@ -183,7 +200,7 @@ describe('(public)/jobs/[id]/page', () => {
 
   it('renders the standard sealed-bid layout when a job is loaded', () => {
     setHooks({ job: baseJob });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByRole('heading', { name: 'Replace water heater' })).toBeDefined();
     expect(screen.getByText('Description')).toBeDefined();
     expect(screen.getByText('Posted By')).toBeDefined();
@@ -191,7 +208,7 @@ describe('(public)/jobs/[id]/page', () => {
 
   it('renders the sign-in CTA in the auction status card when unauthenticated', () => {
     setHooks({ job: baseJob });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByRole('link', { name: /Sign in to bid/ })).toBeDefined();
   });
 
@@ -201,7 +218,7 @@ describe('(public)/jobs/[id]/page', () => {
       isAuthenticated: true,
     });
     setHooks({ job: baseJob });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(
       screen.getByText('Only providers can place bids on jobs.'),
     ).toBeDefined();
@@ -213,7 +230,7 @@ describe('(public)/jobs/[id]/page', () => {
       isAuthenticated: true,
     });
     setHooks({ job: baseJob });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('bid-list')).toBeDefined();
   });
 
@@ -223,7 +240,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('terminal-grid')).toBeDefined();
     expect(screen.getByText('LIVE')).toBeDefined();
   });
@@ -233,7 +250,7 @@ describe('(public)/jobs/[id]/page', () => {
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2020-01-01T00:00:00Z' },
       countdown: { timeLeft: '0', isExpired: true, totalSeconds: 0 },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     // No terminal grid — standard layout shows the customer card.
     expect(screen.queryByTestId('terminal-grid')).toBeNull();
     expect(screen.getByText('Posted By')).toBeDefined();
@@ -248,7 +265,7 @@ describe('(public)/jobs/[id]/page', () => {
         scheduled_date: null,
       },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText(/Recurring: weekly/)).toBeDefined();
   });
 
@@ -256,7 +273,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, lowest_bid_cents: 12345, starting_bid_cents: 50000, bid_count: 3 },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText(/Lowest:/)).toBeDefined();
     expect(screen.getByTestId('live-bid-ticker')).toBeDefined();
   });
@@ -271,7 +288,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     // BidForm renders inside the sticky bottom bar of the live layout.
     expect(screen.getByTestId('bid-form')).toBeDefined();
   });
@@ -286,7 +303,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Provider')).toBeDefined();
   });
 
@@ -300,7 +317,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Owner')).toBeDefined();
   });
 
@@ -310,7 +327,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: false, error: new Error('boom') },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Disconnected')).toBeDefined();
   });
 
@@ -320,7 +337,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: false, error: null },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Connecting')).toBeDefined();
   });
 
@@ -335,7 +352,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     // Location may render multiple places in live header (desktop + mobile); both ok.
     expect(screen.getAllByText('500 Oak Ave').length).toBeGreaterThan(0);
   });
@@ -346,7 +363,7 @@ describe('(public)/jobs/[id]/page', () => {
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: true },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText(/Sign in to place a bid/)).toBeDefined();
   });
 
@@ -354,7 +371,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, status: 'draft' },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     // Status badge text replaces underscores with spaces; "draft" remains as is.
     expect(screen.getByText('draft')).toBeDefined();
   });
@@ -363,7 +380,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, is_recurring: true, recurrence_frequency: 'monthly' },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText(/Recurring: monthly/)).toBeDefined();
   });
 
@@ -371,7 +388,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, scheduled_date: '2026-05-01T10:00:00Z' },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     // The scheduled date renders with locale-formatted weekday/month/day/year.
     expect(screen.getByText(/2026/)).toBeDefined();
   });
@@ -393,7 +410,7 @@ describe('(public)/jobs/[id]/page', () => {
       ],
     });
     setAuth({ user: { id: 'cust-1', roles: ['customer'] }, isAuthenticated: true });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('bid-activity')).toBeDefined();
   });
 
@@ -408,7 +425,7 @@ describe('(public)/jobs/[id]/page', () => {
       job: { ...baseJob, lowest_bid_cents: 50000, starting_bid_cents: 100000 },
       bids: [],
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getAllByTestId('bid-form').length).toBeGreaterThan(0);
   });
 
@@ -419,7 +436,7 @@ describe('(public)/jobs/[id]/page', () => {
         market_range: { low_cents: 1000, median_cents: 2000, high_cents: 3000, sample_size: 10 },
       },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('market-range')).toBeDefined();
   });
 
@@ -433,7 +450,7 @@ describe('(public)/jobs/[id]/page', () => {
         location_address: '500 Oak Ave',
       },
     });
-    const { container } = render(createElement(JobDetailPage));
+    const { container } = renderClient();
     const img = container.querySelector('img');
     expect(img).not.toBeNull();
     expect(img?.getAttribute('src')).toContain('api.mapbox.com');
@@ -460,7 +477,7 @@ describe('(public)/jobs/[id]/page', () => {
         },
       ],
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('bid-form')).toBeDefined();
   });
 
@@ -468,7 +485,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, customer_jobs_posted: 5 },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText(/5 jobs.*posted/)).toBeDefined();
   });
 
@@ -476,7 +493,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, auction_ends_at: null },
     });
-    const { container } = render(createElement(JobDetailPage));
+    const { container } = renderClient();
     // Without auction_ends_at, the AuctionTimer is still not rendered (null branch).
     // The "Auction not started" copy should appear instead.
     expect(container.textContent).toContain('Auction not started');
@@ -486,7 +503,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, offer_accepted_cents: 25000 },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Instant Accept Price')).toBeDefined();
   });
 
@@ -500,7 +517,7 @@ describe('(public)/jobs/[id]/page', () => {
         location_address: null,
       },
     });
-    const { container } = render(createElement(JobDetailPage));
+    const { container } = renderClient();
     const img = container.querySelector('img');
     expect(img).not.toBeNull();
     // The address overlay div is not rendered without an address.
@@ -517,7 +534,7 @@ describe('(public)/jobs/[id]/page', () => {
         market_range: { low_cents: 90000, median_cents: 100000, high_cents: 110000, sample_size: 5 },
       },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('savings-badge')).toBeDefined();
   });
 
@@ -529,7 +546,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, status: 'closed' },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('bid-list')).toBeDefined();
   });
 
@@ -550,7 +567,7 @@ describe('(public)/jobs/[id]/page', () => {
         },
       ],
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByTestId('bid-activity')).toBeDefined();
   });
 
@@ -558,7 +575,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, schedule_type: 'specific_date' },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Specific Date')).toBeDefined();
   });
 
@@ -566,7 +583,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, schedule_type: 'date_range' },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     expect(screen.getByText('Date Range')).toBeDefined();
   });
 
@@ -574,7 +591,7 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({
       job: { ...baseJob, status: 'closed' },
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     // The status text is replaced underscore→space; status remains "closed".
     expect(screen.getByText('closed')).toBeDefined();
   });
@@ -600,7 +617,7 @@ describe('(public)/jobs/[id]/page', () => {
         },
       ],
     });
-    render(createElement(JobDetailPage));
+    renderClient();
     // BidForm renders for a provider with an existing bid (lines 590-599).
     expect(screen.getByTestId('bid-form')).toBeDefined();
   });

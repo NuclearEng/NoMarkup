@@ -10,6 +10,10 @@ import type { ListingDetail, ListingPhoto } from '@/types';
 const API_URL =
   process.env['API_URL'] ?? process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8081';
 
+// Public site origin — drives canonical + absolute openGraph/JSON-LD URLs.
+// Same resolution as layout.tsx / sitemap.ts / robots.ts.
+const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+
 /**
  * Server-fetch a listing for the detail page.
  *
@@ -60,17 +64,83 @@ export async function generateMetadata({
       ? `${listing.description.slice(0, 157)}...`
       : listing.description;
   const ogImage = listing.photos[0]?.url;
+  const canonical = `/marketplace/${id}`;
 
   return {
     title: `${listing.title} · NoMarkup`,
     description,
+    alternates: { canonical },
     openGraph: {
       title: listing.title,
       description,
       type: 'website',
+      url: `${SITE_URL}${canonical}`,
       ...(ogImage ? { images: [{ url: ogImage }] } : {}),
     },
   };
+}
+
+/**
+ * Map our listing condition grade to a schema.org OfferItemCondition URL.
+ * Undefined/null ("seller didn't say") → no condition emitted.
+ */
+function schemaCondition(condition: ListingDetail['condition']): string | undefined {
+  switch (condition) {
+    case 'new':
+      return 'https://schema.org/NewCondition';
+    case 'like_new':
+    case 'very_good':
+    case 'good':
+    case 'acceptable':
+      return 'https://schema.org/UsedCondition';
+    case 'for_parts':
+      return 'https://schema.org/DamagedCondition';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Build schema.org Product + Offer JSON-LD for a marketplace listing.
+ *
+ * Money is integer cents in the API → convert to dollars for schema.org.
+ * The current high bid (or starting price when no bids) is the live offer
+ * price; a `buy_now_price_cents`, when set, is the fixed closeout price.
+ */
+function buildListingJsonLd(listing: ListingDetail, url: string): Record<string, unknown> {
+  const priceCents =
+    listing.current_bid_cents > 0 ? listing.current_bid_cents : listing.starting_price_cents;
+  const condition = schemaCondition(listing.condition);
+
+  const offer: Record<string, unknown> = {
+    '@type': 'Offer',
+    url,
+    priceCurrency: 'USD',
+    price: (listing.buy_now_price_cents ?? priceCents) / 100,
+    availability:
+      listing.status === 'active'
+        ? 'https://schema.org/InStock'
+        : 'https://schema.org/SoldOut',
+  };
+  if (condition) {
+    offer['itemCondition'] = condition;
+  }
+
+  const ld: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: listing.title,
+    description: listing.description,
+    category: listing.category_name,
+    offers: offer,
+  };
+
+  const images = listing.photos.map((p) => p.url).filter(Boolean);
+  if (images.length > 0) {
+    ld['image'] = images;
+  }
+
+  return ld;
 }
 
 export default async function ListingDetailPage({
@@ -85,5 +155,19 @@ export default async function ListingDetailPage({
     notFound();
   }
 
-  return <ListingDetailClient listingId={id} initialListing={listing} />;
+  const canonicalUrl = `${SITE_URL}/marketplace/${id}`;
+  const jsonLd = buildListingJsonLd(listing, canonicalUrl);
+
+  return (
+    <>
+      {/* Product structured data — server-rendered + crawlable. Safe:
+          JSON.stringify of server-controlled data (the DOMPurify rule is for
+          user HTML, not JSON-LD; this is the standard schema.org approach). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <ListingDetailClient listingId={id} initialListing={listing} />
+    </>
+  );
 }
