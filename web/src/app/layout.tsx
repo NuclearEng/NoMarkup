@@ -19,11 +19,39 @@ const syne = Syne({
   display: 'swap',
 });
 
+// Public site origin — drives canonical URLs and absolute OG/Twitter image URLs.
+// no-markup.com is the owned, hyphenated production zone (CLAUDE.md §2).
+const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: { default: 'NoMarkup', template: '%s | NoMarkup' },
-  description: 'Reverse-auction marketplace for home services. Fair prices, verified providers.',
-  manifest: '/manifest.json',
+  description:
+    'Reverse-auction marketplace for home services. Providers compete on price — no lead-gen markup. Plus a local goods marketplace with escrow and verified sellers.',
   applicationName: 'NoMarkup',
+  manifest: '/manifest.json',
+  keywords: [
+    'home services',
+    'reverse auction',
+    'local contractors',
+    'fair price',
+    'local marketplace',
+    'verified providers',
+  ],
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    siteName: 'NoMarkup',
+    title: 'NoMarkup — fair prices, no lead-gen markup',
+    description:
+      'Post a job and let verified providers compete on price. Plus a local goods marketplace with escrow.',
+    url: SITE_URL,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'NoMarkup — fair prices, no lead-gen markup',
+    description: 'Verified providers compete on price. A local marketplace with escrow + trust.',
+  },
   appleWebApp: {
     capable: true,
     title: 'NoMarkup',
