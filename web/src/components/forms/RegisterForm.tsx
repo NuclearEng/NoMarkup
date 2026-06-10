@@ -159,6 +159,9 @@ export function RegisterForm() {
             <p className="mt-0.5 text-xs text-white/50">Grow your business</p>
           </button>
         </div>
+        <p className="mt-2 text-center text-xs text-white/50">
+          Pick your main goal — you can do both, and add the other anytime from your profile.
+        </p>
 
         <OAuthButtons />
         <OAuthDivider />

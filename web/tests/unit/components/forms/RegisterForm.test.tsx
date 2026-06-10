@@ -83,6 +83,8 @@ describe('RegisterForm', () => {
     expect(screen.getByRole('button', { name: /I need work done/ })).toBeDefined();
     expect(screen.getByRole('button', { name: /I offer services/ })).toBeDefined();
     expect(screen.getByRole('button', { name: /Create account/ })).toBeDefined();
+    // The intent picker must say the choice is reversible (dual-role reassurance).
+    expect(screen.getByText(/you can do both, and add the other anytime/i)).toBeDefined();
   });
 
   it('switches the submit label when the provider intent is chosen', async () => {
@@ -133,11 +135,7 @@ describe('RegisterForm', () => {
     if (form) fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(registerMock).toHaveBeenCalledWith(
-        'cust@example.com',
-        'StrongPass1!',
-        'Cust User',
-      );
+      expect(registerMock).toHaveBeenCalledWith('cust@example.com', 'StrongPass1!', 'Cust User');
     });
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith('/dashboard');
