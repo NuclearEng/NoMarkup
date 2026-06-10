@@ -139,7 +139,7 @@ function InsurerCard({ insurer }: { insurer: Insurer }) {
                   {insurer.products.map((product) => (
                     <tr key={product.id} className="border-b border-white/5 last:border-0">
                       <td className="px-3 py-2 text-zinc-100">
-                        {PRODUCT_TYPE_LABELS[product.product_type] ?? product.product_type}
+                        {PRODUCT_TYPE_LABELS[product.product_type]}
                       </td>
                       <td className="px-3 py-2 font-mono text-zinc-100">
                         {formatRate(product.base_rate_bps)}

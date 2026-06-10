@@ -71,7 +71,7 @@ export function ScoreboardCard({
   watching = false,
   showWatch = true,
 }: ScoreboardCardProps) {
-  const rawPhoto = listing.photos?.[0]?.url ?? null;
+  const rawPhoto = listing.photos[0]?.url ?? null;
   // Only hand next/image a src it can actually optimize; an unconfigured
   // remote host throws and crashes the page, so fall back to the placeholder.
   const photo = rawPhoto && canNextImageLoad(rawPhoto) ? rawPhoto : null;

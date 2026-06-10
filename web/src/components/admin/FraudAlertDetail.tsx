@@ -79,10 +79,10 @@ function SignalRow({ signal }: { signal: FraudSignal }) {
     <div className="rounded-lg border p-4 space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{formatSignalType(signal.signal_type ?? '')}</span>
+          <span className="text-sm font-medium">{formatSignalType(signal.signal_type)}</span>
           <Badge
             variant="outline"
-            className={cn('text-xs', signal.risk_level ? FRAUD_RISK_CLASSES[signal.risk_level] : undefined)}
+            className={cn('text-xs', FRAUD_RISK_CLASSES[signal.risk_level])}
           >
             {riskLabel(signal.risk_level)}
           </Badge>
@@ -90,16 +90,16 @@ function SignalRow({ signal }: { signal: FraudSignal }) {
         <span className="text-xs text-muted-foreground">{formatDateSafe(signal.created_at)}</span>
       </div>
 
-      <p className="text-sm text-muted-foreground">{signal.description ?? '—'}</p>
+      <p className="text-sm text-muted-foreground">{signal.description || '—'}</p>
 
       <div className="space-y-1">
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">Confidence</span>
-          <span className="font-medium">{String(Math.round((signal.confidence ?? 0) * 100))}%</span>
+          <span className="font-medium">{String(Math.round(signal.confidence * 100))}%</span>
         </div>
         <Progress
-          value={(signal.confidence ?? 0) * 100}
-          className={cn('h-2', confidenceColor(signal.confidence ?? 0))}
+          value={signal.confidence * 100}
+          className={cn('h-2', confidenceColor(signal.confidence))}
         />
       </div>
 
@@ -110,12 +110,12 @@ function SignalRow({ signal }: { signal: FraudSignal }) {
         </div>
         <div>
           <span className="text-muted-foreground">Fingerprint: </span>
-          <span className="font-mono">{truncate(signal.device_fingerprint ?? '', 16) || '—'}</span>
+          <span className="font-mono">{truncate(signal.device_fingerprint, 16) || '—'}</span>
         </div>
         <div className="sm:col-span-2">
           <span className="text-muted-foreground">Entity: </span>
           <span className="font-mono">
-            {signal.reference_entity_type ?? '—'}/{truncate(signal.reference_entity_id ?? '', 12)}
+            {signal.reference_entity_type || '—'}/{truncate(signal.reference_entity_id, 12)}
           </span>
         </div>
       </div>
@@ -134,7 +134,7 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
 
   const reviewMutation = useReviewFraudAlert();
 
-  const signals = alert.signals ?? [];
+  const signals = alert.signals;
 
   const isResolved = alert.status === ALERT_STATUS.RESOLVED_FRAUD
     || alert.status === ALERT_STATUS.RESOLVED_LEGITIMATE
@@ -163,13 +163,13 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
-                className={cn(alert.aggregate_risk_level ? FRAUD_RISK_CLASSES[alert.aggregate_risk_level] : undefined)}
+                className={cn(FRAUD_RISK_CLASSES[alert.aggregate_risk_level])}
               >
                 {riskLabel(alert.aggregate_risk_level)} RISK
               </Badge>
               <Badge
                 variant="outline"
-                className={cn(alert.status ? FRAUD_ALERT_STATUS_CLASSES[alert.status] : undefined)}
+                className={cn(FRAUD_ALERT_STATUS_CLASSES[alert.status])}
               >
                 {statusLabel(alert.status)}
               </Badge>

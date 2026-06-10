@@ -80,7 +80,7 @@ export function SimilarListings({
 }
 
 function SimilarCard({ listing }: { listing: Listing }) {
-  const rawPhoto = listing.photos?.[0]?.url;
+  const rawPhoto = listing.photos[0]?.url;
   // Only hand next/image a src it can actually optimize; an unconfigured
   // remote host throws and crashes the page, so fall back to the placeholder.
   const photo = canNextImageLoad(rawPhoto) ? rawPhoto : undefined;

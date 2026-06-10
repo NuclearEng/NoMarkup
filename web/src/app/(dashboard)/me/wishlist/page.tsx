@@ -40,7 +40,7 @@ export default function WishlistPage() {
 
   const items = data?.wishlist_items ?? [];
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError(null);
 

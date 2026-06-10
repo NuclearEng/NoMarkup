@@ -291,7 +291,7 @@ export function InsuranceQuoteCompare({
     Number.isFinite(coverageCents) &&
     coverageCents > 0;
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!coverageValid || requestQuotes.isPending) return;
     requestQuotes.mutate({
@@ -420,7 +420,7 @@ export function InsuranceQuoteCompare({
       ) : null}
 
       {/* Success — comparison */}
-      {result && !requestQuotes.isPending ? (
+      {result ? (
         <QuoteComparison requestId={result.request_id} quotes={result.quotes} />
       ) : null}
     </div>

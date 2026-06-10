@@ -10,8 +10,8 @@ const toastSuccess = vi.fn();
 const toastError = vi.fn();
 vi.mock('sonner', () => ({
   toast: {
-    success: (...args: unknown[]) => toastSuccess(...args),
-    error: (...args: unknown[]) => toastError(...args),
+    success: (...args: unknown[]) => { toastSuccess(...args); },
+    error: (...args: unknown[]) => { toastError(...args); },
   },
 }));
 
@@ -25,7 +25,7 @@ vi.mock('@/hooks/useAdmin', async () => {
     await vi.importActual<typeof import('@/hooks/useAdmin')>('@/hooks/useAdmin');
   return {
     ...actual,
-    useAdminInsurers: () => useAdminInsurers(),
+    useAdminInsurers: () => useAdminInsurers() as unknown,
     useOnboardInsurer: () => ({ mutate: onboardMutate, isPending: false }),
     useUpdateInsurer: () => ({ mutate: updateMutate, isPending: false }),
   };

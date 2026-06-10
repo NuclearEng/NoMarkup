@@ -74,7 +74,7 @@ function LicenseRow({ license }: { license: AdminLicense }) {
         </Link>
       </td>
       <td className="px-3 py-3 align-top text-zinc-100">
-        {LICENSE_TYPE_LABELS[license.license_type] ?? license.license_type}
+        {LICENSE_TYPE_LABELS[license.license_type]}
       </td>
       <td className="px-3 py-3 align-top font-mono text-zinc-100">
         {license.license_number}

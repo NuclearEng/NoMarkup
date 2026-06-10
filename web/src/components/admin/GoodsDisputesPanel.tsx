@@ -87,7 +87,7 @@ function ResolveForm({ dispute }: ResolveFormProps) {
 
   const isPartial = resolution === RESOLUTION.REFUND_PARTIAL;
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
 

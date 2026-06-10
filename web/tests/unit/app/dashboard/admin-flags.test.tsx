@@ -21,8 +21,8 @@ const toastSuccess = vi.fn();
 const toastError = vi.fn();
 vi.mock('sonner', () => ({
   toast: {
-    success: (...args: unknown[]) => toastSuccess(...args),
-    error: (...args: unknown[]) => toastError(...args),
+    success: (...args: unknown[]) => { toastSuccess(...args); },
+    error: (...args: unknown[]) => { toastError(...args); },
   },
 }));
 

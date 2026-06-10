@@ -106,6 +106,12 @@ export default function SubscriptionPage() {
   const subscription = subscriptionData?.subscription;
   const tiers = tiersData?.tiers ?? [];
   const usage = usageData;
+
+  // Read proration off the mutation result here, where `data` is still typed
+  // `... | undefined`. Inside the `isSuccess` branch below TanStack narrows
+  // `data` to non-null, but in practice the success flag can flip a render
+  // before `data` is populated, so we keep this nullable and default to 0.
+  const prorationCents = changeTier.data?.proration_amount_cents ?? 0;
   const invoices = invoicesData?.invoices ?? [];
 
   function handleSelectTier(tierId: string) {
@@ -282,7 +288,7 @@ export default function SubscriptionPage() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-zinc-300">Current platform fee</span>
               <span className="font-semibold">
-                {((usage.current_fee_percentage ?? 0) * 100).toFixed(0)}%
+                {(usage.current_fee_percentage * 100).toFixed(0)}%
               </span>
             </div>
           </CardContent>
@@ -369,23 +375,19 @@ export default function SubscriptionPage() {
           {changeTier.isSuccess ? (
             <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg p-3 text-sm">
               Plan changed successfully.
-              {changeTier.data && changeTier.data.proration_amount_cents > 0 ? (
+              {prorationCents > 0 ? (
                 <>
                   {' '}
                   A prorated charge of{' '}
-                  <span className="font-semibold">
-                    {formatCents(changeTier.data.proration_amount_cents)}
-                  </span>{' '}
-                  applies for the rest of this billing period.
+                  <span className="font-semibold">{formatCents(prorationCents)}</span> applies for
+                  the rest of this billing period.
                 </>
               ) : null}
-              {changeTier.data && changeTier.data.proration_amount_cents < 0 ? (
+              {prorationCents < 0 ? (
                 <>
                   {' '}
                   A prorated credit of{' '}
-                  <span className="font-semibold">
-                    {formatCents(Math.abs(changeTier.data.proration_amount_cents))}
-                  </span>{' '}
+                  <span className="font-semibold">{formatCents(Math.abs(prorationCents))}</span>{' '}
                   will be applied to your next invoice.
                 </>
               ) : null}

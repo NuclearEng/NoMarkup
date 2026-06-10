@@ -185,7 +185,7 @@ export function FraudAlertList() {
                     variant="outline"
                     className={cn(
                       'w-fit text-xs',
-                      alert.aggregate_risk_level ? FRAUD_RISK_CLASSES[alert.aggregate_risk_level] : undefined,
+                      FRAUD_RISK_CLASSES[alert.aggregate_risk_level],
                     )}
                   >
                     {riskLabel(alert.aggregate_risk_level)}
@@ -194,13 +194,13 @@ export function FraudAlertList() {
                     variant="outline"
                     className={cn(
                       'w-fit text-xs',
-                      alert.status ? FRAUD_ALERT_STATUS_CLASSES[alert.status] : undefined,
+                      FRAUD_ALERT_STATUS_CLASSES[alert.status],
                     )}
                   >
                     {statusLabel(alert.status)}
                   </Badge>
                   <span className="w-16 text-center text-sm tabular-nums">
-                    {String(alert.signals?.length ?? 0)}
+                    {String(alert.signals.length)}
                   </span>
                   <span className="flex-1 text-right text-xs text-muted-foreground">
                     {formatDate(alert.created_at)}

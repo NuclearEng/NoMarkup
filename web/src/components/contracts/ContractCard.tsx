@@ -334,7 +334,6 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
   return (
     <div
       className="space-y-2 rounded-md border border-zinc-700 bg-zinc-900/50 p-2"
-      onClick={stop}
       role="group"
       aria-label="Tip composer"
     >

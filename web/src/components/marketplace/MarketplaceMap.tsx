@@ -305,7 +305,7 @@ export function MarketplaceMap({
         const popup = new mapboxgl.Popup({ offset: 16, closeButton: true });
         const popupEl = document.createElement('div');
         popupEl.className = 'min-w-[180px] max-w-[220px] p-1';
-        const photoUrl = l.photos?.[0]?.url;
+        const photoUrl = l.photos[0]?.url;
         if (photoUrl) {
           const img = document.createElement('img');
           img.src = photoUrl;
