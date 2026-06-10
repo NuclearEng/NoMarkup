@@ -269,7 +269,7 @@ func main() {
 	spectatorWSHandler := handler.NewSpectatorWSHandler(cacheClient)
 	marketplaceSpectatorWSHandler := handler.NewMarketplaceSpectatorWSHandler(cacheClient)
 	trustHandler := handler.NewTrustHandler(trustClient, cacheClient)
-	fraudHandler := handler.NewFraudHandler(fraudClient)
+	fraudHandler := handler.NewFraudHandler(fraudClient, trustClient)
 	notificationHandler := handler.NewNotificationHandler(notifClient)
 	imageHandler := handler.NewImageHandler(imagingClient)
 

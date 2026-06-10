@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -14,11 +18,36 @@ import (
 // FraudHandler handles HTTP endpoints for fraud detection administration.
 type FraudHandler struct {
 	fraudClient fraudv1.FraudServiceClient
+	trustClient trustv1.TrustServiceClient // optional — recompute trust after a fraud review
 }
 
-// NewFraudHandler creates a new FraudHandler.
-func NewFraudHandler(fraudClient fraudv1.FraudServiceClient) *FraudHandler {
-	return &FraudHandler{fraudClient: fraudClient}
+// NewFraudHandler creates a new FraudHandler. trustClient may be nil (recompute
+// is then skipped); when set, reviewing a fraud alert recomputes the affected
+// user's trust score so a cleared flag actually lifts an under_review tier.
+func NewFraudHandler(fraudClient fraudv1.FraudServiceClient, trustClient trustv1.TrustServiceClient) *FraudHandler {
+	return &FraudHandler{fraudClient: fraudClient, trustClient: trustClient}
+}
+
+// recomputeTrustScore asynchronously recomputes a user's trust score. The
+// fraud-flag -> under_review override is baked into the stored tier at compute
+// time, so without a recompute after a fraud alert is resolved the tier stays
+// frozen at under_review even once the flag is gone. Fire-and-forget: trust is a
+// derived signal and must degrade gracefully (§15 fail soft) — a trust outage
+// must never fail the admin's fraud-review action.
+func (h *FraudHandler) recomputeTrustScore(userID string) {
+	if h.trustClient == nil || userID == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := h.trustClient.ComputeTrustScore(ctx, &trustv1.ComputeTrustScoreRequest{
+			UserId:        userID,
+			TriggerReason: "fraud_alert_reviewed",
+		}); err != nil {
+			slog.Warn("trust score recompute after fraud review failed", "user_id", userID, "error", err)
+		}
+	}()
 }
 
 // ListAlerts handles GET /api/v1/admin/fraud/alerts.
@@ -132,6 +161,11 @@ func (h *FraudHandler) ReviewAlert(w http.ResponseWriter, r *http.Request) {
 		writeGRPCError(w, err)
 		return
 	}
+
+	// Reviewing an alert changes the user's active-flag state, which the trust
+	// tier is computed from. Recompute so a resolved flag actually lifts the
+	// frozen under_review tier (fire-and-forget; never blocks the response).
+	h.recomputeTrustScore(resp.GetAlert().GetUserId())
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"alert": fraudAlertToJSON(resp.GetAlert()),
