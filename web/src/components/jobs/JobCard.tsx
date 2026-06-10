@@ -124,11 +124,15 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
   );
 
   return (
-    <Link href={`/jobs/${job.id}` as Route} className="block">
+    <Link href={`/jobs/${job.id}` as Route} className="block min-w-0">
       <Card
         variant="glass"
         className={cn(
-          'glass-interactive glass-highlight relative overflow-hidden border border-l-[3px] border-[var(--brand-gold)]/10',
+          // min-w-0 + w-full so the card shrinks to its grid/flex track instead of
+          // refusing below its min-content (a grid item defaults to min-width:auto),
+          // which pushed a 2px horizontal scroll at 320px. overflow-hidden +
+          // truncation below handle the clipped content.
+          'w-full min-w-0 glass-interactive glass-highlight relative overflow-hidden border border-l-[3px] border-[var(--brand-gold)]/10',
           getStatusBorderColor(job.status),
         )}
       >
