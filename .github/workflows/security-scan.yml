@@ -12,7 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.25" # must match the go.mod directives (go 1.25.0) — see ci.yml
+  # Pin the exact patch matching every go.mod's `toolchain go1.25.11`: setup-go
+  # v6 makes the installed version authoritative (ignores the directive), and a
+  # bare "1.25" resolved to 1.25.10, whose stdlib carries vulns fixed in .11.
+  # Bump this in lockstep with the toolchain directive.
+  GO_VERSION: "1.25.11"
   NODE_VERSION: 22
 
 jobs:
