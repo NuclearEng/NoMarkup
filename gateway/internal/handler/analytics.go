@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,12 +17,73 @@ import (
 
 // AnalyticsHandler handles HTTP endpoints for analytics.
 type AnalyticsHandler struct {
-	client analyticsv1.AnalyticsServiceClient
+	client    analyticsv1.AnalyticsServiceClient
+	jobClient jobv1.JobServiceClient // for the Fair-Price engine RPC (GetFairPrice)
 }
 
 // NewAnalyticsHandler creates a new AnalyticsHandler.
-func NewAnalyticsHandler(client analyticsv1.AnalyticsServiceClient) *AnalyticsHandler {
-	return &AnalyticsHandler{client: client}
+func NewAnalyticsHandler(client analyticsv1.AnalyticsServiceClient, jobClient jobv1.JobServiceClient) *AnalyticsHandler {
+	return &AnalyticsHandler{client: client, jobClient: jobClient}
+}
+
+// GetFairPrice serves the Fair Price Index for a (category × geo) cell from the
+// Rust pricing engine. Public aggregate (no PII). Accepts category_id or
+// category_slug (slug-or-id flexible, §15) + optional zip/market. Fails soft to
+// has_data=false (never a 500) — pricing is decorative social proof, not a gate.
+func (h *AnalyticsHandler) GetFairPrice(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	categoryID := q.Get("category_id")
+	categorySlug := q.Get("category_slug")
+	if categoryID == "" && categorySlug == "" {
+		writeError(w, http.StatusBadRequest, "category_id or category_slug is required")
+		return
+	}
+	if categoryID != "" && !isValidUUID(categoryID) {
+		writeError(w, http.StatusBadRequest, "category_id must be a valid UUID")
+		return
+	}
+
+	// side: 1=service (default), 2=good.
+	side := uint32(1)
+	if s := q.Get("side"); s != "" {
+		if v, err := strconv.ParseUint(s, 10, 32); err == nil && (v == 1 || v == 2) {
+			side = uint32(v)
+		}
+	}
+	var asOf int64
+	if a := q.Get("as_of"); a != "" {
+		if v, err := strconv.ParseInt(a, 10, 64); err == nil {
+			asOf = v
+		}
+	}
+
+	resp, err := h.jobClient.GetFairPrice(r.Context(), &jobv1.GetFairPriceRequest{
+		CategoryId:   categoryID,
+		CategorySlug: categorySlug,
+		Zip:          q.Get("zip"),
+		MarketId:     q.Get("market_id"),
+		AsOf:         asOf,
+		Side:         side,
+	})
+	if err != nil {
+		// Fail soft: a pricing estimate must never 500 the surface.
+		writeJSON(w, http.StatusOK, map[string]interface{}{"has_data": false})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"has_data":         resp.GetHasData(),
+		"price_cents":      resp.GetPriceCents(),
+		"p25_cents":        resp.GetP25Cents(),
+		"p75_cents":        resp.GetP75Cents(),
+		"ci_lo_cents":      resp.GetCiLoCents(),
+		"ci_hi_cents":      resp.GetCiHiCents(),
+		"n_eff":            resp.GetNEff(),
+		"confidence":       resp.GetConfidence(),
+		"confidence_label": resp.GetConfidenceLabel(),
+		"level_used":       resp.GetLevelUsed(),
+		"model_version":    resp.GetModelVersion(),
+	})
 }
 
 // GetMarketRange handles GET /api/v1/analytics/market/range.
@@ -101,18 +163,18 @@ func (h *AnalyticsHandler) GetMarketRange(w http.ResponseWriter, r *http.Request
 	// Public SEO-friendly fair-price data, same class as /api/v1/pricing (which
 	// caches) — no per-caller variance, edge-cacheable per §14.
 	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{
-		"has_data":       true,
-		"category_id":    mr.GetCategoryId(),
-		"subcategory_id": mr.GetSubcategoryId(),
+		"has_data":        true,
+		"category_id":     mr.GetCategoryId(),
+		"subcategory_id":  mr.GetSubcategoryId(),
 		"service_type_id": mr.GetServiceTypeId(),
-		"region":         mr.GetRegion(),
-		"low_cents":      mr.GetLowCents(),
-		"median_cents":   mr.GetMedianCents(),
-		"high_cents":     mr.GetHighCents(),
-		"data_points":    mr.GetDataPoints(),
-		"source":         mr.GetSource(),
-		"confidence":     mr.GetConfidence(),
-		"computed_at":    formatTimestamp(mr.GetComputedAt()),
+		"region":          mr.GetRegion(),
+		"low_cents":       mr.GetLowCents(),
+		"median_cents":    mr.GetMedianCents(),
+		"high_cents":      mr.GetHighCents(),
+		"data_points":     mr.GetDataPoints(),
+		"source":          mr.GetSource(),
+		"confidence":      mr.GetConfidence(),
+		"computed_at":     formatTimestamp(mr.GetComputedAt()),
 	}, 300, 600)
 }
 
@@ -327,10 +389,10 @@ func (h *AnalyticsHandler) GetCustomerSpending(w http.ResponseWriter, r *http.Re
 	catBreakdown := make([]map[string]interface{}, 0, len(resp.GetCategoryBreakdown()))
 	for _, c := range resp.GetCategoryBreakdown() {
 		catBreakdown = append(catBreakdown, map[string]interface{}{
-			"category_id":      c.GetCategoryId(),
-			"category_name":    c.GetCategoryName(),
+			"category_id":       c.GetCategoryId(),
+			"category_name":     c.GetCategoryName(),
 			"total_spent_cents": c.GetTotalSpentCents(),
-			"job_count":        c.GetJobCount(),
+			"job_count":         c.GetJobCount(),
 		})
 	}
 

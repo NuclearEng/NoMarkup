@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import type {
   AnalyticsMarketRange,
   CustomerSpendingResponse,
+  FairPrice,
   ProviderAnalytics,
   ProviderEarningsResponse,
 } from '@/types';
@@ -41,6 +42,47 @@ export function useMarketRange(
         // auth-gated) is likewise treated as no-data so the public page renders.
         if (error instanceof ApiError && (error.status === 404 || error.status === 401)) {
           return { has_data: false } as AnalyticsMarketRange;
+        }
+        throw error;
+      }
+    },
+  });
+}
+
+export interface UseFairPriceArgs {
+  // Accept slug-or-id flexible inputs (CLAUDE.md §15) — the gateway resolves
+  // either. Callers on the public pricing surface have a slug; the auction
+  // arena has both an id and a slug.
+  categoryId?: string;
+  categorySlug?: string;
+  zip?: string;
+}
+
+// Fair-Price engine read. Public aggregate (no PII), so it uses getPublic to
+// skip the bearer + 401-bounce interceptor — logged-out visitors hit the
+// pricing page. A 404/401 from an older/auth-gated gateway is normalized to the
+// same has_data:false empty state the new gateway returns natively, so the band
+// degrades to "Not enough local data yet" instead of surfacing an error.
+export function useFairPrice({ categoryId, categorySlug, zip }: UseFairPriceArgs) {
+  const category = categoryId ?? categorySlug ?? '';
+  const searchParams = new URLSearchParams();
+  if (categoryId) searchParams.set('category_id', categoryId);
+  else if (categorySlug) searchParams.set('category_slug', categorySlug);
+  if (zip) searchParams.set('zip', zip);
+  const query = searchParams.toString();
+  const path = `/api/v1/analytics/fair-price${query ? `?${query}` : ''}`;
+
+  return useQuery({
+    queryKey: ['fair-price', categoryId, categorySlug, zip],
+    enabled: !!category,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      try {
+        return await api.getPublic<FairPrice>(path);
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 404 || error.status === 401)) {
+          return { has_data: false } as FairPrice;
         }
         throw error;
       }

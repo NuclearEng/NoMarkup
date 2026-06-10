@@ -34,6 +34,10 @@ service JobService {
   rpc GetServiceCategories(GetServiceCategoriesRequest) returns (GetServiceCategoriesResponse);
   rpc GetCategoryTree(GetCategoryTreeRequest) returns (GetCategoryTreeResponse);
 
+  // Fair Price — gathers candidate cleared prices from completed contracts and
+  // delegates the estimate to the Rust pricing engine. Fails soft (has_data=false).
+  rpc GetFairPrice(GetFairPriceRequest) returns (GetFairPriceResponse);
+
   // Admin
   rpc AdminListJobs(AdminListJobsRequest) returns (AdminListJobsResponse);
   rpc AdminSuspendJob(AdminSuspendJobRequest) returns (AdminSuspendJobResponse);
@@ -433,3 +437,34 @@ message AdminDeleteCategoryRequest {
 }
 
 message AdminDeleteCategoryResponse {}
+
+// ============================================================
+// Fair Price Messages
+// ============================================================
+
+// side mirrors nomarkup.pricing.v1.MarketSide:
+//   0 = unspecified, 1 = service (reverse-auction), 2 = good (forward-auction).
+message GetFairPriceRequest {
+  string category_id = 1;
+  string zip = 2;
+  string market_id = 3;  // optional resolved metro; empty → engine uses national levels
+  int64 as_of = 4;       // unix seconds; anchors recency decay. 0 → server uses now()
+  uint32 side = 5;       // MarketSide
+  string category_slug = 6; // slug-or-id flexible (§15): used when category_id is empty
+}
+
+message GetFairPriceResponse {
+  bool has_data = 1;             // false when the engine had no usable data or errored (fail-soft)
+
+  int64 price_cents = 2;
+  int64 p25_cents = 3;
+  int64 p75_cents = 4;
+  int64 ci_lo_cents = 5;
+  int64 ci_hi_cents = 6;
+
+  double n_eff = 7;
+  double confidence = 8;
+  string confidence_label = 9;
+  uint32 level_used = 10;
+  string model_version = 11;
+}

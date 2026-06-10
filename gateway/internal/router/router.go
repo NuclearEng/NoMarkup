@@ -380,6 +380,9 @@ func New(
 	// Public market price range — used by the FairPriceWidget on the public
 	// jobs surface (registered above with the Fair Price Index routes).
 	r.Get("/api/v1/analytics/market/range", analyticsHandler.GetMarketRange)
+	// Fair Price Index — robust cleared-price estimate + confidence band from the
+	// Rust pricing engine (public aggregate, no PII; fails soft to has_data=false).
+	r.Get("/api/v1/analytics/fair-price", analyticsHandler.GetFairPrice)
 
 	// Market trends analytics (require authentication — dashboard only).
 	r.Route("/api/v1/analytics/market", func(r chi.Router) {

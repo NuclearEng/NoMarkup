@@ -4,10 +4,12 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, MapPin, Search, TrendingDown, X } from 'lucide-react';
 
+import { FairPriceBand } from '@/components/analytics/FairPriceBand';
 import { PriceHeatMap } from '@/components/maps/PriceHeatMap';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useFairPrice } from '@/hooks/useAnalytics';
 import {
   usePricingOverview,
   usePricingByCategory,
@@ -694,6 +696,15 @@ function PriceDetailCard({
   index: number;
   parentInView: boolean;
 }) {
+  // Fair-Price engine read for this (category × zip) cell. Augments the static
+  // materialized-view medians below with a confidence-scored band that handles
+  // sparse data gracefully. Degrades to a "not enough data" note on miss.
+  const {
+    data: fairPrice,
+    isLoading: fairPriceLoading,
+    isError: fairPriceError,
+  } = useFairPrice({ categorySlug: row.category_slug, zip: row.zip_code });
+
   return (
     <div
       className={`glass glass-highlight glass-specular-anim rounded-2xl p-5 transition-all duration-700 ${parentInView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
@@ -710,13 +721,25 @@ function PriceDetailCard({
         </span>
       </div>
 
-      {/* Median price hero number */}
+      {/* Fair-Price band — confidence-scored estimate (replaces the bare
+          median hero with the engine's robust estimate + band + confidence). */}
+      <div className="relative z-[3] mb-4">
+        <FairPriceBand
+          fairPrice={fairPrice}
+          isLoading={fairPriceLoading}
+          isError={fairPriceError}
+          title="Fair price"
+        />
+      </div>
+
+      {/* Static materialized-view percentile detail, retained as the
+          breakdown beneath the live band. */}
       <div className="relative z-[3]">
         <p className="text-xs font-medium uppercase tracking-wide text-white/35">
           Median price
         </p>
         <p
-          className="mt-0.5 text-3xl font-black tabular-nums"
+          className="mt-0.5 text-2xl font-black tabular-nums"
           style={{
             background: 'linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold-bright))',
             WebkitBackgroundClip: 'text',

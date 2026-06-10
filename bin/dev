@@ -658,7 +658,8 @@ start_services() {
     start_go_service job "$ROOT/services/job" "$JOB_PORT" \
         "JOB_SERVICE_PORT=$JOB_PORT" \
         "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
-        "MEILISEARCH_API_KEY=masterKey"
+        "MEILISEARCH_API_KEY=masterKey" \
+        "PRICING_ENGINE_ADDR=localhost:$PRICING_PORT"
 
     start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \
         "ENVIRONMENT=development" \
@@ -787,7 +788,8 @@ cmd_up() {
             start_go_service job "$ROOT/services/job" "$JOB_PORT" \
                 "JOB_SERVICE_PORT=$JOB_PORT" \
                 "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
-                "MEILISEARCH_API_KEY=masterKey"
+                "MEILISEARCH_API_KEY=masterKey" \
+                "PRICING_ENGINE_ADDR=localhost:$PRICING_PORT"
             ;;
         payment)
             start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \

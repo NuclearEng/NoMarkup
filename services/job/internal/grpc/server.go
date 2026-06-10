@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
@@ -19,12 +20,20 @@ import (
 // Server implements the JobService gRPC server.
 type Server struct {
 	jobv1.UnimplementedJobServiceServer
-	svc *service.JobService
+	svc       *service.JobService
+	analytics *service.AnalyticsService // optional; powers GetFairPrice
 }
 
 // NewServer creates a new gRPC server for the job service.
 func NewServer(svc *service.JobService) *Server {
 	return &Server{svc: svc}
+}
+
+// WithAnalytics wires the analytics service so the JobService can answer the
+// GetFairPrice RPC. Optional: if unset, GetFairPrice fails soft (has_data=false).
+func (s *Server) WithAnalytics(a *service.AnalyticsService) *Server {
+	s.analytics = a
+	return s
 }
 
 // Register registers the job service with a gRPC server.
@@ -771,4 +780,42 @@ func mapDomainError(err error) error {
 		slog.Error("unmapped domain error", "error", err)
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+// GetFairPrice gathers candidate cleared prices for the requested category and
+// delegates the estimate to the Rust pricing engine. It fails soft: a missing
+// analytics wiring, a candidate-gathering failure, or an engine error all yield
+// has_data=false rather than an error, so the surface degrades gracefully.
+func (s *Server) GetFairPrice(ctx context.Context, req *jobv1.GetFairPriceRequest) (*jobv1.GetFairPriceResponse, error) {
+	if s.analytics == nil {
+		slog.WarnContext(ctx, "GetFairPrice called but analytics service not wired")
+		return &jobv1.GetFairPriceResponse{HasData: false}, nil
+	}
+
+	var asOf time.Time // zero → service uses now()
+	if req.GetAsOf() > 0 {
+		asOf = time.Unix(req.GetAsOf(), 0).UTC()
+	}
+
+	fp, err := s.analytics.GetFairPrice(ctx, req.GetCategoryId(), req.GetCategorySlug(), req.GetZip(), req.GetMarketId(), asOf, req.GetSide())
+	if err != nil {
+		// GetFairPrice is designed to fail soft and not return errors, but guard
+		// anyway: never surface a 500 for a pricing estimate.
+		slog.ErrorContext(ctx, "GetFairPrice: unexpected service error, returning no data", "error", err)
+		return &jobv1.GetFairPriceResponse{HasData: false}, nil
+	}
+
+	return &jobv1.GetFairPriceResponse{
+		HasData:         fp.HasData,
+		PriceCents:      fp.PriceCents,
+		P25Cents:        fp.P25Cents,
+		P75Cents:        fp.P75Cents,
+		CiLoCents:       fp.CILoCents,
+		CiHiCents:       fp.CIHiCents,
+		NEff:            fp.NEff,
+		Confidence:      fp.Confidence,
+		ConfidenceLabel: fp.ConfidenceLabel,
+		LevelUsed:       fp.LevelUsed,
+		ModelVersion:    fp.ModelVersion,
+	}, nil
 }

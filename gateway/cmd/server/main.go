@@ -15,14 +15,16 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meilisearch/meilisearch-go"
 	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
 	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
-	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
 	subscriptionv1 "github.com/nomarkup/nomarkup/proto/subscription/v1"
@@ -35,8 +37,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/meilisearch/meilisearch-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -248,7 +248,7 @@ func main() {
 
 	// Analytics service lives on the same gRPC server as the job service.
 	analyticsClient := analyticsv1.NewAnalyticsServiceClient(jobConn)
-	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient, jobClient)
 
 	// Installment, insurance, and tax/invoice RPCs are all part of the unified
 	// PaymentService (proto consolidated — no separate sub-clients), so they

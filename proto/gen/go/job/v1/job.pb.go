@@ -3421,6 +3421,217 @@ func (*AdminDeleteCategoryResponse) Descriptor() ([]byte, []int) {
 	return file_job_v1_job_proto_rawDescGZIP(), []int{49}
 }
 
+// side mirrors nomarkup.pricing.v1.MarketSide:
+//
+//	0 = unspecified, 1 = service (reverse-auction), 2 = good (forward-auction).
+type GetFairPriceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CategoryId    string                 `protobuf:"bytes,1,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	Zip           string                 `protobuf:"bytes,2,opt,name=zip,proto3" json:"zip,omitempty"`
+	MarketId      string                 `protobuf:"bytes,3,opt,name=market_id,json=marketId,proto3" json:"market_id,omitempty"`             // optional resolved metro; empty → engine uses national levels
+	AsOf          int64                  `protobuf:"varint,4,opt,name=as_of,json=asOf,proto3" json:"as_of,omitempty"`                        // unix seconds; anchors recency decay. 0 → server uses now()
+	Side          uint32                 `protobuf:"varint,5,opt,name=side,proto3" json:"side,omitempty"`                                    // MarketSide
+	CategorySlug  string                 `protobuf:"bytes,6,opt,name=category_slug,json=categorySlug,proto3" json:"category_slug,omitempty"` // slug-or-id flexible (§15): used when category_id is empty
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFairPriceRequest) Reset() {
+	*x = GetFairPriceRequest{}
+	mi := &file_job_v1_job_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFairPriceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFairPriceRequest) ProtoMessage() {}
+
+func (x *GetFairPriceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_v1_job_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFairPriceRequest.ProtoReflect.Descriptor instead.
+func (*GetFairPriceRequest) Descriptor() ([]byte, []int) {
+	return file_job_v1_job_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *GetFairPriceRequest) GetCategoryId() string {
+	if x != nil {
+		return x.CategoryId
+	}
+	return ""
+}
+
+func (x *GetFairPriceRequest) GetZip() string {
+	if x != nil {
+		return x.Zip
+	}
+	return ""
+}
+
+func (x *GetFairPriceRequest) GetMarketId() string {
+	if x != nil {
+		return x.MarketId
+	}
+	return ""
+}
+
+func (x *GetFairPriceRequest) GetAsOf() int64 {
+	if x != nil {
+		return x.AsOf
+	}
+	return 0
+}
+
+func (x *GetFairPriceRequest) GetSide() uint32 {
+	if x != nil {
+		return x.Side
+	}
+	return 0
+}
+
+func (x *GetFairPriceRequest) GetCategorySlug() string {
+	if x != nil {
+		return x.CategorySlug
+	}
+	return ""
+}
+
+type GetFairPriceResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	HasData         bool                   `protobuf:"varint,1,opt,name=has_data,json=hasData,proto3" json:"has_data,omitempty"` // false when the engine had no usable data or errored (fail-soft)
+	PriceCents      int64                  `protobuf:"varint,2,opt,name=price_cents,json=priceCents,proto3" json:"price_cents,omitempty"`
+	P25Cents        int64                  `protobuf:"varint,3,opt,name=p25_cents,json=p25Cents,proto3" json:"p25_cents,omitempty"`
+	P75Cents        int64                  `protobuf:"varint,4,opt,name=p75_cents,json=p75Cents,proto3" json:"p75_cents,omitempty"`
+	CiLoCents       int64                  `protobuf:"varint,5,opt,name=ci_lo_cents,json=ciLoCents,proto3" json:"ci_lo_cents,omitempty"`
+	CiHiCents       int64                  `protobuf:"varint,6,opt,name=ci_hi_cents,json=ciHiCents,proto3" json:"ci_hi_cents,omitempty"`
+	NEff            float64                `protobuf:"fixed64,7,opt,name=n_eff,json=nEff,proto3" json:"n_eff,omitempty"`
+	Confidence      float64                `protobuf:"fixed64,8,opt,name=confidence,proto3" json:"confidence,omitempty"`
+	ConfidenceLabel string                 `protobuf:"bytes,9,opt,name=confidence_label,json=confidenceLabel,proto3" json:"confidence_label,omitempty"`
+	LevelUsed       uint32                 `protobuf:"varint,10,opt,name=level_used,json=levelUsed,proto3" json:"level_used,omitempty"`
+	ModelVersion    string                 `protobuf:"bytes,11,opt,name=model_version,json=modelVersion,proto3" json:"model_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetFairPriceResponse) Reset() {
+	*x = GetFairPriceResponse{}
+	mi := &file_job_v1_job_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFairPriceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFairPriceResponse) ProtoMessage() {}
+
+func (x *GetFairPriceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_job_v1_job_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFairPriceResponse.ProtoReflect.Descriptor instead.
+func (*GetFairPriceResponse) Descriptor() ([]byte, []int) {
+	return file_job_v1_job_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *GetFairPriceResponse) GetHasData() bool {
+	if x != nil {
+		return x.HasData
+	}
+	return false
+}
+
+func (x *GetFairPriceResponse) GetPriceCents() int64 {
+	if x != nil {
+		return x.PriceCents
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetP25Cents() int64 {
+	if x != nil {
+		return x.P25Cents
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetP75Cents() int64 {
+	if x != nil {
+		return x.P75Cents
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetCiLoCents() int64 {
+	if x != nil {
+		return x.CiLoCents
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetCiHiCents() int64 {
+	if x != nil {
+		return x.CiHiCents
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetNEff() float64 {
+	if x != nil {
+		return x.NEff
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetConfidence() float64 {
+	if x != nil {
+		return x.Confidence
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetConfidenceLabel() string {
+	if x != nil {
+		return x.ConfidenceLabel
+	}
+	return ""
+}
+
+func (x *GetFairPriceResponse) GetLevelUsed() uint32 {
+	if x != nil {
+		return x.LevelUsed
+	}
+	return 0
+}
+
+func (x *GetFairPriceResponse) GetModelVersion() string {
+	if x != nil {
+		return x.ModelVersion
+	}
+	return ""
+}
+
 var File_job_v1_job_proto protoreflect.FileDescriptor
 
 const file_job_v1_job_proto_rawDesc = "" +
@@ -3762,7 +3973,32 @@ const file_job_v1_job_proto_rawDesc = "" +
 	"\x1aAdminDeleteCategoryRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\"\x1d\n" +
-	"\x1bAdminDeleteCategoryResponse*\xf9\x02\n" +
+	"\x1bAdminDeleteCategoryResponse\"\xb3\x01\n" +
+	"\x13GetFairPriceRequest\x12\x1f\n" +
+	"\vcategory_id\x18\x01 \x01(\tR\n" +
+	"categoryId\x12\x10\n" +
+	"\x03zip\x18\x02 \x01(\tR\x03zip\x12\x1b\n" +
+	"\tmarket_id\x18\x03 \x01(\tR\bmarketId\x12\x13\n" +
+	"\x05as_of\x18\x04 \x01(\x03R\x04asOf\x12\x12\n" +
+	"\x04side\x18\x05 \x01(\rR\x04side\x12#\n" +
+	"\rcategory_slug\x18\x06 \x01(\tR\fcategorySlug\"\xf0\x02\n" +
+	"\x14GetFairPriceResponse\x12\x19\n" +
+	"\bhas_data\x18\x01 \x01(\bR\ahasData\x12\x1f\n" +
+	"\vprice_cents\x18\x02 \x01(\x03R\n" +
+	"priceCents\x12\x1b\n" +
+	"\tp25_cents\x18\x03 \x01(\x03R\bp25Cents\x12\x1b\n" +
+	"\tp75_cents\x18\x04 \x01(\x03R\bp75Cents\x12\x1e\n" +
+	"\vci_lo_cents\x18\x05 \x01(\x03R\tciLoCents\x12\x1e\n" +
+	"\vci_hi_cents\x18\x06 \x01(\x03R\tciHiCents\x12\x13\n" +
+	"\x05n_eff\x18\a \x01(\x01R\x04nEff\x12\x1e\n" +
+	"\n" +
+	"confidence\x18\b \x01(\x01R\n" +
+	"confidence\x12)\n" +
+	"\x10confidence_label\x18\t \x01(\tR\x0fconfidenceLabel\x12\x1d\n" +
+	"\n" +
+	"level_used\x18\n" +
+	" \x01(\rR\tlevelUsed\x12#\n" +
+	"\rmodel_version\x18\v \x01(\tR\fmodelVersion*\xf9\x02\n" +
 	"\tJobStatus\x12\x1a\n" +
 	"\x16JOB_STATUS_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10JOB_STATUS_DRAFT\x10\x01\x12\x15\n" +
@@ -3778,7 +4014,7 @@ const file_job_v1_job_proto_rawDesc = "" +
 	"\x12\x17\n" +
 	"\x13JOB_STATUS_REPOSTED\x10\v\x12\x16\n" +
 	"\x12JOB_STATUS_EXPIRED\x10\f\x12\x18\n" +
-	"\x14JOB_STATUS_SUSPENDED\x10\r2\xfe\x0f\n" +
+	"\x14JOB_STATUS_SUSPENDED\x10\r2\xdb\x10\n" +
 	"\n" +
 	"JobService\x12R\n" +
 	"\tCreateJob\x12!.nomarkup.job.v1.CreateJobRequest\x1a\".nomarkup.job.v1.CreateJobResponse\x12R\n" +
@@ -3798,7 +4034,8 @@ const file_job_v1_job_proto_rawDesc = "" +
 	"\n" +
 	"ListDrafts\x12\".nomarkup.job.v1.ListDraftsRequest\x1a#.nomarkup.job.v1.ListDraftsResponse\x12s\n" +
 	"\x14GetServiceCategories\x12,.nomarkup.job.v1.GetServiceCategoriesRequest\x1a-.nomarkup.job.v1.GetServiceCategoriesResponse\x12d\n" +
-	"\x0fGetCategoryTree\x12'.nomarkup.job.v1.GetCategoryTreeRequest\x1a(.nomarkup.job.v1.GetCategoryTreeResponse\x12^\n" +
+	"\x0fGetCategoryTree\x12'.nomarkup.job.v1.GetCategoryTreeRequest\x1a(.nomarkup.job.v1.GetCategoryTreeResponse\x12[\n" +
+	"\fGetFairPrice\x12$.nomarkup.job.v1.GetFairPriceRequest\x1a%.nomarkup.job.v1.GetFairPriceResponse\x12^\n" +
 	"\rAdminListJobs\x12%.nomarkup.job.v1.AdminListJobsRequest\x1a&.nomarkup.job.v1.AdminListJobsResponse\x12d\n" +
 	"\x0fAdminSuspendJob\x12'.nomarkup.job.v1.AdminSuspendJobRequest\x1a(.nomarkup.job.v1.AdminSuspendJobResponse\x12a\n" +
 	"\x0eAdminRemoveJob\x12&.nomarkup.job.v1.AdminRemoveJobRequest\x1a'.nomarkup.job.v1.AdminRemoveJobResponse\x12p\n" +
@@ -3819,7 +4056,7 @@ func file_job_v1_job_proto_rawDescGZIP() []byte {
 }
 
 var file_job_v1_job_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_job_v1_job_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_job_v1_job_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_job_v1_job_proto_goTypes = []any{
 	(JobStatus)(0),                         // 0: nomarkup.job.v1.JobStatus
 	(*Job)(nil),                            // 1: nomarkup.job.v1.Job
@@ -3872,80 +4109,82 @@ var file_job_v1_job_proto_goTypes = []any{
 	(*AdminUpdateCategoryResponse)(nil),    // 48: nomarkup.job.v1.AdminUpdateCategoryResponse
 	(*AdminDeleteCategoryRequest)(nil),     // 49: nomarkup.job.v1.AdminDeleteCategoryRequest
 	(*AdminDeleteCategoryResponse)(nil),    // 50: nomarkup.job.v1.AdminDeleteCategoryResponse
-	(*v1.Address)(nil),                     // 51: nomarkup.common.v1.Address
-	(v1.ScheduleType)(0),                   // 52: nomarkup.common.v1.ScheduleType
-	(*timestamppb.Timestamp)(nil),          // 53: google.protobuf.Timestamp
-	(*v1.DateRange)(nil),                   // 54: nomarkup.common.v1.DateRange
-	(v1.RecurrenceFrequency)(0),            // 55: nomarkup.common.v1.RecurrenceFrequency
-	(*v11.User)(nil),                       // 56: nomarkup.user.v1.User
-	(*v11.TrustScoreSummary)(nil),          // 57: nomarkup.user.v1.TrustScoreSummary
-	(*v1.Location)(nil),                    // 58: nomarkup.common.v1.Location
-	(*v1.SortRequest)(nil),                 // 59: nomarkup.common.v1.SortRequest
-	(*v1.PaginationRequest)(nil),           // 60: nomarkup.common.v1.PaginationRequest
-	(*v1.PaginationResponse)(nil),          // 61: nomarkup.common.v1.PaginationResponse
+	(*GetFairPriceRequest)(nil),            // 51: nomarkup.job.v1.GetFairPriceRequest
+	(*GetFairPriceResponse)(nil),           // 52: nomarkup.job.v1.GetFairPriceResponse
+	(*v1.Address)(nil),                     // 53: nomarkup.common.v1.Address
+	(v1.ScheduleType)(0),                   // 54: nomarkup.common.v1.ScheduleType
+	(*timestamppb.Timestamp)(nil),          // 55: google.protobuf.Timestamp
+	(*v1.DateRange)(nil),                   // 56: nomarkup.common.v1.DateRange
+	(v1.RecurrenceFrequency)(0),            // 57: nomarkup.common.v1.RecurrenceFrequency
+	(*v11.User)(nil),                       // 58: nomarkup.user.v1.User
+	(*v11.TrustScoreSummary)(nil),          // 59: nomarkup.user.v1.TrustScoreSummary
+	(*v1.Location)(nil),                    // 60: nomarkup.common.v1.Location
+	(*v1.SortRequest)(nil),                 // 61: nomarkup.common.v1.SortRequest
+	(*v1.PaginationRequest)(nil),           // 62: nomarkup.common.v1.PaginationRequest
+	(*v1.PaginationResponse)(nil),          // 63: nomarkup.common.v1.PaginationResponse
 }
 var file_job_v1_job_proto_depIdxs = []int32{
 	3,  // 0: nomarkup.job.v1.Job.category:type_name -> nomarkup.job.v1.ServiceCategory
 	3,  // 1: nomarkup.job.v1.Job.subcategory:type_name -> nomarkup.job.v1.ServiceCategory
 	3,  // 2: nomarkup.job.v1.Job.service_type:type_name -> nomarkup.job.v1.ServiceCategory
-	51, // 3: nomarkup.job.v1.Job.approximate_address:type_name -> nomarkup.common.v1.Address
-	52, // 4: nomarkup.job.v1.Job.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
-	53, // 5: nomarkup.job.v1.Job.scheduled_date:type_name -> google.protobuf.Timestamp
-	54, // 6: nomarkup.job.v1.Job.schedule_range:type_name -> nomarkup.common.v1.DateRange
-	55, // 7: nomarkup.job.v1.Job.recurrence_frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
-	53, // 8: nomarkup.job.v1.Job.auction_ends_at:type_name -> google.protobuf.Timestamp
+	53, // 3: nomarkup.job.v1.Job.approximate_address:type_name -> nomarkup.common.v1.Address
+	54, // 4: nomarkup.job.v1.Job.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
+	55, // 5: nomarkup.job.v1.Job.scheduled_date:type_name -> google.protobuf.Timestamp
+	56, // 6: nomarkup.job.v1.Job.schedule_range:type_name -> nomarkup.common.v1.DateRange
+	57, // 7: nomarkup.job.v1.Job.recurrence_frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
+	55, // 8: nomarkup.job.v1.Job.auction_ends_at:type_name -> google.protobuf.Timestamp
 	0,  // 9: nomarkup.job.v1.Job.status:type_name -> nomarkup.job.v1.JobStatus
 	4,  // 10: nomarkup.job.v1.Job.market_range:type_name -> nomarkup.job.v1.MarketRange
-	53, // 11: nomarkup.job.v1.Job.created_at:type_name -> google.protobuf.Timestamp
-	53, // 12: nomarkup.job.v1.Job.auction_closed_at:type_name -> google.protobuf.Timestamp
-	53, // 13: nomarkup.job.v1.Job.awarded_at:type_name -> google.protobuf.Timestamp
-	53, // 14: nomarkup.job.v1.Job.completed_at:type_name -> google.protobuf.Timestamp
-	53, // 15: nomarkup.job.v1.Job.original_auction_ends_at:type_name -> google.protobuf.Timestamp
+	55, // 11: nomarkup.job.v1.Job.created_at:type_name -> google.protobuf.Timestamp
+	55, // 12: nomarkup.job.v1.Job.auction_closed_at:type_name -> google.protobuf.Timestamp
+	55, // 13: nomarkup.job.v1.Job.awarded_at:type_name -> google.protobuf.Timestamp
+	55, // 14: nomarkup.job.v1.Job.completed_at:type_name -> google.protobuf.Timestamp
+	55, // 15: nomarkup.job.v1.Job.original_auction_ends_at:type_name -> google.protobuf.Timestamp
 	1,  // 16: nomarkup.job.v1.JobDetail.job:type_name -> nomarkup.job.v1.Job
-	51, // 17: nomarkup.job.v1.JobDetail.exact_address:type_name -> nomarkup.common.v1.Address
-	56, // 18: nomarkup.job.v1.JobDetail.customer:type_name -> nomarkup.user.v1.User
-	57, // 19: nomarkup.job.v1.JobDetail.customer_trust:type_name -> nomarkup.user.v1.TrustScoreSummary
-	52, // 20: nomarkup.job.v1.CreateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
-	53, // 21: nomarkup.job.v1.CreateJobRequest.scheduled_date:type_name -> google.protobuf.Timestamp
-	54, // 22: nomarkup.job.v1.CreateJobRequest.schedule_range:type_name -> nomarkup.common.v1.DateRange
-	55, // 23: nomarkup.job.v1.CreateJobRequest.recurrence_frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
+	53, // 17: nomarkup.job.v1.JobDetail.exact_address:type_name -> nomarkup.common.v1.Address
+	58, // 18: nomarkup.job.v1.JobDetail.customer:type_name -> nomarkup.user.v1.User
+	59, // 19: nomarkup.job.v1.JobDetail.customer_trust:type_name -> nomarkup.user.v1.TrustScoreSummary
+	54, // 20: nomarkup.job.v1.CreateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
+	55, // 21: nomarkup.job.v1.CreateJobRequest.scheduled_date:type_name -> google.protobuf.Timestamp
+	56, // 22: nomarkup.job.v1.CreateJobRequest.schedule_range:type_name -> nomarkup.common.v1.DateRange
+	57, // 23: nomarkup.job.v1.CreateJobRequest.recurrence_frequency:type_name -> nomarkup.common.v1.RecurrenceFrequency
 	1,  // 24: nomarkup.job.v1.CreateJobResponse.job:type_name -> nomarkup.job.v1.Job
-	52, // 25: nomarkup.job.v1.UpdateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
+	54, // 25: nomarkup.job.v1.UpdateJobRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
 	1,  // 26: nomarkup.job.v1.UpdateJobResponse.job:type_name -> nomarkup.job.v1.Job
 	2,  // 27: nomarkup.job.v1.GetJobResponse.job:type_name -> nomarkup.job.v1.JobDetail
 	1,  // 28: nomarkup.job.v1.PublishJobResponse.job:type_name -> nomarkup.job.v1.Job
 	1,  // 29: nomarkup.job.v1.CloseAuctionResponse.job:type_name -> nomarkup.job.v1.Job
 	1,  // 30: nomarkup.job.v1.CancelJobResponse.job:type_name -> nomarkup.job.v1.Job
 	1,  // 31: nomarkup.job.v1.RepostJobResponse.new_job:type_name -> nomarkup.job.v1.Job
-	58, // 32: nomarkup.job.v1.SearchJobsRequest.location:type_name -> nomarkup.common.v1.Location
-	52, // 33: nomarkup.job.v1.SearchJobsRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
-	59, // 34: nomarkup.job.v1.SearchJobsRequest.sort:type_name -> nomarkup.common.v1.SortRequest
-	60, // 35: nomarkup.job.v1.SearchJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	60, // 32: nomarkup.job.v1.SearchJobsRequest.location:type_name -> nomarkup.common.v1.Location
+	54, // 33: nomarkup.job.v1.SearchJobsRequest.schedule_type:type_name -> nomarkup.common.v1.ScheduleType
+	61, // 34: nomarkup.job.v1.SearchJobsRequest.sort:type_name -> nomarkup.common.v1.SortRequest
+	62, // 35: nomarkup.job.v1.SearchJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	1,  // 36: nomarkup.job.v1.SearchJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
-	61, // 37: nomarkup.job.v1.SearchJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	58, // 38: nomarkup.job.v1.GetJobsOnMapRequest.center:type_name -> nomarkup.common.v1.Location
+	63, // 37: nomarkup.job.v1.SearchJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	60, // 38: nomarkup.job.v1.GetJobsOnMapRequest.center:type_name -> nomarkup.common.v1.Location
 	25, // 39: nomarkup.job.v1.GetJobsOnMapResponse.pins:type_name -> nomarkup.job.v1.JobMapPin
-	58, // 40: nomarkup.job.v1.JobMapPin.location:type_name -> nomarkup.common.v1.Location
-	53, // 41: nomarkup.job.v1.JobMapPin.auction_ends_at:type_name -> google.protobuf.Timestamp
+	60, // 40: nomarkup.job.v1.JobMapPin.location:type_name -> nomarkup.common.v1.Location
+	55, // 41: nomarkup.job.v1.JobMapPin.auction_ends_at:type_name -> google.protobuf.Timestamp
 	0,  // 42: nomarkup.job.v1.ListCustomerJobsRequest.status_filter:type_name -> nomarkup.job.v1.JobStatus
-	60, // 43: nomarkup.job.v1.ListCustomerJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	62, // 43: nomarkup.job.v1.ListCustomerJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	1,  // 44: nomarkup.job.v1.ListCustomerJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
-	61, // 45: nomarkup.job.v1.ListCustomerJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	60, // 46: nomarkup.job.v1.ListProviderBiddedJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	63, // 45: nomarkup.job.v1.ListCustomerJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	62, // 46: nomarkup.job.v1.ListProviderBiddedJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	30, // 47: nomarkup.job.v1.ListProviderBiddedJobsResponse.jobs:type_name -> nomarkup.job.v1.JobWithBid
-	61, // 48: nomarkup.job.v1.ListProviderBiddedJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	63, // 48: nomarkup.job.v1.ListProviderBiddedJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	1,  // 49: nomarkup.job.v1.JobWithBid.job:type_name -> nomarkup.job.v1.Job
 	31, // 50: nomarkup.job.v1.JobWithBid.my_bid:type_name -> nomarkup.job.v1.BidSummary
-	53, // 51: nomarkup.job.v1.BidSummary.created_at:type_name -> google.protobuf.Timestamp
+	55, // 51: nomarkup.job.v1.BidSummary.created_at:type_name -> google.protobuf.Timestamp
 	1,  // 52: nomarkup.job.v1.ListDraftsResponse.drafts:type_name -> nomarkup.job.v1.Job
 	3,  // 53: nomarkup.job.v1.GetServiceCategoriesResponse.categories:type_name -> nomarkup.job.v1.ServiceCategory
 	38, // 54: nomarkup.job.v1.GetCategoryTreeResponse.tree:type_name -> nomarkup.job.v1.CategoryTreeNode
 	3,  // 55: nomarkup.job.v1.CategoryTreeNode.category:type_name -> nomarkup.job.v1.ServiceCategory
 	38, // 56: nomarkup.job.v1.CategoryTreeNode.children:type_name -> nomarkup.job.v1.CategoryTreeNode
 	0,  // 57: nomarkup.job.v1.AdminListJobsRequest.status_filter:type_name -> nomarkup.job.v1.JobStatus
-	60, // 58: nomarkup.job.v1.AdminListJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	62, // 58: nomarkup.job.v1.AdminListJobsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
 	1,  // 59: nomarkup.job.v1.AdminListJobsResponse.jobs:type_name -> nomarkup.job.v1.Job
-	61, // 60: nomarkup.job.v1.AdminListJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	63, // 60: nomarkup.job.v1.AdminListJobsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
 	1,  // 61: nomarkup.job.v1.AdminSuspendJobResponse.job:type_name -> nomarkup.job.v1.Job
 	3,  // 62: nomarkup.job.v1.AdminCreateCategoryResponse.category:type_name -> nomarkup.job.v1.ServiceCategory
 	3,  // 63: nomarkup.job.v1.AdminUpdateCategoryResponse.category:type_name -> nomarkup.job.v1.ServiceCategory
@@ -3964,35 +4203,37 @@ var file_job_v1_job_proto_depIdxs = []int32{
 	32, // 76: nomarkup.job.v1.JobService.ListDrafts:input_type -> nomarkup.job.v1.ListDraftsRequest
 	34, // 77: nomarkup.job.v1.JobService.GetServiceCategories:input_type -> nomarkup.job.v1.GetServiceCategoriesRequest
 	36, // 78: nomarkup.job.v1.JobService.GetCategoryTree:input_type -> nomarkup.job.v1.GetCategoryTreeRequest
-	39, // 79: nomarkup.job.v1.JobService.AdminListJobs:input_type -> nomarkup.job.v1.AdminListJobsRequest
-	41, // 80: nomarkup.job.v1.JobService.AdminSuspendJob:input_type -> nomarkup.job.v1.AdminSuspendJobRequest
-	43, // 81: nomarkup.job.v1.JobService.AdminRemoveJob:input_type -> nomarkup.job.v1.AdminRemoveJobRequest
-	45, // 82: nomarkup.job.v1.JobService.AdminCreateCategory:input_type -> nomarkup.job.v1.AdminCreateCategoryRequest
-	47, // 83: nomarkup.job.v1.JobService.AdminUpdateCategory:input_type -> nomarkup.job.v1.AdminUpdateCategoryRequest
-	49, // 84: nomarkup.job.v1.JobService.AdminDeleteCategory:input_type -> nomarkup.job.v1.AdminDeleteCategoryRequest
-	6,  // 85: nomarkup.job.v1.JobService.CreateJob:output_type -> nomarkup.job.v1.CreateJobResponse
-	8,  // 86: nomarkup.job.v1.JobService.UpdateJob:output_type -> nomarkup.job.v1.UpdateJobResponse
-	10, // 87: nomarkup.job.v1.JobService.GetJob:output_type -> nomarkup.job.v1.GetJobResponse
-	12, // 88: nomarkup.job.v1.JobService.DeleteDraft:output_type -> nomarkup.job.v1.DeleteDraftResponse
-	14, // 89: nomarkup.job.v1.JobService.PublishJob:output_type -> nomarkup.job.v1.PublishJobResponse
-	16, // 90: nomarkup.job.v1.JobService.CloseAuction:output_type -> nomarkup.job.v1.CloseAuctionResponse
-	18, // 91: nomarkup.job.v1.JobService.CancelJob:output_type -> nomarkup.job.v1.CancelJobResponse
-	20, // 92: nomarkup.job.v1.JobService.RepostJob:output_type -> nomarkup.job.v1.RepostJobResponse
-	22, // 93: nomarkup.job.v1.JobService.SearchJobs:output_type -> nomarkup.job.v1.SearchJobsResponse
-	24, // 94: nomarkup.job.v1.JobService.GetJobsOnMap:output_type -> nomarkup.job.v1.GetJobsOnMapResponse
-	27, // 95: nomarkup.job.v1.JobService.ListCustomerJobs:output_type -> nomarkup.job.v1.ListCustomerJobsResponse
-	29, // 96: nomarkup.job.v1.JobService.ListProviderBiddedJobs:output_type -> nomarkup.job.v1.ListProviderBiddedJobsResponse
-	33, // 97: nomarkup.job.v1.JobService.ListDrafts:output_type -> nomarkup.job.v1.ListDraftsResponse
-	35, // 98: nomarkup.job.v1.JobService.GetServiceCategories:output_type -> nomarkup.job.v1.GetServiceCategoriesResponse
-	37, // 99: nomarkup.job.v1.JobService.GetCategoryTree:output_type -> nomarkup.job.v1.GetCategoryTreeResponse
-	40, // 100: nomarkup.job.v1.JobService.AdminListJobs:output_type -> nomarkup.job.v1.AdminListJobsResponse
-	42, // 101: nomarkup.job.v1.JobService.AdminSuspendJob:output_type -> nomarkup.job.v1.AdminSuspendJobResponse
-	44, // 102: nomarkup.job.v1.JobService.AdminRemoveJob:output_type -> nomarkup.job.v1.AdminRemoveJobResponse
-	46, // 103: nomarkup.job.v1.JobService.AdminCreateCategory:output_type -> nomarkup.job.v1.AdminCreateCategoryResponse
-	48, // 104: nomarkup.job.v1.JobService.AdminUpdateCategory:output_type -> nomarkup.job.v1.AdminUpdateCategoryResponse
-	50, // 105: nomarkup.job.v1.JobService.AdminDeleteCategory:output_type -> nomarkup.job.v1.AdminDeleteCategoryResponse
-	85, // [85:106] is the sub-list for method output_type
-	64, // [64:85] is the sub-list for method input_type
+	51, // 79: nomarkup.job.v1.JobService.GetFairPrice:input_type -> nomarkup.job.v1.GetFairPriceRequest
+	39, // 80: nomarkup.job.v1.JobService.AdminListJobs:input_type -> nomarkup.job.v1.AdminListJobsRequest
+	41, // 81: nomarkup.job.v1.JobService.AdminSuspendJob:input_type -> nomarkup.job.v1.AdminSuspendJobRequest
+	43, // 82: nomarkup.job.v1.JobService.AdminRemoveJob:input_type -> nomarkup.job.v1.AdminRemoveJobRequest
+	45, // 83: nomarkup.job.v1.JobService.AdminCreateCategory:input_type -> nomarkup.job.v1.AdminCreateCategoryRequest
+	47, // 84: nomarkup.job.v1.JobService.AdminUpdateCategory:input_type -> nomarkup.job.v1.AdminUpdateCategoryRequest
+	49, // 85: nomarkup.job.v1.JobService.AdminDeleteCategory:input_type -> nomarkup.job.v1.AdminDeleteCategoryRequest
+	6,  // 86: nomarkup.job.v1.JobService.CreateJob:output_type -> nomarkup.job.v1.CreateJobResponse
+	8,  // 87: nomarkup.job.v1.JobService.UpdateJob:output_type -> nomarkup.job.v1.UpdateJobResponse
+	10, // 88: nomarkup.job.v1.JobService.GetJob:output_type -> nomarkup.job.v1.GetJobResponse
+	12, // 89: nomarkup.job.v1.JobService.DeleteDraft:output_type -> nomarkup.job.v1.DeleteDraftResponse
+	14, // 90: nomarkup.job.v1.JobService.PublishJob:output_type -> nomarkup.job.v1.PublishJobResponse
+	16, // 91: nomarkup.job.v1.JobService.CloseAuction:output_type -> nomarkup.job.v1.CloseAuctionResponse
+	18, // 92: nomarkup.job.v1.JobService.CancelJob:output_type -> nomarkup.job.v1.CancelJobResponse
+	20, // 93: nomarkup.job.v1.JobService.RepostJob:output_type -> nomarkup.job.v1.RepostJobResponse
+	22, // 94: nomarkup.job.v1.JobService.SearchJobs:output_type -> nomarkup.job.v1.SearchJobsResponse
+	24, // 95: nomarkup.job.v1.JobService.GetJobsOnMap:output_type -> nomarkup.job.v1.GetJobsOnMapResponse
+	27, // 96: nomarkup.job.v1.JobService.ListCustomerJobs:output_type -> nomarkup.job.v1.ListCustomerJobsResponse
+	29, // 97: nomarkup.job.v1.JobService.ListProviderBiddedJobs:output_type -> nomarkup.job.v1.ListProviderBiddedJobsResponse
+	33, // 98: nomarkup.job.v1.JobService.ListDrafts:output_type -> nomarkup.job.v1.ListDraftsResponse
+	35, // 99: nomarkup.job.v1.JobService.GetServiceCategories:output_type -> nomarkup.job.v1.GetServiceCategoriesResponse
+	37, // 100: nomarkup.job.v1.JobService.GetCategoryTree:output_type -> nomarkup.job.v1.GetCategoryTreeResponse
+	52, // 101: nomarkup.job.v1.JobService.GetFairPrice:output_type -> nomarkup.job.v1.GetFairPriceResponse
+	40, // 102: nomarkup.job.v1.JobService.AdminListJobs:output_type -> nomarkup.job.v1.AdminListJobsResponse
+	42, // 103: nomarkup.job.v1.JobService.AdminSuspendJob:output_type -> nomarkup.job.v1.AdminSuspendJobResponse
+	44, // 104: nomarkup.job.v1.JobService.AdminRemoveJob:output_type -> nomarkup.job.v1.AdminRemoveJobResponse
+	46, // 105: nomarkup.job.v1.JobService.AdminCreateCategory:output_type -> nomarkup.job.v1.AdminCreateCategoryResponse
+	48, // 106: nomarkup.job.v1.JobService.AdminUpdateCategory:output_type -> nomarkup.job.v1.AdminUpdateCategoryResponse
+	50, // 107: nomarkup.job.v1.JobService.AdminDeleteCategory:output_type -> nomarkup.job.v1.AdminDeleteCategoryResponse
+	86, // [86:108] is the sub-list for method output_type
+	64, // [64:86] is the sub-list for method input_type
 	64, // [64:64] is the sub-list for extension type_name
 	64, // [64:64] is the sub-list for extension extendee
 	0,  // [0:64] is the sub-list for field type_name
@@ -4021,7 +4262,7 @@ func file_job_v1_job_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_job_v1_job_proto_rawDesc), len(file_job_v1_job_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   50,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

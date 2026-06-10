@@ -22,6 +22,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
 
+	"github.com/nomarkup/nomarkup/services/job/internal/client"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	grpcserver "github.com/nomarkup/nomarkup/services/job/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/job/internal/repository"
@@ -150,6 +151,23 @@ func main() {
 
 	srv := grpcserver.NewServer(jobService)
 
+	// Optional Rust Fair-Price engine client. The connection is lazy, so a down
+	// engine never blocks startup — GetFairPrice fails soft (has_data=false).
+	// Wire it only if PRICING_ENGINE_ADDR is set.
+	var pricingEngine service.PricingEngine
+	if pricingAddr := os.Getenv("PRICING_ENGINE_ADDR"); pricingAddr != "" {
+		pc, perr := client.NewPricingClient(pricingAddr)
+		if perr != nil {
+			slog.Warn("fair-price: failed to init pricing engine client, GetFairPrice will return no data", "error", perr)
+		} else {
+			defer func() { _ = pc.Close() }()
+			pricingEngine = pc
+			slog.Info("fair-price: pricing engine client enabled", "addr", pricingAddr)
+		}
+	} else {
+		slog.Info("fair-price: PRICING_ENGINE_ADDR not set, GetFairPrice will return no data")
+	}
+
 	// Wire up contract service (shares same repo/pool).
 	contractService := service.NewContractService(repo, repo)
 	contractSrv := grpcserver.NewContractServer(contractService)
@@ -158,9 +176,17 @@ func main() {
 	reviewService := service.NewReviewService(repo, repo)
 	reviewSrv := grpcserver.NewReviewServer(reviewService)
 
-	// Wire up analytics service (shares same repo/pool).
+	// Wire up analytics service (shares same repo/pool). The Fair-Price engine
+	// client is optional; if absent, GetFairPrice fails soft.
 	analyticsService := service.NewAnalyticsService(repo)
+	if pricingEngine != nil {
+		analyticsService = analyticsService.WithPricingEngine(pricingEngine)
+	}
 	analyticsSrv := grpcserver.NewAnalyticsServer(analyticsService)
+
+	// The GetFairPrice RPC lives on JobService but is powered by the analytics
+	// service; wire it onto the job server.
+	srv = srv.WithAnalytics(analyticsService)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))

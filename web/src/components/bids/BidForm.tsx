@@ -5,6 +5,7 @@ import { CheckCircle, DollarSign, Loader2, Minus, Plus, Zap } from 'lucide-react
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
+import { FairPriceBand } from '@/components/analytics/FairPriceBand';
 import { BidSuggestion } from '@/components/bids/BidSuggestion';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { useFairPrice } from '@/hooks/useAnalytics';
 import { useAcceptOffer, usePlaceBid, useUpdateBid } from '@/hooks/useBids';
 import { formatCents } from '@/lib/utils';
 import { bidSchema, type BidFormValues } from '@/lib/validations';
@@ -55,6 +57,13 @@ export function BidForm({
   const placeBid = usePlaceBid();
   const updateBid = useUpdateBid();
   const acceptOffer = useAcceptOffer();
+
+  // Live Fair-Price hint — "bids here usually settle $X–$Y" near the bid form.
+  const {
+    data: fairPrice,
+    isLoading: fairPriceLoading,
+    isError: fairPriceError,
+  } = useFairPrice({ categorySlug, zip: zipCode });
 
   const auctionClosed = isAuctionClosed(auctionEndsAt);
   const isUpdate = existingBid !== null;
@@ -188,6 +197,18 @@ export function BidForm({
       {/* Market range */}
       {marketRange && marketRange.sample_size > 0 ? (
         <MarketRangeDisplay marketRange={marketRange} />
+      ) : null}
+
+      {/* Live Fair-Price hint — where bids in this category/area settle. Only
+          render once we have a category to key the engine read on. */}
+      {categorySlug ? (
+        <FairPriceBand
+          compact
+          fairPrice={fairPrice}
+          isLoading={fairPriceLoading}
+          isError={fairPriceError}
+          currentBidCents={amountCents > 0 ? amountCents : null}
+        />
       ) : null}
 
       {/* Fair Price Index suggestion */}

@@ -1224,6 +1224,48 @@ export interface AnalyticsMarketRange {
   computed_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Fair-Price engine (confidence-scored price band)
+// ---------------------------------------------------------------------------
+// The gateway's Fair-Price endpoint returns a robust point estimate for a
+// (category × geo) cell, a dispersion band (p25–p75), a confidence interval,
+// the effective sample size, and a 0..1 confidence score. `has_data === false`
+// is a predictable empty state (a fresh cell with no settled prices yet), not
+// an error — the numeric fields are only meaningful when `has_data` is true.
+export const CONFIDENCE_LABEL = {
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low',
+} as const;
+export type ConfidenceLabel = (typeof CONFIDENCE_LABEL)[keyof typeof CONFIDENCE_LABEL];
+
+// Geo fallback ladder the engine walked to find enough data. 0 = the exact
+// requested zip; anything > 0 means the band is borrowed from a wider area, so
+// the UI surfaces an honest "based on metro-wide data" note.
+export const FAIR_PRICE_LEVEL = {
+  ZIP: 0,
+  METRO: 1,
+  METRO_PARENT: 2,
+  NATIONAL: 3,
+  NATIONAL_PARENT: 4,
+  SIDE: 5,
+} as const;
+export type FairPriceLevel = (typeof FAIR_PRICE_LEVEL)[keyof typeof FAIR_PRICE_LEVEL];
+
+export interface FairPrice {
+  has_data: boolean;
+  price_cents: number;
+  p25_cents: number;
+  p75_cents: number;
+  ci_lo_cents: number;
+  ci_hi_cents: number;
+  n_eff: number;
+  confidence: number;
+  confidence_label: ConfidenceLabel;
+  level_used: number;
+  model_version: string;
+}
+
 export interface ProviderAnalytics {
   total_bids: number;
   bids_won: number;

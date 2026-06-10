@@ -49,6 +49,119 @@ func (r *PostgresRepository) GetMarketRange(ctx context.Context, categoryID stri
 	return mr, nil
 }
 
+// clearedPriceWindowDays bounds the candidate set to a recent window so the
+// engine's recency decay operates on relevant data and the scan stays cheap.
+const clearedPriceWindowDays = 540
+
+// clearedPriceRowLimit caps the candidate set returned to the pricing engine.
+const clearedPriceRowLimit = 5000
+
+// GetClearedPriceTransactions returns per-completed-contract cleared prices for
+// a category, for the Rust pricing engine. It mirrors the join that the
+// fair_price_index materialized view (migration 014) uses — contracts ⋈ bids ⋈
+// jobs ⋈ service_categories with status='completed' — but per-transaction and
+// richer: it also pulls the category's taxonomy parent and the winning
+// provider's trust tier. The cleared price is the winning bid amount
+// (b.amount_cents); geo is the job's service zip; settled_at is the contract's
+// completed_at. Bounded to the last clearedPriceWindowDays relative to asOf and
+// clearedPriceRowLimit rows (most recent first).
+//
+// market_id is left empty: there is no zip→market mapping table in this schema
+// (markets, migration 051, is a craigslist-style metro list keyed by lat/lng,
+// with no zip column), so the engine falls back to its national hierarchy
+// levels. TODO(pricing): resolve a market_id once a zip→market mapping exists
+// (e.g. nearest active market to jobs.service_location), to unlock metro-level
+// shrinkage.
+//
+// GetCategoryIDBySlug resolves a service-category slug to its UUID. Returns an
+// empty string (no error) when the slug is unknown, so callers fail soft.
+func (r *PostgresRepository) GetCategoryIDBySlug(ctx context.Context, slug string) (string, error) {
+	var id string
+	err := r.pool.QueryRow(ctx,
+		`SELECT id::text FROM service_categories WHERE slug = $1`,
+		slug,
+	).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get category id by slug %q: %w", slug, err)
+	}
+	return id, nil
+}
+
+// condition is fixed to 4 (services pass 4 per the engine contract).
+func (r *PostgresRepository) GetClearedPriceTransactions(ctx context.Context, categoryID string, asOf time.Time) ([]domain.ClearedPriceTransaction, error) {
+	windowStart := asOf.AddDate(0, 0, -clearedPriceWindowDays).UTC()
+
+	// trust_scores.tier is a text enum; map it to the engine's 0..4 tier.
+	// Providers with no trust row default to 1 ('new').
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+		    j.category_id::text                       AS category_id,
+		    COALESCE(sc.parent_id::text, '')          AS parent_category_id,
+		    COALESCE(j.service_zip, '')               AS zip,
+		    b.amount_cents                            AS cleared_price_cents,
+		    c.completed_at                            AS settled_at,
+		    CASE COALESCE(ts.tier, 'new')
+		        WHEN 'under_review' THEN 0
+		        WHEN 'new'          THEN 1
+		        WHEN 'rising'       THEN 2
+		        WHEN 'trusted'      THEN 3
+		        WHEN 'top_rated'    THEN 4
+		        ELSE 1
+		    END::int                                  AS trust_tier
+		FROM contracts c
+		JOIN bids b ON b.id = c.bid_id
+		JOIN jobs j ON j.id = c.job_id
+		JOIN service_categories sc ON sc.id = j.category_id
+		LEFT JOIN trust_scores ts ON ts.user_id = c.provider_id AND ts.role = 'provider'
+		WHERE c.status = 'completed'
+		  AND c.completed_at IS NOT NULL
+		  AND c.completed_at >= $2
+		  AND c.completed_at <= $3
+		  AND b.amount_cents > 0
+		  AND j.deleted_at IS NULL
+		  AND j.category_id = $1
+		ORDER BY c.completed_at DESC
+		LIMIT $4`,
+		categoryID, windowStart, asOf.UTC(), clearedPriceRowLimit)
+	if err != nil {
+		return nil, fmt.Errorf("get cleared price transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var txns []domain.ClearedPriceTransaction
+	for rows.Next() {
+		var t domain.ClearedPriceTransaction
+		var trustTier int32
+		if err := rows.Scan(
+			&t.CategoryID,
+			&t.ParentCategoryID,
+			&t.Zip,
+			&t.ClearedPriceCents,
+			&t.SettledAt,
+			&trustTier,
+		); err != nil {
+			return nil, fmt.Errorf("get cleared price transactions scan: %w", err)
+		}
+		t.SettledAt = t.SettledAt.UTC()
+		t.TrustTier = uint32(trustTier)
+		// No zip→market mapping available; engine falls back to national levels.
+		t.MarketID = ""
+		// Services carry no goods condition; the engine contract wants 4.
+		t.Condition = 4
+		// instant_match is not modeled on contracts/jobs in this schema yet.
+		t.InstantMatch = false
+		txns = append(txns, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get cleared price transactions rows: %w", err)
+	}
+
+	return txns, nil
+}
+
 func (r *PostgresRepository) GetMarketTrends(ctx context.Context, categoryID string, subcategoryID *string, region *string, startDate, endDate time.Time, groupBy string) ([]domain.PriceTrend, error) {
 	truncUnit := "month"
 	switch groupBy {
