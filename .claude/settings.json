@@ -12,7 +12,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-bash.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-bash.sh"
           }
         ]
       },
@@ -21,35 +21,35 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-file-write.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-file-write.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-dependencies.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-dependencies.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-api-patterns.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-api-patterns.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-database.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-database.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-payment.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-payment.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-react-patterns.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-react-patterns.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-env-usage.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-env-usage.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/validate-test-patterns.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/validate-test-patterns.sh"
           }
         ]
       }
@@ -60,11 +60,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/post-write-format.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/post-write-format.sh"
           },
           {
             "type": "command",
-            "command": "bash /Users/tannercoker/Projects/NoMarkup/.claude/hooks/post-write-lint.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/post-write-lint.sh"
           }
         ]
       }
