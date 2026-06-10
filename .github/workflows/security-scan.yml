@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.22"
+  GO_VERSION: "1.25" # must match the go.mod directives (go 1.25.0) — see ci.yml
   NODE_VERSION: 22
 
 jobs:
