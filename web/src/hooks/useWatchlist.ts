@@ -123,16 +123,16 @@ export function savedSearchQueryToParams(query: SavedSearchQuery): SearchListing
   if (typeof query === 'string') {
     return query.trim() ? { query: query.trim() } : {};
   }
-  if (query !== null && typeof query === 'object') {
-    const { q, category, ...rest } = query;
-    const params: SearchListingsParams = { ...rest };
-    if (q !== undefined && params.query === undefined) params.query = q;
-    if (category !== undefined && params.category_id === undefined) {
-      params.category_id = category;
-    }
-    return params;
+  // After the string branch, `query` narrows to SavedSearchQueryObject — a
+  // non-null object — so an explicit `!== null`/`typeof === 'object'` guard is
+  // statically dead. Fold the aliases directly.
+  const { q, category, ...rest } = query;
+  const params: SearchListingsParams = { ...rest };
+  if (q !== undefined && params.query === undefined) params.query = q;
+  if (category !== undefined && params.category_id === undefined) {
+    params.category_id = category;
   }
-  return {};
+  return params;
 }
 
 /**

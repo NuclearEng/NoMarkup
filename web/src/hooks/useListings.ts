@@ -21,6 +21,17 @@ import type {
 } from '@/types';
 
 /**
+ * Wire shape of a listing as it actually arrives from the API: `photos` can be
+ * `null` for photo-less listings even though the `Listing` type declares it a
+ * non-null array. Typing the boundary as nullable keeps the `?? []`
+ * normalization below honest (the value is genuinely nullable here) instead of
+ * being a type-dead guard against the over-strict `Listing` type.
+ */
+type RawListing<T extends Listing = Listing> = Omit<T, 'photos'> & {
+  photos: T['photos'] | null;
+};
+
+/**
  * Normalize a listing's `photos` to a non-null array.
  *
  * The API can return `photos: null` for listings with no photos, but the
@@ -29,8 +40,8 @@ import type {
  * client hooks so every call site receives a guaranteed array and never
  * null-derefs (`listing.photos.find(...)`, `listing.photos[0]`, etc.).
  */
-function normalizeListing<T extends Listing>(listing: T): T {
-  return { ...listing, photos: listing.photos ?? [] };
+function normalizeListing<T extends Listing>(listing: RawListing<T>): T {
+  return { ...listing, photos: listing.photos ?? [] } as T;
 }
 
 function explainListingFailure(fallback: string): (err: unknown) => void {
@@ -82,7 +93,9 @@ export function useListings(
     queryKey: ['listings', 'search', params],
     queryFn: () =>
       api
-        .getPublic<ListingsResponse>(`/api/v1/listings${buildSearchParams(params)}`)
+        .getPublic<Omit<ListingsResponse, 'listings'> & { listings: RawListing[] }>(
+          `/api/v1/listings${buildSearchParams(params)}`,
+        )
         .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
     placeholderData: keepPreviousData,
     ...(options?.initialData ? { initialData: options.initialData } : {}),
@@ -102,7 +115,7 @@ export function useTrendingListings(limit = 12) {
     queryKey: ['listings', 'trending', limit],
     queryFn: () =>
       api
-        .getPublic<ListingsResponse>(
+        .getPublic<Omit<ListingsResponse, 'listings'> & { listings: RawListing[] }>(
           `/api/v1/listings?sort_by=trending&page_size=${String(limit)}`,
         )
         .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
@@ -124,7 +137,7 @@ export function useListing(id: string, options?: { initialData?: ListingDetail }
     queryKey: ['listings', id],
     queryFn: () =>
       api
-        .getPublic<{ listing: ListingDetail }>(`/api/v1/listings/${id}`)
+        .getPublic<{ listing: RawListing<ListingDetail> }>(`/api/v1/listings/${id}`)
         .then((res) => normalizeListing(res.listing)),
     enabled: !!id,
     ...(options?.initialData ? { initialData: options.initialData } : {}),
@@ -374,7 +387,7 @@ export function useMyOrders() {
     queryKey: ['listingOrders', 'mine'],
     queryFn: () =>
       api
-        .get<{ orders: ListingOrder[] }>('/api/v1/me/orders')
+        .get<{ orders: ListingOrder[] | null }>('/api/v1/me/orders')
         .then((res) => res.orders ?? []),
   });
 }

@@ -30,13 +30,6 @@ export async function printAuthenticatedDocument(path: string): Promise<void> {
   iframe.style.width = '0';
   iframe.style.height = '0';
   iframe.style.border = '0';
-  document.body.appendChild(iframe);
-
-  const frameDoc = iframe.contentWindow?.document;
-  if (!frameDoc) {
-    iframe.remove();
-    throw new Error('Unable to open a print frame');
-  }
 
   const cleanup = () => {
     window.setTimeout(() => {
@@ -55,13 +48,11 @@ export async function printAuthenticatedDocument(path: string): Promise<void> {
     cleanup();
   };
 
-  frameDoc.open();
-  frameDoc.write(html);
-  frameDoc.close();
-
-  if (frameDoc.readyState === 'complete') {
-    doPrint();
-  } else {
-    iframe.onload = doPrint;
-  }
+  // Seed the document via `srcdoc` rather than the deprecated
+  // `document.open()/write()/close()` trio. The frame parses the full HTML
+  // (including the server's institutional print stylesheet) and fires `onload`
+  // once it's ready, at which point we print just that frame.
+  iframe.onload = doPrint;
+  iframe.srcdoc = html;
+  document.body.appendChild(iframe);
 }

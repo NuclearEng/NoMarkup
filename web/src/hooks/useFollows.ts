@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { ApiError, api } from '@/lib/api';
-import type { MyListingsResponse, PaginationResponse } from '@/types';
+import type { Listing, MyListingsResponse, PaginationResponse } from '@/types';
 
 function explainFollowFailure(fallback: string): (err: unknown) => void {
   return (err: unknown) => {
@@ -148,9 +148,18 @@ export function useMyFeed(page?: number) {
     // photo-less listings while the `Listing` type declares a non-null array,
     // so downstream cards (ScoreboardCard, ListingCard) would null-deref.
     queryFn: () =>
-      api.get<MyListingsResponse>(path).then((res) => ({
-        ...res,
-        listings: res.listings.map((l) => ({ ...l, photos: l.photos ?? [] })),
-      })),
+      api
+        // The API can return `photos: null` for photo-less listings even
+        // though `Listing` declares it a non-null array, so type the wire
+        // shape as nullable to keep the `?? []` normalization below honest.
+        .get<
+          Omit<MyListingsResponse, 'listings'> & {
+            listings: (Omit<Listing, 'photos'> & { photos: Listing['photos'] | null })[];
+          }
+        >(path)
+        .then((res) => ({
+          ...res,
+          listings: res.listings.map((l) => ({ ...l, photos: l.photos ?? [] })),
+        })),
   });
 }

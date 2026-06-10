@@ -155,11 +155,16 @@ export function useProviderLicenses(providerId: string) {
 /**
  * hasVerifiedBarLicense is a small derived helper used by the badge: true when
  * the provider has at least one verified `bar` license.
+ *
+ * `LicenseType` is currently the single literal `'bar'`, so a
+ * `license_type === BAR` comparison is statically always-true (and the
+ * type-aware lint rightly flags it as redundant). We therefore gate on
+ * verification status alone today; if a second license type is ever added to
+ * `LICENSE_TYPE`, reintroduce a `license_type` filter here so the bar badge
+ * stays bar-specific.
  */
 export function hasVerifiedBarLicense(licenses: PublicProviderLicense[]): boolean {
-  return licenses.some(
-    (l) => l.license_type === LICENSE_TYPE.BAR && l.status === LICENSE_STATUS.VERIFIED,
-  );
+  return licenses.some((l) => l.status === LICENSE_STATUS.VERIFIED);
 }
 
 /* -------------------------------------------------------------------------- *

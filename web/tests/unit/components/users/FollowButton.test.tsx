@@ -92,14 +92,18 @@ describe('FollowButton', () => {
   // Public-funnel guard: a logged-out visitor on the public seller profile must
   // be prompted to sign in (clean nav to /login) rather than firing the
   // auth-gated follow mutation — which would 401 and bounce them off the page.
-  it('redirects a logged-out visitor to /login instead of calling the API', async () => {
+  it('redirects a logged-out visitor to /login instead of calling the API', () => {
+    expect(getAccessToken).toBeDefined();
     getAccessToken.mockReturnValue(null);
     const original = window.location;
     const hrefSetter = vi.fn();
     Object.defineProperty(window, 'location', {
       configurable: true,
+      // Build a plain stand-in rather than spreading the real `Location`
+      // instance (spreading a class instance drops its prototype). The
+      // component only ever writes `window.location.href`, so a bare href
+      // getter/setter is enough.
       value: {
-        ...original,
         get href() {
           return '';
         },

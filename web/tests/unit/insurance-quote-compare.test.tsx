@@ -206,7 +206,7 @@ describe('InsuranceQuoteCompare — request → compare → select', () => {
       screen.getByText(
         (_content, el) =>
           el?.tagName === 'P' &&
-          el.textContent?.replace(/\s+/g, ' ').trim() ===
+          el.textContent.replace(/\s+/g, ' ').trim() ===
             'Your policy with Acme Mutual is active.',
       ),
     ).toBeInTheDocument();

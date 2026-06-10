@@ -27,7 +27,7 @@ export function useInstallmentSchedule(contractId: string) {
 
   const installments = useMemo<InstallmentInfo[]>(() => {
     // Primary source: the plan's scheduled installments (present on creation).
-    const scheduled = planDetail?.plan?.installments;
+    const scheduled = planDetail?.plan.installments;
     if (scheduled && scheduled.length > 0) {
       const totalInstallments = planDetail.plan.installment_count;
       return [...scheduled]

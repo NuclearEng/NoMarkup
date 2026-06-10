@@ -222,7 +222,7 @@ describe('InsuranceSelector', () => {
     expect(screen.getByRole('link', { name: /payment method/i })).toBeInTheDocument();
     // Add Protection is disabled and clicking it never fires the mutation.
     const button = screen.getByRole('button', { name: /Add Protection/ });
-    expect(button.disabled).toBe(true);
+    expect(button).toBeDisabled();
     await user.click(button);
     expect(mutate).not.toHaveBeenCalled();
   });

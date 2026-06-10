@@ -9,7 +9,8 @@ import userEvent from '@testing-library/user-event';
 import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const useListingOffers = vi.fn();
+type UseListingOffersResult = ReturnType<typeof import('@/hooks/useOffers').useListingOffers>;
+const useListingOffers = vi.fn<(listingId: string) => Partial<UseListingOffersResult>>();
 const updateMutate = vi.fn();
 const updateState = { isPending: false };
 
@@ -19,7 +20,11 @@ vi.mock('@/hooks/useOffers', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useOffers')>('@/hooks/useOffers');
   return {
     ...actual,
-    useListingOffers: (...args: unknown[]) => useListingOffers(...args),
+    // The mock returns deliberately partial query results (only the fields the
+    // card reads); cast to the full hook type so the mock satisfies the real
+    // signature without each call site spelling out all 20+ query fields.
+    useListingOffers: (listingId: string) =>
+      useListingOffers(listingId) as UseListingOffersResult,
     useUpdateOffer: () => ({ mutate: updateMutate, isPending: updateState.isPending }),
   };
 });
