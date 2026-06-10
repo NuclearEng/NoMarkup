@@ -306,7 +306,12 @@ export function BidForm({
                         type="number"
                         inputMode="decimal"
                         min="0.01"
-                        step="1"
+                        // step must align with min: min=0.01 + step=1 makes the
+                        // HTML5 valid grid 0.01/1.01/2.01..., so a natural
+                        // whole-dollar step (1, 5, 10) is rejected with a raw
+                        // browser "nearest valid values" popup. The onChange
+                        // rounds to cents, so a 0.01 grid is the right one.
+                        step="0.01"
                         className="h-8 w-20 text-xs"
                         value={stepDollars}
                         onChange={(e) => {
