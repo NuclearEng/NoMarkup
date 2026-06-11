@@ -28,6 +28,41 @@ const (
 	coBid      = "fa199d9a-491d-4883-b52b-b992b7ac8355"
 )
 
+// ensureChangeOrderFixtures self-provisions the job + bid rows the contract
+// fixtures hang off. coJob/coBid previously existed only in the original
+// author's dev database, so every contract insert failed with
+// contracts_job_id_fkey on any fresh DB (e.g. CI). The users are the fixed
+// seed accounts (`make seed`); inserts are idempotent so already-provisioned
+// databases are untouched.
+func ensureChangeOrderFixtures(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+
+	var catID string
+	require.NoError(t,
+		pool.QueryRow(ctx, `SELECT id FROM service_categories LIMIT 1`).Scan(&catID),
+		"need service_categories taxonomy — run migrations first")
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO jobs (id, customer_id, title, description, category_id,
+			service_city, service_state, service_zip,
+			service_location, approximate_location, status)
+		VALUES ($1, $2, 'Change-order authz fixture',
+			'Created by change_order_authz_test (integration).', $3,
+			'Austin', 'TX', '78701',
+			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
+			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
+			'awarded')
+		ON CONFLICT (id) DO NOTHING`, coJob, coCustomer, catID)
+	require.NoError(t, err, "provision change-order fixture job")
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents)
+		VALUES ($1, $2, $3, 100000, 100000)
+		ON CONFLICT (id) DO NOTHING`, coBid, coJob, coProvider)
+	require.NoError(t, err, "provision change-order fixture bid")
+}
+
 func authzTestSvc(t *testing.T) (*ContractService, *repository.PostgresRepository, *pgxpool.Pool) {
 	t.Helper()
 	url := os.Getenv("DATABASE_URL")
@@ -37,6 +72,7 @@ func authzTestSvc(t *testing.T) (*ContractService, *repository.PostgresRepositor
 	pool, err := pgxpool.New(context.Background(), url)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
+	ensureChangeOrderFixtures(t, pool)
 	repo := repository.NewPostgresRepository(pool)
 	return NewContractService(repo, repo), repo, pool
 }

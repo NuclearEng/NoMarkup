@@ -56,10 +56,28 @@ func pickAnyCategoryID(t *testing.T, pool *pgxpool.Pool) string {
 	return id
 }
 
-// pickAnyUserIDs grabs N existing users (any roles) from the DB.
+// pickAnyUserIDs grabs N existing users (any roles) from the DB, topping the
+// table up with throwaway integration users when fewer exist. A fresh,
+// migrated + seeded database holds only the 4 fixed seed accounts, while the
+// race test below needs 11 — requiring `make seed` alone could never satisfy
+// that on CI. The throwaway rows are inert (no credentials, .invalid email
+// domain) and idempotent to leave in a dev database.
 func pickAnyUserIDs(t *testing.T, pool *pgxpool.Pool, n int) []string {
 	t.Helper()
-	rows, err := pool.Query(context.Background(),
+	ctx := context.Background()
+
+	var have int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&have))
+	for i := have; i < n; i++ {
+		u := uuid.NewString()
+		_, err := pool.Exec(ctx,
+			`INSERT INTO users (email, display_name, roles)
+			 VALUES ($1, $2, '{customer}')`,
+			"itest-"+u+"@example.invalid", "Integration Test User "+u[:8])
+		require.NoError(t, err, "provision throwaway integration user")
+	}
+
+	rows, err := pool.Query(ctx,
 		`SELECT id::text FROM users ORDER BY created_at LIMIT $1`, n)
 	require.NoError(t, err)
 	defer rows.Close()
@@ -70,7 +88,7 @@ func pickAnyUserIDs(t *testing.T, pool *pgxpool.Pool, n int) []string {
 		out = append(out, id)
 	}
 	require.GreaterOrEqual(t, len(out), n,
-		"need %d seed users in DB, got %d — run `make seed`", n, len(out))
+		"need %d users in DB, got %d", n, len(out))
 	return out
 }
 
