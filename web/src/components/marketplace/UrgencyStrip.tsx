@@ -86,8 +86,12 @@ function Stat({
   const color =
     tone === 'red' ? 'text-red-300' : tone === 'amber' ? 'text-amber-300' : 'text-emerald-300';
 
+  // No role on the wrapper div: a <div> child of <dl> is only valid (HTML spec
+  // + axe definition-list/dlitem) when it is a ROLE-LESS wrapper grouping a
+  // dt+dd pair. role="group" re-mapped it away from the dl structure and
+  // orphaned the dt/dd (axe: definition-list ×1, dlitem ×6).
   return (
-    <div className="rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2" role="group">
+    <div className="rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
       <dt className={`flex items-center gap-1 text-[10px] font-semibold tracking-wider ${color} uppercase`}>
         <span className="inline-flex" aria-hidden="true">{icon}</span>
         {label}

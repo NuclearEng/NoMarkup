@@ -57,6 +57,15 @@ interface ScoreboardCardProps {
    * action) isn't shown to anonymous shoppers.
    */
   showWatch?: boolean;
+  /**
+   * Mark this card's hero image as the LCP candidate: next/image `priority`
+   * (eager load + fetchpriority=high + preload). The browse grid sets this on
+   * the first viewport row of cards only — the grid image is the measured LCP
+   * element on /marketplace (lab LCP 2.86–3.16s vs <2.5s budget, image load
+   * delay, CLAUDE.md §8/§14). Layout is unchanged (same aspect-ratio box), so
+   * CLS is unaffected.
+   */
+  imagePriority?: boolean;
 }
 
 /**
@@ -70,6 +79,7 @@ export function ScoreboardCard({
   urgency = 'normal',
   watching = false,
   showWatch = true,
+  imagePriority = false,
 }: ScoreboardCardProps) {
   const rawPhoto = listing.photos[0]?.url ?? null;
   // Only hand next/image a src it can actually optimize; an unconfigured
@@ -110,6 +120,7 @@ export function ScoreboardCard({
             src={photo}
             alt={listing.title}
             fill
+            priority={imagePriority}
             sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
             className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           />

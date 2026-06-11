@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Syne } from 'next/font/google';
 import { headers } from 'next/headers';
+import { preconnect } from 'react-dom';
 import '@/styles/globals.css';
 
 import { AgeGate } from '@/components/compliance/AgeGate';
@@ -80,6 +81,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const headerStore = await headers();
   // Reference the value so that bundlers/eslint don't elide the read.
   void headerStore.get('x-nonce');
+
+  // Preconnect to the listing-photo origin the BROWSER actually fetches from.
+  // Photos on hosts in next.config's remotePatterns (dev MinIO localhost:9000)
+  // are proxied through same-origin /_next/image, so no preconnect is needed
+  // for them; unsplash-hosted photos (the seed-data host) render via
+  // ProgressiveImage's `unoptimized` fallback and are fetched directly, so
+  // warming DNS+TCP+TLS here shaves the LCP image's connection setup
+  // (lab LCP 2.86–3.16s vs <2.5s budget, image load delay — CLAUDE.md §8/§14).
+  // No crossOrigin: <img> fetches are no-cors, and a crossorigin preconnect
+  // would open a second, unused connection.
+  preconnect('https://images.unsplash.com');
 
   return (
     <html lang="en" className={`dark ${syne.variable}`} suppressHydrationWarning>

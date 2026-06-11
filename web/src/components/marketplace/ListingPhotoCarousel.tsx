@@ -65,11 +65,18 @@ export function ListingPhotoCarousel({ photos, alt, className }: ListingPhotoCar
           className="absolute inset-0 cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]"
           aria-label={`View photo ${String(activeIndex + 1)} full screen`}
         >
+          {/* priority: this image is the LCP element on /marketplace/[id]
+              (lab LCP 2.86–3.16s vs <2.5s budget — image load delay). Eager
+              load + fetchpriority=high; the aspect-[4/3] box already reserves
+              layout, so CLS is unaffected. sizes matches the photo column:
+              3/5 of the lg grid inside max-w-7xl (~60vw), full width below. */}
           <ProgressiveImage
             src={currentPhoto.url}
             alt={`${alt} (photo ${String(activeIndex + 1)} of ${String(photos.length)})`}
             blurHash={currentPhoto.blur_hash}
             className="absolute inset-0"
+            priority
+            sizes="(min-width: 1024px) 60vw, 100vw"
           />
         </button>
 
@@ -122,11 +129,15 @@ export function ListingPhotoCarousel({ photos, alt, className }: ListingPhotoCar
                   : 'border-transparent opacity-70 hover:opacity-100',
               )}
             >
+              {/* sizes: the thumbnail box is h-16 × aspect-4/3 ≈ 85px wide —
+                  without this, fill mode defaults to 100vw and downloads a
+                  viewport-width image per thumbnail. */}
               <ProgressiveImage
                 src={p.url}
                 alt=""
                 blurHash={p.blur_hash}
                 className="absolute inset-0"
+                sizes="85px"
               />
             </button>
           ))}

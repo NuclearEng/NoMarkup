@@ -56,7 +56,10 @@ export function SimilarListings({
     >
       <header className="mb-3">
         <h2 className="text-lg font-semibold text-zinc-100">{title}</h2>
-        <p className="text-xs text-zinc-500">
+        {/* zinc-400, not zinc-500: zinc-500 on the page bg (#070b14) is 4.07:1,
+            under the 4.5:1 WCAG AA floor for small text (axe: color-contrast).
+            zinc-400 is 7.68:1. */}
+        <p className="text-xs text-zinc-400">
           Same category, ranked by relevance.
         </p>
       </header>

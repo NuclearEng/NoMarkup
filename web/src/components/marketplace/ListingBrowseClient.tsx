@@ -19,6 +19,13 @@ import type { Listing, ListingsResponse, SearchListingsParams } from '@/types';
 
 const DEFAULT_PAGE_SIZE = 60;
 
+// How many leading cards get next/image `priority` (eager + fetchpriority=high
+// + preload). The first grid row(s) are above the fold and the first card image
+// is the measured LCP element on /marketplace (lab 2.86–3.16s vs the <2.5s
+// budget, image load delay — CLAUDE.md §8/§14). 4 covers the visible row at
+// every breakpoint (1/2/3-column grid) without preloading the whole page.
+const PRIORITY_IMAGE_COUNT = 4;
+
 // Default filter set used for the very first paint. The Server Component
 // fetches /listings with the SAME params and seeds the matching query key so
 // the grid renders from server HTML (no skeleton) until the user filters.
@@ -302,13 +309,14 @@ export function ListingBrowseClient({
                   tone="critical"
                 >
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {buckets.critical.map((listing) => (
+                    {buckets.critical.map((listing, i) => (
                       <ScoreboardCard
                         key={listing.id}
                         listing={listing}
                         urgency="critical"
                         showWatch={isAuthenticated}
                         watching={watchedIds.has(listing.id)}
+                        imagePriority={i < PRIORITY_IMAGE_COUNT}
                       />
                     ))}
                   </div>
@@ -323,13 +331,14 @@ export function ListingBrowseClient({
                   tone="urgent"
                 >
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {buckets.urgent.map((listing) => (
+                    {buckets.urgent.map((listing, i) => (
                       <ScoreboardCard
                         key={listing.id}
                         listing={listing}
                         urgency="urgent"
                         showWatch={isAuthenticated}
                         watching={watchedIds.has(listing.id)}
+                        imagePriority={buckets.critical.length + i < PRIORITY_IMAGE_COUNT}
                       />
                     ))}
                   </div>
@@ -344,12 +353,16 @@ export function ListingBrowseClient({
                   tone="normal"
                 >
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {buckets.later.map((listing) => (
+                    {buckets.later.map((listing, i) => (
                       <ScoreboardCard
                         key={listing.id}
                         listing={listing}
                         showWatch={isAuthenticated}
                         watching={watchedIds.has(listing.id)}
+                        imagePriority={
+                          buckets.critical.length + buckets.urgent.length + i <
+                          PRIORITY_IMAGE_COUNT
+                        }
                       />
                     ))}
                   </div>
@@ -393,7 +406,10 @@ function Section({
         >
           {title}
         </h2>
-        <p className="text-xs text-zinc-500">{subtitle}</p>
+        {/* zinc-400, not zinc-500: zinc-500 on the page bg (#070b14) is 4.07:1,
+            under the 4.5:1 WCAG AA floor for small text (axe: color-contrast).
+            zinc-400 is 7.68:1. */}
+        <p className="text-xs text-zinc-400">{subtitle}</p>
       </header>
       {children}
     </section>

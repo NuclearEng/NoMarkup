@@ -100,11 +100,15 @@ export const ListingCard = memo(function ListingCard({
       {/* Hero photo */}
       {heroPhoto ? (
         <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-900">
+          {/* sizes: card-sized slot in a 1/2/3-column grid — without this,
+              fill mode defaults to 100vw and downloads a viewport-width
+              image for a card (LCP budget, CLAUDE.md §8/§14). */}
           <ProgressiveImage
             src={heroPhoto.url}
             alt={listing.title}
             blurHash={heroPhoto.blur_hash}
             className="absolute inset-0"
+            sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
           />
           {listing.is_user_winning ? (
             <span
@@ -126,6 +130,10 @@ export const ListingCard = memo(function ListingCard({
       ) : (
         <div
           className="flex aspect-[4/3] w-full items-center justify-center bg-zinc-900/40 text-zinc-600"
+          // role="img" — aria-label is prohibited on a role-less <div> (generic
+          // role; axe: aria-prohibited-attr). Mirrors ListingPhotoCarousel's
+          // no-photos placeholder.
+          role="img"
           aria-label="No photo"
         >
           <Tag className="h-10 w-10" aria-hidden="true" />

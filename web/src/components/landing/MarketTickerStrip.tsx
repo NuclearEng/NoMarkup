@@ -99,6 +99,10 @@ function TickerSkeleton({ className }: { className?: string }) {
         'border-b border-white/5',
         className,
       )}
+      // role="status" — a plain <div> has the generic role, which PROHIBITS
+      // aria-label (axe: aria-prohibited-attr, WCAG 4.1.2). status permits the
+      // label and is the right semantic for a transient loading region.
+      role="status"
       aria-label="Loading marketplace activity"
       aria-busy="true"
     >

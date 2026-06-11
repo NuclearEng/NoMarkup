@@ -13,6 +13,14 @@ interface ProgressiveImageProps {
   height?: number;
   className?: string;
   priority?: boolean;
+  /**
+   * Responsive `sizes` hint for fill mode. Defaults to `100vw` (the safe
+   * upper bound), but card/thumbnail slots MUST pass their real rendered
+   * width — otherwise the browser downloads a viewport-width image for a
+   * 64px thumbnail (LCP budget, CLAUDE.md §8/§14). Ignored in fixed
+   * width/height mode, where next/image derives the size itself.
+   */
+  sizes?: string;
 }
 
 /**
@@ -79,6 +87,7 @@ export function ProgressiveImage({
   height,
   className,
   priority = false,
+  sizes = '100vw',
 }: ProgressiveImageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -120,7 +129,7 @@ export function ProgressiveImage({
             isLoaded ? 'opacity-100' : 'opacity-0',
           )}
           onLoad={handleLoad}
-          sizes="100vw"
+          sizes={sizes}
         />
       ) : (
         <Image
