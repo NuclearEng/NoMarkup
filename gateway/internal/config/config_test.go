@@ -77,3 +77,61 @@ func TestResolveMeilisearchURL(t *testing.T) {
 		})
 	}
 }
+
+func TestMissingProductionVars(t *testing.T) {
+	tests := []struct {
+		name     string
+		database string
+		redis    string
+		want     []string
+	}{
+		{
+			name:     "both set returns nil",
+			database: "postgresql://localhost:5432/nomarkup",
+			redis:    "redis://localhost:6379",
+			want:     nil,
+		},
+		{
+			name:     "both missing reports both",
+			database: "",
+			redis:    "",
+			want:     []string{"DATABASE_URL", "REDIS_URL"},
+		},
+		{
+			name:     "only DATABASE_URL missing",
+			database: "",
+			redis:    "redis://localhost:6379",
+			want:     []string{"DATABASE_URL"},
+		},
+		{
+			name:     "only REDIS_URL missing",
+			database: "postgresql://localhost:5432/nomarkup",
+			redis:    "",
+			want:     []string{"REDIS_URL"},
+		},
+		{
+			name:     "whitespace-only counts as missing",
+			database: "   ",
+			redis:    "\t",
+			want:     []string{"DATABASE_URL", "REDIS_URL"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// t.Setenv forbids t.Parallel(); env mutation is process-global.
+			t.Setenv("DATABASE_URL", tt.database)
+			t.Setenv("REDIS_URL", tt.redis)
+
+			got := MissingProductionVars()
+			if len(got) != len(tt.want) {
+				t.Fatalf("MissingProductionVars() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("MissingProductionVars()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

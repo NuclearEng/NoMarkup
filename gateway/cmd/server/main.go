@@ -60,6 +60,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Fail fast on §12-required infrastructure vars in production, before
+	// anything dials out or binds a port. In dev the gateway degrades
+	// gracefully (feature flags off, in-memory rate limits, localhost Redis
+	// default), but production booting green without a database or Redis is
+	// fail-open. Mirrors the Meilisearch production check below (e4208e7).
+	if cfg.IsProduction() {
+		if missing := config.MissingProductionVars(); len(missing) > 0 {
+			slog.Error("required environment variables missing in production", "missing", missing)
+			os.Exit(1)
+		}
+	}
+
 	// Initialize Sentry error tracking. When SENTRY_DSN is not set, this is a
 	// no-op — all sentry.CaptureException / hub.Recover calls become silent.
 	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {

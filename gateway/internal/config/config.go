@@ -67,6 +67,30 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// MissingProductionVars returns the CLAUDE.md §12-required infrastructure
+// variables that are unset (or whitespace-only) in the environment.
+//
+// In development the gateway degrades gracefully without these (feature
+// flags off, in-memory rate limiting, localhost Redis default), but a
+// production gateway booting green without its database or Redis is
+// fail-open — main.go exits 1 when ENVIRONMENT=production and this returns
+// a non-empty list. Note REDIS_URL is checked against the raw environment,
+// not Config.RedisURL, because Load() applies a localhost default that must
+// not mask a missing production value.
+//
+// JWT_PUBLIC_KEY_PATH and MEILISEARCH_URL are not listed here: the key load
+// is already fatal in every environment, and Meilisearch has its own
+// production fail-fast at client init (commit e4208e7).
+func MissingProductionVars() []string {
+	var missing []string
+	for _, key := range []string{"DATABASE_URL", "REDIS_URL"} {
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			missing = append(missing, key)
+		}
+	}
+	return missing
+}
+
 // ResolveMeilisearchURL resolves the Meilisearch endpoint URL from the
 // environment.
 //
