@@ -24,6 +24,7 @@ import (
 	grpclib "google.golang.org/grpc"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/client"
+	"github.com/nomarkup/nomarkup/services/job/internal/config"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	grpcserver "github.com/nomarkup/nomarkup/services/job/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/job/internal/repository"
@@ -94,9 +95,21 @@ func main() {
 	}
 	slog.Info("connected to database")
 
-	// Optional Meilisearch integration.
-	meiliHost := os.Getenv("MEILISEARCH_HOST")
+	// Meilisearch integration: optional in dev, required in production.
+	// MEILISEARCH_URL is canonical; MEILISEARCH_HOST is a deprecated
+	// fallback (resolved + normalized in internal/config). In production
+	// (ENVIRONMENT=production, supplied by the k8s configmap) a missing URL
+	// is a startup error — booting green with search silently dead is
+	// fail-open, and §15 says fail closed.
+	meiliURL := config.ResolveMeilisearchURL()
 	meiliKey := os.Getenv("MEILISEARCH_API_KEY")
+	if meiliURL == "" {
+		if os.Getenv("ENVIRONMENT") == "production" {
+			slog.Error("MEILISEARCH_URL is required in production (search would be silently disabled)")
+			os.Exit(1)
+		}
+		slog.Info("MEILISEARCH_URL not set, search disabled")
+	}
 
 	// Trust-tiered search ranking (MOVE B2): a higher seller/provider trust tier
 	// becomes a modest, explainable ranking signal. Behind the TRUST_RANKING
@@ -105,17 +118,17 @@ func main() {
 
 	var searchEngine *service.SearchEngine
 	var listingSearchEngine *service.ListingSearchEngine
-	if meiliHost != "" {
-		se, err := service.NewSearchEngine(meiliHost, meiliKey)
+	if meiliURL != "" {
+		se, err := service.NewSearchEngine(meiliURL, meiliKey)
 		if err != nil {
 			slog.Warn("failed to initialize search engine, continuing without search", "error", err)
 		} else {
 			searchEngine = se
-			slog.Info("connected to meilisearch", "host", meiliHost)
+			slog.Info("connected to meilisearch", "url", meiliURL)
 		}
 		// Listings index is independent of jobs. Failure to configure
 		// either does not stop the service from booting.
-		lse, err := service.NewListingSearchEngine(meiliHost, meiliKey)
+		lse, err := service.NewListingSearchEngine(meiliURL, meiliKey)
 		if err != nil {
 			slog.Warn("failed to initialize listing search engine, continuing without listing search", "error", err)
 		} else {
@@ -128,7 +141,7 @@ func main() {
 				}
 			}
 			listingSearchEngine = lse
-			slog.Info("listings search index ready", "host", meiliHost, "trust_ranking", trustRanking)
+			slog.Info("listings search index ready", "url", meiliURL, "trust_ranking", trustRanking)
 		}
 	}
 	// Wire up dependencies.

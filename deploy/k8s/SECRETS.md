@@ -29,7 +29,7 @@ environments.
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | every service | error tracking (TODOS-7) |
 | `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth token exchange |
 | `APPLE_CLIENT_SECRET` | gateway | Apple OAuth token exchange |
-| `MEILISEARCH_API_KEY` | job service | search index admin operations |
+| `MEILISEARCH_API_KEY` | gateway, job service | search index admin operations + gateway listings search |
 
 ## Provisioning (recommended via External Secrets Operator + Vault)
 

@@ -343,12 +343,19 @@ func main() {
 
 	// Optional Meilisearch client for listings autocomplete + "similar"
 	// rails. Mirrors the env conventions used by services/job
-	// (MEILISEARCH_HOST / MEILISEARCH_API_KEY). When not configured, the
-	// search handler returns empty payloads — non-fatal in dev/sandbox.
+	// (MEILISEARCH_URL / MEILISEARCH_API_KEY, with MEILISEARCH_HOST as a
+	// deprecated fallback). When not configured, the search handler returns
+	// empty payloads — non-fatal in dev/sandbox, but a hard startup error in
+	// production: booting green with search silently dead is fail-open.
 	var meiliClient meilisearch.ServiceManager
-	if host := os.Getenv("MEILISEARCH_HOST"); host != "" {
-		meiliClient = meilisearch.New(host, meilisearch.WithAPIKey(os.Getenv("MEILISEARCH_API_KEY")))
-		slog.Info("meilisearch client initialized", "host", host)
+	if meiliURL := config.ResolveMeilisearchURL(); meiliURL != "" {
+		meiliClient = meilisearch.New(meiliURL, meilisearch.WithAPIKey(os.Getenv("MEILISEARCH_API_KEY")))
+		slog.Info("meilisearch client initialized", "url", meiliURL)
+	} else if cfg.IsProduction() {
+		slog.Error("MEILISEARCH_URL is required in production (search would be silently disabled)")
+		os.Exit(1)
+	} else {
+		slog.Info("MEILISEARCH_URL not set, listings search disabled")
 	}
 	listingsSearchHandler := handler.NewListingsSearchHandler(dbPool, meiliClient, listingsHandler)
 

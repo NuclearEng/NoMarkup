@@ -657,6 +657,7 @@ start_services() {
 
     start_go_service job "$ROOT/services/job" "$JOB_PORT" \
         "JOB_SERVICE_PORT=$JOB_PORT" \
+        "MEILISEARCH_URL=http://localhost:$MEILI_PORT" \
         "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
         "MEILISEARCH_API_KEY=masterKey" \
         "PRICING_ENGINE_ADDR=localhost:$PRICING_PORT"
@@ -733,6 +734,7 @@ start_gateway() {
         "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT" \
         "REDIS_URL=redis://localhost:$REDIS_PORT" \
         "RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH:-50}" \
+        "MEILISEARCH_URL=http://localhost:$MEILI_PORT" \
         "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
         "MEILISEARCH_API_KEY=masterKey" \
         "ENABLE_LIVE_AUCTION=${ENABLE_LIVE_AUCTION:-true}"
@@ -787,6 +789,7 @@ cmd_up() {
         job)
             start_go_service job "$ROOT/services/job" "$JOB_PORT" \
                 "JOB_SERVICE_PORT=$JOB_PORT" \
+                "MEILISEARCH_URL=http://localhost:$MEILI_PORT" \
                 "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
                 "MEILISEARCH_API_KEY=masterKey" \
                 "PRICING_ENGINE_ADDR=localhost:$PRICING_PORT"

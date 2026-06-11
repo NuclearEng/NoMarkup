@@ -178,6 +178,8 @@ services:
       PRICING_ENGINE_ADDR: "pricing:50061"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "job-service"
+      # MEILISEARCH_URL is canonical; MEILISEARCH_HOST kept for older tooling.
+      MEILISEARCH_URL: "http://meilisearch:7700"
       MEILISEARCH_HOST: "http://meilisearch:7700"
       MEILISEARCH_API_KEY: "masterKey"
     depends_on:

@@ -3,12 +3,15 @@
 //
 // Usage:
 //   cd services/job
-//   DATABASE_URL=... MEILISEARCH_HOST=... MEILISEARCH_API_KEY=... \
+//   DATABASE_URL=... MEILISEARCH_URL=... MEILISEARCH_API_KEY=... \
 //     go run ./cmd/reindex-listings
+//
+// MEILISEARCH_URL is canonical; MEILISEARCH_HOST is accepted as a deprecated
+// fallback (see internal/config).
 //
 // Exit codes:
 //   0 — success
-//   1 — DATABASE_URL or MEILISEARCH_HOST not set
+//   1 — DATABASE_URL or MEILISEARCH_URL not set
 //   2 — DB connection or query error
 //   3 — Meilisearch index configuration / write error
 //
@@ -27,6 +30,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/nomarkup/nomarkup/services/job/internal/config"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	"github.com/nomarkup/nomarkup/services/job/internal/service"
 )
@@ -40,9 +44,9 @@ func main() {
 		slog.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
-	meiliHost := os.Getenv("MEILISEARCH_HOST")
-	if meiliHost == "" {
-		slog.Error("MEILISEARCH_HOST is required")
+	meiliURL := config.ResolveMeilisearchURL()
+	if meiliURL == "" {
+		slog.Error("MEILISEARCH_URL is required")
 		os.Exit(1)
 	}
 	meiliKey := os.Getenv("MEILISEARCH_API_KEY")
@@ -62,7 +66,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	se, err := service.NewListingSearchEngine(meiliHost, meiliKey)
+	se, err := service.NewListingSearchEngine(meiliURL, meiliKey)
 	if err != nil {
 		slog.Error("initialize listing search engine", "error", err)
 		os.Exit(3)
