@@ -1,3 +1,11 @@
+// Pixel math in bench fixtures: casts bounded by image dimensions;
+// r/g/b/x/y are the idiomatic names in per-channel loops.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use image::{DynamicImage, RgbaImage};
 

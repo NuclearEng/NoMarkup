@@ -324,8 +324,9 @@ impl FraudDetector {
         }
 
         // 1b. Shared device fingerprint between bidder and job poster.
-        let mut fingerprint_score: f64 = 0.0;
-        if !device_fingerprint.is_empty() {
+        let fingerprint_score: f64 = if device_fingerprint.is_empty() {
+            0.0
+        } else {
             let shared_device: CountRow = sqlx::query_as(
                 "SELECT COUNT(*)::bigint AS count FROM user_sessions \
                  WHERE user_id = $1 \
@@ -345,8 +346,8 @@ impl FraudDetector {
             };
 
             let device_score = Self::score_device_fingerprint(device_fingerprint, "");
-            fingerprint_score = shared_score.max(device_score);
-        }
+            shared_score.max(device_score)
+        };
 
         // 2. Velocity: bids from this provider in the last hour.
         let bid_velocity: CountRow = sqlx::query_as(

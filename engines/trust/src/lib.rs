@@ -1,4 +1,3 @@
-#![deny(clippy::all, clippy::pedantic)]
 // Trust scoring is numeric: counts (i64) and ratios (f64) are routinely
 // converted between integer and float. The precision loss and sign-loss casts
 // are intentional and bounded by the score-clamping that every dimension

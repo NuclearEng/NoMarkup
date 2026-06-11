@@ -16,7 +16,7 @@ pub struct UnderwritingServer;
 
 impl From<&ProviderFeatures> for model::Features {
     fn from(p: &ProviderFeatures) -> Self {
-        model::Features {
+        Self {
             provider_id: p.provider_id.clone(),
             trust_overall: p.trust_overall,
             trust_feedback: p.trust_feedback,

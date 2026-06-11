@@ -146,7 +146,7 @@ proptest! {
         let mut better = f.clone();
         better.on_time_repayment_rate = 1.0;
         better.prior_advances_count = f.prior_advances_count.max(5);
-        let mut worse = f.clone();
+        let mut worse = f;
         worse.on_time_repayment_rate = 0.0;
         worse.prior_advances_count = worse.prior_advances_count.max(5);
         let a = underwrite(&better);

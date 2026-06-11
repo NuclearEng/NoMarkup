@@ -143,6 +143,9 @@ fn round_cents(x: f64) -> i64 {
 
 /// Underwrite a provider. Deterministic, pure, sub-millisecond.
 #[must_use]
+// One linear pass: normalize -> score -> gate -> size -> price. Splitting the
+// scorecard across helpers would hurt auditability of the regulated decision flow.
+#[allow(clippy::too_many_lines)]
 pub fn underwrite(f: &Features) -> Decision {
     // ── Defensive normalization of inputs to valid ranges (fail-safe; the
     //    caller is server-authoritative but we never trust an out-of-range
@@ -178,10 +181,10 @@ pub fn underwrite(f: &Features) -> Decision {
     let n_fraud = 1.0 - trust_fraud;
     let n_repay = (0.5 - on_time) * 2.0;
     let n_dispute = clampf(dispute * 5.0, 0.0, 1.0);
-    let n_tenure = clampf((180.0 - tenure_days as f64) / 180.0, 0.0, 1.0);
-    let n_thinfile = clampf((5.0 - prior as f64) / 5.0, 0.0, 1.0);
+    let n_tenure = clampf((180.0 - f64::from(tenure_days)) / 180.0, 0.0, 1.0);
+    let n_thinfile = clampf((5.0 - f64::from(prior)) / 5.0, 0.0, 1.0);
     let n_velocity = clampf(1.0 - velocity_ratio, -1.0, 1.0);
-    let n_consistency = clampf((6.0 - active_months as f64) / 6.0, 0.0, 1.0);
+    let n_consistency = clampf((6.0 - f64::from(active_months)) / 6.0, 0.0, 1.0);
 
     // Weighted contributions (kept for the explainability breakdown).
     let c_repay = W_REPAY * n_repay;
@@ -347,10 +350,10 @@ pub fn underwrite(f: &Features) -> Decision {
     let available = (limit - outstanding).max(0);
 
     // ── Pricing (risk-banded factor rate). ───────────────────────────────────
-    let fee_span = (FEE_MAX_BPS - FEE_MIN_BPS) as f64;
-    let fee_bps = (FEE_MIN_BPS as f64 + fee_span * (pd / PD_CEILING)).round();
+    let fee_span = f64::from(FEE_MAX_BPS - FEE_MIN_BPS);
+    let fee_bps = (f64::from(FEE_MIN_BPS) + fee_span * (pd / PD_CEILING)).round();
     let fee_bps = (fee_bps as i32).clamp(FEE_MIN_BPS, FEE_MAX_BPS);
-    let factor_rate = 1.0 + fee_bps as f64 / 10_000.0;
+    let factor_rate = 1.0 + f64::from(fee_bps) / 10_000.0;
     let holdback_pct = (8.0 + (20.0 * pd).round()).clamp(8.0, 20.0) as i32;
 
     let tier = if limit == 0 {

@@ -1,4 +1,3 @@
-#![deny(clippy::all, clippy::pedantic)]
 // Imaging pipeline operates on i32/u32/f64 pixel dimensions and channel
 // values. Casts between these are intentional and bounded by libvips/image
 // crate input validation. Doc lints suppressed.

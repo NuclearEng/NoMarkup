@@ -35,8 +35,11 @@ fn process_pipeline_resize_and_encode_jpeg() {
     assert!(h <= 600);
 
     let mut buf = std::io::Cursor::new(Vec::new());
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, DEFAULT_QUALITY);
-    resized.write_with_encoder(encoder).expect("encode JPEG");
+    let jpeg_encoder =
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, DEFAULT_QUALITY);
+    resized
+        .write_with_encoder(jpeg_encoder)
+        .expect("encode JPEG");
     let encoded = buf.into_inner();
     assert!(!encoded.is_empty());
 }
@@ -325,7 +328,7 @@ fn full_pipeline_create_resize_encode_decode() {
     let encoded = encode_test_image(&resized, image::ImageFormat::Jpeg);
     assert!(!encoded.is_empty());
     assert!(
-        (encoded.len() as i64) < MAX_FILE_SIZE_BYTES,
+        i64::try_from(encoded.len()).expect("len fits in i64") < MAX_FILE_SIZE_BYTES,
         "Encoded size {} should be under limit",
         encoded.len()
     );

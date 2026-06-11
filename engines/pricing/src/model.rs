@@ -1,9 +1,10 @@
 //! Fair Price Index model — log-space robust weighted estimation + empirical-
-//! Bayes hierarchical shrinkage. Pure deterministic function (no clock/RNG/IO):
-//! the caller passes `as_of` and a candidate transaction set; the engine buckets
-//! by geo/category, robustly estimates each level, and partial-pools sparse
-//! cells toward their parent so thin cells fall back gracefully instead of
-//! returning nothing.
+//! Bayes hierarchical shrinkage.
+//!
+//! Pure deterministic function (no clock/RNG/IO): the caller passes `as_of`
+//! and a candidate transaction set; the engine buckets by geo/category,
+//! robustly estimates each level, and partial-pools sparse cells toward their
+//! parent so thin cells fall back gracefully instead of returning nothing.
 //!
 //! Prices are ~log-normal, so all location math is in log space (median is
 //! scale-equivariant, fences/bands symmetrize), exponentiated back at the end.
@@ -110,7 +111,7 @@ fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
     }
 }
 
-/// Weighted interpolated quantile (ClickHouse `quantileInterpolatedWeighted`
+/// Weighted interpolated quantile (`ClickHouse` `quantileInterpolatedWeighted`
 /// semantics). `pairs` ascending-sorted by value; weights > 0.
 fn weighted_quantile(pairs: &[(f64, f64)], p: f64) -> f64 {
     if pairs.is_empty() {
@@ -252,6 +253,16 @@ fn in_level(t: &Txn, q: &Query, level: u32) -> bool {
     }
 }
 
+/// Exponentiate a log-space value back to whole cents (≥ 1), saturating into
+/// i64; non-finite inputs collapse to the 1-cent floor.
+fn to_cents(log_v: f64) -> i64 {
+    if log_v.is_finite() {
+        log_v.exp().round().clamp(1.0, i64::MAX as f64) as i64
+    } else {
+        1
+    }
+}
+
 /// Compute the fair price for a (category × geo × time) cell. Deterministic, pure.
 #[must_use]
 pub fn fair_price(txns: &[Txn], q: &Query) -> FairPrice {
@@ -299,11 +310,14 @@ pub fn fair_price(txns: &[Txn], q: &Query) -> FairPrice {
         .collect();
 
     // Deepest non-empty level = local; nearest non-empty coarser = parent.
-    let Some(local_idx) = cells.iter().position(Option::is_some) else {
+    let Some((local_idx, local)) = cells
+        .iter()
+        .enumerate()
+        .find_map(|(i, cell)| cell.as_ref().map(|c| (i, c.clone())))
+    else {
         return no_data();
     };
-    let local = cells[local_idx].clone().unwrap();
-    let parent = cells[local_idx + 1..].iter().flatten().next().cloned();
+    let parent = cells.iter().skip(local_idx + 1).flatten().next().cloned();
 
     // 3. Shrinkage (partial pool local toward parent with the SAME weight B for
     //    median + p25 + p75, so ordering is preserved).
@@ -348,13 +362,6 @@ pub fn fair_price(txns: &[Txn], q: &Query) -> FairPrice {
 
     // 6. Exponentiate + round to cents; clamp + order so the invariants hold
     //    exactly post-rounding.
-    let to_cents = |log_v: f64| -> i64 {
-        if log_v.is_finite() {
-            log_v.exp().round().clamp(1.0, i64::MAX as f64) as i64
-        } else {
-            1
-        }
-    };
     let mut price = to_cents(m_log).clamp(min_price, max_price);
     if price < 1 {
         price = 1;

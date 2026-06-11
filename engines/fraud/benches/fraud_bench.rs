@@ -1,3 +1,6 @@
+// Synthetic bench fixtures: small indices, lossy casts intentional.
+#![allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
+
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use std::collections::HashMap;
@@ -94,8 +97,8 @@ fn make_ip_sessions(n: usize) -> Vec<IpSessionRecord> {
         .map(|i| IpSessionRecord {
             user_id: Uuid::now_v7(),
             ip_address: format!("192.168.1.{}", i % 256),
-            geo_lat: Some(37.7749 + (i as f64 * 0.01)),
-            geo_lng: Some(-122.4194 + (i as f64 * 0.01)),
+            geo_lat: Some((i as f64).mul_add(0.01, 37.7749)),
+            geo_lng: Some((i as f64).mul_add(0.01, -122.4194)),
             geo_country: Some("US".into()),
         })
         .collect()

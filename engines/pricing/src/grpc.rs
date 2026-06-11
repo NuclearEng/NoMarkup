@@ -22,7 +22,7 @@ fn side_from_proto(v: i32) -> Side {
 
 impl From<&ProtoTxn> for model::Txn {
     fn from(t: &ProtoTxn) -> Self {
-        model::Txn {
+        Self {
             category_id: t.category_id.clone(),
             parent_category_id: t.parent_category_id.clone(),
             market_id: t.market_id.clone(),

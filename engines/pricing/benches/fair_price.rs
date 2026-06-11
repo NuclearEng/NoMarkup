@@ -22,10 +22,10 @@ fn txn(price: i64, age_days: i64, zip: &str, tier: u32) -> Txn {
 fn corpus() -> Vec<Txn> {
     // ~300 txns across the metro, ~60 in the target ZIP.
     let mut v = Vec::with_capacity(300);
-    for i in 0..300 {
+    for i in 0u32..300 {
         let zip = if i % 5 == 0 { "78701" } else { "78704" };
-        let price = 11_000 + (i % 50) as i64 * 120;
-        v.push(txn(price, (i % 200) as i64, zip, 2 + (i % 3) as u32));
+        let price = 11_000 + i64::from(i % 50) * 120;
+        v.push(txn(price, i64::from(i % 200), zip, 2 + (i % 3)));
     }
     v
 }

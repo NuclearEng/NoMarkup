@@ -3,6 +3,9 @@ name = "nomarkup-underwriting-engine"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "underwriting"
 path = "src/lib.rs"

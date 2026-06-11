@@ -100,8 +100,10 @@ pub fn should_extend_for_snipe(
     secs_remaining > 0 && secs_remaining <= SNIPE_WINDOW_SECS
 }
 
-/// Place a forward-auction bid against a listings row. This is the Rust
-/// counterpart to `services/job/internal/repository/listing_repo.go::PlaceListingBid`.
+/// Place a forward-auction bid against a listings row.
+///
+/// This is the Rust counterpart to
+/// `services/job/internal/repository/listing_repo.go::PlaceListingBid`.
 /// Both implementations MUST produce identical accept/reject decisions for
 /// the same inputs.
 ///

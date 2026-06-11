@@ -97,6 +97,7 @@ impl FraudDecision {
 }
 
 /// Proto signal type enum values mapped to closest DB `signal_type` values.
+///
 /// Proto enum: VELOCITY=1, `GEO_MISMATCH=2`, `DEVICE_FINGERPRINT=3`, `SHILL_BID=4`,
 ///   `ACCOUNT_TAKEOVER=5`, `PAYMENT_FRAUD=6`, `FAKE_REVIEW=7`, `MULTI_ACCOUNT=8`, `BOT_BEHAVIOR=9`
 /// DB: '`review_manipulation`', '`account_fraud`', '`bid_manipulation`',

@@ -1,7 +1,5 @@
 //! Pricing engine server. Pure-function gRPC service — no DB, no clock.
 
-#![forbid(unsafe_code)]
-
 use std::net::SocketAddr;
 
 use tonic::transport::Server;

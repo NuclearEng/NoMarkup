@@ -6,6 +6,9 @@
 //! skipped via early return — same convention as the Go-side integration
 //! tests.
 
+// Test fixtures: usize counts are tiny, wrap is impossible.
+#![allow(clippy::cast_possible_wrap)]
+
 use bidding::forward::{
     MAX_SNIPE_EXTENSIONS, place_forward_bid, should_extend_for_snipe, validate_forward_bid,
 };
@@ -184,7 +187,8 @@ async fn concurrent_forward_bids_serialize_correctly() {
             "iter {iter}: accepted={accepted} but listing_bids row count={db_count}"
         );
         assert_eq!(
-            listing_bid_count as i64, db_count,
+            i64::from(listing_bid_count),
+            db_count,
             "iter {iter}: listings.bid_count={listing_bid_count} != count(*)={db_count}"
         );
         assert_eq!(

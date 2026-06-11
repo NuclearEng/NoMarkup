@@ -224,7 +224,7 @@ fn tier_determination_trusted_user() {
         jobs_last_90_days: 5,
         repeat_customers: 4,
         on_time_rate: 0.95,
-        total_gmv_cents: 200000,
+        total_gmv_cents: 200_000,
     };
     let feedback = FeedbackDetails {
         average_rating: 4.3,
@@ -289,6 +289,8 @@ fn dimension_scores_overall_weighted_correctly() {
         fraud: 1.0,
     };
 
+    // Must use the same plain (non-fused) FP ops as the engine's weighting.
+    #[allow(clippy::suboptimal_flops)]
     let expected = 0.8 * 0.35 + 0.6 * 0.20 + 0.9 * 0.25 + 1.0 * 0.20;
     let overall = scores.overall();
     assert!((overall - expected).abs() < f64::EPSILON);

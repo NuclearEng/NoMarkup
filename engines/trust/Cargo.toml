@@ -3,6 +3,9 @@ name = "nomarkup-trust-engine"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "trust"
 path = "src/lib.rs"

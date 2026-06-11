@@ -2,7 +2,7 @@
 ///
 /// Module hierarchy mirrors proto package paths so relative imports resolve correctly.
 
-#[allow(clippy::all, clippy::pedantic, dead_code)]
+#[allow(clippy::all, clippy::pedantic, clippy::nursery, dead_code)]
 pub mod nomarkup {
     pub mod common {
         pub mod v1 {

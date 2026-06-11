@@ -3,6 +3,9 @@ name = "nomarkup-imaging-engine"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "imaging"
 path = "src/lib.rs"

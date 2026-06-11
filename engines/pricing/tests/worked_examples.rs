@@ -37,13 +37,13 @@ fn q(zip: &str) -> Query {
 #[test]
 fn dense_stable_cell() {
     let mut txns = Vec::new();
-    for i in 0..60 {
+    for i in 0u32..60 {
         // prices clustered ~$110–$160 in the target ZIP, recent, trusted.
         txns.push(t(
-            11_000 + (i % 50) * 100,
-            i % 90,
+            11_000 + i64::from(i % 50) * 100,
+            i64::from(i % 90),
             "78701",
-            2 + (i % 3) as u32,
+            2 + (i % 3),
         ));
     }
     let fp = fair_price(&txns, &q("78701"));

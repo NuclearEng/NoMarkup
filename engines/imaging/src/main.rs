@@ -1,4 +1,3 @@
-#![deny(clippy::all, clippy::pedantic, unsafe_code)]
 #![allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,

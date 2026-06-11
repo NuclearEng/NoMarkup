@@ -15,6 +15,26 @@ edition = "2024"
 authors = ["NoMarkup Engineering"]
 license = "proprietary"
 
+# Workspace-wide lint bar (CLAUDE.md §5): clippy pedantic+nursery, unsafe_code denied.
+# Member crates opt in with `[lints] workspace = true`. CI runs clippy with
+# `-D warnings`, so "warn" here is effectively deny in the pipeline while staying
+# overridable via targeted #[allow(...)] at module/crate level.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Groups at priority -1 so targeted per-lint overrides (here or in crate roots) win.
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Accepted nursery noise (workspace-wide, documented exceptions):
+# - missing_const_for_fn: const-ness is an API commitment we don't want dictated
+#   by what the current compiler happens to accept; fires on trivial constructors.
+# - option_if_let_else: explicit match/if-let over Option is frequently clearer
+#   than map_or_else chains; readability call, no correctness impact.
+missing_const_for_fn = "allow"
+option_if_let_else = "allow"
+
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
 tonic = "0.12"

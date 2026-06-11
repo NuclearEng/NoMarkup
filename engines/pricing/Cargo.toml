@@ -3,6 +3,9 @@ name = "nomarkup-pricing-engine"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "pricing"
 path = "src/lib.rs"

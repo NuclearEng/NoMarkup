@@ -1,4 +1,3 @@
-#![deny(clippy::all, clippy::pedantic)]
 // Bidding engine math: i64 cents and ratios across many integer/float
 // boundaries. Casts are intentional and bounded by validation at request
 // ingress (max bid amounts capped well within i64). Doc lints suppressed

@@ -167,7 +167,7 @@ impl TrustScorer {
 
         let previous_tier = existing
             .as_ref()
-            .map_or("new".to_string(), |r| r.tier.clone());
+            .map_or_else(|| "new".to_string(), |r| r.tier.clone());
 
         // Compute each dimension using pure scoring functions.
         let feedback = self.compute_feedback(user_id).await?;

@@ -3,6 +3,9 @@ name = "nomarkup-bidding-engine"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "bidding"
 path = "src/lib.rs"

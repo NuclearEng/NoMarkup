@@ -1,4 +1,3 @@
-#![deny(clippy::all, clippy::pedantic)]
 // Fraud scoring is numeric heuristics over device/IP/behavioral signals.
 // Cast precision and sign-loss are bounded by the [0..=1] clamps every
 // scorer applies. The noisy doc lints (backticks, # Errors sections) are

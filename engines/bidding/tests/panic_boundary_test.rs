@@ -23,6 +23,8 @@ use tower::{Layer, Service};
 use tower_http::catch_panic::CatchPanicLayer;
 
 /// Byte-identical copy of the per-engine `handle_panic` in `src/main.rs`.
+// Signature is fixed by tower's `CatchPanicLayer::custom` (takes the payload by value).
+#[allow(clippy::needless_pass_by_value)]
 fn handle_panic(
     err: Box<dyn std::any::Any + Send + 'static>,
 ) -> http::Response<tonic::body::BoxBody> {
