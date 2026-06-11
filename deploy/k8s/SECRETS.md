@@ -29,7 +29,7 @@ environments.
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | every service | error tracking (TODOS-7) |
 | `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth token exchange |
 | `APPLE_CLIENT_SECRET` | gateway | Apple OAuth token exchange |
-| `MEILISEARCH_API_KEY` | gateway, job service | search index admin operations + gateway listings search |
+| `MEILISEARCH_API_KEY` | gateway, job service, meilisearch (as `MEILI_MASTER_KEY`) | search index admin operations + gateway listings search; the in-cluster Meilisearch Deployment (`base/meilisearch/deployment.yaml`) boots with this same value as its master key — identical to the docker-compose wiring |
 
 ## Provisioning (recommended via External Secrets Operator + Vault)
 

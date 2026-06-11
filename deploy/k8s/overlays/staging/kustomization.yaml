@@ -8,6 +8,39 @@ namePrefix: staging-
 resources:
   - ../../base
 
+# Image pinning — staging deploys an explicit tag, never floating `:latest`.
+# `v0.1.0` is the placeholder release; CI stamps the real release tag at
+# deploy time via `kustomize edit set image ghcr.io/nomarkup/<name>:<tag>`
+# (deploy.yml is a gated placeholder today — it no-ops unless the
+# DEPLOY_PROVISIONED repo variable is "true").
+images:
+  - name: ghcr.io/nomarkup/gateway
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/web
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/user
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/job
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/payment
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/chat
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/notification
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/bidding
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/fraud
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/imaging
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/pricing
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/trust
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/underwriting
+    newTag: v0.1.0
+
 patches:
   # Gateway: 1 replica in staging
   - target:
@@ -86,6 +119,20 @@ patches:
   - target:
       kind: Deployment
       name: imaging
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: pricing
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: underwriting
     patch: |
       - op: replace
         path: /spec/replicas

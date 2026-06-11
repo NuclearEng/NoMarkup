@@ -41,6 +41,13 @@ resources:
   - underwriting/service.yaml
   - pricing/deployment.yaml
   - pricing/service.yaml
+  # In-cluster infrastructure (referenced by nomarkup-config:
+  # MEILISEARCH_URL / OTEL_EXPORTER_OTLP_ENDPOINT)
+  - meilisearch/deployment.yaml
+  - meilisearch/service.yaml
+  - otel-collector/configmap.yaml
+  - otel-collector/deployment.yaml
+  - otel-collector/service.yaml
   # Ingress
   - ingress.yaml
   # Storage
