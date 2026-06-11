@@ -393,6 +393,12 @@ func New(
 	// Protected API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMW.Handler)
+		// Authed responses are per-user: default to `private, no-store` so
+		// no shared cache (CDN/proxy) ever stores them. Set BEFORE handlers
+		// run, so a handler that sets its own Cache-Control overwrites the
+		// default. Public catalog reads (writeCachedJSON) are mounted
+		// outside this subtree and keep their `public, s-maxage` policy.
+		r.Use(middleware.PrivateNoStore)
 
 		r.Route("/users", func(r chi.Router) {
 			r.Get("/me", userHandler.GetMe)

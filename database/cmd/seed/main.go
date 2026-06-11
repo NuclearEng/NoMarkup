@@ -258,6 +258,10 @@ func main() {
 	}
 
 	// ── 3. Provider Profile ───────────────────────────────────────
+	// Conflict arbiter is the natural key (user_id UNIQUE), not the PK:
+	// a profile created through the app for the same dev user carries a
+	// random id, and an (id) arbiter would let the UNIQUE(user_id)
+	// violation abort the whole seed transaction on re-run.
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO provider_profiles (id, user_id, business_name, bio,
@@ -267,7 +271,7 @@ func main() {
 			'456 Service Rd, Austin, TX 78702',
 			ST_SetSRID(ST_MakePoint(-97.7200, 30.2700), 4326),
 			80, 'completion', 15, 85)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (user_id) DO NOTHING`,
 		providerProfileID, providerUserID,
 	)
 	if err != nil {
@@ -283,7 +287,7 @@ func main() {
 			'789 Trade Ave, Austin, TX 78703',
 			ST_SetSRID(ST_MakePoint(-97.7600, 30.2800), 4326),
 			50, 'completion', 8, 70)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (user_id) DO NOTHING`,
 		provider2ProfileID, provider2UserID,
 	)
 	if err != nil {
@@ -432,11 +436,15 @@ func main() {
 
 	// ── 6. Bids ───────────────────────────────────────────────────
 
-	// Bids on the active job (one bid per provider per job due to UNIQUE constraint)
+	// Bids on the active job (one bid per provider per job due to UNIQUE
+	// constraint). The conflict arbiter is that natural key
+	// (job_id, provider_id) rather than the PK: a re-run after the dev
+	// account bid through the app (random bid id, same job+provider) must
+	// skip cleanly instead of aborting the transaction.
 	_, err = tx.Exec(ctx, `
 		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents, status)
 		VALUES ($1, $2, $3, 35000, 40000, 'active')
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (job_id, provider_id) DO NOTHING`,
 		bid1ID, activeJobID, providerUserID,
 	)
 	if err != nil {
@@ -446,7 +454,7 @@ func main() {
 	_, err = tx.Exec(ctx, `
 		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents, status)
 		VALUES ($1, $2, $3, 42000, 45000, 'active')
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (job_id, provider_id) DO NOTHING`,
 		bid2ID, activeJobID, provider2UserID,
 	)
 	if err != nil {
@@ -457,7 +465,7 @@ func main() {
 	_, err = tx.Exec(ctx, `
 		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents, status, awarded_at)
 		VALUES ($1, $2, $3, 22000, 25000, 'awarded', $4)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (job_id, provider_id) DO NOTHING`,
 		bid3ID, awardedJobID, providerUserID, pastAwarded,
 	)
 	if err != nil {
@@ -468,7 +476,7 @@ func main() {
 	_, err = tx.Exec(ctx, `
 		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents, status, awarded_at)
 		VALUES ($1, $2, $3, 18000, 20000, 'awarded', $4)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (job_id, provider_id) DO NOTHING`,
 		bid4ID, completedJobID, providerUserID, pastCompleted.Add(-3*24*time.Hour),
 	)
 	if err != nil {
@@ -484,6 +492,10 @@ func main() {
 	}
 
 	// ── 7. Contracts ──────────────────────────────────────────────
+	// Bare ON CONFLICT DO NOTHING: contracts carry TWO unique keys (the PK
+	// and contract_number). A targeted (id) arbiter would still abort the
+	// transaction if a pre-existing contract holds the seed's
+	// contract_number under a different id, so we skip on any conflict.
 
 	// Active contract (from awarded job)
 	_, err = tx.Exec(ctx, `
@@ -493,7 +505,7 @@ func main() {
 		VALUES ($1, 'NM-2026-00001', $2, $3, $4, $5,
 			22000, 'milestone', 'active', true, true,
 			$6, $6)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT DO NOTHING`,
 		awardedContractID, awardedJobID, customerUserID, providerUserID, bid3ID, pastAwarded,
 	)
 	if err != nil {
@@ -508,7 +520,7 @@ func main() {
 		VALUES ($1, 'NM-2026-00002', $2, $3, $4, $5,
 			18000, 'completion', 'completed', true, true,
 			$6, $6, $7)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT DO NOTHING`,
 		completedContractID, completedJobID, customerUserID, providerUserID, bid4ID,
 		pastCompleted.Add(-3*24*time.Hour), pastCompleted,
 	)
@@ -532,6 +544,11 @@ func main() {
 	}
 
 	// ── 9. Review ─────────────────────────────────────────────────
+	// Conflict arbiter is the natural key UNIQUE(contract_id, reviewer_id):
+	// an (id) arbiter misses the case where the review for this contract
+	// already exists under a different id (observed in the dev DB:
+	// `reviews_contract_id_reviewer_id_key` violation, which aborted the
+	// transaction and 25P02-cascaded into every later statement).
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO reviews (id, contract_id, job_id, reviewer_id, reviewee_id, reviewer_role,
@@ -541,22 +558,28 @@ func main() {
 			5, 5, 4, 5, 5,
 			'Mike did an excellent job installing the ceiling fan. He was professional, arrived on time, and cleaned up after the work. The fan works perfectly. Highly recommend!',
 			'published', $6, $7)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (contract_id, reviewer_id) DO NOTHING`,
 		reviewID, completedContractID, completedJobID, customerUserID, providerUserID,
 		pastCompleted.Add(24*time.Hour), reviewWindowEnd,
 	)
 	if err != nil {
-		log.Printf("insert review: %v (may fail if contract FK doesn't exist, skipping)", err)
+		// Fatal, not log-and-continue: inside a transaction any failed
+		// statement aborts the tx (25P02), so "skipping" here only turns
+		// one clear error into a cascade of misleading ones downstream.
+		log.Fatalf("insert review: %v", err)
 	}
 
 	// ── 10. Trust Score ───────────────────────────────────────────
+	// Arbiter is UNIQUE(user_id) — one score per user. The trust engine
+	// writes scores with random ids, so an (id) arbiter would abort the
+	// re-run once the engine has scored this provider.
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO trust_scores (id, user_id, role, overall_score, tier,
 			feedback_score, volume_score, risk_score, fraud_score)
 		VALUES ($1, $2, 'provider', 78.50, 'trusted',
 			85.00, 60.00, 80.00, 95.00)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (user_id) DO NOTHING`,
 		trustScoreID, providerUserID,
 	)
 	if err != nil {

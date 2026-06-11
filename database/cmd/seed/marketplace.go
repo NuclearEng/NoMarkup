@@ -401,12 +401,16 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	}
 
 	// listing_orders row — escrow released, pickup confirmed.
+	// Conflict arbiter is UNIQUE(listing_id) — one order per listing. If
+	// the settle worker already created this listing's order under a
+	// random id, an (id) arbiter would abort the seed transaction; the
+	// natural key updates whichever row exists.
 	_, err = tx.Exec(ctx, `
 		INSERT INTO listing_orders (id, listing_id, seller_id, buyer_id,
 			amount_cents, fee_cents, seller_payout_cents, escrow_status,
 			pickup_confirmed_at, released_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, 'released', $8, $9)
-		ON CONFLICT (id) DO UPDATE SET
+		ON CONFLICT (listing_id) DO UPDATE SET
 			escrow_status = 'released',
 			seller_payout_cents = $7,
 			pickup_confirmed_at = $8,
@@ -477,7 +481,7 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		INSERT INTO listing_orders (id, listing_id, seller_id, buyer_id,
 			amount_cents, fee_cents, escrow_status)
 		VALUES ($1, $2, $3, $4, $5, $6, 'disputed')
-		ON CONFLICT (id) DO UPDATE SET
+		ON CONFLICT (listing_id) DO UPDATE SET
 			escrow_status = 'disputed',
 			updated_at = now()`,
 		disputedOrderID, listingDisputedID, provider2UserID, customerUserID,
