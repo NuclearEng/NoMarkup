@@ -112,6 +112,8 @@ const (
 	activeJobID    = "00000000-0000-0000-0000-000000000100"
 	awardedJobID   = "00000000-0000-0000-0000-000000000101"
 	completedJobID = "00000000-0000-0000-0000-000000000102"
+	legalJob1ID    = "00000000-0000-0000-0000-000000000103"
+	legalJob2ID    = "00000000-0000-0000-0000-000000000104"
 
 	bid1ID = "00000000-0000-0000-0000-000000000200"
 	bid2ID = "00000000-0000-0000-0000-000000000201"
@@ -188,6 +190,23 @@ func main() {
 	err = conn.QueryRow(ctx, `SELECT id FROM service_categories WHERE parent_id = $1 AND level = 3 LIMIT 1`, hvacSubcatID).Scan(&acRepairServiceID)
 	if err != nil {
 		log.Fatalf("lookup AC repair service type: %v", err)
+	}
+
+	// Legal vertical taxonomy (seeded by migration 006 with fresh UUIDs per
+	// database — always resolve by slug, never hardcode ids; see the header
+	// of migration 062 for the incident that rule comes from).
+	var legalCatID, legalContractReviewSubcatID, legalConsultSubcatID string
+	err = conn.QueryRow(ctx, `SELECT id FROM service_categories WHERE slug = 'legal' AND level = 1`).Scan(&legalCatID)
+	if err != nil {
+		log.Fatalf("lookup Legal category: %v", err)
+	}
+	err = conn.QueryRow(ctx, `SELECT id FROM service_categories WHERE slug = 'legal-contract-review' AND level = 2`).Scan(&legalContractReviewSubcatID)
+	if err != nil {
+		log.Fatalf("lookup Legal contract-review subcategory: %v", err)
+	}
+	err = conn.QueryRow(ctx, `SELECT id FROM service_categories WHERE slug = 'legal-consultation' AND level = 2`).Scan(&legalConsultSubcatID)
+	if err != nil {
+		log.Fatalf("lookup Legal consultation subcategory: %v", err)
 	}
 
 	now := time.Now()
@@ -415,23 +434,77 @@ func main() {
 		log.Fatalf("insert completed job: %v", err)
 	}
 
-	// ── 5b. Completed payments — cleared payout funds for the provider ──
-	// Instant-payout eligibility = sum of the provider's COMPLETED
-	// provider_payout_cents. Seed three completed payments on the completed
-	// contract so the provider has a positive eligible balance ($1,620) and
-	// the instant-payout success path is demoable on a fresh DB.
+	// ── 5b. Legal vertical fixtures (ported from migration 062) ──
+	//
+	// Migration 062 originally seeded these directly, but its INSERTs
+	// referenced seed-tool users and dev-only category UUIDs, breaking the
+	// chain on fresh databases. 062 is now existence-guarded (no-op without
+	// this seeder's users), and the fixtures live here, where dev demo data
+	// belongs. Guards compose: both sides skip when the natural key already
+	// exists — (provider_id, license_type, jurisdiction) for licenses,
+	// (customer_id, title) for jobs — so migration + seeder never
+	// double-insert in either order.
+
+	// Verified WA bar licenses for the two seed providers, verified by the
+	// seed admin, so /providers/{id}/licenses returns a badge.
 	_, err = tx.Exec(ctx, `
-		INSERT INTO payments (id, contract_id, customer_id, provider_id,
-			amount_cents, platform_fee_cents, guarantee_fee_cents, provider_payout_cents,
-			idempotency_key, status, completed_at, created_at, updated_at)
-		SELECT gen_random_uuid(), $1, $2, $3, 60000, 4800, 1200, 54000,
-			'seed-cleared-payout-'||g, 'completed', now(), now(), now()
-		FROM generate_series(1, 3) g
-		ON CONFLICT (idempotency_key) DO NOTHING`,
-		completedContractID, customerUserID, providerUserID,
+		INSERT INTO provider_licenses (provider_id, license_type, license_number, jurisdiction, status, verified_by, verified_at)
+		SELECT v.provider_id, v.license_type, v.license_number, v.jurisdiction, 'verified', $3::uuid, now()
+		FROM (VALUES
+			($1::uuid, 'bar', 'WA-58213', 'WA'),
+			($2::uuid, 'bar', 'WA-61907', 'WA')
+		) AS v(provider_id, license_type, license_number, jurisdiction)
+		WHERE NOT EXISTS (
+			SELECT 1 FROM provider_licenses pl
+			WHERE pl.provider_id = v.provider_id
+			  AND pl.license_type = v.license_type
+			  AND pl.jurisdiction = v.jurisdiction
+		)`,
+		providerUserID, provider2UserID, adminUserID,
 	)
 	if err != nil {
-		log.Fatalf("insert cleared-payout fixture: %v", err)
+		log.Fatalf("insert provider licenses: %v", err)
+	}
+
+	// Two active legal-category jobs (Seattle, WA — the launched market) so
+	// the gated /legal vertical has content to browse. The (customer_id,
+	// title) NOT EXISTS guard skips cleanly when migration 062 already
+	// inserted them (those rows carry random ids, so an (id) arbiter alone
+	// would double-insert). bid_count omitted — maintained by trigger (029).
+	_, err = tx.Exec(ctx, `
+		INSERT INTO jobs (id, customer_id, title, description,
+			category_id, subcategory_id,
+			service_city, service_state, service_zip,
+			service_location, approximate_location,
+			schedule_type, starting_bid_cents, auction_duration_hours, auction_ends_at,
+			status)
+		SELECT v.id, $3::uuid, v.title, v.description, $4::uuid, v.subcategory_id,
+			'Seattle', 'WA', v.service_zip,
+			ST_SetSRID(ST_MakePoint(v.lng, v.lat), 4326),
+			ST_SetSRID(ST_MakePoint(v.lng, v.lat), 4326),
+			'flexible', v.starting_bid_cents, 72, $7,
+			'active'
+		FROM (VALUES
+			($1::uuid,
+			 'Review SaaS vendor contract before signing',
+			 'Need a licensed attorney to review a 14-page SaaS vendor agreement and flag liability, auto-renewal, and indemnification risks. Remote consult is fine.',
+			 $5::uuid, '98101', -122.3321::float8, 47.6062::float8, 40000::bigint),
+			($2::uuid,
+			 'One-hour business law consultation for new LLC',
+			 'Forming a single-member LLC in Washington and want a 60-minute consultation with a licensed attorney on operating agreement basics and liability.',
+			 $6::uuid, '98109', -122.3493::float8, 47.6205::float8, 25000::bigint)
+		) AS v(id, title, description, subcategory_id, service_zip, lng, lat, starting_bid_cents)
+		WHERE NOT EXISTS (
+			SELECT 1 FROM jobs j
+			WHERE j.customer_id = $3::uuid AND j.title = v.title
+		)
+		ON CONFLICT (id) DO NOTHING`,
+		legalJob1ID, legalJob2ID, customerUserID,
+		legalCatID, legalContractReviewSubcatID, legalConsultSubcatID,
+		auctionEnd,
+	)
+	if err != nil {
+		log.Fatalf("insert legal jobs: %v", err)
 	}
 
 	// ── 6. Bids ───────────────────────────────────────────────────
@@ -528,6 +601,30 @@ func main() {
 		log.Fatalf("insert completed contract: %v", err)
 	}
 
+	// ── 7b. Completed payments — cleared payout funds for the provider ──
+	// Instant-payout eligibility = sum of the provider's COMPLETED
+	// provider_payout_cents. Seed three completed payments on the completed
+	// contract so the provider has a positive eligible balance ($1,620) and
+	// the instant-payout success path is demoable on a fresh DB.
+	//
+	// MUST run after §7: on a fresh database the completed contract does not
+	// exist yet, and inserting these payments first violates
+	// payments_contract_id_fkey (this bug was masked on already-seeded DBs,
+	// where the contract survives from the previous run).
+	_, err = tx.Exec(ctx, `
+		INSERT INTO payments (id, contract_id, customer_id, provider_id,
+			amount_cents, platform_fee_cents, guarantee_fee_cents, provider_payout_cents,
+			idempotency_key, status, completed_at, created_at, updated_at)
+		SELECT gen_random_uuid(), $1, $2, $3, 60000, 4800, 1200, 54000,
+			'seed-cleared-payout-'||g, 'completed', now(), now(), now()
+		FROM generate_series(1, 3) g
+		ON CONFLICT (idempotency_key) DO NOTHING`,
+		completedContractID, customerUserID, providerUserID,
+	)
+	if err != nil {
+		log.Fatalf("insert cleared-payout fixture: %v", err)
+	}
+
 	// ── 8. Milestones ─────────────────────────────────────────────
 
 	_, err = tx.Exec(ctx, `
@@ -587,6 +684,12 @@ func main() {
 	}
 
 	// ── 11. Subscription Tiers ────────────────────────────────────
+	// Bare ON CONFLICT DO NOTHING: subscription_tiers carries TWO unique keys
+	// (the PK and idx_subscription_tiers_slug), and migration 019 already
+	// seeds a 'free' tier under a generated id on fresh databases. An (id)
+	// arbiter would abort the transaction on that slug collision (masked on
+	// long-lived dev DBs, where this seeder ran before migration 019's
+	// WHERE NOT EXISTS guard saw an existing 'free' row).
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO subscription_tiers (id, slug, name, role, price_cents, max_active_jobs, max_bids_per_month, features_json, active)
@@ -594,7 +697,7 @@ func main() {
 			($1, 'free',         'free',          'customer', 0,    1,    NULL, '{"analytics": false, "priority_placement": false}', true),
 			($2, 'pro_customer', 'pro_customer',  'customer', 1999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_jobs": true}', true),
 			($3, 'pro_provider', 'pro_provider',  'provider', 2999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_bids": true, "badge": true}', true)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT DO NOTHING`,
 		freeTierID, proCustomerTierID, proProviderTierID,
 	)
 	if err != nil {
@@ -602,6 +705,18 @@ func main() {
 	}
 
 	// ── 12. Subscriptions ─────────────────────────────────────────
+	// Resolve tier ids by slug rather than assuming the fixed seed UUIDs:
+	// on a fresh DB the 'free' slug is owned by migration 019's row, so
+	// freeTierID does not exist there and a hardcoded reference would
+	// violate subscriptions_tier_id_fkey.
+
+	var freeTierDBID, proProviderTierDBID string
+	if err := tx.QueryRow(ctx, `SELECT id FROM subscription_tiers WHERE slug = 'free'`).Scan(&freeTierDBID); err != nil {
+		log.Fatalf("resolve free tier id: %v", err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT id FROM subscription_tiers WHERE slug = 'pro_provider'`).Scan(&proProviderTierDBID); err != nil {
+		log.Fatalf("resolve pro_provider tier id: %v", err)
+	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO subscriptions (id, user_id, tier_id, status, current_period_start, current_period_end)
@@ -610,9 +725,9 @@ func main() {
 			($4, $5, $3, 'active', $9, $10),
 			($6, $7, $8, 'active', $9, $10)
 		ON CONFLICT (id) DO NOTHING`,
-		adminSubscriptionID, adminUserID, freeTierID,
+		adminSubscriptionID, adminUserID, freeTierDBID,
 		custSubscriptionID, customerUserID,
-		provSubscriptionID, providerUserID, proProviderTierID,
+		provSubscriptionID, providerUserID, proProviderTierDBID,
 		periodStart, periodEnd,
 	)
 	if err != nil {
@@ -711,8 +826,8 @@ func main() {
 	log.Println("║  Provider2: provider2@nomarkup.com  roles: [provider]       ║")
 	log.Println("╚══════════════════════════════════════════════════════════════╝")
 	log.Println("")
-	log.Println("Seeded: 4 users, 1 property, 2 provider profiles, 3 jobs,")
-	log.Println("        4 bids, 2 contracts, 2 milestones, 1 review,")
+	log.Println("Seeded: 4 users, 1 property, 2 provider profiles, 5 jobs (3 home + 2 legal),")
+	log.Println("        2 provider licenses, 4 bids, 2 contracts, 2 milestones, 1 review,")
 	log.Println("        1 trust score, 3 subscription tiers, 3 subscriptions,")
 	log.Println("        3 notification preferences, 1 market range")
 	log.Println("        Marketplace: 13 listings (8 active + 3 with bids + ")

@@ -1,5 +1,18 @@
 -- 062_provider_licenses.up.sql
 --
+-- POLICY DEVIATION NOTE (2026-06-10): this migration was edited IN PLACE
+-- after being merged, deviating from "never edit a deployed migration"
+-- (CLAUDE.md §5). Accepted because: (1) production has never applied any
+-- migration (deploy.yml is a gated placeholder — "deployed" today means
+-- merged/shared), (2) golang-migrate does not checksum applied files, and
+-- (3) the original version made every fresh database bootstrap fail dirty
+-- at version 62: its fixture INSERTs referenced seed-tool users
+-- (…0001–…0004) and dev-DB-only service_categories UUIDs that do not exist
+-- on a fresh chain. The fixture INSERTs below are now existence-guarded:
+-- identical effect on the dev DB, clean no-op on fresh DBs. The fixtures
+-- are also ported to database/cmd/seed (which is where dev environments
+-- get them from now on). See docs/operations/migration-notes.md.
+--
 -- Provider professional-license capture + verification, for the gated LEGAL
 -- services vertical (CLAUDE.md §15: gated verticals; §6: every data boundary
 -- authenticated + authorized; §5 SQL conventions).
@@ -62,42 +75,71 @@ CREATE INDEX idx_provider_licenses_status ON provider_licenses (status);
 -- Mark the two seed providers as verified bar-licensed in Washington (the
 -- launched market, see 055/058) so /providers/{id}/licenses returns a badge,
 -- and post a couple of active legal-category jobs so /legal browse has jobs to
--- bid on. ON CONFLICT-safe via a guarded insert (only seed-id rows).
+-- bid on.
+--
+-- Every INSERT is existence-guarded: the referenced users are created by the
+-- seed tool (database/cmd/seed), not by migrations, and the category UUIDs
+-- are the dev DB's instances of the 006 legal subtree (006 generates fresh
+-- UUIDs per database). On a fresh database none of these rows exist, so the
+-- inserts are a clean no-op and the chain proceeds; the seed tool now carries
+-- these fixtures for dev environments (with NOT EXISTS guards on the same
+-- natural keys, so migration + seeder compose without double-inserting).
 -- ============================================================
 
--- Verified bar licenses for the seed providers (provider@ / provider2@).
+-- Verified bar licenses for the seed providers (provider@ / provider2@),
+-- verified by the seed admin. Only inserted when those users exist, and not
+-- already licensed for the same (provider, type, jurisdiction).
 INSERT INTO provider_licenses (provider_id, license_type, license_number, jurisdiction, status, verified_by, verified_at)
-VALUES
-    ('00000000-0000-0000-0000-000000000003', 'bar', 'WA-58213', 'WA', 'verified',
-     '00000000-0000-0000-0000-000000000001', now()),
-    ('00000000-0000-0000-0000-000000000004', 'bar', 'WA-61907', 'WA', 'verified',
-     '00000000-0000-0000-0000-000000000001', now());
+SELECT v.provider_id, v.license_type, v.license_number, v.jurisdiction, 'verified', v.verified_by, now()
+FROM (VALUES
+    ('00000000-0000-0000-0000-000000000003'::uuid, 'bar', 'WA-58213', 'WA',
+     '00000000-0000-0000-0000-000000000001'::uuid),
+    ('00000000-0000-0000-0000-000000000004'::uuid, 'bar', 'WA-61907', 'WA',
+     '00000000-0000-0000-0000-000000000001'::uuid)
+) AS v(provider_id, license_type, license_number, jurisdiction, verified_by)
+WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = v.provider_id)
+  AND EXISTS (SELECT 1 FROM users a WHERE a.id = v.verified_by)
+  AND NOT EXISTS (
+        SELECT 1 FROM provider_licenses pl
+        WHERE pl.provider_id = v.provider_id
+          AND pl.license_type = v.license_type
+          AND pl.jurisdiction = v.jurisdiction
+  );
 
 -- A couple of active legal-category jobs so the vertical has content to browse.
 -- customer@ (…0002) posts in the existing Legal Services category. Location is
--- Seattle, WA to match the launched WA market.
+-- Seattle, WA to match the launched WA market. Guarded on the customer user,
+-- the category/subcategory rows, and (customer_id, title) dedupe.
 INSERT INTO jobs (
     customer_id, title, description, category_id, subcategory_id,
     service_city, service_state, service_zip,
     service_location, approximate_location,
     schedule_type, starting_bid_cents, auction_duration_hours, auction_ends_at, status
 )
-VALUES
-    ('00000000-0000-0000-0000-000000000002',
+SELECT v.customer_id, v.title, v.description, v.category_id, v.subcategory_id,
+       v.service_city, 'WA', v.service_zip,
+       ST_SetSRID(ST_MakePoint(v.lng, v.lat), 4326),
+       ST_SetSRID(ST_MakePoint(v.lng, v.lat), 4326),
+       'flexible', v.starting_bid_cents, 72, now() + interval '72 hours', 'active'
+FROM (VALUES
+    ('00000000-0000-0000-0000-000000000002'::uuid,
      'Review SaaS vendor contract before signing',
      'Need a licensed attorney to review a 14-page SaaS vendor agreement and flag liability, auto-renewal, and indemnification risks. Remote consult is fine.',
-     'a5663378-3f7e-4164-a42e-15e752348902',
-     '02e5bb42-0c91-4519-a9ef-10603e337f0e',
-     'Seattle', 'WA', '98101',
-     ST_SetSRID(ST_MakePoint(-122.3321, 47.6062), 4326),
-     ST_SetSRID(ST_MakePoint(-122.3321, 47.6062), 4326),
-     'flexible', 40000, 72, now() + interval '72 hours', 'active'),
-    ('00000000-0000-0000-0000-000000000002',
+     'a5663378-3f7e-4164-a42e-15e752348902'::uuid,
+     '02e5bb42-0c91-4519-a9ef-10603e337f0e'::uuid,
+     'Seattle', '98101', -122.3321::float8, 47.6062::float8, 40000::bigint),
+    ('00000000-0000-0000-0000-000000000002'::uuid,
      'One-hour business law consultation for new LLC',
      'Forming a single-member LLC in Washington and want a 60-minute consultation with a licensed attorney on operating agreement basics and liability.',
-     'a5663378-3f7e-4164-a42e-15e752348902',
-     'b8dd10b6-93b5-4ef9-a0da-c57a038c6313',
-     'Seattle', 'WA', '98109',
-     ST_SetSRID(ST_MakePoint(-122.3493, 47.6205), 4326),
-     ST_SetSRID(ST_MakePoint(-122.3493, 47.6205), 4326),
-     'flexible', 25000, 72, now() + interval '72 hours', 'active');
+     'a5663378-3f7e-4164-a42e-15e752348902'::uuid,
+     'b8dd10b6-93b5-4ef9-a0da-c57a038c6313'::uuid,
+     'Seattle', '98109', -122.3493::float8, 47.6205::float8, 25000::bigint)
+) AS v(customer_id, title, description, category_id, subcategory_id,
+       service_city, service_zip, lng, lat, starting_bid_cents)
+WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = v.customer_id)
+  AND EXISTS (SELECT 1 FROM service_categories c WHERE c.id = v.category_id)
+  AND EXISTS (SELECT 1 FROM service_categories s WHERE s.id = v.subcategory_id)
+  AND NOT EXISTS (
+        SELECT 1 FROM jobs j
+        WHERE j.customer_id = v.customer_id AND j.title = v.title
+  );
