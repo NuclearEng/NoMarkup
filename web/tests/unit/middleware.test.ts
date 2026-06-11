@@ -56,3 +56,29 @@ describe('middleware CSP — script-src unsafe-eval policy', () => {
     expect(scriptSrc).toContain("'unsafe-eval'");
   });
 });
+
+describe('middleware auth gate — AUTH_ONLY_API', () => {
+  it.each(['/api/analyze-job-image', '/api/analyze-listing-image'])(
+    'returns 401 JSON for %s without any session indicator',
+    async (path) => {
+      const req = new NextRequest(`http://localhost:3000${path}`, { method: 'POST' });
+      const res = middleware(req);
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: 'unauthorized' });
+    },
+  );
+
+  it.each(['/api/analyze-job-image', '/api/analyze-listing-image'])(
+    'lets %s through to the route handler when a Bearer token is present',
+    (path) => {
+      const req = new NextRequest(`http://localhost:3000${path}`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer some-token' },
+      });
+      const res = middleware(req);
+      // NextResponse.next() — the route handler performs the real JWT
+      // verification; the middleware only screens for presence.
+      expect(res.status).toBe(200);
+    },
+  );
+});

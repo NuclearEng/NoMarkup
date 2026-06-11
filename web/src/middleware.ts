@@ -59,7 +59,10 @@ const PROTECTED_PREFIXES: readonly string[] = [
 // API routes that must be called by an authenticated user. `/jobs` (public
 // browse), `/jobs/[id]` (public detail), and `/providers` (public search) are
 // deliberately excluded.
-const AUTH_ONLY_API: readonly string[] = ['/api/analyze-job-image'];
+const AUTH_ONLY_API: readonly string[] = [
+  '/api/analyze-job-image',
+  '/api/analyze-listing-image',
+];
 
 function hasSessionIndicator(req: NextRequest): boolean {
   const cookies = req.cookies;

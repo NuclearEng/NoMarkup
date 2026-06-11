@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { gateAiRoute } from '@/lib/server/ai-route-gate';
+
 // Hard-coded model — the client MUST NOT influence model selection. This
 // prevents an attacker from forcing an expensive model (e.g. claude-opus) on
 // every call.
@@ -65,22 +67,14 @@ const claudeResponseSchema = z.object({
   confidence: z.enum(ALLOWED_CONFIDENCE),
 });
 
-function hasAuth(request: NextRequest): boolean {
-  const cookies = request.cookies;
-  if (cookies.get('has_session')?.value === '1') return true;
-  if (cookies.get('refresh_token')?.value) return true;
-  if (cookies.get('oauth_access_token')?.value) return true;
-
-  const auth = request.headers.get('authorization');
-  if (auth && /^Bearer\s+\S+/i.test(auth)) return true;
-
-  return false;
-}
-
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  // 1. Auth (belt-and-suspenders — middleware also blocks this path).
-  if (!hasAuth(request)) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  // 1. Auth + per-user rate limit. The middleware only checks for the
+  // PRESENCE of a session indicator; this verifies the RS256 access JWT
+  // (signature, exp, iss, aud) and enforces a sliding-window budget keyed by
+  // the token's `sub` — this route spends real money per call.
+  const gate = gateAiRoute(request);
+  if (!gate.ok) {
+    return gate.response;
   }
 
   // 2. Content-Type must be JSON.

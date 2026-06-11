@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { getAccessToken } from '@/lib/auth';
 
 export interface ImageAnalysisResult {
   category: string;
@@ -83,9 +84,15 @@ export function ImageAnalysisButton({ onResult, className }: ImageAnalysisButton
     try {
       const imageBase64 = await fileToBase64(file);
 
+      // The route verifies the access JWT server-side (it proxies a paid
+      // LLM call) — attach it explicitly; cookies alone are not accepted.
+      const accessToken = getAccessToken();
       const response = await fetch('/api/analyze-job-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({ imageBase64, mimeType: file.type }),
       });
 

@@ -36,6 +36,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCreateListing } from '@/hooks/useListings';
 import { getApiErrorMessage } from '@/lib/api';
+import { getAccessToken } from '@/lib/auth';
 import { scorePhotoQuality } from '@/lib/photo-quality';
 import { cn, formatCents } from '@/lib/utils';
 import {
@@ -278,9 +279,15 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
     setAiState('analyzing');
     try {
       const imageBase64 = await fileToBase64(file);
+      // The route verifies the access JWT server-side (it proxies a paid
+      // LLM call) — attach it explicitly; cookies alone are not accepted.
+      const accessToken = getAccessToken();
       const res = await fetch('/api/analyze-listing-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({ imageBase64, mimeType: file.type }),
       });
       if (!res.ok) {
