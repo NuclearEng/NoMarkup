@@ -2,6 +2,8 @@ module github.com/nomarkup/nomarkup/database
 
 go 1.22.0
 
+toolchain go1.26.4
+
 require (
 	github.com/jackc/pgx/v5 v5.7.2
 	golang.org/x/crypto v0.31.0

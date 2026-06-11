@@ -12,11 +12,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pin the exact patch matching every go.mod's `toolchain go1.25.11`: setup-go
+  # Pin the exact patch matching every go.mod's `toolchain go1.26.4`: setup-go
   # v6 makes the installed version authoritative (ignores the directive), and a
-  # bare "1.25" resolved to 1.25.10, whose stdlib carries vulns fixed in .11.
+  # bare minor (e.g. "1.26") can resolve to an older patch whose stdlib carries
+  # vulns fixed in later patches (GO-2026-5039/-5037 fixed in 1.26.4).
   # Bump this in lockstep with the toolchain directive.
-  GO_VERSION: "1.25.11"
+  GO_VERSION: "1.26.4"
   NODE_VERSION: 22
 
 jobs:
