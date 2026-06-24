@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -451,15 +452,18 @@ func (r *PostgresRepository) AdminListPayments(ctx context.Context, userID strin
 	whereClause := strings.Join(where, " AND ")
 
 	// Get aggregates (count, total amount, total fees).
+	// Use text to avoid int64 overflow from bad test data with huge amounts.
 	var totalCount int
-	var totalAmountCents, totalFeesCents int64
+	var totalAmountCentsStr, totalFeesCentsStr string
 	aggQuery := fmt.Sprintf(`
-		SELECT COUNT(*), COALESCE(SUM(amount_cents), 0), COALESCE(SUM(platform_fee_cents + guarantee_fee_cents), 0)
+		SELECT COUNT(*), COALESCE(SUM(amount_cents), 0)::text, COALESCE(SUM(platform_fee_cents + guarantee_fee_cents), 0)::text
 		FROM payments WHERE %s`, whereClause)
-	err := r.pool.QueryRow(ctx, aggQuery, args...).Scan(&totalCount, &totalAmountCents, &totalFeesCents)
+	err := r.pool.QueryRow(ctx, aggQuery, args...).Scan(&totalCount, &totalAmountCentsStr, &totalFeesCentsStr)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("admin list payments count: %w", err)
 	}
+	totalAmountCents, _ := strconv.ParseInt(totalAmountCentsStr, 10, 64)
+	totalFeesCents, _ := strconv.ParseInt(totalFeesCentsStr, 10, 64)
 
 	if page < 1 {
 		page = 1

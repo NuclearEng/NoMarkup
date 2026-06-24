@@ -189,6 +189,11 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 		// An unimplemented RPC is a server-side gap, not a generic failure —
 		// surface it as 501 rather than masking it as a 500.
 		writeError(w, http.StatusNotImplemented, st.Message())
+	case codes.Unavailable:
+		// Service is down (common in dev before `./bin/dev up user` or when DB is
+		// not ready). Return 503 so the frontend can show a friendly message instead
+		// of treating it as a hard 500 crash.
+		writeError(w, http.StatusServiceUnavailable, "service temporarily unavailable")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}

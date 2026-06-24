@@ -14,6 +14,8 @@ import { PageTransition } from '@/components/ui/page-transition';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMyBids } from '@/hooks/useBids';
 import { useMyListingBids } from '@/hooks/useListings';
+import { useAuthStore } from '@/stores/auth-store';
+import { USER_ROLE } from '@/types';
 
 type ServicesTab = 'all' | 'active' | 'awarded' | 'lost';
 
@@ -215,6 +217,9 @@ function GoodsBidContent() {
 }
 
 export default function MyBidsPage() {
+  const user = useAuthStore((state) => state.user);
+  const isProvider = user?.roles?.includes(USER_ROLE.PROVIDER) ?? false;
+
   return (
     <PageTransition>
       <div className="space-y-6">
@@ -234,34 +239,40 @@ export default function MyBidsPage() {
           </TabsList>
 
           <TabsContent value="services">
-            <Tabs defaultValue="all" className="mt-2">
-              <TabsList className="glass glass-highlight">
-                <TabsTrigger value="all" className="min-h-[44px]">
-                  All
-                </TabsTrigger>
-                <TabsTrigger value="active" className="min-h-[44px]">
-                  Active
-                </TabsTrigger>
-                <TabsTrigger value="awarded" className="min-h-[44px]">
-                  Won
-                </TabsTrigger>
-                <TabsTrigger value="lost" className="min-h-[44px]">
-                  Lost
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="all">
-                <ServicesBidContent tab="all" />
-              </TabsContent>
-              <TabsContent value="active">
-                <ServicesBidContent tab="active" />
-              </TabsContent>
-              <TabsContent value="awarded">
-                <ServicesBidContent tab="awarded" />
-              </TabsContent>
-              <TabsContent value="lost">
-                <ServicesBidContent tab="lost" />
-              </TabsContent>
-            </Tabs>
+            {isProvider ? (
+              <Tabs defaultValue="all" className="mt-2">
+                <TabsList className="glass glass-highlight">
+                  <TabsTrigger value="all" className="min-h-[44px]">
+                    All
+                  </TabsTrigger>
+                  <TabsTrigger value="active" className="min-h-[44px]">
+                    Active
+                  </TabsTrigger>
+                  <TabsTrigger value="awarded" className="min-h-[44px]">
+                    Won
+                  </TabsTrigger>
+                  <TabsTrigger value="lost" className="min-h-[44px]">
+                    Lost
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="all">
+                  <ServicesBidContent tab="all" />
+                </TabsContent>
+                <TabsContent value="active">
+                  <ServicesBidContent tab="active" />
+                </TabsContent>
+                <TabsContent value="awarded">
+                  <ServicesBidContent tab="awarded" />
+                </TabsContent>
+                <TabsContent value="lost">
+                  <ServicesBidContent tab="lost" />
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-zinc-400">
+                Services bids are only available to provider accounts. Switch to a provider login or browse goods bids.
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="goods">

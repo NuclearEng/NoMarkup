@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './constants';
+import { resolveWsBase } from './constants';
 
 // ─── Wire-format types (mirror gateway/internal/handler/marketplace_spectator_ws.go) ───
 
@@ -34,29 +34,6 @@ type SpectatorCountListener = (count: number) => void;
 type ConnectionListener = (status: MarketplaceConnectionStatus) => void;
 
 export type MarketplaceSpectatorEvent = 'bid' | 'spectator_count' | 'connection';
-
-/**
- * Resolve the WebSocket base URL.
- *
- *   1. NEXT_PUBLIC_WS_URL — explicit override (e.g. wss://api.example.com)
- *   2. Derive from NEXT_PUBLIC_API_URL by swapping http→ws
- *   3. Fallback to current origin (browser only)
- */
-function resolveWsBase(): string {
-  const explicit = process.env['NEXT_PUBLIC_WS_URL'];
-  if (explicit && explicit.length > 0) return explicit;
-
-  if (API_BASE_URL.length > 0) {
-    return API_BASE_URL.replace(/^http/, 'ws');
-  }
-
-  if (typeof window !== 'undefined') {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}`;
-  }
-
-  return '';
-}
 
 /**
  * Spectator WebSocket client for the goods marketplace listing detail page.

@@ -1,6 +1,6 @@
 import { attemptRefresh } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/constants';
+import { API_BASE_URL, resolveWsBase } from '@/lib/constants';
 
 // ─── WebSocket message types (Client → Server) ───────────────────
 const WS_CLIENT_MSG = {
@@ -156,15 +156,12 @@ class WebSocketManager {
 
     this.setStatus(CONNECTION_STATUS.CONNECTING);
 
-    // Derive WebSocket URL. When API_BASE_URL is empty (same-origin proxy), use current host.
-    let wsUrl: string;
-    if (API_BASE_URL === '' && typeof window !== 'undefined') {
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      wsUrl = `${proto}//${window.location.host}`;
-    } else {
-      wsUrl = API_BASE_URL.replace(/^http/, 'ws');
-    }
-    this.socket = new WebSocket(`${wsUrl}/ws/chat?token=${encodeURIComponent(token)}`);
+    // Derive WebSocket URL. Prefer the shared resolver so everything (chat,
+    // auction, spectator, marketplace) uses same-origin proxy when possible.
+    const wsBase = resolveWsBase() || (typeof window !== 'undefined'
+      ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+      : '');
+    this.socket = new WebSocket(`${wsBase}/ws/chat?token=${encodeURIComponent(token)}`);
 
     this.socket.onopen = () => {
       this.setStatus(CONNECTION_STATUS.CONNECTED);

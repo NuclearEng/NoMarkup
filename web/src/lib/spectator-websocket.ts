@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './constants';
+import { resolveWsBase } from './constants';
 
 export type SpectatorMessageType = 'bid_event' | 'spectator_count' | 'auction_state';
 
@@ -46,7 +46,7 @@ class SpectatorWebSocketManager {
     this.disconnect();
     this.jobId = jobId;
 
-    const wsBase = API_BASE_URL.replace(/^http/, 'ws');
+    const wsBase = resolveWsBase();
     const url = `${wsBase}/ws/auction/${jobId}/spectate`;
 
     this.updateStatus('connecting');

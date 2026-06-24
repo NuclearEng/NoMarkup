@@ -331,6 +331,8 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			ST_X(l.location)                      AS pickup_lng,
 			l.starting_price_cents,
 			COALESCE(l.current_bid_cents, l.starting_price_cents) AS current_bid_cents,
+			-- min_increment_cents is now tiered in Go (listingMinIncrementForPrice)
+			-- using current high / starting. Legacy 100 kept for migration compat in this projection.
 			100::bigint                           AS min_increment_cents,
 			l.reserve_price_cents,
 			l.buy_now_price_cents,

@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { ApiError, api } from '@/lib/api';
 import { useAuctionStore } from '@/stores/auction-store';
 import { useCountdown } from '@/hooks/useCountdown';
+import { useAuthStore } from '@/stores/auth-store';
+import { USER_ROLE } from '@/types';
 import type {
   AuctionBidEvent,
   Bid,
@@ -39,6 +41,15 @@ async function bidMutation(
 function explainBidFailure(fallback: string): (err: unknown) => void {
   return (err: unknown) => {
     if (err instanceof ApiError) {
+      const status = err.status;
+      if (status === 403) {
+        toast.error('Only providers can place bids on service jobs.');
+        return;
+      }
+      if (status === 409) {
+        toast.error('Bid rejected: you may already have an active bid, or the job/auction state no longer allows it.');
+        return;
+      }
       toast.error(err.userMessage(fallback));
       return;
     }
@@ -138,6 +149,9 @@ export function useBidsForJob(jobId: string) {
 }
 
 export function useMyBids(statusFilter?: string, page?: number) {
+  const user = useAuthStore((state) => state.user);
+  const isProvider = user?.roles?.includes(USER_ROLE.PROVIDER) ?? false;
+
   const searchParams = new URLSearchParams();
   if (statusFilter) searchParams.set('status', statusFilter);
   if (page !== undefined) searchParams.set('page', String(page));
@@ -147,6 +161,7 @@ export function useMyBids(statusFilter?: string, page?: number) {
   return useQuery({
     queryKey: ['myBids', statusFilter, page],
     queryFn: () => api.get<MyBidsResponse>(path),
+    enabled: isProvider,
   });
 }
 

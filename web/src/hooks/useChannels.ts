@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth-store';
 import type {
   Channel,
   ChannelsResponse,
@@ -96,9 +97,11 @@ export function useMarkRead() {
 }
 
 export function useUnreadCount() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   return useQuery({
     queryKey: ['unread-count'],
     queryFn: () => api.get<UnreadCountResponse>('/api/v1/channels/unread'),
     refetchInterval: 60000,
+    enabled: isAuthenticated,
   });
 }

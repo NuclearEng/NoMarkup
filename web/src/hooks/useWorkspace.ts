@@ -168,8 +168,9 @@ export function useUploadCompletionPhoto(contractId: string) {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
+      // Relative URL keeps this same-origin through the Next rewrite proxy.
       const response = await fetch(
-        `${API_BASE_URL}/api/v1/contracts/${contractId}/completion-photos`,
+        `/api/v1/contracts/${contractId}/completion-photos`,
         {
           method: 'POST',
           headers,

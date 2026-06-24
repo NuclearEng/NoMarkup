@@ -203,7 +203,7 @@ func main() {
 		defer cacheClient.Close()
 	}
 
-	// Connect to PostgreSQL for gateway-level queries (feature flags).
+	// Connect to PostgreSQL for gateway-level queries (feature flags, admin, direct reads).
 	// The pool is nil-safe — handlers degrade gracefully if DATABASE_URL is not set.
 	var dbPool *pgxpool.Pool
 	if cfg.DatabaseURL != "" {
@@ -213,9 +213,28 @@ func main() {
 			os.Exit(1)
 		}
 		defer dbPool.Close()
-		slog.Info("database pool initialized")
+		slog.Info("database (write) pool initialized")
 	} else {
 		slog.Warn("DATABASE_URL not set, feature flags disabled")
+	}
+
+	// Read replica pool for analytics, search, public catalog, profiles (NFR-12, scaling-blockers).
+	// Falls back to write pool if DATABASE_URL_REPLICA not set (dev simplicity + safe rollout).
+	var dbReadPool *pgxpool.Pool
+	readURL := cfg.DatabaseReadURL
+	if readURL != "" && readURL != cfg.DatabaseURL {
+		dbReadPool, err = pgxpool.New(context.Background(), readURL)
+		if err != nil {
+			slog.Error("failed to connect to database replica", "error", err)
+			os.Exit(1)
+		}
+		defer dbReadPool.Close()
+		slog.Info("database read replica pool initialized", "url", "REPLICA")
+	} else {
+		dbReadPool = dbPool // safe default
+		if dbPool != nil {
+			slog.Info("database read replica not configured; using primary pool for reads")
+		}
 	}
 
 	// Determine if we should use secure cookies (production).
@@ -297,10 +316,10 @@ func main() {
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
-	featureFlagHandler := handler.NewFeatureFlagHandler(dbPool, cacheClient)
+	featureFlagHandler := handler.NewFeatureFlagHandler(dbReadPool, cacheClient) // public flags + admin are safe on replica (small table)
 	insuranceCompetitionHandler := handler.NewInsuranceCompetitionHandler(dbPool)
 	providerLicenseHandler := handler.NewProviderLicenseHandler(dbPool)
-	pricingHandler := handler.NewPricingHandler(dbPool)
+	pricingHandler := handler.NewPricingHandler(dbReadPool) // fair price + analytics reads
 	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
 	challengeHandler := handler.NewChallengeHandler(dbPool)
 	installmentHandler := handler.NewInstallmentHandler(paymentClient)
@@ -336,7 +355,7 @@ func main() {
 	// promotions, CSV export. All three are gateway-direct (no gRPC
 	// hop) since they're either pure SQL or thin wrappers around the
 	// existing payment service.
-	sellerAnalyticsHandler := handler.NewSellerAnalyticsHandler(dbPool)
+	sellerAnalyticsHandler := handler.NewSellerAnalyticsHandler(dbReadPool) // analytics are read-heavy
 	promotedListingsHandler := handler.NewPromotedListingsHandler(dbPool, paymentClient)
 	csvExportHandler := handler.NewCSVExportHandler(dbPool)
 	// GDPR Art. 15 / CCPA right-to-access — self-service personal-data export.
@@ -369,11 +388,11 @@ func main() {
 	} else {
 		slog.Info("MEILISEARCH_URL not set, listings search disabled")
 	}
-	listingsSearchHandler := handler.NewListingsSearchHandler(dbPool, meiliClient, listingsHandler)
+	listingsSearchHandler := handler.NewListingsSearchHandler(dbReadPool, meiliClient, listingsHandler) // read replica for discovery
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.
 	r := router.New(
-		cfg.AllowedOrigins, cfg.IsProduction(), dbPool, cacheClient, rateLimiter, authMW,
+		cfg.AllowedOrigins, cfg.IsProduction(), dbPool, dbReadPool, cacheClient, rateLimiter, authMW,
 		authHandler, userHandler, providerHandler, categoriesHandler,
 		jobHandler, bidHandler, contractHandler, paymentHandler,
 		webhookHandler, chatHandler, reviewHandler, trustHandler,

@@ -10,8 +10,8 @@ package main
 //
 // Idempotent — uses fixed UUIDs and ON CONFLICT DO UPDATE/DO NOTHING.
 //
-// Photos use unsplash placeholder URLs. The /marketplace UI does not
-// require live photos — it falls back to a placeholder if the URL 404s.
+// Photos use picsum placeholder URLs (stable, hotlink-friendly). The /marketplace UI
+// does not require live photos — guards + remotePatterns ensure graceful fallback.
 //
 // Sellers are mixed across customer / provider / provider2; buyers
 // (bidders) are also mixed so every dev account has at least one bid.
@@ -81,42 +81,42 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		{listingActive1ID, providerUserID, "goods-furniture",
 			"Mid-century walnut credenza",
 			"Solid walnut credenza, 6ft wide, 1965. Minor surface scratches; legs and joints solid. Includes original key.",
-			"https://images.unsplash.com/photo-1493663284031-b7e3aefcae8e?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			18000, 48},
 		{listingActive2ID, provider2UserID, "goods-electronics",
 			"Sony A7 III mirrorless camera body",
 			"Excellent condition, ~12k shutter count, original box. Battery, charger, and one strap included. Local pickup only.",
-			"https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			95000, 48},
 		{listingActive3ID, providerUserID, "goods-tools",
 			"DeWalt 20V cordless drill kit",
 			"Two batteries, charger, and case. Used on a couple of weekend projects. Bits not included.",
-			"https://images.unsplash.com/photo-1572981779307-38b8cabb2407?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			8500, 24},
 		{listingActive4ID, customerUserID, "goods-sporting",
 			"Trek FX 2 hybrid bike, size L",
 			"2022 Trek FX 2, lightly used. New tires last spring. Frame size 21\" — fits 6'0\"–6'3\".",
-			"https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			42000, 48},
 		{listingActive5ID, provider2UserID, "goods-vehicles",
 			"Set of 4 OEM 18\" alloy wheels (BMW)",
 			"Came off a 2018 BMW 3-series. Tires worn, sell wheels only. Curb rash on one rim, photos on request.",
-			"https://images.unsplash.com/photo-1553949345-eb786bb3f7ba?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			55000, 48},
 		{listingActive6ID, providerUserID, "goods-home-garden",
 			"Weber Genesis II E-310 grill",
 			"Three-burner, propane. Used three seasons. Cleaned monthly, cover included. Buyer brings a truck.",
-			"https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			28000, 24},
 		{listingActive7ID, customerUserID, "goods-books-media",
 			"Vintage vinyl collection — 80s/90s rock (45 LPs)",
 			"Bulk lot of 45 LPs, all sleeves intact, most A-grade. List on request. Selling as one lot only.",
-			"https://images.unsplash.com/photo-1487180144351-b8472da7d491?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			15000, 168},
 		{listingActive8ID, provider2UserID, "goods-collectibles",
 			"Sealed Pokemon Base Set booster box (1999)",
 			"Original 36-pack 1999 Base Set booster box. Sealed, never opened. Provenance: estate sale, photos available.",
-			"https://images.unsplash.com/photo-1542779283-429940ce8336?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			120000, 168},
 	}
 
@@ -163,7 +163,7 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		{
 			listingBidded1ID, providerUserID, "goods-electronics",
 			"PS5 Disc Edition + 2 controllers",
-			"https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			30000, 7,
 			[]bidSpec{
 				{customerUserID, 31000},
@@ -178,7 +178,7 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		{
 			listingBidded2ID, customerUserID, "goods-tools",
 			"Milwaukee M18 combo kit (drill + impact + circular saw)",
-			"https://images.unsplash.com/photo-1530124566582-a618bc2615dc?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			25000, 5,
 			[]bidSpec{
 				{providerUserID, 26000},
@@ -191,7 +191,7 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		{
 			listingBidded3ID, provider2UserID, "goods-sporting",
 			"Peloton Bike+, 2022, with original mat",
-			"https://images.unsplash.com/photo-1591291621164-2c6367723315?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			80000, 9,
 			[]bidSpec{
 				{customerUserID, 82000},
@@ -276,11 +276,11 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	}{
 		{listingClosing1ID, providerUserID, "goods-furniture",
 			"Solid oak dining table, seats 8",
-			"https://images.unsplash.com/photo-1604061986761-d9d0cc41b0b1?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			20000, 32500, 25},
 		{listingClosing2ID, customerUserID, "goods-clothing",
 			"Vintage leather jacket, men's L",
-			"https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800",
+			"https://picsum.photos/id/1015/800/600",
 			6000, 14000, 50},
 	}
 
@@ -379,7 +379,7 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		return fmt.Errorf("insert sold listing: %w", err)
 	}
 	if err := upsertListingPhoto(ctx, tx, listingSoldID,
-		"https://images.unsplash.com/photo-1514924013411-cbf25faa35bb?w=800"); err != nil {
+		"https://picsum.photos/id/1015/800/600"); err != nil {
 		return err
 	}
 
@@ -454,7 +454,7 @@ func seedMarketplace(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		return fmt.Errorf("insert disputed listing: %w", err)
 	}
 	if err := upsertListingPhoto(ctx, tx, listingDisputedID,
-		"https://images.unsplash.com/photo-1561154464-82e9adf32764?w=800"); err != nil {
+		"https://picsum.photos/id/1015/800/600"); err != nil {
 		return err
 	}
 

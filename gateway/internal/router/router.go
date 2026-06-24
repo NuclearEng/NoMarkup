@@ -23,10 +23,15 @@ import (
 // RequirePartyAccess / RequireJoinedPartyAccess) to verify that the
 // authenticated user owns or is a party to the resource identified by the
 // URL path parameter. Required.
+//
+// dbReadPool (if different) is passed to read-heavy handlers (search, analytics,
+// public catalog, pricing index, seller reports) so they hit the replica.
+// Ownership/authz still uses the write dbPool. Safe to pass the same pool.
 func New(
 	allowedOrigins []string,
 	production bool,
 	dbPool *pgxpool.Pool,
+	dbReadPool *pgxpool.Pool, // replica for read-heavy paths (search, analytics, public catalog). Falls back gracefully.
 	cacheClient *cache.Client,
 	rateLimiter *middleware.RateLimiter,
 	authMW *middleware.AuthMiddleware,

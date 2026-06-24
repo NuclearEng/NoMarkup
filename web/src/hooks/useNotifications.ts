@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef } from 'react';
 
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth-store';
 import { useNotificationStore } from '@/stores/notification-store';
 import type {
   NotificationsResponse,
@@ -17,6 +18,8 @@ interface NotificationsParams {
 }
 
 export function useNotifications(params?: NotificationsParams) {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
   const searchParams = new URLSearchParams();
   if (params?.unreadOnly) searchParams.set('unread_only', 'true');
   if (params?.page !== undefined) searchParams.set('page', String(params.page));
@@ -27,10 +30,12 @@ export function useNotifications(params?: NotificationsParams) {
   return useQuery({
     queryKey: ['notifications', params?.unreadOnly, params?.page, params?.pageSize],
     queryFn: () => api.get<NotificationsResponse>(path),
+    enabled: isAuthenticated,
   });
 }
 
 export function useUnreadCount() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setUnreadCount = useNotificationStore((state) => state.setUnreadCount);
   const queryClient = useQueryClient();
   // Remember the last-seen count so a poll that observes a HIGHER count (a new
@@ -58,6 +63,7 @@ export function useUnreadCount() {
       return data;
     },
     refetchInterval: 30000,
+    enabled: isAuthenticated,
   });
 }
 
@@ -92,9 +98,11 @@ export function useMarkAllAsRead() {
 }
 
 export function useNotificationPreferences() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   return useQuery({
     queryKey: ['notification-preferences'],
     queryFn: () => api.get<PreferencesResponse>('/api/v1/notifications/preferences'),
+    enabled: isAuthenticated,
   });
 }
 

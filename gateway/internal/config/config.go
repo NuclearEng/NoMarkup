@@ -13,6 +13,7 @@ type Config struct {
 	Port               int
 	Environment        string // "production", "staging", or "development" (default)
 	DatabaseURL        string
+	DatabaseReadURL    string // replica for reads (search, analytics, profiles, public catalog). Falls back to DatabaseURL.
 	RedisURL           string
 	JWTPublicKeyPath   string
 	UserServiceAddr    string
@@ -48,6 +49,7 @@ func Load() (*Config, error) {
 		Port:               port,
 		Environment:        getEnv("ENVIRONMENT", "development"),
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
+		DatabaseReadURL:    getEnv("DATABASE_URL_REPLICA", getEnv("DATABASE_URL", "")),
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTPublicKeyPath:   getEnv("JWT_PUBLIC_KEY_PATH", ""),
 		UserServiceAddr:    getEnv("USER_SERVICE_ADDR", "localhost:50051"),

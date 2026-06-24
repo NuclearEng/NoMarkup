@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './constants';
+import { resolveWsBase } from './constants';
 
 export type AuctionMessageType = 'bid_event' | 'auction_state' | 'snipe_extended' | 'auction_ended';
 
@@ -76,7 +76,7 @@ class AuctionWebSocketManager {
       this.tokenRefresher = tokenRefresher;
     }
 
-    const wsBase = API_BASE_URL.replace(/^http/, 'ws');
+    const wsBase = resolveWsBase();
     const url = `${wsBase}/ws/auction/${jobId}?token=${encodeURIComponent(token)}`;
 
     this.updateStatus('connecting');

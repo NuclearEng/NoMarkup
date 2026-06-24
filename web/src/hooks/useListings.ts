@@ -47,6 +47,19 @@ function normalizeListing<T extends Listing>(listing: RawListing<T>): T {
 function explainListingFailure(fallback: string): (err: unknown) => void {
   return (err: unknown) => {
     if (err instanceof ApiError) {
+      const status = err.status;
+      if (status === 403) {
+        toast.error('Sellers cannot bid on their own listings.');
+        return;
+      }
+      if (status === 409) {
+        toast.error('Bid rejected: auction not active, ended, or you already hold the high bid.');
+        return;
+      }
+      if (status === 402) {
+        toast.error('A bid bond is required before bidding on this listing.');
+        return;
+      }
       toast.error(err.userMessage(fallback));
       return;
     }

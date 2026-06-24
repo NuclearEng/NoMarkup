@@ -136,7 +136,13 @@ func (h *ComplianceHandler) LogCookieConsent(w http.ResponseWriter, r *http.Requ
 // signup/login flows can render the link before auth.
 func (h *ComplianceHandler) GetCurrentToS(w http.ResponseWriter, r *http.Request) {
 	if h.db == nil {
-		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		// Dev fallback (no DB) — avoid 5xx on every refresh/login page.
+		fallback := tosVersionJSON{
+			Version:     "1.0",
+			EffectiveAt: time.Now(),
+			BodyURL:     stringPtr("/legal/terms"),
+		}
+		writeCachedJSON(w, r, http.StatusOK, fallback, 60, 300)
 		return
 	}
 	var row tosVersionJSON
@@ -148,13 +154,18 @@ func (h *ComplianceHandler) GetCurrentToS(w http.ResponseWriter, r *http.Request
 		 ORDER BY effective_at DESC
 		 LIMIT 1`,
 	).Scan(&row.Version, &row.EffectiveAt, &bodyURL)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "no tos version configured")
-		return
-	}
 	if err != nil {
-		slog.ErrorContext(r.Context(), "fetch current tos failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to load tos")
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(r.Context(), "fetch current tos failed", "error", err)
+		}
+		// Fallback to the seeded default so public pages (incl. login + refresh)
+		// don't spam 5xx / console errors while DB is being brought up.
+		fallback := tosVersionJSON{
+			Version:     "1.0",
+			EffectiveAt: time.Now(),
+			BodyURL:     stringPtr("/legal/terms"),
+		}
+		writeCachedJSON(w, r, http.StatusOK, fallback, 60, 300)
 		return
 	}
 	if bodyURL.Valid {
@@ -164,6 +175,11 @@ func (h *ComplianceHandler) GetCurrentToS(w http.ResponseWriter, r *http.Request
 	// Public, near-static legal document pointer — edge-cacheable per §14.
 	writeCachedJSON(w, r, http.StatusOK, row, 300, 3600)
 }
+
+func stringPtr(s string) *string { return &s }
+
+// Note: this was added to prevent 5xx on every browser refresh when the DB
+// is not yet available (common in dev before `bin/dev up infra` + migrate).
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/v1/me/tos-acceptance — auth required

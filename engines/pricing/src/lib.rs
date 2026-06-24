@@ -24,3 +24,15 @@ pub mod proto {
 }
 
 pub use model::{FairPrice, MODEL_VERSION, Query, Side, Txn, fair_price};
+
+// ML / ONNX hook (P1-2 gap closure).
+// When the optional `ort` feature is enabled (off by default per CLAUDE.md policy),
+// engines can load a price model exported from ml/pricing/train.py and call
+// inference. The deterministic fair_price remains the always-on fallback.
+// See gap-closure-plan.md and ml/README.md.
+#[cfg(feature = "ort")]
+pub mod ml_stub {
+    // TODO: use ort::Session, load from env MODEL_PATH or baked bytes,
+    // run predict on featurized Query + context, blend or replace heuristic.
+    pub fn load_and_predict(_bytes: &[u8], _features: &[f32]) -> Option<f64> { None }
+}

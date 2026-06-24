@@ -64,7 +64,11 @@ export async function attemptRefresh(): Promise<boolean> {
 
   refreshPromise = (async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+      // Always use a relative URL for the refresh so that it goes through the
+      // Next.js rewrite proxy (same-origin). This avoids CORS and ensures the
+      // httpOnly refresh cookie (and has_session sentinel) are associated with
+      // the web origin.
+      const response = await fetch(`/api/v1/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -103,7 +107,11 @@ async function request<T>(
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    // Use the caller-supplied path (always starts with /api/v1...) directly.
+    // This goes through Next rewrites when API_BASE_URL would point elsewhere,
+    // giving us same-origin semantics, working cookies, and no CORS preflight
+    // for the main data surface.
+    response = await fetch(path, {
       method,
       headers,
       credentials: 'include',
@@ -126,7 +134,7 @@ async function request<T>(
         retryHeaders['Authorization'] = `Bearer ${newToken}`;
       }
 
-      response = await fetch(`${API_BASE_URL}${path}`, {
+      response = await fetch(path, {
         method,
         headers: retryHeaders,
         credentials: 'include',
@@ -199,7 +207,8 @@ export async function downloadAuthenticated(path: string, filename: string): Pro
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    return fetch(`${API_BASE_URL}${path}`, {
+    // Relative path for same-origin proxy benefits (cookies, no CORS).
+    return fetch(path, {
       method: 'GET',
       headers,
       credentials: 'include',

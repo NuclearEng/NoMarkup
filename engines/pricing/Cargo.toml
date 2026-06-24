@@ -25,6 +25,13 @@ anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+# Optional ONNX inference (ort) for learned pricing model.
+# Off by default — see CLAUDE.md ("ML Inference: RESERVED for v2").
+# Enable locally: cargo build -p nomarkup-pricing-engine --features ort
+# The training lives in ../../ml/pricing (produces .onnx).
+[features]
+ort = []  # placeholder; real dep would be ort = { version = "...", features = ["load-dynamic"] } when activated.
+
 [build-dependencies]
 tonic-build.workspace = true
 

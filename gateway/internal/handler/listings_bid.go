@@ -45,16 +45,36 @@ const (
 	// cap, late bids still register but no longer extend the deadline.
 	listingMaxSnipeExtensions = 5
 
-	// minBidIncrement: smallest legal increment over the current high bid.
+	// listingMinIncrementCents is the legacy fallback. Prefer listingMinIncrementForPrice.
 	listingMinIncrementCents int64 = 100
+)
 
-	// listingPlatformFeeBps is the marketplace platform fee in basis points.
-	// v1 = 5% rounded up, identical to the canonical auction-close path in
-	// services/job/internal/repository/listing_repo.go (feeBps = 500). Every
-	// closeout path (auction win, buy-now, accepted offer) MUST charge the
-	// same fee so the platform-revenue invariant in
-	// docs/operations/marketplace-escrow.md holds — the fee is permanent
-	// platform revenue and the seller payout is amount − fee.
+// listingMinIncrementForPrice returns the minimum bid step for a given current
+// (or starting) price in cents. Scaled tiers match best-in-class expectations
+// (eBay/StockX style) and close the corresponding gap in the best-in-class audit.
+// Tiers (example):
+//   < $50   → $1
+//   < $200  → $5
+//   < $1k   → $10
+//   < $5k   → $25
+//   >= $5k  → $50
+func listingMinIncrementForPrice(priceCents int64) int64 {
+	switch {
+	case priceCents < 5_000:
+		return 100
+	case priceCents < 20_000:
+		return 500
+	case priceCents < 100_000:
+		return 1_000
+	case priceCents < 500_000:
+		return 2_500
+	default:
+		return 5_000
+	}
+}
+
+const (
+	// listingPlatformFeeBps ... (moved to own const for syntax after adding tier func)
 	listingPlatformFeeBps int64 = 500
 )
 
@@ -131,7 +151,7 @@ func computeAutoBidCascade(
 	maxIterations int,
 ) cascadeOutcome {
 	if increment <= 0 {
-		increment = 1
+		increment = listingMinIncrementForPrice(currentTop)
 	}
 	if maxIterations <= 0 {
 		maxIterations = 50
@@ -516,7 +536,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	if currentBidCents.Valid {
 		prevCents = currentBidCents.Int64
 	}
-	inc := listingMinIncrementCents
+	inc := listingMinIncrementForPrice(prevCents)
 	required := startCents
 	if currentBidCents.Valid {
 		required = prevCents + inc
@@ -588,7 +608,7 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	// Compute the cascade outcome before touching any rows.
 	cascade := computeAutoBidCascade(
 		prevCents,
-		listingMinIncrementCents,
+		listingMinIncrementForPrice(prevCents),
 		bidderID,
 		amountCents,
 		maxBidCents,

@@ -61,7 +61,8 @@ WEB_PORT=${WEB_PORT:-3000}
 # ── Database ─────────────────────────────────────────────────────
 PG_USER=nomarkup
 PG_DB=nomarkup
-DATABASE_URL="postgresql://$PG_USER@localhost:$PG_PORT/$PG_DB?sslmode=disable"
+PG_PASSWORD=${PG_PASSWORD:-password}
+DATABASE_URL="postgresql://$PG_USER:$PG_PASSWORD@localhost:$PG_PORT/$PG_DB?sslmode=disable"
 
 # ── Colors ───────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -351,8 +352,9 @@ S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 
 NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ...
-NEXT_PUBLIC_API_URL=http://localhost:$GATEWAY_PORT
-NEXT_PUBLIC_WS_URL=ws://localhost:$GATEWAY_PORT
+# Leave NEXT_PUBLIC_API_URL unset (empty) so the web client uses relative /api and /ws paths.
+# These are rewritten by next.config.ts to the gateway → same-origin fetches (no CORS, cookies work correctly for the web origin).
+# Explicitly setting it to http://localhost:808X forces cross-origin mode which requires working CORS + complicates session restoration.
 API_URL=http://localhost:$GATEWAY_PORT
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
 
@@ -620,8 +622,8 @@ start_web() {
     step "Starting Next.js dev server..."
     (
         cd "$ROOT/web"
-        NEXT_PUBLIC_API_URL="http://localhost:$GATEWAY_PORT" \
-        NEXT_PUBLIC_WS_URL="ws://localhost:$GATEWAY_PORT" \
+        # Do not force NEXT_PUBLIC_API_URL. Empty means relative /api + /ws paths
+        # (rewritten by Next to the gateway). This keeps fetches same-origin.
         npx next dev --turbopack --port "$WEB_PORT" > "$LOGS/web.log" 2>&1
     ) &
     save_pid web $!
@@ -719,8 +721,8 @@ start_gateway() {
     start_go_service gateway "$ROOT/gateway" "$GATEWAY_PORT" \
         "GATEWAY_PORT=$GATEWAY_PORT" \
         "JWT_PUBLIC_KEY_PATH=$ROOT/keys/public.pem" \
-        "ALLOWED_ORIGINS=http://localhost:$WEB_PORT" \
-        "WS_ALLOWED_ORIGINS=http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT" \
+        "ALLOWED_ORIGINS=http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT,http://[::1]:$WEB_PORT" \
+        "WS_ALLOWED_ORIGINS=http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT,http://[::1]:$WEB_PORT" \
         "SECURE_COOKIES=false" \
         "USER_SERVICE_ADDR=localhost:$USER_PORT" \
         "JOB_SERVICE_ADDR=localhost:$JOB_PORT" \

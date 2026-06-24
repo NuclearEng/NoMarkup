@@ -36,9 +36,9 @@ test.describe('Customer: Login & Dashboard', () => {
       });
     }
 
-    // Verify quick action cards exist
-    await expect(page.getByText('Post a Job')).toBeVisible();
-    await expect(page.getByText('My Contracts')).toBeVisible();
+    // Verify quick action cards exist - use href or role with partial to avoid ambiguity
+    await expect(page.locator('a[href="/jobs/new"]')).toBeVisible();
+    await expect(page.locator('a[href="/contracts"]')).toBeVisible();
 
     // Verify nav sidebar is present
     await expectNavSidebar(page);
@@ -74,36 +74,39 @@ test.describe.serial('Customer: Job Creation Wizard', () => {
     const categoryButtons = categoryList.getByRole('button');
     await expect(categoryButtons.first()).toBeVisible({ timeout: 15_000 });
 
-    // Click Plumbing (or first available)
-    const plumbingButton = sharedPage.getByRole('button', { name: /Plumbing/i });
-    if ((await plumbingButton.count()) > 0) {
-      await plumbingButton.first().click();
-    } else {
-      await categoryButtons.first().click();
-    }
+    // Click first available top level (Plumbing or any)
+    await categoryButtons.first().click();
 
-    // If subcategories appeared, drill down and check a leaf
-    await sharedPage.waitForTimeout(500);
+    // Wait for either sub level or selection
+    await sharedPage.waitForTimeout(800);
+
+    // Try to select a leaf if checkboxes appear
+    let selected = false;
     const checkboxes = sharedPage.getByRole('checkbox');
     if ((await checkboxes.count()) > 0) {
       await checkboxes.first().check();
+      selected = true;
     } else {
-      // Still a drill-down level
       const subButtons = sharedPage.locator('ul[aria-label="Categories"]').getByRole('button');
       if ((await subButtons.count()) > 0) {
         await subButtons.first().click();
-        await sharedPage.waitForTimeout(500);
+        await sharedPage.waitForTimeout(800);
         const leafCheckboxes = sharedPage.getByRole('checkbox');
         if ((await leafCheckboxes.count()) > 0) {
           await leafCheckboxes.first().check();
+          selected = true;
         }
       }
     }
 
-    // Verify category was selected
-    const selectedBadges = sharedPage.locator('[aria-label="Selected categories"]');
-    const selectedHint = sharedPage.getByText(/Category selected/i);
-    expect((await selectedBadges.count()) > 0 || (await selectedHint.count()) > 0).toBeTruthy();
+    // If no leaf, perhaps top level is selectable or use hint
+    if (!selected) {
+      // click again or accept top level
+      await categoryButtons.first().click();
+    }
+
+    // Verify category was selected by ensuring a checkbox is checked (the UI indicator)
+    await expect(sharedPage.getByRole("checkbox").first()).toBeChecked({ timeout: 5000 });
 
     // Click Next (exact match to avoid Next.js dev tools button)
     await sharedPage.getByRole('button', { name: 'Next', exact: true }).click();

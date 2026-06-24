@@ -690,11 +690,19 @@ func (r *ListingPostgresRepository) CloseListingAuction(ctx context.Context, lis
 	err = tx.QueryRow(ctx,
 		`INSERT INTO listing_orders (listing_id, seller_id, buyer_id, amount_cents, fee_cents, escrow_status)
 		 VALUES ($1, $2, $3, $4, $5, 'held')
+		 ON CONFLICT (listing_id) DO NOTHING
 		 RETURNING id`,
 		listingID, sellerID, *currentBidderID, *currentBid, feeCents).
 		Scan(&orderID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("close listing create order: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Conflict: already had an order (race or prior close). Fetch it.
+			if scanErr := tx.QueryRow(ctx, `SELECT id FROM listing_orders WHERE listing_id = $1`, listingID).Scan(&orderID); scanErr != nil {
+				return nil, nil, fmt.Errorf("close listing get existing order after conflict: %w", scanErr)
+			}
+		} else {
+			return nil, nil, fmt.Errorf("close listing create order: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

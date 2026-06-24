@@ -139,7 +139,8 @@ Every service goes through Postgres. As pods grow, connections grow. Mitigations
 1. **PgBouncer** (transaction pooling) is mandatory in production, sized at
    100 default pool, 500 max client.
 2. **Read replicas** for analytics, search, profile reads. Wired as
-   `DATABASE_URL_REPLICA` (not yet wired in code — gap).
+   `DATABASE_URL_REPLICA` (and dbReadPool passed to read paths in gateway + key handlers).
+   Primary used for writes/ownership. Gap closed (see gap-closure-plan.md P0-1).
 3. **Connection cap per pod** — pgxpool max=20 in code; with 10 pods per
    service × ~7 services = 1400 connections max, which exceeds PgBouncer's
    500 client limit on a single instance. Run **2x PgBouncer instances**

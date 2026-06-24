@@ -14,7 +14,7 @@ export function cn(...inputs: ClassValue[]) {
  * (e.g. dev fixtures pointing at images.unsplash.com) degrades to the photo
  * placeholder instead of nuking the page (CLAUDE.md §15: fail soft).
  */
-const NEXT_IMAGE_ALLOWED_HOSTS = new Set<string>(['localhost']);
+const NEXT_IMAGE_ALLOWED_HOSTS = new Set<string>(['localhost', 'images.unsplash.com', 'picsum.photos']);
 
 /**
  * True when `src` is something `next/image` can render without throwing:

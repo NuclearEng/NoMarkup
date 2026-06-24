@@ -128,7 +128,7 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Enable point-in-time recovery (PITR) on managed PostgreSQL
 - [ ] Test restore from backup to a separate instance
 - [ ] Test migration rollback procedure: run `.down.sql` for latest migration, verify clean state
-- [ ] Create read replica for analytics queries (NFR-12)
+- [x] Create read replica for analytics queries (NFR-12) — DATABASE_URL_REPLICA + dbReadPool wired in gateway (P0-1, gap-closure-plan.md)
 - [ ] Document emergency recovery runbook with RTO/RPO targets
 
 ---

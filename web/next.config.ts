@@ -61,6 +61,14 @@ const nextConfig: NextConfig = {
         port: '9000',
         pathname: '/nomarkup-dev/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+      },
     ],
   },
   async headers() {
