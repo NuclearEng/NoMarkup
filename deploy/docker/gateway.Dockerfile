@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     echo "  [2/3] ✔ Compiled in ${ELAPSED}s · ${SIZE}"
 
 # ── Runtime ──────────────────────────────────────────────────
-FROM alpine:3.20
+FROM alpine:3.23
 RUN apk --no-cache add ca-certificates
 COPY --from=builder /gateway /gateway
 RUN echo "  [3/3] ✔ gateway image ready · $(du -h /gateway | awk '{print $1}')"

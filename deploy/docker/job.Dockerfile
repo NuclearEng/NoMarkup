@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     echo "  [2/3] ✔ Compiled in ${ELAPSED}s · ${SIZE}"
 
 # ── Runtime ──────────────────────────────────────────────────
-FROM alpine:3.20
+FROM alpine:3.23
 RUN apk --no-cache add ca-certificates
 COPY --from=builder /server /server
 RUN echo "  [3/3] ✔ job-service image ready · $(du -h /server | awk '{print $1}')"
