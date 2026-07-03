@@ -14,15 +14,43 @@
 
 ---
 
+## Quick Reference
+
+- **Stack:** `bin/dev up` (web, gateway, Go services, Rust engines, PG/Redis/Meili). After editing a
+  Go service: `bin/dev rebuild <svc> && bin/dev up <svc>`. `bin/dev status` = ports/health (map in
+  `bin/dev`, §12).
+- **Migrations:** `migrate -path database/migrations -database "$DATABASE_URL" up`.
+- **Tests:** Go `go test ./...` · Rust `cargo test` / `cargo bench` (in `engines/`) · Web `npx tsc
+  --noEmit && npx eslint <files>` + `npx vitest run`.
+- **Proto → Go stubs:** `protoc --proto_path=proto --go_out=proto/gen/go --go_opt=paths=source_relative
+  --go-grpc_out=proto/gen/go --go-grpc_opt=paths=source_relative proto/<svc>/v1/<f>.proto` (plugins in
+  `$(go env GOPATH)/bin`); Rust stubs regen via each engine's `build.rs`.
+
+## Verification Discipline
+
+How work is PROVEN here — surfaced up top because these get skipped at exactly verification time.
+
+- **Run the gate before claiming done.** Build it, run the test, read the output — a green compile is
+  not a passing test.
+- **Measure or it didn't happen** — perf changes report before/after for the budget; missing one
+  without a written accepted reason is a regression (→ `docs/performance.md`).
+- **Rust hot paths:** criterion before/after, no regression; numerical code proptest-gated (§5/§7).
+- **Prove behavior by the real artifact** (rendered page / actual response), not source
+  string-matching; data-fetching UI checked in all four states (loading/error/empty/success) (§4/§7).
+
+---
+
 ## 1. Architecture Overview
 
 Clients (Next.js 15 web) → **Go API Gateway** (auth, rate limit, validation, routing) → gRPC to
-service mesh: **User / Job / Payment / Chat** (Go), **Bidding / Fraud / Trust / Search / Imaging /
-Geo** (Rust, performance-critical). Data layer: **PostgreSQL 16 + PostGIS · Redis 7 ·
-Meilisearch**. Native extensions (C): libvips, libsodium, argon2, custom PostGIS.
+service mesh: **User / Job / Payment / Chat** (Go), **Bidding / Fraud / Trust / Underwriting /
+Pricing / Search / Imaging / Geo** (Rust, performance-critical). Data layer: **PostgreSQL 16 +
+PostGIS · Redis 7 · Meilisearch**. Native extensions (C): libvips, libsodium, argon2, custom PostGIS.
 
 Rust is reserved for sub-ms / high-throughput / numerical paths (bidding, fraud heuristics v1,
-trust scoring, image pipeline). Go owns CRUD, orchestration, Stripe, and WebSocket fan-out.
+trust scoring, working-capital underwriting, Fair-Price Index, image pipeline). The underwriting +
+pricing engines are **pure functions** (no DB/clock/RNG → deterministic, reproducible, auditable).
+Go owns CRUD, orchestration, Stripe, and WebSocket fan-out.
 
 → **Full system diagram + per-service language rationale: `docs/architecture.md`.**
 
@@ -47,8 +75,8 @@ trust scoring, image pipeline). Go owns CRUD, orchestration, Stripe, and WebSock
 ### Backend (Rust Services)
 - **Rust latest stable, 2024 edition** · Runtime: Tokio · gRPC: tonic + prost · Serde
 - HTTP (where needed): axum · DB: sqlx (compile-time checked) · Image: image crate + libvips FFI · Geo: geo crate
-- **ML Inference**: `ort` (ONNX) — RESERVED for v2 fraud models, **not in current builds**. Fraud v1
-  is deterministic heuristics; ONNX is roadmap (PLAN §6.1). Do not assume ML inference is in prod paths.
+- **ML Inference**: `ort` (ONNX) is roadmap only (v2 fraud, PLAN §6.1) — **NOT in current builds**.
+  Fraud v1 is deterministic heuristics; don't assume ML in prod paths. → `docs/architecture.md`.
 - Testing: cargo test + proptest · Benchmarking: criterion
 
 ### Native (C/C++)
@@ -62,10 +90,9 @@ trust scoring, image pipeline). Go owns CRUD, orchestration, Stripe, and WebSock
 
 ### Infrastructure
 - Docker + Compose (local) · Kubernetes (prod) · GitHub Actions CI/CD · Cloudflare CDN (public assets)
-- **Cloudflare** is registrar + DNS + CDN/edge for the production zone **`no-markup.com`** (hyphenated —
-  the non-hyphen `nomarkup.com` is **not** owned). One account holds DNS, edge, and registrar, which is
-  why the edge-caching strategy targets the public DATA layer, not HTML (see §14). Account ID / Zone ID:
-  in Vault/`.env.local`, not committed here.
+- **Domain `no-markup.com`** (hyphenated — `nomarkup.com` is **NOT** owned, never assume it).
+  Cloudflare = registrar + DNS + CDN. Edge-cache the public DATA layer, not the HTML (§14); IDs in
+  Vault. → `docs/architecture.md` (domain & edge strategy).
 - Prometheus + Grafana · Sentry · OpenTelemetry · Secrets: HashiCorp Vault (prod), `.env.local` (dev)
 
 ---
@@ -73,7 +100,8 @@ trust scoring, image pipeline). Go owns CRUD, orchestration, Stripe, and WebSock
 ## 3. Project Structure
 
 Monorepo: `web/` (Next.js) · `gateway/` (Go) · `services/` (Go: user, job, payment, chat) ·
-`engines/` (Rust: bidding, fraud, trust, imaging) · `proto/` (shared gRPC defs, `v1`) · `ml/`
+`engines/` (Rust: bidding, fraud, trust, imaging, underwriting, pricing) · `proto/` (shared gRPC
+defs, `v1`) · `ml/`
 (Python training, not deployed) · `deploy/` (docker, k8s, terraform). Go services share a uniform
 `cmd/` + `internal/{domain,repository,service,grpc}/` + `migrations/` layout.
 
@@ -187,8 +215,9 @@ These are non-negotiable. The hooks enforce many automatically.
 
 ## 8. Performance Budgets
 
-**Frontend** (and see §14 for the hard user-felt gates): LCP <2.5s · CLS <0.1 · TTI <3.5s · initial
-JS <200KB gz · per-route <50KB gz · hero image <200KB (WebP/AVIF).
+**Frontend** (and see §14 for the hard user-felt gates): LCP <2.5s · CLS <0.1 · TTI <3.5s · shared
+First Load JS ≤190KB parsed (~60KB gz) — the React floor, don't regress · interactive route ≤300KB
+First Load · +≤50KB route-specific · hero image <200KB (WebP/AVIF). → `docs/performance.md` (measured budgets).
 
 **Backend**: API p50 <50ms / p95 <200ms / p99 <500ms · bid p99 <1ms · trust p99 <5ms · fraud p99
 <50ms · search p99 <50ms · image p99 <200ms · WS delivery <100ms · DB query p95 <20ms.
@@ -238,8 +267,9 @@ durations, active WS connections, Stripe webhook processing.
 The canonical list lives in **`.env.example`** (copy to `.env.local` for dev). Required at startup
 (app fails fast if missing): `DATABASE_URL`, `REDIS_URL`, `MEILISEARCH_URL`/`_API_KEY`, JWT key paths
 + `SESSION_SECRET`, the `STRIPE_*` set, `S3_*`, `NEXT_PUBLIC_MAPBOX_TOKEN`, `SENTRY_DSN`,
-`OTEL_EXPORTER_OTLP_ENDPOINT`, and the per-service `*_PORT` vars (gateway 8080, services 50051-50058,
-web 3000). Validate with a Zod schema at startup.
+`OTEL_EXPORTER_OTLP_ENDPOINT`, the engine addresses (`TRUST_ENGINE_ADDR`, `UNDERWRITING_ENGINE_ADDR`,
+`PRICING_ENGINE_ADDR`, …), and the per-service `*_PORT` vars (gateway, Go services + Rust engines in
+50051–50061, web 3000 — current map in `bin/dev`). Validate with a Zod schema at startup.
 
 ---
 
@@ -269,9 +299,9 @@ web 3000). Validate with a Zod schema at startup.
 ## 14. Performance Playbook — McMaster-Carr-class speed (project rule)
 
 **North star:** NoMarkup must feel *instantly responsive*, on par with or faster than mcmaster.com.
-Speed is a feature and a first-class acceptance criterion.
+Speed is a first-class acceptance criterion.
 
-**Hard user-felt gates** (the primary gates — what "McMaster-fast" means):
+**Hard user-felt gates** (what "McMaster-fast" means):
 | Metric | Target |
 |--------|--------|
 | LCP (first load, P75 field) | < 1.5s; **stretch < 300ms** on edge-cached HTML |
@@ -280,26 +310,21 @@ Speed is a feature and a first-class acceptance criterion.
 | CLS | < 0.05 (target perfect 0) |
 | TTFB (edge hit) | < 100ms |
 
-**Two validated learnings — do NOT re-chase:**
-1. **The app HTML cannot be edge-cached.** `layout.tsx` reads a per-request CSP nonce via
-   `await headers()` (lets us drop `'unsafe-inline'`, §6), forcing every page dynamic. ISR/`revalidate`
-   on app pages is a no-op while the nonce stands. **Cache the DATA layer instead** — the Go gateway's
-   public catalog reads use `writeCachedJSON` (`gateway/internal/handler/response.go`): `public,
-   s-maxage + stale-while-revalidate + stale-if-error` + strong `ETag`/`304`. Authed reads stay uncached.
-2. **On interactive pages, RSC wins LCP/SEO, not bundle size.** Shared First Load is ~183 kB (the
-   React floor); dependency-carving is exhausted (mapbox/recharts already lazy). Don't promise a JS cut
-   from RSC on an interactive surface.
+**Two settled verdicts — do NOT re-chase** (full measurements + why in `docs/performance.md`):
+1. **The app HTML cannot be edge-cached** — the per-request CSP nonce (`await headers()`, §6) forces
+   every page dynamic; ISR/`revalidate` is a no-op. **Cache the DATA layer instead** (the gateway's
+   `writeCachedJSON` public catalog reads); authed reads stay uncached.
+2. **On interactive pages RSC wins LCP/SEO, not bundle size** — dependency-carving is exhausted. Don't
+   promise a JS cut from RSC on an interactive surface.
 
-**Default pattern for new pages (proven, shipped on marketplace):** `page.tsx` is an `async` Server
-Component that server-fetches its public data, normalizes nullables, `notFound()` on miss, sets `next:
-{ revalidate: N }`, exports `metadata`. Interactive UI lives in a small `*Client.tsx` island seeded via
-TanStack Query `initialData` (real first paint, no skeleton). Push `'use client'` to the leaf.
+**Default new-page pattern (proven):** `async` Server-Component `page.tsx` server-fetches public data,
+`notFound()`s on miss, sets `next: { revalidate: N }`, exports `metadata`; interactive UI in a small
+`*Client.tsx` island seeded via TanStack Query `initialData` (real first paint). → `docs/performance.md`.
 
 **Preservation + proof (non-negotiable):** preserve all existing Go/Rust/Next.js — remove or
-re-architect only with a **measured** before/after win. Measure or it didn't happen. Missing a budget
-without a written accepted reason is a regression.
+re-architect only with a **measured** before/after win (see Verification Discipline).
 
-→ **Full JS budget table, baseline narrative, and the 6 principles: `docs/performance.md`.**
+→ **Full budget table, baseline narrative, and the 6 principles: `docs/performance.md`.**
 
 ---
 
@@ -308,11 +333,11 @@ without a written accepted reason is a regression.
 Security and longevity are first-class acceptance criteria, **equal to performance**. Fast but
 insecure or a dead end is not done.
 
-### Secure by default (standing posture — detailed rules in §6)
-- Every endpoint authenticated AND authorized (`withAuth` / `RequireAdmin` / ownership checks). Every
-  input validated server-side. Parameterized SQL only. No secrets in code.
-- Money/PII paths get extra scrutiny: idempotency keys, Stripe webhook signature verification, escrow
-  invariants, AES-256-GCM at rest. **Fail closed**, never open.
+### Secure by default (standing posture — base rules in §6)
+- The §6 invariants hold on every change (authn + authz on every endpoint via `withAuth` /
+  `RequireAdmin` / ownership checks, server-side validation, parameterized SQL, no secrets in code).
+  Money/PII paths get extra scrutiny (idempotency keys, Stripe webhook signature verification, escrow
+  invariants, AES-256-GCM at rest). **Fail closed**, never open.
 - Treat the security audit as a **release gate**: run `/security-review` (or `/cso`) before shipping
   anything touching auth, payments, or a data boundary. A 500 is never an acceptable answer to a
   predictable condition — map it to the right 4xx with an intuitive message.
@@ -331,6 +356,32 @@ insecure or a dead end is not done.
 - **Graceful degradation + feature flags.** Features fail soft (payments/AI/maps down → clear notice,
   never a crash) and ship behind flags when risky.
 - **Document the non-obvious.** Record meaningful architecture decisions (ADR-style).
+
+---
+
+## Reference docs (index)
+
+The always-loaded **rules** live in this file; full detail / maps / worked examples live in `docs/` —
+read on demand. (Sections above also link inline at point of use.)
+
+| Area | File |
+|------|------|
+| Architecture, service boundaries, project tree, production domain & edge strategy | `docs/architecture.md` |
+| Code conventions (worked examples), testing config blocks, metric list | `docs/conventions.md` |
+| Design system — HIG/Material/WCAG detail + the canonical tailwind token block | `docs/design-system.md` |
+| Goods marketplace architecture + trust model | `docs/marketplace.md` |
+| Performance — measured baseline, JS budget table, the 6 principles | `docs/performance.md` |
+
+---
+
+## Discovered Patterns
+
+<!-- AGENT-MANAGED INBOX — not an archive. Lifecycle: when you learn a durable rule mid-task,
+     (1) write the full why/history into the matching docs/ notes file FIRST, (2) add a ONE-LINE
+     pointer here, (3) once it's stable, graduate it up into the matching numbered section above and
+     DELETE it here. Keep every entry to one line + a → pointer; history belongs in the notes file. -->
+
+_(none pending)_
 
 ---
 

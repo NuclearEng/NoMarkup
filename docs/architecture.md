@@ -52,6 +52,8 @@
 | Chat Service | Go | WebSocket connections, message persistence, presence | goroutine-per-connection scales to millions |
 | Fraud Detection | **Rust** | Browser fingerprinting analysis, behavioral scoring, ring detection | Heuristic v1 (velocity, geo-mismatch, fingerprint entropy, multi-account); ML inference deferred — see PLAN §6.1 |
 | Trust Scoring | **Rust** | Composite score computation, real-time recalculation | High-throughput numerical computation |
+| Underwriting | **Rust** | Working-capital credit-limit sizing + risk-banded advance pricing (deterministic scorecard) | Pure numerical, sub-ms, must be reproducible/auditable + tamper-evident |
+| Pricing (Fair Price Index) | **Rust** | Robust cleared-price estimation with hierarchical shrinkage + confidence | Pure numerical, sub-ms, robust stats over settled-transaction corpus |
 | Search & Ranking | **Rust** (Meilisearch) | Full-text search, geo-filtered results, relevance ranking | Meilisearch is Rust-native, sub-50ms queries |
 | Image Pipeline | **Rust** + **C** (libvips) | Resize, optimize, watermark, format conversion | libvips via FFI, 8x faster than ImageMagick |
 | Geo Computation | **Rust** + **C** (PostGIS) | Service area calculation, proximity matching, route estimation | PostGIS C extensions + Rust geo crate for app-layer |
@@ -90,7 +92,9 @@ NoMarkup/
 │   ├── bidding/    src/{main,engine,grpc,models}.rs · tests/ benches/
 │   ├── fraud/      src/{main,engine,behavioral,models,grpc}.rs  # heuristic v1; ONNX deferred
 │   ├── trust/      src/{main,scorer,dimensions,grpc}.rs
-│   └── imaging/    src/{main,pipeline,optimize,grpc}.rs
+│   ├── imaging/    src/{main,pipeline,optimize,grpc}.rs
+│   ├── underwriting/ src/{main,model,grpc}.rs  # pure-fn working-capital underwriting (no DB)
+│   └── pricing/    src/{main,model,grpc}.rs    # pure-fn Fair Price Index (no DB)
 ├── ml/                                # Python ML training (NOT deployed as a service)
 │   └── fraud/ pricing/ requirements.txt
 └── deploy/
@@ -101,5 +105,15 @@ Per-service Go layout is uniform: `cmd/` for entry points, `internal/` for priva
 (`domain` types/interfaces, `repository` Postgres queries, `service` business logic, `grpc`
 server impl), `migrations/`. Rust engines: `src/` with `main.rs` + domain modules, `tests/`,
 `benches/` (criterion).
+
+## Production domain & edge strategy
+
+- **Domain: `no-markup.com`** (hyphenated). The non-hyphen `nomarkup.com` is **NOT** owned — never
+  assume it. One Cloudflare account is registrar + DNS + CDN/edge for the zone.
+- Because a single account holds DNS, edge, and registrar, the edge-caching strategy targets the
+  public **DATA** layer (the gateway's `writeCachedJSON` catalog reads), **not** the HTML — the app
+  HTML can't be edge-cached (a per-request CSP nonce forces dynamic rendering; see `docs/performance.md`
+  and CLAUDE.md §14). Authed/user-specific reads stay uncached.
+- Cloudflare Account ID / Zone ID live in Vault (`.env.local` for dev) — not committed.
 
 See also `docs/marketplace.md` (Goods architecture + trust model) and `docs/route-map.md`.
