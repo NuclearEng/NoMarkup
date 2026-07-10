@@ -19,9 +19,15 @@ spec:
         app.kubernetes.io/part-of: nomarkup
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50057"
+        prometheus.io/port: "60057"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: trust
           image: ghcr.io/nomarkup/trust:latest
@@ -30,14 +36,32 @@ spec:
             - name: grpc
               containerPort: 50057
               protocol: TCP
+            - name: metrics
+              containerPort: 60057
+              protocol: TCP
           env:
             - name: TRUST_ENGINE_PORT
               value: "50057"
+            - name: TRUST_METRICS_PORT
+              value: "60057"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             grpc:
               port: 50057

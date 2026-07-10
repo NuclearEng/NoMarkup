@@ -159,12 +159,22 @@ var routeTiers = []struct {
 	// by AuthRestorer, so it gets the standard tier instead. Brute-forcing
 	// refresh tokens directly would require already having a stolen
 	// refresh-token cookie, which is itself an HttpOnly compromise.
+	//
+	// SEC-06: register-phone, resend-verification, and OAuth init/callback
+	// paths are also auth-tier. Prefix "/api/v1/auth/register" already covers
+	// register-phone; listed explicitly for clarity.
 	{"/api/v1/auth/register", TierAuth},
+	{"/api/v1/auth/register-phone", TierAuth},
 	{"/api/v1/auth/login", TierAuth},
 	{"/api/v1/auth/verify-email", TierAuth},
 	{"/api/v1/auth/verify-phone", TierAuth},
 	{"/api/v1/auth/reset-password", TierAuth},
+	{"/api/v1/auth/resend-verification", TierAuth},
 	{"/api/v1/auth/mfa/verify", TierAuth},
+	// OAuth init + callback endpoints are unauthenticated entry points and
+	// must not share the default standard bucket with authed traffic.
+	{"/api/v1/auth/oauth/", TierAuth},
+	{"/api/v1/auth/callback/", TierAuth},
 
 	// Public-read tier — expensive UNAUTHENTICATED Meilisearch-backed catalog
 	// reads. These must precede any broader "/api/v1/listings" handling and the

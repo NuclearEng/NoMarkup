@@ -17,6 +17,7 @@ import (
 	"github.com/stripe/stripe-go/v82/loginlink"
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/paymentmethod"
+	"github.com/stripe/stripe-go/v82/payout"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/setupintent"
 	stripesub "github.com/stripe/stripe-go/v82/subscription"
@@ -265,7 +266,17 @@ func (s *StripeService) DeletePaymentMethod(ctx context.Context, paymentMethodID
 	return nil
 }
 
-// CreatePaymentIntent creates a PaymentIntent with a destination charge to a Connect account.
+// CreatePaymentIntent creates a PaymentIntent with manual capture and NO
+// TransferData destination charge.
+//
+// Connect model (separate charges + transfer): funds are captured onto the
+// platform Stripe balance and held in escrow by NoMarkup's state machine.
+// Provider payout happens later via CreateTransfer in ReleaseEscrow. This
+// avoids the double-move bug of destination charges (auto-transfer on capture)
+// PLUS a second explicit CreateTransfer on release.
+//
+// providerAccountID and platformFeeCents are recorded in metadata for
+// reconciliation only — they do not create a destination charge.
 // Uses capture_method="manual" for escrow functionality.
 func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int64, currency string, providerAccountID string, platformFeeCents int64, idempotencyKey string) (string, string, error) {
 	if s.devMode {
@@ -277,10 +288,14 @@ func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int
 		Amount:        stripe.Int64(amountCents),
 		Currency:      stripe.String(currency),
 		CaptureMethod: stripe.String(string(stripe.PaymentIntentCaptureMethodManual)),
-		TransferData: &stripe.PaymentIntentTransferDataParams{
-			Destination: stripe.String(providerAccountID),
-		},
-		ApplicationFeeAmount: stripe.Int64(platformFeeCents),
+		// No TransferData / ApplicationFeeAmount: platform holds funds until
+		// ReleaseEscrow CreateTransfer. See comment above.
+	}
+	if providerAccountID != "" {
+		params.AddMetadata("provider_account_id", providerAccountID)
+	}
+	if platformFeeCents > 0 {
+		params.AddMetadata("platform_fee_cents", fmt.Sprintf("%d", platformFeeCents))
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
@@ -291,32 +306,65 @@ func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int
 	return pi.ID, pi.ClientSecret, nil
 }
 
-// CapturePaymentIntent captures a held PaymentIntent (moves to escrow).
-func (s *StripeService) CapturePaymentIntent(ctx context.Context, paymentIntentID string) error {
+// CapturePaymentIntent captures a held PaymentIntent (moves funds to platform
+// balance / escrow). idempotencyKey is mandatory so concurrent ProcessPayment
+// calls cannot double-capture.
+func (s *StripeService) CapturePaymentIntent(ctx context.Context, paymentIntentID string, idempotencyKey string) error {
+	if idempotencyKey == "" {
+		return fmt.Errorf("capture payment intent: idempotency key required")
+	}
 	if s.devMode {
-		slog.Info("dev mode: stub CapturePaymentIntent", "paymentIntentID", paymentIntentID)
-		return nil
+		slog.Info("dev mode: stub CapturePaymentIntent", "paymentIntentID", paymentIntentID, "idem", idempotencyKey)
+		return s.DevStore().RecordCapture(idempotencyKey, paymentIntentID)
 	}
 
-	_, err := paymentintent.Capture(paymentIntentID, nil)
+	params := &stripe.PaymentIntentCaptureParams{}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
+	_, err := paymentintent.Capture(paymentIntentID, params)
 	if err != nil {
 		return fmt.Errorf("capture payment intent: %w", err)
 	}
 	return nil
 }
 
-// CreateTransfer transfers funds to a provider's Connect account.
-func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, currency string, destinationAccountID string, paymentIntentID string) (string, error) {
+// CreateTransfer transfers funds to a provider's Connect account from a
+// previously captured charge on the platform. idempotencyKey is mandatory
+// (e.g. "escrow-release:<paymentID>") so concurrent/retried ReleaseEscrow
+// never double-pays.
+//
+// SourceTransaction must be a Charge ID (ch_...), not a PaymentIntent ID.
+// When paymentIntentID is a pi_..., we resolve LatestCharge from Stripe.
+func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, currency string, destinationAccountID string, paymentIntentID string, idempotencyKey string) (string, error) {
+	if idempotencyKey == "" {
+		return "", fmt.Errorf("create transfer: idempotency key required")
+	}
 	if s.devMode {
-		slog.Info("dev mode: stub CreateTransfer", "amountCents", amountCents)
-		return "tr_dev_" + paymentIntentID, nil
+		slog.Info("dev mode: stub CreateTransfer", "amountCents", amountCents, "idem", idempotencyKey)
+		return s.DevStore().RecordTransfer(idempotencyKey, destinationAccountID, amountCents), nil
+	}
+
+	sourceTxn := paymentIntentID
+	// Stripe SourceTransaction requires a Charge ID. Resolve from PI when needed.
+	if strings.HasPrefix(paymentIntentID, "pi_") {
+		getParams := &stripe.PaymentIntentParams{}
+		getParams.AddExpand("latest_charge")
+		pi, err := paymentintent.Get(paymentIntentID, getParams)
+		if err != nil {
+			return "", fmt.Errorf("create transfer: resolve payment intent for charge: %w", err)
+		}
+		if pi.LatestCharge == nil || pi.LatestCharge.ID == "" {
+			return "", fmt.Errorf("create transfer: payment intent %s has no latest charge for SourceTransaction", paymentIntentID)
+		}
+		sourceTxn = pi.LatestCharge.ID
 	}
 
 	params := &stripe.TransferParams{
-		Amount:            stripe.Int64(amountCents),
-		Currency:          stripe.String(currency),
-		Destination:       stripe.String(destinationAccountID),
-		SourceTransaction: stripe.String(paymentIntentID),
+		Amount:      stripe.Int64(amountCents),
+		Currency:    stripe.String(currency),
+		Destination: stripe.String(destinationAccountID),
+	}
+	if sourceTxn != "" {
+		params.SourceTransaction = stripe.String(sourceTxn)
 	}
 	// Stamp the originating PaymentIntent in transfer metadata. The
 	// transfer.created webhook (handleTransferCreated) looks up the local
@@ -328,6 +376,7 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	if paymentIntentID != "" {
 		params.AddMetadata("payment_intent_id", paymentIntentID)
 	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
 
 	t, err := transfer.New(params)
 	if err != nil {
@@ -368,11 +417,16 @@ func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents 
 	return t.ID, nil
 }
 
-// CreateRefund issues a refund for a PaymentIntent.
-func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string, amountCents int64) (string, error) {
+// CreateRefund issues a refund for a PaymentIntent. idempotencyKey is
+// mandatory (e.g. "refund:<paymentID>:<targetCumulativeCents>") so concurrent
+// or retried refunds never over-refund at Stripe.
+func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string, amountCents int64, idempotencyKey string) (string, error) {
+	if idempotencyKey == "" {
+		return "", fmt.Errorf("create refund: idempotency key required")
+	}
 	if s.devMode {
-		slog.Info("dev mode: stub CreateRefund", "paymentIntentID", paymentIntentID)
-		return "re_dev_" + paymentIntentID, nil
+		slog.Info("dev mode: stub CreateRefund", "paymentIntentID", paymentIntentID, "idem", idempotencyKey)
+		return s.DevStore().RecordRefund(idempotencyKey, paymentIntentID, amountCents), nil
 	}
 
 	params := &stripe.RefundParams{
@@ -381,12 +435,51 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 	if amountCents > 0 {
 		params.Amount = stripe.Int64(amountCents)
 	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
 
 	r, err := refund.New(params)
 	if err != nil {
 		return "", fmt.Errorf("create refund: %w", err)
 	}
 	return r.ID, nil
+}
+
+// CreateConnectInstantPayout creates an instant payout on a connected account
+// (Stripe Connect Instant Payouts). In dev mode returns a payout_dev_* id
+// keyed by idempotencyKey. In production NEVER fabricates a payout id — either
+// Stripe succeeds or an error is returned.
+func (s *StripeService) CreateConnectInstantPayout(ctx context.Context, amountCents int64, currency, connectAccountID, idempotencyKey string) (string, error) {
+	if idempotencyKey == "" {
+		return "", fmt.Errorf("create connect instant payout: idempotency key required")
+	}
+	if connectAccountID == "" {
+		return "", fmt.Errorf("create connect instant payout: connect account id required")
+	}
+	if amountCents <= 0 {
+		return "", fmt.Errorf("create connect instant payout: amount must be positive")
+	}
+	if s.devMode {
+		slog.Info("dev mode: stub CreateConnectInstantPayout",
+			"amount_cents", amountCents,
+			"account", connectAccountID,
+			"idem", idempotencyKey,
+		)
+		return s.DevStore().RecordPayout(idempotencyKey, connectAccountID, amountCents), nil
+	}
+
+	params := &stripe.PayoutParams{
+		Amount:   stripe.Int64(amountCents),
+		Currency: stripe.String(currency),
+		Method:   stripe.String(string(stripe.PayoutMethodInstant)),
+	}
+	params.SetStripeAccount(connectAccountID)
+	params.IdempotencyKey = stripe.String(idempotencyKey)
+
+	p, err := payout.New(params)
+	if err != nil {
+		return "", fmt.Errorf("create connect instant payout: %w", err)
+	}
+	return p.ID, nil
 }
 
 // StripeExternalBankAccount holds the non-sensitive metadata Stripe returns
@@ -576,7 +669,22 @@ func (s *StripeService) CreateMarketplaceTransfer(
 		Destination: stripe.String(stripeAccountIDOrSellerID),
 	}
 	if paymentIntentID != "" {
-		params.SourceTransaction = stripe.String(paymentIntentID)
+		sourceTxn := paymentIntentID
+		// SourceTransaction must be a Charge ID, not a PaymentIntent.
+		if strings.HasPrefix(paymentIntentID, "pi_") {
+			getParams := &stripe.PaymentIntentParams{}
+			getParams.AddExpand("latest_charge")
+			pi, err := paymentintent.Get(paymentIntentID, getParams)
+			if err != nil {
+				return "", fmt.Errorf("create marketplace transfer: resolve charge: %w", err)
+			}
+			if pi.LatestCharge == nil || pi.LatestCharge.ID == "" {
+				return "", fmt.Errorf("create marketplace transfer: payment intent %s has no latest charge", paymentIntentID)
+			}
+			sourceTxn = pi.LatestCharge.ID
+		}
+		params.SourceTransaction = stripe.String(sourceTxn)
+		params.AddMetadata("payment_intent_id", paymentIntentID)
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
@@ -626,16 +734,15 @@ func (s *StripeService) CreateMarketplaceRefund(
 
 // CreateOffSessionPaymentIntent creates a PaymentIntent with confirm=true and off_session=true.
 // This is used for charging saved payment methods for scheduled installments.
-func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amountCents int64, currency string, customerStripeID string, paymentMethodID string, metadata map[string]string) (string, string, error) {
+// idempotencyKey is mandatory so cron retries / concurrent BNPL charges never double-bill.
+func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amountCents int64, currency string, customerStripeID string, paymentMethodID string, idempotencyKey string, metadata map[string]string) (string, string, error) {
+	if idempotencyKey == "" {
+		return "", "", fmt.Errorf("create off-session payment intent: idempotency key required")
+	}
 	if s.devMode {
-		slog.Info("dev mode: stub CreateOffSessionPaymentIntent", "amountCents", amountCents, "customerStripeID", customerStripeID)
-		key := "pi_dev_offsession_" + customerStripeID
-		if metadata != nil {
-			if ik, ok := metadata["idempotency_key"]; ok {
-				key = "pi_dev_offsession_" + ik
-			}
-		}
-		return key, "pi_dev_secret_offsession_" + customerStripeID, nil
+		slog.Info("dev mode: stub CreateOffSessionPaymentIntent", "amountCents", amountCents, "customerStripeID", customerStripeID, "idem", idempotencyKey)
+		key := "pi_dev_offsession_" + idempotencyKey
+		return key, "pi_dev_secret_offsession_" + idempotencyKey, nil
 	}
 
 	params := &stripe.PaymentIntentParams{
@@ -649,6 +756,7 @@ func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amoun
 	for k, v := range metadata {
 		params.AddMetadata(k, v)
 	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
 
 	pi, err := paymentintent.New(params)
 	if err != nil {

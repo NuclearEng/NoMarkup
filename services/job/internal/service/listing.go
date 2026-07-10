@@ -255,7 +255,8 @@ func (s *ListingService) GetListingBids(ctx context.Context, listingID string, p
 }
 
 // CloseListingAuction is the post-deadline transition. Promotes the high bid
-// to 'awarded' and creates a listing_orders row in escrow. Idempotent.
+// to 'awarded' and creates a listing_orders row in pending_payment (never held
+// without a PaymentIntent — MON-06). Idempotent.
 func (s *ListingService) CloseListingAuction(ctx context.Context, listingID string) (*domain.Listing, *domain.ListingOrder, error) {
 	l, o, err := s.repo.CloseListingAuction(ctx, listingID)
 	if err != nil {
@@ -282,7 +283,8 @@ func (s *ListingService) CloseListingAuction(ctx context.Context, listingID stri
 // CloseEndedAuctions resolves auctions whose deadline has passed but that are
 // still status='active'. It fetches a bounded batch of ended auctions and
 // closes each one via CloseListingAuction. Returns (closed, expired) counts:
-//   - closed  = listings that produced a winning order (escrow held)
+//   - closed  = listings that produced a winning order (pending_payment;
+//     ChargeListingWinner + PI capture promote to held)
 //   - expired = listings closed with no sale (no bids OR reserve not met)
 //
 // Money-safety: each close runs in its own FOR UPDATE-locked, status-guarded

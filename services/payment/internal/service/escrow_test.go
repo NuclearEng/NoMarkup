@@ -70,6 +70,14 @@ func newEscrowFixture(t *testing.T, initialStatus string, payment *domain.Paymen
 			f.currentStatus = status
 			return nil
 		},
+		claimPaymentStatusFn: func(_ context.Context, _ string, from, to string) error {
+			if f.currentStatus != from {
+				return domain.ErrInvalidStatus
+			}
+			f.updateCalls[to]++
+			f.currentStatus = to
+			return nil
+		},
 		getStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
 			return f.stripeAcctID, nil
 		},
@@ -83,6 +91,12 @@ func newEscrowFixture(t *testing.T, initialStatus string, payment *domain.Paymen
 			f.refundCalls++
 			f.currentStatus = status
 			f.transferAmount = amt
+			return nil
+		},
+		updateRefundCASFn: func(_ context.Context, _ string, _, newTotal int64, _ string, _ time.Time, _ string, status string) error {
+			f.refundCalls++
+			f.currentStatus = status
+			f.transferAmount = newTotal
 			return nil
 		},
 		getActiveAdvancesFn: func(_ context.Context, _ string) ([]*domain.Advance, error) {

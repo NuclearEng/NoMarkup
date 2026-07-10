@@ -536,6 +536,14 @@ impl BiddingEngine {
             ));
         }
 
+        // MON-19: job must still be open under the FOR UPDATE lock. Without this,
+        // a concurrent award / offer-accept / cancel can leave the row non-active
+        // while we still mark a bid awarded and rewrite job status. Mirrors the
+        // place_bid / accept_offer guards.
+        if job.status != "active" {
+            return Err(BidError::AuctionNotActive);
+        }
+
         // Validate bid exists, is active, and belongs to this job.
         let bid = sqlx::query_as::<_, Bid>("SELECT * FROM bids WHERE id = $1 FOR UPDATE")
             .bind(bid_id)

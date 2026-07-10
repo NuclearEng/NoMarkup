@@ -15,11 +15,12 @@ environments.
 
 | Key | Used by | Why mandatory |
 |---|---|---|
-| `DATABASE_URL` | every Go service | DB connection string |
+| `DATABASE_URL` | every Go service + migration Job | DB connection string |
 | `REDIS_URL` | gateway, services | session/idempotency cache |
 | `JWT_PRIVATE_KEY` | user service | RS256 signing |
 | `JWT_PUBLIC_KEY` | gateway, every service | JWT verification |
 | `SESSION_SECRET` | gateway | secure cookie sealing |
+| `INTERNAL_WS_SECRET` | gateway + chat | Shared secret for gateway→chat WebSocket hop auth. Generate with `openssl rand -base64 32`. Same value on both Deployments (explicit `secretKeyRef` + `envFrom`). |
 | `STRIPE_SECRET_KEY` | payment service | server-side Stripe API |
 | `STRIPE_WEBHOOK_SECRET` | payment service | webhook signature verification (mandatory; no env-based bypass) |
 | `STRIPE_CONNECT_CLIENT_ID` | payment service | Connect onboarding |
@@ -29,12 +30,22 @@ environments.
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | every service | error tracking (TODOS-7) |
 | `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth token exchange |
 | `APPLE_CLIENT_SECRET` | gateway | Apple OAuth token exchange |
+| `ENCRYPTION_KEY` | user, services with PII | base64 32-byte AES-256-GCM key |
 | `MEILISEARCH_API_KEY` | gateway, job service, meilisearch (as `MEILI_MASTER_KEY`) | search index admin operations + gateway listings search; the in-cluster Meilisearch Deployment (`base/meilisearch/deployment.yaml`) boots with this same value as its master key — identical to the docker-compose wiring |
 
 ## Provisioning (recommended via External Secrets Operator + Vault)
 
+Sample ExternalSecret manifest (copy + apply after ClusterSecretStore exists):
+
+```bash
+cp deploy/k8s/base/externalsecret.sample.yaml \
+   deploy/k8s/overlays/production/externalsecret.yaml
+# edit store name / Vault path, then:
+kubectl apply -f deploy/k8s/overlays/production/externalsecret.yaml
+```
+
 ```yaml
-# k8s/overlays/production/external-secret.yaml (NOT in this repo)
+# deploy/k8s/base/externalsecret.sample.yaml (committed sample)
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:

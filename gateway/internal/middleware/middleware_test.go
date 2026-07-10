@@ -500,3 +500,30 @@ func TestRateLimit_passthrough(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "ok", rec.Body.String())
 }
+
+// SEC-06: auth-adjacent unauthenticated paths must land on TierAuth.
+func TestTierForPath_authPaths(t *testing.T) {
+	t.Parallel()
+	authPaths := []string{
+		"/api/v1/auth/register",
+		"/api/v1/auth/register-phone",
+		"/api/v1/auth/login",
+		"/api/v1/auth/resend-verification",
+		"/api/v1/auth/oauth/google",
+		"/api/v1/auth/callback/google",
+		"/api/v1/auth/oauth/facebook",
+		"/api/v1/auth/callback/facebook",
+		"/api/v1/auth/oauth/apple",
+		"/api/v1/auth/callback/apple",
+		"/api/v1/auth/mfa/verify",
+	}
+	for _, p := range authPaths {
+		p := p
+		t.Run(p, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, TierAuth, tierForPath(p), "path %s should be TierAuth", p)
+		})
+	}
+	// refresh stays standard (called on every navigation).
+	assert.Equal(t, TierStandard, tierForPath("/api/v1/auth/refresh"))
+}

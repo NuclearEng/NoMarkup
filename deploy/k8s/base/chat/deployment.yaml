@@ -18,10 +18,17 @@ spec:
         app.kubernetes.io/component: go-service
         app.kubernetes.io/part-of: nomarkup
       annotations:
+        # Go services: metrics on SERVICE_PORT+1000 (see docs/operations/metrics.md)
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50055"
+        prometheus.io/port: "51055"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: chat
           image: ghcr.io/nomarkup/chat:latest
@@ -33,16 +40,39 @@ spec:
             - name: ws
               containerPort: 50065
               protocol: TCP
+            - name: metrics
+              containerPort: 51055
+              protocol: TCP
           env:
             - name: CHAT_SERVICE_PORT
               value: "50055"
             - name: CHAT_WS_PORT
               value: "50065"
+            - name: METRICS_PORT
+              value: "51055"
+            - name: INTERNAL_WS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: INTERNAL_WS_SECRET
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             grpc:
               port: 50055

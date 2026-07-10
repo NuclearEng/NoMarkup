@@ -266,6 +266,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 }
 
 // ProcessPayment confirms/captures a PaymentIntent and updates status.
+//
+// Concurrency (MON-14): CAS pending→processing so only one caller captures;
+// Stripe capture carries a deterministic idempotency key so a retry after a
+// crash cannot double-capture.
 func (s *PaymentService) ProcessPayment(ctx context.Context, paymentID string, paymentMethodID string) (*domain.Payment, error) {
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil {
@@ -276,23 +280,26 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, paymentID string, p
 		return nil, fmt.Errorf("process payment: %w", domain.ErrPaymentAlreadyProcessed)
 	}
 
-	// Update status to processing.
-	if err := s.repo.UpdatePaymentStatus(ctx, paymentID, "processing"); err != nil {
-		return nil, err
+	// CAS claim: pending → processing. A concurrent ProcessPayment loses here.
+	if err := s.repo.ClaimPaymentStatus(ctx, paymentID, "pending", "processing"); err != nil {
+		return nil, fmt.Errorf("process payment: %w", domain.ErrPaymentAlreadyProcessed)
 	}
 
-	// Capture the payment intent.
+	// Capture the payment intent with a deterministic key.
 	if payment.StripePaymentIntentID != "" {
-		if err := s.stripe.CapturePaymentIntent(ctx, payment.StripePaymentIntentID); err != nil {
-			// Mark as failed if capture fails.
-			_ = s.repo.UpdatePaymentStatus(ctx, paymentID, "failed")
+		captureKey := "capture:" + paymentID
+		if err := s.stripe.CapturePaymentIntent(ctx, payment.StripePaymentIntentID, captureKey); err != nil {
+			// Mark as failed if capture fails (CAS processing→failed).
+			_ = s.repo.ClaimPaymentStatus(ctx, paymentID, "processing", "failed")
 			return nil, fmt.Errorf("process payment capture: %w", err)
 		}
 	}
 
-	// Update status to escrow on success.
-	if err := s.repo.UpdatePaymentStatus(ctx, paymentID, "escrow"); err != nil {
-		return nil, err
+	// CAS processing → escrow on success.
+	if err := s.repo.ClaimPaymentStatus(ctx, paymentID, "processing", "escrow"); err != nil {
+		// Capture already succeeded; try best-effort status write.
+		_ = s.repo.UpdatePaymentStatus(ctx, paymentID, "escrow")
+		return nil, fmt.Errorf("process payment escrow claim: %w", err)
 	}
 
 	return s.repo.GetPayment(ctx, paymentID)
@@ -303,19 +310,42 @@ const advanceRepaymentRate = 0.20
 
 // ReleaseEscrow creates a Stripe transfer to the provider and updates status.
 // If the provider has active advances, a portion of the payout is withheld for repayment.
+//
+// Concurrency (MON-03): CAS-claim status escrow→released BEFORE the transfer so
+// only one concurrent release wins. Transfer uses deterministic key
+// "escrow-release:<paymentID>" so a crash/retry never double-pays at Stripe.
+// On transfer failure the claim is reverted to escrow.
 func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, reason string) (*domain.Payment, error) {
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil {
 		return nil, err
 	}
 
-	if payment.Status != "escrow" {
-		return nil, fmt.Errorf("release escrow: %w", domain.ErrInvalidStatus)
+	// Idempotent re-entry: already released with a transfer recorded.
+	if payment.Status == "released" && payment.StripeTransferID != "" {
+		return payment, nil
+	}
+
+	// Resume incomplete release (claimed released but transfer never stamped).
+	resume := payment.Status == "released" && payment.StripeTransferID == ""
+	if !resume {
+		if payment.Status != "escrow" {
+			return nil, fmt.Errorf("release escrow: %w", domain.ErrInvalidStatus)
+		}
+		// CAS claim: escrow → released. Loser of a concurrent race fails here.
+		if err := s.repo.ClaimPaymentStatus(ctx, paymentID, "escrow", "released"); err != nil {
+			// Another release may have won — if so, return the released payment.
+			if cur, gerr := s.repo.GetPayment(ctx, paymentID); gerr == nil && cur.Status == "released" {
+				return cur, nil
+			}
+			return nil, fmt.Errorf("release escrow: %w", domain.ErrInvalidStatus)
+		}
 	}
 
 	// Get provider Stripe account.
 	providerAccountID, err := s.repo.GetStripeAccountID(ctx, payment.ProviderID)
 	if err != nil {
+		_ = s.repo.ClaimPaymentStatus(ctx, paymentID, "released", "escrow")
 		return nil, fmt.Errorf("release escrow: %w", err)
 	}
 
@@ -380,8 +410,13 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 		transferAmount = 0
 	}
 
-	transferID, err := s.stripe.CreateTransfer(ctx, transferAmount, "usd", providerAccountID, payment.StripePaymentIntentID)
+	// Deterministic Stripe idempotency key — concurrent/retried releases
+	// return the SAME transfer rather than double-paying.
+	transferKey := "escrow-release:" + paymentID
+	transferID, err := s.stripe.CreateTransfer(ctx, transferAmount, "usd", providerAccountID, payment.StripePaymentIntentID, transferKey)
 	if err != nil {
+		// Revert claim so a later retry can re-attempt.
+		_ = s.repo.ClaimPaymentStatus(ctx, paymentID, "released", "escrow")
 		return nil, fmt.Errorf("release escrow transfer: %w", err)
 	}
 
@@ -395,13 +430,8 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 		)
 	}
 
-	// Update stripe fields with transfer ID.
+	// Stamp transfer ID (status already released via CAS claim).
 	if err := s.repo.UpdateStripeFields(ctx, paymentID, "", "", transferID); err != nil {
-		return nil, err
-	}
-
-	// Update status to released.
-	if err := s.repo.UpdatePaymentStatus(ctx, paymentID, "released"); err != nil {
 		return nil, err
 	}
 
@@ -409,13 +439,18 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 }
 
 // CreateRefund issues a Stripe refund and updates the payment record.
+//
+// Concurrency (MON-13): remaining balance is re-checked against the CAS'd
+// prior refund total so concurrent refunds cannot over-refund. Stripe key
+// includes payment id + target cumulative amount so retries are safe.
 func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amountCents int64, reason string) (*domain.Payment, error) {
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil {
 		return nil, err
 	}
 
-	if payment.Status != "escrow" && payment.Status != "released" && payment.Status != "completed" {
+	if payment.Status != "escrow" && payment.Status != "released" && payment.Status != "completed" &&
+		payment.Status != "partially_refunded" {
 		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidStatus)
 	}
 
@@ -452,10 +487,11 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 	// The cumulative refunded total persisted on the payment.
 	totalRefunded := alreadyRefunded + refundAmount
 
-	// Create Stripe refund. Pass the validated per-call amount (0 => full
-	// remaining, which Stripe treats as the full remaining PaymentIntent balance).
-	stripeAmount := refundAmount
-	refundID, err := s.stripe.CreateRefund(ctx, payment.StripePaymentIntentID, stripeAmount)
+	// Deterministic Stripe key: payment + target cumulative so concurrent
+	// attempts at the same cumulative total dedupe; distinct amounts get
+	// distinct keys.
+	refundKey := fmt.Sprintf("refund:%s:%d", paymentID, totalRefunded)
+	refundID, err := s.stripe.CreateRefund(ctx, payment.StripePaymentIntentID, refundAmount, refundKey)
 	if err != nil {
 		return nil, fmt.Errorf("create refund stripe: %w", err)
 	}
@@ -467,8 +503,15 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 	}
 
 	now := time.Now()
-	if err := s.repo.UpdateRefund(ctx, paymentID, totalRefunded, reason, now, refundID, refundStatus); err != nil {
-		return nil, err
+	// CAS: only apply if refund_amount_cents is still the prior we based this on.
+	if err := s.repo.UpdateRefundCAS(ctx, paymentID, alreadyRefunded, totalRefunded, reason, now, refundID, refundStatus); err != nil {
+		// Concurrent refund may have already applied the same total (same Stripe key).
+		if cur, gerr := s.repo.GetPayment(ctx, paymentID); gerr == nil {
+			if cur.RefundAmountCents >= totalRefunded {
+				return cur, nil
+			}
+		}
+		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
 	}
 
 	return s.repo.GetPayment(ctx, paymentID)

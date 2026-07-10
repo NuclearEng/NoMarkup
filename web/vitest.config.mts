@@ -40,11 +40,14 @@ export default defineConfig({
       // Coverage did NOT regress — the measurement got more honest. Floors are
       // recalibrated to the v4 ruler with the same ~4-6pt margin below measured
       // as before; RATCHET UP as coverage grows, never down.
+      // Ratchet toward 80% whole-app (CLAUDE.md §7). Floors are min(measured,
+      // 80) style — never set above verified coverage. Branches floor 76 is
+      // the minimum ratchet requested; lines/stmts/funcs at 80 when feasible.
       thresholds: {
-        branches: 71,
-        functions: 75,
-        lines: 77,
-        statements: 76,
+        branches: 76,
+        functions: 80,
+        lines: 80,
+        statements: 80,
       },
     },
   },

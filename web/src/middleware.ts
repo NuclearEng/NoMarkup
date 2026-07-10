@@ -5,10 +5,18 @@ import { NextResponse, type NextRequest } from 'next/server';
  *
  * Two responsibilities:
  *
- * 1. AUTH GUARD — The gateway is the authoritative authenticator; this
- *    middleware only checks for the presence of session indicators so
- *    unauthenticated clients (bots, direct fetches, SSR probes) are redirected
- *    before pages render.
+ * 1. SOFT SESSION GATE (SEC-07) — Presence-only redirect UX. This middleware
+ *    only checks for the *presence* of session indicators (cookies /
+ *    Authorization header). It does **not**:
+ *      - verify JWT signature, exp, iss, or aud
+ *      - load the user, roles, or grants
+ *      - authorize any data access
+ *    A client that presents a stale/forged `has_session=1` cookie can still
+ *    reach the HTML shell; **no protected data is granted here**. Real authz
+ *    lives in the Go gateway (`withAuth` / `RequireAdmin` / ownership checks)
+ *    and in route handlers that verify the RS256 access JWT (e.g. AI routes
+ *    via `gateAiRoute`). The soft gate only reduces wasted HTML for bots and
+ *    unauthenticated SSR probes by redirecting them to `/login`.
  *
  * 2. CSP NONCE — A cryptographically-random nonce is generated per request
  *    and embedded in the Content-Security-Policy header so we can drop
@@ -21,7 +29,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  *    transitively loaded by an explicitly-trusted (nonce'd) script. This lets
  *    Next.js bootstrap chunks load without enumerating every chunk URL.
  *
- * Cookies in play:
+ * Cookies in play (presence indicators only — never treated as proof of auth):
  *   - has_session=1          — sentinel set by the gateway when a refresh
  *                              token cookie is issued (non-HttpOnly sentinel
  *                              for client-side detection)
@@ -31,7 +39,8 @@ import { NextResponse, type NextRequest } from 'next/server';
  *   - oauth_access_token     — short-lived OAuth callback cookie
  *
  * The access JWT itself lives in memory on the client and is sent as a
- * Bearer token on API requests, so we also accept an Authorization header.
+ * Bearer token on API requests, so we also accept an Authorization header
+ * (presence only; signature verification is the route/gateway's job).
  */
 
 // Routes that render inside (dashboard) — i.e. the authenticated layout.
@@ -121,7 +130,21 @@ function buildCsp(nonce: string): string {
       // ignore malformed
     }
   }
+  // SEC-12: do NOT allow bare `ws:` / `wss:` wildcards. WebSocket connect-src
+  // is limited to 'self' plus the explicit API/WS origins derived from
+  // NEXT_PUBLIC_API_URL / NEXT_PUBLIC_WS_URL above. Same-origin relative WS
+  // upgrades still work via 'self'.
   const extra = apiOrigins.join(' ');
+  const connectSrc = [
+    "'self'",
+    extra,
+    'https://api.mapbox.com',
+    'https://events.mapbox.com',
+    'https://*.sentry.io',
+    'https://api.stripe.com',
+  ]
+    .filter((s) => s.length > 0)
+    .join(' ');
   // upgrade-insecure-requests is production-only. In dev it force-upgrades
   // http://localhost calls to https://localhost, which the dev server can't
   // serve and causes a "TLS error" / "network connection lost" cascade in
@@ -138,7 +161,7 @@ function buildCsp(nonce: string): string {
     "style-src 'self' 'unsafe-inline' https://api.mapbox.com",
     "img-src 'self' data: blob: https: http://localhost:9000",
     "font-src 'self' data:",
-    `connect-src 'self' ${extra} ws: wss: https://api.mapbox.com https://events.mapbox.com https://*.sentry.io https://api.stripe.com`,
+    `connect-src ${connectSrc}`,
     "worker-src 'self' blob:",
     "frame-src https://js.stripe.com https://hooks.stripe.com",
     "frame-ancestors 'none'",

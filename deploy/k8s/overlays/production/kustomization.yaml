@@ -9,9 +9,7 @@ resources:
 
 # Image pinning — production never deploys a floating `:latest` tag.
 # `v0.1.0` is the placeholder release; CI stamps the real release tag at
-# deploy time via `kustomize edit set image ghcr.io/nomarkup/<name>:<tag>`
-# (deploy.yml is a gated placeholder today — it no-ops unless the
-# DEPLOY_PROVISIONED repo variable is "true").
+# deploy time via `kustomize edit set image ghcr.io/nomarkup/<name>:<tag>`.
 images:
   - name: ghcr.io/nomarkup/gateway
     newTag: v0.1.0
@@ -38,6 +36,8 @@ images:
   - name: ghcr.io/nomarkup/trust
     newTag: v0.1.0
   - name: ghcr.io/nomarkup/underwriting
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/migrate
     newTag: v0.1.0
 
 patches:
@@ -149,6 +149,8 @@ configMapGenerator:
     literals:
       - ENVIRONMENT=production
       - LOG_LEVEL=info
+      # CI overwrites APP_VERSION to the release tag (category cache bust + Sentry).
+      - APP_VERSION=v0.1.0
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - MEILISEARCH_URL=http://meilisearch:7700
       # Audit S2 — mandatory env vars (services fail-closed without these).
@@ -160,5 +162,8 @@ configMapGenerator:
       # X-Forwarded-For header that the rate limiter / audit log trusts.
       - TRUSTED_PROXIES=10.0.0.0/8
       # OAuth aud claims.
+      # REQUIRED before first live deploy: replace with the production Google OAuth
+      # client ID from the GCP console (Vault-managed secret holds the client
+      # secret). Placeholder value fails OAuth aud validation intentionally.
       - APPLE_CLIENT_ID=com.nomarkup.app
-      - GOOGLE_CLIENT_ID=REPLACE_ME_PROD_GOOGLE_CLIENT_ID.apps.googleusercontent.com
+      - GOOGLE_CLIENT_ID=SET_ME_PROD_GOOGLE_CLIENT_ID.apps.googleusercontent.com

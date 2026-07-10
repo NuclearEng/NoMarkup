@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -32,27 +34,39 @@ const (
 )
 
 // featureFlagState is the cached value for a single flag. We cache an explicit
-// "found" marker so a missing flag (treated as enabled / fail-open) is also
-// cached rather than re-queried every request.
+// "found" marker so a missing flag is also cached rather than re-queried every
+// request. Interpretation of Found=false depends on the environment:
+// production fail-closed (missing ⇒ disabled); dev/staging fail-open
+// (missing ⇒ enabled). See flagDisabled.
 type featureFlagState struct {
 	Found   bool `json:"found"`
 	Enabled bool `json:"enabled"`
 }
 
+// isProductionEnv reports whether ENVIRONMENT=production. Feature-flag gates
+// use this to fail closed on missing/error (SEC-01). Staging and development
+// keep fail-open for missing flags so un-seeded local stacks keep working.
+func isProductionEnv() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("ENVIRONMENT")), "production")
+}
+
 // RequireFlag returns middleware that gates a route group behind a feature
 // flag stored in the feature_flags table.
 //
-// Behavior:
+// Behavior (production — ALWAYS fail closed, SEC-01):
 //   - Flag row exists and enabled = true  → call next (feature live).
-//   - Flag row exists and enabled = false → 503 with an intuitive JSON body.
+//   - Flag row exists and enabled = false → 503.
+//   - Flag row MISSING                     → 503 (treat as disabled).
+//   - DB error / db == nil                → 503 (treat as disabled).
+//
+// Behavior (development / staging — fail open for missing only):
+//   - Flag row exists and enabled = true  → call next.
+//   - Flag row exists and enabled = false → 503.
 //   - Flag row MISSING                     → FAIL OPEN (treat as enabled).
-//     A missing flag must never break a route; only an explicitly-disabled
-//     flag gates. This keeps a typo'd key or an un-seeded environment from
-//     silently taking a working feature offline.
-//   - DB error / db == nil                → FAIL OPEN (treat as enabled).
-//     These features are core-adjacent (payments/insurance/advances); failing
-//     closed on an infra blip would be worse than serving them, so we fail
-//     open and log loudly for the admin to investigate.
+//     A missing flag must never break a local/staging route; only an
+//     explicitly-disabled flag gates. Documented exception for non-prod so
+//     typo'd keys / un-seeded envs don't silently take features offline.
+//   - DB error / db == nil                → FAIL OPEN (treat as enabled), log.
 //
 // The flag's enabled state is cached in Redis for featureFlagCacheTTL so the
 // hot path is a Redis GET, not a Postgres query, on every request.
@@ -68,30 +82,41 @@ func RequireFlag(db *pgxpool.Pool, cacheClient *cache.Client, flagKey string) fu
 				"flag", flagKey,
 				"method", r.Method,
 				"path", r.URL.Path,
+				"production", isProductionEnv(),
 			)
 			http.Error(w, `{"error":"This feature is currently unavailable"}`, http.StatusServiceUnavailable)
 		})
 	}
 }
 
-// flagDisabled reports whether the named flag is EXPLICITLY disabled.
-// It returns false (i.e. allow the request) for: enabled flags, missing flags,
-// DB errors, and a nil DB — every fail-open case — so only a real row with
-// enabled = false blocks.
+// flagDisabled reports whether the named flag should block the request.
+//
+// Production (SEC-01 fail-closed): missing flag, DB error, or nil DB all
+// return true (disabled). Only an explicit enabled=true row allows traffic.
+//
+// Non-production (fail-open for missing/error): only an explicit enabled=false
+// row blocks; missing flags and infra blips allow the request through.
 func flagDisabled(ctx context.Context, db *pgxpool.Pool, cacheClient *cache.Client, flagKey string) bool {
+	prod := isProductionEnv()
 	redisKey := cache.Key(featureFlagPrefix, flagKey)
 
 	// 1. Try the cache.
 	if cacheClient != nil {
 		var st featureFlagState
 		if cacheClient.GetJSON(ctx, redisKey, &st) {
-			return st.Found && !st.Enabled
+			return interpretFlagState(st, prod)
 		}
 	}
 
 	// 2. Cache miss — read from Postgres.
 	if db == nil {
-		return false // fail open
+		if prod {
+			slog.Error("feature flag gate: no database configured, failing closed",
+				"flag", flagKey,
+			)
+			return true
+		}
+		return false // fail open in non-prod
 	}
 
 	var enabled bool
@@ -104,11 +129,18 @@ func flagDisabled(ctx context.Context, db *pgxpool.Pool, cacheClient *cache.Clie
 		st.Found = true
 		st.Enabled = enabled
 	case errors.Is(err, pgx.ErrNoRows):
-		// Missing flag → fail open (enabled). Cache the "not found" marker so
-		// we don't re-query every request for an un-seeded key.
+		// Missing flag. Cache the "not found" marker so we don't re-query.
+		// Interpretation (fail-closed vs fail-open) happens in interpretFlagState.
 		st.Found = false
 	default:
-		// Real DB error: fail open but do NOT cache, so we retry next request.
+		// Real DB error: do NOT cache, so we retry next request.
+		if prod {
+			slog.Error("feature flag gate: failed to read flag, failing closed",
+				"flag", flagKey,
+				"error", err,
+			)
+			return true
+		}
 		slog.Error("feature flag gate: failed to read flag, failing open",
 			"flag", flagKey,
 			"error", err,
@@ -120,5 +152,15 @@ func flagDisabled(ctx context.Context, db *pgxpool.Pool, cacheClient *cache.Clie
 		cacheClient.SetJSON(ctx, redisKey, st, featureFlagCacheTTL)
 	}
 
-	return st.Found && !st.Enabled
+	return interpretFlagState(st, prod)
+}
+
+// interpretFlagState maps a cached/loaded flag state to "should block".
+// production: missing (Found=false) ⇒ disabled; found ⇒ !Enabled.
+// non-prod: only Found && !Enabled blocks.
+func interpretFlagState(st featureFlagState, production bool) bool {
+	if !st.Found {
+		return production // fail-closed in prod, fail-open otherwise
+	}
+	return !st.Enabled
 }

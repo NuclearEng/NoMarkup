@@ -18,6 +18,9 @@ type mockPaymentRepo struct {
 	createPaymentFn               func(ctx context.Context, payment *domain.Payment) error
 	getPaymentFn                  func(ctx context.Context, id string) (*domain.Payment, error)
 	updatePaymentStatusFn         func(ctx context.Context, id string, status string) error
+	claimPaymentStatusFn          func(ctx context.Context, id, fromStatus, toStatus string) error
+	updateRefundCASFn             func(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
+	withProviderAdvisoryLockFn    func(ctx context.Context, providerID string, fn func(ctx context.Context) error) error
 	listPaymentsFn                func(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error)
 	getFeeConfigFn                func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
 	getDefaultFeeConfigFn         func(ctx context.Context) (*domain.FeeConfig, error)
@@ -70,6 +73,14 @@ type mockPaymentRepo struct {
 	// Stripe event dedup methods.
 	recordStripeEventStartFn   func(ctx context.Context, eventID, eventType string) (bool, error)
 	markStripeEventProcessedFn func(ctx context.Context, eventID string) error
+	// Instant payout methods.
+	sumInstantPayoutsLast24hFn      func(ctx context.Context, providerID string) (int64, error)
+	sumAllInstantPayoutsFn          func(ctx context.Context, providerID string) (int64, error)
+	sumEligibleInstantPayoutCentsFn func(ctx context.Context, providerID string) (int64, error)
+	lookupInstantPayoutByKeyFn      func(ctx context.Context, providerID, key string) (*domain.InstantPayout, bool, error)
+	claimInstantPayoutFn            func(ctx context.Context, providerID string, amountCents, feeCents, netCents int64, key string) (*domain.InstantPayout, error)
+	completeInstantPayoutFn         func(ctx context.Context, payoutID, stripePayoutID string) error
+	failInstantPayoutFn             func(ctx context.Context, payoutID string) error
 }
 
 func (m *mockPaymentRepo) CreatePayment(ctx context.Context, payment *domain.Payment) error {
@@ -79,10 +90,42 @@ func (m *mockPaymentRepo) GetPayment(ctx context.Context, id string) (*domain.Pa
 	return m.getPaymentFn(ctx, id)
 }
 func (m *mockPaymentRepo) UpdatePaymentStatus(ctx context.Context, id string, status string) error {
-	return m.updatePaymentStatusFn(ctx, id, status)
+	if m.updatePaymentStatusFn != nil {
+		return m.updatePaymentStatusFn(ctx, id, status)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) ClaimPaymentStatus(ctx context.Context, id, fromStatus, toStatus string) error {
+	if m.claimPaymentStatusFn != nil {
+		return m.claimPaymentStatusFn(ctx, id, fromStatus, toStatus)
+	}
+	// Default: delegate to UpdatePaymentStatus when provided.
+	if m.updatePaymentStatusFn != nil {
+		return m.updatePaymentStatusFn(ctx, id, toStatus)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) UpdateRefundCAS(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error {
+	if m.updateRefundCASFn != nil {
+		return m.updateRefundCASFn(ctx, id, expectedPrior, newTotal, refundReason, refundedAt, stripeRefundID, status)
+	}
+	// Default: fall through to UpdateRefund when provided.
+	if m.updateRefundFn != nil {
+		return m.updateRefundFn(ctx, id, newTotal, refundReason, refundedAt, stripeRefundID, status)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) WithProviderAdvisoryLock(ctx context.Context, providerID string, fn func(ctx context.Context) error) error {
+	if m.withProviderAdvisoryLockFn != nil {
+		return m.withProviderAdvisoryLockFn(ctx, providerID, fn)
+	}
+	return fn(ctx)
 }
 func (m *mockPaymentRepo) ListPayments(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error) {
-	return m.listPaymentsFn(ctx, userID, statusFilter, page, pageSize)
+	if m.listPaymentsFn != nil {
+		return m.listPaymentsFn(ctx, userID, statusFilter, page, pageSize)
+	}
+	return nil, 0, nil
 }
 func (m *mockPaymentRepo) GetFeeConfig(ctx context.Context, categoryID string) (*domain.FeeConfig, error) {
 	return m.getFeeConfigFn(ctx, categoryID)
@@ -377,6 +420,53 @@ func (m *mockPaymentRepo) RecordStripeEventStart(ctx context.Context, eventID, e
 func (m *mockPaymentRepo) MarkStripeEventProcessed(ctx context.Context, eventID string) error {
 	if m.markStripeEventProcessedFn != nil {
 		return m.markStripeEventProcessedFn(ctx, eventID)
+	}
+	return nil
+}
+
+func (m *mockPaymentRepo) SumInstantPayoutsLast24h(ctx context.Context, providerID string) (int64, error) {
+	if m.sumInstantPayoutsLast24hFn != nil {
+		return m.sumInstantPayoutsLast24hFn(ctx, providerID)
+	}
+	return 0, nil
+}
+func (m *mockPaymentRepo) SumAllInstantPayouts(ctx context.Context, providerID string) (int64, error) {
+	if m.sumAllInstantPayoutsFn != nil {
+		return m.sumAllInstantPayoutsFn(ctx, providerID)
+	}
+	return 0, nil
+}
+func (m *mockPaymentRepo) SumEligibleInstantPayoutCents(ctx context.Context, providerID string) (int64, error) {
+	if m.sumEligibleInstantPayoutCentsFn != nil {
+		return m.sumEligibleInstantPayoutCentsFn(ctx, providerID)
+	}
+	return 0, nil
+}
+func (m *mockPaymentRepo) LookupInstantPayoutByKey(ctx context.Context, providerID, key string) (*domain.InstantPayout, bool, error) {
+	if m.lookupInstantPayoutByKeyFn != nil {
+		return m.lookupInstantPayoutByKeyFn(ctx, providerID, key)
+	}
+	return nil, false, nil
+}
+func (m *mockPaymentRepo) ClaimInstantPayout(ctx context.Context, providerID string, amountCents, feeCents, netCents int64, key string) (*domain.InstantPayout, error) {
+	if m.claimInstantPayoutFn != nil {
+		return m.claimInstantPayoutFn(ctx, providerID, amountCents, feeCents, netCents, key)
+	}
+	return &domain.InstantPayout{
+		ID: "ip-mock", ProviderID: providerID,
+		AmountCents: amountCents, FeeCents: feeCents, NetCents: netCents,
+		IdempotencyKey: key, Status: "pending",
+	}, nil
+}
+func (m *mockPaymentRepo) CompleteInstantPayout(ctx context.Context, payoutID, stripePayoutID string) error {
+	if m.completeInstantPayoutFn != nil {
+		return m.completeInstantPayoutFn(ctx, payoutID, stripePayoutID)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) FailInstantPayout(ctx context.Context, payoutID string) error {
+	if m.failInstantPayoutFn != nil {
+		return m.failInstantPayoutFn(ctx, payoutID)
 	}
 	return nil
 }

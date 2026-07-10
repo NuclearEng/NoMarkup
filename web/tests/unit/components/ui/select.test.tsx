@@ -49,6 +49,20 @@ describe('Select', () => {
     expect(screen.getByRole('combobox', { name: 'fruit' })).toBeDefined();
   });
 
+  it('exposes a min 44px hit target on the trigger (FE-07)', () => {
+    render(
+      <Select>
+        <SelectTrigger aria-label="fruit">
+          <SelectValue placeholder="Choose" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="apple">Apple</SelectItem>
+        </SelectContent>
+      </Select>,
+    );
+    expect(screen.getByRole('combobox', { name: 'fruit' }).className).toMatch(/min-h-11/);
+  });
+
   it('shows placeholder while no value selected', () => {
     render(
       <Select>

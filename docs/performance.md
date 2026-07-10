@@ -1,12 +1,27 @@
 # NoMarkup — Performance Playbook (measured baseline & detail)
 
 > Offloaded from `CLAUDE.md` §14 to keep the always-loaded rules file lean. CLAUDE.md keeps the
-> north star, the hard-gate budgets, the default RSC pattern, and the two non-negotiable
+> north star **targets**, the default RSC pattern recommendation, and the two non-negotiable
 > "validated" learnings. This file holds the full baseline narrative and the principles list.
+>
+> **Truth note (2026-07-09):** North Star numbers are **targets**, not achieved field metrics.
+> Lab LCP remains multi-second on key routes; SW is a kill-switch; DATA-layer CDN cache is real.
 
-**North star:** NoMarkup must feel *instantly responsive*, on par with or faster than mcmaster.com
-(one of the fastest catalog sites on the internet). Speed is a feature and a first-class
-acceptance criterion, not an afterthought.
+**North star (aspiration):** NoMarkup must feel *instantly responsive*, on par with or faster than
+mcmaster.com. Speed is a feature and a first-class acceptance criterion for new work — **do not
+claim the bar is already met**.
+
+## Status vs targets (honest)
+
+| Metric | Target | Current reality |
+|--------|--------|-----------------|
+| LCP P75 field | < 1.5s | **No RUM / web-vitals pipeline yet** |
+| LCP lab (key routes) | — | **Multi-second** in prior lab checks (~3–4s class); not under North Star |
+| Stretch "edge HTML < 300ms" | aspirational | **Impossible while CSP script nonce forces dynamic HTML** |
+| INP | < 100ms | Not field-gated |
+| DATA-layer CDN (`writeCachedJSON`) | shipped | **Real** — public listings/catalog JSON cacheable |
+| Service worker | offline/instant repeat | **Kill-switch only** (`public/sw.js` unregisters + purges) |
+| Criterion / k6 | enforce budgets | **Local / scripts only — not CI** |
 
 ## JS budgets (React-floor-aware — measured, not aspirational)
 | Surface | First Load JS budget |
@@ -14,14 +29,13 @@ acceptance criterion, not an afterthought.
 | Shared by all routes | ≤ **190 kB** parsed (~60 kB gzip) — the React+Next runtime floor; **don't regress** |
 | Interactive route (auctions, sell, dashboards) | ≤ **300 kB** First Load; trim with islands/dynamic |
 | Read/catalog route (browse, listing detail) | as low as possible toward the shared floor |
-| Genuinely-static surface (pure RSC, no islands, or a future Go-`templ` page) | **< 20–35 kB** total — the only place the aggressive McMaster-MPA budget applies |
+| Genuinely-static surface (pure RSC, no islands) | **< 20–35 kB** total — only place aggressive MPA budgets apply |
 
 ## Stack reality (do not pretend otherwise)
-Frontend is **Next.js 15 App Router + React 19** (81 pages). Backend is **Go** (gateway + gRPC
-services). Performance-critical compute is **Rust** in `engines/` (backend gRPC, not browser WASM
-today). There is currently **no Go `templ`/`html/template` app rendering** and **no Rust WASM in
-the UI**. The McMaster *goals* are mandatory; the *mechanism* is whatever provably hits them on
-THIS stack. Do not invent a Go-SSR or WASM layer unless it measurably beats the Next.js equivalent.
+Frontend is **Next.js 15 App Router + React 19**. Backend is **Go** (gateway + gRPC services).
+Performance-critical compute is **Rust** in `engines/` (backend gRPC, not browser WASM today).
+There is currently **no Go `templ` app rendering** and **no Rust WASM in the UI**. The McMaster
+*goals* are mandatory for new work; the *mechanism* is whatever provably hits them on THIS stack.
 
 ## Measured baseline & what we learned (2026-06, `npm run analyze`)
 - Shared First Load JS: **~183 kB parsed** (React + react-dom ~107 kB + Next runtime + app-wide
@@ -29,37 +43,37 @@ THIS stack. Do not invent a Go-SSR or WASM layer unless it measurably beats the 
 - Routes range ~220–370 kB First Load; the heaviest are *interactive* (auctions, sell, onboarding),
   not catalog. Catalog pages (`/marketplace` 272 kB, `/marketplace/[id]` 268 kB) carry small
   route-specific JS (13–23 kB) — already lean.
-- Heavy deps are **already lazy/route-isolated**: `mapbox-gl` (~454 kB) is in an async chunk, not
-  in any First Load; `recharts` is confined to `/sell/analytics`. **Dependency-carving is
-  exhausted — no headroom there.**
+- Heavy deps are **already lazy/route-isolated**: `mapbox-gl` is in an async chunk, not in any
+  First Load. **Dependency-carving is largely exhausted.**
 - **Accepted budget overages (re-measured 2026-06-10, post-RSC conversions):** `/jobs/[id]`
   **375 kB** and `/jobs/new` **309 kB** exceed the ≤300 kB interactive budget. Audited the island
-  tree: charts are hand-rolled (no recharts), no framer-motion/mapbox; the only notable dep is
-  `react-grid-layout`, which IS the live-auction terminal's core interaction — lazy-loading the
-  page's primary UI would trade LCP/CLS (the harder gates) for bytes. Accepted as the cost of the
-  product's most interactive surface. **Revisit if:** the terminal moves off react-grid-layout, or
-  a sub-surface of the page becomes non-interactive (then carve it to RSC).
+  tree: charts are hand-rolled; the only notable dep is `react-grid-layout` for the live-auction
+  terminal — lazy-loading the page's primary UI would trade LCP/CLS for bytes. Accepted as the cost
+  of the product's most interactive surface. **Revisit if:** the terminal moves off react-grid-layout.
 - **Validated:** the RSC pilot (`/marketplace` + `/marketplace/[id]`) left First Load JS flat
   (interactivity is irreducible) but delivered server-rendered first paint + SEO. On interactive
   pages, **RSC wins LCP/SEO, not bundle size.** Don't promise a JS cut from RSC on an interactive surface.
-- **Validated (don't re-chase): the app HTML cannot be edge-cached.** `layout.tsx` calls
-  `await headers()` to read the per-request CSP nonce (lets us drop `'unsafe-inline'`, §6), which
-  forces EVERY page into dynamic rendering. `export const revalidate` / ISR on app pages is a
-  **no-op** while the nonce stands — verified: routes build `ƒ` and serve `Cache-Control: private,
-  no-store`. Edge-caching the HTML would require dropping the nonce (a CSP downgrade) — not worth
-  it. **Cache the DATA layer instead.**
+- **Validated (don't re-chase): the app HTML cannot be edge-cached.** Root layout calls
+  `await headers()` for the per-request CSP **script** nonce (styles still allow `'unsafe-inline'` —
+  see security CSP truth). That forces pages into dynamic rendering. `export const revalidate` / ISR
+  on app pages is a **no-op for public HTML caching** while the nonce stands — routes serve
+  `Cache-Control: private, no-store` class behavior. Edge-caching the HTML would require dropping the
+  nonce (a CSP downgrade) — not worth it. **Cache the DATA layer instead.**
 - **Shipped: edge-cache the public DATA, not the HTML.** The Go gateway's public catalog reads use
   `writeCachedJSON` (`gateway/internal/handler/response.go`): `Cache-Control: public, s-maxage +
   stale-while-revalidate + stale-if-error` + strong `ETag`/`304`. `/api/v1/listings` (30s) and
   `/listings/{id}` (15s) are CDN-cacheable; authed/user-specific reads stay uncached. This is the
-  security-preserving way to absorb catalog load (keeps the strong CSP).
+  security-preserving way to absorb catalog load (keeps strong script CSP).
 
-## Default pattern for new pages: RSC-first + seeded client island (proven)
-Shipped on the marketplace pages — copy it:
+## RSC-first pattern (recommended for new pages; not yet app-wide)
+**Shipped pilots:** marketplace list + detail. **Still client-heavy:** homepage `/`, `/jobs` browse,
+and many dashboard routes.
+
+When adding or converting a public page, copy the marketplace pattern:
 1. `page.tsx` is a **Server Component**: `async`, server-fetches its data (`GET
    ${API_URL}/api/v1/...`, public reads need no auth), normalizes nullable fields, `notFound()` on
-   miss, sets `next: { revalidate: N }` (Next data-fetch cache only — the HTML itself stays dynamic
-   due to the CSP nonce), and exports `metadata`/`generateMetadata` for SEO.
+   miss, sets `next: { revalidate: N }` (Next **data-fetch** cache only — the HTML itself stays
+   dynamic due to the CSP nonce), and exports `metadata`/`generateMetadata` for SEO.
 2. The interactive UI lives in a `*Client.tsx` **island** (`'use client'`) seeded with the server
    data via TanStack Query `initialData` — so first paint is real content, no skeleton, and all
    interactivity (live bidding, WS, countdowns) is preserved unchanged.
@@ -67,23 +81,19 @@ Shipped on the marketplace pages — copy it:
    Server Component (no client JS).
 
 ## Principles (apply to every page/feature)
-1. **Server-render the HTML.** Default to RSC / SSR so first paint is complete HTML, not a client
-   render. Push `'use client'` to the leaf. Stream where it helps.
+1. **Server-render the HTML.** Prefer RSC / SSR so first paint is complete HTML. Push `'use client'`
+   to the leaf. Stream where it helps.
 2. **Hover-prefetch + instant navigation.** Use `<Link>` with prefetch (and `router.prefetch` on
-   hover for off-screen/long links) so the next page is in cache before click; client nav swaps
-   content without a full reload. (Next's built-in equivalent of the McMaster hover-prefetch +
-   History-API swap — use it before hand-rolling vanilla TS.)
-3. **Aggressive caching everywhere.** Go sets `Cache-Control`, `ETag`, `stale-while-revalidate`.
-   Cache full HTML/JSON at the CDN edge (Cloudflare). Ship a minimal service worker for instant
-   repeat visits + background refresh.
-4. **Minimal, lightweight everything.** Stay inside the JS budgets. Inline critical CSS;
-   async/defer the rest. Code-split per route. No trackers/bloat.
+   hover for off-screen/long links).
+3. **Aggressive caching where safe.** Go sets `Cache-Control`, `ETag`, `stale-while-revalidate` on
+   **public DATA**. Do **not** claim HTML CDN cache or a production SW cache until those exist.
+   Current SW is a kill-switch.
+4. **Minimal, lightweight everything.** Stay inside the JS budgets. Code-split per route. No trackers/bloat.
 5. **Zero layout shift.** Fixed-size images (Next `<Image>` w/ width/height), reserved space for
-   async content, sprites/icons sized. Perfect CLS is the goal.
-6. **Rust for hot paths only, lazy + measured.** Rust may power a narrow, compute-heavy UI module
-   via lazily-loaded WASM **only when it beats the JS version on a real metric** and does not grow
-   the initial bundle or slow prefetch/nav. TypeScript always owns navigation and DOM. Rust is
-   never the UI framework. Keep all existing backend Rust/Go.
+   async content. Perfect CLS is the goal.
+6. **Rust for hot paths only, lazy + measured.** Rust may power a narrow UI module via WASM **only
+   when it beats the JS version on a real metric**. TypeScript owns navigation and DOM. Keep all
+   existing backend Rust/Go.
 
 ## Preservation + proof rules (non-negotiable)
 - **Preserve all existing Go, Rust, and the Next.js/React frontend.** Do NOT remove, rewrite, or

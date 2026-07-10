@@ -38,9 +38,14 @@ func envInt(key string, def int) int {
 // `interval` it scans for listings whose auction deadline has passed but are
 // still status='active' and resolves each one:
 //
-//   - winning bid at/above any reserve → highest bidder wins, an escrow
-//     listing_orders row is created (escrow_status='held', 5% platform fee),
-//     the listing flips to status='sold', and the winning bid is 'awarded'.
+//   - winning bid at/above any reserve → highest bidder wins, a
+//     listing_orders row is created in escrow_status='pending_payment'
+//     (NOT held — held requires a captured PaymentIntent; see MON-06),
+//     with seller-side fee 1000 bps (8% platform + 2% guarantee, MON-20).
+//     The listing flips to status='sold', and the winning bid is 'awarded'.
+//     ChargeListingWinner (payment service) attaches the PI; webhook capture
+//     promotes pending_payment → held. Release/auto-release only run on held
+//     orders that have payment_intent_id set.
 //   - no bids, OR a high bid below the seller's reserve → the listing closes
 //     WITHOUT a sale (status='expired'), no order, no money moved.
 //

@@ -1,0 +1,342 @@
+# NoMarkup — Adversarial Review Action Tracker
+
+> **Source:** Hostile gap analysis vs North Star + SOTA marketplace bar (2026-07-09)  
+> **Branch context:** `fix/security-audit-2026-04-23`  
+> **Verdict at review:** **NO-GO**  
+> **Stable violation IDs:** `GAP-001` … `GAP-009` (map 1:1 to rows below where noted)
+
+### Legend
+
+| Field | Values |
+|-------|--------|
+| **Priority** | `P0` = real money / production block · `P1` = launch / North Star · `P2` = SOTA polish · `DOC` = claim/doc truth only |
+| **Severity** | `BLOCKER` · `MAJOR` · `MINOR` |
+| **Status** | `Open` · `In Progress` · `Done` · `Won't Fix` · `Founder-Action` · `Demoted` (claim lowered, not code-fixed) |
+| **Owner** | Fill in (default blank = unassigned) |
+
+**How to close an item:** status → `Done` only when **Verify** command/test passes. Do not close on prose.
+
+---
+
+## Summary dashboard
+
+| Priority | Open | Done / Demoted | Total |
+|----------|------|----------------|-------|
+| P0 | 28 | 0 | 28 |
+| P1 | 32 | 0 | 32 |
+| P2 | 24 | 0 | 24 |
+| DOC | 0 | **18 Demoted** (2026-07-09 docs truth pass) | 18 |
+| **All** | **84 code/ops** | **18 DOC demoted** | **102** |
+
+*(DOC rows demoted by language-only truth pass; code items stay Open until code lands. Recompute when updating status.)*
+
+---
+
+## P0 — Money integrity (must fix before real money)
+
+| ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
+|----|-------|-----|------|----------|--------|--------|--------|-------|
+| **GAP-001** / MON-01 | Services `CreateTransfer` lacks Stripe idempotency key | BLOCKER | payment | `services/payment/internal/service/stripe.go` | Add deterministic `IdempotencyKey` on every transfer (e.g. `escrow-release:<paymentID>`) | Concurrent `ReleaseEscrow`×2 → exactly one Stripe transfer | Open | |
+| **GAP-001** / MON-02 | Services `CreateRefund` lacks Stripe idempotency key | BLOCKER | payment | `stripe.go` CreateRefund | Add key e.g. `refund:<paymentID>:<amount>:<n>` or single full-refund key | Concurrent full refund×2 → total ≤ amount_cents | Open | |
+| **GAP-001** / MON-03 | `ReleaseEscrow` check-then-act; status UPDATE not CAS | BLOCKER | payment | `service.go` ReleaseEscrow; `postgres.go` UpdatePaymentStatus | `UPDATE … WHERE status='escrow' RETURNING`; reject if 0 rows | Race test: only one release wins | Open | |
+| MON-04 | Services Connect model: destination charge + second transfer | BLOCKER | payment | `stripe.go` CreatePaymentIntent + ReleaseEscrow | Pick one model (manual capture + delayed transfer **or** destination charge without second transfer); fix `SourceTransaction` to charge id | Stripe test-mode: funds move exactly once | Open | |
+| **GAP-002** / MON-05 | Goods auction close creates `held` order without charging buyer | BLOCKER | job | `listing_repo.go` close path; `auction_close_cron.go` | Start as `pending_payment`; call charge path before `held` | Close → PI required → no free held order | Open | |
+| **GAP-002** / MON-06 | Buy-It-Now creates `held` without PaymentIntent | BLOCKER | gateway | `listings_bid.go` BuyItNow | Require payment before held escrow | BIN without card → 4xx; never free held | Open | |
+| **GAP-002** / MON-07 | `ChargeListingWinner` not wired on live close/BIN paths | BLOCKER | job/payment | `listing_charge.go` | Wire into close/BIN/award flows | E2E: charge → held → release | Open | |
+| **GAP-002** / MON-08 | Marketplace transfer Destination = user UUID not Connect `acct_*` | BLOCKER | payment | `listing_charge.go` CreateMarketplaceTransfer callers | Resolve seller → Stripe Connect account id | Live/test: Destination is `acct_*` | Open | |
+| **GAP-003** / MON-09 | Instant payout returns `payout_dev_*` even with `sk_live` | BLOCKER | gateway | `payment.go` `executeStripeInstantPayout` | Implement real payout in **payment service** (not gateway stub); or hard-disable feature until wired | With live key → real payout id or 503 (never fake success) | Open | |
+| MON-10 | Instant payout eligibility filters `COMPLETED` but release sets `released` | BLOCKER | gateway | `payment.go` eligibility query | Include `released` / map statuses correctly | Eligible balance includes released escrow | Open | |
+| MON-11 | Instant payout: Stripe call before durable ledger claim | MAJOR | gateway | `payment.go` InstantPayout handler | Claim ledger/advisory lock **then** Stripe with same idempotency key | Crash after Stripe: no double on retry | Open | |
+| **GAP-004** / MON-12 | Webhook dedup swallows retries after failed processing | BLOCKER | payment | `webhook.go` + `RecordStripeEventStart` | Skip only when `processed_at IS NOT NULL` (or lease) | Fail handler → Stripe retry reprocesses | Open | |
+| MON-13 | Concurrent services refund can over-capture | BLOCKER | payment | CreateRefund path | Row lock / CAS on refunded amount + Stripe key | Concurrent refunds total ≤ amount | Open | |
+| MON-14 | `CapturePaymentIntent` / `ProcessPayment` no idempotency + race | MAJOR | payment | `stripe.go`, `service.go` | Key capture; CAS status pending→processing | Double ProcessPayment → one capture | Open | |
+| MON-15 | BNPL: provider paid before first customer charge; off-session PI unkeyed | MAJOR | payment | `installment.go`, `CreateOffSessionPaymentIntent` | Charge/authorize customer first **or** compensate; add Stripe keys | Cron retry does not double-charge | Open | |
+| MON-16 | Working capital `RequestAdvance` credit TOCTOU | MAJOR | payment | `advance.go` | Advisory lock / serializable credit check | Concurrent RequestAdvance ≤ line | Open | |
+| MON-17 | Goods dispute resolve does not stamp `stripe_transfer_id` | MAJOR | payment | `listing_charge.go` dispute path | Use same stamp path as release; single idempotency key family | Dispute transfer once; no re-pay race | Open | |
+| MON-18 | Goods auto-release vs dispute file race (no FOR UPDATE) | MAJOR | payment/job | AutoRelease + FileListingDispute | Lock order row before act | Concurrent release+dispute → safe end state | Open | |
+| MON-19 | Services award missing `job.status == active` under lock | MAJOR | bidding | `engines/bidding/src/engine.rs` | Check job active under FOR UPDATE | Cannot award non-active job | Open | |
+| MON-20 | Goods fee 5% vs README 8%+2%; fee not always persisted on charge | MAJOR | product/payment | gateway fee bps; listing_charge | Align fee policy; persist fee_cents on charge | Charged fee = released fee | Open | |
+| MON-21 | Client can under-pay contract (amount ≤ contract, no cumulative check) | MAJOR | payment | CreatePayment | Enforce milestone/total paid ≤ contract | Underpay path rejected or tracked | Open | |
+| MON-22 | Listing bids / BIN / offers lack **required** Idempotency-Key | MAJOR | gateway | router + listings_bid + offers | Require middleware on money closeouts (or document optional) | Missing key → 400 if claim retained | Open | |
+| MON-23 | Contract tip records cents without Stripe rail | MAJOR | gateway | `quote_templates.go` | Wire PI or remove tip ledger until paid | Tip never creates unfunded liability | Open | |
+| MON-24 | Fee math via float64 truncation | MINOR | payment | advance/platform fee paths | Integer basis-points only | Property: fee_cents exact | Open | |
+| MON-25 | CI: concurrent money races not in pipeline | BLOCKER | ci | `tests/integration/*` excluded | Run double-spend / release races in CI | Required check green | Open | |
+| MON-26 | Sequential-only refund tests insufficient | MAJOR | test | payment security tests | Add concurrent refund/release tests | Tests fail on current code | Open | |
+| MON-27 | Working capital fee story: factor 1.06–1.18 vs 3%+APR booking | DOC/P1 | product | README + `RequestAdvance` | One fee model in product + code + Fees table | Docs match booking path | **Demoted** 2026-07-09 (docs: factor=limit, 3%+APR=booking) | |
+| MON-28 | Platform transfer paths that already key well — preserve | — | payment | CreatePlatformTransfer, marketplace keys | Do not regress existing keys on advance/marketplace | Regression suite green | Open | |
+
+---
+
+## P0 — Security fail-closed / trust boundary
+
+| ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
+|----|-------|-----|------|----------|--------|--------|--------|-------|
+| **GAP-005** / SEC-01 | Feature flags fail-open on money surfaces | BLOCKER | gateway | `feature_flag.go`; BNPL/advances/insurance/instant routes | Production: fail-closed on missing flag / DB error for financial keys | DB down / missing row → **503** | Open | |
+| SEC-02 | UI `useFeatureFlag` defaults `?? true` (fail-open) | MAJOR | web | feature flag hooks | Match server: unknown flag hidden/disabled for money UI | UI does not show gated money when flag missing | Open | |
+| **GAP-006** / SEC-03 | `INTERNAL_WS_SECRET` empty → trust any `user_id` | BLOCKER | chat | `secret.go`; k8s Deployments | Refuse start in production if empty; inject secret on gateway+chat | Empty secret → process exit / all WS 401 | Open | |
+| SEC-04 | Chat backend `InsecureSkipVerify: true` origin | MAJOR | chat | `ws/handler.go` | Rely on secret + network policy; document; optional origin check | No CSWSH if port exposed | Open | |
+| SEC-05 | Plaintext gRPC mesh vs “TLS 1.3 everywhere” | BLOCKER (claim) / MAJOR (code) | gateway | `main.go` insecure credentials | mTLS mesh **or** demote claim to “TLS at edge; mesh private network” | Claim matches threat model | **Demoted** claim 2026-07-09; mTLS code still Open | |
+| SEC-06 | Auth TierAuth missing `register-phone`, `resend-verification`, OAuth | MAJOR | gateway | `ratelimit.go` | Map to TierAuth (5/15m) | 429 after budget | Open | |
+| SEC-07 | Edge middleware `has_session=1` forgeable | MAJOR | web | `middleware.ts` | Document soft gate; never treat as auth; consider signed cookie | AI routes still JWT-only (keep) | Open | |
+| SEC-08 | Unauthenticated `/metrics` | MAJOR | gateway | `router.go` | Network-isolate + optional basic auth | External scrape blocked | Open | |
+| SEC-09 | Jobs mutations lack gateway `RequireOwnership` | MAJOR | gateway | jobs routes | Apply ownership middleware like contracts | IDOR regression suite | Open | |
+| SEC-10 | Chat typing indicator no membership check | MAJOR | chat | `service.go` SendTypingIndicator | Require channel membership | Non-member → PermissionDenied | Open | |
+| SEC-11 | CSP `style-src 'unsafe-inline'`; claim says none | MAJOR | web/gateway | `middleware.ts`, `security.go` | Nonce styles or demote CLAUDE claim | Prod CSP matches docs | **Demoted** claim 2026-07-09; style nonce still Open | |
+| SEC-12 | `connect-src` allows bare `ws:`/`wss:` | MINOR | web | `middleware.ts` | Restrict to API hosts | CSP hardened | Open | |
+| SEC-13 | PII claim AES-256-GCM/libsodium vs secretbox; email plaintext | MAJOR | docs/crypto | user/payment crypto | Fix docs; expand encryption if product requires | Docs = cipher; inventory of plaintext fields | **Demoted** docs 2026-07-09; expand encryption still Open if product requires | |
+| SEC-14 | No `// @public` markers (CLAUDE process claim) | MAJOR | gateway | router | Annotate public routes or demote rule | Audit checklist enforceable | Open | |
+| SEC-15 | Rate limit / idle session Redis fail-open | MINOR | gateway | cache, idle_session | Document; consider fail-closed auth in prod | Policy explicit | Open | |
+| SEC-16 | JWT alg = any RSA method not RS256-only | MINOR | gateway | auth middleware | Pin RS256 only | Non-RS256 rejected | Open | |
+| SEC-17 | Founder: rotate `Password123!` history credentials | BLOCKER | ops | docs/TODOS S1 | Rotate all seeded/QA accounts | Old password fails | Founder-Action | |
+| SEC-18 | `analyze-listing-image` missing same-origin check (job has it) | MINOR | web | AI routes | Mirror job route origin gate | Cross-origin blocked | Open | |
+
+---
+
+## P0 — Production deploy / ops
+
+| ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
+|----|-------|-----|------|----------|--------|--------|--------|-------|
+| **GAP-007** / OPS-01 | Deploy pipeline is placeholder | BLOCKER | ci | `.github/workflows/deploy.yml` | Real: build/push → migrate → apply → smoke | Tag deploy changes prod | Open | |
+| OPS-02 | `deploy/terraform/` empty | BLOCKER | infra | `deploy/terraform/` | IaC for cluster + Postgres/PostGIS + Redis + S3 (or document external) | `terraform plan` meaningful | Open | Founder-Action |
+| OPS-03 | No migration Job / init on deploy | BLOCKER | k8s | deploy/k8s | Job or init-container `migrate up` | Schema applies on deploy | Open | |
+| OPS-04 | No in-repo secret provisioning (ESO/Vault CR) | BLOCKER | k8s | SECRETS.md only | ExternalSecret / sealed secrets manifests | Secrets present pre-start | Open | Founder-Action |
+| OPS-05 | NetworkPolicy selects `app: gateway` but pods use `app.kubernetes.io/name` | BLOCKER | k8s | `network-policy.yaml` | Fix selectors; allow ingress-nginx → gateway + web | kind/CNI: traffic works | Open | |
+| OPS-06 | No NetworkPolicy allow for web / ingress controller | BLOCKER | k8s | network-policy | Allow ingress→web, ingress→gateway | Public pages reachable | Open | |
+| OPS-07 | Domain split-brain: checklist `nomarkup.com` vs owned `no-markup.com` | BLOCKER | docs/ops | launch-checklist, ingress | **Only** `no-markup.com`; purge wrong domain | DNS + smoke match owned zone | **Done** (docs 2026-07-09); confirm ingress/k8s manifests separately | |
+| OPS-08 | Production overlay `REPLACE_ME_*` / placeholder image tags | BLOCKER | k8s | production kustomization | Real image tags + Google client id | No REPLACE_ME in prod | Open | Founder-Action |
+| OPS-09 | OTel collector exports **debug only** (discards) | BLOCKER | k8s | otel-collector config | Export to real backend | Traces visible in backend | Open | |
+| OPS-10 | Prometheus/Grafana/Alertmanager not in k8s | BLOCKER | k8s | deploy/monitoring only | Deploy stack or drop claim | Alerts fire on test | Open | |
+| OPS-11 | Metrics scrape ports wrong; engine `*_METRICS_PORT` unset | BLOCKER | k8s | Deployments annotations | Scrape HTTP metrics ports; set engine env | Prometheus has bid/payment series | Open | |
+| OPS-12 | Payment failure alert P2/info @ 5% (not P0) | MAJOR | monitoring | alerts.yml | P0 on payment/webhook failure thresholds | Alert severity matches money risk | Open | |
+| OPS-13 | Zero PodDisruptionBudgets | BLOCKER | k8s | manifests | PDB for gateway, payment, user, job, web, bidding | `kubectl get pdb` | Open | |
+| OPS-14 | HPA only gateway + bidding | MAJOR | k8s | production overlay | HPA for payment, user, job, web, chat | HPA objects exist | Open | |
+| OPS-15 | No K8s `securityContext` (runAsNonRoot etc.) | MAJOR | k8s | Deployments | Pod security context | Cannot run as root in cluster | Open | |
+| OPS-16 | `INTERNAL_WS_SECRET` / `APP_VERSION` not injected | BLOCKER | k8s | Deployments | Wire secrets + APP_VERSION for cache bust | Env present on pods | Open | |
+| OPS-17 | Launch checklist ~1/~280 checked; migration count stale (18 vs 73) | BLOCKER | docs | launch-checklist.md | Rewrite against reality; track in this file | Checklist = live runbook | **Done** 2026-07-09 (truth pass: `no-markup.com`, migrations 073, demoted fiction) | |
+| OPS-18 | pricing/underwriting lack OTel | MAJOR | engines | pricing, underwriting | Add tracing like other engines | Spans exported | Open | |
+| OPS-19 | No egress NetworkPolicies | MAJOR | k8s | network-policy | Egress allowlist for Stripe, DB, Redis, S3 | Default-deny egress tested | Open | |
+| OPS-20 | Staging `namePrefix` breaks service DNS | MAJOR | k8s | staging overlay | Fix or document required overrides | Staging boots | Open | |
+| OPS-21 | Docker main “push” does not login/push | MAJOR | ci | ci.yml | docker login + push or rename step | Images in registry | Open | |
+| OPS-22 | Missing runbooks: Redis, Meili, ingress/TLS, migration fail | MAJOR | docs | runbooks/ | Add runbooks | Linked from alerts | Open | |
+| OPS-23 | Alert runbook URLs point off-repo | MINOR | monitoring | alerts.yml | Point to `docs/runbooks/` | Links resolve | Open | |
+| OPS-24 | Cloudflare CDN claim with zero config in repo | DOC | ops | CLAUDE / checklist | Add CF config or demote claim | Edge rules documented | Open | Founder-Action |
+| OPS-25 | Vault client exists; no prod wiring | MAJOR | gateway | vault package | Wire ESO/Vault for secrets | Prod secrets not file-mounted only | Open | Founder-Action |
+| OPS-26 | 99.9% / 10k concurrent unproven | DOC/P1 | claims | README/PRD | Load proof + HA design or demote | k6/report artifacts | Open | |
+| OPS-27 | Gateway probes shallow (no DB/Redis ready) | MINOR | k8s | gateway probes | Optional deep ready | Fail unready on DB down | Open | |
+| OPS-28 | Go service metrics on +1000 port unused by probes | MINOR | k8s | probes | Align probes with /readyz where useful | Ready reflects DB | Open | |
+
+---
+
+## P1 — North Star performance
+
+| ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
+|----|-------|-----|------|----------|--------|--------|--------|-------|
+| **GAP-008** / PERF-01 | No field LCP/INP/CLS (RUM) | BLOCKER | web | no web-vitals | Ship web-vitals → Sentry/backend | p75 dashboards exist | Open | |
+| PERF-02 | No Lighthouse CI / budget gates | BLOCKER | ci | workflows | Lighthouse CI on `/`, marketplace, jobs | PR fails over budget | Open | |
+| PERF-03 | Lab LCP ~3.8–4s fails North Star 1.5s | BLOCKER | web | layout, `/`, `/jobs` | RSC + perf work until measured under bar **or** demote North Star language | Field/lab under declared gate | **Demoted** language 2026-07-09; perf work still Open | |
+| PERF-04 | Service worker is kill-switch (anti-cache) | BLOCKER | web | `public/sw.js`, ServiceWorkerRegistrar | Real SW behind prod flag **or** remove PWA claims | SW caches or claim removed | **Demoted** claim 2026-07-09; real SW still Open | |
+| PERF-05 | Homepage `/` is full `'use client'` | MAJOR | web | `(public)/page.tsx` | RSC shell + islands | First paint HTML content | Open | |
+| PERF-06 | `/jobs` browse is full client page | MAJOR | web | `(public)/jobs/page.tsx` | RSC + seeded island (marketplace pattern) | Server HTML + initialData | Open | |
+| PERF-07 | No First Load / bundle size CI gate | MAJOR | ci | web build | Fail on shared >190kB / interactive >300kB (with documented exceptions) | CI enforces | Open | |
+| PERF-08 | Accepted overages `/jobs/[id]` 375kB, `/jobs/new` 309kB unenforced | MINOR | docs/ci | performance.md | Encode exceptions in CI allowlist | Regression only if new | Open | |
+| PERF-09 | Criterion benches not in CI; no p99 asserts | MAJOR | ci/engines | benches/ | Nightly `cargo bench` + threshold or demote claim | Bench fail on regression | **Demoted** claim 2026-07-09; CI bench still Open | |
+| PERF-10 | k6 load tests not in CI; mock auth | MAJOR | tests/load | `tests/load/` | Nightly k6 against staging with real tokens | Artifacts + thresholds | Open (claim already non-asserted in docs) | |
+| PERF-11 | Prometheus alerts looser than budgets (bid 5ms vs 1ms) | MAJOR | monitoring | alerts.yml | Align alerts to CLAUDE budgets | Alert thresholds = budgets | Open | |
+| PERF-12 | Stale docs: recharts claim; aggressive SW principle | DOC | docs | performance.md | Fix recharts (removed); SW truth | Docs match package.json | **Demoted** 2026-07-09 | |
+| PERF-13 | No TTFB/curl evidence for edge JSON | MAJOR | ops | — | Script `curl -w` against CDN | Artifact in CI/smoke | Open | |
+| PERF-14 | HTML cannot edge-cache (CSP nonce) — stretch 300ms impossible | DOC | claims | CLAUDE §14 | Keep DATA-cache strategy; remove MPA edge-HTML implication | Claims honest | **Demoted** 2026-07-09 | |
+| PERF-15 | Static asset Cache-Control not set in next.config | MINOR | web | next.config | Long-cache hashed assets | Headers present | Open | |
+| PERF-16 | `optimizePackageImports` absent | MINOR | web | next.config | Enable for lucide/etc. | Bundle delta | Open | |
+
+---
+
+## P1 — CI / testing mechanical enforcers
+
+| ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
+|----|-------|-----|------|----------|--------|--------|--------|-------|
+| QA-01 | Coverage floors 71–77% not claimed 80% | MAJOR | web | `vitest.config.mts` | Ratchet to 80% **or** demote CLAUDE/investor-faq | Thresholds = claims | **Demoted** claim 2026-07-09 (floors documented); ratchet still optional | |
+| QA-02 | Go coverage profile never gated | MAJOR | ci | gateway-test | `go tool cover` threshold on gateway (+ services) | CI fails under bar | Open | |
+| QA-03 | No Rust/Go 80% claim enforcement | MAJOR | ci | engines/services | Gate or demote claim | Honest docs | **Demoted** claim 2026-07-09; gate still Open if desired | |
+| QA-04 | testcontainers claimed but zero deps | DOC | docs | CLAUDE, investor-faq | Remove claim; document GH Actions Postgres | Docs true | **Demoted** 2026-07-09 | |
+| QA-05 | Husky pre-commit claimed; none installed | DOC | web | package.json | Add husky **or** demote to Claude-hooks-only | Commit path enforced or claim gone | **Demoted** 2026-07-09 | |
+| QA-06 | E2E full funnel not in CI (backendless; dogfood excluded) | BLOCKER | ci | e2e-test job | Boot stack + SEED_PASSWORD dogfood **or** demote funnel claim | register→job→bid→pay→chat in CI | **Demoted** claim 2026-07-09; CI funnel still Open if desired | |
+| QA-07 | Vacuous E2E asserts (`expect(a\|\|b\|\|c)`) | MAJOR | web | e2e specs | Assert real outcomes | Fail on broken UI | Open | |
+| QA-08 | Chromium-only E2E in CI | MINOR | ci | playwright | Optional webkit/firefox nightly | Cross-browser job | Open | |
+| QA-09 | `verify-proto` not in `build.needs` | MINOR | ci | ci.yml | Add needs edge | Proto drift blocks build | Open | |
+| QA-10 | security-scan not coupled to CI build | MAJOR | ci | branch protection | Require security jobs for merge | Proven required checks | Open | Founder-Action |
+| QA-11 | Integration: chat/notification excluded | MAJOR | ci | go-integration-test | Add suites or document gap | Coverage map honest | Open | |
+| QA-12 | `-short` skips bid-race + payment idempotency live tests | MAJOR | ci | integration job | Run non-short for money races (dedicated job) | Race tests execute | Open | |
+| QA-13 | payment `repository/` ~0 tests | MAJOR | payment | repository/ | Repo tests for money SQL | Coverage on repos | Open | |
+| QA-14 | Claude-only hooks not git-enforced | MINOR | tooling | .claude/hooks | Document scope; optional pre-commit | Team knows bypass | Open | |
+| QA-15 | npm audit high+ prod only | MINOR | ci | security-scan | Consider moderate / dev policy | Document residual | Open | |
+| QA-16 | MSW network-boundary testing overclaimed | DOC | docs | CLAUDE | Align test strategy docs | Docs = practice | Open | |
+
+---
+
+## P1 — Frontend / a11y / product honesty
+
+| ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
+|----|-------|-----|------|----------|--------|--------|--------|-------|
+| FE-01 | axe-core only on HTML stubs; contrast disabled | BLOCKER | web | `tests/integration/axe.test.ts` | Playwright + axe on real routes; enable contrast | CI a11y gate | Open | |
+| FE-02 | ~81/95 pages client — “RSC-first default” false | MAJOR | web | `app/**/page.tsx` | Convert public LCP routes; stop claiming default | Client page % drops; docs match | **Demoted** claim 2026-07-09; conversions still Open | |
+| FE-03 | Raw hex pervasive (~180 hits); “never hex” false | MAJOR | web | components + globals | Tokens + Tailwind brand colors; ban arbitrary hex in components | Lint rule / grep CI | Open | |
+| FE-04 | Loader2/spinners vs “Skeleton only” | MAJOR | web | many pages | Skeleton/ContentLoader for page load; spinner for button pending | Audit key routes | Open | |
+| FE-05 | PWA manifest + install without working SW | MAJOR | web | pwa components | Wire SW or remove install UX | No dead PWA promise | Open | |
+| FE-06 | Goods spectate “LIVE” without WS / weak errors | MAJOR | web | marketplace spectate | WS + isError/retry; honest connection state | Live = real stream | Open | |
+| FE-07 | Sub-44px checkbox/select/slider | MAJOR | web | ui primitives | 44×44 hit areas | Touch audit | Open | |
+| FE-08 | Silent error rails (TrendingRail null) | MINOR | web | rails | Error/empty states | Retry UI | Open | |
+| FE-09 | Raw `<img>` for Mapbox/MFA | MINOR | web | map + MFA | Exception documented or next/image | Do-not list honest | Open | |
+| FE-10 | ListingBidPanel `<a href="/login">` | MINOR | web | ListingBidPanel | Use `Link` | Client nav | Open | |
+| FE-11 | prefers-reduced-motion incomplete for utility animations | MINOR | web | globals + components | Cover pulse/spin utilities | reduced-motion test | Open | |
+| FE-12 | Win-probability bars are hard-coded cosmetics | MAJOR | product | BidCard | Real model **or** remove “intelligence” claim | UI labels honest | **Demoted** claim 2026-07-09; real model still Open | |
+| FE-13 | GPS check-in: no geo-fence vs job site | MAJOR | product | workspace | Server proximity check **or** demote “verified on-site” | Spoof rejected or claim gone | **Demoted** claim 2026-07-09; geo-fence still Open | |
+| FE-14 | Goods double-blind 8-dim reviews claim false | MAJOR | product | README + reviews | Implement goods reviews **or** kill claim | README true | **Demoted** claim 2026-07-09; goods reviews still Open | |
+| FE-15 | Live auction env-gated without README disclosure | MAJOR | product | ENABLE_LIVE_AUCTION | Document flag; seed defaults | README notes gate | Open | |
+| FE-16 | Insurance competition / legal flag-off sold as features | MAJOR | product | seed flags + README | Label “preview / off by default” | Marketing = seed state | **Demoted** claim 2026-07-09 | |
+
+---
+
+## P2 — Architecture fidelity / moat / polish
+
+| ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
+|----|-------|-----|------|----------|--------|--------|--------|-------|
+| **GAP-009** / ARC-01 | Docs invent `engines/search` and `engines/geo` | MAJOR | docs | README, CLAUDE, architecture.md | Inventory = workspace members only | Grep engines list = Cargo.toml | **Demoted** 2026-07-09 (docs truth pass) | |
+| ARC-02 | Imaging claimed libvips FFI; pure `image` crate | MAJOR | docs | CLAUDE/arch | Say `image` crate until libvips lands | Cargo.toml matches docs | **Demoted** 2026-07-09 | |
+| ARC-03 | Custom PostGIS C / Rust geo crate claimed | MAJOR | docs | architecture | Stock PostGIS + Go only | No false native claims | **Demoted** 2026-07-09 | |
+| ARC-04 | libsodium FFI / rust-argon2 claimed; pure Go | MINOR | docs | CLAUDE | Document golang.org/x/crypto + nacl | Docs true | **Demoted** 2026-07-09 | |
+| ARC-05 | ML/`ort` production path theater | MAJOR | ml/engines | ml/, pricing ort stub | Demote ml/README; keep heuristics honest | No ort in prod path | Open | |
+| ARC-06 | Goods bidding primary path is gateway SQL (not Rust engine) | DOC | docs | architecture | Clarify primary path | Docs true | Open | |
+| ARC-07 | CLAUDE engines tree omits underwriting + pricing | DOC | docs | CLAUDE | Add real engines | Tree complete | **Demoted** 2026-07-09 | |
+| ARC-08 | Gateway does not dial underwriting/pricing (by design) | DOC | docs | architecture | Document payment/job dialers | Wiring diagram true | **Demoted** 2026-07-09 | |
+| ARC-09 | Listing gRPC proto without primary write path | MINOR | proto/gateway | listing proto | Implement or mark secondary | No dual truth | Open | |
+| ARC-10 | Experimentation: binary flags only | P2 | product | flags | % rollout + exposure logging | Experiment API | Open | |
+| ARC-11 | Native mobile missing | P2 | product | — | Roadmap or PWA completion first | Strategy doc | Open | |
+| ARC-12 | Data flywheel / ML moat not real | P2 | ml | ml/ | Train + serve **or** stop moat language | Model in prod path | Open | |
+| ARC-13 | Insurance competition sample deductible / no carrier APIs | P2 | payment | insurance_competition | Real carrier integration or demote | Quotes realistic | Open | |
+| ARC-14 | Legal services flag-off scaffold | P2 | product | legal routes | Launch criteria + flag on | Legal GA checklist | Open | |
+| ARC-15 | Fair price index flag seed history | MINOR | flags | migrations | Ensure prod seed intent clear | Flag state documented | Open | |
+| ARC-16 | Search reindex durable retry TODO | MINOR | job | search | Durable queue | No silent drop | Open | |
+| ARC-17 | GDPR email “TODO real email” | MINOR | user | GDPR paths | Wire SendGrid | Email arrives | Open | |
+| ARC-18 | Spectator anonymization / delay — keep tested | — | chat | spectator | Preserve under load | Tests green | Open | |
+
+---
+
+## DOC — Claim demotions (language only — completed 2026-07-09)
+
+Use status `Demoted` when the fix is **language only**. Applied in README, CLAUDE.md,
+`docs/architecture.md`, `docs/performance.md`, `docs/launch-checklist.md`, `docs/investor-faq.md`.
+
+| ID | Overclaim | Demote to | Status |
+|----|-----------|-----------|--------|
+| DOC-01 | Feature flags fail-closed | 503 only when row exists + `enabled=false`; missing/DB error fail open; financial fail-closed = SEC-01 code target | **Demoted** 2026-07-09 |
+| DOC-02 | TLS 1.3 all connections | Edge TLS 1.3; mesh plaintext gRPC on private network (mTLS target) | **Demoted** 2026-07-09 |
+| DOC-03 | AES-256-GCM libsodium all PII | XSalsa20-Poly1305 secretbox; listed fields only; email plaintext | **Demoted** 2026-07-09 |
+| DOC-04 | 80% coverage all stacks | Web floors 71/75/77/76; Go/Rust not 80%-gated | **Demoted** 2026-07-09 |
+| DOC-05 | testcontainers-go | CI PostGIS service container | **Demoted** 2026-07-09 |
+| DOC-06 | Criterion enforces p99 | Local benches; not CI | **Demoted** 2026-07-09 |
+| DOC-07 | Husky pre-commit | Claude Code hooks only (unless husky added) | **Demoted** 2026-07-09 |
+| DOC-08 | Full funnel E2E in CI | Chromium backend-tolerant; dogfood needs SEED_PASSWORD | **Demoted** 2026-07-09 |
+| DOC-09 | McMaster LCP &lt;1.5s as achieved | Target; lab multi-second; no field RUM | **Demoted** 2026-07-09 |
+| DOC-10 | Aggressive SW / PWA ready | SW kill-switch; PWA incomplete | **Demoted** 2026-07-09 |
+| DOC-11 | RSC-first app default | Recommended pattern; marketplace pilots; many pages still client | **Demoted** 2026-07-09 |
+| DOC-12 | WCAG 2.2 AA mandatory gate | Goal AA; jsx-a11y + partial axe; not certified | **Demoted** 2026-07-09 |
+| DOC-13 | Search/geo Rust engines | Meilisearch + PostGIS + Go | **Demoted** 2026-07-09 |
+| DOC-14 | libvips imaging | Rust `image` crate | **Demoted** 2026-07-09 |
+| DOC-15 | K8s prod 99.9% 10k ready | Manifests + skeleton terraform; not provisioned until DEPLOY_PROVISIONED | **Demoted** 2026-07-09 |
+| DOC-16 | Goods double-blind 8-dim reviews | Services contract double-blind; role-specific dims; not goods-order 8-dim | **Demoted** 2026-07-09 |
+| DOC-17 | Insurance/legal product live | Flag-off preview (`insurance_competition`, `legal_services`) | **Demoted** 2026-07-09 |
+| DOC-18 | Win-probability / GPS verified on-site | Rank heuristic %; client GPS honor system | **Demoted** 2026-07-09 |
+
+---
+
+## Negative tests to add (map to work)
+
+| Test ID | Covers tracker IDs | Expected after fix |
+|---------|-------------------|--------------------|
+| N1 | MON-01, MON-03 | Concurrent ReleaseEscrow×2 → 1 transfer |
+| N2 | MON-02, MON-13 | Concurrent refund×2 → total ≤ amount |
+| N3 | MON-05, MON-06, MON-07 | No held without PI.succeeded |
+| N4 | MON-08 | Destination `acct_*` only |
+| N5 | MON-09, MON-10 | Instant payout real or hard fail |
+| N6 | MON-12 | Webhook retry reprocesses |
+| N7 | SEC-01 | Financial flag missing → 503 |
+| N8 | SEC-03 | Empty INTERNAL_WS_SECRET → refuse |
+| N9 | SEC-06 | register-phone rate limited |
+| N10 | MON-22 | BIN/offers require Idempotency-Key |
+| N11 | MON-25 | double_spend / ownership in CI |
+| N12 | OPS-05, OPS-06 | NetworkPolicy kind smoke |
+| N13 | PERF-02 | Lighthouse CI gate |
+| N14 | PERF-07 | Bundle size gate |
+| N15 | FE-01 | axe real routes + contrast |
+
+---
+
+## Steel-thread order (recommended execution sequence)
+
+Do in this order for **CONDITIONAL-GO** (not full SOTA):
+
+1. **Money:** MON-01…MON-13, MON-25 (GAP-001…004)  
+2. **Fail-closed:** SEC-01, SEC-03, OPS-16 (GAP-005, GAP-006)  
+3. **Docs truth:** GAP-009 / ARC-01…05 + DOC-01…18 (stops false launch confidence)  
+4. **Deploy minimum:** OPS-01…08, OPS-11 (GAP-007)  
+5. **North Star measure:** PERF-01…06 (GAP-008)  
+6. **CI honesty + races:** QA-01…07, MON-25  
+
+---
+
+## Status log
+
+| Date | Change |
+|------|--------|
+| 2026-07-09 | Tracker created from adversarial multi-agent review. All items **Open** unless Founder-Action. Verdict NO-GO. |
+| 2026-07-09 | **Implementation wave** (agent teams): money CAS/idempotency, goods pending_payment + ChargeListingWinner gRPC wire, prod flag fail-closed, WS secret, NetworkPolicy/deploy/terraform, web RSC/vitals, docs truth. |
+| 2026-07-09 | **Post-impl adversarial re-audit:** GAP-001–007,009 **PASS**; GAP-008 **PARTIAL**. Verdict upgraded **NO-GO → CONDITIONAL-GO**. Residual: live InstantPayout product path, auction auto-charge, deploy not provisioned, partial-refund Stripe-before-CAS, field LCP unproven. |
+| 2026-07-09 | **Docs truth pass:** DOC-01…DOC-18 → **Demoted** (README, CLAUDE.md, architecture, performance, launch-checklist, investor-faq). Code/ops rows remain **Open**. OPS-17 checklist migration count/domain fixed in launch-checklist. |
+
+---
+
+## Related docs
+
+- `docs/planning/gap-closure-plan.md` — moat / unicorn gaps (ML, native, experiments)  
+- `docs/TODOS.md` — prior 2026-04 security audit follow-ups  
+- `docs/launch-checklist.md` — ops launch (truth-pass 2026-07-09: `no-markup.com`, migrations through 073)  
+- `docs/operations/provisioning-checklist.md` — deploy gate (`DEPLOY_PROVISIONED`)  
+- `docs/performance.md` — North Star **targets** + measured baseline honesty  
+- `.gstack/security-reports/2026-04-23-consolidated-audit.md` — prior security wave (mostly code-fixed)
+
+---
+
+*When an item is Done, append a one-line note under Status log: `YYYY-MM-DD | ID | Done | evidence (PR/commit/test)`.*
+
+
+---
+
+## Post-implementation validation (2026-07-09)
+
+Hostile re-audit after agent-team implementation. Evidence-based; tracker rows above may still say Open — use this section as the source of truth until a full row-by-row status pass.
+
+### GAP results
+
+| ID | Result | Notes |
+|----|--------|-------|
+| GAP-001 | **PASS** | Transfer/refund keys; ReleaseEscrow CAS |
+| GAP-002 | **PASS** | pending_payment; ChargeListingWinner gRPC + main wire; Connect resolver (BIN/offers) |
+| GAP-003 | **PASS** (fail-closed) | sk_live → 503, never payout_dev; product path still not live |
+| GAP-004 | **PASS** | Skip only when processed_at set |
+| GAP-005 | **PASS** | Production RequireFlag fail-closed |
+| GAP-006 | **PASS** | INTERNAL_WS_SECRET required non-dev |
+| GAP-007 | **PASS** (in-repo) | NP labels, real deploy.yml, terraform modules; cluster not provisioned |
+| GAP-008 | **PARTIAL** | web-vitals, RSC `/`+`/jobs`, SW honesty; no Lighthouse/field gate |
+| GAP-009 | **PASS** | Engine inventory matches Cargo.toml |
+
+### Tests green (local)
+
+- `services/payment` internal/service + grpc
+- `gateway` middleware + handler
+- `services/chat` all packages
+- `engines` bidding lib (40 tests)
+- `web` typecheck
+
+### Verdict
+
+**CONDITIONAL-GO** — engineering/staging dogfood OK behind flags. **Not GO** for real customer money until InstantPayout product path, auction-winner charge funnel, provisioned deploy+secrets, and residual refund/advance edges are closed or explicitly accepted.

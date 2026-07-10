@@ -98,24 +98,27 @@ func TestRemoteIPFromRemoteAddr(t *testing.T) {
 	}
 }
 
-// TestComplianceRoutingDBNil verifies all four compliance endpoints route
-// correctly and short-circuit to 503 when the db pool is nil.
+// TestComplianceRoutingDBNil verifies compliance endpoints with a nil db pool.
+// Mutating / authed endpoints fail closed with 503. Public GET /tos/current
+// intentionally serves a static fallback (200) so login/signup never hard-fail
+// while the DB is coming up (see GetCurrentToS).
 func TestComplianceRoutingDBNil(t *testing.T) {
 	t.Parallel()
 	h := NewComplianceHandler(nil)
 
 	tests := []struct {
-		name   string
-		method string
-		path   string
-		body   []byte
-		auth   bool
+		name       string
+		method     string
+		path       string
+		body       []byte
+		auth       bool
+		wantStatus int
 	}{
-		{"cookie consent", http.MethodPost, "/api/v1/cookie-consent", []byte(`{"analytics":true}`), false},
-		{"current tos", http.MethodGet, "/api/v1/tos/current", nil, false},
-		{"accept tos", http.MethodPost, "/api/v1/me/tos-acceptance", []byte(`{"tos_version":"1.0"}`), true},
-		{"set dob", http.MethodPut, "/api/v1/me/dob", []byte(`{"dob":"1990-01-01"}`), true},
-		{"age status", http.MethodGet, "/api/v1/me/age-status", nil, true},
+		{"cookie consent", http.MethodPost, "/api/v1/cookie-consent", []byte(`{"analytics":true}`), false, http.StatusServiceUnavailable},
+		{"current tos", http.MethodGet, "/api/v1/tos/current", nil, false, http.StatusOK},
+		{"accept tos", http.MethodPost, "/api/v1/me/tos-acceptance", []byte(`{"tos_version":"1.0"}`), true, http.StatusServiceUnavailable},
+		{"set dob", http.MethodPut, "/api/v1/me/dob", []byte(`{"dob":"1990-01-01"}`), true, http.StatusServiceUnavailable},
+		{"age status", http.MethodGet, "/api/v1/me/age-status", nil, true, http.StatusServiceUnavailable},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -141,8 +144,8 @@ func TestComplianceRoutingDBNil(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
-			if rec.Code != http.StatusServiceUnavailable {
-				t.Errorf("%s %s: got %d, want %d (body=%s)", tc.method, tc.path, rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+			if rec.Code != tc.wantStatus {
+				t.Errorf("%s %s: got %d, want %d (body=%s)", tc.method, tc.path, rec.Code, tc.wantStatus, rec.Body.String())
 			}
 		})
 	}

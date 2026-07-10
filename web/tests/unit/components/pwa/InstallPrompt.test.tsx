@@ -61,13 +61,14 @@ describe('InstallPrompt', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders nothing when no beforeinstallprompt event has fired', () => {
+  it('is a no-op while the service worker is the kill-switch (FE-05)', () => {
     const { container } = render(<InstallPrompt />);
     expect(container).toBeEmptyDOMElement();
     expect(screen.queryByText(/install nomarkup as an app/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
   });
 
-  it('does not throw on mount even without browser support', () => {
+  it('does not throw on mount', () => {
     expect(() => render(<InstallPrompt />)).not.toThrow();
   });
 });

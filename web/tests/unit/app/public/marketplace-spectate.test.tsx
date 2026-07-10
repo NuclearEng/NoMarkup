@@ -10,9 +10,30 @@ import type { ListingDetail } from '@/types';
 const listingState: {
   data: ListingDetail | undefined;
   isLoading: boolean;
-} = { data: undefined, isLoading: false };
+  isError: boolean;
+  isFetching: boolean;
+  refetch: ReturnType<typeof vi.fn>;
+} = {
+  data: undefined,
+  isLoading: false,
+  isError: false,
+  isFetching: false,
+  refetch: vi.fn(),
+};
 
 const bidsState = { data: undefined };
+
+const spectatorState: {
+  isConnected: boolean;
+  connectionStatus: 'connecting' | 'connected' | 'disconnected';
+  lastBid: null;
+  watcherCount: number;
+} = {
+  isConnected: false,
+  connectionStatus: 'disconnected',
+  lastBid: null,
+  watcherCount: 0,
+};
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -43,6 +64,10 @@ vi.mock('@/components/ui/sparkline', () => ({
 vi.mock('@/hooks/useListings', () => ({
   useListing: () => listingState,
   useListingBids: () => bidsState,
+}));
+
+vi.mock('@/hooks/useMarketplaceSpectator', () => ({
+  useMarketplaceSpectator: () => spectatorState,
 }));
 
 import SpectatePage from '@/app/(public)/marketplace/[id]/spectate/page';
@@ -86,6 +111,13 @@ const detail: ListingDetail = {
 beforeEach(() => {
   listingState.data = undefined;
   listingState.isLoading = false;
+  listingState.isError = false;
+  listingState.isFetching = false;
+  listingState.refetch = vi.fn();
+  spectatorState.isConnected = false;
+  spectatorState.connectionStatus = 'disconnected';
+  spectatorState.lastBid = null;
+  spectatorState.watcherCount = 0;
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -98,10 +130,35 @@ describe('SpectatePage', () => {
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
+  it('renders Retry on error and invokes refetch', () => {
+    listingState.isError = true;
+    listingState.data = undefined;
+    render(withQueryClient(createElement(SpectatePage)));
+    expect(screen.getByText('Failed to load listing')).toBeDefined();
+    screen.getByRole('button', { name: /Retry/i }).click();
+    expect(listingState.refetch).toHaveBeenCalled();
+  });
+
   it('renders the SPECTATE badge', () => {
     listingState.data = detail;
     render(withQueryClient(createElement(SpectatePage)));
     expect(screen.getByText('SPECTATE')).toBeDefined();
+  });
+
+  it('does not claim LIVE when the spectator socket is disconnected', () => {
+    listingState.data = detail;
+    spectatorState.isConnected = false;
+    render(withQueryClient(createElement(SpectatePage)));
+    expect(screen.getByText('OFFLINE')).toBeDefined();
+    expect(screen.queryByText('LIVE')).toBeNull();
+  });
+
+  it('shows LIVE only when the spectator socket is connected', () => {
+    listingState.data = detail;
+    spectatorState.isConnected = true;
+    spectatorState.connectionStatus = 'connected';
+    render(withQueryClient(createElement(SpectatePage)));
+    expect(screen.getByText('LIVE')).toBeDefined();
   });
 
   it('renders the current bid as the hero number', () => {

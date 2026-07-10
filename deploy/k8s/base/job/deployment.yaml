@@ -19,9 +19,15 @@ spec:
         app.kubernetes.io/part-of: nomarkup
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50052"
+        prometheus.io/port: "51052"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: job
           image: ghcr.io/nomarkup/job:latest
@@ -30,17 +36,34 @@ spec:
             - name: grpc
               containerPort: 50052
               protocol: TCP
+            - name: metrics
+              containerPort: 51052
+              protocol: TCP
           env:
             - name: JOB_SERVICE_PORT
               value: "50052"
-            # Fair-Price engine (feature is off when unset).
+            - name: METRICS_PORT
+              value: "51052"
             - name: PRICING_ENGINE_ADDR
               value: "pricing:50061"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             grpc:
               port: 50052

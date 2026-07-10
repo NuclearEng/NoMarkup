@@ -101,11 +101,11 @@ func (r *MarketplaceRepository) UpdateListingOrderEscrowStatus(
 }
 
 // UpdateListingOrderPaymentIntent stamps the PI id, idempotency key, tax,
-// and auto-release deadline on the order.
+// fee, and auto-release deadline on the order.
 func (r *MarketplaceRepository) UpdateListingOrderPaymentIntent(
 	ctx context.Context,
 	orderID, paymentIntentID, idempotencyKey string,
-	taxCents int64,
+	taxCents, feeCents int64,
 	autoReleaseAt time.Time,
 ) error {
 	const q = `
@@ -113,10 +113,11 @@ func (r *MarketplaceRepository) UpdateListingOrderPaymentIntent(
 		   SET payment_intent_id = $2,
 		       idempotency_key   = $3,
 		       tax_cents         = $4,
-		       auto_release_at   = $5,
+		       fee_cents         = $5,
+		       auto_release_at   = $6,
 		       updated_at        = now()
 		 WHERE id = $1`
-	tag, err := r.pool.Exec(ctx, q, orderID, paymentIntentID, idempotencyKey, taxCents, autoReleaseAt)
+	tag, err := r.pool.Exec(ctx, q, orderID, paymentIntentID, idempotencyKey, taxCents, feeCents, autoReleaseAt)
 	if err != nil {
 		return fmt.Errorf("update listing order payment intent: %w", err)
 	}
@@ -124,6 +125,68 @@ func (r *MarketplaceRepository) UpdateListingOrderPaymentIntent(
 		return service.ErrListingOrderNotFound
 	}
 	return nil
+}
+
+// ClaimListingOrderForRelease locks the order row FOR UPDATE and returns it
+// only when still eligible for payout (held or released, no open dispute, no
+// transfer yet). Concurrent dispute file or another auto-release loses.
+func (r *MarketplaceRepository) ClaimListingOrderForRelease(ctx context.Context, orderID string) (*service.MarketplaceListingOrder, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("claim listing order begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const q = `
+		SELECT lo.id, lo.listing_id, lo.seller_id, lo.buyer_id,
+		       lo.amount_cents, lo.fee_cents, lo.tax_cents, lo.seller_payout_cents,
+		       lo.escrow_status, COALESCE(lo.payment_intent_id,''),
+		       COALESCE(lo.idempotency_key,''),
+		       COALESCE(lo.stripe_transfer_id,''),
+		       COALESCE(l.pickup_zip_code,''),
+		       lo.pickup_confirmed_at, lo.released_at, lo.auto_release_at,
+		       lo.dispute_id, lo.created_at, lo.updated_at
+		  FROM listing_orders lo
+		  JOIN listings l ON l.id = lo.listing_id
+		 WHERE lo.id = $1
+		 FOR UPDATE OF lo`
+	o := &service.MarketplaceListingOrder{}
+	var disputeID *string
+	err = tx.QueryRow(ctx, q, orderID).Scan(
+		&o.ID, &o.ListingID, &o.SellerID, &o.BuyerID,
+		&o.AmountCents, &o.FeeCents, &o.TaxCents, &o.SellerPayoutCents,
+		&o.EscrowStatus, &o.PaymentIntentID, &o.IdempotencyKey,
+		&o.StripeTransferID, &o.PickupZipCode,
+		&o.PickupConfirmedAt, &o.ReleasedAt, &o.AutoReleaseAt,
+		&disputeID, &o.CreatedAt, &o.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, service.ErrListingOrderNotFound
+		}
+		return nil, fmt.Errorf("claim listing order: %w", err)
+	}
+	o.DisputeID = disputeID
+
+	if o.DisputeID != nil && *o.DisputeID != "" {
+		return nil, fmt.Errorf("claim listing order disputed: %w", service.ErrInvalidEscrowState)
+	}
+	if o.StripeTransferID != "" {
+		return nil, fmt.Errorf("claim listing order already paid: %w", service.ErrInvalidEscrowState)
+	}
+	if o.EscrowStatus != "held" && o.EscrowStatus != "released" {
+		return nil, fmt.Errorf("claim listing order status %q: %w", o.EscrowStatus, service.ErrInvalidEscrowState)
+	}
+
+	// Commit releases the lock; the transfer id stamp is the durable claim.
+	// Holding the lock only through the SELECT is enough to serialize with
+	// FileListingDispute's status update on the same row when both run under
+	// FOR UPDATE; FileListingDispute currently does not lock — the recheck of
+	// dispute_id above is the critical race close for auto-release.
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("claim listing order commit: %w", err)
+	}
+	return o, nil
 }
 
 // UpdateListingOrderDispute links / unlinks a dispute_id.

@@ -123,20 +123,25 @@ function getOrdinalSuffix(n: number): string {
   return s[(v - 20) % 10] || s[v] || s[0] || 'th';
 }
 
-function getWinProbability(
+/**
+ * Illustrative rank-based strength heuristic for reverse auctions.
+ * NOT a trained model or calibrated win probability — purely rank bands
+ * for UI orientation (FE-12).
+ */
+function getRankEstimate(
   rank: number,
   totalBids: number,
 ): {
   label: string;
-  percent: number;
+  strength: number;
   color: string;
 } {
-  if (totalBids === 0) return { label: 'N/A', percent: 0, color: 'text-muted-foreground' };
-  if (rank === 1) return { label: 'High chance', percent: 85, color: 'text-emerald-500' };
-  if (rank === 2) return { label: 'Competitive', percent: 55, color: 'text-amber-500' };
+  if (totalBids === 0) return { label: 'N/A', strength: 0, color: 'text-muted-foreground' };
+  if (rank === 1) return { label: 'Leading', strength: 85, color: 'text-emerald-500' };
+  if (rank === 2) return { label: 'Close', strength: 55, color: 'text-amber-500' };
   if (rank <= Math.ceil(totalBids / 3))
-    return { label: 'Competitive', percent: 35, color: 'text-amber-500' };
-  return { label: 'Needs lower bid', percent: 15, color: 'text-red-500' };
+    return { label: 'Mid pack', strength: 35, color: 'text-amber-500' };
+  return { label: 'Needs lower bid', strength: 15, color: 'text-red-500' };
 }
 
 /** Renders a small SVG circular gauge for the trust score with glow effect */
@@ -247,33 +252,38 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   );
 }
 
-/** Win probability bar indicator with gradient fill */
-function WinProbabilityBar({ rank, totalBids }: { rank: number; totalBids: number }) {
-  const { label, percent, color } = getWinProbability(rank, totalBids);
+/** Rank-estimate bar — illustrative strength from price rank, not a model. */
+function RankEstimateBar({ rank, totalBids }: { rank: number; totalBids: number }) {
+  const { label, strength, color } = getRankEstimate(rank, totalBids);
 
   const barGradient = cn(
-    percent >= 70 && 'bg-gradient-to-r from-emerald-600 to-emerald-400',
-    percent >= 30 && percent < 70 && 'bg-gradient-to-r from-amber-600 to-amber-400',
-    percent < 30 && 'bg-gradient-to-r from-red-600 to-red-400',
+    strength >= 70 && 'bg-gradient-to-r from-emerald-600 to-emerald-400',
+    strength >= 30 && strength < 70 && 'bg-gradient-to-r from-amber-600 to-amber-400',
+    strength < 30 && 'bg-gradient-to-r from-red-600 to-red-400',
   );
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility */}
-        <div className="cursor-default space-y-1" tabIndex={0} role="img" aria-label={`Win probability: ${label}, ${String(percent)}%`}>
+        <div
+          className="cursor-default space-y-1"
+          tabIndex={0}
+          role="img"
+          aria-label={`Rank estimate: ${label}, illustrative strength ${String(strength)} of 100`}
+        >
           <div className="flex items-center justify-between">
             <span className={cn('text-xs font-bold', color)}>{label}</span>
             <span className={cn('text-[10px] font-semibold tabular-nums', color)}>
-              {String(percent)}%
+              #{String(rank)}
             </span>
           </div>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
             <div
               className={cn('h-full rounded-full transition-all duration-500', barGradient)}
-              style={{ width: `${String(percent)}%` }}
+              style={{ width: `${String(strength)}%` }}
               role="progressbar"
-              aria-valuenow={percent}
+              aria-valuenow={strength}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-hidden="true"
@@ -282,8 +292,11 @@ function WinProbabilityBar({ rank, totalBids }: { rank: number; totalBids: numbe
         </div>
       </TooltipTrigger>
       <TooltipContent>
-        <p className="font-semibold">Win Probability</p>
-        <p className="mt-0.5 text-zinc-400">Estimated likelihood based on price rank vs. competition. Rank-1 bids historically win ~85% of auctions.</p>
+        <p className="font-semibold">Rank estimate</p>
+        <p className="mt-0.5 text-zinc-400">
+          Illustrative strength from current price rank vs. other bids — not a
+          predictive model or win probability.
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -474,10 +487,10 @@ export const BidCard = memo(function BidCard({
           </div>
         </div>
 
-        {/* ── 2.5. Win probability (desktop only, hidden on mobile) ── */}
+        {/* ── 2.5. Rank estimate (desktop only; illustrative, not a model) ── */}
         {hasRank && displayTotalBids > 1 ? (
           <div className="hidden sm:block">
-            <WinProbabilityBar rank={rank} totalBids={displayTotalBids} />
+            <RankEstimateBar rank={rank} totalBids={displayTotalBids} />
           </div>
         ) : null}
 

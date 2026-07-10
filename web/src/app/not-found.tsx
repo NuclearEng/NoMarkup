@@ -3,7 +3,7 @@ import type { Route } from 'next';
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#070b14] px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
       <div className="text-center">
         <p className="text-sm font-semibold tracking-widest text-[var(--brand-gold)] uppercase">
           404

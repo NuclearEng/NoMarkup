@@ -2,511 +2,274 @@
 
 From code-complete to real users on production. Every item must be checked off or explicitly deferred with a reason before launch.
 
-**Launch market:** Seattle, WA
-**Target:** 10,000 concurrent users at launch (NFR-6)
-**Uptime SLA:** 99.9% (NFR-7)
+> **Truth pass (2026-07-09):** Owned production domain is **`no-markup.com` only** (hyphenated —
+> `nomarkup.com` is **not** owned). Migrations run through **`073_*`**. Deploy remains
+> **fail-closed** until `DEPLOY_PROVISIONED=true` and secrets/cluster are real — see
+> `docs/operations/provisioning-checklist.md`. Unchecked items below are work remaining, not
+> capabilities already in production. Adversarial gaps: `docs/planning/adversarial-action-tracker.md`.
+
+**Launch market:** King County / Seattle metro, WA (seeded markets; expand via admin Markets tool)
+**Capacity target (aspirational):** scale design toward high concurrent load — **unproven** until k6/staging load reports exist
+**Uptime SLA target:** 99.9% (design goal — not measured in prod; prod not provisioned)
+
+---
+
+## 0. Production gate (do first)
+
+- [ ] Set repo/environment `DEPLOY_PROVISIONED=true` **only after** cluster + secrets + migrate-on-deploy work
+- [ ] Confirm `deploy.yml` no longer exits placeholder-only (currently fail-closed until provisioned)
+- [ ] Secrets in Vault/ESO/K8s — no `REPLACE_ME_*` in production overlay
+- [ ] DNS + TLS for **`no-markup.com`** / **`www.no-markup.com`** only
+- [ ] Run migrations **001 → 073** on production Postgres (PostGIS 3.4)
+- [ ] Smoke: `curl -f https://no-markup.com` and `https://no-markup.com/api/health` (or actual gateway path)
 
 ---
 
 ## 1. Infrastructure Provisioning
 
 ### Kubernetes Cluster
-- [ ] Provision managed Kubernetes cluster (EKS or GKE — Open Question #1 in PRD)
-- [ ] Minimum 3 nodes in the node pool (matches production overlay: gateway x3, all services x2)
+- [ ] Provision managed Kubernetes cluster (EKS or GKE — open product decision)
+- [ ] Minimum 3 nodes (production overlay targets gateway multi-replica; verify live HPA)
 - [ ] Configure `nomarkup` namespace (per `deploy/k8s/base/namespace.yaml`)
-- [ ] Install nginx ingress controller (ingress spec uses `ingressClassName: nginx`)
-- [ ] Apply network policies (`deploy/k8s/base/network-policy.yaml` — default-deny-ingress, gateway-only external access)
-- [ ] Verify HPA is functional: gateway scales 3-10 pods, bidding engine scales 2-8 pods (per `deploy/k8s/overlays/production/hpa.yaml`)
-- [ ] Configure PersistentVolumeClaims for stateful services (per `deploy/k8s/base/pvc.yaml`)
+- [ ] Install ingress controller matching `ingressClassName` in manifests
+- [ ] Apply network policies — **fix selectors first** (known gap: label mismatch vs pods; OPS-05/06)
+- [ ] Verify HPA objects that exist (gateway + bidding today); expand as needed
+- [ ] Configure PVCs for stateful services as required by manifests
+- [ ] **Note:** `deploy/terraform/` is a **skeleton** — fill IaC or document external provisioner
 
-### DNS & TLS
-- [ ] Register/verify `nomarkup.com` domain
-- [ ] Point `nomarkup.com` and `www.nomarkup.com` to ingress load balancer IP
-- [ ] Provision TLS certificate and create `nomarkup-tls` K8s secret (referenced in `deploy/k8s/base/ingress.yaml`)
-- [ ] Verify SSL redirect annotation is active (`nginx.ingress.kubernetes.io/ssl-redirect: "true"`)
-- [ ] Configure Cloudflare CDN for static assets (public profile photos, job photos, portfolio images)
-- [ ] Set up `api.nomarkup.com` subdomain for health checks (referenced in `deploy.yml` smoke tests)
+### DNS & TLS (owned zone only)
+- [ ] Verify registrar/DNS for **`no-markup.com`** (Cloudflare account holds zone)
+- [ ] Point `no-markup.com` and `www.no-markup.com` to ingress / load balancer
+- [ ] Provision TLS certificate (edge TLS 1.3) and create K8s TLS secret referenced by ingress
+- [ ] Verify SSL redirect on ingress
+- [ ] Configure Cloudflare CDN/cache rules for **public DATA / static assets** (not app HTML — CSP nonce)
+- [ ] Optional API host if used: document actual hostname (do **not** invent `nomarkup.com`)
 
 ### Managed Data Stores
-- [ ] Provision managed PostgreSQL 16 with PostGIS 3.4 extension enabled (docker-compose uses `postgis/postgis:16-3.4`)
-- [ ] Configure PgBouncer in front of PostgreSQL (transaction pooling mode, 100 default pool size, 500 max client connections — matches docker-compose config)
-- [ ] Provision managed Redis 7 cluster (appendonly persistence enabled)
-- [ ] Deploy Meilisearch 1.x (managed or self-hosted with persistent storage)
-- [ ] Provision S3 bucket for public assets (`nomarkup-prod`) with CDN
-- [ ] Provision separate S3 bucket for private documents (identity docs, insurance, licenses — no CDN, no public read, per NFR-13/SEC-8)
-- [ ] Verify S3 endpoint does not point to MinIO in production (dev uses `S3_ENDPOINT=http://localhost:9000`)
+- [ ] Managed PostgreSQL 16 + PostGIS 3.4
+- [ ] PgBouncer (or managed pooling) sized for prod
+- [ ] Managed Redis 7
+- [ ] Meilisearch 1.x with durable storage
+- [ ] S3 bucket(s): public assets + private docs (no public read on private)
+- [ ] Confirm production `S3_*` does not point at MinIO
 
 ### Container Registry
-- [ ] Set up container registry (GHCR is default per CI — `vars.DOCKER_REGISTRY || 'ghcr.io'`)
-- [ ] Configure CI to authenticate and push images on main branch merge
-- [ ] Verify all 11 Dockerfiles build successfully: web, gateway, user, job, payment, chat, notification, bidding, fraud, trust, imaging
+- [ ] Registry auth (GHCR default in CI)
+- [ ] CI pushes images on main **when** docker login/push is wired (verify OPS-21)
+- [ ] Build images for: web, gateway, user, job, payment, chat, notification, bidding, fraud, trust, imaging
+  (underwriting/pricing as deployed in your compose/k8s layout)
 
 ---
 
 ## 2. Secrets & Configuration
 
 ### Cryptographic Keys
-- [ ] Generate production JWT RS256 keypair (4096-bit): `openssl genrsa -out private.pem 4096 && openssl rsa -in private.pem -pubout -out public.pem`
-- [ ] Store keypair in K8s secret or Vault — not on disk (dev uses `JWT_PRIVATE_KEY_PATH=./keys/private.pem`)
-- [ ] Generate production `SESSION_SECRET` with `openssl rand -base64 32`
+- [ ] Production JWT RS256 keypair (store in Vault/K8s secret — not disk in prod)
+- [ ] Production `SESSION_SECRET`
+- [ ] `ENCRYPTION_KEY` / PII secretbox key material (rotation plan: `docs/operations/encryption-key-rotation.md`)
+- [ ] `INTERNAL_WS_SECRET` on **gateway + chat** (production must not start empty — SEC-03)
 
 ### Stripe (Live Mode)
-- [ ] Activate Stripe production account (exit test mode)
-- [ ] Create live `STRIPE_SECRET_KEY` (sk_live_...)
-- [ ] Create live `STRIPE_PUBLISHABLE_KEY` (pk_live_...)
-- [ ] Configure Stripe Connect platform settings for Express accounts (per FR-9.1 — providers are Connected Express accounts)
-- [ ] Obtain `STRIPE_CONNECT_CLIENT_ID` for production
-- [ ] Register production webhook endpoint (`https://nomarkup.com/api/webhooks/stripe`) and obtain `STRIPE_WEBHOOK_SECRET` (whsec_...)
-- [ ] Subscribe to required webhook events: `payment_intent.succeeded`, `payment_intent.payment_failed`, `account.updated`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`
-- [ ] Sign Stripe Connect platform agreement
+- [ ] Activate Stripe live mode; live secret + publishable keys
+- [ ] Connect Express platform settings
+- [ ] Webhook endpoint on production origin, e.g. `https://no-markup.com/api/webhooks/stripe` (confirm path)
+- [ ] `STRIPE_WEBHOOK_SECRET`; subscribe required events
+- [ ] Sign Connect platform agreement
 
 ### Email (SendGrid)
-- [ ] Create SendGrid production account
-- [ ] Verify sending domain (`nomarkup.com`) with SPF, DKIM, and DMARC records
-- [ ] Obtain production `SENDGRID_API_KEY`
-- [ ] Configure `SENDGRID_FROM_EMAIL=noreply@nomarkup.com`
-- [ ] Create/import email templates for: verification, bid awarded, payment received, dispute opened, subscription expiring, digest (per FR-17.2 notification types)
-- [ ] Set `SENDGRID_VERIFICATION_TEMPLATE_ID` for production
+- [ ] Production SendGrid; SPF/DKIM/DMARC for **`no-markup.com`**
+- [ ] `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` (e.g. `noreply@no-markup.com`)
+- [ ] Templates for verification, bid awarded, payment, dispute, etc.
 
-### OAuth Providers
-- [ ] Configure Google OAuth: production `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` with redirect URI `https://nomarkup.com/api/auth/google/callback`
-- [ ] Configure Apple Sign-In: production `APPLE_CLIENT_ID` and `APPLE_CLIENT_SECRET` (if implementing for web — Open Question #12)
-- [ ] Set `OAUTH_REDIRECT_BASE=https://nomarkup.com`
-- [ ] Set `FRONTEND_URL=https://nomarkup.com`
+### OAuth
+- [ ] Google OAuth redirect base `https://no-markup.com` (and callback path as implemented)
+- [ ] Apple Sign-In if shipping on web
+- [ ] `FRONTEND_URL=https://no-markup.com`
 
-### Maps
-- [ ] Create Mapbox production token with appropriate scopes
-- [ ] Set `NEXT_PUBLIC_MAPBOX_TOKEN` for production
-- [ ] Verify token URL restrictions are set to `nomarkup.com`
-
-### Monitoring
-- [ ] Create Sentry production projects: one for web frontend, one for backend services
-- [ ] Set `SENTRY_DSN` (backend) and `NEXT_PUBLIC_SENTRY_DSN` (frontend)
-- [ ] Set `SENTRY_ORG` and `SENTRY_PROJECT`
-- [ ] Configure `OTEL_EXPORTER_OTLP_ENDPOINT` to point to production OTel collector
-
-### Secret Management
-- [ ] Set up HashiCorp Vault or cloud KMS for production secret management
-- [ ] Migrate all secrets from K8s literals to Vault-backed secrets
-- [ ] Verify no secrets are hardcoded in `deploy/k8s/overlays/production/kustomization.yaml` configMapGenerator
-- [ ] Audit `.env.example` — confirm every variable has a production value set or a documented reason for omission
+### Maps / Monitoring
+- [ ] Mapbox **public** `pk.` token URL-restricted to `no-markup.com`
+- [ ] Sentry projects + DSNs; OTel exporter to a **real** backend (collector must not debug-only discard)
 
 ### Environment Validation
-- [ ] Set `ENVIRONMENT=production` in production config (already in production kustomization)
-- [ ] Set `LOG_LEVEL=info` (already in production kustomization)
-- [ ] Set `NEXT_PUBLIC_API_URL=https://nomarkup.com` (not localhost:8080)
-- [ ] Set `NEXT_PUBLIC_ENABLE_LIVE_AUCTION=true` (feature flag — live_auction is seeded as enabled)
+- [ ] `ENVIRONMENT=production`
+- [ ] `NEXT_PUBLIC_API_URL` points at production origin (not localhost)
+- [ ] Feature flags reviewed for launch (see §3)
 
 ---
 
 ## 3. Database
 
 ### Migrations
-- [ ] Run all 18 migrations (001 through 018) on production database in order
-- [ ] Verify `001_initial_schema.up.sql` creates all core tables: users, jobs, bids, contracts, payments, reviews, chat_messages, etc.
-- [ ] Verify `002_seed_taxonomy.up.sql` seeds service categories
-- [ ] Verify tier categories are seeded: `005_tier1_categories`, `006_tier2_categories`, `009_tier3_categories`
-- [ ] Verify `013_feature_flags.up.sql` seeds default feature flags (live_auction=true, others=false)
-- [ ] Verify `018_query_optimization.up.sql` creates all performance indexes
-- [ ] Confirm `trigger_set_updated_at()` function exists (referenced by multiple migrations)
+- [ ] Run **all migrations 001 through 073** on production in order
+- [ ] Verify core tables from `001_initial_schema` + later marketplace/goods/financial migrations
+- [ ] Taxonomy / categories seeds (002, 005, 006, 009, expansions 052–053)
+- [ ] Feature flags: `013_feature_flags` + **`060_seed_financial_feature_flags`**
+- [ ] Launch markets (e.g. WA / King County migrations 055, 058, 059)
+- [ ] Confirm `trigger_set_updated_at()` and money-related indexes present
 
-### Feature Flags (Production Defaults)
-- [ ] `live_auction` = true (core feature)
-- [ ] `fair_price_index` = false (post-launch)
-- [ ] `spectator_mode` = false (post-launch)
-- [ ] `nomarkup_guarantee` = false (post-launch)
-- [ ] `smart_matching` = false (post-launch)
-- [ ] `provider_business_os` = false (post-launch)
+### Feature Flags (suggested production defaults — adjust deliberately)
+| Key | Suggested launch | Notes |
+|-----|------------------|-------|
+| `live_auction` | on if shipping live WS arena | Also respect `NEXT_PUBLIC_ENABLE_LIVE_AUCTION` / env gates |
+| `customer_bnpl` | on only if money paths audited | Seeded on in 060 — **confirm** |
+| `instant_payout` | on only if live payout wired | Seeded on — verify not stub-success |
+| `per_job_insurance` | optional | Seeded on |
+| `working_capital` | optional | Seeded on; underwriting fail-closed when unwired |
+| `lead_gen` | **off** | Seeded off |
+| `insurance_competition` | **off** | Preview only |
+| `legal_services` | **off** | Preview only |
+| fair-price / spectator / guarantee flags | per product | Do not enable without data + ops |
+
+**Flag enforcement truth:** gateway `RequireFlag` → 503 when row exists and `enabled=false`; missing row / DB error currently **fail open**. Target financial fail-closed: SEC-01.
 
 ### Data Seeding
-- [ ] Seed Seattle-area service categories: General Handyman, Cleaning, Landscaping, Plumbing, Electrical (PRD Phase 1.5 priority categories)
-- [ ] Seed market pricing data for Seattle metro ZIP codes (FR-11.5 — market range bar needs data from day one)
-- [ ] Verify `fair_price_index` table has initial data for priority categories (migration 014)
+- [ ] Launch-market categories and market pricing for Seattle metro ZIPs as needed
+- [ ] fair_price_index data if Fair Price Index is on
 
 ### Backup & Recovery
-- [ ] Configure automated daily backups with 30-day retention (NFR-10)
-- [ ] Enable point-in-time recovery (PITR) on managed PostgreSQL
-- [ ] Test restore from backup to a separate instance
-- [ ] Test migration rollback procedure: run `.down.sql` for latest migration, verify clean state
-- [x] Create read replica for analytics queries (NFR-12) — DATABASE_URL_REPLICA + dbReadPool wired in gateway (P0-1, gap-closure-plan.md)
-- [ ] Document emergency recovery runbook with RTO/RPO targets
+- [ ] Daily backups + PITR; test restore
+- [ ] Document RTO/RPO (`docs/operations/backup-disaster-recovery.md`)
+- [x] Read replica path: `DATABASE_URL_REPLICA` + gateway read pool (code landed; **provision** replica in prod)
 
 ---
 
 ## 4. CI/CD Pipeline
 
-### Current Pipeline Verification
-- [ ] Verify `ci.yml` passes on main: web lint + typecheck, web tests (80% coverage thresholds), Playwright E2E, gateway tests, all 5 service tests (user/job/payment/chat/notification), Rust engine tests (fmt + clippy + test), full Docker build
-- [ ] Verify `security-scan.yml` passes: govulncheck on all 6 Go modules, cargo-audit on engines, npm audit (production deps, high severity)
-- [ ] Verify all 11 Docker images build in CI without error
+### Current Pipeline (truth)
+- [ ] `ci.yml` green on main: web lint + typecheck, Vitest (**floors** ~71–77% in `vitest.config.mts`, not blanket 80% all metrics), Playwright **Chromium** E2E (backend-tolerant; full dogfood needs stack + `SEED_PASSWORD`), Go tests + PostGIS service container integration, Rust fmt/clippy/test
+- [ ] `security-scan.yml` green (govulncheck, cargo-audit, npm audit policy)
+- [ ] **Not in CI today:** criterion p99 gates, k6 load, full axe AA on real routes, Go/Rust 80% coverage gates, Husky pre-commit
 
-### Deploy Pipeline (Must Complete)
-- [ ] **Replace placeholder `deploy.yml`** — current workflow only echoes instructions, does not actually deploy
-- [ ] Implement actual Docker build + push to registry step
-- [ ] Implement actual database migration step
-- [ ] Implement actual `kubectl apply` with kustomize overlay for production
-- [ ] Implement actual image tag update across all 11 deployments
-- [ ] Implement rollout status verification with timeout
-- [ ] Implement smoke test (health check endpoints)
-- [ ] Add deployment notifications to Slack/Discord
-- [ ] Test staging deployment end-to-end before production
-
-### Rollback
-- [ ] Test `kubectl rollout undo deployment/<name> -n nomarkup` for each service
-- [ ] Document rollback procedure for database migrations (cannot be automated — requires manual `.down.sql`)
-- [ ] Verify rollback does not corrupt data (especially for migrations 010-011 auction constraints)
+### Deploy Pipeline
+- [ ] **CRITICAL:** real deploy (build/push → migrate → apply → smoke) behind `DEPLOY_PROVISIONED`
+- [ ] Rollout status + rollback procedure documented
+- [ ] Migration down is **manual** in prod (forward-only)
 
 ---
 
 ## 5. Monitoring & Alerting
 
-### Prometheus + Grafana
-- [ ] Deploy Prometheus to monitoring namespace in K8s
-- [ ] Deploy Grafana with persistent storage
-- [ ] Verify Prometheus scrapes all services via `/metrics` endpoint
-- [ ] Import/create Grafana dashboards for:
-  - HTTP request rate, latency, error rate (per gateway handler)
-  - gRPC request rate, latency, error rate (per service)
-  - Bid processing latency (p50/p95/p99 — budget: < 1ms p99)
-  - Trust score computation latency (budget: < 5ms p99)
-  - Fraud scoring latency (budget: < 50ms p99)
-  - Active WebSocket connections (chat + auction)
-  - Stripe webhook processing duration
-  - PostgreSQL connection pool utilization (PgBouncer)
-  - Redis memory and connection count
-  - Meilisearch query latency
-
-### Alerting Rules
-- [ ] Error rate > 0.1% of requests for any service (sustained 5 min)
-- [ ] API p99 latency > 500ms (sustained 5 min)
-- [ ] Payment processing failures > 0 (immediate alert)
-- [ ] Database connection pool exhaustion (> 90% utilization)
-- [ ] Pod restart count > 3 in 10 minutes (crash loop)
-- [ ] Disk usage > 80% on any PVC
-- [ ] Certificate expiry < 14 days
-- [ ] Configure notification channels: PagerDuty for critical, Slack for warnings
-
-### Distributed Tracing
-- [ ] Deploy OpenTelemetry Collector to K8s
-- [ ] Verify traces flow from gateway through Go services through Rust engines
-- [ ] Verify trace ID propagation via `traceparent` header across all service calls
-- [ ] Deploy Jaeger or Grafana Tempo for trace visualization
-
-### Error Tracking
-- [ ] Verify Sentry receives errors from Next.js frontend (client + server components)
-- [ ] Verify Sentry receives errors from all Go services (gateway + 5 microservices)
-- [ ] Verify Sentry receives errors from all Rust engines (4 engines)
-- [ ] Configure Sentry alert rules: new issue → Slack, spike in errors → PagerDuty
-
-### Uptime Monitoring
-- [ ] Set up external uptime monitor (Pingdom, UptimeRobot, or Better Uptime) for:
-  - `https://nomarkup.com` (web)
-  - `https://nomarkup.com/api/health` (gateway)
-  - `https://api.nomarkup.com/health` (gateway direct)
-- [ ] Create public status page (statuspage.io or Instatus) at `status.nomarkup.com`
+- [ ] Deploy Prometheus/Grafana/Alertmanager **or** managed equivalent (manifests under `deploy/monitoring/` are not automatic prod)
+- [ ] Scrape correct metrics ports (engines need `*_METRICS_PORT` where required)
+- [ ] Dashboards: HTTP/gRPC latency, bid/trust/fraud budgets, WS, Stripe webhooks, DB pool, Redis, Meili
+- [ ] Alerts: error rate, payment failures (**P0**), latency, disk, cert expiry
+- [ ] OTel → real backend; Sentry web + Go + Rust
+- [ ] External uptime on `https://no-markup.com` and health endpoint
+- [ ] Status page hostname under **`no-markup.com`** if public
 
 ---
 
-## 6. Security
+## 6. Security (verify against code + docs truth)
 
-### Endpoint Security
-- [ ] Verify CORS production allowlist in `gateway/internal/middleware/cors.go` — only `https://nomarkup.com` and `https://www.nomarkup.com` (no wildcards, per SEC-13)
-- [ ] Verify CSP headers in production ingress — no `unsafe-inline`, no `unsafe-eval` (ingress already sets X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy)
-- [ ] Verify rate limiting configuration in `gateway/internal/middleware/ratelimit.go` — stricter on auth endpoints (5 attempts/15 min per CLAUDE.md, SEC-10)
-- [ ] Verify CSRF protection on all state-changing requests (SEC-11)
-- [ ] Verify all endpoints require authentication except those annotated `// @public` (per CLAUDE.md security rules)
-- [ ] Verify admin endpoints require `admin` role (via `gateway/internal/middleware/admin.go`)
-- [ ] Verify support endpoints require `support` role (via `gateway/internal/middleware/support.go`)
-- [ ] Verify ownership middleware prevents cross-user data access (via `gateway/internal/middleware/ownership.go`)
-- [ ] Verify idempotency middleware is active on payment mutations (via `gateway/internal/middleware/idempotency.go`)
+### Endpoint / edge
+- [ ] CORS allowlist: production origins for **`no-markup.com`** / `www` only (no wildcards)
+- [ ] CSP: **script** nonce + no `'unsafe-eval'` in prod; **`style-src` may include `'unsafe-inline'`** (honest exception)
+- [ ] Rate limits on auth; CSRF where applicable; admin/support role gates
+- [ ] Idempotency on money mutations (see money tracker for remaining gaps)
 
-### Authentication
-- [ ] Verify JWT RS256 token validation with production keypair
-- [ ] Verify access token expiry is 15 minutes
-- [ ] Verify refresh tokens are HTTP-only secure cookies
-- [ ] Verify session timeouts: 60 min customer, 120 min provider, 30 min admin (SEC-4)
-- [ ] Verify concurrent session limit: 3 devices per account (SEC-4)
-- [ ] Verify MFA is required for admin accounts (SEC-2)
-- [ ] Verify password hashing uses argon2id (memory=65536, iterations=3, parallelism=4)
+### Auth
+- [ ] JWT RS256, 15m access, HTTP-only refresh, idle timeouts (customer 60 / provider 120 / admin 30)
+- [ ] argon2id params; MFA for admin
 
-### Payment Security
-- [ ] Verify Stripe webhook signature enforcement in `gateway/internal/handler/webhook.go` using production `STRIPE_WEBHOOK_SECRET`
-- [ ] Verify all price calculations happen server-side (client displays only)
-- [ ] Verify idempotency keys on all payment mutations
-- [ ] Verify raw card numbers are never stored — Stripe Elements/PaymentIntent only (SEC-9)
-- [ ] Verify escrow flow: funds held in Stripe Connect, released only on job completion confirmation
+### Data protection
+- [ ] PII: **XSalsa20-Poly1305 secretbox** on inventory fields; **email plaintext** — not “AES-256-GCM everything”
+- [ ] Mesh: private network plaintext gRPC until mTLS; edge TLS only for public
+- [ ] Private S3 for docs; MIME + size limits
 
-### Data Protection
-- [ ] Verify PII encrypted at rest (AES-256-GCM via libsodium, per SEC-5)
-- [ ] Verify document storage bucket has no public access, access requires auth + audit logging (SEC-8)
-- [ ] Verify file upload MIME type validation is server-side (not trusting Content-Type header)
-- [ ] Verify file size limits enforced: 10MB images, 25MB documents
-- [ ] Verify proxy body size matches: ingress annotation sets `proxy-body-size: "25m"`
-
-### Vulnerability Scans
-- [ ] Run `govulncheck ./...` on all 6 Go modules with zero findings
-- [ ] Run `cargo audit` on engines workspace with zero findings
-- [ ] Run `npm audit --omit=dev --audit-level=high` on web with zero findings
-- [ ] Schedule penetration test (or confirm vendor and date)
+### Vulnerability scans
+- [ ] govulncheck / cargo audit / npm audit clean per policy
+- [ ] Pen-test schedule
 
 ---
 
-## 7. Application Verification
+## 7. Application Verification (staging or prod-like)
 
-### User Registration & Auth
-- [ ] Complete registration flow: email/password, Google OAuth, Apple Sign-In
-- [ ] Verify email verification via SendGrid template
-- [ ] Verify login, logout, token refresh
-- [ ] Verify password reset flow
-- [ ] Verify role assignment: customer, provider, admin
-- [ ] Verify MFA setup and login with TOTP
+### Core services reverse auction
+- [ ] Register/login/OAuth/password reset/MFA
+- [ ] Post job → bid → award → contract → complete → escrow release → double-blind **contract** reviews
+- [ ] Live auction WS if flag/env enabled
 
-### Job Posting & Auction (Core Flow)
-- [ ] Post a job as customer: title, description, category (from seeded taxonomy), budget range, location (Seattle ZIP), photos
-- [ ] Verify auction window opens and countdown works
-- [ ] Place bids from multiple provider accounts
-- [ ] Verify live auction WebSocket updates (`gateway/internal/handler/auction_ws.go`)
-- [ ] Award bid to provider
-- [ ] Verify contract creation (FR-14)
-- [ ] Complete job: provider marks milestones, customer approves
-- [ ] Verify escrow release on completion
-- [ ] Submit two-way reviews
+### Goods marketplace
+- [ ] List → bid (with lock/idempotency) → close/BIN → order/escrow → pickup confirm
+- [ ] Do **not** expect goods 8-dim double-blind reviews (not productized)
 
-### Payments (Live Stripe)
-- [ ] Process a real payment with a live card (small amount, refund after)
-- [ ] Verify provider Stripe Connect Express onboarding flow
-- [ ] Verify escrow hold and release
-- [ ] Verify payment failure handling and retry logic
-- [ ] Verify refund processing
-- [ ] Verify subscription creation for Pro tier (customer and provider)
-- [ ] Verify subscription upgrade/downgrade/cancel (FR-12.3)
-- [ ] Verify transaction fee deduction from provider payout (FR-12.5-12.6)
-- [ ] Verify webhook processing for all subscribed events
+### Payments (live Stripe only with small amounts)
+- [ ] Connect onboarding, hold/release, refunds, webhooks
+- [ ] BNPL / instant payout / advances only if flags on **and** money paths verified against adversarial tracker
 
-### Chat
-- [ ] Send messages between customer and provider via WebSocket
-- [ ] Verify message persistence (messages survive page reload)
-- [ ] Verify offline message delivery (messages queued, delivered on reconnect)
-- [ ] Verify off-platform communication detection (SEC-17 — phone numbers, emails blocked)
+### Chat / notifications / search / imaging
+- [ ] WS messaging + persistence; off-platform content filters as implemented
+- [ ] In-app notifications; email when SendGrid configured
+- [ ] Meilisearch jobs/listings; geo filters via PostGIS
+- [ ] Imaging resize via Rust `image` crate pipeline
 
-### Notifications
-- [ ] Verify in-app notification bell with unread count (FR-17.1)
-- [ ] Verify email delivery for: bid awarded, payment received, dispute opened
-- [ ] Verify web push notification opt-in and delivery
-- [ ] Verify CAN-SPAM unsubscribe link in all emails (FR-17.6)
-- [ ] Verify notification preferences page works (FR-17.3)
+### Admin
+- [ ] Users, jobs, fraud queue, disputes, verification, flags, markets, audit log
 
-### Search & Discovery
-- [ ] Verify Meilisearch indexes jobs and providers
-- [ ] Verify search returns results with < 50ms latency
-- [ ] Verify geo-filtered search by Seattle ZIP codes
-- [ ] Verify category filtering works across all seeded categories
-
-### Image Processing
-- [ ] Upload profile photo — verify resize and optimization via imaging service
-- [ ] Upload job photos — verify processing pipeline
-- [ ] Upload identity document — verify stored in private bucket, not publicly accessible
-
-### Admin Panel
-- [ ] Verify admin login requires MFA
-- [ ] Verify user management: search, view, edit, suspend, ban (FR-13.1)
-- [ ] Verify job management: view all, filter, force-close (FR-13.1)
-- [ ] Verify fraud review queue: flagged signals, drill-into-user, approve/dismiss (FR-13.1)
-- [ ] Verify dispute resolution queue (FR-13.1)
-- [ ] Verify verification queue: approve/reject documents with reason (FR-13.1)
-- [ ] Verify subscription/fee configuration panel (FR-13.4)
-- [ ] Verify feature flag toggles work (per `013_feature_flags` migration)
-- [ ] Verify audit log captures all admin actions (FR-13.6)
-
-### Performance
-- [ ] Verify LCP < 2.5s on key pages (landing, job browse, job detail)
-- [ ] Verify API p95 < 200ms for reads, < 500ms for writes (NFR-3)
-- [ ] Verify WebSocket message delivery < 500ms (NFR-4)
-- [ ] Verify bidding engine processes bids in < 1ms p99
-- [ ] Load test: simulate 100 concurrent users across registration, job posting, bidding, chat
-- [ ] Load test: simulate 1,000 concurrent WebSocket connections (chat + auction)
+### Performance (measure, don’t assume)
+- [ ] Record lab Lighthouse LCP/INP/CLS on `/`, marketplace, jobs — **expect multi-second LCP until improved**
+- [ ] Confirm public JSON CDN headers on catalog endpoints
+- [ ] Bid engine p99 bench **local** (criterion not CI)
+- [ ] Optional k6 against staging (not CI)
 
 ---
 
 ## 8. Legal & Business
 
-### Business Formation
-- [ ] Register business entity (LLC or Corp)
-- [ ] Obtain business license for Washington State
-- [ ] Set up business bank account
-- [ ] Obtain EIN
-
-### Legal Documents
-- [ ] Terms of Service finalized and published at `nomarkup.com/terms`
-- [ ] Privacy Policy finalized and published at `nomarkup.com/privacy` (must cover CCPA, SEC-18)
-- [ ] Cookie consent banner implemented (if using non-essential cookies)
-- [ ] Data retention policy documented (SEC-21 — chat transcripts, transaction records, fraud logs)
-- [ ] CCPA compliance: data export and deletion request flow functional
-- [ ] PCI DSS SAQ-A or SAQ-A-EP completed and documented (SEC-20)
-
-### Stripe Platform
-- [ ] Stripe Connect platform agreement signed
-- [ ] Stripe Express account terms reviewed with legal
-- [ ] Payment dispute/chargeback handling process documented
-- [ ] Refund policy documented and published
-
-### Insurance
-- [ ] General liability insurance
-- [ ] Errors and omissions (E&O) insurance
-- [ ] Cyber liability insurance
-
-### Monetization Decisions (PRD Open Questions #5-8)
-- [ ] **Decide:** Subscription pricing for Pro tier (customer and provider)
-- [ ] **Decide:** Transaction fee percentage (5-10% range per FR-12.5)
-- [ ] **Decide:** Primary monetization model for launch (subscription, transaction fee, or hybrid)
-- [ ] **Decide:** Free tier limits (active jobs for customers, bids per month for providers)
-- [ ] Configure decided values in admin panel (FR-13.4)
+- [ ] Entity, licenses, bank, EIN
+- [ ] ToS / Privacy at **`no-markup.com/terms`** and **`/privacy`**
+- [ ] CCPA export/delete flows functional
+- [ ] PCI SAQ path (Stripe Elements)
+- [ ] Insurance (GL / E&O / cyber) as required
+- [ ] Monetization decisions (take rates already seeded — confirm with finance)
 
 ---
 
-## 9. Pre-Launch: Supply-Side Bootstrapping (PRD Phase 1.5)
+## 9. Supply-side bootstrapping
 
-This is the single most critical pre-launch activity. A marketplace with zero providers has zero value.
-
-### Provider Recruitment
-- [ ] Onboard minimum **25 verified providers** across at least **5 service categories** (PRD Phase 1.5)
-- [ ] Priority categories for Seattle: General Handyman, Cleaning, Landscaping, Plumbing, Electrical
-- [ ] Achieve minimum **3 providers per category** before inviting customers for that category (PRD Phase 2 liquidity target)
-- [ ] Categories with < 3 providers are hidden from customer browse until supply is sufficient
-
-### Sourcing Channels
-- [ ] Contact Seattle-area trade associations
-- [ ] Post in Seattle contractor Facebook groups
-- [ ] Outreach via Nextdoor recommendations
-- [ ] Direct outreach to independent contractors
-- [ ] Partner with local trade schools
-
-### Incentives
-- [ ] Configure Pro tier free for 6 months for first 50 providers (launch incentive per PRD)
-- [ ] Create provider onboarding materials (how to set up profile, how bidding works, payout schedule)
-
-### Market Data
-- [ ] Seed analytics engine with market pricing data for Seattle metro (per FR-11.5)
-- [ ] Ensure market range bar has data for all 5 priority categories from day one
-- [ ] Source data from BLS, manufacturer MSRPs, or licensed datasets (Open Question #10 — avoid scraping competitors)
+- [ ] Minimum verified providers per priority category before customer push
+- [ ] Seattle/King County channels + incentives
+- [ ] Market data for range UI if enabled
 
 ---
 
-## 10. Pre-Launch: Internal Alpha (PRD Phase 1)
+## 10. Internal alpha
 
-### Team Testing
-- [ ] Deploy to staging environment with production-like data
-- [ ] Internal team tests all flows end-to-end: registration, job posting, bidding, chat, payment, reviews
-- [ ] Set verification toggle OFF (demo mode, FR-13.2)
-- [ ] Set analytics toggle to internal-only (Shift+~ per PRD Phase 1)
-- [ ] Seed staging with realistic test data: fake jobs, providers, reviews
-- [ ] Verify analytics pipeline processes seeded data correctly
-
-### Operations Readiness
-- [ ] Create admin account for operations team
-- [ ] Set up support email: `support@nomarkup.com`
-- [ ] Set up support ticketing system (Zendesk, Intercom, or similar)
-- [ ] Train at least 1 support agent on the platform (PRD Phase 2 requirement)
-- [ ] Document dispute resolution workflow for support staff
-- [ ] Document verification review workflow for admin team
-- [ ] Document escalation procedures
+- [ ] Staging with seed data (`SEED_PASSWORD` for dogfood E2E)
+- [ ] Support email **`support@no-markup.com`**
+- [ ] Dispute / verification ops runbooks
 
 ---
 
-## 11. Launch Day
+## 11. Launch day
 
-### Deployment
-- [ ] Tag release (`v1.0.0`) to trigger deploy pipeline
-- [ ] Verify all 11 container images build and push to registry
-- [ ] Run migrations on production database (verify migration version matches expected: 018)
-- [ ] Apply production kustomize overlay: `kubectl apply -k deploy/k8s/overlays/production`
-- [ ] Verify all pods are running: `kubectl get pods -n nomarkup`
-- [ ] Verify all deployments hit target replica count (gateway: 3, everything else: 2)
-
-### Smoke Tests
-- [ ] `curl -f https://nomarkup.com` returns 200 (web)
-- [ ] `curl -f https://nomarkup.com/api/health` returns 200 (gateway)
-- [ ] Open web app in browser, verify pages render
-- [ ] Log in as admin, verify dashboard loads
-- [ ] Log in as test provider, verify profile page loads
-- [ ] Post a test job, verify it appears in browse
-
-### Monitoring Verification
-- [ ] Verify all health checks passing in K8s
-- [ ] Verify Grafana dashboards showing live data
-- [ ] Verify Sentry is receiving events (trigger a test error)
-- [ ] Verify external uptime monitor reports UP
-- [ ] Verify Prometheus scraping all services
-
-### First Real Transaction
-- [ ] Create a real customer account
-- [ ] Post a real job in a seeded category
-- [ ] Have a real provider bid on the job
-- [ ] Award bid, create contract
-- [ ] Process real payment through Stripe (live mode)
-- [ ] Verify payment lands in provider's Connect account
-- [ ] Verify platform fee deducted correctly
-
-### Go Live
-- [ ] Enable external monitoring and status page
-- [ ] Monitor error rates for first hour — target: < 0.1%
-- [ ] Monitor payment processing — target: zero failures
-- [ ] Monitor WebSocket stability — target: no unexpected disconnects
-- [ ] Announce launch via planned channels
+- [ ] Tag release only if `DEPLOY_PROVISIONED` path is real
+- [ ] Migrations at **version 073** (or current max after this doc)
+- [ ] All pods ready; smoke curls on **`no-markup.com`**
+- [ ] First real transaction monitored end-to-end
 
 ---
 
-## 12. Post-Launch: First 48 Hours
+## 12. Post-launch (first 48h)
 
-### Active Monitoring
-- [ ] Engineer on-call for first 48 hours with PagerDuty alerts enabled
-- [ ] Monitor Sentry every 2 hours for new error types
-- [ ] Monitor Grafana dashboards for latency anomalies
-- [ ] Monitor PostgreSQL connection pool utilization
-- [ ] Monitor Redis memory usage
-- [ ] Monitor disk usage on PVCs
-
-### Verification
-- [ ] Verify first real user registrations complete successfully
-- [ ] Verify first real transactions process and settle correctly
-- [ ] Verify provider payouts arrive in Connect accounts
-- [ ] Verify email notifications delivering (check SendGrid delivery logs)
-- [ ] Verify search returns results for real user queries
-- [ ] Verify automated database backup ran successfully (check backup logs)
-
-### Support
-- [ ] Review all support tickets — resolve within SLA
-- [ ] Monitor fraud detection system output — tune thresholds if needed
-- [ ] Monitor verification queue — process pending documents within 24 hours
-- [ ] Document any issues encountered and fixes applied
-
-### Metrics Baseline
-- [ ] Record baseline for North Star KPIs (PRD Section 17):
-  - Liquidity: % of jobs receiving >= 1 bid within 24 hours (target: > 80%)
-  - Time to first bid (target: < 4 hours)
-  - Bids per job (target: 3-7)
-  - Zero-bid rate (target: < 10%)
-- [ ] Verify business metrics dashboard shows real-time data (NFR-21)
+- [ ] On-call; Sentry/Grafana; backups verified
+- [ ] Liquidity KPIs baseline (targets, not guarantees)
 
 ---
 
-## 13. Known Gaps to Address Before Launch
+## 13. Known gaps (must not ignore)
 
-These items are identified from the current codebase state and must be resolved:
+### Deploy / ops
+- [ ] Deploy pipeline + secrets + NetworkPolicy selector fixes
+- [ ] Terraform / external provisioner documented
+- [ ] Migration Job on deploy
+- [ ] Domain consistency: **only `no-markup.com`**
 
-### Deploy Pipeline
-- [ ] **CRITICAL:** `deploy.yml` is a placeholder that only prints instructions — must be replaced with actual CI/CD steps before any deployment (see Section 4)
+### Money / security (code)
+- [ ] Track open P0s in `docs/planning/adversarial-action-tracker.md` — **do not take real money** until money + fail-closed items close
 
-### Open PRD Questions That Block Launch
-- [ ] **#1:** Cloud provider decision (AWS vs GCP) — blocks all infrastructure provisioning
-- [ ] **#5-8:** Monetization decisions (subscription pricing, transaction fee %, primary model, free tier limits) — blocks subscription launch
-- [ ] **#10:** Market pricing data source — blocks analytics accuracy at launch
-- [ ] **#11:** SMS/OTP provider decision (Twilio vs AWS SNS) — blocks phone verification if required
-
-### Notification Service
-- [ ] Verify SMS delivery channel if phone verification is required (depends on Open Question #11)
-- [ ] Verify push notification delivery via web push (FR-17.1)
-- [ ] Verify email digest batching logic (FR-17.4)
+### Claims demoted (docs done; code optional)
+- Feature flags fail-open on missing rows · mesh plaintext gRPC · secretbox not AES-GCM · coverage floors not 80% all stacks · no testcontainers · criterion/k6 not CI · no Husky · E2E CI backend-tolerant · North Star not achieved · SW kill-switch · RSC pilots not whole app · WCAG goal not axe-certified · insurance/legal flag-off · win-prob cosmetic · GPS honor system
 
 ---
 

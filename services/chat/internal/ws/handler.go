@@ -182,9 +182,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Origin check (SEC-04): do not use InsecureSkipVerify. Gateway→chat dials
+	// typically omit Origin (allowed by nhooyr). Browser origins must match
+	// WS_ALLOWED_ORIGINS. The shared secret above already authenticates the
+	// mesh hop; this blocks CSWSH if the chat port is ever exposed.
 	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// The gateway handles CORS; no need to check origin here.
-		InsecureSkipVerify: true,
+		OriginPatterns: originPatterns(),
 	})
 	if err != nil {
 		slog.Error("failed to accept websocket", "error", err, "remote_addr", r.RemoteAddr)
@@ -411,9 +414,20 @@ func (c *Connection) handleUnsubscribe(channelID string) {
 }
 
 // handleTyping publishes a typing indicator via Redis.
+// SEC-10: only allow typing on channels this connection has successfully
+// subscribed to (subscribe already enforces IsChannelMember). Fail closed if
+// the client tries to type into a channel it never joined.
 func (c *Connection) handleTyping(ctx context.Context, channelID string) {
 	if channelID == "" {
 		c.sendError("channel_id is required for typing")
+		return
+	}
+	if _, ok := c.subs[channelID]; !ok {
+		c.sendError("not subscribed to this channel")
+		slog.Warn("ws typing denied: not subscribed",
+			"user_id", c.userID,
+			"channel_id", channelID,
+		)
 		return
 	}
 

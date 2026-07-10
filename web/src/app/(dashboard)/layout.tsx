@@ -67,7 +67,7 @@ function EmailVerificationBanner() {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
-      <div className="flex min-h-screen flex-col bg-[#070b14]">
+      <div className="flex min-h-screen flex-col bg-background">
         <Header />
         <EmailVerificationBanner />
 

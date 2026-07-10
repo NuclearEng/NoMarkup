@@ -67,6 +67,30 @@ const claudeResponseSchema = z.object({
   confidence: z.enum(ALLOWED_CONFIDENCE),
 });
 
+// isSameOrigin guards this expensive LLM endpoint against cross-site callers
+// (CSRF-style cost amplification). Mirrors analyze-job-image (SEC-18).
+// Browsers always attach an Origin header on cross-site fetch POSTs, so a
+// *present* Origin that doesn't match this app's own host is rejected. We
+// compare against the request's own host (derived from the Host header or,
+// failing that, the request URL). When neither an Origin nor a Referer is
+// present, we allow the request — non-browser callers that already passed
+// the Bearer/cookie auth check above land here, and a malicious cross-site
+// page can never suppress the Origin header.
+function isSameOrigin(request: NextRequest): boolean {
+  const expectedHost = request.headers.get('host') ?? request.nextUrl.host;
+
+  const sourceHeader = request.headers.get('origin') ?? request.headers.get('referer');
+  if (!sourceHeader) return true;
+
+  if (!expectedHost) return false;
+
+  try {
+    return new URL(sourceHeader).host === expectedHost;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // 1. Auth + per-user rate limit. The middleware only checks for the
   // PRESENCE of a session indicator; this verifies the RS256 access JWT
@@ -75,6 +99,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const gate = gateAiRoute(request);
   if (!gate.ok) {
     return gate.response;
+  }
+
+  // 1b. Origin check — reject cross-site callers outright (SEC-18).
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
   // 2. Content-Type must be JSON.

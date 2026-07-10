@@ -18,6 +18,12 @@ spec:
         app.kubernetes.io/component: frontend
         app.kubernetes.io/part-of: nomarkup
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: web
           image: ghcr.io/nomarkup/web:latest
@@ -29,11 +35,24 @@ spec:
           env:
             - name: PORT
               value: "3000"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             httpGet:
               path: /health

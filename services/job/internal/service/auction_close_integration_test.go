@@ -102,9 +102,9 @@ func TestCloseEndedAuctions_Integration(t *testing.T) {
 		`SELECT escrow_status, amount_cents, fee_cents, buyer_id::text
 		   FROM listing_orders WHERE listing_id = $1`, listing.ID).
 		Scan(&escrow, &amount, &fee, &buyerID))
-	assert.Equal(t, "held", escrow)
+	assert.Equal(t, "pending_payment", escrow)
 	assert.Equal(t, int64(12000), amount)
-	assert.Equal(t, int64(600), fee, "5%% of 12000 = 600")
+	assert.Equal(t, int64(1200), fee, "10%% of 12000 = 1200 (8%%+2%%)")
 	assert.Equal(t, buyer, buyerID)
 
 	// Money-safety: a worker re-run must NOT create a second order.

@@ -1,6 +1,8 @@
 'use client';
 
 import { Loader2, ShieldCheck, Zap } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import { BidBondPrompt } from '@/components/compliance/BidBondPrompt';
@@ -192,7 +194,7 @@ export function ListingBidPanel({
       >
         <p className="mb-3">Sign in to place a bid on this listing.</p>
         <Button asChild className="min-h-[44px] w-full">
-          <a href="/login">Sign in to bid</a>
+          <Link href={'/login' as Route}>Sign in to bid</Link>
         </Button>
       </div>
     );

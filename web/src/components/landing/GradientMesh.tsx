@@ -16,7 +16,7 @@ export function GradientMesh({ className }: GradientMeshProps) {
       aria-hidden="true"
     >
       {/* Base dark background */}
-      <div className="absolute inset-0 bg-[#070b14]" />
+      <div className="absolute inset-0 bg-background" />
 
       {/* Blob 1 — rich deep navy/blue, top-left drift — larger for atmospheric coverage */}
       <div

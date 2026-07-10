@@ -16,11 +16,18 @@ import type {
 } from '@/hooks/useProviderLicenses';
 
 // --- Feature flag mock (tests mutate per-case) ---
+// Mirrors SEC-02: financial keys (incl. legal_services) fail-closed when missing.
 let flagState: Partial<Record<FeatureFlagKey, boolean>> = {};
-vi.mock('@/hooks/useFeatureFlags', () => ({
-  useFeatureFlags: () => flagState,
-  useFeatureFlag: (key: FeatureFlagKey) => flagState[key] ?? true,
-}));
+vi.mock('@/hooks/useFeatureFlags', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/hooks/useFeatureFlags')>('@/hooks/useFeatureFlags');
+  return {
+    ...actual,
+    useFeatureFlags: () => flagState,
+    useFeatureFlag: (key: FeatureFlagKey) =>
+      flagState[key] ?? actual.defaultFeatureFlagValue(key),
+  };
+});
 
 // --- API mock: ProfessionalLicenseSection's submit uses the real
 //     useSubmitLicense hook, which calls api.post. The data-fetching hooks

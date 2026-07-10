@@ -30,6 +30,7 @@ type Server struct {
 	svc            *service.PaymentService
 	installmentSvc *service.InstallmentService
 	insuranceSvc   *service.InsuranceService
+	marketplaceSvc *service.MarketplaceService
 	stripeDeleter  *service.StripeDeleter
 }
 

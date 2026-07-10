@@ -682,14 +682,23 @@ func (r *ListingPostgresRepository) CloseListingAuction(ctx context.Context, lis
 		return nil, nil, fmt.Errorf("close listing mark sold: %w", err)
 	}
 
-	// Compute platform fee. v1 = 5% rounded up.
-	const feeBps = 500 // 5.00%
+	// Compute platform fee. MON-20: 8% platform + 2% guarantee = 1000 bps
+	// total seller-side. listing_orders has a single fee_cents column (no
+	// split fields on goods), so we store the combined total. Round any
+	// fractional cent UP so the platform never under-charges. Must match
+	// gateway listingPlatformFeeBps.
+	const feeBps = 1000 // 8% platform + 2% guarantee
 	feeCents := (*currentBid)*feeBps/10000 + boolToInt64((*currentBid)*feeBps%10000 != 0)
 
+	// MON-06 / goods auction close: insert as pending_payment, NOT held.
+	// held requires a captured PaymentIntent (payment_intent_id set via
+	// ChargeListingWinner + payment_intent.succeeded webhook). Release /
+	// auto-release / confirm-pickup only apply to held orders with a PI —
+	// never release unpaid pending_payment rows.
 	var orderID string
 	err = tx.QueryRow(ctx,
 		`INSERT INTO listing_orders (listing_id, seller_id, buyer_id, amount_cents, fee_cents, escrow_status)
-		 VALUES ($1, $2, $3, $4, $5, 'held')
+		 VALUES ($1, $2, $3, $4, $5, 'pending_payment')
 		 ON CONFLICT (listing_id) DO NOTHING
 		 RETURNING id`,
 		listingID, sellerID, *currentBidderID, *currentBid, feeCents).
@@ -748,6 +757,8 @@ func (r *ListingPostgresRepository) GetListingOrder(ctx context.Context, orderID
 
 func (r *ListingPostgresRepository) ConfirmPickup(ctx context.Context, orderID, buyerID string) (*domain.ListingOrder, error) {
 	// Single-statement transition that enforces buyer + held status atomically.
+	// Release/confirm-pickup only for held (funds captured via PaymentIntent) —
+	// never pending_payment rows without payment_intent_id (MON-06).
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE listing_orders
 		    SET escrow_status = 'released',

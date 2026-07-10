@@ -148,6 +148,7 @@ func (m *AuthMiddleware) validateToken(tokenStr string) (*Claims, error) {
 	wantIss := expectedJWTIssuer()
 	wantAud := expectedJWTAudience()
 
+	// SEC: pin RS256 family only — reject HS*/none/alg-confusion.
 	token, err := jwt.ParseWithClaims(
 		tokenStr,
 		&tokenClaims{},
@@ -157,6 +158,7 @@ func (m *AuthMiddleware) validateToken(tokenStr string) (*Claims, error) {
 			}
 			return m.publicKey, nil
 		},
+		jwt.WithValidMethods([]string{"RS256", "RS384", "RS512"}),
 		jwt.WithIssuer(wantIss),
 		jwt.WithAudience(wantAud),
 	)

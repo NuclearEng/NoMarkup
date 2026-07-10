@@ -200,7 +200,16 @@ func (s *Service) GetUnreadCounts(ctx context.Context, userID string) ([]domain.
 }
 
 // SendTypingIndicator publishes a typing indicator via Redis pub/sub.
+// SEC-10: the caller must be a channel member — otherwise any authenticated
+// user could spam typing events into conversations they are not part of.
 func (s *Service) SendTypingIndicator(ctx context.Context, channelID, userID string) error {
+	ok, err := s.repo.IsChannelMember(ctx, channelID, userID)
+	if err != nil {
+		return fmt.Errorf("send typing: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("send typing: %w", domain.ErrNotChannelMember)
+	}
 	if s.pubsub == nil {
 		return nil
 	}

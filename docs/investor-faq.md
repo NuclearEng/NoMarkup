@@ -141,12 +141,14 @@ retained for 7 years for tax/regulatory reasons (anonymized). Run via
 Go for everything that needs to be readable, deployable, and fast
 enough — gateway, user/job/payment services, chat WebSocket layer.
 Rust for the parts where p99 latency drives the product feel — bid
-processing (sub-1ms), trust scoring, fraud heuristics, image processing.
+processing (sub-1ms target), trust scoring, fraud heuristics, imaging
+(`image` crate), underwriting, and pricing. **Search is Meilisearch + Go;
+geo is PostGIS + Go** — not separate Rust engines.
 
-This isn't a religion. It's the standard pattern at every marketplace
-that scaled past $100M GMV (Whatnot, Discord, Cloudflare, Shopify
-internal services). We're shipping the architecture we know we'll need
-at scale rather than rewriting at Series B.
+This isn't a religion. It's the standard pattern at marketplaces that
+scaled: keep hot numerical paths in a systems language and own CRUD in
+Go. We're shipping the architecture we know we'll need at scale rather
+than rewriting at Series B.
 
 ### Q: Microservices for a pre-seed company. Premature?
 
@@ -164,11 +166,16 @@ the 2FA flow we want for sellers. The cost-to-build is paid down.
 
 ### Q: Coverage / test claims real?
 
-Yes. `web/` has 3,800+ unit tests with v8 coverage at 80%+ on lines,
-branches, functions, statements (gates set in `vitest.config.ts`). Go
-services have testcontainers-based integration tests. Rust engines
-have proptest property-based tests on the numerical paths. CI gates
-all of this.
+Yes — with precise numbers, not marketing inflation. `web/` has thousands
+of Vitest unit/integration tests; v8 **whole-app floors** in
+`vitest.config.mts` are approximately **71% branches / 75% functions /
+77% lines / 76% statements** (ratchet up; not a blanket “80% every metric”).
+Go services and gateway have extensive unit tests; **integration tests run
+against a CI PostGIS service container** (not testcontainers-go). Rust
+engines use **proptest** on numerical paths (trust, bidding, fraud,
+underwriting). **Criterion benches and k6 load scripts exist but are not
+CI-gated.** Playwright E2E in CI is Chromium and backend-tolerant; full
+funnel dogfood needs a live stack and `SEED_PASSWORD`.
 
 ---
 
@@ -208,10 +215,10 @@ We need <0.1% of this to be a Series A company. <1% to be a billion-dollar compa
 Three real risks, in order:
 
 1. **Liquidity death spiral.** Marketplaces fail when one side shows up
-   and the other doesn't. We mitigate with single-city launch (Austin),
-   seller-side incentive (free first 5 listings), and aggressive
-   in-person seeding for the first 60 days. If we can't get to 100
-   active listings/day in Austin in 90 days, we have a problem.
+   and the other doesn't. We mitigate with single-metro launch (**King
+   County / Seattle, WA**), seller-side incentives, and aggressive
+   in-person seeding for the first 60 days. If we can't get to density
+   targets in 90 days, we have a problem.
 
 2. **Auction format doesn't transfer to services.** Maybe homeowners
    won't wait for an auction to close on a leaky pipe. We have a

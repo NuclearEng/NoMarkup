@@ -5,36 +5,35 @@ on:
     tags:
       - "v*"
 
+env:
+  REGISTRY: ghcr.io
+  # Images are published as ghcr.io/<owner>/nomarkup/<name>:<tag>
+  IMAGE_PREFIX: ${{ github.repository_owner }}/nomarkup
+
 jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Provisioning gate (fail-closed)
-        # The production deploy is a placeholder until the Kubernetes cluster is
-        # provisioned. Rather than silently "succeed" and give a false sense that
-        # a deploy happened, fail closed until the provisioning actions in
-        # docs/operations/provisioning-checklist.md are done and the repo/
-        # environment variable DEPLOY_PROVISIONED is set to "true".
-        #
-        # Critical actions the checklist gates (see that file for details):
-        #   1. A K8s migration Job / init-container running `migrate up`
-        #      (nothing applies database/migrations/ on deploy yet).
-        #   2. APP_VERSION injected per release on the gateway (auto-invalidates
-        #      the category-tree cache; otherwise new categories serve stale).
-        #   3. Rebuilt gateway/user images (include the new /api/v1/markets route).
+        # Fail closed until the cluster + secrets are ready. Set
+        # DEPLOY_PROVISIONED=true only after docs/operations/provisioning-checklist.md.
         if: ${{ vars.DEPLOY_PROVISIONED != 'true' }}
         run: |
           echo "::error::Production deploy is NOT provisioned — failing closed."
           echo ""
           echo "Set the repo/environment variable DEPLOY_PROVISIONED=true only"
           echo "after completing docs/operations/provisioning-checklist.md:"
-          echo "  1. Migrations auto-apply (K8s migration Job / init-container, 'migrate up')"
-          echo "  2. APP_VERSION set per release on the gateway (category cache auto-bust)"
-          echo "  3. Gateway/user images rebuilt (new /api/v1/markets handler)"
+          echo "  1. Migrations auto-apply (K8s Job db-migrate + migrate image)"
+          echo "  2. APP_VERSION set per release on nomarkup-config"
+          echo "  3. INTERNAL_WS_SECRET present in nomarkup-secrets"
+          echo "  4. Registry + kubeconfig secrets configured (see below)"
           echo ""
           echo "Until then this job intentionally fails so a tag push cannot"
           echo "masquerade as a real deployment."
@@ -44,68 +43,215 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
-      - name: Deployment instructions
+      - name: Require deploy credentials
+        id: creds
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
         run: |
-          echo "============================================="
-          echo "  NoMarkup Production Deployment"
-          echo "  Version: ${{ steps.version.outputs.VERSION }}"
-          echo "  Commit:  ${GITHUB_SHA}"
-          echo "============================================="
-          echo ""
-          echo "Deployment steps (to be automated):"
-          echo ""
-          echo "1. Build and push Docker images:"
-          echo "   docker build -f deploy/docker/web.Dockerfile -t nomarkup/web:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/gateway.Dockerfile -t nomarkup/gateway:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/user.Dockerfile -t nomarkup/user:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/job.Dockerfile -t nomarkup/job:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/payment.Dockerfile -t nomarkup/payment:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/chat.Dockerfile -t nomarkup/chat:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/notification.Dockerfile -t nomarkup/notification:${{ steps.version.outputs.VERSION }} ."
-          echo "   # Rust engines share ONE multi-target Dockerfile (per-engine Dockerfiles do not exist):"
-          echo "   docker build -f deploy/docker/engines.Dockerfile --target bidding -t nomarkup/bidding:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/engines.Dockerfile --target fraud -t nomarkup/fraud:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/engines.Dockerfile --target trust -t nomarkup/trust:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/engines.Dockerfile --target imaging -t nomarkup/imaging:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/engines.Dockerfile --target underwriting -t nomarkup/underwriting:${{ steps.version.outputs.VERSION }} ."
-          echo "   docker build -f deploy/docker/engines.Dockerfile --target pricing -t nomarkup/pricing:${{ steps.version.outputs.VERSION }} ."
-          echo ""
-          echo "2. Push images to container registry:"
-          echo "   docker push nomarkup/*:${{ steps.version.outputs.VERSION }}"
-          echo ""
-          echo "3. Run database migrations:"
-          echo "   kubectl exec -it deploy/migration-job -- migrate -path /migrations -database \$DATABASE_URL up"
-          echo ""
-          echo "4. Apply Kubernetes manifests:"
-          echo "   kubectl apply -f deploy/k8s/ --namespace=nomarkup"
-          echo ""
-          echo "5. Update image tags in deployments:"
-          echo "   kubectl set image deployment/gateway gateway=nomarkup/gateway:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/web web=nomarkup/web:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/user user=nomarkup/user:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/job job=nomarkup/job:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/payment payment=nomarkup/payment:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/chat chat=nomarkup/chat:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/notification notification=nomarkup/notification:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/bidding bidding=nomarkup/bidding:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/fraud fraud=nomarkup/fraud:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/trust trust=nomarkup/trust:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   kubectl set image deployment/imaging imaging=nomarkup/imaging:${{ steps.version.outputs.VERSION }} -n nomarkup"
-          echo "   # NOTE: underwriting + pricing have images (engines.Dockerfile targets) but no"
-          echo "   # deploy/k8s/base manifests yet — add Deployments/Services before adding"
-          echo "   # kubectl set image lines for them."
-          echo ""
-          echo "6. Verify rollout:"
-          echo "   kubectl rollout status deployment --namespace=nomarkup --timeout=300s"
-          echo ""
-          echo "7. Run smoke tests (production zone is no-markup.com — hyphenated; the"
-          echo "   non-hyphen nomarkup.com is NOT owned. Ingress is single-host path-routed:"
-          echo "   the gateway lives under /api/, there is no api. subdomain):"
-          echo "   curl -f https://no-markup.com/                  # web via ingress"
-          echo "   curl -f https://no-markup.com/api/v1/markets    # gateway via ingress (public read)"
-          echo ""
-          echo "============================================="
-          echo "  Deployment placeholder complete."
-          echo "  Replace this job with actual CI/CD steps"
-          echo "  when Kubernetes cluster is provisioned."
-          echo "============================================="
+          set -euo pipefail
+          missing=0
+          if [ -z "${KUBE_CONFIG:-}" ]; then
+            echo "::error::Secret KUBE_CONFIG is not set (base64 kubeconfig for the prod cluster)."
+            missing=1
+          fi
+          if [ -z "${REGISTRY_PASSWORD:-}" ]; then
+            echo "::error::Secret REGISTRY_PASSWORD is not set (GHCR/PAT or registry password)."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "When DEPLOY_PROVISIONED=true the workflow runs a REAL deploy."
+            echo "Configure these repository/environment secrets first:"
+            echo "  KUBE_CONFIG         — base64-encoded kubeconfig for production"
+            echo "  REGISTRY_PASSWORD   — package write token / registry password"
+            echo "  REGISTRY_USERNAME   — optional; defaults to github.actor"
+            echo ""
+            echo "Do not set DEPLOY_PROVISIONED without credentials — this is intentional."
+            exit 1
+          fi
+          echo "username=${REGISTRY_USERNAME:-${{ github.actor }}}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to container registry
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$REGISTRY_PASSWORD" | docker login "${{ env.REGISTRY }}" \
+            -u "${{ steps.creds.outputs.username }}" --password-stdin
+
+      - name: Build and push images
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          images=(
+            "web:deploy/docker/web.Dockerfile:"
+            "gateway:deploy/docker/gateway.Dockerfile:"
+            "user:deploy/docker/user.Dockerfile:"
+            "job:deploy/docker/job.Dockerfile:"
+            "payment:deploy/docker/payment.Dockerfile:"
+            "chat:deploy/docker/chat.Dockerfile:"
+            "notification:deploy/docker/notification.Dockerfile:"
+            "bidding:deploy/docker/engines.Dockerfile:bidding"
+            "fraud:deploy/docker/engines.Dockerfile:fraud"
+            "trust:deploy/docker/engines.Dockerfile:trust"
+            "imaging:deploy/docker/engines.Dockerfile:imaging"
+            "underwriting:deploy/docker/engines.Dockerfile:underwriting"
+            "pricing:deploy/docker/engines.Dockerfile:pricing"
+            "migrate:deploy/docker/migrate.Dockerfile:"
+          )
+          for entry in "${images[@]}"; do
+            name="${entry%%:*}"
+            rest="${entry#*:}"
+            dockerfile="${rest%%:*}"
+            target="${rest#*:}"
+            tag="${REGISTRY}/${IMAGE_PREFIX}/${name}:${VERSION}"
+            sha_tag="${REGISTRY}/${IMAGE_PREFIX}/${name}:${GITHUB_SHA::8}"
+            args=(-f "${dockerfile}" -t "${tag}" -t "${sha_tag}" --push)
+            if [ -n "${target}" ]; then args+=(--target "${target}"); fi
+            echo "::group::Build+push ${tag}"
+            docker buildx build "${args[@]}" .
+            echo "::endgroup::"
+          done
+
+      - name: Configure kubectl
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl version --client
+          kubectl cluster-info
+
+      - name: Install kustomize
+        run: |
+          set -euo pipefail
+          KUSTOMIZE_VERSION=5.6.0
+          curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kustomize
+          kustomize version
+
+      - name: Stamp image tags + APP_VERSION
+        working-directory: deploy/k8s/overlays/production
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          for img in gateway web user job payment chat notification \
+                     bidding fraud imaging pricing trust underwriting migrate; do
+            kustomize edit set image "ghcr.io/nomarkup/${img}=${REGISTRY}/${IMAGE_PREFIX}/${img}:${VERSION}"
+          done
+          python3 - <<'PY'
+          import os, pathlib, re
+          path = pathlib.Path("kustomization.yaml")
+          text = path.read_text()
+          version = os.environ["VERSION"]
+          text, n = re.subn(
+              r"(- APP_VERSION=)[^\n]+",
+              rf"\g<1>{version}",
+              text,
+              count=1,
+          )
+          if n != 1:
+              raise SystemExit(f"expected to rewrite APP_VERSION once, got {n}")
+          path.write_text(text)
+          print(f"APP_VERSION -> {version}")
+          PY
+
+      - name: Run database migrations
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          JOB_NAME="db-migrate-${VERSION//./-}"
+          MIGRATE_IMAGE="${REGISTRY}/${IMAGE_PREFIX}/migrate:${VERSION}"
+          # Delete any prior Job with this exact release name (re-runs).
+          kubectl delete job -n nomarkup "${JOB_NAME}" --ignore-not-found
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: ${JOB_NAME}
+            namespace: nomarkup
+            labels:
+              app.kubernetes.io/name: db-migrate
+              app.kubernetes.io/component: migration
+              app.kubernetes.io/part-of: nomarkup
+              app.kubernetes.io/version: "${VERSION}"
+          spec:
+            ttlSecondsAfterFinished: 86400
+            backoffLimit: 3
+            activeDeadlineSeconds: 600
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: db-migrate
+                  app.kubernetes.io/component: migration
+                  app.kubernetes.io/part-of: nomarkup
+              spec:
+                restartPolicy: Never
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 65534
+                  runAsGroup: 65534
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: migrate
+                    image: ${MIGRATE_IMAGE}
+                    imagePullPolicy: Always
+                    args:
+                      - "-path=/migrations"
+                      - "-database=\$(DATABASE_URL)"
+                      - "up"
+                    env:
+                      - name: DATABASE_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: nomarkup-secrets
+                            key: DATABASE_URL
+                    securityContext:
+                      runAsNonRoot: true
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: ["ALL"]
+                    resources:
+                      requests:
+                        memory: "64Mi"
+                        cpu: "50m"
+                      limits:
+                        memory: "256Mi"
+                        cpu: "500m"
+          EOF
+          echo "Waiting for Job/${JOB_NAME} to complete..."
+          kubectl wait --for=condition=complete "job/${JOB_NAME}" -n nomarkup --timeout=600s
+          kubectl logs "job/${JOB_NAME}" -n nomarkup || true
+
+      - name: Apply Kubernetes manifests
+        run: |
+          set -euo pipefail
+          kubectl apply -k deploy/k8s/overlays/production
+          kubectl rollout status deployment -n nomarkup --timeout=600s
+
+      - name: Smoke checks
+        run: |
+          set -euo pipefail
+          echo "Deployed version: ${{ steps.version.outputs.VERSION }}"
+          kubectl get pods -n nomarkup -o wide
+          if curl -fsS --max-time 15 "https://no-markup.com/api/v1/markets" >/dev/null 2>&1; then
+            echo "Public markets endpoint OK"
+          else
+            echo "::warning::Public smoke check skipped/failed (cluster may be private or DNS pending)"
+          fi

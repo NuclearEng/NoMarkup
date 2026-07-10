@@ -196,6 +196,10 @@ func computeAdvanceFeeCents(amountCents int64, termDays int) int64 {
 }
 
 // RequestAdvance creates a new working capital advance request.
+//
+// Concurrency (MON-16): credit check + CreateAdvance run under a per-provider
+// advisory lock so concurrent requests cannot both pass the available-credit
+// gate and over-extend the line.
 func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contractID string, amountCents int64) (*domain.Advance, error) {
 	if providerID == "" {
 		return nil, fmt.Errorf("request advance: provider_id is required")
@@ -207,73 +211,72 @@ func (s *PaymentService) RequestAdvance(ctx context.Context, providerID, contrac
 		return nil, fmt.Errorf("request advance: %w", domain.ErrInvalidAmount)
 	}
 
-	// Risk-based pricing: APR = base rate + credit-risk premium, by the
-	// provider's live business credit score. Decline below the floor.
-	score, err := s.providerCreditScore(ctx, providerID)
+	var advance *domain.Advance
+	err := s.repo.WithProviderAdvisoryLock(ctx, providerID, func(lockCtx context.Context) error {
+		// Risk-based pricing: APR = base rate + credit-risk premium, by the
+		// provider's live business credit score. Decline below the floor.
+		score, err := s.providerCreditScore(lockCtx, providerID)
+		if err != nil {
+			return fmt.Errorf("request advance: %w", err)
+		}
+		grade := creditGrade(score)
+		if score < minLendingScore {
+			// Routine "you don't qualify" outcome — wrap the sentinel so the gRPC
+			// layer maps it to 422 (FailedPrecondition), not a 500.
+			return fmt.Errorf("request advance declined: credit score %d (grade %s): %w", score, grade, domain.ErrAdvanceDeclined)
+		}
+
+		// Over-lending guard under the advisory lock: re-compute available credit
+		// so concurrent requests serialize and cannot both clear the gate.
+		limit, err := s.ComputeCreditLimit(lockCtx, providerID)
+		if err != nil {
+			return fmt.Errorf("request advance: %w", err)
+		}
+		available := limit.MaxAdvanceCents - limit.TotalOutstandingCents
+		if available < 0 {
+			available = 0
+		}
+		if amountCents > available {
+			return fmt.Errorf("request advance: %w: requested %d cents exceeds available credit of %d cents (max %d, outstanding %d)",
+				ErrInsufficientCredit, amountCents, available, limit.MaxAdvanceCents, limit.TotalOutstandingCents)
+		}
+
+		aprBps := dynamicAPRBps(score)
+		interestCents := computeAdvanceFeeCentsAPR(amountCents, aprBps, defaultAdvanceTermDays)
+		serviceFeeCents := domain.AdvanceServiceFeeCents(amountCents)
+		feeCents := interestCents + serviceFeeCents
+
+		advance = &domain.Advance{
+			ID:                 uuid.New().String(),
+			ProviderID:         providerID,
+			ContractID:         contractID,
+			AdvanceAmountCents: amountCents,
+			FeeCents:           feeCents,
+			RepaidCents:        0,
+			Status:             "requested",
+		}
+
+		if err := s.repo.CreateAdvance(lockCtx, advance); err != nil {
+			return err
+		}
+
+		slog.Info("advance requested",
+			"advance_id", advance.ID,
+			"provider_id", providerID,
+			"contract_id", contractID,
+			"amount_cents", amountCents,
+			"fee_cents", feeCents,
+			"interest_cents", interestCents,
+			"service_fee_cents", serviceFeeCents,
+			"credit_score", score,
+			"credit_grade", grade,
+			"apr_bps", aprBps,
+		)
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("request advance: %w", err)
-	}
-	grade := creditGrade(score)
-	if score < minLendingScore {
-		// Routine "you don't qualify" outcome — wrap the sentinel so the gRPC
-		// layer maps it to 422 (FailedPrecondition), not a 500. The score/grade
-		// detail stays in the server log; the client gets the sentinel message.
-		return nil, fmt.Errorf("request advance declined: credit score %d (grade %s): %w", score, grade, domain.ErrAdvanceDeclined)
-	}
-
-	// Over-lending guard: enforce the provider's available credit BEFORE booking
-	// the advance. Available = max_advance - currently-outstanding, computed by
-	// the same authoritative logic the credit-limit endpoint surfaces. A request
-	// above the available line is a validation error (→ 400/422 at the gateway),
-	// never a silent over-extension. Integer cents throughout.
-	limit, err := s.ComputeCreditLimit(ctx, providerID)
-	if err != nil {
-		return nil, fmt.Errorf("request advance: %w", err)
-	}
-	available := limit.MaxAdvanceCents - limit.TotalOutstandingCents
-	if available < 0 {
-		available = 0
-	}
-	if amountCents > available {
-		return nil, fmt.Errorf("request advance: %w: requested %d cents exceeds available credit of %d cents (max %d, outstanding %d)",
-			ErrInsufficientCredit, amountCents, available, limit.MaxAdvanceCents, limit.TotalOutstandingCents)
-	}
-
-	aprBps := dynamicAPRBps(score)
-	// Total fee = prorated APR interest + flat origination/service fee. Both
-	// are disclosed to the provider as separate line items; FeeCents stores the
-	// total so repayment/outstanding math stays in one place.
-	interestCents := computeAdvanceFeeCentsAPR(amountCents, aprBps, defaultAdvanceTermDays)
-	serviceFeeCents := domain.AdvanceServiceFeeCents(amountCents)
-	feeCents := interestCents + serviceFeeCents
-
-	advance := &domain.Advance{
-		ID:                 uuid.New().String(),
-		ProviderID:         providerID,
-		ContractID:         contractID,
-		AdvanceAmountCents: amountCents,
-		FeeCents:           feeCents,
-		RepaidCents:        0,
-		Status:             "requested",
-	}
-
-	if err := s.repo.CreateAdvance(ctx, advance); err != nil {
 		return nil, err
 	}
-
-	slog.Info("advance requested",
-		"advance_id", advance.ID,
-		"provider_id", providerID,
-		"contract_id", contractID,
-		"amount_cents", amountCents,
-		"fee_cents", feeCents,
-		"interest_cents", interestCents,
-		"service_fee_cents", serviceFeeCents,
-		"credit_score", score,
-		"credit_grade", grade,
-		"apr_bps", aprBps,
-	)
-
 	return advance, nil
 }
 

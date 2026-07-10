@@ -1,10 +1,17 @@
 // NoMarkup service worker — TEMPORARY self-destruct ("kill-switch") build.
 //
-// Why: a previous cache-first SW (nomarkup-v1/v2) cached /_next/static/ chunks
-// stale-while-revalidate. In dev that pinned an old env-inlined Mapbox token
-// (the 401 dark-v11 errors) past hard reloads, because the SW kept serving the
-// stale bundle. A version bump alone wasn't enough to evict a stuck SW, so this
-// build actively unregisters itself and purges every cache.
+// HONEST STATUS (FE-05 / PERF-04): this is NOT a real PWA service worker.
+// It does not cache assets, does not handle push/notification, and is not
+// registered by the app. InstallPrompt is disabled for the same reason —
+// we must not claim offline/installable capabilities while this file is
+// the kill-switch only.
+//
+// Why it still exists: a previous cache-first SW (nomarkup-v1/v2) cached
+// /_next/static/ chunks stale-while-revalidate. In dev that pinned an old
+// env-inlined Mapbox token (the 401 dark-v11 errors) past hard reloads,
+// because the SW kept serving the stale bundle. A version bump alone wasn't
+// enough to evict a stuck SW, so this build actively unregisters itself and
+// purges every cache if it ever becomes active.
 //
 // IMPORTANT — reload-loop guard: this worker must NEVER be registered by the
 // app while it is the kill-switch build (ServiceWorkerRegistrar.tsx no longer
@@ -20,8 +27,9 @@
 // it still purges caches and unregisters, but does NOT navigate clients, so no
 // loop is possible.
 //
-// The PWA SW (asset caching + Web Push) will be reintroduced behind a
+// The real PWA SW (asset caching + Web Push) will be reintroduced behind a
 // production-only registration once the stale caches are cleared everywhere.
+// Only then re-enable InstallPrompt and ServiceWorkerRegistrar.register.
 
 // True when, at install time, an older SW was active for this registration —
 // i.e. this kill-switch build is genuinely replacing a stuck predecessor.

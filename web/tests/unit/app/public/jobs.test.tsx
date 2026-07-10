@@ -53,7 +53,7 @@ vi.mock('@/hooks/useJobs', () => ({
 }));
 
 const { useSearchJobs } = await import('@/hooks/useJobs');
-const { default: JobsSearchPage } = await import('@/app/(public)/jobs/page');
+const { default: JobsSearchPage } = await import('@/app/(public)/jobs/JobsSearchClient');
 
 describe('(public)/jobs/page', () => {
   beforeEach(() => {

@@ -38,6 +38,154 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
+  name: web-hpa
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: user-hpa
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: user
+    app.kubernetes.io/component: go-service
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: user
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: job-hpa
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: job
+    app.kubernetes.io/component: go-service
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: job
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-hpa
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: payment
+    app.kubernetes.io/component: go-service
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
   name: bidding-hpa
   namespace: nomarkup
   labels:

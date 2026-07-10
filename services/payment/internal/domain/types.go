@@ -400,12 +400,22 @@ type PaymentRepository interface {
 	CreatePayment(ctx context.Context, payment *Payment) error
 	GetPayment(ctx context.Context, id string) (*Payment, error)
 	UpdatePaymentStatus(ctx context.Context, id string, status string) error
+	// ClaimPaymentStatus atomically transitions status from fromStatus to toStatus.
+	// Returns ErrInvalidStatus when the row is not currently in fromStatus (lost CAS race).
+	// Used by ProcessPayment (pending→processing) and ReleaseEscrow (escrow→released).
+	ClaimPaymentStatus(ctx context.Context, id, fromStatus, toStatus string) error
 	ListPayments(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*Payment, int, error)
 	GetFeeConfig(ctx context.Context, categoryID string) (*FeeConfig, error)
 	GetDefaultFeeConfig(ctx context.Context) (*FeeConfig, error)
 	FindByStripePaymentIntentID(ctx context.Context, paymentIntentID string) (*Payment, error)
 	UpdateStripeFields(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
 	UpdateRefund(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
+	// UpdateRefundCAS persists a refund only when refund_amount_cents still equals
+	// expectedPrior. Returns ErrInvalidAmount on CAS failure (concurrent refund).
+	UpdateRefundCAS(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
+	// WithProviderAdvisoryLock runs fn under pg_advisory_xact_lock(hashtext(providerID))
+	// so concurrent RequestAdvance credit checks serialize per provider.
+	WithProviderAdvisoryLock(ctx context.Context, providerID string, fn func(ctx context.Context) error) error
 	GetStripeAccountID(ctx context.Context, userID string) (string, error)
 	SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error
 	// GetContractForPayment loads the parties + amount of a non-deleted contract
@@ -476,9 +486,37 @@ type PaymentRepository interface {
 	GetProviderProfile(ctx context.Context, providerID string) (businessName, serviceAddress string, err error)
 
 	// Stripe webhook event dedup. RecordStripeEventStart inserts a new row for
-	// the given event.id; it returns alreadyProcessed=true if the row already
-	// existed (meaning a prior delivery of the same event was already handled).
-	// MarkStripeEventProcessed stamps processed_at to indicate successful handling.
+	// the given event.id; it returns alreadyProcessed=true ONLY when the row
+	// already exists AND processed_at IS NOT NULL (fully handled). A row with
+	// processed_at NULL (prior attempt failed) returns false so Stripe retries
+	// reprocess. MarkStripeEventProcessed stamps processed_at after success.
 	RecordStripeEventStart(ctx context.Context, eventID, eventType string) (alreadyProcessed bool, err error)
 	MarkStripeEventProcessed(ctx context.Context, eventID string) error
+
+	// Instant payout ledger (instant_payouts table). Claim inserts a pending row
+	// under the per-provider advisory lock; Complete stamps the Stripe payout id.
+	SumInstantPayoutsLast24h(ctx context.Context, providerID string) (int64, error)
+	SumAllInstantPayouts(ctx context.Context, providerID string) (int64, error)
+	// SumEligibleInstantPayoutCents is the provider's released+completed payout
+	// balance available for instant withdrawal (gross before prior payouts).
+	SumEligibleInstantPayoutCents(ctx context.Context, providerID string) (int64, error)
+	LookupInstantPayoutByKey(ctx context.Context, providerID, idempotencyKey string) (*InstantPayout, bool, error)
+	// ClaimInstantPayout inserts a pending ledger row under advisory lock after
+	// re-checking daily cap and available balance. Returns the claimed row.
+	ClaimInstantPayout(ctx context.Context, providerID string, amountCents, feeCents, netCents int64, idempotencyKey string) (*InstantPayout, error)
+	CompleteInstantPayout(ctx context.Context, payoutID, stripePayoutID string) error
+	FailInstantPayout(ctx context.Context, payoutID string) error
+}
+
+// InstantPayout is a row in the instant_payouts ledger.
+type InstantPayout struct {
+	ID             string
+	ProviderID     string
+	AmountCents    int64
+	FeeCents       int64
+	NetCents       int64
+	StripePayoutID string
+	IdempotencyKey string
+	Status         string // pending, completed, failed
+	CreatedAt      time.Time
 }

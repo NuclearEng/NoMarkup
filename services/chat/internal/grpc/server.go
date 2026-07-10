@@ -149,7 +149,8 @@ func (s *Server) MarkRead(ctx context.Context, req *chatv1.MarkReadRequest) (*ch
 func (s *Server) SendTypingIndicator(ctx context.Context, req *chatv1.SendTypingIndicatorRequest) (*chatv1.SendTypingIndicatorResponse, error) {
 	err := s.svc.SendTypingIndicator(ctx, req.GetChannelId(), req.GetUserId())
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to send typing indicator")
+		// SEC-10: non-members → PermissionDenied via mapDomainError (not 500).
+		return nil, mapDomainError(err)
 	}
 	return &chatv1.SendTypingIndicatorResponse{}, nil
 }

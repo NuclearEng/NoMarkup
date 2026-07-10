@@ -61,12 +61,13 @@ func (s *PaymentService) SetWebhookValidator(v WebhookEventValidator) {
 // must call SetWebhookValidator with a StripeWebhookValidator (set up at
 // startup with STRIPE_WEBHOOK_SECRET). Tests may inject a fake validator.
 //
-// Idempotency: Stripe retries webhook deliveries for up to 3 days on any
-// non-2xx response, and occasionally redelivers successful events. To prevent
-// double-apply of side effects (e.g. re-releasing escrow on duplicate
-// payment_intent.succeeded), we record every event.id in the stripe_events
-// table BEFORE processing. If the event was already recorded, we return nil
-// without reprocessing and the gateway returns 200 to Stripe.
+// Idempotency (MON-12): Stripe retries webhook deliveries for up to 3 days on
+// any non-2xx response, and occasionally redelivers successful events. We
+// record every event.id in stripe_events BEFORE processing. alreadyProcessed
+// is true ONLY when processed_at is set (fully handled). A row with
+// processed_at NULL means a prior attempt failed — we reprocess so Stripe
+// retries are not swallowed. MarkStripeEventProcessed stamps processed_at
+// only after the handler succeeds.
 func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, signature string) error {
 	if s.webhookValidator == nil {
 		// Fail closed: without a validator we cannot verify signatures, so we

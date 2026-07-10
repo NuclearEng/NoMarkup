@@ -93,7 +93,7 @@ func (m *mockMarketplaceRepo) UpdateListingOrderEscrowStatus(_ context.Context, 
 	return nil
 }
 
-func (m *mockMarketplaceRepo) UpdateListingOrderPaymentIntent(_ context.Context, orderID, paymentIntentID, idempotencyKey string, taxCents int64, autoReleaseAt time.Time) error {
+func (m *mockMarketplaceRepo) UpdateListingOrderPaymentIntent(_ context.Context, orderID, paymentIntentID, idempotencyKey string, taxCents, feeCents int64, autoReleaseAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	o, ok := m.orders[orderID]
@@ -103,9 +103,30 @@ func (m *mockMarketplaceRepo) UpdateListingOrderPaymentIntent(_ context.Context,
 	o.PaymentIntentID = paymentIntentID
 	o.IdempotencyKey = idempotencyKey
 	o.TaxCents = taxCents
+	o.FeeCents = feeCents
 	t := autoReleaseAt
 	o.AutoReleaseAt = &t
 	return nil
+}
+
+func (m *mockMarketplaceRepo) ClaimListingOrderForRelease(_ context.Context, orderID string) (*MarketplaceListingOrder, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.orders[orderID]
+	if !ok {
+		return nil, ErrListingOrderNotFound
+	}
+	if o.DisputeID != nil && *o.DisputeID != "" {
+		return nil, ErrInvalidEscrowState
+	}
+	if o.StripeTransferID != "" {
+		return nil, ErrInvalidEscrowState
+	}
+	if o.EscrowStatus != "held" && o.EscrowStatus != "released" {
+		return nil, ErrInvalidEscrowState
+	}
+	cp := *o
+	return &cp, nil
 }
 
 func (m *mockMarketplaceRepo) UpdateListingOrderDispute(_ context.Context, orderID string, disputeID *string) error {
@@ -273,15 +294,17 @@ func TestMarketplaceStateMachine_pending_to_held_via_charge_then_webhook(t *test
 	repo.addOrder(o)
 
 	// 1. Charge winner — creates PI, persists, leaves in pending_payment.
+	// MON-20: fee is 10% of amount (5000 on 50000), recomputed as source of truth.
 	res, err := svc.ChargeListingWinner(context.Background(), o.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3625), res.TaxCents, "CA tax = 50000*0.0725 = 3625")
-	assert.Equal(t, int64(50000+2500+3625), res.TotalCents)
+	assert.Equal(t, int64(50000+5000+3625), res.TotalCents)
 	assert.Contains(t, res.PaymentIntentID, "pi_listing_dev_listing-charge:ord-1")
 
 	got, _ := repo.GetListingOrder(context.Background(), o.ID)
 	assert.Equal(t, "pending_payment", got.EscrowStatus, "status remains pending_payment until webhook")
 	assert.Equal(t, int64(3625), got.TaxCents)
+	assert.Equal(t, int64(5000), got.FeeCents, "fee_cents must be persisted on charge (MON-20: 10%)")
 	require.NotNil(t, got.AutoReleaseAt)
 
 	// 2. Webhook fires — flips to held.
@@ -478,6 +501,9 @@ func TestMarketplaceStateMachine_resolve_release_to_seller(t *testing.T) {
 
 	got, _ := repo.GetListingOrder(context.Background(), o.ID)
 	assert.Equal(t, "released", got.EscrowStatus)
+	// MON-17: dispute resolve stamps stripe_transfer_id via the same path as release.
+	assert.NotEmpty(t, got.StripeTransferID, "dispute transfer must stamp stripe_transfer_id")
+	require.Len(t, repo.transferStamps, 1)
 }
 
 func TestMarketplaceStateMachine_resolve_invalid_refund_amount(t *testing.T) {
@@ -706,21 +732,21 @@ func TestFullLifecycle_winner_charged_pickup_confirmed_transfer_to_seller(t *tes
 	o.PickupZipCode = "94016" // CA
 	repo.addOrder(o)
 
-	// 1. Charge.
+	// 1. Charge (MON-20: 10% fee = 5000 on 50000).
 	res, err := svc.ChargeListingWinner(context.Background(), o.ID)
 	require.NoError(t, err)
-	assert.Equal(t, int64(50000+2500+3625), res.TotalCents)
+	assert.Equal(t, int64(50000+5000+3625), res.TotalCents)
 
 	// 2. Webhook → held.
 	require.NoError(t, svc.HandleListingPaymentIntentSucceeded(context.Background(), res.PaymentIntentID))
 	got, _ := repo.GetListingOrder(context.Background(), o.ID)
 	assert.Equal(t, "held", got.EscrowStatus)
 
-	// 3. Buyer confirms pickup.
+	// 3. Buyer confirms pickup. Seller payout = amount - fee = 45000.
 	confirmed, err := svc.ConfirmPickup(context.Background(), o.ID, o.BuyerID, "buyer")
 	require.NoError(t, err)
 	assert.Equal(t, "released", confirmed.EscrowStatus)
-	assert.Equal(t, int64(47500), confirmed.SellerPayoutCents)
+	assert.Equal(t, int64(45000), confirmed.SellerPayoutCents)
 
 	// 4. Notification fired.
 	require.GreaterOrEqual(t, len(notifier.events), 1)
@@ -728,6 +754,6 @@ func TestFullLifecycle_winner_charged_pickup_confirmed_transfer_to_seller(t *tes
 
 	// 5. 1099-K recorded.
 	require.Len(t, repo.taxIncs, 1)
-	assert.Equal(t, int64(47500), repo.taxIncs[0].cents)
+	assert.Equal(t, int64(45000), repo.taxIncs[0].cents)
 	assert.Equal(t, 2026, repo.taxIncs[0].year)
 }

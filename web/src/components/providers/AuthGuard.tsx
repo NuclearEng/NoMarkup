@@ -23,7 +23,7 @@ interface AuthGuardProps {
 function Loader() {
   return (
     <div
-      className="dark flex min-h-screen flex-col items-center justify-center gap-4 bg-[#070b14] px-4"
+      className="dark flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4"
       role="status"
       aria-live="polite"
       aria-label="Loading"

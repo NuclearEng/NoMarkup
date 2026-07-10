@@ -344,11 +344,16 @@ func main() {
 	// Wire the trust engine so the listing-detail seller card shows the
 	// seller's real computed trust score/tier instead of null.
 	listingsHandler.SetTrustClient(trustClient)
+	// Wire ChargeListingWinner for buy-now closeouts (MON-06: pending_payment
+	// + PI, never held without payment).
+	listingsHandler.SetPaymentClient(paymentClient)
 	followsHandler := handler.NewFollowsHandler(dbPool)
 	pushSubscriptionsHandler := handler.NewPushSubscriptionsHandler(dbPool)
 	complianceHandler := handler.NewComplianceHandler(dbPool)
 	bidBondHandler := handler.NewBidBondHandler(dbPool, paymentClient)
 	offersHandler := handler.NewOffersHandler(dbPool)
+	// Wire ChargeListingWinner for offer-accept closeouts (same MON-06 rule).
+	offersHandler.SetPaymentClient(paymentClient)
 	listingReplayHandler := handler.NewListingReplayHandler(dbPool)
 	referralsHandler := handler.NewReferralsHandler(dbPool)
 	// Wave 5 power-seller surface (Agent R) — analytics dashboard, paid

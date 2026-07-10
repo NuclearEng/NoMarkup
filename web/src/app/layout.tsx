@@ -9,6 +9,7 @@ import { CookieConsent } from '@/components/compliance/CookieConsent';
 import { ToSReaccept } from '@/components/compliance/ToSReaccept';
 import { AuthRestorer } from '@/components/providers/AuthRestorer';
 import { QueryProvider } from '@/components/providers/QueryProvider';
+import { WebVitalsReporter } from '@/components/providers/WebVitalsReporter';
 import { InstallPrompt } from '@/components/pwa/InstallPrompt';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import { Toaster } from 'sonner';
@@ -104,6 +105,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </a>
         <QueryProvider>
           <AuthRestorer />
+          <WebVitalsReporter />
           <main id="main-content">{children}</main>
           <Toaster position="bottom-right" richColors closeButton />
           <ServiceWorkerRegistrar />

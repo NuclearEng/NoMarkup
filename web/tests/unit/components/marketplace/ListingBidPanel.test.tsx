@@ -1,6 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('next/link', () => ({
+  default: ({ children, href, ...rest }: { children: ReactNode; href: string }) =>
+    createElement('a', { href, ...rest }, children),
+}));
 
 import { ListingBidPanel } from '@/components/marketplace/ListingBidPanel';
 
@@ -83,7 +89,9 @@ describe('ListingBidPanel', () => {
 
   it('shows sign-in prompt when isAuthenticated is false', () => {
     render(<ListingBidPanel {...defaultProps()} isAuthenticated={false} />);
-    expect(screen.getByText(/Sign in to bid/i)).toBeDefined();
+    expect(screen.getByText(/Sign in to place a bid/i)).toBeDefined();
+    const link = screen.getByRole('link', { name: /Sign in to bid/i });
+    expect(link.getAttribute('href')).toBe('/login');
   });
 
   it('shows "You\'re winning" badge when isUserWinning is true', () => {

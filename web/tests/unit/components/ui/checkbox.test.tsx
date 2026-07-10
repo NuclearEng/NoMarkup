@@ -25,6 +25,13 @@ describe('Checkbox', () => {
     expect(screen.getByRole('checkbox').className).toContain('my-check');
   });
 
+  it('exposes a min 44px hit target (FE-07)', () => {
+    render(<Checkbox aria-label="agree" />);
+    const el = screen.getByRole('checkbox', { name: 'agree' });
+    expect(el.className).toMatch(/min-h-11/);
+    expect(el.className).toMatch(/min-w-11/);
+  });
+
   it('respects the disabled prop', async () => {
     const user = userEvent.setup();
     const onCheckedChange = vi.fn();

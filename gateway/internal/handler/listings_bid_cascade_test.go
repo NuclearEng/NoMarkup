@@ -218,9 +218,9 @@ func TestCascade_Property_HigherMaxWinsAtLowerMaxPlusIncrement(t *testing.T) {
 
 // TestListingPlatformFeeCents locks the marketplace platform-fee invariant:
 // every closeout path (auction win, buy-now, accepted offer) must charge the
-// same 5%-rounded-up fee. Before this was centralized, buy-now and accepted
-// offers minted orders with fee_cents=0, leaking platform revenue and paying
-// the seller 100% — divergent from the auction-close path's 5%.
+// same 10%-rounded-up fee (MON-20: 8% platform + 2% guarantee = 1000 bps).
+// Before this was centralized, buy-now and accepted offers minted orders with
+// fee_cents=0, leaking platform revenue and paying the seller 100%.
 func TestListingPlatformFeeCents(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -230,10 +230,10 @@ func TestListingPlatformFeeCents(t *testing.T) {
 	}{
 		{"zero", 0, 0},
 		{"negative", -100, 0},
-		{"exact_5pct", 20000, 1000},      // 20000 * 5% = 1000 exactly
-		{"rounds_up", 101, 6},            // 101 * 5% = 5.05 → 6
-		{"one_cent", 1, 1},              // 1 * 5% = 0.05 → 1 (never under-charge)
-		{"buy_now_20000", 20000, 1000}, // the dogfood buy-now case
+		{"exact_10pct", 20000, 2000},     // 20000 * 10% = 2000 exactly
+		{"rounds_up", 101, 11},           // 101 * 10% = 10.1 → 11
+		{"one_cent", 1, 1},              // 1 * 10% = 0.1 → 1 (never under-charge)
+		{"buy_now_20000", 20000, 2000}, // the dogfood buy-now case
 	}
 	for _, tc := range cases {
 		tc := tc

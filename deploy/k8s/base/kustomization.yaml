@@ -48,9 +48,17 @@ resources:
   - otel-collector/configmap.yaml
   - otel-collector/deployment.yaml
   - otel-collector/service.yaml
+  # PodDisruptionBudgets (minAvailable: 1 for multi-replica services)
+  - pdb.yaml
+  # NOTE: migration-job.yaml is intentionally NOT listed here. Deploy CI
+  # creates a uniquely named Job per release (db-migrate-<version>) from the
+  # same template so completed Jobs never collide with `kubectl apply -k`.
+  # Manual: kubectl apply -f deploy/k8s/base/migration-job.yaml
   # Ingress
   - ingress.yaml
   # Storage
   - pvc.yaml
   # Network Policies
   - network-policy.yaml
+  # NOTE: externalsecret.sample.yaml is intentionally NOT listed — operators
+  # copy it after Vault / ClusterSecretStore is provisioned (see SECRETS.md).

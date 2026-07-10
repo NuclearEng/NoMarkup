@@ -330,7 +330,7 @@ func TestCloseEndedAuctions_WinnerCreatesExactlyOneOrder(t *testing.T) {
 			listing: &domain.Listing{ID: "won", SellerID: "seller", Title: "Bike", Status: "sold"},
 			order: &domain.ListingOrder{
 				ID: "order-1", ListingID: "won", SellerID: "seller",
-				BuyerID: "buyer", AmountCents: 15500, FeeCents: 775, EscrowStatus: "held",
+				BuyerID: "buyer", AmountCents: 15500, FeeCents: 1550, EscrowStatus: "pending_payment",
 			},
 		},
 	}

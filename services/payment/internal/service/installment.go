@@ -151,14 +151,79 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 		return nil, "", fmt.Errorf("create scheduled installments: %w", err)
 	}
 
-	// Pay provider in full immediately via platform transfer (account validated
-	// up front, before any rows were written). Deterministic idempotency key keyed
-	// on the plan id so a retry of this provider payout never double-pays.
+	// MON-15: Charge the customer's first installment BEFORE paying the
+	// provider. If the charge fails we leave the plan active with installment 1
+	// in a clear non-paid state and do NOT disburse the provider transfer.
+	firstInstallment := installments[0]
+	customerStripeID, err := s.repo.GetStripeCustomerID(ctx, input.CustomerID)
+	if err != nil {
+		slog.Warn("failed to get customer stripe id for first installment, using platform id",
+			"customer_id", input.CustomerID,
+			"error", err,
+		)
+		customerStripeID = input.CustomerID
+	}
+
+	// Deterministic off-session key so retries never double-charge installment 1.
+	firstChargeKey := input.IdempotencyKey
+	if firstChargeKey == "" {
+		firstChargeKey = "bnpl-first:" + planID
+	} else {
+		firstChargeKey = "bnpl-first:" + firstChargeKey
+	}
+	metadata := map[string]string{
+		"installment_plan_id":      planID,
+		"scheduled_installment_id": firstInstallment.ID,
+		"installment_number":       fmt.Sprintf("%d", firstInstallment.InstallmentNumber),
+	}
+
+	piID, clientSecret, err := s.stripe.CreateOffSessionPaymentIntent(
+		ctx,
+		firstInstallment.AmountCents,
+		"usd",
+		customerStripeID,
+		input.PaymentMethodID,
+		firstChargeKey,
+		metadata,
+	)
+	if err != nil {
+		slog.Error("failed to charge first installment; provider NOT paid",
+			"plan_id", planID,
+			"installment_id", firstInstallment.ID,
+			"error", err,
+		)
+		// Clear state: first installment failed, plan active but provider unpaid.
+		_ = s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "failed", nil)
+		return nil, "", fmt.Errorf("create installment plan first charge: %w", err)
+	}
+
+	// Mark first installment as paid.
+	if err := s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "paid", &piID); err != nil {
+		slog.Error("failed to mark first installment as paid",
+			"plan_id", planID,
+			"installment_id", firstInstallment.ID,
+			"error", err,
+		)
+	}
+
+	slog.Info("first installment charged for BNPL plan",
+		"plan_id", planID,
+		"installment_id", firstInstallment.ID,
+		"amount_cents", firstInstallment.AmountCents,
+		"pi_id", piID,
+	)
+
+	// Pay provider in full only after the first customer charge succeeded.
+	// Deterministic key on plan id so a retry never double-pays.
 	transferID, err := s.stripe.CreatePlatformTransfer(ctx, input.TotalAmountCents, "usd", providerAccountID, "installment-provider-payout:"+planID)
 	if err != nil {
-		slog.Error("failed to create platform transfer for BNPL",
+		// First charge already succeeded — leave plan with installment 1 paid
+		// and provider unpaid so ops can re-drive the transfer without
+		// re-charging the customer.
+		slog.Error("failed to create platform transfer for BNPL after first charge",
 			"plan_id", planID,
 			"amount_cents", input.TotalAmountCents,
+			"first_pi_id", piID,
 			"error", err,
 		)
 		return nil, "", fmt.Errorf("create installment plan provider transfer: %w", err)
@@ -178,59 +243,6 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 		"provider_id", input.ProviderID,
 		"amount_cents", input.TotalAmountCents,
 		"transfer_id", transferID,
-	)
-
-	// Charge first installment now.
-	firstInstallment := installments[0]
-	customerStripeID, err := s.repo.GetStripeCustomerID(ctx, input.CustomerID)
-	if err != nil {
-		slog.Warn("failed to get customer stripe id for first installment, using platform id",
-			"customer_id", input.CustomerID,
-			"error", err,
-		)
-		customerStripeID = input.CustomerID
-	}
-
-	metadata := map[string]string{
-		"installment_plan_id":      planID,
-		"scheduled_installment_id": firstInstallment.ID,
-		"installment_number":       fmt.Sprintf("%d", firstInstallment.InstallmentNumber),
-		"idempotency_key":          input.IdempotencyKey,
-	}
-
-	piID, clientSecret, err := s.stripe.CreateOffSessionPaymentIntent(
-		ctx,
-		firstInstallment.AmountCents,
-		"usd",
-		customerStripeID,
-		input.PaymentMethodID,
-		metadata,
-	)
-	if err != nil {
-		slog.Error("failed to charge first installment",
-			"plan_id", planID,
-			"installment_id", firstInstallment.ID,
-			"error", err,
-		)
-		// Mark as processing — event handler will resolve.
-		_ = s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "processing", nil)
-		return nil, "", fmt.Errorf("create installment plan first charge: %w", err)
-	}
-
-	// Mark first installment as paid.
-	if err := s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "paid", &piID); err != nil {
-		slog.Error("failed to mark first installment as paid",
-			"plan_id", planID,
-			"installment_id", firstInstallment.ID,
-			"error", err,
-		)
-	}
-
-	slog.Info("first installment charged for BNPL plan",
-		"plan_id", planID,
-		"installment_id", firstInstallment.ID,
-		"amount_cents", firstInstallment.AmountCents,
-		"pi_id", piID,
 	)
 
 	// Re-fetch the plan to get the latest state.
@@ -300,6 +312,9 @@ func (s *InstallmentService) processOneInstallment(ctx context.Context, inst dom
 		"installment_number":       fmt.Sprintf("%d", inst.InstallmentNumber),
 	}
 
+	// Deterministic key per installment + attempt so cron retries dedupe at Stripe.
+	chargeKey := fmt.Sprintf("bnpl-installment:%s:attempt-%d", inst.ID, inst.Attempts+1)
+
 	// Attempt charge with empty payment method (Stripe uses the customer's default).
 	piID, _, err := s.stripe.CreateOffSessionPaymentIntent(
 		ctx,
@@ -307,6 +322,7 @@ func (s *InstallmentService) processOneInstallment(ctx context.Context, inst dom
 		"usd",
 		customerStripeID,
 		"", // uses customer's default payment method
+		chargeKey,
 		metadata,
 	)
 	if err != nil {

@@ -72,7 +72,7 @@ vi.mock('@/components/landing/AuctionDemo', () => ({
   AuctionDemo: () => createElement('div', { 'data-testid': 'auction-demo' }),
 }));
 
-const { default: LandingPage } = await import('@/app/(public)/page');
+const { default: LandingPage } = await import('@/app/(public)/LandingPageClient');
 
 // Helper: fire every captured IO callback as "isIntersecting: true". This
 // drives `useInView` → setInView(true) for every section and triggers the

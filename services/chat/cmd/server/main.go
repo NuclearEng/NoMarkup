@@ -35,6 +35,14 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	// SEC-03 / GAP-006: refuse to start outside development without the
+	// gateway↔chat shared secret. An empty secret would let anyone who can
+	// reach the chat WS port impersonate arbitrary user_id values.
+	if err := ws.RequireInternalWSSecret(); err != nil {
+		slog.Error("refusing to start chat service", "error", err)
+		os.Exit(1)
+	}
+
 	port := os.Getenv("CHAT_SERVICE_PORT")
 	if port == "" {
 		port = "50055"

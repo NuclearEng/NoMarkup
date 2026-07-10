@@ -447,6 +447,32 @@ func TestListMessages(t *testing.T) {
 	assert.True(t, errors.Is(err, domain.ErrNotChannelMember) || assert.ObjectsAreEqual("not a member", err.Error()))
 }
 
+// TestSendTypingIndicatorMembership covers SEC-10: non-members must not publish typing.
+func TestSendTypingIndicatorMembership(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepo()
+	repo.channels["ch-1"] = &domain.Channel{
+		ID: "ch-1", CustomerID: "user-1", ProviderID: "user-2", Status: "active",
+	}
+	// pubsub nil is fine — membership is checked first; members short-circuit to nil.
+	svc := New(repo, nil)
+
+	err := svc.SendTypingIndicator(context.Background(), "ch-1", "user-1")
+	require.NoError(t, err)
+
+	err = svc.SendTypingIndicator(context.Background(), "ch-1", "user-2")
+	require.NoError(t, err)
+
+	err = svc.SendTypingIndicator(context.Background(), "ch-1", "user-3")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrNotChannelMember))
+
+	err = svc.SendTypingIndicator(context.Background(), "ch-missing", "user-1")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrNotChannelMember))
+}
+
 func TestGetUnreadCounts(t *testing.T) {
 	t.Parallel()
 

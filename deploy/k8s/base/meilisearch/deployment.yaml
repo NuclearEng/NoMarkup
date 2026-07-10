@@ -22,6 +22,13 @@ spec:
         app.kubernetes.io/component: search
         app.kubernetes.io/part-of: nomarkup
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: meilisearch
           # Pinned to the same minor as docker-compose.yml (local dev parity).
@@ -31,6 +38,12 @@ spec:
             - name: http
               containerPort: 7700
               protocol: TCP
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           env:
             - name: MEILI_ENV
               value: "production"

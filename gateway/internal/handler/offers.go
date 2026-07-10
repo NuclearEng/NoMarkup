@@ -10,9 +10,9 @@ package handler
 //
 // Why a thin pgx-backed handler: matches the rest of the goods-marketplace
 // surface (see listings.go for rationale). Accepting an offer mints a
-// listing_orders row in escrow_status='held' inside the same transaction
-// as the listings.status='sold' flip, mirroring the buy-now closeout
-// path in listings_bid.go::BuyItNow.
+// listing_orders row in escrow_status='pending_payment' inside the same
+// transaction as the listings.status='sold' flip, mirroring the buy-now
+// closeout path in listings_bid.go::BuyItNow (MON-06: never held without PI).
 //
 // PATCH actions:
 //
@@ -42,6 +42,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -52,13 +54,20 @@ const maxOfferMessageLen = 2000
 
 // OffersHandler exposes the Best-Offer surface.
 type OffersHandler struct {
-	db *pgxpool.Pool
+	db            *pgxpool.Pool
+	paymentClient paymentv1.PaymentServiceClient
 }
 
 // NewOffersHandler returns an OffersHandler. A nil db short-circuits every
 // endpoint to a 503 (matches the rest of the marketplace handler family).
 func NewOffersHandler(db *pgxpool.Pool) *OffersHandler {
 	return &OffersHandler{db: db}
+}
+
+// SetPaymentClient wires ChargeListingWinner for offer-accept closeouts
+// (MON-06). Safe to leave unset: orders stay in pending_payment.
+func (h *OffersHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
+	h.paymentClient = c
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -325,9 +334,9 @@ func effectiveOfferStatus(rawStatus string, expiresAt time.Time) string {
 //   withdraw                    — buyer only
 //
 // Accept flips the listing to 'sold' and mints a listing_orders row in
-// escrow_status='held' atomically. Counter creates a new pending offer
-// whose parent_offer_id points at the original; both rows live, with the
-// original now in status='countered'.
+// escrow_status='pending_payment' atomically (MON-06). Counter creates a
+// new pending offer whose parent_offer_id points at the original; both
+// rows live, with the original now in status='countered'.
 func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 	if h.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
@@ -674,17 +683,16 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 			slog.WarnContext(r.Context(), "accept offer: sibling reject failed (non-fatal)", "error", err)
 		}
 
-		// Mint the order — same shape as buy-now, including the platform fee.
-		// An accepted offer is a real closeout and is charged the same 5%
-		// platform fee as an auction win / buy-now (see
-		// listingPlatformFeeCents); it is not a fee-free path.
+		// Mint the order in pending_payment — never held without a PI
+		// (MON-06). Same platform fee as auction win / buy-now
+		// (listingPlatformFeeCents = 8%+2% total).
 		feeCents := listingPlatformFeeCents(amountCents)
 		var orderID string
 		if err := tx.QueryRow(r.Context(), `
 			INSERT INTO listing_orders (
 				listing_id, seller_id, buyer_id,
 				amount_cents, fee_cents, escrow_status
-			) VALUES ($1, $2, $3, $4, $5, 'held')
+			) VALUES ($1, $2, $3, $4, $5, 'pending_payment')
 			RETURNING id::text`,
 			listingID, sellerID, buyerID, amountCents, feeCents,
 		).Scan(&orderID); err != nil {
@@ -699,10 +707,25 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"offer":    h.loadOffer(r.Context(), offerID),
-			"order_id": orderID,
-		})
+		resp := map[string]interface{}{
+			"offer":         h.loadOffer(r.Context(), offerID),
+			"order_id":      orderID,
+			"escrow_status": "pending_payment",
+			"payment_required": true,
+		}
+		if h.paymentClient != nil {
+			charge, cerr := h.paymentClient.ChargeListingWinner(r.Context(),
+				&paymentv1.ChargeListingWinnerRequest{OrderId: orderID})
+			if cerr != nil {
+				slog.ErrorContext(r.Context(), "accept offer: charge listing winner failed",
+					"error", cerr, "order_id", orderID)
+				resp["charge_error"] = "payment setup failed; retry charge for this order"
+			} else {
+				resp["payment_intent_id"] = charge.GetPaymentIntentId()
+				resp["client_secret"] = charge.GetClientSecret()
+			}
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 }

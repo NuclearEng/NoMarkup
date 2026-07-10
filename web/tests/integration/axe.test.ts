@@ -10,14 +10,18 @@
  *     - Playwright requires a running web server; that adds CI flake.
  *
  *   For a browser-driven version (requires `npm run dev` to be live),
- *   see the (TODO) e2e/axe.spec.ts companion.
+ *   see the (TODO) e2e/axe.spec.ts companion — one real-page smoke is
+ *   sketched there when Playwright + a backend/stack are available.
  *
- * Scope:
- *   We construct minimal HTML stubs for /, /marketplace, /jobs, and
- *   /login and assert ZERO `serious` or `critical` violations from
- *   axe-core's default rule set. Color-contrast checks are disabled
- *   because jsdom does not compute layout or colors — the rule would
- *   otherwise emit false positives.
+ * Scope (FE-01):
+ *   We mount real lightweight React components (EmptyState, Logo, StarRating,
+ *   Button) plus minimal HTML stubs for route shells and assert ZERO
+ *   `serious` or `critical` violations from axe-core's default rule set.
+ *
+ *   Color-contrast: re-enabled when axe can evaluate it. In jsdom, computed
+ *   styles are incomplete so color-contrast often false-positives; we keep
+ *   it disabled under jsdom and document that Playwright e2e axe should
+ *   re-enable it (see tests/e2e/axe.spec.ts TODO).
  *
  * Why this file is the CI gate:
  *   The existing test suite already runs via `bun run test`; adding axe
@@ -25,8 +29,20 @@
  *   infrastructure. When a violation lands, the test fails the build.
  */
 
-import { describe, expect, it } from 'vitest';
+import { createElement, type ReactNode } from 'react';
+import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import axe from 'axe-core';
+
+vi.mock('next/link', () => ({
+  default: ({ children, href, ...rest }: { children: ReactNode; href: string }) =>
+    createElement('a', { href, ...rest }, children),
+}));
+
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Logo } from '@/components/layout/Logo';
+import { StarRatingDisplay } from '@/components/reviews/StarRating';
 
 // runAxe filters axe-core's findings down to the impacts we treat as
 // blocking. `moderate` and `minor` violations are tracked separately so
@@ -34,6 +50,9 @@ import axe from 'axe-core';
 async function runAxe(node: HTMLElement) {
   const result = await axe.run(node, {
     rules: {
+      // jsdom does not compute layout/colors reliably — leave disabled here.
+      // TODO(e2e): enable color-contrast in Playwright axe on a real page
+      // (tests/e2e/axe.spec.ts) once the stack is up.
       'color-contrast': { enabled: false },
     },
   });
@@ -42,9 +61,6 @@ async function runAxe(node: HTMLElement) {
   );
 }
 
-// mount inserts an HTML string into a fresh container under document.body
-// and returns the container. Cleaning up after each test is important
-// because jsdom's body is shared across the file.
 function mount(html: string): HTMLElement {
   const container = document.createElement('div');
   container.innerHTML = html;
@@ -56,7 +72,7 @@ function unmount(container: HTMLElement) {
   if (container.parentNode) container.parentNode.removeChild(container);
 }
 
-describe('axe accessibility gate', () => {
+describe('axe accessibility gate — HTML stubs', () => {
   it('home landing renders zero serious or critical violations', async () => {
     const container = mount(`
       <main>
@@ -141,5 +157,41 @@ describe('axe accessibility gate', () => {
     } finally {
       unmount(container);
     }
+  });
+});
+
+describe('axe accessibility gate — real lightweight components (FE-01)', () => {
+  it('EmptyState has zero serious/critical violations', async () => {
+    const { container } = render(
+      createElement(EmptyState, {
+        title: 'No results',
+        description: 'Try adjusting your filters.',
+        action: createElement(Button, { type: 'button' }, 'Clear filters'),
+      }),
+    );
+    const violations = await runAxe(container);
+    expect(violations).toEqual([]);
+  });
+
+  it('Logo has zero serious/critical violations', async () => {
+    const { container } = render(createElement(Logo));
+    const violations = await runAxe(container);
+    expect(violations).toEqual([]);
+  });
+
+  it('StarRatingDisplay has zero serious/critical violations', async () => {
+    const { container } = render(
+      createElement(StarRatingDisplay, { rating: 4.5 }),
+    );
+    const violations = await runAxe(container);
+    expect(violations).toEqual([]);
+  });
+
+  it('Button primary has zero serious/critical violations', async () => {
+    const { container } = render(
+      createElement(Button, { type: 'button' }, 'Place bid'),
+    );
+    const violations = await runAxe(container);
+    expect(violations).toEqual([]);
   });
 });

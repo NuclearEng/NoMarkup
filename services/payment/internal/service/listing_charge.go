@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -105,9 +106,16 @@ type MarketplaceRepository interface {
 	GetListingOrder(ctx context.Context, orderID string) (*MarketplaceListingOrder, error)
 	GetListingOrderByPaymentIntent(ctx context.Context, piID string) (*MarketplaceListingOrder, error)
 	UpdateListingOrderEscrowStatus(ctx context.Context, orderID, newStatus string, releasedAt *time.Time, pickupConfirmedAt *time.Time, sellerPayoutCents int64) error
-	UpdateListingOrderPaymentIntent(ctx context.Context, orderID, paymentIntentID, idempotencyKey string, taxCents int64, autoReleaseAt time.Time) error
+	// UpdateListingOrderPaymentIntent stamps the PI id, idempotency key, tax,
+	// fee, and auto-release deadline on the order.
+	UpdateListingOrderPaymentIntent(ctx context.Context, orderID, paymentIntentID, idempotencyKey string, taxCents, feeCents int64, autoReleaseAt time.Time) error
 	UpdateListingOrderDispute(ctx context.Context, orderID string, disputeID *string) error
 	ListListingOrdersForAutoRelease(ctx context.Context, before time.Time, limit int) ([]*MarketplaceListingOrder, error)
+	// ClaimListingOrderForRelease locks the order row (FOR UPDATE) and returns
+	// it only when still eligible for payout (held/released, no dispute, no
+	// transfer). Returns ErrInvalidEscrowState when another worker claimed it
+	// or a dispute is open (MON-18).
+	ClaimListingOrderForRelease(ctx context.Context, orderID string) (*MarketplaceListingOrder, error)
 	// MarkListingOrderTransferred stamps the Stripe Connect transfer id on a
 	// paid-out order. This is the durable "already paid" marker that lets the
 	// auto-release worker reconcile handshake-released orders exactly once.
@@ -118,6 +126,13 @@ type MarketplaceRepository interface {
 	ResolveMarketplaceDispute(ctx context.Context, disputeID, resolution, notes, adminID string, refundCents, transferCents int64) (*MarketplaceDispute, error)
 
 	IncrementSellerTaxForm(ctx context.Context, sellerID string, taxYear int, grossPaymentsCents int64) error
+}
+
+// ConnectAccountResolver resolves a platform user id to their Stripe Connect
+// account id (acct_...). Injected into MarketplaceService so goods transfers
+// never send a bare user UUID as Destination (MON-08).
+type ConnectAccountResolver interface {
+	GetStripeAccountID(ctx context.Context, userID string) (string, error)
 }
 
 // MarketplaceNotifier sends notifications to the buyer/seller. The concrete
@@ -153,7 +168,9 @@ func (noopMarketplaceNotifier) NotifyDisputeResolved(_ context.Context, _, _, _,
 type MarketplaceConfig struct {
 	AutoReleaseAfter      time.Duration // default 14d
 	DisputeWindowAfter    time.Duration // dispute allowed up to: pickup_confirmed_at + this duration (default 24h)
-	MarketplaceFeePercent float64       // default 0.05 (5%)
+	// MarketplaceFeePercent is the combined seller-side take (platform + guarantee).
+	// MON-20: aligned with services 8% + 2% = 10% (0.10). Single fee_cents column.
+	MarketplaceFeePercent float64
 }
 
 // DefaultMarketplaceConfig returns the v1 defaults.
@@ -161,7 +178,7 @@ func DefaultMarketplaceConfig() MarketplaceConfig {
 	return MarketplaceConfig{
 		AutoReleaseAfter:      14 * 24 * time.Hour,
 		DisputeWindowAfter:    24 * time.Hour,
-		MarketplaceFeePercent: 0.05,
+		MarketplaceFeePercent: 0.10, // 8% platform + 2% guarantee (MON-20)
 	}
 }
 
@@ -174,6 +191,7 @@ func DefaultMarketplaceConfig() MarketplaceConfig {
 type MarketplaceService struct {
 	repo     MarketplaceRepository
 	stripe   *StripeService
+	accounts ConnectAccountResolver
 	notifier MarketplaceNotifier
 	cfg      MarketplaceConfig
 	now      func() time.Time // injectable for tests
@@ -188,6 +206,12 @@ func NewMarketplaceService(repo MarketplaceRepository, stripe *StripeService) *M
 		cfg:      DefaultMarketplaceConfig(),
 		now:      time.Now,
 	}
+}
+
+// SetAccountResolver injects the Connect account lookup used before seller
+// transfers. Production wires PaymentService/repo.GetStripeAccountID.
+func (s *MarketplaceService) SetAccountResolver(r ConnectAccountResolver) {
+	s.accounts = r
 }
 
 // SetNotifier injects a MarketplaceNotifier (production wires the real
@@ -302,13 +326,12 @@ func (s *MarketplaceService) ChargeListingWinner(ctx context.Context, orderID st
 	}
 
 	autoReleaseAt := s.now().Add(s.cfg.AutoReleaseAfter)
-	if err := s.repo.UpdateListingOrderPaymentIntent(ctx, order.ID, piID, idemKey, taxCents, autoReleaseAt); err != nil {
+	// Persist fee_cents alongside tax so release/refund math uses the same
+	// fee that was charged (MON-05/20).
+	if err := s.repo.UpdateListingOrderPaymentIntent(ctx, order.ID, piID, idemKey, taxCents, feeCents, autoReleaseAt); err != nil {
 		return nil, fmt.Errorf("charge listing winner: update order: %w", err)
 	}
 
-	// Update fee on the order if it differs from what the upstream wrote.
-	// (We persist the fee elsewhere or via a separate column; the schema in
-	// 034 has fee_cents already.)
 	slog.Info("charged listing winner",
 		"order_id", order.ID,
 		"pi_id", piID,
@@ -405,6 +428,26 @@ func (s *MarketplaceService) ConfirmPickup(ctx context.Context, orderID, actorUs
 	return updated, nil
 }
 
+// resolveSellerConnectAccount returns the Stripe Connect acct_* for the seller.
+// Never returns a bare user UUID in production (MON-08).
+func (s *MarketplaceService) resolveSellerConnectAccount(ctx context.Context, sellerID string) (string, error) {
+	if s.accounts != nil {
+		acct, err := s.accounts.GetStripeAccountID(ctx, sellerID)
+		if err != nil {
+			return "", fmt.Errorf("resolve seller connect account: %w", err)
+		}
+		if acct == "" || (!s.stripe.IsDevMode() && !strings.HasPrefix(acct, "acct_")) {
+			return "", fmt.Errorf("resolve seller connect account: invalid account id for seller %s", sellerID)
+		}
+		return acct, nil
+	}
+	// Dev / tests without a resolver: allow seller id only in dev mode.
+	if s.stripe.IsDevMode() {
+		return sellerID, nil
+	}
+	return "", fmt.Errorf("resolve seller connect account: no account resolver configured")
+}
+
 // releaseToSeller is the shared "transfer + flip status" code used by
 // ConfirmPickup AND AutoReleaseListingOrders. Computes seller payout =
 // amount - fee (tax stays with platform), creates the Stripe transfer, and
@@ -422,25 +465,28 @@ func (s *MarketplaceService) releaseToSeller(ctx context.Context, order *Marketp
 		)
 		return nil
 	}
+	// Skip if disputed (defense in depth; AutoRelease also claims with lock).
+	if order.DisputeID != nil && *order.DisputeID != "" {
+		return fmt.Errorf("release to seller: order disputed: %w", ErrInvalidEscrowState)
+	}
 
 	sellerPayout := order.AmountCents - order.FeeCents
 	if sellerPayout < 0 {
 		sellerPayout = 0
 	}
 
-	// Look up seller's Connect account. We reuse the StripeService from the
-	// payment side which knows about Connect accounts; the actual lookup
-	// happens via stripe metadata or a dedicated repo method that the wider
-	// PaymentService already has. To avoid a circular dep we ask Stripe with
-	// a synthetic destination derived from sellerID — in production this is
-	// resolved by the PaymentService.GetStripeAccountID helper which is
-	// already on the same struct. Test mode short-circuits via DevStore.
+	// MON-08: resolve seller UUID → Stripe Connect acct_* before transfer.
+	dest, err := s.resolveSellerConnectAccount(ctx, order.SellerID)
+	if err != nil {
+		return fmt.Errorf("release to seller: %w", err)
+	}
+
 	transferIdemKey := fmt.Sprintf("listing-release:%s", order.ID)
 	transferID, err := s.stripe.CreateMarketplaceTransfer(
 		ctx,
 		sellerPayout,
 		"usd",
-		order.SellerID,
+		dest,
 		order.PaymentIntentID,
 		transferIdemKey,
 	)
@@ -624,10 +670,22 @@ func (s *MarketplaceService) ResolveListingDispute(
 			return nil, fmt.Errorf("resolve dispute: refund: %w", err)
 		}
 	}
+	var transferID string
 	if transferToSellerCents > 0 {
-		transferIdem := fmt.Sprintf("listing-dispute-transfer:%s:%s", order.ID, disputeID)
-		if _, err := s.stripe.CreateMarketplaceTransfer(ctx, transferToSellerCents, "usd", order.SellerID, order.PaymentIntentID, transferIdem); err != nil {
-			return nil, fmt.Errorf("resolve dispute: transfer: %w", err)
+		// Skip if already paid (double-pay guard, same path as release).
+		if order.StripeTransferID != "" {
+			transferID = order.StripeTransferID
+		} else {
+			dest, err := s.resolveSellerConnectAccount(ctx, order.SellerID)
+			if err != nil {
+				return nil, fmt.Errorf("resolve dispute: %w", err)
+			}
+			// Same key family as release so a race with auto-release dedupes.
+			transferIdem := fmt.Sprintf("listing-release:%s", order.ID)
+			transferID, err = s.stripe.CreateMarketplaceTransfer(ctx, transferToSellerCents, "usd", dest, order.PaymentIntentID, transferIdem)
+			if err != nil {
+				return nil, fmt.Errorf("resolve dispute: transfer: %w", err)
+			}
 		}
 	}
 
@@ -640,6 +698,13 @@ func (s *MarketplaceService) ResolveListingDispute(
 		now := s.now()
 		if err := s.repo.UpdateListingOrderEscrowStatus(ctx, order.ID, newOrderStatus, &now, nil, transferToSellerCents); err != nil {
 			return nil, fmt.Errorf("resolve dispute: update order status: %w", err)
+		}
+	}
+
+	// MON-17: stamp stripe_transfer_id via the same path as release.
+	if transferID != "" {
+		if err := s.repo.MarkListingOrderTransferred(ctx, order.ID, transferID); err != nil {
+			return nil, fmt.Errorf("resolve dispute: stamp transfer: %w", err)
 		}
 	}
 
@@ -690,24 +755,20 @@ func (s *MarketplaceService) AutoReleaseListingOrders(ctx context.Context, batch
 
 	released := 0
 	for _, o := range orders {
-		// Defense in depth — repo query already filters, but recheck. We pay out
-		// two kinds of order here:
-		//   - 'held' past the auto-release window (buyer never confirmed)
-		//   - 'released' via the gateway pickup handshake but not yet paid out
-		//     (stripe_transfer_id still empty) — the bug this fix closes.
-		// Disputed/refunded orders are excluded by the status check, so they
-		// never pay out. Already-paid orders (transfer id set) are skipped by
-		// releaseToSeller's own guard.
-		if o.EscrowStatus != "held" && o.EscrowStatus != "released" {
+		// MON-18: lock the order row before acting so a concurrent dispute
+		// file cannot race the auto-release transfer.
+		claimed, err := s.repo.ClaimListingOrderForRelease(ctx, o.ID)
+		if err != nil {
+			if errors.Is(err, ErrInvalidEscrowState) {
+				slog.Info("auto release: order no longer eligible, skipping",
+					"order_id", o.ID, "error", err)
+				continue
+			}
+			slog.Error("auto release: claim failed, continuing",
+				"order_id", o.ID, "error", err)
 			continue
 		}
-		if o.DisputeID != nil && *o.DisputeID != "" {
-			continue
-		}
-		if o.StripeTransferID != "" {
-			continue
-		}
-		if err := s.releaseToSeller(ctx, o, nil); err != nil {
+		if err := s.releaseToSeller(ctx, claimed, nil); err != nil {
 			slog.Error("auto release: failed for order, continuing",
 				"order_id", o.ID,
 				"error", err,

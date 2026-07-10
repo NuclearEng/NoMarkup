@@ -632,12 +632,19 @@ type instantPayoutRequest struct {
 //
 // RISK MODEL (fail closed): NoMarkup fronts the money instantly, so it is only
 // safe to pay out funds that are CAPTURED and past the escrow/dispute hold.
-// Eligibility is therefore restricted to the provider's own COMPLETED payments
-// (escrow released, dispute window elapsed) — never pending, in-escrow, or
-// released-but-unconfirmed funds, which can still refund/chargeback and leave
-// the platform holding the loss. The fee is configurable (see
+// Eligibility is therefore restricted to the provider's own RELEASED and
+// COMPLETED payments (escrow released; COMPLETED means dispute window elapsed)
+// — never pending or in-escrow funds, which can still refund/chargeback and
+// leave the platform holding the loss. The fee is configurable (see
 // instant_payout_pricing.go) so it covers Stripe's instant-payout cost plus a
 // margin, and per-transaction + per-day caps bound clawback exposure.
+//
+// Money-safety order of operations (MON-09/10/11):
+//  1. Validate eligibility / caps.
+//  2. CLAIM the balance in the instant_payouts ledger FIRST.
+//  3. Only then execute the Stripe transfer (or refuse if not wired).
+// Never report success with a synthetic payout_dev_* id when a real Stripe
+// key is present — that path returns 503 "not configured".
 func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -702,9 +709,8 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Eligible balance = sum of this provider's COMPLETED payouts only (see
-	// grossEligiblePayoutCents). COMPLETED means escrow released and the dispute
-	// window has elapsed, so the funds are safe to front.
+	// Eligible balance = sum of this provider's RELEASED + COMPLETED payouts
+	// (see grossEligiblePayoutCents).
 	grossEligibleCents, err := h.grossEligiblePayoutCents(r.Context(), claims.UserID)
 	if err != nil {
 		writeGRPCError(w, err)
@@ -756,23 +762,29 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Execute the payout against the payment provider (Stripe in prod, dev-mock
-	// otherwise) and RECORD it in the ledger. The ledger write is the source of
-	// truth: it backs idempotent replay and the daily cap.
-	stripePayoutID := executeStripeInstantPayout(req.AmountCents, netCents)
+	// MON-11: production Stripe path is not wired through the gateway (no
+	// InstantPayout RPC on the payment service either). When a live Stripe key
+	// is present we MUST NOT fake success with payout_dev_* — fail closed.
+	if hasRealStripeKey() {
+		slog.Error("instant payout: real Stripe key present but gateway Stripe payout is not configured",
+			"provider_id", claims.UserID)
+		writeError(w, http.StatusServiceUnavailable, "instant payout is not configured")
+		return
+	}
 
+	// Dev-only mock payout id. Generated BEFORE the ledger claim so the row
+	// stores a stable stripe_payout_id; no external money moves in this path.
+	stripePayoutID := "payout_dev_" + strings.SplitN(uuid.NewString(), "-", 2)[0]
 	keyArg := idempotencyKeyArg(idemKey)
 
-	// CONCURRENCY (TOCTOU): the daily-cap check and the ledger insert must be one
-	// atomic, per-provider-serialized step. Previously the trailing-24h sum and
-	// the insert were separate statements with no lock, so N concurrent
-	// different-key payouts for the same provider each read the same pre-cap sum,
-	// all passed, and all inserted — breaching the daily cap. We now run both
-	// inside a single transaction guarded by a transaction-scoped advisory lock
-	// keyed on the provider id (pg_advisory_xact_lock). The lock serializes only
-	// same-provider payouts (different providers hash to different keys and never
-	// contend); the cap is re-summed INSIDE the lock so each request sees every
-	// previously-committed payout. The lock auto-releases at COMMIT/ROLLBACK.
+	// MON-10: CLAIM the balance in the ledger FIRST (under the per-provider
+	// advisory lock + daily cap + net-balance check). Only after a durable
+	// ledger row exists do we consider the payout successful. Previously the
+	// synthetic stripe id was "executed" before the ledger write, so a ledger
+	// failure after a real Stripe transfer could double-pay on retry.
+	//
+	// CONCURRENCY (TOCTOU): daily-cap check + insert are one atomic,
+	// per-provider-serialized step via pg_advisory_xact_lock.
 	row, err := h.insertInstantPayoutWithCap(r.Context(), claims.UserID,
 		req.AmountCents, feeCents, netCents, grossEligibleCents, "completed", stripePayoutID, keyArg)
 	if err != nil {
@@ -788,10 +800,7 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 		}
 		// A UNIQUE(provider_id, idempotency_key) collision means a concurrent
 		// request under the same key already wrote the row — replay it instead
-		// of double-paying. (Note: the dev-mock executeStripeInstantPayout is a
-		// no-op so there is no duplicate transfer to reverse here; the prod
-		// Stripe path must use the same key as its Stripe idempotency key so the
-		// transfer is likewise deduped — see executeStripeInstantPayout.)
+		// of double-paying.
 		if isUniqueViolation(err) && idemKey != "" {
 			if prior, found, lerr := h.lookupInstantPayoutByKey(r.Context(), claims.UserID, idemKey); lerr == nil && found {
 				writeJSON(w, http.StatusOK, prior)
@@ -807,25 +816,35 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, instantPayoutResponse(row))
 }
 
-// grossEligiblePayoutCents returns the sum of this provider's COMPLETED payouts
-// (provider_payout_cents) — the gross cleared earnings safe to front. We filter
-// by provider_id because a user can appear on a payment as either the customer
-// or the provider. This is the GROSS basis; subtract prior instant payouts (see
-// netInstantPayoutAvailableCents) for the actual withdrawable balance.
+// grossEligiblePayoutCents returns the sum of this provider's RELEASED and
+// COMPLETED payouts (provider_payout_cents) — the gross cleared earnings safe
+// to front (MON-09). RELEASED means escrow has been released to the provider;
+// COMPLETED means the dispute window has also elapsed. Pending / in-escrow
+// funds are excluded. We filter by provider_id because a user can appear on a
+// payment as either the customer or the provider. This is the GROSS basis;
+// subtract prior instant payouts (see netInstantPayoutAvailableCents) for the
+// actual withdrawable balance.
 func (h *PaymentHandler) grossEligiblePayoutCents(ctx context.Context, providerID string) (int64, error) {
-	const completed = paymentv1.PaymentStatus_PAYMENT_STATUS_COMPLETED
-	statusFilter := completed
+	// ListPayments accepts a single status filter; fetch without a filter and
+	// keep RELEASED + COMPLETED client-side so eligibility includes both.
 	listResp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
-		UserId:       providerID,
-		StatusFilter: &statusFilter,
-		Pagination:   &commonv1.PaginationRequest{Page: 1, PageSize: 1000},
+		UserId:     providerID,
+		Pagination: &commonv1.PaginationRequest{Page: 1, PageSize: 1000},
 	})
 	if err != nil {
 		return 0, err
 	}
+	const (
+		completed = paymentv1.PaymentStatus_PAYMENT_STATUS_COMPLETED
+		released  = paymentv1.PaymentStatus_PAYMENT_STATUS_RELEASED
+	)
 	var gross int64
 	for _, p := range listResp.GetPayments() {
-		if p.GetProviderId() == providerID && p.GetStatus() == completed {
+		if p.GetProviderId() != providerID {
+			continue
+		}
+		st := p.GetStatus()
+		if st == completed || st == released {
 			gross += p.GetProviderPayoutCents()
 		}
 	}
@@ -908,26 +927,25 @@ func idempotencyKeyArg(key string) *string {
 	return &key
 }
 
-// executeStripeInstantPayout performs the actual money movement and returns the
-// provider-side payout id stored in the ledger as stripe_payout_id.
+// executeStripeInstantPayout is retained for call sites / tests that still
+// exercise the helper. Production live-key path MUST return an error (never a
+// fake payout_dev_* id). Dev mode returns a synthetic id. Prefer the
+// InstantPayout handler's inline claim-then-dev-id flow, which claims the
+// ledger before any external side effect (MON-10/11).
 //
-// PROD PATH (TODO — the one guarded call that remains): when a real Stripe key
-// is configured, call the Stripe Payout API (stripe.Payout / Transfer to the
-// provider's Connect account) using the request's Idempotency-Key as Stripe's
-// idempotency key, and return payout.ID. The gateway does not currently hold a
-// Stripe client (the payment service owns Stripe); wiring this is the remaining
-// production step. Until then we never have a real Stripe key in dev
-// (STRIPE_SECRET_KEY is the sk_test_ placeholder), so we return a dev-mock id
-// "payout_dev_<short-uuid>" — mirroring the advances' "tr_platform_dev_<uuid>".
-func executeStripeInstantPayout(_ /* amountCents */, _ /* netCents */ int64) string {
+// Returns ("", errInstantPayoutNotConfigured) when a real Stripe key is set
+// but the gateway has no Stripe Payout client wired (payment service owns
+// Stripe; no InstantPayout RPC exists yet).
+func executeStripeInstantPayout(_ /* amountCents */, _ /* netCents */ int64) (string, error) {
 	if hasRealStripeKey() {
-		// PROD: stripePayout, _ := stripeClient.Payouts.New(...); return stripePayout.ID
-		// Not wired in the gateway yet — see doc comment above. Fall through to
-		// the dev-mock so dev/sandbox stacks keep working until then.
-		slog.Warn("instant payout: real Stripe key present but gateway Stripe payout is not wired; using dev-mock id")
+		return "", errInstantPayoutNotConfigured
 	}
-	return "payout_dev_" + strings.SplitN(uuid.NewString(), "-", 2)[0]
+	return "payout_dev_" + strings.SplitN(uuid.NewString(), "-", 2)[0], nil
 }
+
+// errInstantPayoutNotConfigured is returned when a live Stripe key is present
+// but the gateway cannot execute a real payout. Mapped to HTTP 503.
+var errInstantPayoutNotConfigured = errors.New("instant payout is not configured")
 
 // hasRealStripeKey reports whether a non-placeholder Stripe secret is set. Dev
 // uses the sk_test_ placeholder, so live payouts stay disabled there.
@@ -1079,11 +1097,11 @@ func netInstantPayoutAvailableCents(grossEligibleCents, priorPaidOutCents int64)
 // the underlying pgx error so the caller can replay the prior result.
 //
 // BALANCE (money-critical): grossEligibleCents is the provider's cleared
-// earnings (sum of COMPLETED provider payouts), computed by the caller. Inside
-// the lock we sum every prior non-failed instant payout and reject if
-// grossEligible − priorPaidOut < amount. Because this runs under the same
-// per-provider advisory lock as the cap check, two concurrent payouts for one
-// provider cannot jointly exceed the net balance: the second to acquire the
+// earnings (sum of RELEASED + COMPLETED provider payouts), computed by the
+// caller. Inside the lock we sum every prior non-failed instant payout and
+// reject if grossEligible − priorPaidOut < amount. Because this runs under the
+// same per-provider advisory lock as the cap check, two concurrent payouts for
+// one provider cannot jointly exceed the net balance: the second to acquire the
 // lock sees the first's committed row in priorPaidOut.
 func (h *PaymentHandler) insertInstantPayoutWithCap(
 	ctx context.Context,

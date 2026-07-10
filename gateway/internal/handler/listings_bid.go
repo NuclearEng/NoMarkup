@@ -74,8 +74,14 @@ func listingMinIncrementForPrice(priceCents int64) int64 {
 }
 
 const (
-	// listingPlatformFeeBps ... (moved to own const for syntax after adding tier func)
-	listingPlatformFeeBps int64 = 500
+	// listingPlatformFeeBps is the total seller-side marketplace fee in basis
+	// points (MON-20). Product rate card is 8% platform + 2% guarantee =
+	// 10% total (1000 bps). listing_orders only has a single fee_cents column
+	// (no split platform/guarantee fields on goods orders), so we store the
+	// combined 1000 bps. Services-side jobs use separate platform_fee_cents +
+	// guarantee_fee_cents (800+200); goods use this single total.
+	// Must match services/job listing_repo closeout fee.
+	listingPlatformFeeBps int64 = 1000 // 8% platform + 2% guarantee
 )
 
 // listingPlatformFeeCents computes the platform fee on a closeout amount,
@@ -1078,8 +1084,9 @@ func itoa(i int) string { return fmt.Sprintf("%d", i) }
 // Skips the auction entirely. The buyer pays the seller's pre-set
 // `buy_now_price_cents`; we record a synthetic high bid at that price,
 // flip the listing to status='sold', and create a `listing_orders` row
-// in escrow_status='held' so the post-pickup confirmation flow takes
-// over from there.
+// in escrow_status='pending_payment' (MON-06: never 'held' without a
+// PaymentIntent). ChargeListingWinner then attaches the PI; webhook
+// capture promotes pending_payment → held.
 //
 // Concurrency: SELECT … FOR UPDATE on the listings row serializes against
 // concurrent regular bids and concurrent buy-now attempts, so the first
@@ -1188,17 +1195,17 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create the escrow order row. The pickup-confirmation flow at
-	// /api/v1/orders/{id}/confirm-pickup takes over from here. The platform
-	// fee is charged identically to the auction-close path — buy-now is not
-	// a fee-free closeout.
+	// Create the order row in pending_payment — never held without a PI
+	// (MON-06). Pickup/release only apply once ChargeListingWinner +
+	// payment_intent.succeeded promote the order to held. Platform fee
+	// matches auction-close / accepted-offer (listingPlatformFeeCents).
 	feeCents := listingPlatformFeeCents(buyNowCents.Int64)
 	var orderID string
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO listing_orders (
 			listing_id, seller_id, buyer_id,
 			amount_cents, fee_cents, escrow_status
-		) VALUES ($1, $2, $3, $4, $5, 'held')
+		) VALUES ($1, $2, $3, $4, $5, 'pending_payment')
 		RETURNING id`,
 		id, sellerID, claims.UserID, buyNowCents.Int64, feeCents,
 	).Scan(&orderID)
@@ -1222,23 +1229,39 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 	slog.InfoContext(r.Context(), "buy-now closeout",
 		"listing_id", id, "buyer_id", claims.UserID,
 		"order_id", orderID, "amount_cents", buyNowCents.Int64,
+		"escrow_status", "pending_payment",
 	)
 
-	listing, err := h.loadListingJSON(r.Context(), id)
-	if err != nil {
-		// Listing is sold + order is held — still a success. Return what
-		// we have so the client can navigate to the order page.
-		slog.WarnContext(r.Context(), "buy-now: post-load failed", "error", err, "id", id)
-		writeJSON(w, http.StatusCreated, map[string]interface{}{
-			"order_id": orderID,
-			"listing":  nil,
-		})
-		return
+	resp := map[string]interface{}{
+		"order_id":      orderID,
+		"escrow_status": "pending_payment",
+		"listing":       nil,
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"order_id": orderID,
-		"listing":  listing,
-	})
+	if listing, lerr := h.loadListingJSON(r.Context(), id); lerr != nil {
+		slog.WarnContext(r.Context(), "buy-now: post-load failed", "error", lerr, "id", id)
+	} else {
+		resp["listing"] = listing
+	}
+
+	// Attach a PaymentIntent when the payment service is wired. Failure here
+	// does not roll back the sold listing / pending_payment order — the buyer
+	// (or a retry) can re-charge via ChargeListingWinner.
+	if piID, clientSecret, cerr := h.chargeListingOrder(r.Context(), orderID); cerr != nil {
+		slog.ErrorContext(r.Context(), "buy-now: charge listing winner failed",
+			"error", cerr, "order_id", orderID)
+		resp["payment_required"] = true
+		resp["charge_error"] = "payment setup failed; retry charge for this order"
+	} else if piID != "" {
+		resp["payment_intent_id"] = piID
+		resp["client_secret"] = clientSecret
+		resp["payment_required"] = true
+	} else {
+		// No payment client (dev without payment service): still never
+		// pretend the order is held — client must complete payment later.
+		resp["payment_required"] = true
+	}
+
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 // ─────────────────────────────────────────────────────────────────────────

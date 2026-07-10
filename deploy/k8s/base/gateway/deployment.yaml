@@ -22,6 +22,12 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
           image: ghcr.io/nomarkup/gateway:latest
@@ -53,11 +59,31 @@ spec:
               value: "imaging:50058"
             - name: NOTIFICATION_SERVICE_ADDR
               value: "notification:50059"
+            # Shared hop-auth secret with chat (also in nomarkup-secrets via envFrom).
+            - name: INTERNAL_WS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: INTERNAL_WS_SECRET
+            # Category-tree cache key + Sentry release; set in nomarkup-config (overlay).
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             httpGet:
               path: /health

@@ -199,12 +199,13 @@ func TestListingLifecycle_Integration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, order)
 	assert.Equal(t, "sold", closed.Status)
-	assert.Equal(t, "held", order.EscrowStatus)
+	// MON-06: auction close mints pending_payment, never held without a PI.
+	assert.Equal(t, "pending_payment", order.EscrowStatus)
 	assert.Equal(t, bidders[2], order.BuyerID)
 	assert.Equal(t, seller, order.SellerID)
 	assert.Equal(t, int64(15500), order.AmountCents)
-	// Fee = 5% of 15500 = 775 cents.
-	assert.Equal(t, int64(775), order.FeeCents)
+	// Fee = 10% of 15500 = 1550 cents (MON-20: 8%+2%).
+	assert.Equal(t, int64(1550), order.FeeCents)
 
 	// Re-call CloseListingAuction — must be idempotent.
 	_, order2, err := svc.CloseListingAuction(ctx, l.ID)
@@ -212,7 +213,14 @@ func TestListingLifecycle_Integration(t *testing.T) {
 	require.NotNil(t, order2)
 	assert.Equal(t, order.ID, order2.ID, "close must be idempotent")
 
-	// ── 4. Buyer confirms pickup. Escrow released.
+	// ── 4. Simulate payment capture (pending_payment → held with PI), then
+	// buyer confirms pickup. ConfirmPickup only accepts held orders.
+	_, err = pool.Exec(ctx, `
+		UPDATE listing_orders
+		   SET escrow_status = 'held', payment_intent_id = 'pi_test_lifecycle'
+		 WHERE id = $1`, order.ID)
+	require.NoError(t, err)
+
 	released, err := svc.ConfirmPickup(ctx, order.ID, bidders[2])
 	require.NoError(t, err)
 	assert.Equal(t, "released", released.EscrowStatus)

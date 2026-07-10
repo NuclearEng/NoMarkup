@@ -223,6 +223,7 @@ fn bid_analytics_default_state() {
 fn bid_error_messages_are_descriptive() {
     let errors: Vec<(BidError, &str)> = vec![
         (BidError::AuctionClosed, "closed"),
+        // MON-19: award_bid returns AuctionNotActive when job.status != active under FOR UPDATE.
         (BidError::AuctionNotActive, "not in active"),
         (BidError::BelowMinimum, "lower"),
         (BidError::AlreadyBid, "already"),

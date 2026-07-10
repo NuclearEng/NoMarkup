@@ -20,6 +20,10 @@ type DevStore struct {
 	customerSubs   map[string]string                 // customerKey -> subscriptionID
 	advances       map[string]devAdvance             // advanceID -> record
 	advanceKeys    map[string]string                 // idempotencyKey -> transfer id (dedup)
+	transferKeys   map[string]string                 // idempotencyKey -> transfer id (escrow release)
+	refundKeys     map[string]string                 // idempotencyKey -> refund id
+	captureKeys    map[string]string                 // idempotencyKey -> payment intent id
+	payoutKeys     map[string]string                 // idempotencyKey -> payout id
 	setupIntents   map[string]string                 // clientSecret -> customerKey
 }
 
@@ -45,6 +49,10 @@ func newDevStore() *DevStore {
 		customerSubs:   make(map[string]string),
 		advances:       make(map[string]devAdvance),
 		advanceKeys:    make(map[string]string),
+		transferKeys:   make(map[string]string),
+		refundKeys:     make(map[string]string),
+		captureKeys:    make(map[string]string),
+		payoutKeys:     make(map[string]string),
 		setupIntents:   make(map[string]string),
 	}
 }
@@ -178,5 +186,86 @@ func (d *DevStore) RecordAdvance(idempotencyKey, providerID string, amountCts in
 		CreatedAt:  time.Now().UTC(),
 	}
 	d.advanceKeys[idempotencyKey] = id
+	return id
+}
+
+// RecordTransfer records a dev-mode escrow CreateTransfer, deduped by key.
+func (d *DevStore) RecordTransfer(idempotencyKey, destination string, amountCts int64) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.transferKeys == nil {
+		d.transferKeys = make(map[string]string)
+	}
+	if existing, ok := d.transferKeys[idempotencyKey]; ok {
+		return existing
+	}
+	id := "tr_dev_" + uuid.NewString()
+	d.transferKeys[idempotencyKey] = id
+	return id
+}
+
+// TransferCount returns how many distinct transfer keys were recorded (test helper).
+func (d *DevStore) TransferCount() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return len(d.transferKeys)
+}
+
+// RecordRefund records a dev-mode refund, deduped by key.
+func (d *DevStore) RecordRefund(idempotencyKey, paymentIntentID string, amountCts int64) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.refundKeys == nil {
+		d.refundKeys = make(map[string]string)
+	}
+	if existing, ok := d.refundKeys[idempotencyKey]; ok {
+		return existing
+	}
+	id := "re_dev_" + uuid.NewString()
+	d.refundKeys[idempotencyKey] = id
+	return id
+}
+
+// RefundCount returns how many distinct refund keys were recorded (test helper).
+func (d *DevStore) RefundCount() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return len(d.refundKeys)
+}
+
+// RecordCapture records a dev-mode capture, deduped by key. Returns error only
+// for interface symmetry; always nil.
+func (d *DevStore) RecordCapture(idempotencyKey, paymentIntentID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.captureKeys == nil {
+		d.captureKeys = make(map[string]string)
+	}
+	if _, ok := d.captureKeys[idempotencyKey]; ok {
+		return nil
+	}
+	d.captureKeys[idempotencyKey] = paymentIntentID
+	return nil
+}
+
+// CaptureCount returns how many distinct capture keys were recorded (test helper).
+func (d *DevStore) CaptureCount() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return len(d.captureKeys)
+}
+
+// RecordPayout records a dev-mode instant payout, deduped by key.
+func (d *DevStore) RecordPayout(idempotencyKey, accountID string, amountCts int64) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.payoutKeys == nil {
+		d.payoutKeys = make(map[string]string)
+	}
+	if existing, ok := d.payoutKeys[idempotencyKey]; ok {
+		return existing
+	}
+	id := "payout_dev_" + uuid.NewString()
+	d.payoutKeys[idempotencyKey] = id
 	return id
 }

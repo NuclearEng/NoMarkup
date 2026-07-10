@@ -18,12 +18,25 @@ spec:
         app.kubernetes.io/component: observability
         app.kubernetes.io/part-of: nomarkup
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:0.122.1
           imagePullPolicy: IfNotPresent
           args:
             - "--config=/etc/otelcol/config.yaml"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: otlp-grpc
               containerPort: 4317

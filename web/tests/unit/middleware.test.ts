@@ -57,6 +57,29 @@ describe('middleware CSP — script-src unsafe-eval policy', () => {
   });
 });
 
+describe('middleware CSP — connect-src (SEC-12)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('does NOT allow bare ws: / wss: wildcards', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.com');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://api.example.com');
+    const req = new NextRequest('http://localhost:3000/');
+    const res = middleware(req);
+    const csp = res.headers.get('Content-Security-Policy');
+    if (!csp) throw new Error('CSP missing');
+    const connectSrc = extractDirective(csp, 'connect-src');
+    // Bare scheme wildcards must not appear; explicit origins only.
+    expect(connectSrc.split(/\s+/)).not.toContain('ws:');
+    expect(connectSrc.split(/\s+/)).not.toContain('wss:');
+    expect(connectSrc).toContain("'self'");
+    expect(connectSrc).toContain('https://api.example.com');
+    expect(connectSrc).toContain('wss://api.example.com');
+  });
+});
+
 describe('middleware auth gate — AUTH_ONLY_API', () => {
   it.each(['/api/analyze-job-image', '/api/analyze-listing-image'])(
     'returns 401 JSON for %s without any session indicator',

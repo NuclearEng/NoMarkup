@@ -17,12 +17,15 @@
 ## 1. Architecture Overview
 
 Clients (Next.js 15 web) → **Go API Gateway** (auth, rate limit, validation, routing) → gRPC to
-service mesh: **User / Job / Payment / Chat** (Go), **Bidding / Fraud / Trust / Search / Imaging /
-Geo** (Rust, performance-critical). Data layer: **PostgreSQL 16 + PostGIS · Redis 7 ·
-Meilisearch**. Native extensions (C): libvips, libsodium, argon2, custom PostGIS.
+service mesh: **User / Job / Payment / Chat / Notification** (Go); **Bidding / Fraud / Trust /
+Imaging / Underwriting / Pricing** (Rust). Data layer: **PostgreSQL 16 + PostGIS · Redis 7 ·
+Meilisearch**. Crypto: **golang.org/x/crypto** nacl/secretbox + argon2id (no custom PostGIS C
+extensions; no libvips in current builds).
 
 Rust is reserved for sub-ms / high-throughput / numerical paths (bidding, fraud heuristics v1,
-trust scoring, image pipeline). Go owns CRUD, orchestration, Stripe, and WebSocket fan-out.
+trust scoring, imaging via the `image` crate, underwriting, pricing). Go owns CRUD, orchestration,
+Stripe, WebSocket fan-out, **Meilisearch** coordination, and **PostGIS** geo. Search and geo are
+**not** separate Rust engines.
 
 → **Full system diagram + per-service language rationale: `docs/architecture.md`.**
 
@@ -46,36 +49,42 @@ trust scoring, image pipeline). Go owns CRUD, orchestration, Stripe, and WebSock
 
 ### Backend (Rust Services)
 - **Rust latest stable, 2024 edition** · Runtime: Tokio · gRPC: tonic + prost · Serde
-- HTTP (where needed): axum · DB: sqlx (compile-time checked) · Image: image crate + libvips FFI · Geo: geo crate
+- HTTP (where needed): axum · DB: sqlx (compile-time checked) · Image: **`image` crate only** (no libvips FFI yet)
+- Workspace members only: `bidding`, `fraud`, `trust`, `imaging`, `underwriting`, `pricing`
 - **ML Inference**: `ort` (ONNX) — RESERVED for v2 fraud models, **not in current builds**. Fraud v1
   is deterministic heuristics; ONNX is roadmap (PLAN §6.1). Do not assume ML inference is in prod paths.
-- Testing: cargo test + proptest · Benchmarking: criterion
+- Testing: cargo test + proptest · Benchmarking: **criterion locally / in `engines/target/criterion` — not gated in CI**
 
-### Native (C/C++)
-- Image: libvips (Rust FFI) · Crypto: libsodium (Go/Rust FFI) · Password: argon2id (rust-argon2) ·
-  Custom PostGIS C extensions only when built-ins are insufficient
+### Crypto / native
+- **PII:** XSalsa20-Poly1305 via Go `golang.org/x/crypto/nacl/secretbox` (libsodium-compatible wire format)
+- **Passwords:** argon2id (Go/user service)
+- **No** custom PostGIS C extensions; stock PostGIS 3.4 only
+- **No** libvips / Rust geo crate in the current tree
 
 ### Database
-- **PostgreSQL 16 + PostGIS 3.4** (primary) · **Redis 7** (cache/sessions/pubsub, Cluster in prod) ·
+- **PostgreSQL 16 + PostGIS 3.4** (primary) · **Redis 7** (cache/sessions/pubsub) ·
   **Meilisearch 1.x** (search) · S3-compatible storage (MinIO local, AWS S3 prod)
-- Migrations: forward-only in production, reversible in development
+- Migrations: forward-only in production, reversible in development (currently through **`073_*`**)
 
 ### Infrastructure
-- Docker + Compose (local) · Kubernetes (prod) · GitHub Actions CI/CD · Cloudflare CDN (public assets)
+- Docker + Compose (local) · Kubernetes **manifests** (prod path) · GitHub Actions CI/CD
 - **Cloudflare** is registrar + DNS + CDN/edge for the production zone **`no-markup.com`** (hyphenated —
-  the non-hyphen `nomarkup.com` is **not** owned). One account holds DNS, edge, and registrar, which is
-  why the edge-caching strategy targets the public DATA layer, not HTML (see §14). Account ID / Zone ID:
-  in Vault/`.env.local`, not committed here.
-- Prometheus + Grafana · Sentry · OpenTelemetry · Secrets: HashiCorp Vault (prod), `.env.local` (dev)
+  the non-hyphen `nomarkup.com` is **not** owned). Edge-caching strategy targets the public **DATA**
+  layer, not HTML (see §14). Account ID / Zone ID: Vault/`.env.local`, not committed.
+- **Deploy is not production-ready** until `DEPLOY_PROVISIONED=true`, secrets, cluster, and real
+  migrate-on-deploy exist (`docs/operations/provisioning-checklist.md`). `deploy/terraform/` is a
+  skeleton until IaC is filled in.
+- Prometheus + Grafana configs live under `deploy/monitoring/`; OTel/Sentry env vars are wired in
+  code. Secrets: Vault (prod target), `.env.local` (dev).
 
 ---
 
 ## 3. Project Structure
 
-Monorepo: `web/` (Next.js) · `gateway/` (Go) · `services/` (Go: user, job, payment, chat) ·
-`engines/` (Rust: bidding, fraud, trust, imaging) · `proto/` (shared gRPC defs, `v1`) · `ml/`
-(Python training, not deployed) · `deploy/` (docker, k8s, terraform). Go services share a uniform
-`cmd/` + `internal/{domain,repository,service,grpc}/` + `migrations/` layout.
+Monorepo: `web/` (Next.js) · `gateway/` (Go) · `services/` (Go: user, job, payment, chat, notification) ·
+`engines/` (Rust: bidding, fraud, trust, imaging, underwriting, pricing) · `proto/` (shared gRPC defs, `v1`) · `ml/`
+(Python training, not deployed) · `deploy/` (docker, k8s, terraform skeleton). Go services share a uniform
+`cmd/` + `internal/{domain,repository,service,grpc}/` layout; SQL migrations live under `database/migrations/`.
 
 → **Full annotated tree: `docs/architecture.md`.**
 
@@ -88,7 +97,8 @@ Platform-native quality — the web app must feel as polished as a native iOS/An
 font sizes/page) and **Material Design 3** (adaptive breakpoints, semantic color tokens with
 mandatory light+dark, elevation tokens, meaningful motion only, ≤5 top-level destinations).
 
-**WCAG 2.2 AA is mandatory** across all four principles:
+**WCAG 2.2 AA is the product goal** (not a fully axe-certified CI gate yet — jsx-a11y + partial stub axe).
+Apply across all four principles:
 - **Perceivable**: alt text or `role="presentation"`; contrast 4.5:1 (3:1 large); never color alone.
 - **Operable**: full keyboard nav; visible focus (≥2px, 3:1); skip-nav first; no traps; 44×44px targets; timed interactions controllable.
 - **Understandable**: inline field errors via `aria-describedby`; `<html lang>`; consistent nav; `autocomplete`.
@@ -115,11 +125,11 @@ lowercase single-word; verb-based interfaces; `ErrXxx` sentinels; `ctx` first pa
 errors, wrap with `%w`. pgx directly, **parameterized queries only** (no `fmt.Sprintf` SQL). slog
 structured. Table-driven parallel tests.
 
-**Rust**: 2024 edition, clippy pedantic+nursery, `#![deny(unsafe_code)]` except isolated FFI modules.
-thiserror (lib) / anyhow (app); every public fn returns `Result`, **never panic in prod**; `?` +
-`.context()`. Zero-copy/pre-alloc in hot paths; `Arc` not `Rc`; criterion before/after, no regression.
-Tokio — never block the runtime (`spawn_blocking` for CPU). All `unsafe` FFI isolated in `ffi.rs` with
-SAFETY comments.
+**Rust**: 2024 edition, clippy pedantic+nursery, `#![deny(unsafe_code)]` (workspace lint; no FFI
+modules in tree today). thiserror (lib) / anyhow (app); every public fn returns `Result`, **never panic
+in prod**; `?` + `.context()`. Zero-copy/pre-alloc in hot paths; `Arc` not `Rc`. Criterion benches
+exist for hot paths — run locally / nightly; **not enforced in CI**. Tokio — never block the runtime
+(`spawn_blocking` for CPU).
 
 **SQL**: snake_case plural tables; UUID v7 `id`; `{singular}_id` FKs; UTC `created_at`/`updated_at`;
 soft-delete via `deleted_at` (not boolean); **money is BIGINT cents** (never DECIMAL/FLOAT); PostGIS
@@ -140,46 +150,64 @@ These are non-negotiable. The hooks enforce many automatically.
 
 ### Authentication & Authorization
 - JWT (RS256). Short-lived access tokens (15 min). Refresh tokens in HTTP-only secure cookies.
-- Roles: `customer`, `provider`, `admin`. Every endpoint checks role.
-- Every API route handler wrapped in `withAuth()` (or annotated `// @public` if intentionally open).
+- Roles: `customer`, `provider`, `admin`. Gateway middleware enforces role/ownership on protected routes.
 - Session timeouts: 60 min customer, 120 min provider, 30 min admin. WebSocket heartbeat resets timer.
 - Password hashing: argon2id (memory=65536, iterations=3, parallelism=4).
 
 ### Input Validation
 - Validate at every boundary: client (Zod), gateway (Go validator), service layer (business rules).
 - Never trust client input. Re-validate server-side even if client validates.
-- Use Zod schemas shared between frontend and API routes.
-- Parameterized queries only. String interpolation in SQL is blocked by hooks.
+- Parameterized queries only. String interpolation in SQL is blocked by Claude Code hooks where configured.
 
 ### Data Protection
-- PII encrypted at rest (AES-256-GCM via libsodium). TLS 1.3 for all connections, no exceptions.
-- CORS: explicit origin allowlist, no wildcards in prod. CSP strict: no `unsafe-inline`, no `unsafe-eval`.
-- Rate limiting: per-IP and per-user. Stricter on auth endpoints (5 attempts/15 min).
-- File uploads: validate MIME server-side (don't trust Content-Type). Max 10MB images, 25MB docs. Virus scan before storage.
+- **PII at rest:** selected fields encrypted with **XSalsa20-Poly1305** (`nacl/secretbox`). Inventory
+  includes phone, MFA secret, provider service address, EIN/TIN, insurance policy number (see
+  migrations `031`/`033`). **Email remains plaintext** for auth lookup. Not AES-256-GCM whole-row.
+- **TLS:** public edge **TLS 1.3** (ingress/CDN). **gRPC mesh is currently insecure credentials
+  (plaintext) on the private network**; target is mTLS — do not claim "TLS 1.3 for all connections."
+- CORS: explicit origin allowlist, no wildcards in prod.
+- **CSP:** script-src uses a per-request **nonce** + `strict-dynamic` (no `'unsafe-eval'` in prod).
+  **`style-src` allows `'unsafe-inline'`** (Next.js / tooling injects styles). Do not claim
+  "no unsafe-inline" without the style exception.
+- Rate limiting: per-IP tiers. Stricter on auth endpoints (5 attempts/15 min target).
+- File uploads: validate MIME server-side (don't trust Content-Type). Max 10MB images, 25MB docs.
 
 ### Payment Security
 - All price calculations server-side. Client displays only.
-- Stripe webhook signature verification mandatory (hooks enforce).
-- Idempotency keys on all payment mutations (hooks enforce).
+- Stripe webhook signature verification mandatory.
+- Idempotency keys on payment mutations (required on critical paths; remaining gaps tracked in
+  `docs/planning/adversarial-action-tracker.md`).
 - PCI DSS: never touch raw card numbers — Stripe Elements/PaymentIntent only.
-- Escrow: funds held in Stripe Connect Express. Released only on job-completion confirmation.
+- Escrow: funds held in Stripe Connect Express. Released only on completion confirmation (services /
+  goods paths as implemented).
+
+### Feature flags
+- Admin-togglable keys; `RequireFlag` → **503 when the flag row exists and `enabled=false`**.
+- **Current:** missing flag row or DB error **fails open** (feature treated as enabled).
+- **Production target for financial keys:** fail-closed on missing row / DB error (SEC-01). Document
+  both until the code change lands.
 
 ### Secrets Management
-- No secrets in code. Ever. Hooks detect and block. Dev: `.env.local` (gitignored). Prod: Vault.
-- Required env vars validated at startup with Zod. App fails to start if missing.
+- No secrets in code. Ever. Claude Code hooks detect many patterns. Dev: `.env.local` (gitignored).
+  Prod: Vault / K8s secrets (provisioning incomplete until `DEPLOY_PROVISIONED`).
+- Required env vars validated at service startup.
 
 ---
 
 ## 7. Testing Standards
 
-- **Coverage: 80% minimum** (frontend lines/branches/functions/statements; Go lines; Rust).
-- **Frontend** (Vitest + RTL + Playwright): test behavior not implementation; mock at the network
-  boundary (MSW); `user-event` not `fireEvent`; every data-fetching component tested in
-  loading/success/error/empty. E2E covers register → post job → bid → pay → chat. axe-core a11y.
-- **Go**: table-driven parallel; testcontainers-go for real Postgres (never mock the DB in repo
-  tests); httptest + bufconn; `//go:build integration` for integration tests.
-- **Rust**: proptest for all numerical code (trust 0..=100, no lost bids, fraud no-panics); criterion
-  benches enforce p99 budgets (bid <1ms, trust <5ms, fraud <50ms, resize <200ms).
+- **Web coverage floors** (Vitest v8, whole-app include — see `web/vitest.config.mts`): branches **71**,
+  functions **75**, lines **77**, statements **76**. Ratchet up; do not claim blanket "80% all stacks."
+- **Go / Rust coverage:** strong unit + proptest culture; **not** CI-gated at 80% today.
+- **Frontend** (Vitest + RTL + Playwright): test behavior not implementation; `user-event` preferred;
+  data-fetching components should cover loading/success/error/empty. **E2E in CI:** Chromium,
+  backend-tolerant smoke; full funnel dogfood needs a live stack + `SEED_PASSWORD` (see `E2E.md`).
+  axe is partial (stubs / not a full real-route AA gate).
+- **Go**: table-driven parallel; **CI uses a PostGIS service container** (GitHub Actions), not
+  testcontainers-go. Integration packages under `tests/integration/` + service tests; httptest + bufconn.
+- **Rust**: proptest for numerical code (trust bounds, bid invariants, fraud no-panics, underwriting).
+  Criterion benches exist for p99 budgets (**local / not CI-enforced**). k6 scripts under `tests/load/`
+  are **not** in CI.
 
 → **Vitest config + full per-stack detail: `docs/conventions.md`.**
 
@@ -216,8 +244,11 @@ JS <200KB gz · per-route <50KB gz · hero image <200KB (WebP/AVIF).
 - **Branches**: `feat/{ticket}-{desc}`, `fix/{ticket}-{desc}`, `chore/{desc}`
 - **Commits**: Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, `perf:`)
 - **PR size**: < 400 lines changed. Larger → stacked PRs.
-- **Main branch**: always deployable. Never push directly. Pre-commit: lint + format + type check (Husky).
-- **CI**: lint → type check → unit → integration → build → deploy preview. **No force-push to main/master** (hooks block).
+- **Main branch**: always deployable. Never push directly.
+- **Pre-commit:** **Claude Code hooks** enforce many project rules in agent sessions. There is **no
+  Husky** git pre-commit package installed unless added later — do not claim Husky is the gate.
+- **CI**: lint → type check → unit → (selected) integration → build. Deploy is fail-closed until
+  `DEPLOY_PROVISIONED`. **No force-push to main/master** (policy / hooks where configured).
 
 ---
 
@@ -268,32 +299,40 @@ web 3000). Validate with a Zod schema at startup.
 
 ## 14. Performance Playbook — McMaster-Carr-class speed (project rule)
 
-**North star:** NoMarkup must feel *instantly responsive*, on par with or faster than mcmaster.com.
-Speed is a feature and a first-class acceptance criterion.
+**North star (targets, not achieved metrics):** NoMarkup should feel *instantly responsive*, on par
+with or faster than mcmaster.com. Lab LCP on key routes is still **multi-second** in measured
+baselines; there is **no field RUM** (web-vitals) gate yet. Speed remains a first-class acceptance
+criterion for new work — do not claim the North Star is shipped.
 
-**Hard user-felt gates** (the primary gates — what "McMaster-fast" means):
+**Hard user-felt gates** (targets):
 | Metric | Target |
 |--------|--------|
-| LCP (first load, P75 field) | < 1.5s; **stretch < 300ms** on edge-cached HTML |
+| LCP (first load, P75 field) | < 1.5s; stretch < 300ms only if HTML were edge-cached (**it is not**) |
 | INP / interaction | < 100ms |
 | Navigation (cached/CDN hit) | < 100ms perceived |
 | CLS | < 0.05 (target perfect 0) |
-| TTFB (edge hit) | < 100ms |
+| TTFB (edge hit on **DATA**) | < 100ms |
 
 **Two validated learnings — do NOT re-chase:**
-1. **The app HTML cannot be edge-cached.** `layout.tsx` reads a per-request CSP nonce via
-   `await headers()` (lets us drop `'unsafe-inline'`, §6), forcing every page dynamic. ISR/`revalidate`
-   on app pages is a no-op while the nonce stands. **Cache the DATA layer instead** — the Go gateway's
-   public catalog reads use `writeCachedJSON` (`gateway/internal/handler/response.go`): `public,
-   s-maxage + stale-while-revalidate + stale-if-error` + strong `ETag`/`304`. Authed reads stay uncached.
+1. **The app HTML cannot be edge-cached.** Root layout reads a per-request CSP **script** nonce via
+   `await headers()`, forcing dynamic rendering. ISR/`revalidate` on app pages does not make HTML
+   public-cacheable while the nonce stands. **Cache the DATA layer instead** — gateway public catalog
+   reads use `writeCachedJSON` (`gateway/internal/handler/response.go`): `public, s-maxage +
+   stale-while-revalidate + stale-if-error` + strong `ETag`/`304`. Authed reads stay uncached. This
+   DATA-layer CDN cache **is real and shipped**.
 2. **On interactive pages, RSC wins LCP/SEO, not bundle size.** Shared First Load is ~183 kB (the
-   React floor); dependency-carving is exhausted (mapbox/recharts already lazy). Don't promise a JS cut
-   from RSC on an interactive surface.
+   React floor); heavy deps like mapbox are already lazy. Don't promise a JS cut from RSC on an
+   interactive surface.
 
-**Default pattern for new pages (proven, shipped on marketplace):** `page.tsx` is an `async` Server
-Component that server-fetches its public data, normalizes nullables, `notFound()` on miss, sets `next:
-{ revalidate: N }`, exports `metadata`. Interactive UI lives in a small `*Client.tsx` island seeded via
-TanStack Query `initialData` (real first paint, no skeleton). Push `'use client'` to the leaf.
+**Service worker:** `web/public/sw.js` is a **kill-switch** (unregisters + purges caches). Do not
+claim production PWA offline caching until a real SW ships behind a prod flag.
+
+**Default pattern for new pages (recommended; marketplace pilots shipped):** `page.tsx` is an
+`async` Server Component that server-fetches public data, normalizes nullables, `notFound()` on miss,
+sets `next: { revalidate: N }` for the fetch cache only, exports `metadata`. Interactive UI lives in
+a small `*Client.tsx` island seeded via TanStack Query `initialData`. Push `'use client'` to the leaf.
+**Reality:** many routes (including `/` and `/jobs` browse) are still full client pages — convert on
+touch; do not claim the whole app is RSC-first.
 
 **Preservation + proof (non-negotiable):** preserve all existing Go/Rust/Next.js — remove or
 re-architect only with a **measured** before/after win. Measure or it didn't happen. Missing a budget
@@ -312,7 +351,8 @@ insecure or a dead end is not done.
 - Every endpoint authenticated AND authorized (`withAuth` / `RequireAdmin` / ownership checks). Every
   input validated server-side. Parameterized SQL only. No secrets in code.
 - Money/PII paths get extra scrutiny: idempotency keys, Stripe webhook signature verification, escrow
-  invariants, AES-256-GCM at rest. **Fail closed**, never open.
+  invariants, secretbox PII fields at rest. **Fail closed** on money engines/authz; feature flags
+  currently fail open on missing rows (financial fail-closed is the target — SEC-01).
 - Treat the security audit as a **release gate**: run `/security-review` (or `/cso`) before shipping
   anything touching auth, payments, or a data boundary. A 500 is never an acceptable answer to a
   predictable condition — map it to the right 4xx with an intuitive message.

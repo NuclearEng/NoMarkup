@@ -182,24 +182,24 @@ groups:
             this alert fires at 1s as an escalation boundary.
           runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighLatencyP99"
 
-      # Requires bid_processing_duration_seconds histogram from the bidding engine.
-      # If the bidding engine does not yet expose this metric, this alert will
-      # remain inactive (absent data produces no alert).
+      # Requires bid_processing_duration_seconds histogram from the bidding engine
+      # (engines/bidding, scraped on BIDDING_METRICS_PORT=60053). Absent series
+      # produce no alert until the engine is instrumented and scraped.
+      # Budget: p99 < 1ms (CLAUDE.md §8). Alert at the budget line, not 5ms.
       - alert: NoMarkupBidProcessingSlow
         expr: |
-          histogram_quantile(0.99, sum by (le) (rate(bid_processing_duration_seconds_bucket[2m]))) > 0.005
+          histogram_quantile(0.99, sum by (le) (rate(bid_processing_duration_seconds_bucket[2m]))) > 0.001
         for: 2m
         labels:
-          severity: warning
-          priority: P1
+          severity: critical
+          priority: P0
           team: engines
         annotations:
-          summary: "Bid processing p99 exceeds 5ms"
+          summary: "Bid processing p99 exceeds 1ms budget"
           description: >-
             Bid processing p99 latency is {{ $value | humanizeDuration }},
-            exceeding the 5ms threshold. The performance budget for bid
-            processing is p99 < 1ms. Investigate the bidding engine for
-            contention or slow database queries.
+            exceeding the hard performance budget of p99 < 1ms. Investigate
+            the bidding engine for contention, lock waits, or slow DB paths.
           runbook: "https://docs.nomarkup.dev/runbook#NoMarkupBidProcessingSlow"
 
   # ---------------------------------------------------------------------------
@@ -313,19 +313,39 @@ groups:
   # ---------------------------------------------------------------------------
   - name: nomarkup.business
     rules:
+      # Payment failures are P0 — money path regressions page immediately.
       - alert: NoMarkupPaymentFailureSpike
         expr: nomarkup:payment_failure_rate_10m > 0.05
-        for: 10m
+        for: 5m
         labels:
-          severity: info
-          priority: P2
+          severity: critical
+          priority: P0
           team: payments
         annotations:
-          summary: "Payment failure rate exceeds 5%"
+          summary: "Payment failure rate exceeds 5% (P0)"
           description: >-
             {{ $value | humanizePercentage }} of payment requests have failed
             over the last 10 minutes. This may indicate a Stripe outage,
             expired API keys, or a code regression in the payment service.
+            Treat as a money-path outage until proven otherwise.
+          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupPaymentFailureSpike"
+
+      # Faster signal for total payment path death (zero successes with traffic).
+      - alert: NoMarkupPaymentPathDown
+        expr: |
+          sum(rate(http_requests_total{path=~"/api/v1/payments.*",status=~"2.."}[5m])) == 0
+          and
+          sum(rate(http_requests_total{path=~"/api/v1/payments.*"}[5m])) > 0.01
+        for: 3m
+        labels:
+          severity: critical
+          priority: P0
+          team: payments
+        annotations:
+          summary: "Payment path has zero 2xx responses under load"
+          description: >-
+            Payment endpoints are receiving traffic but producing no successful
+            (2xx) responses for 3+ minutes. Immediate investigation required.
           runbook: "https://docs.nomarkup.dev/runbook#NoMarkupPaymentFailureSpike"
 
       # Requires active_websocket_connections gauge from the gateway/chat service.

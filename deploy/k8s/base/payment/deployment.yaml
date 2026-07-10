@@ -19,9 +19,15 @@ spec:
         app.kubernetes.io/part-of: nomarkup
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50054"
+        prometheus.io/port: "51054"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: payment
           image: ghcr.io/nomarkup/payment:latest
@@ -30,20 +36,36 @@ spec:
             - name: grpc
               containerPort: 50054
               protocol: TCP
+            - name: metrics
+              containerPort: 51054
+              protocol: TCP
           env:
             - name: PAYMENT_SERVICE_PORT
               value: "50054"
-            # In-cluster engine addresses — binary defaults are localhost,
-            # which fails closed in k8s (no working-capital offers).
+            - name: METRICS_PORT
+              value: "51054"
             - name: TRUST_ENGINE_ADDR
               value: "trust:50057"
             - name: UNDERWRITING_ENGINE_ADDR
               value: "underwriting:50060"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             grpc:
               port: 50054

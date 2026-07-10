@@ -3,8 +3,11 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -126,18 +129,18 @@ func New(
 	r.Use(middleware.SecurityHeaders(production))
 	r.Use(rateLimiter.Middleware)
 
-	// Observability endpoints (public, no auth).
+	// @public Observability endpoints (no auth — /metrics is gated separately).
 	// /healthz   — liveness: always returns 200 if the process can respond.
 	// /readyz    — readiness: 200 only if backend dependencies are reachable.
-	// /metrics   — Prometheus exposition.
+	// /metrics   — Prometheus exposition (SEC-08: bearer/token or localhost in prod).
 	// /health    — legacy alias (kept for backward compatibility with older
 	//              load balancer configs and the launch-checklist smoke tests).
 	r.Get("/healthz", healthHandler)
 	r.Get("/health", healthHandler)
 	r.Get("/readyz", readinessHandler(dbPool, cacheClient))
-	r.Handle("/metrics", promhttp.Handler())
+	r.Handle("/metrics", protectMetrics(production, promhttp.Handler()))
 
-	// Public auth routes (no auth middleware)
+	// @public Public auth routes (no auth middleware)
 	r.Route("/api/v1/auth", func(r chi.Router) {
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
@@ -189,7 +192,7 @@ func New(
 		r.With(authMW.Handler).Delete("/mfa/disable", authHandler.DisableMFA)
 	})
 
-	// Public category routes (no auth required)
+	// @public category routes (no auth required)
 	r.Route("/api/v1/categories", func(r chi.Router) {
 		r.Get("/", categoriesHandler.List)
 		r.Get("/tree", categoriesHandler.Tree)
@@ -198,7 +201,7 @@ func New(
 		r.Get("/{id}/questions", categoryQuestionsHandler.ListByCategory)
 	})
 
-	// Public market catalog (no auth) — source for the city/market selector.
+	// @public market catalog (no auth) — source for the city/market selector.
 	// Edge-cached; the catalog is admin/ops-managed and near-static.
 	r.Get("/api/v1/markets", marketsHandler.List)
 
@@ -213,9 +216,13 @@ func New(
 	// works when no auth header is present.
 	r.Get("/api/v1/me/calendar.ics", optionalAuth(authMW, calendarExportHandler.ExportICS))
 
-	// All job routes in one group (mix of public and authenticated)
+	// Job routes (mix of @public reads and authenticated mutations).
+	// SEC-09: customer-owned mutations require RequireOwnership on customer_id.
+	jobOwner := middleware.ResourceOwnership{
+		Table: "jobs", OwnerColumn: "customer_id", IDColumn: "id", URLParam: "id",
+	}
 	r.Route("/api/v1/jobs", func(r chi.Router) {
-		// Public
+		// @public
 		r.Get("/", jobHandler.Search)
 		r.Get("/map", jobHandler.MapView)
 		r.Get("/{id}", optionalAuth(authMW, jobHandler.GetJob))
@@ -226,11 +233,17 @@ func New(
 		r.With(authMW.Handler).Get("/mine", jobHandler.ListMine)
 		r.With(authMW.Handler).Get("/drafts", jobHandler.ListDrafts)
 		r.With(authMW.Handler).Post("/", jobHandler.Create)
-		r.With(authMW.Handler).Patch("/{id}", jobHandler.Update)
-		r.With(authMW.Handler).Delete("/{id}", jobHandler.Delete)
-		r.With(authMW.Handler).Post("/{id}/publish", jobHandler.Publish)
-		r.With(authMW.Handler).Post("/{id}/close", jobHandler.Close)
-		r.With(authMW.Handler).Post("/{id}/cancel", jobHandler.Cancel)
+		// SEC-09: Update / Delete / Publish are customer-owner only (admin bypass).
+		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+			Patch("/{id}", jobHandler.Update)
+		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+			Delete("/{id}", jobHandler.Delete)
+		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+			Post("/{id}/publish", jobHandler.Publish)
+		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+			Post("/{id}/close", jobHandler.Close)
+		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+			Post("/{id}/cancel", jobHandler.Cancel)
 		r.With(authMW.Handler).Post("/{id}/bids", bidHandler.PlaceBid)
 		r.With(authMW.Handler).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
 		r.With(authMW.Handler).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
@@ -256,27 +269,27 @@ func New(
 		r.With(authMW.Handler).Get("/{id}/answers", categoryQuestionsHandler.GetAnswers)
 	})
 
-	// Public trust tier requirements (no auth required)
+	// @public trust tier requirements (no auth required)
 	r.Route("/api/v1/trust", func(r chi.Router) {
 		r.Get("/tiers", trustHandler.GetTierRequirements)
 	})
 
-	// Public webhook routes (no auth, verified by Stripe signature via stripe.webhooks.constructEvent)
+	// @public webhook routes (no JWT; verified by Stripe signature via stripe.webhooks.constructEvent)
 	r.Route("/api/v1/webhooks", func(r chi.Router) {
 		r.Post("/stripe", webhookHandler.HandleStripeWebhook)
 		r.Post("/subscription", webhookHandler.HandleSubscriptionWebhook)
 	})
 
-	// Public subscription tier routes (no auth required)
+	// @public subscription tier routes (no auth required)
 	r.Route("/api/v1/subscriptions/tiers", func(r chi.Router) {
 		r.Get("/", subscriptionHandler.ListTiers)
 		r.Get("/{id}", subscriptionHandler.GetTier)
 	})
 
-	// Public notification unsubscribe (token-based, no auth required)
+	// @public notification unsubscribe (token-based, no auth required)
 	r.Post("/api/v1/notifications/unsubscribe", notificationHandler.Unsubscribe)
 
-	// Public provider search (no auth required)
+	// @public provider search (no auth required)
 	r.Get("/api/v1/providers/search", providerHandler.SearchProviders)
 
 	// Public provider profile (optional auth) — anonymous shoppers + crawlers
@@ -297,12 +310,12 @@ func New(
 		r.Get("/categories", providerLicenseHandler.ListLegalCategories)
 	})
 
-	// Public feature flags (no auth required). Returns a flat { key: enabled }
+	// @public feature flags (no auth required). Returns a flat { key: enabled }
 	// map, CDN-cacheable. /api/v1/feature-flags is an alias for the same map.
 	r.Get("/api/v1/flags", featureFlagHandler.GetFeatureFlags)
 	r.Get("/api/v1/feature-flags", featureFlagHandler.GetFeatureFlags)
 
-	// Public Fair Price Index routes (no auth required, SEO-friendly)
+	// @public Fair Price Index routes (no auth required, SEO-friendly)
 	r.Get("/api/v1/pricing", pricingHandler.GetPricingOverview)
 	r.Get("/api/v1/pricing/{category}", pricingHandler.GetPricingByCategory)
 
@@ -316,10 +329,10 @@ func New(
 	// them to /login — a top-of-funnel killer. /analytics/market/trends stays
 	// authenticated (dashboard-only, unused by the public surface).
 
-	// Public insurance products (no auth required)
+	// @public insurance products (no auth required)
 	r.Get("/api/v1/insurance/products", insuranceHandler.ListProducts)
 
-	// Public auction replay (no auth required — completed auctions are public)
+	// @public auction replay (no auth required — completed auctions are public)
 	r.Get("/api/v1/auctions/{jobId}/replay", auctionReplayHandler.GetAuctionReplay)
 
 	// ── Compliance: cookie-consent log + ToS surface ──────────────────
@@ -338,10 +351,10 @@ func New(
 	// listing once ≥3 open reports exist.
 	r.Post("/api/v1/listings/{id}/report", adminMarketplaceHandler.CreateReport)
 
-	// ── Public marketplace browse + spectator surface ──────────────────
+	// @public marketplace browse + spectator surface
 	// The whole point of the wedge: anonymous visitors land on the
 	// scoreboard at `/marketplace`, watch live auctions, and ping for
-	// watcher counts. Bid placement (POST .../bid) is auth-gated and
+	// watcher counts. Bid placement (POST .../bids) is auth-gated and
 	// lives inside the protected /api/v1 block below.
 	r.Get("/api/v1/listings", listingsHandler.ListListings)
 	// Search-as-you-type + similar rails (Meilisearch-backed). Registered
@@ -707,7 +720,9 @@ func New(
 		// before the public /listings/{id} wildcard. Registering them here
 		// instead let chi's merged /listings subtree resolve the literal
 		// `mine` node without auth middleware → empty claims → 401.
-		r.Post("/listings/{id}/bids", listingsHandler.PlaceListingBid)
+		// MON-06/22: money-adjacent mutations require Idempotency-Key.
+		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/listings/{id}/bids", listingsHandler.PlaceListingBid)
 
 		// Seller write paths — create, edit, cancel, delete-draft.
 		// The web client at web/src/hooks/useListings.ts:101-153 calls
@@ -719,8 +734,10 @@ func New(
 
 		// Buy-It-Now closeout — buyer pays seller's pre-set fixed price,
 		// auction flips to status='sold' and a listing_orders row is
-		// created in escrow_status='held'. See listings_bid.go::BuyItNow.
-		r.Post("/listings/{id}/buy-now", listingsHandler.BuyItNow)
+		// created in escrow_status='pending_payment' (never held without PI).
+		// See listings_bid.go::BuyItNow. Idempotency-Key required (MON-06/22).
+		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/listings/{id}/buy-now", listingsHandler.BuyItNow)
 
 		// 60-second eBay-style retraction window for the leading bidder.
 		// Only status='active' bids placed within the last 60s qualify;
@@ -730,11 +747,13 @@ func New(
 		// ── Best-Offer / counter-offer chain ────────────────────────────
 		// Buyers post a sub-asking offer; sellers accept, reject, or
 		// counter. Accept flips the listing to 'sold' and mints a
-		// listing_orders row in the same tx (mirrors buy-now). See
-		// handler/offers.go for the state machine.
+		// listing_orders row in pending_payment (mirrors buy-now). See
+		// handler/offers.go for the state machine. PATCH (incl. accept)
+		// requires Idempotency-Key (MON-06/22).
 		r.Post("/listings/{id}/offers", offersHandler.CreateOffer)
 		r.Get("/listings/{id}/offers", offersHandler.ListOffersForListing)
-		r.Patch("/offers/{id}", offersHandler.UpdateOffer)
+		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			Patch("/offers/{id}", offersHandler.UpdateOffer)
 
 		// ── Watchlist + saved searches (retention loop) ─────────────────
 		// Buyers can favorite a listing without bidding ("watch") and
@@ -1135,6 +1154,60 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// protectMetrics gates Prometheus /metrics exposition (SEC-08).
+//
+//   - If METRICS_BEARER_TOKEN or METRICS_TOKEN is set → require
+//     Authorization: Bearer <token>.
+//   - Else if production and METRICS_PUBLIC != true → only allow loopback
+//     clients (scrapers on the same host / sidecar). Non-local requests get 401.
+//   - Else (dev, or METRICS_PUBLIC=true) → open.
+//
+// Prefer setting METRICS_BEARER_TOKEN in production.
+func protectMetrics(production bool, next http.Handler) http.Handler {
+	token := strings.TrimSpace(os.Getenv("METRICS_BEARER_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("METRICS_TOKEN"))
+	}
+	public := strings.EqualFold(strings.TrimSpace(os.Getenv("METRICS_PUBLIC")), "true")
+
+	if production && token == "" && !public {
+		slog.Warn("metrics: no METRICS_BEARER_TOKEN set in production; /metrics restricted to localhost (set METRICS_PUBLIC=true to expose)")
+	}
+	if production && public && token == "" {
+		slog.Warn("metrics: METRICS_PUBLIC=true exposes /metrics without authentication")
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token != "" {
+			auth := r.Header.Get("Authorization")
+			if auth != "Bearer "+token {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		if production && !public {
+			if !metricsRequestIsLocal(r) {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// metricsRequestIsLocal reports whether the request originates from loopback.
+// Used when production metrics have no bearer token and are not public.
+func metricsRequestIsLocal(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // readinessHandler returns 200 only when all critical backing dependencies

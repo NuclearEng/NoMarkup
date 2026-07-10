@@ -117,8 +117,9 @@ func (h *AuctionHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 	userID := r.URL.Query().Get("user_id")
 	jobID := r.URL.Query().Get("job_id")
 
+	// SEC-04: same origin pattern as chat handler — secret already verified above.
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // CORS handled by gateway
+		OriginPatterns: originPatterns(),
 	})
 	if err != nil {
 		slog.Error("auction ws accept failed", "error", err)

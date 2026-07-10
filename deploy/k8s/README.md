@@ -44,16 +44,32 @@ in-cluster is `meili-data` (Meilisearch index storage).
   done
   ```
 
-- `.github/workflows/deploy.yml` is a **gated placeholder**: it exits early
-  unless the repo/environment variable `DEPLOY_PROVISIONED` is `"true"`, so
-  nothing auto-deploys until a real cluster + registry are provisioned.
+- `.github/workflows/deploy.yml` is **fail-closed** until
+  `DEPLOY_PROVISIONED=true`. When provisioned **and** secrets `KUBE_CONFIG` +
+  `REGISTRY_PASSWORD` are present, it build/pushes images, runs the
+  `db-migrate-<version>` Job, then `kubectl apply -k overlays/production`.
+  Missing credentials after the gate is flipped fails with a clear error
+  (no echo-only success path).
 
 ## Secrets
 
 All runtime secrets (including `DATABASE_URL` / `REDIS_URL` for the managed
 Postgres and Redis) come from the `nomarkup-secrets` Secret, provisioned
-externally from Vault (External Secrets Operator recommended). The full
-required-key list and rotation procedure: [`SECRETS.md`](./SECRETS.md).
+externally from Vault (External Secrets Operator recommended). Sample:
+[`base/externalsecret.sample.yaml`](./base/externalsecret.sample.yaml). Full
+key list (includes `INTERNAL_WS_SECRET`): [`SECRETS.md`](./SECRETS.md).
+
+## Migrations
+
+`base/migration-job.yaml` + `deploy/docker/migrate.Dockerfile` apply
+`database/migrations/` via golang-migrate. CI renames the Job per release.
+Runbook: [`docs/runbooks/09-migration-job.md`](../../docs/runbooks/09-migration-job.md).
+
+## Metrics scrape ports
+
+Go services: `SERVICE_PORT + 1000` (`METRICS_PORT`). Rust engines with metrics:
+gRPC port + 10000 (`*_METRICS_PORT`). See `docs/operations/metrics.md`.
+Pod annotations must point at the **HTTP metrics** port, not the gRPC port.
 
 ## Gateway `/metrics` exposure (security audit note)
 

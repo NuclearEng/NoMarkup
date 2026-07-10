@@ -35,6 +35,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
@@ -53,6 +54,10 @@ type ListingsHandler struct {
 	// listing-detail seller card. Optional: a nil client leaves the seller
 	// trust fields null (the card still renders, just without a trust badge).
 	trust trustv1.TrustServiceClient
+	// paymentClient charges buy-now / closeout orders via ChargeListingWinner
+	// so they never sit in held without a PaymentIntent (MON-06). Optional:
+	// nil skips the charge call and leaves the order in pending_payment.
+	paymentClient paymentv1.PaymentServiceClient
 }
 
 // NewListingsHandler returns a ListingsHandler. Both deps may be nil:
@@ -76,6 +81,28 @@ func (h *ListingsHandler) SetWishlist(wl *WishlistHandler) {
 // unset: a nil client leaves seller_trust_score/seller_trust_tier null.
 func (h *ListingsHandler) SetTrustClient(c trustv1.TrustServiceClient) {
 	h.trust = c
+}
+
+// SetPaymentClient wires ChargeListingWinner for buy-now closeouts (MON-06).
+// Safe to leave unset: orders stay in pending_payment until charged.
+func (h *ListingsHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
+	h.paymentClient = c
+}
+
+// chargeListingOrder calls ChargeListingWinner for a pending_payment order.
+// Returns ("","",nil) when no payment client is configured. Errors from the
+// payment service are returned to the caller (order remains pending_payment).
+func (h *ListingsHandler) chargeListingOrder(ctx context.Context, orderID string) (piID, clientSecret string, err error) {
+	if h.paymentClient == nil || orderID == "" {
+		return "", "", nil
+	}
+	resp, err := h.paymentClient.ChargeListingWinner(ctx, &paymentv1.ChargeListingWinnerRequest{
+		OrderId: orderID,
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return resp.GetPaymentIntentId(), resp.GetClientSecret(), nil
 }
 
 // sellerTrust fetches a seller's real computed trust score from the trust

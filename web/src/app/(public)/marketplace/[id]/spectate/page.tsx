@@ -1,51 +1,121 @@
 'use client';
 
-import { ArrowLeft, MapPin, Radio } from 'lucide-react';
+import { ArrowLeft, MapPin, Radio, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useMemo } from 'react';
 
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Sparkline } from '@/components/ui/sparkline';
 import { useListing, useListingBids } from '@/hooks/useListings';
+import { useMarketplaceSpectator } from '@/hooks/useMarketplaceSpectator';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 
 export default function ListingSpectatePage() {
   const params = useParams<{ id: string }>();
   const listingId = params.id;
 
-  const { data: listing, isLoading } = useListing(listingId);
+  const {
+    data: listing,
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+  } = useListing(listingId);
   const { data: bidHistory } = useListingBids(listingId);
 
-  if (isLoading || !listing) {
+  // Live order flow over the marketplace spectator socket (FE-06).
+  // Never claim LIVE unless the socket is actually connected.
+  const { isConnected, connectionStatus, lastBid, watcherCount } =
+    useMarketplaceSpectator(listingId);
+
+  const liveBidCents = lastBid?.amount_cents;
+  const displayBidCents =
+    liveBidCents !== undefined && listing
+      ? Math.max(listing.current_bid_cents, liveBidCents)
+      : listing?.current_bid_cents;
+
+  const sparklineSeries = useMemo(() => {
+    if (!listing) return [];
+    if (bidHistory && bidHistory.bids.length > 0) {
+      const series = [
+        listing.starting_price_cents,
+        ...bidHistory.bids.map((b) => b.amount_cents).reverse(),
+      ];
+      if (liveBidCents !== undefined && liveBidCents !== series[series.length - 1]) {
+        series.push(liveBidCents);
+      }
+      return series;
+    }
+    return [listing.starting_price_cents, displayBidCents ?? listing.current_bid_cents];
+  }, [listing, bidHistory, liveBidCents, displayBidCents]);
+
+  if (isLoading && !listing) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14] text-zinc-100">
+      <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
         <GradientMesh />
         <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-          {isLoading ? (
-            <div className="space-y-4">
-              <div className="h-10 w-2/3 animate-pulse rounded bg-white/5" />
-              <div className="h-72 animate-pulse rounded-xl bg-white/5" />
-            </div>
-          ) : (
-            <EmptyState title="Listing not found" />
-          )}
+          <div className="space-y-4">
+            <div className="h-10 w-2/3 animate-pulse rounded bg-white/5" />
+            <div className="h-72 animate-pulse rounded-xl bg-white/5" />
+          </div>
         </div>
       </div>
     );
   }
 
-  const sparklineSeries =
-    bidHistory && bidHistory.bids.length > 0
-      ? [listing.starting_price_cents, ...bidHistory.bids.map((b) => b.amount_cents).reverse()]
-      : [listing.starting_price_cents, listing.current_bid_cents];
+  if (isError && !listing) {
+    return (
+      <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
+        <GradientMesh />
+        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+          <EmptyState
+            title="Failed to load listing"
+            description="We could not load this auction. Check your connection and try again."
+            action={
+              <Button
+                type="button"
+                className="min-h-11"
+                disabled={isFetching}
+                onClick={() => {
+                  void refetch();
+                }}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+                Retry
+              </Button>
+            }
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (!listing) {
+    return (
+      <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
+        <GradientMesh />
+        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+          <EmptyState title="Listing not found" />
+        </div>
+      </div>
+    );
+  }
+
+  const connectionLabel = isConnected
+    ? 'LIVE'
+    : connectionStatus === 'connecting'
+      ? 'CONNECTING'
+      : 'OFFLINE';
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14] text-zinc-100">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
       <GradientMesh />
 
       <div
@@ -54,21 +124,44 @@ export default function ListingSpectatePage() {
       />
 
       {/* Sticky header */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
               href={`/marketplace/${listingId}` as Route}
-              className="flex items-center gap-1.5 text-sm text-white/65 hover:text-white/85"
+              className="flex min-h-11 items-center gap-1.5 text-sm text-white/65 hover:text-white/85"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Listing</span>
             </Link>
             <div className="h-4 w-px bg-white/10" />
-            <Badge className="gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400">
-              <Radio className="h-3 w-3 animate-pulse" aria-hidden="true" />
+            <Badge className="gap-1 border-white/10 bg-white/5 text-xs text-white/70">
+              <Radio className="h-3 w-3" aria-hidden="true" />
               SPECTATE
             </Badge>
+            {/* LIVE only when the spectator socket is open — never claim live without connection (FE-06). */}
+            <Badge
+              className={
+                isConnected
+                  ? 'gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400'
+                  : connectionStatus === 'connecting'
+                    ? 'gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-300'
+                    : 'gap-1 border-white/10 bg-white/5 text-xs text-white/50'
+              }
+              aria-live="polite"
+            >
+              {isConnected ? (
+                <Wifi className="h-3 w-3 animate-pulse" aria-hidden="true" />
+              ) : (
+                <WifiOff className="h-3 w-3" aria-hidden="true" />
+              )}
+              {connectionLabel}
+            </Badge>
+            {isConnected && watcherCount > 0 ? (
+              <span className="hidden text-xs text-white/45 sm:inline">
+                {String(watcherCount)} watching
+              </span>
+            ) : null}
           </div>
 
           <div className="hidden items-center gap-3 text-sm md:flex">
@@ -97,11 +190,12 @@ export default function ListingSpectatePage() {
           </CardHeader>
           <CardContent>
             <p className="font-mono text-6xl font-bold text-emerald-400 tabular-nums sm:text-7xl">
-              {formatCents(listing.current_bid_cents)}
+              {formatCents(displayBidCents ?? listing.current_bid_cents)}
             </p>
             <p className="mt-2 text-xs tracking-wider text-white/50 uppercase">
               Started at {formatCents(listing.starting_price_cents)} ·{' '}
               {String(listing.bidder_count)} bidders · {String(listing.bid_count)} bids
+              {lastBid && isConnected ? ' · live feed' : ''}
             </p>
             <Sparkline
               data={sparklineSeries}

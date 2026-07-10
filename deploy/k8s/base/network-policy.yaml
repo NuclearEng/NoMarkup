@@ -8,20 +8,56 @@ spec:
   policyTypes:
     - Ingress
 ---
+# Gateway accepts external traffic only from the ingress controller.
+# Labels match Deployments (app.kubernetes.io/name), not legacy app:.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-gateway-external
+  name: allow-ingress-to-gateway
   namespace: nomarkup
 spec:
   podSelector:
     matchLabels:
-      app: gateway
+      app.kubernetes.io/name: gateway
   policyTypes:
     - Ingress
   ingress:
-    - {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
 ---
+# Next.js frontend is also fronted by ingress-nginx (path /).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-web
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Mesh services accept gRPC/HTTP only from the gateway (and peer pods below).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -37,8 +73,31 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: gateway
+              app.kubernetes.io/name: gateway
 ---
+# Gateway may call the web Service (SSR / internal rewrites) if needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-web
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Intra-namespace mesh: any nomarkup pod may talk to any other (gRPC fan-out,
+# chat→notification, payment→trust, etc.).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -55,3 +114,25 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: nomarkup
+---
+# Prometheus (or kube-prometheus) scrapes /metrics on the HTTP metrics ports.
+# Scoped to pods that advertise scrape annotations; source is monitoring NS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: nomarkup
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus

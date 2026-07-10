@@ -3,10 +3,42 @@ package handler
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 )
+
+// TestExecuteStripeInstantPayout_liveKeyNeverFakes pins MON-11: a real
+// sk_live key must refuse with errInstantPayoutNotConfigured, never a
+// payout_dev_* success id.
+func TestExecuteStripeInstantPayout_liveKeyNeverFakes(t *testing.T) {
+	t.Setenv("STRIPE_SECRET_KEY", "sk_live_test_must_not_fake")
+	id, err := executeStripeInstantPayout(10_00, 9_00)
+	if err == nil {
+		t.Fatalf("expected error for live key, got id=%q", id)
+	}
+	if !errors.Is(err, errInstantPayoutNotConfigured) {
+		t.Fatalf("got err %v, want errInstantPayoutNotConfigured", err)
+	}
+	if id != "" {
+		t.Fatalf("must not return a payout id on live-key refusal, got %q", id)
+	}
+}
+
+// TestExecuteStripeInstantPayout_devMockAllowed confirms dev (no live key)
+// may still use payout_dev_* synthetic ids.
+func TestExecuteStripeInstantPayout_devMockAllowed(t *testing.T) {
+	t.Setenv("STRIPE_SECRET_KEY", "sk_test_placeholder")
+	t.Setenv("STRIPE_SECRET", "")
+	id, err := executeStripeInstantPayout(10_00, 9_00)
+	if err != nil {
+		t.Fatalf("dev path must not error: %v", err)
+	}
+	if !strings.HasPrefix(id, "payout_dev_") {
+		t.Fatalf("dev id = %q, want payout_dev_* prefix", id)
+	}
+}
 
 // TestNetInstantPayoutAvailableCents pins the money-critical formula: a
 // provider's withdrawable balance is gross cleared earnings MINUS everything

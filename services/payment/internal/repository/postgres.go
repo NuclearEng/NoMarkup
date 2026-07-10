@@ -113,7 +113,8 @@ func (r *PostgresRepository) UpdatePaymentStatus(ctx context.Context, id string,
 	case "escrow":
 		query = `UPDATE payments SET status = $1, escrow_at = now(), updated_at = now() WHERE id = $2`
 	case "released":
-		query = `UPDATE payments SET status = $1, released_at = now(), updated_at = now() WHERE id = $2`
+		// Guard against double-release: only transition when not already released.
+		query = `UPDATE payments SET status = $1, released_at = now(), updated_at = now() WHERE id = $2 AND status <> 'released'`
 	case "completed":
 		query = `UPDATE payments SET status = $1, completed_at = now(), updated_at = now() WHERE id = $2`
 	default:
@@ -125,7 +126,46 @@ func (r *PostgresRepository) UpdatePaymentStatus(ctx context.Context, id string,
 		return fmt.Errorf("update payment status: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
+		// For released CAS, distinguish "already released" from "not found".
+		if status == "released" {
+			var cur string
+			err := r.pool.QueryRow(ctx, `SELECT status FROM payments WHERE id = $1`, id).Scan(&cur)
+			if err == nil && cur == "released" {
+				return fmt.Errorf("update payment status: %w", domain.ErrInvalidStatus)
+			}
+		}
 		return fmt.Errorf("update payment status: %w", domain.ErrPaymentNotFound)
+	}
+	return nil
+}
+
+// ClaimPaymentStatus atomically transitions status from fromStatus to toStatus.
+// Returns ErrInvalidStatus when the row is not currently in fromStatus.
+func (r *PostgresRepository) ClaimPaymentStatus(ctx context.Context, id, fromStatus, toStatus string) error {
+	var query string
+	switch toStatus {
+	case "escrow":
+		query = `UPDATE payments SET status = $1, escrow_at = now(), updated_at = now() WHERE id = $2 AND status = $3`
+	case "released":
+		query = `UPDATE payments SET status = $1, released_at = now(), updated_at = now() WHERE id = $2 AND status = $3`
+	case "completed":
+		query = `UPDATE payments SET status = $1, completed_at = now(), updated_at = now() WHERE id = $2 AND status = $3`
+	default:
+		query = `UPDATE payments SET status = $1, updated_at = now() WHERE id = $2 AND status = $3`
+	}
+
+	tag, err := r.pool.Exec(ctx, query, toStatus, id, fromStatus)
+	if err != nil {
+		return fmt.Errorf("claim payment status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Distinguish not-found from lost CAS race.
+		var cur string
+		scanErr := r.pool.QueryRow(ctx, `SELECT status FROM payments WHERE id = $1`, id).Scan(&cur)
+		if errors.Is(scanErr, pgx.ErrNoRows) {
+			return fmt.Errorf("claim payment status: %w", domain.ErrPaymentNotFound)
+		}
+		return fmt.Errorf("claim payment status: current=%s want=%s: %w", cur, fromStatus, domain.ErrInvalidStatus)
 	}
 	return nil
 }
@@ -346,6 +386,57 @@ func (r *PostgresRepository) UpdateRefund(ctx context.Context, id string, refund
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("update refund: %w", domain.ErrPaymentNotFound)
+	}
+	return nil
+}
+
+// UpdateRefundCAS updates refund fields only when refund_amount_cents still equals
+// expectedPrior AND the new total does not exceed amount_cents. Lost races return
+// ErrInvalidAmount so callers can re-read remaining balance.
+func (r *PostgresRepository) UpdateRefundCAS(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payments SET
+			refund_amount_cents = $2,
+			refund_reason = $3,
+			refunded_at = $4,
+			stripe_refund_id = $5,
+			status = $6,
+			updated_at = now()
+		WHERE id = $1
+		  AND refund_amount_cents = $7
+		  AND $2 <= amount_cents`,
+		id, newTotal, refundReason, refundedAt, stripeRefundID, status, expectedPrior)
+	if err != nil {
+		return fmt.Errorf("update refund cas: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update refund cas: %w", domain.ErrInvalidAmount)
+	}
+	return nil
+}
+
+// WithProviderAdvisoryLock serializes fn under a transaction-scoped advisory
+// lock keyed on the provider id. Used by RequestAdvance to close the credit
+// TOCTOU window and by InstantPayout for ledger claims.
+func (r *PostgresRepository) WithProviderAdvisoryLock(ctx context.Context, providerID string, fn func(ctx context.Context) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("provider advisory lock begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, providerID); err != nil {
+		return fmt.Errorf("provider advisory lock: %w", err)
+	}
+
+	// Run fn with a context that carries the tx so nested repo calls can use it
+	// when needed. For simple CreateAdvance paths that use the pool, the lock
+	// still serializes concurrent transactions until we commit.
+	if err := fn(ctx); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("provider advisory lock commit: %w", err)
 	}
 	return nil
 }
@@ -671,18 +762,26 @@ func (r *PostgresRepository) GetRevenueReport(ctx context.Context, startTime, en
 }
 
 // RecordStripeEventStart inserts a row into stripe_events for the given event ID.
-// If the event was already recorded (ON CONFLICT), returns alreadyProcessed=true
-// so the webhook handler can skip reprocessing and return 200 OK to Stripe.
+// Returns alreadyProcessed=true ONLY when the event was fully handled
+// (processed_at IS NOT NULL). A prior failed attempt leaves processed_at NULL
+// so Stripe retries are allowed to reprocess (MON-12).
 func (r *PostgresRepository) RecordStripeEventStart(ctx context.Context, eventID, eventType string) (bool, error) {
-	tag, err := r.pool.Exec(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		INSERT INTO stripe_events (id, type)
 		VALUES ($1, $2)
 		ON CONFLICT (id) DO NOTHING`, eventID, eventType)
 	if err != nil {
 		return false, fmt.Errorf("record stripe event start: %w", err)
 	}
-	// RowsAffected == 0 means ON CONFLICT fired -- row already existed.
-	return tag.RowsAffected() == 0, nil
+
+	var processedAt *time.Time
+	err = r.pool.QueryRow(ctx, `
+		SELECT processed_at FROM stripe_events WHERE id = $1`, eventID).Scan(&processedAt)
+	if err != nil {
+		return false, fmt.Errorf("record stripe event start lookup: %w", err)
+	}
+	// Only skip when a prior delivery fully completed.
+	return processedAt != nil, nil
 }
 
 // MarkStripeEventProcessed stamps processed_at on the stripe_events row for
@@ -694,6 +793,196 @@ func (r *PostgresRepository) MarkStripeEventProcessed(ctx context.Context, event
 		WHERE id = $1`, eventID)
 	if err != nil {
 		return fmt.Errorf("mark stripe event processed: %w", err)
+	}
+	return nil
+}
+
+// --- Instant payout ledger ---
+
+func (r *PostgresRepository) SumInstantPayoutsLast24h(ctx context.Context, providerID string) (int64, error) {
+	var total int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)
+		  FROM instant_payouts
+		 WHERE provider_id = $1
+		   AND created_at >= now() - interval '24 hours'
+		   AND status IN ('pending', 'completed')`, providerID).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("sum instant payouts 24h: %w", err)
+	}
+	return total, nil
+}
+
+func (r *PostgresRepository) SumAllInstantPayouts(ctx context.Context, providerID string) (int64, error) {
+	var total int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)
+		  FROM instant_payouts
+		 WHERE provider_id = $1
+		   AND status IN ('pending', 'completed')`, providerID).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("sum all instant payouts: %w", err)
+	}
+	return total, nil
+}
+
+// SumEligibleInstantPayoutCents sums provider_payout_cents for payments in
+// released OR completed status (MON-10: eligibility includes both).
+func (r *PostgresRepository) SumEligibleInstantPayoutCents(ctx context.Context, providerID string) (int64, error) {
+	var total int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(provider_payout_cents), 0)
+		  FROM payments
+		 WHERE provider_id = $1
+		   AND status IN ('released', 'completed')`, providerID).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("sum eligible instant payout: %w", err)
+	}
+	return total, nil
+}
+
+func (r *PostgresRepository) LookupInstantPayoutByKey(ctx context.Context, providerID, idempotencyKey string) (*domain.InstantPayout, bool, error) {
+	if idempotencyKey == "" {
+		return nil, false, nil
+	}
+	p := &domain.InstantPayout{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, provider_id, amount_cents, fee_cents, net_cents,
+		       COALESCE(stripe_payout_id, ''), COALESCE(idempotency_key, ''),
+		       status, created_at
+		  FROM instant_payouts
+		 WHERE provider_id = $1 AND idempotency_key = $2`,
+		providerID, idempotencyKey).Scan(
+		&p.ID, &p.ProviderID, &p.AmountCents, &p.FeeCents, &p.NetCents,
+		&p.StripePayoutID, &p.IdempotencyKey, &p.Status, &p.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("lookup instant payout: %w", err)
+	}
+	return p, true, nil
+}
+
+// ClaimInstantPayout inserts a pending ledger row under the per-provider
+// advisory lock after re-checking available balance and the daily cap.
+func (r *PostgresRepository) ClaimInstantPayout(ctx context.Context, providerID string, amountCents, feeCents, netCents int64, idempotencyKey string) (*domain.InstantPayout, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("claim instant payout begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, providerID); err != nil {
+		return nil, fmt.Errorf("claim instant payout lock: %w", err)
+	}
+
+	// Idempotent replay under lock.
+	if idempotencyKey != "" {
+		p := &domain.InstantPayout{}
+		err := tx.QueryRow(ctx, `
+			SELECT id, provider_id, amount_cents, fee_cents, net_cents,
+			       COALESCE(stripe_payout_id, ''), COALESCE(idempotency_key, ''),
+			       status, created_at
+			  FROM instant_payouts
+			 WHERE provider_id = $1 AND idempotency_key = $2`,
+			providerID, idempotencyKey).Scan(
+			&p.ID, &p.ProviderID, &p.AmountCents, &p.FeeCents, &p.NetCents,
+			&p.StripePayoutID, &p.IdempotencyKey, &p.Status, &p.CreatedAt,
+		)
+		if err == nil {
+			if err := tx.Commit(ctx); err != nil {
+				return nil, fmt.Errorf("claim instant payout commit replay: %w", err)
+			}
+			return p, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("claim instant payout replay lookup: %w", err)
+		}
+	}
+
+	var grossEligible, priorPaidOut, todayCents int64
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(provider_payout_cents), 0)
+		  FROM payments
+		 WHERE provider_id = $1 AND status IN ('released', 'completed')`, providerID).Scan(&grossEligible); err != nil {
+		return nil, fmt.Errorf("claim instant payout eligible: %w", err)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)
+		  FROM instant_payouts
+		 WHERE provider_id = $1 AND status IN ('pending', 'completed')`, providerID).Scan(&priorPaidOut); err != nil {
+		return nil, fmt.Errorf("claim instant payout prior: %w", err)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)
+		  FROM instant_payouts
+		 WHERE provider_id = $1
+		   AND created_at >= now() - interval '24 hours'
+		   AND status IN ('pending', 'completed')`, providerID).Scan(&todayCents); err != nil {
+		return nil, fmt.Errorf("claim instant payout daily: %w", err)
+	}
+
+	available := grossEligible - priorPaidOut
+	if available < amountCents {
+		return nil, fmt.Errorf("claim instant payout: insufficient balance: %w", domain.ErrInvalidAmount)
+	}
+	// Daily cap ($10,000) — matches gateway defaultInstantPayoutMaxPerDayCents.
+	const maxPerDayCents int64 = 1_000_000
+	if todayCents+amountCents > maxPerDayCents {
+		return nil, fmt.Errorf("claim instant payout: daily cap exceeded: %w", domain.ErrInvalidAmount)
+	}
+
+	id := ""
+	err = tx.QueryRow(ctx, `
+		INSERT INTO instant_payouts (
+			provider_id, amount_cents, fee_cents, net_cents,
+			idempotency_key, status
+		) VALUES ($1, $2, $3, $4, NULLIF($5, ''), 'pending')
+		RETURNING id::text`,
+		providerID, amountCents, feeCents, netCents, idempotencyKey,
+	).Scan(&id)
+	if err != nil {
+		return nil, fmt.Errorf("claim instant payout insert: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("claim instant payout commit: %w", err)
+	}
+
+	return &domain.InstantPayout{
+		ID:             id,
+		ProviderID:     providerID,
+		AmountCents:    amountCents,
+		FeeCents:       feeCents,
+		NetCents:       netCents,
+		IdempotencyKey: idempotencyKey,
+		Status:         "pending",
+		CreatedAt:      time.Now().UTC(),
+	}, nil
+}
+
+func (r *PostgresRepository) CompleteInstantPayout(ctx context.Context, payoutID, stripePayoutID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE instant_payouts
+		   SET status = 'completed',
+		       stripe_payout_id = $2
+		 WHERE id = $1 AND status = 'pending'`, payoutID, stripePayoutID)
+	if err != nil {
+		return fmt.Errorf("complete instant payout: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("complete instant payout: %w", domain.ErrPaymentNotFound)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) FailInstantPayout(ctx context.Context, payoutID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE instant_payouts SET status = 'failed' WHERE id = $1 AND status = 'pending'`, payoutID)
+	if err != nil {
+		return fmt.Errorf("fail instant payout: %w", err)
 	}
 	return nil
 }

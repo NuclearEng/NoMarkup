@@ -212,6 +212,16 @@ func main() {
 	)
 	grpcServer.SetInsuranceService(insuranceSvc)
 
+	// Goods marketplace escrow (MON-05/07/08): ChargeListingWinner, pickup,
+	// disputes, auto-release. Connect account resolver refuses bare user UUIDs
+	// as Stripe destinations. Webhook PI.succeeded delegates via SetMarketplaceHandler.
+	marketplaceRepo := repository.NewMarketplaceRepository(pool)
+	marketplaceSvc := service.NewMarketplaceService(marketplaceRepo, stripeSvc)
+	marketplaceSvc.SetAccountResolver(repo) // GetStripeAccountID → acct_*
+	marketplaceSvc.SetConfig(service.DefaultMarketplaceConfig())
+	paymentSvc.SetMarketplaceHandler(marketplaceSvc)
+	grpcServer.SetMarketplaceService(marketplaceSvc)
+
 	// GDPR/CCPA Stripe deletion adapter — called by the user service's
 	// Erasure pipeline via DeleteStripeAccounts. In dev mode this short-
 	// circuits to "skipped_no_client" outcomes. See
@@ -239,6 +249,9 @@ func main() {
 	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
 	// Also exposes stripe_webhook_processing_duration_seconds — see observability.go.
 	startObservabilityServer(ctx, "payment-service", port, pool)
+
+	// Auto-release held listing orders past the window (goods escrow).
+	go runMarketplaceAutoReleaseCron(ctx, marketplaceSvc, 4*time.Hour, 30*time.Second)
 
 	go func() {
 		slog.Info("payment service starting", "port", port)
