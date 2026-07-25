@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import { sanitizeJsonLd } from '@/lib/json-ld';
 import type { JobDetail } from '@/types';
 
 import { JobDetailClient } from './JobDetailClient';
@@ -141,12 +142,15 @@ export default async function JobDetailPage({
 
   return (
     <>
-      {/* JobPosting structured data — server-rendered + crawlable. Safe:
-          JSON.stringify of server-controlled data (the DOMPurify rule is for
-          user HTML, not JSON-LD; this is the standard schema.org approach). */}
+      {/* JobPosting structured data — server-rendered + crawlable. The payload
+          carries customer-controlled free text (title, description,
+          location_address), so it goes through sanitizeJsonLd: plain
+          JSON.stringify leaves `<` and `>` intact and a title containing a
+          closing script tag would break out of this block into live markup.
+          See web/src/lib/json-ld.ts. */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: sanitizeJsonLd(jsonLd) }}
       />
       <JobDetailClient jobId={id} initialJob={job} />
     </>

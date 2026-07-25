@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import type { PublicProvider } from '@/hooks/useProviders';
+import { sanitizeJsonLd } from '@/lib/json-ld';
 
 import { ProviderProfileClient } from './ProviderProfileClient';
 
@@ -148,12 +149,15 @@ export default async function ProviderProfilePage({
 
   return (
     <>
-      {/* LocalBusiness structured data — server-rendered + crawlable. Safe:
-          JSON.stringify of server-controlled data (the DOMPurify rule is for
-          user HTML, not JSON-LD; this is the standard schema.org approach). */}
+      {/* LocalBusiness structured data — server-rendered + crawlable. The
+          payload carries provider-controlled free text (business_name,
+          display_name, bio), so it goes through sanitizeJsonLd: plain
+          JSON.stringify leaves `<` and `>` intact and a business name
+          containing a closing script tag would break out of this block into
+          live markup. See web/src/lib/json-ld.ts. */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: sanitizeJsonLd(jsonLd) }}
       />
       <ProviderProfileClient providerId={id} initialProvider={provider} />
     </>

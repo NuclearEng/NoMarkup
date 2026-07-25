@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { ListingDetailClient } from '@/components/marketplace/ListingDetailClient';
+import { sanitizeJsonLd } from '@/lib/json-ld';
 import type { ListingDetail, ListingPhoto } from '@/types';
 
 // Server-side API origin. Mirror next.config.ts: prefer the server-only
@@ -160,12 +161,14 @@ export default async function ListingDetailPage({
 
   return (
     <>
-      {/* Product structured data — server-rendered + crawlable. Safe:
-          JSON.stringify of server-controlled data (the DOMPurify rule is for
-          user HTML, not JSON-LD; this is the standard schema.org approach). */}
+      {/* Product structured data — server-rendered + crawlable. The payload
+          carries seller-controlled free text (title, description), so it goes
+          through sanitizeJsonLd: plain JSON.stringify leaves `<` and `>`
+          intact and a title containing a closing script tag would break out of
+          this block into live markup. See web/src/lib/json-ld.ts. */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: sanitizeJsonLd(jsonLd) }}
       />
       <ListingDetailClient listingId={id} initialListing={listing} />
     </>
