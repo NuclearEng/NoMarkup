@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -773,27 +774,42 @@ func (h *AdminMarketplaceHandler) CreateReport(w http.ResponseWriter, r *http.Re
 	// The listing must exist. Without this pre-check a well-formed but unknown id
 	// hits the listing_reports FK and the bare error map turns it into a 500 —
 	// a predictable "not found" condition must be a 404.
-	var listingExists bool
+	var listingSellerID string
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT EXISTS (SELECT 1 FROM listings WHERE id = $1)`, listingID).Scan(&listingExists); err != nil {
+		`SELECT seller_id::text FROM listings WHERE id = $1`, listingID).Scan(&listingSellerID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "listing not found")
+			return
+		}
 		slog.Error("create listing report: existence check failed", "error", err, "id", listingID)
 		writeError(w, http.StatusInternalServerError, "failed to create report")
 		return
 	}
-	if !listingExists {
-		writeError(w, http.StatusNotFound, "listing not found")
-		return
-	}
 
-	// reporter_id is optional (anonymous reports allowed).
+	// reporter_id is optional (anonymous reports allowed). This route is
+	// wrapped in optionalAuth, so claims are present for a signed-in caller.
+	// Only attributable reports count toward the auto-hide trigger — see
+	// migration 074.
 	var reporterID *string
 	if claims, ok := middleware.GetClaims(r.Context()); ok {
 		uid := claims.UserID
 		reporterID = &uid
+
+		// Sellers cannot report their own listing. Mirrors the self-report
+		// CHECK on user_reports (migration 067) and stops a seller from
+		// manufacturing reporter diversity against a competitor's listing
+		// using their own account.
+		if uid == listingSellerID {
+			writeError(w, http.StatusForbidden, "you cannot report your own listing")
+			return
+		}
 	}
 
 	// Prevent the same logged-in user from reporting the same listing
-	// twice with status='open' (idempotent flag).
+	// twice with status='open' (idempotent flag). This is the fast path;
+	// uq_listing_reports_open_reporter (migration 074) is the authority —
+	// the read-then-write below is racy on its own, so the INSERT also
+	// handles the unique violation.
 	if reporterID != nil {
 		var exists bool
 		err := h.db.QueryRow(r.Context(), `
@@ -819,6 +835,16 @@ func (h *AdminMarketplaceHandler) CreateReport(w http.ResponseWriter, r *http.Re
 		clientIP(r),
 	).Scan(&id)
 	if err != nil {
+		// uq_listing_reports_open_reporter fired: this reporter already has
+		// an open report on this listing. Idempotent success, not a 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"status":  "already_reported",
+				"message": "you've already flagged this listing",
+			})
+			return
+		}
 		slog.Error("create listing report failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create report")
 		return

@@ -345,11 +345,14 @@ func New(
 	r.Get("/api/v1/tos/current", complianceHandler.GetCurrentToS)
 
 	// Public "report this listing" endpoint — anonymous visitors can flag a
-	// listing as stolen/counterfeit/prohibited. Rate-limited by the global
-	// IP rate limiter; logged-in users get a duplicate-suppression check
-	// inside the handler. The trigger on listing_reports auto-hides a
-	// listing once ≥3 open reports exist.
-	r.Post("/api/v1/listings/{id}/report", adminMarketplaceHandler.CreateReport)
+	// listing as stolen/counterfeit/prohibited. Wrapped in optionalAuth so a
+	// signed-in caller actually gets claims: without it the handler's
+	// duplicate-suppression branch was unreachable (GetClaims always failed),
+	// and three anonymous POSTs were enough to trip the auto-hide trigger on
+	// any listing. Since migration 074 the trigger counts DISTINCT
+	// authenticated reporters, so anonymous reports queue for moderation but
+	// never auto-hide on their own.
+	r.Post("/api/v1/listings/{id}/report", optionalAuth(authMW, adminMarketplaceHandler.CreateReport))
 
 	// @public marketplace browse + spectator surface
 	// The whole point of the wedge: anonymous visitors land on the
@@ -698,8 +701,9 @@ func New(
 		// Daily-revenue chart, sell-through pill, top categories, CSV
 		// export, and paid promotions. The CSV is served directly from
 		// the gateway (no payment service round-trip) since it's pure
-		// SQL. Promotion charges flip listings.is_promoted via the
-		// Stripe webhook on charge.success — see promoted_listings.go.
+		// SQL. /promote/confirm charges the tier price off-session and
+		// only then flips listings.is_promoted — it is not a client-
+		// asserted state change. See promoted_listings.go.
 		r.Get("/me/seller-analytics", sellerAnalyticsHandler.GetSellerAnalytics)
 		r.Get("/me/sales.csv", csvExportHandler.ExportSales)
 		r.Post("/listings/{id}/promote", promotedListingsHandler.PromoteListing)
