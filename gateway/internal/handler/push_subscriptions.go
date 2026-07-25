@@ -94,11 +94,12 @@ func (h *PushSubscriptionsHandler) Subscribe(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "endpoint, p256dh, and auth are required")
 		return
 	}
-	// Cap endpoint length defensively — the W3C spec doesn't bound it but
-	// in practice it's < 1KB. Anything longer is almost certainly an
-	// attempt to fill the table.
-	if len(req.Endpoint) > 2048 {
-		writeError(w, http.StatusBadRequest, "endpoint too long")
+	// The endpoint is a URL the notification service will POST to later, so
+	// it is an SSRF sink, not just a string column. validatePushEndpoint
+	// enforces https + the browser-vendor host allowlist + no IP literals
+	// and bounds the length. See push_endpoint.go for the threat model.
+	if err := validatePushEndpoint(req.Endpoint); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

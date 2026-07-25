@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/jackc/pgx/v5"
@@ -39,6 +40,10 @@ type WebPushDispatcher struct {
 	privateKey string
 	subject    string
 	devMode    bool
+	// httpClient refuses to dial non-public addresses and refuses to follow
+	// redirects — see push_endpoint.go. Never replace this with
+	// http.DefaultClient: the endpoint is client-supplied.
+	httpClient *http.Client
 }
 
 // NewWebPushDispatcher constructs a dispatcher. When privateKey is empty,
@@ -57,6 +62,7 @@ func NewWebPushDispatcher(pool *pgxpool.Pool, publicKey, privateKey, subject str
 		privateKey: privateKey,
 		subject:    subject,
 		devMode:    privateKey == "",
+		httpClient: newPushHTTPClient(),
 	}
 }
 
@@ -137,6 +143,26 @@ func (d *WebPushDispatcher) SendToUser(ctx context.Context, userID, title, body,
 // terminal failure (410 Gone / 404 Not Found) we delete the row inline
 // — the browser has discarded it and re-trying wastes RPS.
 func (d *WebPushDispatcher) deliver(ctx context.Context, s webPushSubscription, payload []byte) error {
+	// Re-validate at egress. The gateway rejects bad endpoints at subscribe
+	// time, but rows written before that check existed are still in the table
+	// and this is the only layer that sees the address actually being dialed.
+	if err := validatePushEndpoint(s.Endpoint); err != nil {
+		slog.Warn("web push: refusing to deliver to disallowed endpoint",
+			"subscription_id", s.ID,
+			"error", err,
+		)
+		// The row can never be delivered to — drop it so we stop retrying.
+		if _, derr := d.pool.Exec(ctx,
+			`DELETE FROM push_subscriptions WHERE id = $1`, s.ID,
+		); derr != nil {
+			slog.Warn("web push: failed to prune disallowed subscription",
+				"subscription_id", s.ID,
+				"error", derr,
+			)
+		}
+		return err
+	}
+
 	sub := &webpush.Subscription{
 		Endpoint: s.Endpoint,
 		Keys: webpush.Keys{
@@ -145,6 +171,7 @@ func (d *WebPushDispatcher) deliver(ctx context.Context, s webPushSubscription, 
 		},
 	}
 	resp, err := webpush.SendNotificationWithContext(ctx, payload, sub, &webpush.Options{
+		HTTPClient:      d.httpClient,
 		Subscriber:      d.subject,
 		VAPIDPublicKey:  d.publicKey,
 		VAPIDPrivateKey: d.privateKey,

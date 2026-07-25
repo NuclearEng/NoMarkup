@@ -136,3 +136,62 @@ spec:
         - namespaceSelector:
             matchLabels:
               app.kubernetes.io/name: prometheus
+---
+# Egress containment for the notification pod.
+#
+# The notification service is the one component that makes outbound HTTP
+# requests to a URL supplied by an end user: push_subscriptions.endpoint,
+# which it POSTs to when fanning out a Web Push notification. The gateway
+# validates that endpoint against a browser-vendor host allowlist and the
+# dispatcher re-checks it and pins the resolved IP at dial time (see
+# services/notification/internal/service/push_endpoint.go), but neither is a
+# network control. This policy is the network control: it is the only
+# policyType Egress rule in the namespace, and without it a bypass at either
+# application layer reaches every pod, every neighbouring namespace, and the
+# link-local metadata range.
+#
+# Allowed: DNS, intra-namespace gRPC/Postgres/Redis, and public HTTPS with the
+# private + link-local ranges carved out.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notification-egress
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification
+  policyTypes:
+    - Egress
+  egress:
+    # Cluster DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Intra-namespace: gRPC peers, Postgres, Redis.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nomarkup
+    # Public HTTPS only — push services, Stripe, S3. Every RFC1918 range,
+    # loopback, CGNAT, and 169.254.0.0/16 (cloud metadata) is excluded, so a
+    # forged push endpoint cannot reach anything internal.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
