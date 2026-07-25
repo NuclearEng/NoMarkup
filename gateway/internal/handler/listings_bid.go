@@ -859,20 +859,18 @@ func (h *ListingsHandler) bidBondCheck(ctx context.Context, userID, listingID st
 		return false, 0
 	}
 
-	// An existing authorized bond on THIS listing means the bidder already
-	// posted + confirmed a bond for this auction. Trust them for continued
-	// bidding — including raises past 10× the posted amount — rather than
-	// re-gating mid-auction as if they were a first-time bidder.
-	var hasAuthorized bool
-	if err := h.db.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM bid_bonds
-			 WHERE user_id = $1 AND listing_id = $2 AND status = 'authorized'
-		)`, userID, listingID).Scan(&hasAuthorized); err != nil {
+	// An existing authorized bond on THIS listing waives the gate — but only
+	// up to what the bond actually covers. Bare existence is not enough: a
+	// $5 floor bond posted against a $50 opening bid must not silently
+	// underwrite a later $10,000 raise, or the bond stops being proportional
+	// to what a no-show would cost the seller. A raise past the covered
+	// amount re-gates and asks for a bond sized to the new bid.
+	covered, err := activeBondCovers(ctx, h.db, userID, listingID, required)
+	if err != nil {
 		slog.WarnContext(ctx, "bid bond authorized lookup failed", "error", err, "user_id", userID, "listing_id", listingID)
 		return false, 0
 	}
-	if hasAuthorized {
+	if covered {
 		return false, 0
 	}
 

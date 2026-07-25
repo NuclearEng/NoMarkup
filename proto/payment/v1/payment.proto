@@ -20,6 +20,14 @@ service PaymentService {
 
   // Customer payment methods
   rpc CreateSetupIntent(CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
+  // Server-side verification that a SetupIntent actually confirmed. Callers
+  // that gate on "the client says it paid" MUST use this instead — see
+  // gateway/internal/handler/bid_bonds.go.
+  rpc GetSetupIntentStatus(GetSetupIntentStatusRequest) returns (GetSetupIntentStatusResponse);
+  // Collects a paid listing-promotion fee off-session against the payment
+  // method saved by a confirmed SetupIntent. The amount is supplied by the
+  // gateway from its server-side pricebook, never by the client.
+  rpc ChargePromotion(ChargePromotionRequest) returns (ChargePromotionResponse);
   rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
   rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (DeletePaymentMethodResponse);
   // AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
@@ -228,6 +236,44 @@ message CreateSetupIntentRequest {
 
 message CreateSetupIntentResponse {
   string client_secret = 1;
+}
+
+message GetSetupIntentStatusRequest {
+  // The client_secret handed back by CreateSetupIntent. Callers persist this
+  // alongside their own record (bid_bonds.stripe_pi_id,
+  // promotion_charges.stripe_pi_id) and pass it back here to verify.
+  string client_secret = 1;
+  // Platform user id asserted by the caller. The service checks it against
+  // the SetupIntent's metadata so one user cannot confirm another's intent.
+  string customer_id = 2;
+}
+
+message GetSetupIntentStatusResponse {
+  // Raw Stripe SetupIntent status ("succeeded", "requires_payment_method",
+  // "requires_action", "canceled", ...).
+  string status = 1;
+  // True only when status == "succeeded" AND a payment method is attached.
+  bool succeeded = 2;
+  string payment_method_id = 3;
+}
+
+message ChargePromotionRequest {
+  string customer_id = 1;
+  // client_secret of the SetupIntent that saved the card.
+  string client_secret = 2;
+  // Server-computed tier price. The gateway derives this from its pricebook
+  // and the duration stored on the charge row — never from request input.
+  int64 amount_cents = 3;
+  // promotion_charges.id — used as the Stripe idempotency key so a retried
+  // confirm cannot double-charge.
+  string idempotency_key = 4;
+  string listing_id = 5;
+}
+
+message ChargePromotionResponse {
+  string payment_intent_id = 1;
+  string status = 2;
+  bool succeeded = 3;
 }
 
 message PaymentMethod {

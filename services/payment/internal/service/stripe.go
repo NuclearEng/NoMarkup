@@ -219,6 +219,82 @@ func (s *StripeService) CreateSetupIntent(ctx context.Context, customerID string
 	return si.ClientSecret, nil
 }
 
+// SetupIntentStatus is the server-verified outcome of a SetupIntent.
+type SetupIntentStatus struct {
+	Status          string
+	Succeeded       bool
+	PaymentMethodID string
+}
+
+// setupIntentIDFromSecret extracts the SetupIntent id from a client_secret.
+// Stripe formats these as "seti_<id>_secret_<random>"; the id is everything
+// before the "_secret_" separator.
+func setupIntentIDFromSecret(clientSecret string) string {
+	if i := strings.Index(clientSecret, "_secret_"); i > 0 {
+		return clientSecret[:i]
+	}
+	return ""
+}
+
+// GetSetupIntentStatus retrieves a SetupIntent from Stripe and reports whether
+// it actually confirmed.
+//
+// This exists because a client POST saying "the SetupIntent succeeded" is not
+// evidence. Callers that gate a privilege on payment (bid bonds, promoted
+// listings) must ask Stripe, not the browser.
+//
+// customerKey is the platform user id asserted by the caller. When the intent
+// carries a platform_customer_id metadata tag (set by CreateSetupIntent) it
+// must match, so one user cannot confirm another user's intent.
+func (s *StripeService) GetSetupIntentStatus(ctx context.Context, clientSecret, customerKey string) (SetupIntentStatus, error) {
+	if clientSecret == "" {
+		return SetupIntentStatus{}, fmt.Errorf("get setup intent status: client secret required")
+	}
+
+	if s.devMode {
+		// Dev intents are the ones DevStore minted, and only for the customer
+		// it minted them for. Anything else is refused rather than waved
+		// through — dev mode is a stub, not an authorization bypass.
+		if !IsDevSetupIntent(clientSecret) {
+			return SetupIntentStatus{Status: "unknown"}, nil
+		}
+		if owner, ok := s.DevStore().SetupIntentOwner(clientSecret); !ok || (customerKey != "" && owner != customerKey) {
+			return SetupIntentStatus{Status: "unknown"}, nil
+		}
+		return SetupIntentStatus{
+			Status:          "succeeded",
+			Succeeded:       true,
+			PaymentMethodID: "pm_dev_setupintent",
+		}, nil
+	}
+
+	id := setupIntentIDFromSecret(clientSecret)
+	if id == "" {
+		return SetupIntentStatus{}, fmt.Errorf("get setup intent status: malformed client secret")
+	}
+
+	si, err := setupintent.Get(id, &stripe.SetupIntentParams{
+		ClientSecret: stripe.String(clientSecret),
+	})
+	if err != nil {
+		return SetupIntentStatus{}, fmt.Errorf("get setup intent status: %w", err)
+	}
+
+	// Bind the intent to the asserted caller when we tagged it at creation.
+	if customerKey != "" && si.Metadata != nil {
+		if tagged, ok := si.Metadata["platform_customer_id"]; ok && tagged != "" && tagged != customerKey {
+			return SetupIntentStatus{Status: "unknown"}, nil
+		}
+	}
+
+	out := SetupIntentStatus{Status: string(si.Status)}
+	if si.PaymentMethod != nil {
+		out.PaymentMethodID = si.PaymentMethod.ID
+	}
+	out.Succeeded = si.Status == stripe.SetupIntentStatusSucceeded && out.PaymentMethodID != ""
+	return out, nil
+}
+
 // ListPaymentMethods lists a customer's payment methods.
 func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID string) ([]domain.PaymentMethod, error) {
 	if s.devMode {

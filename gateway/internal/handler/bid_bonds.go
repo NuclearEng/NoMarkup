@@ -15,6 +15,11 @@ package handler
 //   POST /api/v1/listings/{id}/bid-bond           (auth)
 //   POST /api/v1/listings/{id}/bid-bond/confirm   (auth)
 //
+// pending → authorized requires server-side confirmation from Stripe that
+// the SetupIntent succeeded with a payment method attached. The gate this
+// bond waives is an anti-fraud control, so it fails closed: if the payment
+// service cannot be reached, the bond stays pending.
+//
 // State machine (also documented in migration 043):
 //   pending → authorized → captured (no-show forfeit, future cron)
 //           → authorized → released (won + paid OR lost auction, future cron)
@@ -182,9 +187,9 @@ func (h *BidBondHandler) CreateBidBond(w http.ResponseWriter, r *http.Request) {
 		clientSecret = resp.GetClientSecret()
 	}
 	if clientSecret == "" {
-		// Dev fallback. The /confirm endpoint accepts the bond_id
-		// regardless of stripe_pi_id; this is only used when Stripe is
-		// not configured.
+		// Dev fallback, used only when Stripe is not configured. /confirm
+		// refuses to authorize a bond it cannot verify against Stripe unless
+		// ENVIRONMENT=development, so this sentinel cannot reach production.
 		clientSecret = "dev_bond_seti_" + claims.UserID
 	}
 
@@ -215,9 +220,17 @@ func (h *BidBondHandler) CreateBidBond(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/listings/{id}/bid-bond/confirm
 // ─────────────────────────────────────────────────────────────────────────
 
-// ConfirmBidBond flips the bond row from 'pending' to 'authorized' after
-// the Stripe Elements client successfully confirms the SetupIntent. The
-// bidder may now place the bid that triggered the bond.
+// ConfirmBidBond flips the bond row from 'pending' to 'authorized' once
+// Stripe confirms — server-side — that the SetupIntent actually succeeded and
+// a payment method is attached. The bidder may then place the bid that
+// triggered the bond.
+//
+// The client's word is not evidence. An earlier revision flipped the row on a
+// bare POST carrying only bond_id, which meant any account could self-issue an
+// 'authorized' bond with no card attached and permanently waive the
+// requires_bid_bond gate on that auction (bidBondCheck in listings_bid.go).
+// The bond exists to make a no-show cost something; a bond with nothing behind
+// it is worse than no bond, because it reads as verified.
 //
 // Future work (cron): release on win + payment OR lose auction; capture
 // on confirmed no-show after pickup window expires.
@@ -245,11 +258,67 @@ func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Tag-team UPDATE: only flip when the user owns the bond, the listing
-	// matches, and the row is currently 'pending'. Returns the row id so
-	// we can detect no-op (not found / already authorized) vs success.
-	var updatedID string
+	// Load the pending bond and the SetupIntent secret we minted for it.
+	// Ownership is enforced in the WHERE clause, not after the fact.
+	var clientSecret string
 	err := h.db.QueryRow(r.Context(), `
+		SELECT stripe_pi_id
+		  FROM bid_bonds
+		 WHERE id = $1
+		   AND user_id = $2
+		   AND listing_id = $3
+		   AND status = 'pending'`,
+		req.BondID, claims.UserID, listingID,
+	).Scan(&clientSecret)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "bond not found or already finalized")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "bid-bond confirm lookup failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to confirm bond")
+		return
+	}
+
+	// Verify with Stripe. Fail closed: no payment client outside development
+	// means we cannot verify, and an unverifiable bond must not be authorized.
+	if h.paymentClient == nil {
+		if !isDevelopmentEnv() {
+			slog.ErrorContext(r.Context(), "bid-bond confirm: payment service unavailable, refusing to authorize")
+			writeError(w, http.StatusServiceUnavailable, "payment verification is unavailable, please try again shortly")
+			return
+		}
+		slog.WarnContext(r.Context(), "bid-bond confirm: development short-circuit, no Stripe verification",
+			"bond_id", req.BondID,
+		)
+	} else {
+		resp, verr := h.paymentClient.GetSetupIntentStatus(r.Context(), &paymentv1.GetSetupIntentStatusRequest{
+			ClientSecret: clientSecret,
+			CustomerId:   claims.UserID,
+		})
+		if verr != nil {
+			slog.ErrorContext(r.Context(), "bid-bond confirm: setup intent verification failed",
+				"error", verr,
+				"bond_id", req.BondID,
+			)
+			writeError(w, http.StatusServiceUnavailable, "could not verify your payment method, please try again shortly")
+			return
+		}
+		if !resp.GetSucceeded() {
+			// The card was never confirmed. 402 so the client re-opens Stripe
+			// Elements rather than treating this as a permanent failure.
+			writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
+				"requires_bid_bond": true,
+				"setup_intent_status": resp.GetStatus(),
+				"error":               "your payment method has not been confirmed yet — please complete card setup and try again",
+			})
+			return
+		}
+	}
+
+	// Flip only from 'pending', so a concurrent confirm cannot double-apply.
+	var updatedID string
+	err = h.db.QueryRow(r.Context(), `
 		UPDATE bid_bonds
 		   SET status = 'authorized', updated_at = now()
 		 WHERE id = $1

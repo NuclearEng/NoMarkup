@@ -24,6 +24,8 @@ const (
 	PaymentService_GetStripeAccountStatus_FullMethodName         = "/nomarkup.payment.v1.PaymentService/GetStripeAccountStatus"
 	PaymentService_GetStripeDashboardLink_FullMethodName         = "/nomarkup.payment.v1.PaymentService/GetStripeDashboardLink"
 	PaymentService_CreateSetupIntent_FullMethodName              = "/nomarkup.payment.v1.PaymentService/CreateSetupIntent"
+	PaymentService_GetSetupIntentStatus_FullMethodName           = "/nomarkup.payment.v1.PaymentService/GetSetupIntentStatus"
+	PaymentService_ChargePromotion_FullMethodName                = "/nomarkup.payment.v1.PaymentService/ChargePromotion"
 	PaymentService_ListPaymentMethods_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListPaymentMethods"
 	PaymentService_DeletePaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/DeletePaymentMethod"
 	PaymentService_AddDevPaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/AddDevPaymentMethod"
@@ -89,6 +91,14 @@ type PaymentServiceClient interface {
 	GetStripeDashboardLink(ctx context.Context, in *GetStripeDashboardLinkRequest, opts ...grpc.CallOption) (*GetStripeDashboardLinkResponse, error)
 	// Customer payment methods
 	CreateSetupIntent(ctx context.Context, in *CreateSetupIntentRequest, opts ...grpc.CallOption) (*CreateSetupIntentResponse, error)
+	// Server-side verification that a SetupIntent actually confirmed. Callers
+	// that gate on "the client says it paid" MUST use this instead — see
+	// gateway/internal/handler/bid_bonds.go.
+	GetSetupIntentStatus(ctx context.Context, in *GetSetupIntentStatusRequest, opts ...grpc.CallOption) (*GetSetupIntentStatusResponse, error)
+	// Collects a paid listing-promotion fee off-session against the payment
+	// method saved by a confirmed SetupIntent. The amount is supplied by the
+	// gateway from its server-side pricebook, never by the client.
+	ChargePromotion(ctx context.Context, in *ChargePromotionRequest, opts ...grpc.CallOption) (*ChargePromotionResponse, error)
 	ListPaymentMethods(ctx context.Context, in *ListPaymentMethodsRequest, opts ...grpc.CallOption) (*ListPaymentMethodsResponse, error)
 	DeletePaymentMethod(ctx context.Context, in *DeletePaymentMethodRequest, opts ...grpc.CallOption) (*DeletePaymentMethodResponse, error)
 	// AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
@@ -224,6 +234,26 @@ func (c *paymentServiceClient) CreateSetupIntent(ctx context.Context, in *Create
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateSetupIntentResponse)
 	err := c.cc.Invoke(ctx, PaymentService_CreateSetupIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) GetSetupIntentStatus(ctx context.Context, in *GetSetupIntentStatusRequest, opts ...grpc.CallOption) (*GetSetupIntentStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSetupIntentStatusResponse)
+	err := c.cc.Invoke(ctx, PaymentService_GetSetupIntentStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ChargePromotion(ctx context.Context, in *ChargePromotionRequest, opts ...grpc.CallOption) (*ChargePromotionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChargePromotionResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ChargePromotion_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -761,6 +791,14 @@ type PaymentServiceServer interface {
 	GetStripeDashboardLink(context.Context, *GetStripeDashboardLinkRequest) (*GetStripeDashboardLinkResponse, error)
 	// Customer payment methods
 	CreateSetupIntent(context.Context, *CreateSetupIntentRequest) (*CreateSetupIntentResponse, error)
+	// Server-side verification that a SetupIntent actually confirmed. Callers
+	// that gate on "the client says it paid" MUST use this instead — see
+	// gateway/internal/handler/bid_bonds.go.
+	GetSetupIntentStatus(context.Context, *GetSetupIntentStatusRequest) (*GetSetupIntentStatusResponse, error)
+	// Collects a paid listing-promotion fee off-session against the payment
+	// method saved by a confirmed SetupIntent. The amount is supplied by the
+	// gateway from its server-side pricebook, never by the client.
+	ChargePromotion(context.Context, *ChargePromotionRequest) (*ChargePromotionResponse, error)
 	ListPaymentMethods(context.Context, *ListPaymentMethodsRequest) (*ListPaymentMethodsResponse, error)
 	DeletePaymentMethod(context.Context, *DeletePaymentMethodRequest) (*DeletePaymentMethodResponse, error)
 	// AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
@@ -866,6 +904,12 @@ func (UnimplementedPaymentServiceServer) GetStripeDashboardLink(context.Context,
 }
 func (UnimplementedPaymentServiceServer) CreateSetupIntent(context.Context, *CreateSetupIntentRequest) (*CreateSetupIntentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateSetupIntent not implemented")
+}
+func (UnimplementedPaymentServiceServer) GetSetupIntentStatus(context.Context, *GetSetupIntentStatusRequest) (*GetSetupIntentStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSetupIntentStatus not implemented")
+}
+func (UnimplementedPaymentServiceServer) ChargePromotion(context.Context, *ChargePromotionRequest) (*ChargePromotionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ChargePromotion not implemented")
 }
 func (UnimplementedPaymentServiceServer) ListPaymentMethods(context.Context, *ListPaymentMethodsRequest) (*ListPaymentMethodsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPaymentMethods not implemented")
@@ -1130,6 +1174,42 @@ func _PaymentService_CreateSetupIntent_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PaymentServiceServer).CreateSetupIntent(ctx, req.(*CreateSetupIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_GetSetupIntentStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSetupIntentStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).GetSetupIntentStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_GetSetupIntentStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).GetSetupIntentStatus(ctx, req.(*GetSetupIntentStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ChargePromotion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChargePromotionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ChargePromotion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ChargePromotion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ChargePromotion(ctx, req.(*ChargePromotionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2096,6 +2176,14 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateSetupIntent",
 			Handler:    _PaymentService_CreateSetupIntent_Handler,
+		},
+		{
+			MethodName: "GetSetupIntentStatus",
+			Handler:    _PaymentService_GetSetupIntentStatus_Handler,
+		},
+		{
+			MethodName: "ChargePromotion",
+			Handler:    _PaymentService_ChargePromotion_Handler,
 		},
 		{
 			MethodName: "ListPaymentMethods",

@@ -109,6 +109,37 @@ func (s *Server) CreateSetupIntent(ctx context.Context, req *paymentv1.CreateSet
 	return &paymentv1.CreateSetupIntentResponse{ClientSecret: clientSecret}, nil
 }
 
+func (s *Server) GetSetupIntentStatus(ctx context.Context, req *paymentv1.GetSetupIntentStatusRequest) (*paymentv1.GetSetupIntentStatusResponse, error) {
+	status, err := s.svc.GetSetupIntentStatus(ctx, req.GetClientSecret(), req.GetCustomerId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.GetSetupIntentStatusResponse{
+		Status:          status.Status,
+		Succeeded:       status.Succeeded,
+		PaymentMethodId: status.PaymentMethodID,
+	}, nil
+}
+
+func (s *Server) ChargePromotion(ctx context.Context, req *paymentv1.ChargePromotionRequest) (*paymentv1.ChargePromotionResponse, error) {
+	piID, status, ok, err := s.svc.ChargePromotion(
+		ctx,
+		req.GetCustomerId(),
+		req.GetClientSecret(),
+		req.GetAmountCents(),
+		req.GetIdempotencyKey(),
+		req.GetListingId(),
+	)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.ChargePromotionResponse{
+		PaymentIntentId: piID,
+		Status:          status,
+		Succeeded:       ok,
+	}, nil
+}
+
 func (s *Server) ListPaymentMethods(ctx context.Context, req *paymentv1.ListPaymentMethodsRequest) (*paymentv1.ListPaymentMethodsResponse, error) {
 	methods, err := s.svc.ListPaymentMethods(ctx, req.GetCustomerId())
 	if err != nil {

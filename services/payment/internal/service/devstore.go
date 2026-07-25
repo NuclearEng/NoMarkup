@@ -115,6 +115,16 @@ func IsDevSetupIntent(clientSecret string) bool {
 	return strings.HasPrefix(clientSecret, "dev_seti_")
 }
 
+// SetupIntentOwner returns the customer key a dev client_secret was minted
+// for. Used by GetSetupIntentStatus so the dev path still enforces the
+// intent-belongs-to-caller binding rather than approving any string.
+func (d *DevStore) SetupIntentOwner(clientSecret string) (string, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	owner, ok := d.setupIntents[clientSecret]
+	return owner, ok
+}
+
 // --- Subscriptions ---
 
 func (d *DevStore) UpsertSubscription(customerKey, stripePriceID, paymentMethodID string) devSubscription {

@@ -636,6 +636,68 @@ func (s *PaymentService) CreateSetupIntent(ctx context.Context, customerID strin
 	return s.stripe.CreateSetupIntent(ctx, customerID)
 }
 
+// GetSetupIntentStatus asks Stripe whether a SetupIntent actually confirmed.
+// Callers gate privileges on this instead of trusting a client-side "it
+// succeeded" POST.
+func (s *PaymentService) GetSetupIntentStatus(ctx context.Context, clientSecret, customerID string) (SetupIntentStatus, error) {
+	return s.stripe.GetSetupIntentStatus(ctx, clientSecret, customerID)
+}
+
+// ChargePromotion collects a listing-promotion fee off-session against the
+// card saved by a confirmed SetupIntent.
+//
+// The SetupIntent is verified here — a caller cannot skip straight to the
+// charge — and amountCents is supplied by the gateway from its server-side
+// pricebook. idempotencyKey (the promotion_charges row id) makes a retried or
+// concurrent confirm collapse onto a single Stripe charge.
+func (s *PaymentService) ChargePromotion(ctx context.Context, customerID, clientSecret string, amountCents int64, idempotencyKey, listingID string) (string, string, bool, error) {
+	if idempotencyKey == "" {
+		return "", "", false, fmt.Errorf("charge promotion: idempotency key required")
+	}
+	if amountCents <= 0 {
+		return "", "", false, fmt.Errorf("charge promotion: amount must be positive")
+	}
+
+	si, err := s.stripe.GetSetupIntentStatus(ctx, clientSecret, customerID)
+	if err != nil {
+		return "", "", false, err
+	}
+	if !si.Succeeded {
+		// Not an error condition — the card was never confirmed. The caller
+		// maps this to a 402 so the buyer can retry in Stripe Elements.
+		return "", si.Status, false, nil
+	}
+
+	stripeCustomerID, lookupErr := s.repo.GetStripeCustomerID(ctx, customerID)
+	if lookupErr != nil {
+		slog.Warn("charge promotion: stripe customer lookup failed",
+			"user_id", customerID,
+			"error", lookupErr,
+		)
+	}
+	if stripeCustomerID == "" {
+		stripeCustomerID = customerID
+	}
+
+	piID, _, err := s.stripe.CreateOffSessionPaymentIntent(
+		ctx,
+		amountCents,
+		"usd",
+		stripeCustomerID,
+		si.PaymentMethodID,
+		"promo_"+idempotencyKey,
+		map[string]string{
+			"purpose":    "listing_promotion",
+			"listing_id": listingID,
+			"charge_id":  idempotencyKey,
+		},
+	)
+	if err != nil {
+		return "", "", false, err
+	}
+	return piID, "succeeded", true, nil
+}
+
 // ListPaymentMethods lists a customer's payment methods.
 // If the customer has no Stripe customer ID configured, returns an empty list.
 func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerID string) ([]domain.PaymentMethod, error) {
