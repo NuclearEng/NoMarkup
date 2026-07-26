@@ -1,27 +1,17 @@
-# App icon — frontier lab decision
+# App icon — locked master
 
 **Date:** 2026-07-26  
-**Master:** `app-icon-1024.png` / iOS AppIcon / web PWA
+**Master:** candidate **29** → `app-icon-1024.png` / iOS AppIcon / web PWA  
+**Also:** `brand/app-icon-29.png`
 
-## Decision
+## Spec
 
-Optimize for **60pt SpringBoard recognition**, not 1024px gallery beauty.
+- Smooth champagne stage (no fabric noise)
+- Thin champagne outer edge accent + navy frame near edge
+- Large centered diamond (classic side-elevation brilliant cut)
+- No monogram
+- RGB 1024, no alpha
 
-| Principle | Choice |
-|-----------|--------|
-| Mark | Sideways refractive diamond only (no N) — unique silhouette |
-| Scale | Diamond ~60% of field |
-| Stage | Smooth champagne (no silk noise) |
-| Frame | Hairline champagne edge + navy line near outer bound |
-| Fire | One strong white specular; restrained prism |
-| Rejected | Dark navy tiles, small stones, fabric texture, monogram clutter |
+## Preview
 
-## Why not alternatives
-
-- **Dark vault:** disappears next to Instagram/Tips  
-- **Hot solid gold monogram:** louder but less UHNW / less “value” metaphor  
-- **Top-down diamond:** less dimensional at small size than side profile  
-
-## Freeze
-
-Iterate product UI against this master. Icon churn stops unless metrics (or explicit user veto) demand a new pass.
+`brand/app-icon-preview-120.png` (home-screen scale)
