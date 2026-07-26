@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Product home for the services reverse-auction (hero rail) with a goods marketplace strip.
+/// Product home — reverse-auction first, materials-first (not scaffold marketing).
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.selectedRootTab) private var selectedRootTab
@@ -19,11 +19,11 @@ struct HomeView: View {
     private var signedInLabel: String? {
         guard auth.isAuthenticated else { return nil }
         if auth.isScaffoldSession {
-            return "Browsing offline (scaffold)"
+            return "Browsing offline"
         }
         let email = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)
         if !email.isEmpty {
-            return "Signed in as \(email)"
+            return email
         }
         return "Signed in"
     }
@@ -31,19 +31,22 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 32) {
                     heroSection
+                    if jobTotal != nil || listingTotal != nil {
+                        statsStrip
+                    }
                     howItWorksSection
                     liveAuctionsSection
                     marketplaceStrip
                     gatewayFooter
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
+                .padding(.top, 4)
+                .padding(.bottom, 40)
             }
             .brandScreenBackground()
-            .navigationTitle("Home")
+            .navigationTitle("NoMarkup")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             #endif
@@ -59,7 +62,7 @@ struct HomeView: View {
             .refreshable { await refreshHome() }
             .sheet(isPresented: $showPostJobSafari) {
                 NavigationStack {
-                    LegalWebView(title: "Post a job (web)", url: AppConfig.postJobURL)
+                    LegalWebView(title: "Post a job", url: AppConfig.postJobURL)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Done") { showPostJobSafari = false }
@@ -70,7 +73,7 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showSellSafari) {
                 NavigationStack {
-                    LegalWebView(title: "Sell an item (web)", url: AppConfig.sellItemURL)
+                    LegalWebView(title: "Sell an item", url: AppConfig.sellItemURL)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Done") { showSellSafari = false }
@@ -85,256 +88,302 @@ struct HomeView: View {
     // MARK: - Hero
 
     private var heroSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Reverse auction · Home services")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(BrandTheme.sectionHeader)
-                .textCase(.uppercase)
-                .tracking(0.6)
+        VStack(alignment: .leading, spacing: 0) {
+            // Eyebrow pill
+            Text("REVERSE AUCTION")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .tracking(1.4)
+                .foregroundStyle(BrandTheme.goldBright)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(BrandTheme.gold.opacity(0.12))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.28), lineWidth: 1)
+                )
+                .padding(.bottom, 18)
 
-            Text("Providers compete. You save.")
-                .font(.largeTitle.weight(.bold))
+            Text("Providers compete.\nYou save.")
+                .font(.system(size: 34, weight: .bold, design: .default))
                 .foregroundStyle(BrandTheme.textPrimary)
+                .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
+                .padding(.bottom, 12)
 
             (
-                Text("Post a job and watch the price go ")
-                + Text("down").foregroundColor(BrandTheme.goldBright).fontWeight(.semibold)
-                + Text(", not up. Trusted local providers bid against each other — you award the best offer.")
+                Text("Home services at market prices. Providers bid ")
+                    + Text("down").foregroundColor(BrandTheme.goldBright).fontWeight(.semibold)
+                    + Text(" against each other — you award the best offer.")
             )
-            .font(.body)
+            .font(.system(size: 16, weight: .regular))
             .foregroundStyle(BrandTheme.textSecondary)
+            .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.bottom, 20)
 
             if let signedInLabel {
-                Label(signedInLabel, systemImage: auth.isScaffoldSession ? "hammer" : "person.crop.circle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(auth.isScaffoldSession ? BrandTheme.goldBright : BrandTheme.success)
-                    .accessibilityLabel(signedInLabel)
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(auth.isScaffoldSession ? BrandTheme.warning : BrandTheme.success)
+                        .frame(width: 7, height: 7)
+                    Text(signedInLabel)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                .padding(.bottom, 22)
             }
 
+            // Single primary + two quiet actions — no muddy button stack
             VStack(spacing: 12) {
                 Button {
                     selectedRootTab?.wrappedValue = .jobs
                 } label: {
                     Text("Browse open jobs")
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 44)
                 }
-                .brandGoldProminentButton()
+                .brandPrimaryButton()
                 .accessibilityHint("Opens the Jobs tab")
 
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Button {
                         selectedRootTab?.wrappedValue = .marketplace
                     } label: {
                         Text("Shop goods")
-                            .font(.body.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 44)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(BrandTheme.accent)
+                    .brandGhostButton()
                     .accessibilityHint("Opens the Marketplace tab")
 
                     Button {
                         showPostJobSafari = true
                     } label: {
                         Text("Post a job")
-                            .font(.body.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 44)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(BrandTheme.accent)
-                    .accessibilityHint("Opens post-a-job on the website in Safari")
-                    .accessibilityLabel("Post a job on web")
+                    .brandGhostButton()
+                    .accessibilityHint("Opens the post-a-job flow")
                 }
+            }
 
+            // Tertiary text links — never a third filled CTA color
+            HStack(spacing: 20) {
                 Button {
                     showSellSafari = true
                 } label: {
-                    Text("Sell an item (web)")
-                        .font(.subheadline.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 44)
+                    Text("Sell an item")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .underline(false)
                 }
-                .buttonStyle(.bordered)
-                .tint(BrandTheme.bidActive)
-                .accessibilityHint("Opens sell form on the website in Safari until native create ships")
+                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+
+                Spacer(minLength: 0)
             }
+            .padding(.top, 8)
         }
-        .brandCard(padding: 20, heroGradient: true)
-        .accessibilityElement(children: .contain)
+        .brandCard(padding: 24, heroGradient: true, elevated: true)
+    }
+
+    // MARK: - Stats
+
+    private var statsStrip: some View {
+        HStack(spacing: 0) {
+            statCell(
+                value: jobTotal.map { Self.compactCount($0) } ?? "—",
+                label: "Open jobs"
+            )
+            divider
+            statCell(
+                value: listingTotal.map { Self.compactCount($0) } ?? "—",
+                label: "Listings"
+            )
+            divider
+            statCell(
+                value: healthOK == true ? "Live" : (healthOK == false ? "Down" : "…"),
+                label: "API",
+                valueColor: healthOK == true
+                    ? BrandTheme.success
+                    : (healthOK == false ? BrandTheme.destructive : BrandTheme.textSecondary)
+            )
+        }
+        .brandCard(padding: 0, elevated: false)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(BrandTheme.hairline)
+            .frame(width: 1)
+            .padding(.vertical, 14)
+    }
+
+    private func statCell(value: String, label: String, valueColor: Color = BrandTheme.textPrimary) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .foregroundStyle(valueColor)
+                .monospacedDigit()
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - How it works
 
     private var howItWorksSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("How reverse auction works", systemImage: "arrow.down.circle")
+        VStack(alignment: .leading, spacing: 16) {
+            sectionEyebrow("How it works")
 
-            HStack(alignment: .top, spacing: 10) {
-                HowItWorksStep(
-                    number: 1,
+            VStack(spacing: 0) {
+                HowItWorksRow(
+                    index: 1,
                     title: "Post a job",
-                    detail: "Describe the work and set a starting budget."
+                    detail: "Describe the work and set a starting budget.",
+                    isLast: false
                 )
-                HowItWorksStep(
-                    number: 2,
+                HowItWorksRow(
+                    index: 2,
                     title: "Providers bid down",
-                    detail: "Licensed locals compete — price falls."
+                    detail: "Licensed locals compete — the price falls.",
+                    isLast: false
                 )
-                HowItWorksStep(
-                    number: 3,
-                    title: "Award the best",
-                    detail: "Pick the lowest trusted bid and get it done."
+                HowItWorksRow(
+                    index: 3,
+                    title: "Award the best offer",
+                    detail: "Choose the lowest trusted bid and get it done.",
+                    isLast: true
                 )
             }
+            .brandCard(padding: 4, elevated: false)
         }
     }
 
-    // MARK: - Live open auctions
+    // MARK: - Live auctions
 
     private var liveAuctionsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
-                sectionHeader("Live open auctions", systemImage: "bolt.fill")
+                sectionEyebrow("Live reverse auctions")
                 Spacer(minLength: 8)
                 if let jobTotal, jobTotal > 0 {
                     Text("\(jobTotal) open")
-                        .font(.caption.weight(.medium).monospacedDigit())
-                        .foregroundStyle(BrandTheme.textSecondary)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(BrandTheme.goldBright)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(BrandTheme.gold.opacity(0.12)))
                 }
             }
 
             if isLoadingCatalog && jobs.isEmpty {
-                HStack {
-                    Spacer()
-                    ProgressView("Loading auctions…")
-                        .tint(BrandTheme.accent)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                    Spacer()
-                }
-                .frame(minHeight: 120)
-                .brandCard(padding: 20)
+                ProgressView("Loading…")
+                    .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 100)
+                    .brandCard(padding: 24)
             } else if let catalogError, jobs.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label(catalogError, systemImage: "wifi.exclamationmark")
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(catalogError)
                         .font(.subheadline)
-                        .foregroundStyle(BrandTheme.goldBright)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(BrandTheme.textSecondary)
                     Button("Try again") {
                         Task { await refreshHome() }
                     }
-                    .buttonStyle(.bordered)
-                    .tint(BrandTheme.accent)
-                    .frame(minHeight: 44)
+                    .brandGhostButton()
                 }
-                .brandCard(padding: 16)
+                .brandCard(padding: 20)
             } else if jobs.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("No open jobs right now")
                         .font(.headline)
                         .foregroundStyle(BrandTheme.textPrimary)
-                    Text("Be the first to post — or browse again later. New reverse auctions appear here as customers list work.")
+                    Text("New reverse auctions appear here as customers list work.")
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
                     Button {
                         showPostJobSafari = true
                     } label: {
-                        Text("Post a job on web")
-                            .frame(minHeight: 44)
+                        Text("Post a job")
                     }
-                    .brandGoldProminentButton()
+                    .brandPrimaryButton()
                 }
-                .brandCard(padding: 16)
+                .brandCard(padding: 20)
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     ForEach(jobs) { job in
                         NavigationLink(value: job) {
                             HomeJobCard(job: job)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Opens job detail")
                     }
                 }
 
                 Button {
                     selectedRootTab?.wrappedValue = .jobs
                 } label: {
-                    HStack {
-                        Text("See all jobs")
-                            .font(.body.weight(.semibold))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
+                    HStack(spacing: 6) {
+                        Text("View all jobs")
+                            .font(.system(size: 15, weight: .semibold))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .foregroundStyle(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.goldBright)
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                    .frame(minHeight: 48)
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Opens the Jobs tab")
             }
         }
     }
 
-    // MARK: - Marketplace strip
+    // MARK: - Marketplace
 
     private var marketplaceStrip: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                sectionHeader("Local goods · forward auction", systemImage: "bag.fill")
-                Spacer(minLength: 8)
-                if let listingTotal, listingTotal > 0 {
-                    Text("\(listingTotal)")
-                        .font(.caption.weight(.medium).monospacedDigit())
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .accessibilityLabel("\(listingTotal) listings")
-                }
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            sectionEyebrow("Local goods · forward auction")
 
-            Text("Buyers bid up. Pickup within 25 mi.")
-                .font(.subheadline)
+            Text("Buyers bid up · pickup within 25 mi")
+                .font(.system(size: 14))
                 .foregroundStyle(BrandTheme.textSecondary)
-
-            HStack(spacing: 12) {
-                Button {
-                    showSellSafari = true
-                } label: {
-                    Text("Sell an item (web)")
-                        .font(.subheadline.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.bordered)
-                .tint(BrandTheme.bidActive)
-                .accessibilityHint("Opens sell form on the website")
-            }
+                .padding(.top, -8)
 
             if listings.isEmpty && !isLoadingCatalog {
                 Button {
                     selectedRootTab?.wrappedValue = .marketplace
                 } label: {
                     HStack {
-                        Label("Browse marketplace", systemImage: "arrow.right.circle")
-                            .font(.body.weight(.medium))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Browse marketplace")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            Text("Physical goods with escrow")
+                                .font(.system(size: 13))
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(BrandTheme.textSecondary.opacity(0.6))
                     }
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
+                    .padding(18)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .brandCard(padding: 16)
-                .accessibilityHint("Opens the Marketplace tab")
+                .background {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(BrandTheme.gradientCardFace)
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(BrandTheme.hairline, lineWidth: 1)
+                )
             } else {
                 VStack(spacing: 10) {
                     ForEach(listings.prefix(3)) { listing in
@@ -342,85 +391,87 @@ struct HomeView: View {
                             HomeListingCard(listing: listing)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Opens listing detail")
                     }
                 }
 
                 Button {
                     selectedRootTab?.wrappedValue = .marketplace
                 } label: {
-                    HStack {
+                    HStack(spacing: 6) {
                         Text("Browse marketplace")
-                            .font(.body.weight(.semibold))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
+                            .font(.system(size: 15, weight: .semibold))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .foregroundStyle(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.goldBright)
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                    .frame(minHeight: 48)
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Opens the Marketplace tab")
             }
+
+            Button {
+                showSellSafari = true
+            } label: {
+                Text("Sell an item")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 40)
         }
     }
 
-    // MARK: - Gateway footer (subtle)
+    // MARK: - Gateway
 
     private var gatewayFooter: some View {
-        HStack(spacing: 10) {
-            Group {
-                if isChecking {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(BrandTheme.textSecondary)
-                } else if let healthOK {
-                    Image(systemName: healthOK ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundStyle(healthOK ? BrandTheme.success : BrandTheme.destructive)
-                        .accessibilityLabel(healthOK ? "API healthy" : "API unreachable")
-                } else {
-                    Image(systemName: "circle.dotted")
-                        .foregroundStyle(BrandTheme.textSecondary.opacity(0.6))
-                        .accessibilityLabel("API status unknown")
-                }
+        HStack(spacing: 8) {
+            if isChecking {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(BrandTheme.textSecondary)
+            } else if let healthOK {
+                Circle()
+                    .fill(healthOK ? BrandTheme.success : BrandTheme.destructive)
+                    .frame(width: 6, height: 6)
             }
-            .frame(width: 20, height: 20)
 
-            Text("Gateway")
-                .font(.caption)
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
+            Text(healthOK == true ? "Connected" : (healthOK == false ? "Offline" : "Checking…"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
 
             Spacer()
 
             Button {
                 Task { await refreshHome() }
             } label: {
-                Text(isChecking ? "Checking…" : "Refresh")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(minHeight: 44)
-                    .padding(.horizontal, 4)
+                Text("Refresh")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
+                    .frame(minHeight: 40)
             }
             .buttonStyle(.plain)
             .disabled(isChecking)
-            .accessibilityLabel("Refresh home and API status")
         }
         .padding(.horizontal, 4)
-        .padding(.top, 4)
-        .opacity(0.9)
+        .padding(.top, 8)
     }
 
-    // MARK: - Shared chrome
+    // MARK: - Chrome helpers
 
-    private func sectionHeader(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(BrandTheme.sectionHeader)
-            .labelStyle(.titleAndIcon)
-            .symbolRenderingMode(.hierarchical)
+    private func sectionEyebrow(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .tracking(1.2)
+            .foregroundStyle(BrandTheme.gold.opacity(0.75))
             .accessibilityAddTraits(.isHeader)
+    }
+
+    private static func compactCount(_ n: Int) -> String {
+        if n >= 1000 {
+            return String(format: "%.1fk", Double(n) / 1000.0)
+        }
+        return "\(n)"
     }
 
     // MARK: - Data
@@ -463,53 +514,58 @@ struct HomeView: View {
             catalogError = nil
         } catch {
             if jobs.isEmpty {
-                catalogError = "Couldn’t load live auctions. Pull to refresh or try again."
+                catalogError = "Couldn’t load live auctions. Pull to refresh."
             }
         }
     }
 }
 
-// MARK: - How-it-works step
+// MARK: - How-it-works row (vertical timeline — not three cramped mini-cards)
 
-private struct HowItWorksStep: View {
-    let number: Int
+private struct HowItWorksRow: View {
+    let index: Int
     let title: String
     let detail: String
+    let isLast: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(BrandTheme.gold.opacity(0.18))
-                    .frame(width: 32, height: 32)
-                Text("\(number)")
-                    .font(.caption.weight(.bold).monospacedDigit())
-                    .foregroundStyle(BrandTheme.goldBright)
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle()
+                        .fill(BrandTheme.gold.opacity(0.15))
+                        .frame(width: 28, height: 28)
+                    Text("\(index)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                if !isLast {
+                    Rectangle()
+                        .fill(BrandTheme.gold.opacity(0.18))
+                        .frame(width: 1.5)
+                        .frame(maxHeight: .infinity)
+                }
             }
-            .accessibilityHidden(true)
+            .frame(width: 28)
 
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(BrandTheme.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Text(detail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, isLast ? 14 : 18)
+            .padding(.top, 4)
 
-            Text(detail)
-                .font(.caption2)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(
-            BrandTheme.navyElevated,
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(BrandTheme.gold.opacity(0.12), lineWidth: 1)
-        )
+        .padding(.horizontal, 16)
+        .padding(.top, index == 1 ? 14 : 0)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(number): \(title). \(detail)")
+        .accessibilityLabel("Step \(index): \(title). \(detail)")
     }
 }
 
@@ -519,143 +575,166 @@ private struct HomeJobCard: View {
     let job: JobSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(job.displayTitle)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 8)
-                if let price = job.displayPrice {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(price)
-                            .font(.body.weight(.bold).monospacedDigit())
-                            .foregroundStyle(BrandTheme.goldBright)
-                        if let caption = job.priceCaption {
-                            Text(caption)
-                                .font(.caption2)
-                                .foregroundStyle(BrandTheme.textSecondary)
+        HStack(alignment: .top, spacing: 0) {
+            // Leading gold rail
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [BrandTheme.goldBright, BrandTheme.gold.opacity(0.5)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 3)
+                .padding(.vertical, 4)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(job.displayTitle)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+
+                        HStack(spacing: 8) {
+                            if let category = job.categoryName, !category.isEmpty {
+                                Text(category)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                            if let status = job.status, !status.isEmpty {
+                                StatusChipView(
+                                    label: StatusChipStyle.displayLabel(status),
+                                    style: StatusChipStyle.forStatus(status)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if let price = job.displayPrice {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(price)
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .foregroundStyle(BrandTheme.goldBright)
+                                .monospacedDigit()
+                            if let caption = job.priceCaption {
+                                Text(caption.uppercased())
+                                    .font(.system(size: 9, weight: .bold))
+                                    .tracking(0.6)
+                                    .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
+                            }
                         }
                     }
                 }
-            }
 
-            HStack(spacing: 8) {
-                if let category = job.categoryName, !category.isEmpty {
-                    Text(category)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                if let status = job.status, !status.isEmpty {
-                    StatusChipView(
-                        label: StatusChipStyle.displayLabel(status),
-                        style: StatusChipStyle.forStatus(status)
-                    )
-                }
-            }
-
-            HStack(spacing: 12) {
-                if let location = job.locationLabel {
-                    Label(location, systemImage: "mappin.and.ellipse")
-                        .font(.caption)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                if let bids = job.bidCount {
-                    Label("\(bids) bids", systemImage: "tag")
-                        .font(.caption)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                }
-                Spacer(minLength: 0)
-                if let countdown = job.auctionCountdown {
-                    Text(countdown)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(
-                            countdown == "Ended"
-                                ? BrandTheme.textSecondary
-                                : BrandTheme.navy
-                        )
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule().fill(
-                                countdown == "Ended"
-                                    ? BrandTheme.textSecondary.opacity(0.2)
-                                    : BrandTheme.goldBright
+                HStack(spacing: 12) {
+                    if let location = job.locationLabel {
+                        Label(location, systemImage: "mappin")
+                            .font(.system(size: 12))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .lineLimit(1)
+                            .labelStyle(.titleAndIcon)
+                    }
+                    if let bids = job.bidCount {
+                        Text("\(bids) bids")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    if let countdown = job.auctionCountdown {
+                        Text(countdown)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
                             )
-                        )
-                        .accessibilityLabel(countdown)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule().fill(
+                                    countdown == "Ended"
+                                        ? BrandTheme.surfaceRaised
+                                        : BrandTheme.goldBright
+                                )
+                            )
+                    }
                 }
             }
+            .padding(.leading, 14)
+            .padding(.vertical, 16)
+            .padding(.trailing, 16)
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 44)
-        .background(
-            BrandTheme.navyElevated,
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(BrandTheme.gradientCardFace)
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(BrandTheme.gold.opacity(0.14), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(BrandTheme.hairline, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - Listing preview card
+// MARK: - Listing preview
 
 private struct HomeListingCard: View {
     let listing: ListingSummary
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .center, spacing: 14) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(BrandTheme.surfaceRaised)
+                .frame(width: 48, height: 48)
+                .overlay {
+                    Image(systemName: "bag.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(BrandTheme.gold.opacity(0.7))
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(listing.displayTitle)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(BrandTheme.textPrimary)
                     .lineLimit(2)
-                    .multilineTextAlignment(.leading)
                 HStack(spacing: 8) {
                     if let location = listing.locationLabel {
-                        Label(location, systemImage: "mappin.and.ellipse")
-                            .font(.caption2)
+                        Text(location)
+                            .font(.system(size: 12))
                             .foregroundStyle(BrandTheme.textSecondary)
                             .lineLimit(1)
                     }
                     if let bids = listing.bidCount {
                         Text("\(bids) bids")
-                            .font(.caption2)
+                            .font(.system(size: 12))
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
             }
+
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(listing.displayPrice)
-                    .font(.subheadline.weight(.bold).monospacedDigit())
-                    .foregroundStyle(BrandTheme.goldBright)
-                Text(listing.priceCaption)
-                    .font(.caption2)
-                    .foregroundStyle(BrandTheme.textSecondary)
-            }
+
+            Text(listing.displayPrice)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(BrandTheme.goldBright)
+                .monospacedDigit()
+
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.7))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.45))
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 44)
-        .background(
-            BrandTheme.navyElevated,
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(BrandTheme.gradientCardFace)
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(BrandTheme.gold.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(BrandTheme.hairline, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)

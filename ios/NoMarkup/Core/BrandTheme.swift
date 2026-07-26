@@ -82,14 +82,33 @@ enum BrandTheme {
     static var gradientHero: LinearGradient {
         LinearGradient(
             colors: [
-                gold.opacity(0.22),
-                goldBright.opacity(0.08),
-                navyElevated.opacity(0.0),
+                gold.opacity(0.14),
+                goldBright.opacity(0.05),
+                Color.clear,
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
+
+    /// Premium card face — layered depth without looking like flat gray UIKit.
+    static var gradientCardFace: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0x12 / 255, green: 0x16 / 255, blue: 0x22 / 255),
+                navyElevated,
+                Color(red: 0x0A / 255, green: 0x0D / 255, blue: 0x16 / 255),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    /// Hairline gold edge for elevated surfaces.
+    static let hairline = gold.opacity(0.16)
+
+    /// Soft ambient shadow under premium cards (use sparingly).
+    static let cardShadow = Color.black.opacity(0.45)
 
     // MARK: Global chrome (UIKit appearance)
 
@@ -192,25 +211,101 @@ private struct BrandScreenBackgroundModifier: ViewModifier {
 private struct BrandCardModifier: ViewModifier {
     var padding: CGFloat
     var useHeroGradient: Bool
+    var elevated: Bool
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(BrandTheme.navyElevated)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(BrandTheme.gradientCardFace)
                     .overlay {
                         if useHeroGradient {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(BrandTheme.gradientHero)
                         }
                     }
+                    .overlay(alignment: .top) {
+                        // Specular top edge — reads as glass, not flat fill.
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.10),
+                                        Color.white.opacity(0.02),
+                                        Color.clear,
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                    }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(BrandTheme.gold.opacity(0.12), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(BrandTheme.hairline, lineWidth: 1)
             )
+            .shadow(
+                color: elevated ? BrandTheme.cardShadow : .clear,
+                radius: elevated ? 24 : 0,
+                y: elevated ? 12 : 0
+            )
+    }
+}
+
+/// Ghost / secondary control — hairline gold border, no muddy filled gold.
+struct BrandGhostButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(BrandTheme.goldBright)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(BrandTheme.surfaceRaised.opacity(configuration.isPressed ? 0.9 : 0.55))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(BrandTheme.gold.opacity(configuration.isPressed ? 0.45 : 0.28), lineWidth: 1)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+/// Primary gold pill — bright fill, navy label, soft glow.
+struct BrandPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 52)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                BrandTheme.goldBright,
+                                BrandTheme.gold,
+                                BrandTheme.gold.opacity(0.92),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+            )
+            .shadow(color: BrandTheme.gold.opacity(configuration.isPressed ? 0.15 : 0.35), radius: 16, y: 6)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .opacity(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
@@ -227,8 +322,17 @@ extension View {
 
     /// Elevated card surface with subtle gold edge (empty states, hero blocks).
     /// Pass `heroGradient: true` for home / marketplace promo cards (`gradientHero`).
-    func brandCard(padding: CGFloat = 16, heroGradient: Bool = false) -> some View {
-        modifier(BrandCardModifier(padding: padding, useHeroGradient: heroGradient))
+    /// Pass `elevated: true` for hero depth (ambient shadow).
+    func brandCard(padding: CGFloat = 16, heroGradient: Bool = false, elevated: Bool = false) -> some View {
+        modifier(BrandCardModifier(padding: padding, useHeroGradient: heroGradient, elevated: elevated))
+    }
+
+    func brandPrimaryButton() -> some View {
+        buttonStyle(BrandPrimaryButtonStyle())
+    }
+
+    func brandGhostButton() -> some View {
+        buttonStyle(BrandGhostButtonStyle())
     }
 
     /// Apply elevated navy as the list row surface (call on row content inside `List`).
@@ -245,11 +349,9 @@ extension View {
     }
 
     /// Gold filled CTA with **navy** label (contrast-safe on `#c9a84c` / AccentColor).
+    /// Prefer `brandPrimaryButton()` for new surfaces; this remains for empty-state CTAs.
     func brandGoldProminentButton() -> some View {
-        self
-            .buttonStyle(.borderedProminent)
-            .tint(BrandTheme.accent)
-            .foregroundStyle(BrandTheme.ctaLabelOnGold)
+        brandPrimaryButton()
     }
 }
 
