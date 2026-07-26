@@ -1,17 +1,18 @@
 # App icon — locked master
 
 **Date:** 2026-07-26  
-**Master:** candidate **29** → `app-icon-1024.png` / iOS AppIcon / web PWA  
-**Also:** `brand/app-icon-29.png`
+**Master:** candidate **30** → `app-icon-1024.png` / iOS AppIcon / web PWA  
+**Also:** `brand/app-icon-30.png`
 
 ## Spec
 
-- Smooth champagne stage (no fabric noise)
-- Thin champagne outer edge accent + navy frame near edge
-- Large centered diamond (classic side-elevation brilliant cut)
-- No monogram
+- Champagne silk field
+- Navy + gold dual frame near edge
+- Large navy **N** monogram (brand)
+- Diamond solitaire above N (value / escrow metaphor)
 - RGB 1024, no alpha
 
-## Preview
+## Why not diamond-only
 
-`brand/app-icon-preview-120.png` (home-screen scale)
+Diamond alone is elegant but generic (reads as jewelry, not NoMarkup).
+Hybrid: **N = brand**, **diamond = value**.
