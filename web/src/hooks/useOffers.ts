@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { ApiError, api } from '@/lib/api';
+import type { PaymentIntentEnvelope } from '@/lib/payment-outcome';
 import type { Offer, OffersResponse } from '@/types';
 
 function explainOfferFailure(fallback: string): (err: unknown) => void {
@@ -119,10 +120,35 @@ export interface UpdateOfferInput {
 }
 
 /**
+ * Response to PATCH /api/v1/offers/{id}. On `accept` the gateway also mints a
+ * `listing_orders` row in `pending_payment` and calls ChargeListingWinner,
+ * returning the buyer's PaymentIntent `client_secret` in the envelope fields.
+ *
+ * WHO MAY USE THE SECRET — this is the subtle part. The gateway authorizes
+ * accept/reject/counter on *whoever the offer currently awaits*, which
+ * alternates down the counter chain:
+ *
+ *   even depth (buyer's proposal)  → awaits the SELLER  → seller accepts
+ *   odd depth  (seller's counter)  → awaits the BUYER   → buyer accepts
+ *
+ * The PaymentIntent always belongs to the BUYER. So the secret is only
+ * confirmable in the browser when the accepting party IS the buyer (the
+ * counter-accept case). When a seller accepts, the same field comes back but
+ * must be ignored — the seller cannot authenticate the buyer's card, and the
+ * buyer settles later from the order page. `CounterOfferBanner` (seller) and
+ * `BuyerOfferCard` (buyer) branch on exactly this.
+ */
+export interface UpdateOfferResponse extends PaymentIntentEnvelope {
+  offer: Offer | null;
+  order_id?: string;
+  parent_offer?: Offer | null;
+}
+
+/**
  * Universal PATCH for the four offer-state transitions. The gateway
- * authorizes per-action: seller-only for accept/reject/counter,
- * buyer-only for withdraw. Accept additionally flips the listing to
- * 'sold' and mints a listing_orders row in the same transaction.
+ * authorizes per-action on the awaiting participant (see above);
+ * withdraw is reserved for the offer's author. Accept additionally flips the
+ * listing to 'sold' and mints a listing_orders row in the same transaction.
  */
 export function useUpdateOffer(listingId: string) {
   const qc = useQueryClient();
@@ -133,7 +159,7 @@ export function useUpdateOffer(listingId: string) {
       counter_amount_cents,
       message,
     }: UpdateOfferInput) =>
-      api.patch<{ offer: Offer | null; order_id?: string; parent_offer?: Offer | null }>(
+      api.patch<UpdateOfferResponse>(
         `/api/v1/offers/${offerId}`,
         {
           action,
@@ -144,6 +170,8 @@ export function useUpdateOffer(listingId: string) {
     onSuccess: (_data, variables) => {
       switch (variables.action) {
         case 'accept':
+          // Deliberately not "purchased"/"paid": accept only creates the
+          // order. Payment is confirmed separately and announced there.
           toast.success('Offer accepted — order created');
           break;
         case 'reject':

@@ -110,6 +110,16 @@ export function CounterOfferBanner({ listingId, className }: CounterOfferBannerP
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
+        {/* Accepting creates the order in `pending_payment` and charges the
+            BUYER's card. The gateway echoes that PaymentIntent's client
+            secret in the accept response, but it is the buyer's — a seller
+            cannot authenticate someone else's card (and 3DS would be
+            impossible), so this surface never opens a payment sheet. Say so,
+            rather than letting the seller assume money has moved. */}
+        <p className="text-muted-foreground text-xs">
+          Accepting closes the listing and bills the buyer. Wait until the
+          order shows as paid before handing over the item.
+        </p>
         {open.map((offer) => (
           <OfferRow
             key={offer.id}

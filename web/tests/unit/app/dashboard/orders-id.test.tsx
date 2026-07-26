@@ -166,4 +166,47 @@ describe('OrderDetailPage', () => {
     if (!(btn instanceof HTMLButtonElement)) throw new Error('expected button');
     expect(btn.disabled).toBe(false);
   });
+
+  // `pending` is the web mapping of escrow_status 'pending_payment' — the
+  // auction-win off-session charge failed, or the buyer never completed
+  // checkout. The order is real and unpaid.
+  describe('unpaid order (pending_payment)', () => {
+    it('offers the buyer a way to pay', () => {
+      orderState.data = { ...mockOrder, status: LISTING_ORDER_STATUS.PENDING };
+      render(withQueryClient(createElement(OrderDetailPage)));
+      expect(screen.getByTestId('order-payment-prompt')).toBeDefined();
+      expect(
+        screen.getByRole('button', { name: /Complete payment/i }),
+      ).toBeDefined();
+    });
+
+    it('never calls an unpaid order "paid" in the summary', () => {
+      orderState.data = { ...mockOrder, status: LISTING_ORDER_STATUS.PENDING };
+      render(withQueryClient(createElement(OrderDetailPage)));
+      expect(screen.getByText('Total due')).toBeDefined();
+      expect(screen.queryByText('Total paid')).toBeNull();
+    });
+
+    it('shows the seller a read-only warning, not the buyer’s payment form', () => {
+      // Same order viewed by the seller: the PaymentIntent belongs to the
+      // buyer's card, so the seller must never get a payment surface.
+      orderState.data = {
+        ...mockOrder,
+        status: LISTING_ORDER_STATUS.PENDING,
+        seller_id: 'me',
+        buyer_id: 'someone-else',
+      };
+      render(withQueryClient(createElement(OrderDetailPage)));
+      expect(screen.getByText('Awaiting buyer payment')).toBeDefined();
+      expect(screen.queryByTestId('order-payment-prompt')).toBeNull();
+      expect(screen.queryByRole('button', { name: /Complete payment/i })).toBeNull();
+    });
+
+    it('hides the payment prompt once escrow is funded', () => {
+      orderState.data = { ...mockOrder, status: LISTING_ORDER_STATUS.PAID };
+      render(withQueryClient(createElement(OrderDetailPage)));
+      expect(screen.queryByTestId('order-payment-prompt')).toBeNull();
+      expect(screen.getByText('Total paid')).toBeDefined();
+    });
+  });
 });

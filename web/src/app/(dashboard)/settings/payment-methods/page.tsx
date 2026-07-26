@@ -114,6 +114,15 @@ export default function PaymentMethodsPage() {
               <p className="text-zinc-300">
                 No payment methods saved yet.
               </p>
+              {/* Why an empty list matters here, not just that it's empty:
+                  auction wins are charged off-session, so a buyer with no
+                  card on file wins the item and then owes money with no way
+                  for us to collect until they come back and pay manually. */}
+              <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
+                Save a card before bidding. When you win an auction we charge
+                the card on file automatically — without one, your win sits
+                unpaid until you come back and pay it from the order page.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">

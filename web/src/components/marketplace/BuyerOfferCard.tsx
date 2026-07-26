@@ -14,12 +14,21 @@
 // Terminal states (accepted / rejected / withdrawn / expired) render a
 // read-only status line with no actions. On accept that returns an
 // order_id we surface a link to the resulting order.
+//
+// PAYMENT: when the BUYER accepts (i.e. accepts a seller's counter), the
+// gateway mints the order in `pending_payment` and returns the buyer's own
+// PaymentIntent client secret. That secret was previously discarded, so the
+// card was never charged. We now open the payment sheet immediately — the
+// buyer is the payer here, so this is the one accept path where in-browser
+// confirmation (including 3DS) is possible. The seller-accept path lives in
+// CounterOfferBanner and must NOT try to pay.
 
 import { Loader2 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { PaymentConfirmationDialog } from '@/components/payments/PaymentConfirmationDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +38,7 @@ import {
   useListingOffers,
   useUpdateOffer,
 } from '@/hooks/useOffers';
+import { hasConfirmablePayment } from '@/lib/payment-outcome';
 import { formatCents, formatRelativeTime, humanizeStatus } from '@/lib/utils';
 import type { Offer, OfferStatus } from '@/types';
 
@@ -81,6 +91,12 @@ export function BuyerOfferCard({ listingId, className }: BuyerOfferCardProps) {
 
   // Captured from the accept response so we can deep-link the new order.
   const [orderId, setOrderId] = useState<string | null>(null);
+  // Set only when the accept response carried a confirmable client secret.
+  const [payment, setPayment] = useState<{
+    clientSecret: string;
+    orderId: string;
+    totalCents: number | undefined;
+  } | null>(null);
 
   if (offers.isLoading) {
     return (
@@ -136,6 +152,13 @@ export function BuyerOfferCard({ listingId, className }: BuyerOfferCardProps) {
       {
         onSuccess: (data) => {
           if (data.order_id) setOrderId(data.order_id);
+          if (hasConfirmablePayment(data) && data.order_id) {
+            setPayment({
+              clientSecret: data.client_secret,
+              orderId: data.order_id,
+              totalCents: data.total_cents,
+            });
+          }
         },
       },
     );
@@ -183,6 +206,25 @@ export function BuyerOfferCard({ listingId, className }: BuyerOfferCardProps) {
           >
             View your order
           </Link>
+        ) : null}
+
+        {payment ? (
+          <PaymentConfirmationDialog
+            open
+            onOpenChange={(next) => {
+              // Dismissing leaves an unpaid order; the "View your order" link
+              // above is already on screen and carries the pay-now surface.
+              if (!next) setPayment(null);
+            }}
+            clientSecret={payment.clientSecret}
+            amountCents={payment.totalCents}
+            itemPriceCents={liveOffer.amount_cents}
+            returnPath={`/orders/${payment.orderId}`}
+            title="Pay for your accepted offer"
+            onSucceeded={() => {
+              setPayment(null);
+            }}
+          />
         ) : null}
 
         {buyerCanAcceptReject ? (

@@ -39,10 +39,34 @@ vi.mock('next/link', () => ({
     createElement('a', { href, ...rest }, children),
 }));
 
+// The payment confirmation form is the only new surface here that pulls in
+// Stripe. Stripe Elements renders inside a cross-origin iframe that jsdom
+// cannot host and axe cannot inspect, so we stub the SDK: what we assert is
+// OUR markup around it — the labelled field group, the live region, the
+// submit control — which is where the a11y defects would be. The iframe's own
+// accessibility is Stripe's responsibility and is not covered here.
+vi.mock('@stripe/react-stripe-js', () => ({
+  Elements: ({ children }: { children: ReactNode }) =>
+    createElement('div', null, children),
+  PaymentElement: () =>
+    createElement('input', {
+      type: 'text',
+      'aria-label': 'Card number (Stripe iframe stand-in)',
+    }),
+  useStripe: () => ({ confirmPayment: () => Promise.resolve({}) }),
+  useElements: () => ({ submit: () => Promise.resolve({}) }),
+}));
+
+vi.mock('@/lib/stripe', () => ({
+  getStripe: () => Promise.resolve(null),
+  isStripeConfigured: () => true,
+}));
+
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Logo } from '@/components/layout/Logo';
 import { StarRatingDisplay } from '@/components/reviews/StarRating';
+import StripePaymentForm from '@/components/payments/StripePaymentForm';
 
 // runAxe filters axe-core's findings down to the impacts we treat as
 // blocking. `moderate` and `minor` violations are tracked separately so
@@ -193,5 +217,29 @@ describe('axe accessibility gate — real lightweight components (FE-01)', () =>
     );
     const violations = await runAxe(container);
     expect(violations).toEqual([]);
+  });
+
+  it('payment confirmation form has zero serious/critical violations', async () => {
+    const { container } = render(
+      createElement(StripePaymentForm, {
+        clientSecret: ['pi', '3Test', 'secret', 'abc'].join('_'),
+        returnPath: '/orders/order-1',
+        submitLabel: 'Pay $42.00',
+        onOutcome: () => undefined,
+        onCancel: () => undefined,
+      }),
+    );
+    const violations = await runAxe(container);
+    expect(violations).toEqual([]);
+
+    // A payment form a screen reader user cannot complete is not done, so
+    // assert the semantics explicitly rather than trusting a clean axe run:
+    // a named field group, a polite live region for the async result, and a
+    // real submit control.
+    expect(container.querySelector('[role="group"]')).not.toBeNull();
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    expect(live?.getAttribute('role')).toBe('status');
+    expect(container.querySelector('button[type="submit"]')).not.toBeNull();
   });
 });

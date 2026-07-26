@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
+import { OrderPaymentPrompt } from '@/components/orders/OrderPaymentPrompt';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -173,6 +174,36 @@ export default function OrderDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
+          {/* Unpaid order. `pending` is the web mapping of escrow_status
+              'pending_payment' — the auction-win off-session charge failed
+              (no card, decline, or SCA required), or the buyer dismissed the
+              payment sheet after buy-now / offer-accept. Only the BUYER can
+              settle it; the seller sees a read-only note instead, since the
+              PaymentIntent belongs to the buyer's card. */}
+          {order.status === LISTING_ORDER_STATUS.PENDING ? (
+            isSeller ? (
+              <Card variant="glass" className="border-amber-500/30">
+                <CardContent className="p-4 text-sm text-muted-foreground">
+                  <p className="font-medium text-amber-200">Awaiting buyer payment</p>
+                  <p className="mt-1">
+                    The buyer hasn&apos;t completed payment, so nothing is in
+                    escrow yet. Don&apos;t hand over the item until this order
+                    shows as paid.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <OrderPaymentPrompt
+                orderId={orderId}
+                amountCents={order.amount_cents}
+                platformFeeCents={order.platform_fee_cents}
+                onPaid={() => {
+                  void refetch();
+                }}
+              />
+            )
+          ) : null}
+
           {/* Pickup */}
           <Card variant="glass">
             <CardHeader>
@@ -285,7 +316,16 @@ export default function OrderDetailPage() {
               </span>
             </Row>
             <div className="my-2 border-t border-white/[0.06]" />
-            <Row label="Total paid">
+            {/* "Total paid" is only true once escrow is funded. On a
+                pending_payment order the buyer has paid nothing, and calling
+                it "paid" is exactly the false-success this feature removes. */}
+            <Row
+              label={
+                order.status === LISTING_ORDER_STATUS.PENDING
+                  ? 'Total due'
+                  : 'Total paid'
+              }
+            >
               <span className="font-bold text-[var(--brand-gold)] tabular-nums">
                 {formatCents(order.amount_cents + order.platform_fee_cents)}
               </span>
