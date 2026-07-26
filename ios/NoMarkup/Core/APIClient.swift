@@ -272,6 +272,38 @@ actor APIClient {
         )
     }
 
+    /// POST `/api/v1/channels/{id}/messages` — send a text message (Bearer required).
+    /// Body: `{ "content": "...", "message_type": "text" }`. Returns the created message (201).
+    @discardableResult
+    func sendChannelMessage(
+        channelID: String,
+        content: String,
+        messageType: String = "text"
+    ) async throws -> ChatMessage {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Message cannot be empty.")
+        }
+        guard trimmed.count <= 2000 else {
+            throw APIClientError.httpStatus(400, detail: "Message must be at most 2000 characters.")
+        }
+        let body = SendMessageRequestBody(content: trimmed, messageType: messageType)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "channels", channelID, "messages"],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// Best-effort current user id from the access-token JWT `sub` claim (no signature verify).
+    /// Used only for UI alignment (outgoing bubbles), not for auth decisions.
+    func currentUserID() -> String? {
+        guard let token = try? tokenStore.read(.accessToken), !token.isEmpty else {
+            return nil
+        }
+        return JWTPayload.userID(from: token)
+    }
+
     // MARK: - Mutations (report + bids)
 
     /// POST `/api/v1/listings/{id}/report` — optional auth (Bearer attached when present).
@@ -581,6 +613,42 @@ private struct ListingReportRequestBody: Encodable {
 
 private struct AmountCentsBody: Encodable {
     let amountCents: Int64
+}
+
+private struct SendMessageRequestBody: Encodable {
+    let content: String
+    let messageType: String
+}
+
+/// Unverified JWT payload decode for client UI hints only (subject / email).
+enum JWTPayload {
+    /// Extracts `sub` (user id) from a compact JWT without verifying the signature.
+    static func userID(from jwt: String) -> String? {
+        payload(from: jwt)?["sub"] as? String
+    }
+
+    /// Extracts `email` when present on the access token.
+    static func email(from jwt: String) -> String? {
+        payload(from: jwt)?["email"] as? String
+    }
+
+    private static func payload(from jwt: String) -> [String: Any]? {
+        let parts = jwt.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count >= 2 else { return nil }
+        var base64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let pad = (4 - base64.count % 4) % 4
+        if pad > 0 {
+            base64.append(String(repeating: "=", count: pad))
+        }
+        guard let data = Data(base64Encoded: base64),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+        return obj
+    }
 }
 
 /// Flexible decode for `POST /listings/{id}/report` success / already_reported shapes.

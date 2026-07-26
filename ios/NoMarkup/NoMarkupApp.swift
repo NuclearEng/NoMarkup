@@ -5,13 +5,20 @@ struct NoMarkupApp: App {
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var featureFlags = FeatureFlags()
 
+    init() {
+        // Navy + gold chrome for TabView / NavigationStack / lists (matches web dark terminal).
+        BrandTheme.applyGlobalChrome()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(authViewModel)
                 .environmentObject(featureFlags)
                 // Brand gold from AccentColor.colorset (web --brand-gold: #c9a84c / #d4af57).
-                .tint(Color("AccentColor"))
+                .tint(BrandTheme.accent)
+                // Luxury shell is dark navy — force dark so system fills match brand, not light gray.
+                .preferredColorScheme(.dark)
                 .task {
                     await featureFlags.refresh()
                 }

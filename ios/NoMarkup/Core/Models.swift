@@ -1,5 +1,87 @@
 import Foundation
 
+// MARK: - Date / countdown helpers
+
+enum CatalogDateFormat {
+    /// Parses gateway ISO-8601 timestamps (with or without fractional seconds).
+    static func parseISO(_ iso: String) -> Date? {
+        let trimmed = iso.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: trimmed) {
+            return date
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: trimmed)
+    }
+
+    static func friendlyDateTime(_ iso: String) -> String {
+        guard let date = parseISO(iso) else { return iso }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    /// Short auction countdown: "Ends in 2h", "Ends in 45m", "Ended", or absolute if far out.
+    static func countdownLabel(until date: Date, now: Date = Date()) -> String {
+        let remaining = date.timeIntervalSince(now)
+        if remaining <= 0 {
+            return "Ended"
+        }
+        let minutes = Int(remaining / 60)
+        if minutes < 60 {
+            return "Ends in \(max(1, minutes))m"
+        }
+        let hours = minutes / 60
+        if hours < 48 {
+            let remMin = minutes % 60
+            if remMin == 0 {
+                return "Ends in \(hours)h"
+            }
+            return "Ends in \(hours)h \(remMin)m"
+        }
+        let days = hours / 24
+        if days < 14 {
+            return "Ends in \(days)d"
+        }
+        return "Ends \(date.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    static func countdownLabel(iso: String, now: Date = Date()) -> String? {
+        guard let date = parseISO(iso) else { return nil }
+        return countdownLabel(until: date, now: now)
+    }
+}
+
+// MARK: - Status chip styling
+
+enum StatusChipStyle {
+    case success
+    case info
+    case warning
+    case danger
+    case neutral
+
+    static func forStatus(_ raw: String?) -> StatusChipStyle {
+        guard let raw, !raw.isEmpty else { return .neutral }
+        switch raw.lowercased() {
+        case "open", "active", "live", "published", "in_progress", "awarded":
+            return .success
+        case "pending", "pending_payment", "scheduled", "review":
+            return .warning
+        case "completed", "closed", "sold", "fulfilled", "paid":
+            return .info
+        case "cancelled", "canceled", "rejected", "expired", "failed":
+            return .danger
+        default:
+            return .neutral
+        }
+    }
+
+    static func displayLabel(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
 // MARK: - Currency
 
 enum MoneyFormat {
@@ -152,6 +234,16 @@ struct ListingSummary: Codable, Sendable, Hashable, Identifiable {
             if let zip = pickupZip, !zip.isEmpty { return zip }
             return nil
         }
+    }
+
+    var priceCaption: String {
+        if currentBidCents != nil { return "Current bid" }
+        return "Starting"
+    }
+
+    var auctionCountdown: String? {
+        guard let ends = auctionEndsAt else { return nil }
+        return CatalogDateFormat.countdownLabel(until: ends)
     }
 }
 
@@ -332,6 +424,18 @@ struct JobSummary: Codable, Sendable, Hashable, Identifiable {
 
     var locationLabel: String? {
         approximateAddress?.label
+    }
+
+    /// Price label: accepted offer preferred, else starting bid.
+    var priceCaption: String? {
+        if offerAcceptedCents != nil { return "Accepted" }
+        if startingBidCents != nil { return "Starting" }
+        return nil
+    }
+
+    var auctionCountdown: String? {
+        guard let ends = auctionEndsAt, !ends.isEmpty else { return nil }
+        return CatalogDateFormat.countdownLabel(iso: ends)
     }
 }
 

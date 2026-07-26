@@ -35,6 +35,21 @@ struct RootTabView: View {
                 .tabItem { Label("Account", systemImage: "person.crop.circle.fill") }
                 .tag(Tab.account)
         }
+        .environment(\.selectedRootTab, $selectedTab)
+    }
+}
+
+// MARK: - Tab selection environment (Home deep links)
+
+private struct SelectedRootTabKey: EnvironmentKey {
+    static let defaultValue: Binding<RootTabView.Tab>? = nil
+}
+
+extension EnvironmentValues {
+    /// When set by `RootTabView`, lets child views switch tabs (e.g. Home → Marketplace).
+    var selectedRootTab: Binding<RootTabView.Tab>? {
+        get { self[SelectedRootTabKey.self] }
+        set { self[SelectedRootTabKey.self] = newValue }
     }
 }
 

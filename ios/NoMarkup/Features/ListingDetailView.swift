@@ -42,27 +42,32 @@ struct ListingDetailView: View {
                 detailContent(detail)
             } else if isLoading {
                 ProgressView("Loading…")
+                    .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.textSecondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .brandScreenBackground()
             } else if let errorMessage {
-                ContentUnavailableView {
-                    Label("Couldn’t load listing", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("Try again") {
-                        Task { await load() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(minHeight: 44)
+                BrandEmptyState(
+                    title: "Couldn’t load listing",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage,
+                    actionTitle: "Try again"
+                ) {
+                    Task { await load() }
                 }
             } else {
                 ProgressView()
+                    .tint(BrandTheme.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .brandScreenBackground()
             }
         }
         .navigationTitle(detail?.displayTitle ?? "Listing")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .sheet(isPresented: $showReportSheet) {
@@ -90,22 +95,24 @@ struct ListingDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(listing.displayTitle)
                         .font(.title2.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(listing.displayPrice)
                         .font(.title3.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
 
                     if let start = listing.startingPriceCents, start != listing.displayPriceCents {
                         Text("Started at \(MoneyFormat.usd(cents: start))")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
                 .padding(.vertical, 4)
                 .accessibilityElement(children: .combine)
             }
 
-            Section("Details") {
+            Section {
                 if let status = listing.status {
                     LabeledContent("Status") {
                         Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
@@ -136,20 +143,24 @@ struct ListingDetailView: View {
                 if let buyNow = listing.buyNowPriceCents {
                     LabeledContent("Buy now", value: MoneyFormat.usd(cents: buyNow))
                 }
+            } header: {
+                Text("Details").brandSectionHeader()
             }
 
             if let description = listing.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                !description.isEmpty {
-                Section("Description") {
+                Section {
                     Text(description)
                         .font(.body)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(BrandTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
+                } header: {
+                    Text("Description").brandSectionHeader()
                 }
             }
 
             if listing.sellerDisplayName != nil || listing.sellerListingsCount != nil {
-                Section("Seller") {
+                Section {
                     if let name = listing.sellerDisplayName, !name.isEmpty {
                         LabeledContent("Name", value: name)
                     }
@@ -159,6 +170,8 @@ struct ListingDetailView: View {
                     if let tier = listing.sellerTrustTier, !tier.isEmpty {
                         LabeledContent("Trust", value: tier.capitalized)
                     }
+                } header: {
+                    Text("Seller").brandSectionHeader()
                 }
             }
 
@@ -182,7 +195,7 @@ struct ListingDetailView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .brandListBackground()
     }
 
     @ViewBuilder
@@ -195,11 +208,11 @@ struct ListingDetailView: View {
                 if !auth.isAuthenticated {
                     Text("Sign in to buy now with Apple Pay.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                 } else if auth.isScaffoldSession {
                     Text("Scaffold session has no API credentials. Sign in against a live gateway to pay.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                     Button {} label: {
                         Label("Buy now \(priceLabel)", systemImage: "apple.logo")
                             .frame(maxWidth: .infinity, minHeight: 44)
@@ -208,16 +221,16 @@ struct ListingDetailView: View {
                 } else if !isActive {
                     Text("Buy now is only available while the auction is active.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                 } else {
                     Text("Pays \(priceLabel) via Apple Pay (or card). Funds are held in escrow until you confirm pickup. Local pickup only.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
 
                     if let buyNowStatusMessage {
                         Text(buyNowStatusMessage)
                             .font(.footnote)
-                            .foregroundStyle(buyNowStatusIsError ? .red : .secondary)
+                            .foregroundStyle(buyNowStatusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -226,6 +239,7 @@ struct ListingDetailView: View {
                     } label: {
                         if isBuyingNow {
                             ProgressView()
+                                .tint(BrandTheme.navy)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Label("Buy now \(priceLabel)", systemImage: "apple.logo")
@@ -233,12 +247,12 @@ struct ListingDetailView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color("AccentColor"))
+                    .tint(BrandTheme.accent)
                     .disabled(isBuyingNow || isPlacingBid)
                     .accessibilityLabel("Buy now for \(priceLabel) with Apple Pay")
                 }
             } header: {
-                Text("Buy now")
+                Text("Buy now").brandSectionHeader()
             }
         }
     }
@@ -249,11 +263,11 @@ struct ListingDetailView: View {
             if !auth.isAuthenticated {
                 Text("Sign in to place a bid on this listing.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
             } else if auth.isScaffoldSession {
                 Text("Scaffold session has no API credentials. Sign in against a live gateway to place bids.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
                 TextField("Bid amount (USD)", text: $bidAmountText)
                     .keyboardType(.decimalPad)
                     .textContentType(.none)
@@ -265,7 +279,7 @@ struct ListingDetailView: View {
             } else {
                 Text("Enter your bid in dollars. Current price is \(listing.displayPrice).")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
 
                 TextField("Bid amount (USD)", text: $bidAmountText)
                     .keyboardType(.decimalPad)
@@ -277,7 +291,7 @@ struct ListingDetailView: View {
                 if let bidStatusMessage {
                     Text(bidStatusMessage)
                         .font(.footnote)
-                        .foregroundStyle(bidStatusIsError ? .red : .secondary)
+                        .foregroundStyle(bidStatusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -286,6 +300,7 @@ struct ListingDetailView: View {
                 } label: {
                     if isPlacingBid {
                         ProgressView()
+                            .tint(BrandTheme.navy)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Text("Place bid")
@@ -293,7 +308,7 @@ struct ListingDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color("AccentColor"))
+                .tint(BrandTheme.accent)
                 .disabled(
                     isPlacingBid
                         || isBuyingNow
@@ -301,7 +316,7 @@ struct ListingDetailView: View {
                 )
             }
         } header: {
-            Text("Place a bid")
+            Text("Place a bid").brandSectionHeader()
         }
     }
 
@@ -439,7 +454,7 @@ private struct ListingReportSheet: View {
                     .frame(minHeight: 44)
                     .accessibilityLabel("Report reason")
                 } header: {
-                    Text("Why are you reporting this?")
+                    Text("Why are you reporting this?").brandSectionHeader()
                 }
 
                 Section {
@@ -447,16 +462,17 @@ private struct ListingReportSheet: View {
                         .frame(minHeight: 120)
                         .accessibilityLabel("Additional details")
                 } header: {
-                    Text("Details (optional)")
+                    Text("Details (optional)").brandSectionHeader()
                 } footer: {
                     Text("Reports help keep the marketplace safe. False reports may lead to account action.")
+                        .foregroundStyle(BrandTheme.textSecondary)
                 }
 
                 if let statusMessage {
                     Section {
                         Text(statusMessage)
                             .font(.footnote)
-                            .foregroundStyle(statusIsError ? .red : .secondary)
+                            .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -467,6 +483,7 @@ private struct ListingReportSheet: View {
                     } label: {
                         if isSubmitting {
                             ProgressView()
+                                .tint(BrandTheme.navy)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Submit report")
@@ -474,13 +491,17 @@ private struct ListingReportSheet: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
                     .disabled(isSubmitting)
                 }
             }
+            .brandListBackground()
             .navigationTitle("Report listing")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }

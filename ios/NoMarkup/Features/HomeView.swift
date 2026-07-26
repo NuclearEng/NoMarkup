@@ -2,6 +2,8 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.selectedRootTab) private var selectedRootTab
+
     @State private var healthOK: Bool?
     @State private var healthError: String?
     @State private var isChecking = false
@@ -67,22 +69,70 @@ struct HomeView: View {
                 }
 
                 Section("Live catalog") {
-                    LabeledContent("Active listings") {
-                        Text(listingCount.map(String.init) ?? "—")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                    Button {
+                        selectedRootTab?.wrappedValue = .marketplace
+                    } label: {
+                        HStack {
+                            Label("Marketplace", systemImage: "bag.fill")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(listingCount.map { "\($0) listings" } ?? "—")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
-                    LabeledContent("Open jobs") {
-                        Text(jobCount.map(String.init) ?? "—")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the Marketplace tab")
+
+                    Button {
+                        selectedRootTab?.wrappedValue = .jobs
+                    } label: {
+                        HStack {
+                            Label("Jobs", systemImage: "wrench.and.screwdriver.fill")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(jobCount.map { "\($0) open" } ?? "—")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the Jobs tab")
+
+                    Button {
+                        selectedRootTab?.wrappedValue = .messages
+                    } label: {
+                        HStack {
+                            Label("Messages", systemImage: "bubble.left.and.bubble.right.fill")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the Messages tab")
+
                     if let catalogError {
                         Text(catalogError)
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
-                    Text("Open the Marketplace and Jobs tabs for full catalogs, search, and detail. Chat and bidding stay on the web for now.")
+
+                    Text("Tap a row to jump to that tab. Pull to refresh counts from the live API.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

@@ -37,27 +37,32 @@ struct JobDetailView: View {
                 detailContent(detail)
             } else if isLoading {
                 ProgressView("Loading…")
+                    .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.textSecondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .brandScreenBackground()
             } else if let errorMessage {
-                ContentUnavailableView {
-                    Label("Couldn’t load job", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("Try again") {
-                        Task { await load() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(minHeight: 44)
+                BrandEmptyState(
+                    title: "Couldn’t load job",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage,
+                    actionTitle: "Try again"
+                ) {
+                    Task { await load() }
                 }
             } else {
                 ProgressView()
+                    .tint(BrandTheme.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .brandScreenBackground()
             }
         }
         .navigationTitle(detail?.displayTitle ?? "Job")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .sheet(isPresented: $showWebSafari) {
@@ -80,19 +85,21 @@ struct JobDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(job.displayTitle)
                         .font(.title2.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let price = job.displayPrice {
                         Text(price)
                             .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
                         if job.offerAcceptedCents != nil {
                             Text("Accepted offer")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(BrandTheme.textSecondary)
                         } else if job.startingBidCents != nil {
                             Text("Starting bid")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(BrandTheme.textSecondary)
                         }
                     }
                 }
@@ -100,7 +107,7 @@ struct JobDetailView: View {
                 .accessibilityElement(children: .combine)
             }
 
-            Section("Details") {
+            Section {
                 if let status = job.status {
                     LabeledContent("Status") {
                         Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
@@ -126,19 +133,24 @@ struct JobDetailView: View {
                 if let recurring = job.isRecurring, recurring {
                     LabeledContent("Recurring", value: "Yes")
                 }
+            } header: {
+                Text("Details").brandSectionHeader()
             }
 
             if let description = job.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                !description.isEmpty {
-                Section("Description") {
+                Section {
                     Text(description)
                         .font(.body)
+                        .foregroundStyle(BrandTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
+                } header: {
+                    Text("Description").brandSectionHeader()
                 }
             }
 
             if job.customerDisplayName != nil || job.customerJobsPosted != nil {
-                Section("Customer") {
+                Section {
                     if let name = job.customerDisplayName, !name.isEmpty {
                         LabeledContent("Name", value: name)
                     }
@@ -148,6 +160,8 @@ struct JobDetailView: View {
                     if let since = job.customerMemberSince, !since.isEmpty {
                         LabeledContent("Member since", value: Self.friendlyDate(since))
                     }
+                } header: {
+                    Text("Customer").brandSectionHeader()
                 }
             }
 
@@ -156,7 +170,7 @@ struct JobDetailView: View {
             Section {
                 Text("Contracts and advanced auction tools remain on the website.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
                 Button {
                     showWebSafari = true
                 } label: {
@@ -165,7 +179,7 @@ struct JobDetailView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .brandListBackground()
     }
 
     @ViewBuilder
@@ -174,11 +188,11 @@ struct JobDetailView: View {
             if !auth.isAuthenticated {
                 Text("Sign in as a provider to place a bid on this job.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
             } else if auth.isScaffoldSession {
                 Text("Scaffold session has no API credentials. Sign in against a live gateway to place bids.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
                 TextField("Bid amount (USD)", text: $bidAmountText)
                     .keyboardType(.decimalPad)
                     .disabled(true)
@@ -189,7 +203,7 @@ struct JobDetailView: View {
             } else {
                 Text(bidHint(for: job))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
 
                 TextField("Bid amount (USD)", text: $bidAmountText)
                     .keyboardType(.decimalPad)
@@ -201,7 +215,7 @@ struct JobDetailView: View {
                 if let bidStatusMessage {
                     Text(bidStatusMessage)
                         .font(.footnote)
-                        .foregroundStyle(bidStatusIsError ? .red : .secondary)
+                        .foregroundStyle(bidStatusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -210,6 +224,7 @@ struct JobDetailView: View {
                 } label: {
                     if isPlacingBid {
                         ProgressView()
+                            .tint(BrandTheme.navy)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Text("Place bid")
@@ -217,13 +232,14 @@ struct JobDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color("AccentColor"))
+                .tint(BrandTheme.accent)
                 .disabled(isPlacingBid || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         } header: {
-            Text("Place a bid")
+            Text("Place a bid").brandSectionHeader()
         } footer: {
             Text("Services are reverse auctions — lower bids compete. Provider role required.")
+                .foregroundStyle(BrandTheme.textSecondary)
         }
     }
 

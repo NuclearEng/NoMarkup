@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Chat channel inbox — `GET /api/v1/channels` (auth). Thread detail loads messages when available.
+/// Chat channel inbox — `GET /api/v1/channels` (auth). Thread detail loads + sends messages.
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -14,6 +14,8 @@ struct MessagesView: View {
         NavigationStack {
             content
                 .navigationTitle("Messages")
+                .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
                 .refreshable { await load() }
                 .task { await load() }
                 .navigationDestination(for: ChatChannelSummary.self) { channel in
@@ -25,50 +27,44 @@ struct MessagesView: View {
     @ViewBuilder
     private var content: some View {
         if auth.isScaffoldSession {
-            ContentUnavailableView {
-                Label("Sign in for messages", systemImage: "person.crop.circle.badge.exclamationmark")
-            } description: {
-                Text("Scaffold session has no API token. Sign out and sign in with a real account to load chat threads.")
-            } actions: {
-                Button("Sign out to log in") {
-                    auth.signOut()
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Sign in for messages",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                message: "Scaffold session has no API token. Sign out and sign in with a real account to load chat threads.",
+                actionTitle: "Sign out to log in"
+            ) {
+                auth.signOut()
             }
         } else if needsSignIn {
-            ContentUnavailableView {
-                Label("Sign in required", systemImage: "lock.circle")
-            } description: {
-                Text("Your session expired or is missing. Sign in again to see conversations.")
-            } actions: {
-                Button("Sign in") {
-                    auth.signOut()
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Sign in required",
+                systemImage: "lock.circle",
+                message: "Your session expired or is missing. Sign in again to see conversations.",
+                actionTitle: "Sign in"
+            ) {
+                auth.signOut()
             }
         } else if isLoading && channels.isEmpty {
             ProgressView("Loading messages…")
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .brandScreenBackground()
         } else if let errorMessage, channels.isEmpty {
-            ContentUnavailableView {
-                Label("Couldn’t load messages", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(errorMessage)
-            } actions: {
-                Button("Try again") {
-                    Task { await load() }
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Couldn’t load messages",
+                systemImage: "wifi.exclamationmark",
+                message: errorMessage,
+                actionTitle: "Try again"
+            ) {
+                Task { await load() }
             }
         } else if channels.isEmpty {
-            ContentUnavailableView {
-                Label("No conversations yet", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("Chat threads with providers and customers appear here after you bid or award a job.")
-            }
+            BrandEmptyState(
+                title: "No conversations yet",
+                systemImage: "bubble.left.and.bubble.right.fill",
+                message: "Chat threads with providers and customers appear here after you bid or award a job. Pull to refresh anytime."
+            )
         } else {
             List {
                 Section {
@@ -77,17 +73,18 @@ struct MessagesView: View {
                             ChannelRowView(channel: channel)
                         }
                         .frame(minHeight: 44)
+                        .listRowBackground(BrandTheme.navyElevated)
                         .accessibilityHint("Opens conversation")
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {
-                        Text("\(channels.count) of \(total)")
+                        Text("\(channels.count) of \(total)").brandSectionHeader()
                     } else {
-                        Text("Inbox")
+                        Text("Inbox").brandSectionHeader()
                     }
                 }
             }
-            .listStyle(.insetGrouped)
+            .brandListBackground()
         }
     }
 
@@ -131,7 +128,7 @@ private struct ChannelRowView: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.title3)
-                .foregroundStyle(.tint)
+                .foregroundStyle(BrandTheme.accent)
                 .frame(width: 36, height: 36)
                 .accessibilityHidden(true)
 
@@ -139,15 +136,16 @@ private struct ChannelRowView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(channel.displayTitle)
                         .font(.body.weight(.medium))
+                        .foregroundStyle(BrandTheme.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     if let unread = channel.unreadCount, unread > 0 {
                         Text("\(unread)")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(BrandTheme.navy)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.accentColor))
+                            .background(Capsule().fill(BrandTheme.accent))
                             .accessibilityLabel("\(unread) unread")
                     }
                 }
@@ -155,7 +153,7 @@ private struct ChannelRowView: View {
                 if let preview = channel.previewText {
                     Text(preview)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(2)
                 }
 
@@ -163,31 +161,18 @@ private struct ChannelRowView: View {
                     if let type = channel.typeLabel {
                         Text(type)
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(BrandTheme.textSecondary.opacity(0.8))
                     }
                     if let updated = channel.updatedAt ?? channel.createdAt, !updated.isEmpty {
-                        Text(Self.friendlyDate(updated))
+                        Text(CatalogDateFormat.friendlyDateTime(updated))
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(BrandTheme.textSecondary.opacity(0.8))
                     }
                 }
             }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-    }
-
-    private static func friendlyDate(_ iso: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: iso) {
-            return date.formatted(date: .abbreviated, time: .shortened)
-        }
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: iso) {
-            return date.formatted(date: .abbreviated, time: .shortened)
-        }
-        return iso
     }
 }
 
@@ -202,76 +187,40 @@ struct ChatThreadView: View {
     @State private var errorMessage: String?
     @State private var needsSignIn = false
     @State private var showWebSafari = false
+    @State private var draft = ""
+    @State private var isSending = false
+    @State private var sendError: String?
+    @State private var currentUserID: String?
+    @FocusState private var composerFocused: Bool
 
     private var webMessagesURL: URL {
         AppConfig.publicWebBaseURL.appending(path: "messages")
     }
 
+    private var canCompose: Bool {
+        !auth.isScaffoldSession && !needsSignIn
+    }
+
+    private var canSend: Bool {
+        canCompose
+            && !isSending
+            && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
-        Group {
-            if needsSignIn {
-                ContentUnavailableView {
-                    Label("Sign in required", systemImage: "lock.circle")
-                } description: {
-                    Text("Session expired. Sign in again to read this conversation.")
-                } actions: {
-                    Button("Sign in") {
-                        auth.signOut()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(minHeight: 44)
-                }
-            } else if isLoading && messages.isEmpty {
-                ProgressView("Loading messages…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorMessage, messages.isEmpty {
-                ContentUnavailableView {
-                    Label("Couldn’t load thread", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("Try again") {
-                        Task { await loadMessages() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(minHeight: 44)
-                    Button("Open on web") {
-                        showWebSafari = true
-                    }
-                    .frame(minHeight: 44)
-                }
-            } else if messages.isEmpty {
-                ContentUnavailableView {
-                    Label("No messages yet", systemImage: "text.bubble")
-                } description: {
-                    Text("This channel has no messages. Compose and full real-time chat are on the web for now.")
-                } actions: {
-                    Button("Open on web") {
-                        showWebSafari = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(minHeight: 44)
-                }
-            } else {
-                List {
-                    Section {
-                        ForEach(messages) { message in
-                            MessageBubbleRow(message: message)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        }
-                    } footer: {
-                        Text("Read-only on iOS for now. Reply on the website.")
-                            .font(.caption)
-                    }
-                }
-                .listStyle(.plain)
-            }
+        VStack(spacing: 0) {
+            threadBody
+            Divider()
+                .overlay(BrandTheme.gold.opacity(0.15))
+            composerBar
         }
+        .background(BrandTheme.navy.ignoresSafeArea())
         .navigationTitle(channel.displayTitle)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -282,7 +231,10 @@ struct ChatThreadView: View {
                 .frame(minHeight: 44)
             }
         }
-        .task { await loadMessages() }
+        .task {
+            currentUserID = await APIClient.shared.currentUserID()
+            await loadMessages()
+        }
         .refreshable { await loadMessages() }
         .sheet(isPresented: $showWebSafari) {
             NavigationStack {
@@ -297,6 +249,138 @@ struct ChatThreadView: View {
         }
     }
 
+    @ViewBuilder
+    private var threadBody: some View {
+        if needsSignIn {
+            BrandEmptyState(
+                title: "Sign in required",
+                systemImage: "lock.circle",
+                message: "Session expired. Sign in again to read this conversation.",
+                actionTitle: "Sign in"
+            ) {
+                auth.signOut()
+            }
+        } else if isLoading && messages.isEmpty {
+            ProgressView("Loading messages…")
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .brandScreenBackground()
+        } else if let errorMessage, messages.isEmpty {
+            BrandEmptyState(
+                title: "Couldn’t load thread",
+                systemImage: "exclamationmark.triangle",
+                message: errorMessage,
+                actionTitle: "Try again",
+                action: { Task { await loadMessages() } },
+                secondaryActionTitle: "Open on web",
+                secondaryAction: { showWebSafari = true }
+            )
+        } else if messages.isEmpty {
+            BrandEmptyState(
+                title: "No messages yet",
+                systemImage: "text.bubble",
+                message: canCompose
+                    ? "Say hello below — your first message starts the thread. Pull to refresh anytime."
+                    : "This channel has no messages yet."
+            )
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(messages) { message in
+                            MessageBubbleRow(
+                                message: message,
+                                isMine: isMine(message)
+                            )
+                            .id(message.id)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+                .background(BrandTheme.navy)
+                .onChange(of: messages.count) { _, _ in
+                    if let lastID = messages.last?.id {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(lastID, anchor: .bottom)
+                        }
+                    }
+                }
+                .onAppear {
+                    if let lastID = messages.last?.id {
+                        proxy.scrollTo(lastID, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
+
+    private var composerBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if auth.isScaffoldSession {
+                Text("Scaffold session can’t send messages. Sign out and sign in with a real account.")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let sendError {
+                Text(sendError)
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("Message", text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .lineLimit(1 ... 5)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(BrandTheme.gold.opacity(0.15), lineWidth: 1)
+                    )
+                    .focused($composerFocused)
+                    .disabled(!canCompose || isSending)
+                    .accessibilityLabel("Message")
+
+                Button {
+                    Task { await send() }
+                } label: {
+                    Group {
+                        if isSending {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 32))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(canSend ? BrandTheme.accent : BrandTheme.textSecondary.opacity(0.5))
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .accessibilityLabel("Send message")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(BrandTheme.navyElevated)
+    }
+
+    private func isMine(_ message: ChatMessage) -> Bool {
+        guard let me = currentUserID, let sender = message.senderId else {
+            return false
+        }
+        return me == sender
+    }
+
     @MainActor
     private func loadMessages() async {
         isLoading = true
@@ -304,12 +388,16 @@ struct ChatThreadView: View {
         needsSignIn = false
         defer { isLoading = false }
 
+        if currentUserID == nil {
+            currentUserID = await APIClient.shared.currentUserID()
+        }
+
         do {
             let response = try await APIClient.shared.fetchChannelMessages(
                 channelID: channel.id,
                 pageSize: 50
             )
-            // API returns newest-first or oldest-first depending on service; show chronological.
+            // Chronological oldest → newest for chat reading order.
             messages = response.messages.sorted { lhs, rhs in
                 (lhs.createdAt ?? "") < (rhs.createdAt ?? "")
             }
@@ -322,51 +410,98 @@ struct ChatThreadView: View {
             }
         }
     }
+
+    @MainActor
+    private func send() async {
+        guard canCompose else {
+            sendError = "Sign in with a real account to send messages."
+            return
+        }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        isSending = true
+        sendError = nil
+        defer { isSending = false }
+
+        do {
+            let created = try await APIClient.shared.sendChannelMessage(
+                channelID: channel.id,
+                content: text
+            )
+            draft = ""
+            composerFocused = false
+            // Prefer server message; fall back to optimistic row if decode was sparse.
+            if messages.contains(where: { $0.id == created.id }) {
+                // already present (unlikely)
+            } else {
+                messages.append(created)
+                messages.sort { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
+            }
+            if currentUserID == nil {
+                currentUserID = await APIClient.shared.currentUserID()
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            sendError = "Session expired. Sign in again to send."
+        } catch {
+            sendError = error.localizedDescription
+        }
+    }
 }
 
 private struct MessageBubbleRow: View {
     let message: ChatMessage
+    let isMine: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(message.displayBody)
-                .font(.body)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack {
+            if isMine { Spacer(minLength: 48) }
 
-            HStack(spacing: 8) {
-                if let type = message.messageType, type != "text", !type.isEmpty {
-                    Text(type.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+            VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
+                Text(message.displayBody)
+                    .font(.body)
+                    .foregroundStyle(isMine ? BrandTheme.navy : BrandTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(isMine ? .trailing : .leading)
+
+                HStack(spacing: 6) {
+                    if let type = message.messageType, type != "text", !type.isEmpty {
+                        Text(type.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(.caption2)
+                    }
+                    if let created = message.createdAt, !created.isEmpty {
+                        Text(CatalogDateFormat.friendlyDateTime(created))
+                            .font(.caption2)
+                    }
                 }
-                if let created = message.createdAt, !created.isEmpty {
-                    Text(Self.friendlyDate(created))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                .foregroundStyle(isMine ? BrandTheme.navy.opacity(0.75) : BrandTheme.textSecondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isMine ? BrandTheme.accent : BrandTheme.navyElevated)
+            )
+            .overlay {
+                if !isMine {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.12), lineWidth: 1)
                 }
             }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .accessibilityElement(children: .combine)
-    }
+            .frame(maxWidth: 320, alignment: isMine ? .trailing : .leading)
 
-    private static func friendlyDate(_ iso: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: iso) {
-            return date.formatted(date: .abbreviated, time: .shortened)
+            if !isMine { Spacer(minLength: 48) }
         }
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: iso) {
-            return date.formatted(date: .abbreviated, time: .shortened)
-        }
-        return iso
+        .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isMine ? "You: \(message.displayBody)" : message.displayBody)
     }
 }
 
 #Preview {
     MessagesView()
         .environmentObject(AuthViewModel())
+        .preferredColorScheme(.dark)
+        .tint(BrandTheme.accent)
 }

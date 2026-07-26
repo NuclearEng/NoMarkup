@@ -11,7 +11,7 @@
 
 ### Design intent
 
-Champagne-gold **embossed N** inside dual precision rings with a diamond at 12 o’clock on void navy (`#070b14`). Institutional luxury (auction seal × escrow trust) — not a flat monogram sticker.
+Champagne-gold **embossed N** inside dual precision rings with a **large brilliant-cut diamond** at 12 o’clock on void navy (`#070b14`). The gem is intentionally oversized for home-screen presence (auction seal × escrow trust × luxury). Not a flat monogram sticker.
 
 Apple applies the home-screen mask; the PNG is full-bleed square.
 

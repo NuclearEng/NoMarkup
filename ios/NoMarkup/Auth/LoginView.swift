@@ -27,11 +27,13 @@ struct LoginView: View {
                 .frame(maxWidth: 480)
                 .frame(maxWidth: .infinity)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(BrandTheme.navy.ignoresSafeArea())
             .navigationTitle("Sign in")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         }
     }
 
@@ -39,9 +41,10 @@ struct LoginView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(AppConfig.appDisplayName)
                 .font(.largeTitle.weight(.bold))
+                .foregroundStyle(BrandTheme.textPrimary)
             Text("Local services marketplace — jobs reverse-auction, goods forward-auction. Native chrome scaffold (not a web wrapper).")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -54,16 +57,26 @@ struct LoginView: View {
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .foregroundStyle(BrandTheme.textPrimary)
                 .padding(14)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.15), lineWidth: 1)
+                )
                 .focused($focusedField, equals: .email)
                 .submitLabel(.next)
                 .onSubmit { focusedField = .password }
 
             SecureField("Password", text: $auth.password)
                 .textContentType(.password)
+                .foregroundStyle(BrandTheme.textPrimary)
                 .padding(14)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.15), lineWidth: 1)
+                )
                 .focused($focusedField, equals: .password)
                 .submitLabel(.go)
                 .onSubmit {
@@ -81,7 +94,7 @@ struct LoginView: View {
                     if auth.isLoading {
                         // Dark spinner for contrast on brand-gold filled button.
                         ProgressView()
-                            .tint(Color.primary)
+                            .tint(BrandTheme.navy)
                     } else {
                         Text("Sign in")
                             .fontWeight(.semibold)
@@ -91,14 +104,14 @@ struct LoginView: View {
                 .frame(minHeight: 48)
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color("AccentColor"))
+            .tint(BrandTheme.accent)
             .disabled(auth.isLoading)
             .accessibilityLabel("Sign in with email and password")
 
             if let error = auth.errorMessage {
                 Text(error)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Error: \(error)")
             }
@@ -106,24 +119,24 @@ struct LoginView: View {
             if let status = auth.statusMessage {
                 Text(status)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Text("API: \(AppConfig.apiBaseURLString)")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
                 .textSelection(.enabled)
         }
     }
 
     private var divider: some View {
         HStack {
-            Rectangle().frame(height: 1).foregroundStyle(.quaternary)
+            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.gold.opacity(0.2))
             Text("or")
                 .font(.caption)
-                .foregroundStyle(.secondary)
-            Rectangle().frame(height: 1).foregroundStyle(.quaternary)
+                .foregroundStyle(BrandTheme.textSecondary)
+            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.gold.opacity(0.2))
         }
     }
 
@@ -134,6 +147,7 @@ struct LoginView: View {
         .frame(maxWidth: .infinity)
         .frame(minHeight: 44)
         .font(.subheadline)
+        .foregroundStyle(BrandTheme.goldBright)
         .accessibilityHint("Opens the tab shell without calling the API. For design and layout review only.")
     }
 
@@ -141,12 +155,13 @@ struct LoginView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("By continuing you agree to NoMarkup’s Terms and acknowledge the Privacy Policy.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandTheme.textSecondary)
             HStack(spacing: 16) {
                 Link("Privacy", destination: AppConfig.privacyURL)
                 Link("Terms", destination: AppConfig.termsURL)
             }
             .font(.caption.weight(.medium))
+            .tint(BrandTheme.accent)
         }
         .padding(.top, 8)
     }

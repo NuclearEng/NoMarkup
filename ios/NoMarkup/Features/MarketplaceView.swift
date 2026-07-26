@@ -42,11 +42,11 @@ struct MarketplaceView: View {
                 .frame(minHeight: 44)
             }
         } else if listings.isEmpty {
-            ContentUnavailableView(
-                "No listings",
-                systemImage: "bag",
-                description: Text("No active listings match your search. Pull to refresh or try again later.")
-            )
+            ContentUnavailableView {
+                Label("No listings", systemImage: "bag")
+            } description: {
+                Text("No active listings match your search. Pull down to refresh, clear the search field, or check back later.")
+            }
         } else {
             List {
                 Section {
@@ -106,37 +106,38 @@ private struct ListingRowView: View {
     let listing: ListingSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(listing.displayTitle)
-                    .font(.body.weight(.medium))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                 Spacer(minLength: 8)
-                Text(listing.displayPrice)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(listing.displayPrice)
+                        .font(.body.weight(.bold).monospacedDigit())
+                        .foregroundStyle(Color("AccentColor"))
+                    Text(listing.priceCaption)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             HStack(spacing: 8) {
                 if let status = listing.status, !status.isEmpty {
-                    Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                    StatusChipView(
+                        label: StatusChipStyle.displayLabel(status),
+                        style: StatusChipStyle.forStatus(status)
+                    )
                 }
-                if let category = listing.categoryName, !category.isEmpty {
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-                    Text(category)
+                if let condition = listing.condition, !condition.isEmpty {
+                    Text(condition.replacingOccurrences(of: "_", with: " ").capitalized)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                if let location = listing.locationLabel {
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-                    Text(location)
+                if let category = listing.categoryName, !category.isEmpty {
+                    Text(category)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -144,19 +145,26 @@ private struct ListingRowView: View {
             }
 
             HStack(spacing: 12) {
-                if let bids = listing.bidCount {
-                    Label("\(bids)", systemImage: "hammer")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                if let location = listing.locationLabel {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                if let ends = listing.auctionEndsAt {
-                    Label(ends.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                if let bids = listing.bidCount {
+                    Label("\(bids) bids", systemImage: "hammer")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let countdown = listing.auctionCountdown {
+                    Label(countdown, systemImage: "clock")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(countdown == "Ended" ? Color.secondary : Color("AccentColor"))
+                        .lineLimit(1)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
     }
 }

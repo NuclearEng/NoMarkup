@@ -80,11 +80,11 @@ struct JobsView: View {
                 .frame(minHeight: 44)
             }
         } else if jobs.isEmpty {
-            ContentUnavailableView(
-                "No open jobs",
-                systemImage: "wrench.and.screwdriver",
-                description: Text("No jobs match your search. Pull to refresh or try again later.")
-            )
+            ContentUnavailableView {
+                Label("No open jobs", systemImage: "wrench.and.screwdriver")
+            } description: {
+                Text("No jobs match your search. Pull down to refresh, clear the search field, or try again later.")
+            }
         } else {
             List {
                 Section {
@@ -166,11 +166,11 @@ struct JobsView: View {
                 .frame(minHeight: 44)
             }
         } else if myJobs.isEmpty {
-            ContentUnavailableView(
-                "No jobs yet",
-                systemImage: "tray",
-                description: Text("Jobs you post as a customer show up here. Post from the website for now.")
-            )
+            ContentUnavailableView {
+                Label("No jobs yet", systemImage: "tray")
+            } description: {
+                Text("Jobs you post as a customer show up here. Pull to refresh after posting on the website.")
+            }
         } else {
             List {
                 Section {
@@ -252,37 +252,36 @@ private struct JobRowView: View {
     let job: JobSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(job.displayTitle)
-                    .font(.body.weight(.medium))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 if let price = job.displayPrice {
-                    Text(price)
-                        .font(.body.weight(.semibold))
-                        .monospacedDigit()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(price)
+                            .font(.body.weight(.bold).monospacedDigit())
+                            .foregroundStyle(Color("AccentColor"))
+                        if let caption = job.priceCaption {
+                            Text(caption)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 
             HStack(spacing: 8) {
                 if let status = job.status, !status.isEmpty {
-                    Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                    StatusChipView(
+                        label: StatusChipStyle.displayLabel(status),
+                        style: StatusChipStyle.forStatus(status)
+                    )
                 }
                 if let category = job.categoryName, !category.isEmpty {
-                    Text("·")
-                        .foregroundStyle(.tertiary)
                     Text(category)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                if let location = job.locationLabel {
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-                    Text(location)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -290,33 +289,57 @@ private struct JobRowView: View {
             }
 
             HStack(spacing: 12) {
+                if let location = job.locationLabel {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 if let bids = job.bidCount {
                     Label("\(bids) bids", systemImage: "tag")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                if let ends = job.auctionEndsAt, !ends.isEmpty {
-                    Label(Self.friendlyDate(ends), systemImage: "clock")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                if let countdown = job.auctionCountdown {
+                    Label(countdown, systemImage: "clock")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(countdown == "Ended" ? Color.secondary : Color("AccentColor"))
+                        .lineLimit(1)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
     }
+}
 
-    private static func friendlyDate(_ iso: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: iso) {
-            return date.formatted(date: .abbreviated, time: .shortened)
+/// Compact status pill used on catalog rows.
+struct StatusChipView: View {
+    let label: String
+    let style: StatusChipStyle
+
+    var body: some View {
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .foregroundStyle(foreground)
+            .background(background, in: Capsule())
+            .accessibilityLabel("Status \(label)")
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .success: return Color.green
+        case .info: return Color.blue
+        case .warning: return Color.orange
+        case .danger: return Color.red
+        case .neutral: return Color.secondary
         }
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: iso) {
-            return date.formatted(date: .abbreviated, time: .shortened)
-        }
-        return iso
+    }
+
+    private var background: Color {
+        foreground.opacity(0.14)
     }
 }
 

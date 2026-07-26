@@ -35,6 +35,7 @@
 		A10000000000000000000022 /* MyOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* MyOrdersView.swift */; };
 		A10000000000000000000023 /* PassKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* PassKit.framework */; };
 		A10000000000000000000024 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000002 /* StripePaymentSheet */; };
+		A10000000000000000000025 /* BrandTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* BrandTheme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -67,6 +68,7 @@
 		B10000000000000000000021 /* RailACheckout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailACheckout.swift; sourceTree = "<group>"; };
 		B10000000000000000000022 /* MyOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyOrdersView.swift; sourceTree = "<group>"; };
 		B10000000000000000000023 /* PassKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PassKit.framework; path = System/Library/Frameworks/PassKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000025 /* BrandTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandTheme.swift; sourceTree = "<group>"; };
 		C10000000000000000000001 /* NoMarkup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoMarkup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -138,6 +140,7 @@
 				B10000000000000000000017 /* Models.swift */,
 				B10000000000000000000020 /* FeatureFlags.swift */,
 				B10000000000000000000021 /* RailACheckout.swift */,
+				B10000000000000000000025 /* BrandTheme.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -255,6 +258,7 @@
 			files = (
 				A10000000000000000000001 /* NoMarkupApp.swift in Sources */,
 				A10000000000000000000002 /* AppConfig.swift in Sources */,
+				A10000000000000000000025 /* BrandTheme.swift in Sources */,
 				A10000000000000000000003 /* KeychainTokenStore.swift in Sources */,
 				A10000000000000000000004 /* APIClient.swift in Sources */,
 				A10000000000000000000005 /* AuthViewModel.swift in Sources */,

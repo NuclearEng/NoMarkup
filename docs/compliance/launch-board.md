@@ -3,6 +3,7 @@
 **Program:** `/app-store-launch-readiness`  
 **Updated:** 2026-07-26  
 **Current stage:** **Stage C partial** — B0–B4 + B3+/write + **Rail A Apple Pay** + B6 docs + free-tier cut; residual: **B6 ops** (signing, screenshots, ASC, merchant ID) + live review backend + **device smoke**  
+**Brand:** SOTA seal icon (large diamond) + iOS dark navy/gold chrome + live marketplace seed (19 active listings).  
 **Binary readiness:** **NOT READY** for App Review (ASC assets, team signing, Apple Pay merchant + Stripe key on device, smoke not signed off)  
 **v1 digital cut:** **free-tier-only** (StoreKit deferred) — [`v1-ios-product-cut.md`](./v1-ios-product-cut.md)  
 **Brand:** App Icon **SOTA seal** shipped (gold N + double ring on navy); design-system **AccentColor / brand-gold** token pass in progress (iOS gold CTAs aligned to web `--brand-gold`)

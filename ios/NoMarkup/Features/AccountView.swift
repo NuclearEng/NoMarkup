@@ -5,28 +5,64 @@ struct AccountView: View {
     @State private var exportMessage: String?
     @State private var exportIsError = false
     @State private var isExporting = false
+    @State private var sessionEmail: String?
+    @State private var sessionUserID: String?
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Session") {
+                Section {
                     if auth.isScaffoldSession {
                         Label("Scaffold session", systemImage: "hammer.fill")
                             .foregroundStyle(.orange)
+                        Text("Browse chrome only — API mutations and chat send stay disabled until you sign in with a real account.")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
                     } else if auth.isAuthenticated {
                         Label("Signed in", systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(BrandTheme.success)
+                        if let sessionUserID, !sessionUserID.isEmpty {
+                            LabeledContent("User") {
+                                Text(shortID(sessionUserID))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    } else {
+                        Label("Not signed in", systemImage: "person.crop.circle.badge.questionmark")
+                            .foregroundStyle(BrandTheme.textSecondary)
                     }
-                    if !auth.email.isEmpty {
-                        LabeledContent("Email", value: auth.email)
+
+                    if let email = displayEmail {
+                        LabeledContent("Email", value: email)
                     }
+
                     Button("Sign out", role: .destructive) {
                         auth.signOut()
                     }
                     .frame(minHeight: 44)
+                } header: {
+                    Text("Session").brandSectionHeader()
                 }
 
-                Section("Legal & support") {
+                Section {
+                    NavigationLink {
+                        MyOrdersView()
+                    } label: {
+                        Label("Orders", systemImage: "bag")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("View marketplace orders and pay pending ones with Apple Pay")
+
+                    Text("Physical goods and services use Apple Pay / Stripe (not App Store IAP).")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                } header: {
+                    Text("Orders & payments").brandSectionHeader()
+                }
+
+                Section {
                     NavigationLink {
                         LegalWebView(title: "Privacy Policy", url: AppConfig.privacyURL)
                     } label: {
@@ -51,23 +87,11 @@ struct AccountView: View {
                         Label("Support", systemImage: "lifepreserver")
                     }
                     .frame(minHeight: 44)
+                } header: {
+                    Text("Legal & support").brandSectionHeader()
                 }
 
-                Section("Orders & payments") {
-                    NavigationLink {
-                        MyOrdersView()
-                    } label: {
-                        Label("Orders", systemImage: "bag")
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityHint("View marketplace orders and pay pending ones with Apple Pay")
-
-                    Text("Physical goods and services use Apple Pay / Stripe (not App Store IAP).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Your data") {
+                Section {
                     Button {
                         Task { await exportData() }
                     } label: {
@@ -76,6 +100,7 @@ struct AccountView: View {
                             Spacer()
                             if isExporting {
                                 ProgressView()
+                                    .tint(BrandTheme.accent)
                             }
                         }
                         .frame(minHeight: 44)
@@ -86,29 +111,33 @@ struct AccountView: View {
                     if let exportMessage {
                         Text(exportMessage)
                             .font(.footnote)
-                            .foregroundStyle(exportIsError ? .red : .secondary)
+                            .foregroundStyle(exportIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                     }
 
                     NavigationLink {
                         AccountDeletionView()
                     } label: {
                         Label("Delete Account", systemImage: "trash")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(BrandTheme.destructive)
                     }
                     .frame(minHeight: 44)
+                } header: {
+                    Text("Your data").brandSectionHeader()
                 }
 
-                Section("Subscriptions") {
+                Section {
                     Label(
                         "Digital subscriptions (StoreKit) — not in this build",
                         systemImage: "bag.badge.minus"
                     )
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
                     .frame(minHeight: 44)
                     .accessibilityLabel("Digital subscriptions via StoreKit are not in this build")
+                } header: {
+                    Text("Subscriptions").brandSectionHeader()
                 }
 
-                Section("About") {
+                Section {
                     LabeledContent("Version", value: "\(AppConfig.shortVersion) (\(AppConfig.buildNumber))")
                     LabeledContent("API", value: AppConfig.apiBaseURLString)
                     LabeledContent(
@@ -117,10 +146,50 @@ struct AccountView: View {
                     )
                     Text("Rail A: Apple Pay via Stripe. StoreKit / IAP intentionally omitted (digital free-tier only).")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                } header: {
+                    Text("About").brandSectionHeader()
                 }
             }
+            .brandListBackground()
             .navigationTitle("Account")
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .task { await refreshSessionHints() }
+            .onChange(of: auth.isAuthenticated) { _, _ in
+                Task { await refreshSessionHints() }
+            }
+            .onChange(of: auth.isScaffoldSession) { _, _ in
+                Task { await refreshSessionHints() }
+            }
+        }
+    }
+
+    private var displayEmail: String? {
+        let fromAuth = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !fromAuth.isEmpty { return fromAuth }
+        if let sessionEmail, !sessionEmail.isEmpty { return sessionEmail }
+        return nil
+    }
+
+    private func shortID(_ id: String) -> String {
+        if id.count <= 12 { return id }
+        return String(id.prefix(8)) + "…"
+    }
+
+    @MainActor
+    private func refreshSessionHints() async {
+        if auth.isScaffoldSession || !auth.isAuthenticated {
+            sessionEmail = nil
+            sessionUserID = nil
+            return
+        }
+        sessionUserID = await APIClient.shared.currentUserID()
+        // Email may already be on AuthViewModel after password login; JWT may carry it too.
+        if auth.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let token = try? KeychainTokenStore().read(.accessToken) {
+                sessionEmail = JWTPayload.email(from: token)
+            }
         }
     }
 
@@ -144,4 +213,6 @@ struct AccountView: View {
 #Preview {
     AccountView()
         .environmentObject(AuthViewModel())
+        .preferredColorScheme(.dark)
+        .tint(BrandTheme.accent)
 }

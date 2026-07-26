@@ -41,11 +41,16 @@ export function BrandMark({ className, title }: BrandMarkProps) {
         strokeWidth="1.5"
         opacity="0.95"
       />
-      {/* Precision diamond (12 o’clock) — matches app icon seal */}
+      {/* Precision diamond (12 o’clock) — larger, matches app icon seal */}
       <path
-        d="M16 2.2 L17.35 3.7 L16 5.2 L14.65 3.7 Z"
+        d="M16 1.1 L18.35 3.85 L16 6.6 L13.65 3.85 Z"
         fill="var(--brand-gold-bright)"
-        opacity="0.95"
+        opacity="0.98"
+      />
+      <path
+        d="M16 1.1 L18.35 3.85 L16 4.6 L13.65 3.85 Z"
+        fill="currentColor"
+        opacity="0.35"
       />
       {/* Geometric N */}
       <path
