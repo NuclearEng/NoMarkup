@@ -393,7 +393,12 @@ func main() {
 	// GDPR Art. 15 / CCPA right-to-access — self-service personal-data export.
 	// Gateway-direct (pure owner-scoped SQL, no gRPC hop), mirroring the
 	// erasure cascade's table set.
-	dataExportHandler := handler.NewDataExportHandler(dbPool)
+	// Pass the cipher explicitly. The GDPR Art. 15 export previously held no
+	// cipher at all and returned raw ciphertext to the data subject, so the
+	// dependency is load-bearing rather than optional — wiring it here means a
+	// missing key is a startup failure (FromEnv already ran above) instead of
+	// a silent per-request fallback.
+	dataExportHandler := handler.NewDataExportHandler(dbPool, piiCipher)
 	// Wave 5 Agent Q surface — wired here since main.go is the shared
 	// composition root (router signature already references these). The
 	// handler implementations live in agent Q's owned files.

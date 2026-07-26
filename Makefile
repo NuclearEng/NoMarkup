@@ -64,10 +64,12 @@ demo-up: dev-infra migrate-up seed-demo
 	@echo ""
 	@echo "Pre-demo checklist: docs/demo-script.md (T-30)"
 
-# Backfill / re-encrypt PII columns flagged in migration 031. Idempotent: only
-# touches rows where pii_encrypted_v1 = FALSE. Requires ENCRYPTION_KEY (and,
-# during a rotation, ENCRYPTION_KEY_PREVIOUS) to be set in the environment.
-# See docs/operations/encryption-key-rotation.md.
+# Backfill / re-key the PII columns declared by migrations 031 and 033.
+# Idempotent per VALUE, not per flag: a value already sealed under
+# ENCRYPTION_KEY is skipped byte-for-byte, so re-running is a no-op rather than
+# a double encryption. Set ENCRYPTION_KEY_PREVIOUS to re-key after a rotation;
+# there is no flag to clear first. The tool REFUSES to run if it finds
+# ciphertext neither key can open. See docs/operations/encryption-key-rotation.md.
 encrypt-pii:
 	@echo "Backfilling PII encryption..."
 	cd database && go run ./cmd/encrypt-pii

@@ -155,6 +155,109 @@ func (c *Cipher) DecryptString(ciphertext string) (string, error) {
 	return "", ErrDecryptFailed
 }
 
+// LooksLikeCiphertext reports whether s has the STRUCTURE of a value produced
+// by EncryptString: standard base64 that decodes to at least
+// NonceSize+secretbox.Overhead (24+16 = 40) bytes.
+//
+// This is a shape test only — it says nothing about whether any key can open
+// the value. It exists so callers can tell the two failure modes apart:
+//
+//   - !LooksLikeCiphertext(s)  → s was never our ciphertext; it is legacy
+//     plaintext and must be passed through untouched.
+//   - LooksLikeCiphertext(s) but DecryptString fails → s IS our wire format
+//     but no configured key opens it. That is a KEY problem, never a
+//     "plaintext" one, and callers must fail loudly rather than pass the
+//     base64 through or (worse) encrypt it a second time.
+//
+// The 40-byte floor is what makes the shape test useful against the values it
+// guards: a base64 string must be at least 56 characters to decode to 40
+// bytes, whereas an EIN/TIN ("12-3456789") is 10 characters and contains '-',
+// which is not in the standard base64 alphabet, and insurance policy numbers
+// are similarly short and typically punctuated. Short values fail the length
+// gate; punctuated values fail the alphabet gate.
+func LooksLikeCiphertext(s string) bool {
+	if len(s) < base64.StdEncoding.EncodedLen(NonceSize+secretbox.Overhead) {
+		return false
+	}
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return false
+	}
+	return len(raw) >= NonceSize+secretbox.Overhead
+}
+
+// IsCurrent reports whether s is ciphertext that authenticates under the
+// PRIMARY key — i.e. it is already at the current key version and re-encrypting
+// it would be a destructive double-encryption.
+//
+// Authentication (not shape) is the discriminator: secretbox.Open verifies a
+// Poly1305 tag, so a value that was not sealed under this exact key is rejected
+// with overwhelming probability (a forgery bound on the order of 2^-100). A
+// false positive — mistaking plaintext for current ciphertext — is therefore
+// not a practical concern. False NEGATIVES are the direction that matters, and
+// they are handled by LooksLikeCiphertext: anything shaped like our wire format
+// that will not open is escalated, never silently re-encrypted.
+func (c *Cipher) IsCurrent(s string) bool {
+	if s == "" || c == nil || c.primary == nil {
+		return false
+	}
+	return opensWith(s, c.primary)
+}
+
+// IsPrevious reports whether s authenticates under the PREVIOUS (rotation)
+// key but not the primary — i.e. it is stale ciphertext awaiting a re-key.
+func (c *Cipher) IsPrevious(s string) bool {
+	if s == "" || c == nil || c.previous == nil {
+		return false
+	}
+	if c.primary != nil && opensWith(s, c.primary) {
+		return false
+	}
+	return opensWith(s, c.previous)
+}
+
+// opensWith reports whether s is base64 secretbox output that key authenticates.
+func opensWith(s string, key *[KeySize]byte) bool {
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil || len(raw) < NonceSize+secretbox.Overhead {
+		return false
+	}
+	var nonce [NonceSize]byte
+	copy(nonce[:], raw[:NonceSize])
+	_, ok := secretbox.Open(nil, raw[NonceSize:], &nonce, key)
+	return ok
+}
+
+// DecryptStringOrPassthrough is the mixed-state read path. It returns:
+//
+//   - (plaintext, nil)              — s authenticated under primary or previous.
+//   - (s, nil)                      — s is not our wire format at all, so it is
+//     legacy plaintext written before the column was
+//     encrypted; return it unchanged.
+//   - ("", ErrDecryptFailed)        — s IS our wire format but no configured key
+//     opens it. Never return the raw ciphertext to a
+//     caller; that is the GDPR-export bug this
+//     function exists to prevent.
+//
+// Use this instead of a per-row pii_encrypted_v1 flag. The flag is per ROW but
+// encryption is per COLUMN, so a row whose service_address was re-written
+// through the encrypting update path is flagged TRUE even while its ein_tin is
+// still the plaintext the backfill never re-visited. Per-value detection cannot
+// drift that way.
+func (c *Cipher) DecryptStringOrPassthrough(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	plain, err := c.DecryptString(s)
+	if err == nil {
+		return plain, nil
+	}
+	if LooksLikeCiphertext(s) {
+		return "", fmt.Errorf("%w (value is secretbox-shaped but no configured key opens it)", ErrDecryptFailed)
+	}
+	return s, nil
+}
+
 // EncryptStringList encrypts each non-empty element of items. Empty elements
 // are preserved so positional arrays survive a round-trip.
 func (c *Cipher) EncryptStringList(items []string) ([]string, error) {

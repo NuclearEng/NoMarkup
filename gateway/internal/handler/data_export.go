@@ -23,8 +23,19 @@ package handler
 //   - internal moderation/fraud flags, trust-score internals, suspension notes
 //   - other parties' PII inside shared records (redacted to display_name + role)
 //
-// PII-at-rest fields (phone, addresses) ARE decrypted/returned here because the
-// requester is the data subject — that's exactly the access right being served.
+// PII-at-rest fields (phone, addresses, EIN/TIN, insurance policy number) ARE
+// decrypted/returned here because the requester is the data subject — that's
+// exactly the access right being served. Those columns hold base64
+// nacl/secretbox ciphertext on disk (migrations 031/033); returning the column
+// verbatim would hand the user unreadable base64 and silently fail Art. 15.
+//
+// Mixed state is expected and handled per value, not per row (see decryptPII):
+// a legacy row written before the backfill holds plaintext, a backfilled row
+// holds ciphertext, and — because pii_encrypted_v1 is a ROW flag over
+// per-COLUMN encryption — a single row can hold one of each. A value that is
+// not our wire format passes through untouched; a value that IS our wire
+// format but will not open under any configured key is reported as an
+// unavailable field rather than dumped as base64.
 //
 // ── Size / DoS bound ────────────────────────────────────────────────────────
 // Each collection is capped (exportSectionCap). When a section hits the cap we
@@ -44,6 +55,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -53,15 +65,87 @@ import (
 // hits the cap is flagged "_truncated" so the export is honestly partial.
 const exportSectionCap = 5000
 
+// piiUnavailable is what an encrypted field becomes when no configured key can
+// open it. Emitting this instead of the raw column keeps the export honest: the
+// user learns the field exists and could not be rendered, and support/ops get a
+// signal, rather than the user receiving base64 they cannot use.
+const piiUnavailable = "[unavailable: encrypted with a key this server does not hold — contact support]"
+
 // DataExportHandler serves the authenticated user's personal-data export.
 type DataExportHandler struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
 // NewDataExportHandler creates a new handler. db is the gateway pool; if nil
 // the endpoint degrades to 503 like the rest of the DB-backed surface.
-func NewDataExportHandler(db *pgxpool.Pool) *DataExportHandler {
-	return &DataExportHandler{db: db}
+//
+// cipher is variadic purely so the existing single-argument call site keeps
+// compiling; callers SHOULD pass the gateway's shared piiCipher (the same one
+// handed to NewEmployeesHandler) so this handler decrypts under exactly the
+// process-wide key. When it is omitted we fall back to crypto.FromEnv(), which
+// reads the same ENCRYPTION_KEY / ENCRYPTION_KEY_PREVIOUS and therefore yields
+// an identical cipher in every environment where the key is set — i.e.
+// everywhere but development, where FromEnv mints an ephemeral key and rows
+// written under the process cipher will not open. That divergence is dev-only
+// and is WARN-logged.
+func NewDataExportHandler(db *pgxpool.Pool, cipher ...*crypto.Cipher) *DataExportHandler {
+	h := &DataExportHandler{db: db}
+	if len(cipher) > 0 && cipher[0] != nil {
+		h.cipher = cipher[0]
+		return h
+	}
+	c, err := crypto.FromEnv()
+	if err != nil {
+		// Outside development FromEnv fails closed on a missing key. Leave the
+		// cipher nil: encrypted fields become piiUnavailable rather than raw
+		// ciphertext, and the rest of the export still serves.
+		slog.Error("data export: no PII cipher; encrypted fields will be reported unavailable", "error", err)
+		return h
+	}
+	slog.Warn("data export: constructed its own cipher from env; pass the shared piiCipher to NewDataExportHandler for guaranteed key parity")
+	h.cipher = c
+	return h
+}
+
+// decryptPII renders one PII-at-rest column for the export. It is the read-side
+// mirror of crypto.Cipher.EncryptString and deliberately never returns raw
+// ciphertext.
+//
+// Three outcomes:
+//
+//	nil / ""                         → nil (absent field)
+//	opens under primary or previous  → the plaintext
+//	not our wire format              → the value unchanged (legacy plaintext row)
+//	our wire format, will not open   → piiUnavailable
+//
+// The "not our wire format" branch is what makes the mixed legacy/backfilled
+// state safe: it is decided per VALUE, so it stays correct even on a row whose
+// pii_encrypted_v1 flag says TRUE because some *other* column on it was
+// encrypted. crypto.ErrDecryptFailed is only returned after the structural
+// (base64 + >= NonceSize+Overhead bytes) gate has already passed, so
+// errors.Is(err, ErrDecryptFailed) is exactly "secretbox-shaped but unopenable".
+func (h *DataExportHandler) decryptPII(v *string) interface{} {
+	if v == nil || *v == "" {
+		return derefStr(v)
+	}
+	if h.cipher == nil {
+		// No key at all. We cannot tell ciphertext from plaintext safely, and
+		// emitting a possible ciphertext is the bug being fixed — withhold.
+		return piiUnavailable
+	}
+	plain, err := h.cipher.DecryptString(*v)
+	switch {
+	case err == nil:
+		return plain
+	case errors.Is(err, crypto.ErrDecryptFailed):
+		slog.Error("data export: PII value is secretbox-shaped but no configured key opens it")
+		return piiUnavailable
+	default:
+		// Not base64, or too short to be secretbox output: a legacy plaintext
+		// value written before the column was encrypted. Pass it through.
+		return *v
+	}
 }
 
 // ExportMyData handles GET /api/v1/users/me/export.
@@ -192,7 +276,7 @@ func (h *DataExportHandler) exportProfile(ctx context.Context, userID string) (m
 		"id":                    id,
 		"email":                 email,
 		"email_verified":        emailVerified,
-		"phone":                 derefStr(phone),
+		"phone":                 h.decryptPII(phone), // secretbox ciphertext on disk (031)
 		"phone_verified":        phoneVerified,
 		"display_name":          displayName,
 		"avatar_url":            derefStr(avatarURL),
@@ -240,10 +324,10 @@ func (h *DataExportHandler) exportProviderProfile(ctx context.Context, userID st
 		"id":                      id,
 		"business_name":           businessName,
 		"bio":                     derefStr(bio),
-		"service_address":         derefStr(serviceAddress),
-		"ein_tin":                 derefStr(einTin),
-		"insurance_provider":      derefStr(insProvider),
-		"insurance_policy_number": derefStr(insPolicy),
+		"service_address":         h.decryptPII(serviceAddress),
+		"ein_tin":                 h.decryptPII(einTin),
+		"insurance_provider":      derefStr(insProvider), // NOT encrypted: a carrier name, not personal data
+		"insurance_policy_number": h.decryptPII(insPolicy),
 		"jobs_completed":          jobsCompleted,
 		"created_at":              createdAt.UTC().Format(time.RFC3339),
 	}, false, nil

@@ -156,12 +156,18 @@ type TokenPair struct {
 }
 
 // ProviderProfile represents a provider's profile.
+//
+// ServiceAddress, EINTIN and InsurancePolicyNumber are PII at rest (migration
+// 031): they are nacl/secretbox ciphertext in the database and are decrypted by
+// the repository on read, so every field here is plaintext.
 type ProviderProfile struct {
 	ID                       string
 	UserID                   string
 	BusinessName             string
 	Bio                      string
 	ServiceAddress           string
+	EINTIN                   string
+	InsurancePolicyNumber    string
 	Latitude                 *float64
 	Longitude                *float64
 	ServiceRadiusKm          float64
@@ -229,6 +235,11 @@ type UpdateProviderInput struct {
 	Latitude        *float64
 	Longitude       *float64
 	ServiceRadiusKm *float64
+	// EINTIN and InsurancePolicyNumber are PII-at-rest (CLAUDE.md §6,
+	// migration 031). The repository encrypts them on write and decrypts on
+	// read — callers pass and receive plaintext.
+	EINTIN                *string
+	InsurancePolicyNumber *string
 }
 
 // GlobalTermsInput holds provider global terms settings.

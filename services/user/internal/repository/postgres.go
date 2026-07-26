@@ -399,6 +399,7 @@ func (r *PostgresRepository) CreateProviderProfile(ctx context.Context, userID s
 		VALUES ($1)
 		ON CONFLICT (user_id) DO UPDATE SET updated_at = now()
 		RETURNING id, user_id, business_name, bio, service_address,
+		          ein_tin, insurance_policy_number,
 		          ST_Y(service_location) AS lat, ST_X(service_location) AS lng,
 		          service_radius_km, default_payment_timing, default_milestone_json,
 		          cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
@@ -416,6 +417,7 @@ func (r *PostgresRepository) CreateProviderProfile(ctx context.Context, userID s
 func (r *PostgresRepository) GetProviderProfile(ctx context.Context, userID string) (*domain.ProviderProfile, error) {
 	query := `
 		SELECT id, user_id, business_name, bio, service_address,
+		       ein_tin, insurance_policy_number,
 		       ST_Y(service_location) AS lat, ST_X(service_location) AS lng,
 		       service_radius_km, default_payment_timing, default_milestone_json,
 		       cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
@@ -463,14 +465,40 @@ func (r *PostgresRepository) UpdateProviderProfile(ctx context.Context, userID s
 		args = append(args, *input.Bio)
 		argIdx++
 	}
-	if input.ServiceAddress != nil {
-		encrypted, err := r.cipher.EncryptString(*input.ServiceAddress)
-		if err != nil {
-			return nil, fmt.Errorf("update provider profile: encrypt service_address: %w", err)
+	// PII-at-rest columns (CLAUDE.md §6 / migration 031). Every one of these
+	// goes through r.cipher on the way in — a plaintext write to any of them
+	// is the bug this block exists to make impossible.
+	piiFields := []struct {
+		column string
+		value  *string
+	}{
+		{"service_address", input.ServiceAddress},
+		{"ein_tin", input.EINTIN},
+		{"insurance_policy_number", input.InsurancePolicyNumber},
+	}
+	wrotePII := false
+	for _, f := range piiFields {
+		if f.value == nil {
+			continue
 		}
-		setClauses = append(setClauses, fmt.Sprintf("service_address = $%d", argIdx))
+		// EncryptString returns "" for "" so clearing a field stays a clear,
+		// not an encrypted empty string.
+		encrypted, err := r.cipher.EncryptString(*f.value)
+		if err != nil {
+			return nil, fmt.Errorf("update provider profile: encrypt %s: %w", f.column, err)
+		}
+		// f.column is a compile-time literal from the slice above, never
+		// caller input — the value itself is bound as $n.
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", f.column, argIdx))
 		args = append(args, encrypted)
 		argIdx++
+		wrotePII = true
+	}
+	if wrotePII {
+		// Assigned at most once: Postgres rejects two assignments to the same
+		// column in one UPDATE. The flag stays for observability and for the
+		// backfill tool's reporting, but the read path no longer depends on it
+		// — see scanProviderProfile.
 		setClauses = append(setClauses, "pii_encrypted_v1 = TRUE")
 	}
 	if input.Latitude != nil && input.Longitude != nil {
@@ -495,6 +523,7 @@ func (r *PostgresRepository) UpdateProviderProfile(ctx context.Context, userID s
 		UPDATE provider_profiles SET %s
 		WHERE user_id = $%d
 		RETURNING id, user_id, business_name, bio, service_address,
+		          ein_tin, insurance_policy_number,
 		          ST_Y(service_location) AS lat, ST_X(service_location) AS lng,
 		          service_radius_km, default_payment_timing, default_milestone_json,
 		          cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
@@ -1042,16 +1071,25 @@ func decryptUserPII(u *domain.User, phone, mfaSecret *string, piiEncrypted bool,
 	return nil
 }
 
-// scanProviderProfile decrypts service_address when pii_encrypted_v1 is true.
-// ein_tin and insurance_policy_number are not selected by this scanner because
-// no current code path reads them, but they are encrypted in place by the
-// encrypt-pii backfill tool.
+// scanProviderProfile decrypts the three PII-at-rest columns declared by
+// migration 031: service_address, ein_tin and insurance_policy_number.
+//
+// Detection is PER VALUE (crypto.DecryptStringOrPassthrough), not per row via
+// pii_encrypted_v1. The flag is a row-level boolean but encryption is a
+// column-level property, and UpdateProviderProfile sets the flag TRUE whenever
+// service_address is written — so a row can legitimately be flagged TRUE while
+// ein_tin is still the plaintext the backfill never revisited. Trusting the
+// flag there would hand raw plaintext back as if it had been decrypted, or, on
+// the write side, encrypt an already-encrypted value. Per-value authentication
+// cannot drift that way.
 func scanProviderProfile(row pgx.Row, cipher *crypto.Cipher) (*domain.ProviderProfile, error) {
 	var p domain.ProviderProfile
 	var businessName, bio, serviceAddress, cancellationPolicy, warrantyTerms, stripeAccountID *string
+	var einTin, insurancePolicy *string
 	var piiEncrypted bool
 	err := row.Scan(
 		&p.ID, &p.UserID, &businessName, &bio, &serviceAddress,
+		&einTin, &insurancePolicy,
 		&p.Latitude, &p.Longitude,
 		&p.ServiceRadiusKm, &p.DefaultPaymentTiming, &p.DefaultMilestoneJSON,
 		&cancellationPolicy, &warrantyTerms, &p.InstantEnabled, &p.InstantSchedule,
@@ -1062,6 +1100,7 @@ func scanProviderProfile(row pgx.Row, cipher *crypto.Cipher) (*domain.ProviderPr
 	if err != nil {
 		return nil, err
 	}
+	_ = piiEncrypted // retained in the projection for observability; not load-bearing
 	if businessName != nil {
 		p.BusinessName = *businessName
 	}
@@ -1078,15 +1117,25 @@ func scanProviderProfile(row pgx.Row, cipher *crypto.Cipher) (*domain.ProviderPr
 		p.StripeAccountID = *stripeAccountID
 	}
 	if serviceAddress != nil {
-		if piiEncrypted && *serviceAddress != "" {
-			plain, err := cipher.DecryptString(*serviceAddress)
-			if err != nil {
-				return nil, fmt.Errorf("decrypt service_address: %w", err)
-			}
-			p.ServiceAddress = plain
-		} else {
-			p.ServiceAddress = *serviceAddress
+		plain, err := cipher.DecryptStringOrPassthrough(*serviceAddress)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt service_address: %w", err)
 		}
+		p.ServiceAddress = plain
+	}
+	if einTin != nil {
+		plain, err := cipher.DecryptStringOrPassthrough(*einTin)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt ein_tin: %w", err)
+		}
+		p.EINTIN = plain
+	}
+	if insurancePolicy != nil {
+		plain, err := cipher.DecryptStringOrPassthrough(*insurancePolicy)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt insurance_policy_number: %w", err)
+		}
+		p.InsurancePolicyNumber = plain
 	}
 	return &p, nil
 }
