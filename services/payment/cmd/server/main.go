@@ -317,7 +317,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpclib.NewServer(
+	serverOpts := []grpclib.ServerOption{
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
 		// RequestID first: it seeds the context the logging interceptor and
 		// every downstream slog.*Context call read.
@@ -327,7 +327,14 @@ func main() {
 		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
 		grpclib.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
 		grpclib.KeepaliveParams(grpcKeepaliveParams()),
-	)
+	}
+	var errMTLS error
+	serverOpts, errMTLS = meshServerOptions(serverOpts)
+	if errMTLS != nil {
+		slog.Error("failed to configure gRPC server mTLS", "error", errMTLS)
+		os.Exit(1)
+	}
+	s := grpclib.NewServer(serverOpts...)
 	paymentgrpc.Register(s, grpcServer)
 	paymentgrpc.RegisterSubscription(s, subscriptionGRPCServer)
 

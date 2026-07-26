@@ -7,7 +7,6 @@ import (
 
 	underwritingv1 "github.com/nomarkup/nomarkup/proto/underwriting/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
@@ -24,9 +23,13 @@ type UnderwritingClient struct {
 
 // NewUnderwritingClient dials the underwriting engine at addr and returns a wrapper.
 func NewUnderwritingClient(addr string) (*UnderwritingClient, error) {
+	dialOpt, err := meshDialOption()
+	if err != nil {
+		return nil, fmt.Errorf("dial underwriting engine credentials: %w", err)
+	}
 	conn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		dialOpt,
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {

@@ -381,11 +381,22 @@ async fn run() -> anyhow::Result<()> {
         addr
     );
 
-    tonic::transport::Server::builder()
-        // Outermost, so the span also covers requests the panic boundary below
-        // turns into `grpc-status: 13`.
+    let mut server = tonic::transport::Server::builder()
         .layer(GrpcTraceLayer)
-        .layer(CatchPanicLayer::custom(handle_panic))
+        .layer(CatchPanicLayer::custom(handle_panic));
+    match engine_telemetry::load_server_tls() {
+        Ok(Some(tls)) => {
+            tracing::info!("gRPC mesh mTLS enabled");
+            server = server.tls_config(tls)?;
+        }
+        Ok(None) => {
+            tracing::warn!("gRPC mesh mTLS disabled; accepting insecure credentials");
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("gRPC mTLS config: {e}"));
+        }
+    }
+    server
         .add_service(health_service)
         .add_service(BidServiceServer::new(service))
         .serve_with_shutdown(addr, shutdown)

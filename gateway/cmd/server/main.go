@@ -38,7 +38,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/config"
@@ -47,6 +46,7 @@ import (
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"github.com/nomarkup/nomarkup/gateway/internal/observability"
 	"github.com/nomarkup/nomarkup/gateway/internal/router"
+	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 )
 
 func main() {
@@ -120,8 +120,29 @@ func main() {
 	// records the resulting DeadlineExceeded status instead of never firing.
 	// Keepalive makes a black-holed connection fail fast instead of hanging on
 	// the OS TCP timeout.
+	//
+	// Mesh mTLS (C1): transport credentials come from grpmtls. When unconfigured
+	// this is still insecure.NewCredentials() — local dev and compose stay
+	// plaintext. When GRPC_MTLS + cert paths are set, peer identity is
+	// cryptographic and network position alone is no longer sufficient to call
+	// a service.
+	mtlsCfg, err := grpmtls.Load()
+	if err != nil {
+		slog.Error("failed to load gRPC mTLS config", "error", err)
+		os.Exit(1)
+	}
+	transportCreds, err := mtlsCfg.ClientCredentials()
+	if err != nil {
+		slog.Error("failed to build gRPC client credentials", "error", err)
+		os.Exit(1)
+	}
+	if mtlsCfg.Enabled {
+		slog.Info("gRPC mesh mTLS enabled for gateway dials", "server_name", mtlsCfg.ServerName)
+	} else {
+		slog.Warn("gRPC mesh mTLS disabled; dialing with insecure credentials (network position is the auth boundary)")
+	}
 	grpcDialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transportCreds),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithChainUnaryInterceptor(
 			middleware.GRPCTimeoutUnaryInterceptor,

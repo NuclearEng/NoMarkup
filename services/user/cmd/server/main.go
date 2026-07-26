@@ -25,7 +25,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
@@ -172,8 +171,13 @@ func main() {
 	var notifClient notificationv1.NotificationServiceClient
 	notifAddr := os.Getenv("NOTIFICATION_SERVICE_ADDR")
 	if notifAddr != "" {
+		dialOpt, dialErr := meshClientDialOption()
+		if dialErr != nil {
+			slog.Error("failed to load mesh mTLS for notification dial", "error", dialErr)
+			os.Exit(1)
+		}
 		notifConn, err := grpclib.NewClient(notifAddr,
-			grpclib.WithTransportCredentials(insecure.NewCredentials()),
+			dialOpt,
 			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
 		)
 		if err != nil {
@@ -245,8 +249,13 @@ func main() {
 	// S3 and OAuth deleters are still TODO.
 	var stripeDeleter service.StripeDeleter
 	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
+		dialOpt, dialErr := meshClientDialOption()
+		if dialErr != nil {
+			slog.Error("failed to load mesh mTLS for payment dial", "error", dialErr)
+			os.Exit(1)
+		}
 		paymentConn, err := grpclib.NewClient(paymentAddr,
-			grpclib.WithTransportCredentials(insecure.NewCredentials()),
+			dialOpt,
 			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
 		)
 		if err != nil {
@@ -269,7 +278,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpclib.NewServer(
+	serverOpts := []grpclib.ServerOption{
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
 		// RequestID first (it seeds the context both the recovery and logging
 		// interceptors read), then recovery — outside logging so a panic in
@@ -278,7 +287,13 @@ func main() {
 		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
 		grpclib.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
 		grpclib.KeepaliveParams(grpcKeepaliveParams()),
-	)
+	}
+	serverOpts, err = meshServerOptions(serverOpts)
+	if err != nil {
+		slog.Error("failed to configure gRPC server mTLS", "error", err)
+		os.Exit(1)
+	}
+	s := grpclib.NewServer(serverOpts...)
 	grpcserver.Register(s, srv)
 
 	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the

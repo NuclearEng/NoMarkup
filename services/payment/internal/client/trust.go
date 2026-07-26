@@ -10,7 +10,6 @@ import (
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
@@ -26,9 +25,13 @@ type TrustClient struct {
 
 // NewTrustClient dials the trust engine at addr and returns a wrapper.
 func NewTrustClient(addr string) (*TrustClient, error) {
+	dialOpt, err := meshDialOption()
+	if err != nil {
+		return nil, fmt.Errorf("dial trust engine credentials: %w", err)
+	}
 	conn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		dialOpt,
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {

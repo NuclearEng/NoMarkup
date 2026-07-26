@@ -9,9 +9,9 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	pricingv1 "github.com/nomarkup/nomarkup/proto/pricing/v1"
+	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 )
 
 // pricingCallTimeout bounds a single ComputeFairPrice call. The engine is a
@@ -33,9 +33,17 @@ func NewPricingClient(addr string) (*PricingClient, error) {
 	if addr == "" {
 		return nil, fmt.Errorf("pricing client: empty address")
 	}
+	mtlsCfg, err := grpmtls.Load()
+	if err != nil {
+		return nil, fmt.Errorf("pricing client mTLS: %w", err)
+	}
+	dialOpt, err := mtlsCfg.DialOption()
+	if err != nil {
+		return nil, fmt.Errorf("pricing client credentials: %w", err)
+	}
 	conn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		dialOpt,
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {

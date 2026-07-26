@@ -7,7 +7,6 @@ import (
 
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
@@ -32,9 +31,13 @@ func NewNotificationClient(addr string) (*NotificationClient, error) {
 	if addr == "" {
 		return nil, fmt.Errorf("notification service address is empty")
 	}
+	dialOpt, err := meshDialOption()
+	if err != nil {
+		return nil, fmt.Errorf("dial notification service credentials: %w", err)
+	}
 	conn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		dialOpt,
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {

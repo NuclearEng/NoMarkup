@@ -38,7 +38,8 @@ option_if_let_else = "allow"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
-tonic = "0.12"
+# tls feature: mesh mTLS when GRPC_TLS_* paths are set (see engine_telemetry::load_server_tls).
+tonic = { version = "0.12", features = ["tls"] }
 tonic-health = "0.12"
 prost = "0.13"
 prost-types = "0.13"

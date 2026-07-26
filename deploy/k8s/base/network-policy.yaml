@@ -107,7 +107,8 @@ spec:
 ---
 # Intra-namespace mesh: LEAST PRIVILEGE, not allow-all.
 #
-# WHY THIS IS TIGHT. The gRPC mesh runs on insecure credentials (plaintext —
+# WHY THIS IS TIGHT. The gRPC mesh defaults to insecure credentials (plaintext —
+# arm mTLS via GRPC_MTLS + cert mounts; see docs/operations/mesh-mtls.md.
 # CLAUDE.md §6 states this openly), and the RPCs take the acting user's
 # identity as a REQUEST FIELD: AwardBidRequest.customer_id, the various
 # provider_id fields, and so on. The service trusts what it is told. That is

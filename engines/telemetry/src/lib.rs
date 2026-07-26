@@ -34,12 +34,14 @@
 //! *unparented* calls — health probes, cron-driven sweeps, direct debugging.
 
 mod grpc;
+mod mtls;
 mod propagation;
 
 #[cfg(feature = "test-util")]
 pub mod test_support;
 
 pub use grpc::{GrpcTrace, GrpcTraceLayer};
+pub use mtls::load_server_tls;
 
 use opentelemetry::KeyValue;
 use opentelemetry::global;

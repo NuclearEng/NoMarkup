@@ -163,7 +163,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpc.NewServer(
+	serverOpts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		// RequestID first (it seeds the context both the recovery and logging
 		// interceptors read), then recovery — outside logging so a panic in
@@ -172,7 +172,14 @@ func main() {
 		grpc.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
 		grpc.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
 		grpc.KeepaliveParams(grpcKeepaliveParams()),
-	)
+	}
+	var errMTLS error
+	serverOpts, errMTLS = meshServerOptions(serverOpts)
+	if errMTLS != nil {
+		slog.Error("failed to configure gRPC server mTLS", "error", errMTLS)
+		os.Exit(1)
+	}
+	s := grpc.NewServer(serverOpts...)
 	chatgrpc.Register(s, srv)
 
 	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
