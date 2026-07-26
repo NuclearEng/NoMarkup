@@ -19,23 +19,27 @@ enum AppConfig {
     /// Gateway HTTP base (no trailing slash).
     ///
     /// Resolution:
-    /// 1. `NOMARKUP_API_BASE_URL` env (any configuration)
-    /// 2. **DEBUG:** `http://localhost:8080` (matches `.env.example` GATEWAY_PORT / NEXT_PUBLIC_API_URL)
-    /// 3. Info.plist `APIBaseURL` (release packaging override)
-    /// 4. `https://api.no-markup.com`
+    /// 1. `NOMARKUP_API_BASE_URL` env (scheme / CI)
+    /// 2. Info.plist `APIBaseURL` when non-empty
+    /// 3. **DEBUG + Simulator only:** `http://localhost:8080` (Mac gateway)
+    /// 4. Physical device / Release: `https://api.no-markup.com`
+    ///
+    /// A phone cannot reach the Mac’s `localhost` — device builds must use
+    /// staging/prod or a LAN IP via env / plist.
     static var apiBaseURL: URL {
         if let env = ProcessInfo.processInfo.environment["NOMARKUP_API_BASE_URL"],
            let url = URL(string: env), !env.isEmpty {
             return url
         }
 
-        #if DEBUG
-        return URL(string: "http://localhost:8080")!
-        #else
         if let plist = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String,
            let url = URL(string: plist), !plist.isEmpty {
             return url
         }
+
+        #if DEBUG && targetEnvironment(simulator)
+        return URL(string: "http://localhost:8080")!
+        #else
         return URL(string: "https://api.no-markup.com")!
         #endif
     }
