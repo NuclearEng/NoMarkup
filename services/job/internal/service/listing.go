@@ -283,8 +283,12 @@ func (s *ListingService) CloseListingAuction(ctx context.Context, listingID stri
 // CloseEndedAuctions resolves auctions whose deadline has passed but that are
 // still status='active'. It fetches a bounded batch of ended auctions and
 // closes each one via CloseListingAuction. Returns (closed, expired) counts:
-//   - closed  = listings that produced a winning order (pending_payment;
-//     ChargeListingWinner + PI capture promote to held)
+//   - closed  = listings that produced a winning order. The order is written in
+//     escrow_status='pending_payment' and left there: the payment service's
+//     settlement worker attaches the PaymentIntent, and only a verified
+//     payment_intent.succeeded event promotes it to 'held'. See
+//     runListingSettlementCron and SettlePendingListingOrders in the payment
+//     service for why the charge is not made here.
 //   - expired = listings closed with no sale (no bids OR reserve not met)
 //
 // Money-safety: each close runs in its own FOR UPDATE-locked, status-guarded

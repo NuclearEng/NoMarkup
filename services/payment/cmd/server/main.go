@@ -226,7 +226,18 @@ func main() {
 	marketplaceRepo := repository.NewMarketplaceRepository(pool)
 	marketplaceSvc := service.NewMarketplaceService(marketplaceRepo, stripeSvc)
 	marketplaceSvc.SetAccountResolver(repo) // GetStripeAccountID → acct_*
-	marketplaceSvc.SetConfig(service.DefaultMarketplaceConfig())
+	marketplaceCfg := service.DefaultMarketplaceConfig()
+	marketplaceCfg.PaymentWindow = envDurationOr("MARKETPLACE_PAYMENT_WINDOW", marketplaceCfg.PaymentWindow)
+	marketplaceSvc.SetConfig(marketplaceCfg)
+	// Terminal 'payment_failed' transition for unfunded orders. Default OFF:
+	// cancelling someone's won auction is a product decision, and until it is
+	// made the sweeper only reports the condition (loudly) rather than acting.
+	marketplaceExpiry := envBool("MARKETPLACE_PAYMENT_EXPIRY", false)
+	marketplaceSvc.SetExpireUnfunded(marketplaceExpiry)
+	slog.Info("goods settlement configured",
+		"payment_window", marketplaceCfg.PaymentWindow.String(),
+		"expire_unfunded_orders", marketplaceExpiry,
+	)
 	paymentSvc.SetMarketplaceHandler(marketplaceSvc)
 	grpcServer.SetMarketplaceService(marketplaceSvc)
 
@@ -278,6 +289,24 @@ func main() {
 
 	// Auto-release held listing orders past the window (goods escrow).
 	go runMarketplaceAutoReleaseCron(ctx, marketplaceSvc, 4*time.Hour, 30*time.Second)
+
+	// Goods settlement: attach the PaymentIntent to auction-won orders that the
+	// job service left in 'pending_payment', and report the ones still unfunded
+	// past their deadline. ChargeListingWinner had no caller on the auction path
+	// before this; see runListingSettlementCron.
+	runListingSettlementCron(ctx, marketplaceSvc, pool,
+		envDurationOr("MARKETPLACE_SETTLEMENT_INTERVAL", 15*time.Minute),
+		time.Minute,
+		envIntOr("MARKETPLACE_SETTLEMENT_BATCH", 200),
+	)
+
+	// BNPL: collect installments 2..N. ProcessDueInstallments had no caller, so
+	// nothing after the first installment was ever charged while the provider had
+	// already been paid the full contract amount at plan creation.
+	runInstallmentCron(ctx, installmentSvc, pool,
+		envDurationOr("BNPL_INSTALLMENT_INTERVAL", 24*time.Hour),
+		2*time.Minute,
+	)
 
 	go func() {
 		slog.Info("payment service starting", "port", port)

@@ -43,9 +43,24 @@ func envInt(key string, def int) int {
 //     (NOT held — held requires a captured PaymentIntent; see MON-06),
 //     with seller-side fee 1000 bps (8% platform + 2% guarantee, MON-20).
 //     The listing flips to status='sold', and the winning bid is 'awarded'.
-//     ChargeListingWinner (payment service) attaches the PI; webhook capture
-//     promotes pending_payment → held. Release/auto-release only run on held
-//     orders that have payment_intent_id set.
+//
+//     This worker deliberately stops there — it does not talk to the payment
+//     service. Settlement is picked up asynchronously by the payment service's
+//     own worker (runListingSettlementCron in
+//     services/payment/cmd/server/marketplace_cron.go), which calls
+//     ChargeListingWinner for every order still in 'pending_payment' with no
+//     payment_intent_id. Keeping it that way means an auction still closes
+//     correctly when the payment service is down, and settlement retries on its
+//     own schedule instead of being lost with the tick that closed the auction.
+//
+//     NOTE (accuracy): attaching the PaymentIntent is NOT the same as being
+//     paid. The PI is created without a customer or payment method, so it sits
+//     in requires_payment_method until someone confirms it client-side. Only a
+//     signature-verified payment_intent.succeeded event promotes
+//     pending_payment → held. Release / auto-release / confirm-pickup run only
+//     on held orders that have payment_intent_id set, so an unfunded order can
+//     never pay a seller. An earlier version of this comment asserted that
+//     ChargeListingWinner attached the PI here; nothing called it at all.
 //   - no bids, OR a high bid below the seller's reserve → the listing closes
 //     WITHOUT a sale (status='expired'), no order, no money moved.
 //

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -269,25 +270,76 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 	return updatedPlan, clientSecret, nil
 }
 
-// ProcessDueInstallments finds all installments due today or earlier and charges them.
-func (s *InstallmentService) ProcessDueInstallments(ctx context.Context) error {
+// ErrNoPaymentInstrument means the platform has no chargeable Stripe customer
+// for this user, so an off-session charge cannot even be attempted.
+//
+// This is a PLATFORM failure, not a customer failure, and the two must never be
+// conflated: a customer whose card declined has defaulted, a customer the
+// platform has no card for has not. Callers therefore neither burn a retry
+// attempt nor default the plan on this error — they alert the operator.
+var ErrNoPaymentInstrument = errors.New("no chargeable stripe customer on file")
+
+// InstallmentRunStats summarises one ProcessDueInstallments pass so the
+// scheduler can distinguish "nothing was owed" from "everything was blocked".
+type InstallmentRunStats struct {
+	Due            int // installments selected as due this pass
+	Charged        int // successfully charged
+	Declined       int // Stripe attempted and refused — a real payment failure
+	Blocked        int // never attempted: no payment instrument (platform fault)
+	PlansDefaulted int // plans flipped to 'defaulted' after the final decline
+}
+
+// resolveCustomerStripeID returns the Stripe customer id to charge off-session.
+//
+// GetStripeCustomerID reads subscriptions.stripe_customer_id, which is only
+// populated for subscribers — and returns ("", nil), not an error, when there
+// is none. The previous code only substituted the platform UUID on a returned
+// ERROR, so the common empty case flowed straight into Stripe as
+// Customer:"" + PaymentMethod:"", which Stripe rejects. Every such rejection
+// counted as a customer payment failure and, three passes later, defaulted a
+// plan belonging to a customer who had done nothing wrong.
+//
+// Fail closed instead: no instrument means no attempt. The dev-mode fallback to
+// the platform id mirrors resolveSellerConnectAccount in listing_charge.go —
+// dev stubs are keyed by platform user id, and dev mode is a stub, not a
+// production bypass.
+func (s *InstallmentService) resolveCustomerStripeID(ctx context.Context, platformUserID string) (string, error) {
+	customerStripeID, err := s.repo.GetStripeCustomerID(ctx, platformUserID)
+	if err != nil {
+		return "", fmt.Errorf("resolve customer stripe id for %s: %w", platformUserID, err)
+	}
+	if customerStripeID != "" {
+		return customerStripeID, nil
+	}
+	if s.stripe != nil && s.stripe.IsDevMode() {
+		return platformUserID, nil
+	}
+	return "", fmt.Errorf("resolve customer stripe id for %s: %w", platformUserID, ErrNoPaymentInstrument)
+}
+
+// ProcessDueInstallments finds all installments due today or earlier and charges
+// them. Fail-soft per installment: one bad row is logged and skipped so it can
+// never stall the rest of the batch.
+func (s *InstallmentService) ProcessDueInstallments(ctx context.Context) (InstallmentRunStats, error) {
+	var stats InstallmentRunStats
 	today := time.Now()
 
 	dueInstallments, err := s.repo.GetDueInstallments(ctx, today)
 	if err != nil {
-		return fmt.Errorf("process due installments fetch: %w", err)
+		return stats, fmt.Errorf("process due installments fetch: %w", err)
 	}
 
 	if len(dueInstallments) == 0 {
-		slog.Info("no due installments to process")
-		return nil
+		slog.InfoContext(ctx, "no due installments to process")
+		return stats, nil
 	}
 
-	slog.Info("processing due installments", "count", len(dueInstallments))
+	stats.Due = len(dueInstallments)
+	slog.InfoContext(ctx, "processing due installments", "count", len(dueInstallments))
 
 	for _, inst := range dueInstallments {
-		if err := s.processOneInstallment(ctx, inst); err != nil {
-			slog.Error("failed to process installment",
+		if err := s.processOneInstallment(ctx, inst, &stats); err != nil {
+			slog.ErrorContext(ctx, "failed to process installment",
 				"installment_id", inst.ID,
 				"plan_id", inst.PlanID,
 				"error", err,
@@ -296,30 +348,46 @@ func (s *InstallmentService) ProcessDueInstallments(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return stats, nil
 }
 
-func (s *InstallmentService) processOneInstallment(ctx context.Context, inst domain.ScheduledInstallment) error {
+func (s *InstallmentService) processOneInstallment(ctx context.Context, inst domain.ScheduledInstallment, stats *InstallmentRunStats) error {
 	// Get the plan to find the customer info.
 	plan, err := s.repo.GetInstallmentPlan(ctx, inst.PlanID)
 	if err != nil {
 		return fmt.Errorf("get plan for installment %s: %w", inst.ID, err)
 	}
 
-	// Mark as processing.
-	if err := s.repo.UpdateScheduledInstallmentStatus(ctx, inst.ID, "processing", nil); err != nil {
-		return fmt.Errorf("mark installment processing: %w", err)
+	// Resolve the chargeable customer BEFORE touching the row. No instrument
+	// means the platform cannot attempt a charge at all: leave the installment
+	// exactly as it is ('scheduled'/'retrying', attempts unchanged) so the next
+	// pass retries it once the instrument exists, and surface it to the operator.
+	customerStripeID, err := s.resolveCustomerStripeID(ctx, plan.CustomerID)
+	if err != nil {
+		if errors.Is(err, ErrNoPaymentInstrument) {
+			stats.Blocked++
+			slog.ErrorContext(ctx, "installment blocked: no payment instrument on file; "+
+				"not counted as a customer default",
+				"installment_id", inst.ID,
+				"plan_id", inst.PlanID,
+				"customer_id", plan.CustomerID,
+				"amount_cents", inst.AmountCents,
+			)
+			return err
+		}
+		stats.Blocked++
+		return fmt.Errorf("installment %s: %w", inst.ID, err)
 	}
 
-	// Get customer Stripe ID.
-	customerStripeID, err := s.repo.GetStripeCustomerID(ctx, plan.CustomerID)
-	if err != nil {
-		slog.Warn("failed to get customer stripe id for installment, using platform id",
-			"customer_id", plan.CustomerID,
-			"error", err,
-		)
-		customerStripeID = plan.CustomerID
-	}
+	// NOTE: this deliberately does NOT pre-mark the row 'processing'.
+	// UpdateScheduledInstallmentStatus increments `attempts` for BOTH
+	// 'processing' and the terminal status, so the old pre-mark burned two
+	// attempts per real attempt — halving the retry budget and, worse, changing
+	// the attempt number that seeds the Stripe idempotency key below. A crash
+	// between the Stripe call and the status write would then retry under a
+	// DIFFERENT key and charge the customer twice. With exactly one increment
+	// per attempt, a crashed pass replays the SAME key, Stripe returns the
+	// original PaymentIntent, and the retry is free.
 
 	metadata := map[string]string{
 		"installment_plan_id":      inst.PlanID,
@@ -341,7 +409,8 @@ func (s *InstallmentService) processOneInstallment(ctx context.Context, inst dom
 		metadata,
 	)
 	if err != nil {
-		slog.Error("installment charge failed",
+		stats.Declined++
+		slog.ErrorContext(ctx, "installment charge failed",
 			"installment_id", inst.ID,
 			"plan_id", inst.PlanID,
 			"attempt", inst.Attempts+1,
@@ -351,7 +420,7 @@ func (s *InstallmentService) processOneInstallment(ctx context.Context, inst dom
 		// Update as failed. The repo method handles retrying logic (increments attempts,
 		// sets retrying if < 3 attempts, failed if >= 3).
 		if updateErr := s.repo.UpdateScheduledInstallmentStatus(ctx, inst.ID, "failed", nil); updateErr != nil {
-			slog.Error("failed to update installment status after charge failure",
+			slog.ErrorContext(ctx, "failed to update installment status after charge failure",
 				"installment_id", inst.ID,
 				"error", updateErr,
 			)
@@ -359,15 +428,17 @@ func (s *InstallmentService) processOneInstallment(ctx context.Context, inst dom
 
 		// Check if this was the 3rd attempt — if so, default the plan.
 		if inst.Attempts+1 >= 3 {
-			slog.Warn("installment plan defaulted due to max retry attempts",
+			slog.WarnContext(ctx, "installment plan defaulted due to max retry attempts",
 				"plan_id", inst.PlanID,
 				"installment_id", inst.ID,
 			)
 			if planErr := s.repo.UpdateInstallmentPlanStatus(ctx, inst.PlanID, "defaulted"); planErr != nil {
-				slog.Error("failed to default installment plan",
+				slog.ErrorContext(ctx, "failed to default installment plan",
 					"plan_id", inst.PlanID,
 					"error", planErr,
 				)
+			} else {
+				stats.PlansDefaulted++
 			}
 		}
 
@@ -378,8 +449,9 @@ func (s *InstallmentService) processOneInstallment(ctx context.Context, inst dom
 	if err := s.repo.UpdateScheduledInstallmentStatus(ctx, inst.ID, "paid", &piID); err != nil {
 		return fmt.Errorf("mark installment paid: %w", err)
 	}
+	stats.Charged++
 
-	slog.Info("installment charged successfully",
+	slog.InfoContext(ctx, "installment charged successfully",
 		"installment_id", inst.ID,
 		"plan_id", inst.PlanID,
 		"amount_cents", inst.AmountCents,

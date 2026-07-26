@@ -81,6 +81,25 @@ type MarketplaceListingOrder struct {
 	UpdatedAt         time.Time
 }
 
+// PendingListingOrder is the narrow projection the settlement sweeper reads.
+// It carries only what deciding "charge it / expire it / leave it" needs, so
+// adding the migration-101 payment columns did not have to touch the three
+// full-row SELECTs that the escrow/dispute/release paths depend on.
+type PendingListingOrder struct {
+	ID              string
+	ListingID       string
+	SellerID        string
+	BuyerID         string
+	AmountCents     int64
+	PaymentIntentID string
+	PaymentAttempts int
+	// PaymentDueAt is nil until the first settlement pass stamps it. A nil
+	// deadline is treated as CreatedAt + PaymentWindow so orders written before
+	// migration 101 are still swept rather than living forever.
+	PaymentDueAt *time.Time
+	CreatedAt    time.Time
+}
+
 // MarketplaceDispute is a row in marketplace_disputes.
 type MarketplaceDispute struct {
 	ID                     string
@@ -111,6 +130,22 @@ type MarketplaceRepository interface {
 	UpdateListingOrderPaymentIntent(ctx context.Context, orderID, paymentIntentID, idempotencyKey string, taxCents, feeCents int64, autoReleaseAt time.Time) error
 	UpdateListingOrderDispute(ctx context.Context, orderID string, disputeID *string) error
 	ListListingOrdersForAutoRelease(ctx context.Context, before time.Time, limit int) ([]*MarketplaceListingOrder, error)
+	// ListListingOrdersAwaitingPayment returns orders still in
+	// escrow_status='pending_payment', oldest first, bounded by limit. This is
+	// the settlement sweeper's input set: orders whose buyer has not funded
+	// escrow. Deliberately a narrow projection rather than a full
+	// MarketplaceListingOrder — the sweeper needs only identity, the PI (or its
+	// absence) and the payment clock.
+	ListListingOrdersAwaitingPayment(ctx context.Context, limit int) ([]*PendingListingOrder, error)
+	// RecordListingPaymentAttempt increments payment_attempts and stamps
+	// last_payment_error (empty string clears it). paymentDueAt is written only
+	// when non-nil, so a retry never extends a deadline that is already running.
+	RecordListingPaymentAttempt(ctx context.Context, orderID string, paymentDueAt *time.Time, lastErr string) error
+	// FailListingOrderPayment moves an unfunded order from 'pending_payment' to
+	// the terminal 'payment_failed' (migration 101). The status guard is in the
+	// UPDATE itself, so an order that funded in the meantime is never clobbered.
+	// Returns ErrInvalidEscrowState when no row matched.
+	FailListingOrderPayment(ctx context.Context, orderID, reason string) error
 	// ClaimListingOrderForRelease locks the order row (FOR UPDATE) and returns
 	// it only when still eligible for payout (held/released, no dispute, no
 	// transfer). Returns ErrInvalidEscrowState when another worker claimed it
@@ -178,6 +213,13 @@ type MarketplaceConfig struct {
 	// round-fractional-cent-UP rule. The two paths compute the same number; if
 	// they disagree the buyer is charged a total that contradicts the order row.
 	MarketplaceFeeBps int64
+
+	// PaymentWindow is how long a buyer has to fund an order minted in
+	// 'pending_payment' (auction win, buy-now, accepted offer) before the
+	// settlement sweeper calls it unpaid. 72h is an ASSUMPTION, not a product
+	// decision anyone has made — eBay's equivalent unpaid-item window is 4 days.
+	// Tunable via MARKETPLACE_PAYMENT_WINDOW.
+	PaymentWindow time.Duration
 }
 
 // DefaultMarketplaceConfig returns the v1 defaults.
@@ -185,6 +227,7 @@ func DefaultMarketplaceConfig() MarketplaceConfig {
 	return MarketplaceConfig{
 		AutoReleaseAfter:   14 * 24 * time.Hour,
 		DisputeWindowAfter: 24 * time.Hour,
+		PaymentWindow:      72 * time.Hour,
 		MarketplaceFeeBps:  1000, // 8% platform + 2% guarantee (MON-20)
 	}
 }
@@ -202,6 +245,17 @@ type MarketplaceService struct {
 	notifier MarketplaceNotifier
 	cfg      MarketplaceConfig
 	now      func() time.Time // injectable for tests
+
+	// expireUnfunded gates the ONLY irreversible half of the settlement sweeper:
+	// moving an unfunded order to the terminal 'payment_failed'. Default false.
+	//
+	// Off, the sweeper still finds and loudly logs every overdue unfunded order
+	// (so the failure is visible and actionable today) but changes no row. Whether
+	// an unpaid auction win should be cancelled — and what happens to the listing,
+	// the awarded bid and the bidder's bond when it is — is a product decision
+	// nobody has made yet, and it is not one a background worker should make by
+	// default. Set MARKETPLACE_PAYMENT_EXPIRY=true to arm it.
+	expireUnfunded bool
 }
 
 // NewMarketplaceService constructs a service with sane defaults.
@@ -229,6 +283,12 @@ func (s *MarketplaceService) SetNotifier(n MarketplaceNotifier) {
 	}
 }
 
+// SetExpireUnfunded arms (or disarms) the terminal 'payment_failed' transition
+// in the settlement sweeper. See MarketplaceService.expireUnfunded.
+func (s *MarketplaceService) SetExpireUnfunded(enabled bool) {
+	s.expireUnfunded = enabled
+}
+
 // SetConfig overrides the defaults (used by tests + admin tooling).
 func (s *MarketplaceService) SetConfig(cfg MarketplaceConfig) {
 	if cfg.AutoReleaseAfter > 0 {
@@ -239,6 +299,9 @@ func (s *MarketplaceService) SetConfig(cfg MarketplaceConfig) {
 	}
 	if cfg.MarketplaceFeeBps > 0 {
 		s.cfg.MarketplaceFeeBps = cfg.MarketplaceFeeBps
+	}
+	if cfg.PaymentWindow > 0 {
+		s.cfg.PaymentWindow = cfg.PaymentWindow
 	}
 }
 
@@ -742,6 +805,187 @@ func (s *MarketplaceService) ResolveListingDispute(
 		"admin_id", adminID,
 	)
 	return resolved, nil
+}
+
+// --- Settlement sweeper (auction close) ---
+
+// SettlementStats summarises one SettlePendingListingOrders pass.
+type SettlementStats struct {
+	Scanned      int // orders in 'pending_payment' examined this pass
+	Charged      int // PaymentIntents newly created (or replayed idempotently)
+	ChargeFailed int // ChargeListingWinner returned an error
+	Overdue      int // unfunded past their payment deadline
+	Expired      int // moved to terminal 'payment_failed' (only when armed)
+}
+
+// SettlePendingListingOrders is the missing caller for ChargeListingWinner.
+//
+// WHY THIS EXISTS. A won auction is closed by the job service, which inserts
+// listing_orders in escrow_status='pending_payment' with no payment_intent_id
+// (services/job/internal/repository/listing_repo.go). Its cron comment claimed
+// "ChargeListingWinner (payment service) attaches the PI" — nothing did.
+// ChargeListingWinner had exactly two callers, both in the gateway on the
+// synchronous buy-now and offer-accept paths, so an auction win produced an
+// order that nothing ever touched again: escrow_status never reached 'held',
+// the auto-release worker (which selects only 'held'/'released') never saw it,
+// and nobody was told. This sweeper is that caller.
+//
+// WHAT IT DOES AND DOES NOT DO. Two phases, both idempotent:
+//
+//	1. Charge. For an order with no PaymentIntent, call ChargeListingWinner.
+//	   That recomputes fee + tax from the order row, creates the PI under the
+//	   deterministic Stripe key "listing-charge:<orderID>", and stamps
+//	   payment_intent_id / tax_cents / fee_cents / auto_release_at. Re-entry is
+//	   safe twice over: ChargeListingWinner short-circuits when the order
+//	   already carries a PI, and the Stripe key dedupes at Stripe. The first
+//	   pass also stamps payment_due_at = now + PaymentWindow, and only the
+//	   first — RecordListingPaymentAttempt never overwrites a running deadline.
+//
+//	2. Expire. An order still unfunded past its deadline is counted, logged at
+//	   ERROR with the buyer, seller and amount, and — only when SetExpireUnfunded
+//	   is armed — moved to the terminal 'payment_failed' (migration 101).
+//
+// IT DOES NOT COLLECT MONEY, and cannot yet. CreateMarketplacePaymentIntent
+// builds a PaymentIntent with no Customer, no PaymentMethod and Confirm unset,
+// so the PI lands in requires_payment_method and someone has to confirm it
+// client-side. For an auction there is nobody there: the buyer is not on the
+// site at close. An off-session charge is not merely unwired, it is impossible
+// with today's plumbing — no Stripe Customer is ever created anywhere in this
+// repo (subscriptions.stripe_customer_id is written from a domain field that is
+// never populated, so GetStripeCustomerID returns "" for every user),
+// CreateSetupIntent never sets params.Customer so a confirmed card is attached
+// to nothing, and bid_bonds stores the SetupIntent client_secret rather than a
+// pm_ id. Closing that gap needs changes in stripe.go, the gateway and the web
+// app. Until then this sweeper's job is to attach the PI and make the dead end
+// visible, not to pretend money moved.
+//
+// Fail-soft per order: one bad row is logged and skipped so it can never stall
+// the backlog. Fail-closed on money: nothing here transfers, captures or
+// refunds, and an order that reached 'held' or beyond is never in the input set.
+func (s *MarketplaceService) SettlePendingListingOrders(ctx context.Context, batchLimit int) (SettlementStats, error) {
+	var stats SettlementStats
+	if batchLimit <= 0 {
+		batchLimit = 100
+	}
+
+	orders, err := s.repo.ListListingOrdersAwaitingPayment(ctx, batchLimit)
+	if err != nil {
+		return stats, fmt.Errorf("settle pending listing orders: list: %w", err)
+	}
+	stats.Scanned = len(orders)
+
+	now := s.now()
+	for _, o := range orders {
+		if o.PaymentIntentID == "" {
+			if s.chargeOnePendingOrder(ctx, o, now) {
+				stats.Charged++
+				// The deadline was just stamped at now + window, so it is in the
+				// future by construction: nothing to expire on this pass.
+				continue
+			}
+			stats.ChargeFailed++
+			// Deliberately NOT `continue`. An order the platform cannot charge
+			// at all — a permanently poisoned row — would otherwise be retried
+			// every tick forever with no way to terminate. Falling through to
+			// the deadline check below (which uses created_at + window, since a
+			// failed attempt never stamps payment_due_at) gives it the same
+			// finite life as any other unfunded order.
+		}
+
+		deadline := o.CreatedAt.Add(s.cfg.PaymentWindow)
+		if o.PaymentDueAt != nil {
+			deadline = *o.PaymentDueAt
+		}
+		if now.Before(deadline) {
+			continue
+		}
+		stats.Overdue++
+
+		slog.ErrorContext(ctx, "listing order past its payment deadline and still unfunded",
+			"order_id", o.ID,
+			"listing_id", o.ListingID,
+			"buyer_id", o.BuyerID,
+			"seller_id", o.SellerID,
+			"amount_cents", o.AmountCents,
+			"payment_intent_id", o.PaymentIntentID,
+			"payment_attempts", o.PaymentAttempts,
+			"deadline", deadline.Format(time.RFC3339),
+			"expiry_armed", s.expireUnfunded,
+		)
+		if !s.expireUnfunded {
+			continue
+		}
+		if err := s.repo.FailListingOrderPayment(ctx, o.ID,
+			fmt.Sprintf("buyer did not fund escrow within %s of order creation", s.cfg.PaymentWindow)); err != nil {
+			if errors.Is(err, ErrInvalidEscrowState) {
+				// Funded (or otherwise moved on) between the SELECT and the
+				// UPDATE. The status-guarded UPDATE is what makes that safe.
+				slog.InfoContext(ctx, "settle: order left pending_payment before expiry, skipping",
+					"order_id", o.ID)
+				continue
+			}
+			slog.ErrorContext(ctx, "settle: failed to expire unfunded order, continuing",
+				"order_id", o.ID, "error", err)
+			continue
+		}
+		stats.Expired++
+		slog.WarnContext(ctx, "listing order marked payment_failed",
+			"order_id", o.ID,
+			"listing_id", o.ListingID,
+			"buyer_id", o.BuyerID,
+			"seller_id", o.SellerID,
+		)
+	}
+
+	return stats, nil
+}
+
+// chargeOnePendingOrder attaches a PaymentIntent to one unfunded order and
+// stamps the payment clock. Reports whether the charge call succeeded; every
+// outcome is recorded on the row so a stuck order is never indistinguishable
+// from a fresh one.
+func (s *MarketplaceService) chargeOnePendingOrder(ctx context.Context, o *PendingListingOrder, now time.Time) bool {
+	res, err := s.ChargeListingWinner(ctx, o.ID)
+	if err != nil {
+		// Record the attempt WITHOUT a deadline: a platform-side failure must
+		// not start (or restart) the buyer's clock. Truncate the message so a
+		// verbose upstream error cannot bloat the column.
+		reason := err.Error()
+		if len(reason) > 500 {
+			reason = reason[:500]
+		}
+		if recErr := s.repo.RecordListingPaymentAttempt(ctx, o.ID, nil, reason); recErr != nil {
+			slog.ErrorContext(ctx, "settle: failed to record payment attempt", "order_id", o.ID, "error", recErr)
+		}
+		slog.ErrorContext(ctx, "settle: charge listing winner failed, continuing",
+			"order_id", o.ID,
+			"listing_id", o.ListingID,
+			"buyer_id", o.BuyerID,
+			"attempts", o.PaymentAttempts+1,
+			"error", err,
+		)
+		return false
+	}
+
+	due := now.Add(s.cfg.PaymentWindow)
+	if recErr := s.repo.RecordListingPaymentAttempt(ctx, o.ID, &due, ""); recErr != nil {
+		// The PI exists and is stamped on the order; only the clock is missing.
+		// The next pass falls back to created_at + window, so this degrades
+		// rather than losing the order.
+		slog.ErrorContext(ctx, "settle: charged but failed to stamp payment deadline",
+			"order_id", o.ID, "error", recErr)
+	}
+
+	slog.InfoContext(ctx, "settle: payment intent attached to unfunded listing order",
+		"order_id", o.ID,
+		"listing_id", o.ListingID,
+		"buyer_id", o.BuyerID,
+		"seller_id", o.SellerID,
+		"payment_intent_id", res.PaymentIntentID,
+		"total_cents", res.TotalCents,
+		"payment_due_at", due.Format(time.RFC3339),
+	)
+	return true
 }
 
 // --- Auto-release cron ---
