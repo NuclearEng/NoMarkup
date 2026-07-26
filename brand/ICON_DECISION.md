@@ -1,18 +1,28 @@
-# App icon — locked master
+# App icon — mission-true master
 
 **Date:** 2026-07-26  
-**Master:** candidate **30** → `app-icon-1024.png` / iOS AppIcon / web PWA  
-**Also:** `brand/app-icon-30.png`
+**Master:** `app-icon-1024.png` (candidate **35**) · iOS AppIcon · web PWA
 
-## Spec
+## Product truth
 
-- Champagne silk field
-- Navy + gold dual frame near edge
-- Large navy **N** monogram (brand)
-- Diamond solitaire above N (value / escrow metaphor)
-- RGB 1024, no alpha
+NoMarkup is a **reverse auction**: market competition drives **costs down** for customers and supports **fair pay** for independent contractors / small businesses — without lead-gen markup.
 
-## Why not diamond-only
+## Icon
 
-Diamond alone is elegant but generic (reads as jewelry, not NoMarkup).
-Hybrid: **N = brand**, **diamond = value**.
+| Element | Meaning |
+|---------|---------|
+| Deep navy field | Serious local marketplace (not jewelry) |
+| Bold gold **N** | NoMarkup brand |
+| Gold **chevron down** | Price bids *down* (reverse auction) |
+
+## Rejected paths
+
+| Path | Why |
+|------|-----|
+| Diamond-only / solitaire jewelry | No brand; wrong category |
+| Cartier silk / UHNW vault | Excludes working pros; off-mission |
+| “NM MARKET” microcopy | Illegible at 60pt |
+
+## Brand doc
+
+See `docs/brand/mission-brand-north-star.md`
