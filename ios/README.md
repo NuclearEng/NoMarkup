@@ -71,16 +71,24 @@ Single-size universal asset (Xcode 14+ single-size catalog):
 | `NoMarkup/Assets.xcassets/AccentColor.colorset` | Brand gold accent (CTAs / tint) |
 | `brand/app-icon-1024.png` | Canonical master art (monorepo root) |
 
-**Brand mark (SOTA seal):** dark navy field, **3D gold “N” monogram** inside a **double gold ring** with a diamond at the crown — not the flat Pillow “NM” script monogram used in early scaffolding. Opaque RGB only (App Store rejects transparency). Keep `AppIcon-1024.png` and `brand/app-icon-1024.png` in sync when marketing revises the seal.
+**App icon (current):** terminal amber-gold **N** (+ reverse-auction chevron lineage) on **pure black `#000000`** — master **37** (`brand/ICON_DECISION.md`). Not the historical dual-ring / diamond “SOTA seal,” and not the flat Pillow “NM” script from early scaffolding. Opaque RGB only (App Store rejects transparency). Keep `AppIcon-1024.png` and `brand/app-icon-1024.png` in sync when the master revises.
 
-**Accent / design-system tokens (aligned with web `globals.css`):**
+**In-product chrome** uses showcase shell `#07080b` (`BrandTheme.navy`) — slightly lifted from the icon’s pure black field. See `docs/brand/showcase-ssot.md`.
 
-| Token | Light | Dark | iOS use |
-|-------|-------|------|---------|
-| Brand gold (showcase `--gold`) | `#c9a84c` | `#c9a84c` (same; bright label `#e4c566` via `BrandTheme.goldBright`) | `AccentColor` → CTAs / tab tint |
-| Navy field (showcase `--bg-primary`) | `#07080b` | — | App chrome + icon field (`BrandTheme.navy`) |
+**Brand SSOT:** `qa/showcase/index.html` + `docs/brand/showcase-ssot.md`. Tagline: **The Market Sets The Price. Not The Markup.** iOS maps tokens in `NoMarkup/Core/BrandTheme.swift`.
 
-Primary money and auth CTAs use `.buttonStyle(.borderedProminent)` + `Color("AccentColor")` / app-level `.tint` — do not invent ad-hoc hex colors in SwiftUI.
+**Accent / design-system tokens (showcase SSOT):**
+
+| Token | Hex | iOS use |
+|-------|-----|---------|
+| Brand gold (`--gold`) | `#c9a84c` | `AccentColor` / `BrandTheme.gold` / `BrandTheme.accent` → CTAs / tab tint |
+| Gold bright (`--gold-bright`) | `#e4c566` | `BrandTheme.goldBright` → prices, emphasis labels |
+| Navy shell (`--bg-primary`) | `#07080b` | App chrome (`BrandTheme.navy`) — **not** the icon canvas |
+| Card surface (`--bg-card`) | `#14161e` | List rows / elevated (`BrandTheme.navyElevated`) |
+| Text primary / secondary | `#e8ecf1` / `#8b949e` | `BrandTheme.textPrimary` / `.textSecondary` |
+| Icon field | `#000000` | AppIcon outer field only |
+
+**Do not use legacy** `#070b14`, `#d4af57`, or ad-hoc `Color(red:…)` outside `BrandTheme`. Prefer `BrandTheme.*` (or `BrandTheme.accent` for interactive tint).
 
 ## Device smoke
 
@@ -144,7 +152,7 @@ Home · Marketplace · Jobs · Messages · Account
 
 - Email/password form → `APIClient.login` (gateway path stub)
 - **Sign in with Apple** button shell (`AuthenticationServices`) — identity token **not** exchanged with gateway yet
-- **Browse native chrome (scaffold)** — local-only session for layout review without API
+- **Browse without signing in** — local-only session for layout review without API (`enterScaffoldSession`; product voice matches showcase)
 
 ### Account / Guideline 5.1.1(v)
 
@@ -186,7 +194,7 @@ First binary should keep regulated digital-adjacent flags off per `ios-payment-r
 - [ ] CoreLocation market picker + job check-in with pre-prompts
 - [ ] Photo picker / camera capture paths
 - [ ] Account export (`GET /api/v1/me/export`) + real deletion schedule path
-- [x] App icon 1024×1024 SOTA seal (gold N monogram + rings; AccentColor brand gold)
+- [x] App icon 1024×1024 terminal master 37 (amber N on pure black; AccentColor brand gold)
 - [ ] Organization team signing + App Store Connect record
 - [ ] Human-execute device smoke checklist and sign launch-board
 - [ ] Stage B2 StoreKit only when digital unlocks ship

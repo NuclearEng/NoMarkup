@@ -29,13 +29,13 @@ import type { MarketRange } from '@/types';
 
 function ReplayLoadingSkeleton() {
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background">
       <GradientMesh />
       <div
         className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
         aria-hidden="true"
       />
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#07080b]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <Skeleton className="h-6 w-24 bg-white/10" />
           <Skeleton className="h-6 w-64 bg-white/10" />
@@ -64,7 +64,7 @@ function ReplayLoadingSkeleton() {
 
 function ReplayNotFound() {
   return (
-    <div className="dark relative flex min-h-screen flex-col items-center justify-center overflow-y-auto bg-[#07080b]">
+    <div className="dark relative flex min-h-screen flex-col items-center justify-center overflow-y-auto bg-background">
       <GradientMesh />
       <div
         className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
@@ -117,7 +117,7 @@ function CompletionOverlay({
       aria-modal="true"
       aria-label="Auction replay complete"
     >
-      <div className="mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-[#14161e] p-8 shadow-2xl">
+      <div className="mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-card p-8 shadow-2xl">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15">
             <Trophy className="h-8 w-8 text-emerald-400" aria-hidden="true" />
@@ -227,7 +227,7 @@ export default function AuctionReplayPage() {
   }
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background">
       {/* Animated gradient mesh */}
       <GradientMesh />
 
@@ -238,7 +238,7 @@ export default function AuctionReplayPage() {
       />
 
       {/* ─── Sticky top bar ─── */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#07080b]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           {/* Left: Back + Replay badge */}
           <div className="flex shrink-0 items-center gap-3">

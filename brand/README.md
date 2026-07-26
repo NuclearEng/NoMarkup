@@ -25,7 +25,12 @@
 
 ### Design intent (current)
 
-**Terminal amber N** on void black / navy (`#07080b`) — Bloomberg-grade monogram, optional down-chevron for reverse-auction “price down.” Not a jewelry diamond as the sole brand story (see mission north star).
+**Terminal amber N** on **pure black `#000000`** (master **37** — `brand/ICON_DECISION.md`) — Bloomberg-grade monogram, optional down-chevron for reverse-auction “price down.” Not a jewelry diamond as the sole brand story (see mission north star).
+
+| Layer | Hex | Notes |
+|-------|-----|--------|
+| Icon outer canvas | `#000000` | Shipped 1024 masters sample pure black at corners — keep it |
+| In-product dark shell | `#07080b` | Showcase / web / iOS chrome only — **not** a requirement to recolor the icon field |
 
 Apple applies the home-screen mask; the PNG is full-bleed square.
 
@@ -33,8 +38,8 @@ Apple applies the home-screen mask; the PNG is full-bleed square.
 
 Prefer regenerating from approved session masters under Grok session `images/`, or re-run the pipeline that:
 
-1. Starts from the approved terminal monogram master  
-2. Forces outer canvas to showcase navy `#07080b`  
+1. Starts from the approved terminal monogram master (candidate 37 lineage)  
+2. Keeps outer canvas **pure black `#000000`** (do not silently recolor to `#07080b`)  
 3. Exports RGB 1024 with no alpha  
 
 Do **not** reintroduce diamond-only jewelry marks as the product icon without an explicit brand decision.

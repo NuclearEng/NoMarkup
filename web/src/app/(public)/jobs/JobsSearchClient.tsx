@@ -121,7 +121,9 @@ export function JobsSearchClient({
         <h1 className="text-4xl font-extrabold tracking-tight text-zinc-100">
           Find <span className="gold-text">Jobs</span>
         </h1>
-        <p className="mt-2 text-lg text-zinc-300">Browse available jobs and place your bids</p>
+        <p className="mt-2 text-lg text-zinc-300">
+          Reverse auctions for home services. Providers compete — fair market rates, not the markup.
+        </p>
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row">
@@ -233,7 +235,7 @@ export function JobsSearchClient({
               description={
                 hasActiveFilters
                   ? 'No jobs match your current filters. Try broadening your search or clearing some filters.'
-                  : 'There are no jobs posted right now. Check back soon for new opportunities.'
+                  : 'No open jobs right now. Check back soon — or post one and let the market set the price.'
               }
               action={
                 hasActiveFilters ? (

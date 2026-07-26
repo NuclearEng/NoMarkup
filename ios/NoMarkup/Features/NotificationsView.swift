@@ -14,15 +14,15 @@ struct NotificationsView: View {
         Group {
             if auth.isScaffoldSession {
                 BrandEmptyState(
-                    title: "Scaffold session",
+                    title: "Sign in required",
                     systemImage: "hammer",
-                    message: "Scaffold sessions have no API credentials. Sign in against a live gateway to load notifications."
+                    message: "Browse-only mode has no API credentials. Sign in against a live gateway to load notifications."
                 )
             } else if needsSignIn || !auth.isAuthenticated {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "bell.slash",
-                    message: "Sign in to see auction, order, and message alerts.",
+                    message: "Sign in to see reverse-auction awards, order escrow, and message alerts.",
                     actionTitle: "Sign in"
                 ) {
                     auth.signOut()
@@ -46,7 +46,7 @@ struct NotificationsView: View {
                 BrandEmptyState(
                     title: "No notifications",
                     systemImage: "bell",
-                    message: "Bids, awards, payments, and messages will appear here when the platform notifies you."
+                    message: "Outbid alerts, awards, escrow payments, and messages appear here when the market moves."
                 )
             } else {
                 List {

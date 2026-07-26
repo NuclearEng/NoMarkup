@@ -62,15 +62,17 @@ Visual tokens + full SSOT: **`docs/brand/showcase-ssot.md`** (do not invent a se
 
 ---
 
-## Icon brief (next masters)
+## Icon (decided + brief)
+
+**Shipped master:** candidate **37** — terminal amber **N** + reverse-auction chevron energy on **pure black** (`brand/ICON_DECISION.md`, `brand/app-icon-1024.png`).
 
 Must answer in one glance:
 
 > **NoMarkup — reverse auction — fair market for services.**
 
-Candidate forms:
+If revisiting alts, prefer:
 
-1. Bold **N** on navy or gold field + subtle **downward chevron** (price down).  
+1. Bold **N** on black or navy field + subtle **downward chevron** (price down) — **current lineage**.  
 2. **N** with dual arrows (cost ↓ / wages ↑) if still legible at 60pt.  
 3. Clean **NM** monogram, no gem.  
 4. Optional small **gold mark** of quality — not a centerpiece diamond.

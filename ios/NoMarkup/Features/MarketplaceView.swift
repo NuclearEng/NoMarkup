@@ -18,6 +18,8 @@ struct MarketplaceView: View {
                 }
                 .refreshable { await load(reset: true) }
                 .task { await load(reset: true) }
+                .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
                 .navigationDestination(for: ListingSummary.self) { listing in
                     ListingDetailView(listingID: listing.id, preview: listing)
                 }
@@ -28,31 +30,32 @@ struct MarketplaceView: View {
     private var content: some View {
         if isLoading && listings.isEmpty {
             ProgressView("Loading listings…")
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .brandScreenBackground()
         } else if let errorMessage, listings.isEmpty {
-            ContentUnavailableView {
-                Label("Couldn’t load listings", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(errorMessage)
-            } actions: {
-                Button("Try again") {
-                    Task { await load(reset: true) }
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Couldn’t load listings",
+                systemImage: "wifi.exclamationmark",
+                message: errorMessage,
+                actionTitle: "Try again"
+            ) {
+                Task { await load(reset: true) }
             }
         } else if listings.isEmpty {
-            ContentUnavailableView {
-                Label("No listings", systemImage: "bag")
-            } description: {
-                Text("No active listings match your search. Pull down to refresh, clear the search field, or check back later.")
-            }
+            BrandEmptyState(
+                title: "No listings nearby",
+                systemImage: "bag",
+                message: "Local goods auctions (forward bid-up, pickup within 25 mi) show up here when sellers list. Pull to refresh or clear search."
+            )
         } else {
             List {
                 Section {
-                    Text("Local pickup · forward auction · 25 mi model")
+                    Text("Local goods · buyers bid up · pickup within 25 mi. Escrow holds funds until pickup — fair price discovery, no middleman markup.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
                 }
 
                 Section {
@@ -61,17 +64,18 @@ struct MarketplaceView: View {
                             ListingRowView(listing: listing)
                         }
                         .frame(minHeight: 44)
+                        .listRowBackground(BrandTheme.navyElevated)
                         .accessibilityHint("Opens listing detail")
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {
-                        Text("\(listings.count) of \(total)")
+                        Text("\(listings.count) of \(total)").brandSectionHeader()
                     } else {
-                        Text("Listings")
+                        Text("Listings").brandSectionHeader()
                     }
                 }
             }
-            .listStyle(.insetGrouped)
+            .brandListBackground()
         }
     }
 
@@ -110,16 +114,16 @@ private struct ListingRowView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(listing.displayTitle)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(BrandTheme.textPrimary)
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(listing.displayPrice)
                         .font(.body.weight(.bold).monospacedDigit())
-                        .foregroundStyle(Color("AccentColor"))
+                        .foregroundStyle(BrandTheme.goldBright)
                     Text(listing.priceCaption)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                 }
             }
 
@@ -133,13 +137,13 @@ private struct ListingRowView: View {
                 if let condition = listing.condition, !condition.isEmpty {
                     Text(condition.replacingOccurrences(of: "_", with: " ").capitalized)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
                 if let category = listing.categoryName, !category.isEmpty {
                     Text(category)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -148,18 +152,18 @@ private struct ListingRowView: View {
                 if let location = listing.locationLabel {
                     Label(location, systemImage: "mappin.and.ellipse")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
                 if let bids = listing.bidCount {
                     Label("\(bids) bids", systemImage: "hammer")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                 }
                 if let countdown = listing.auctionCountdown {
                     Label(countdown, systemImage: "clock")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(countdown == "Ended" ? Color.secondary : Color("AccentColor"))
+                        .foregroundStyle(countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.goldBright)
                         .lineLimit(1)
                 }
             }
@@ -171,4 +175,6 @@ private struct ListingRowView: View {
 
 #Preview {
     MarketplaceView()
+        .preferredColorScheme(.dark)
+        .tint(BrandTheme.accent)
 }

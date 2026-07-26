@@ -98,9 +98,10 @@ xl: ['1.25rem', { lineHeight: '1.75rem' }],
 ```
 
 ### Brand mark
-- SVG component: `web/src/components/layout/BrandMark.tsx` (dual rings + geometric N; `text-brand-gold` / currentColor only)
-- Wordmark + mark: `web/src/components/layout/Logo.tsx`
-- Favicon / Apple touch: `web/src/app/icon.tsx` (32px), `web/src/app/apple-icon.tsx` (180px) — code-generated ImageResponse (inline hex OK; not React component tree)
+- **App icon master:** terminal amber N on pure black — `brand/ICON_DECISION.md` (not diamond seal)
+- SVG in chrome: `web/src/components/layout/BrandMark.tsx` — still dual rings + crown diamond (seal-era **partial** vs master; prefer terminal monogram when next touched)
+- Wordmark + mark: `web/src/components/layout/Logo.tsx` (No + gold Markup, Syne)
+- Favicon / Apple touch: `web/src/app/icon.tsx` (32px), `web/src/app/apple-icon.tsx` (180px) — code-generated ImageResponse on shell `#07080b` (inline hex OK; not App Store master)
 
 ```typescript
 // tailwind.config.ts — canonical shape (values resolve via CSS vars)

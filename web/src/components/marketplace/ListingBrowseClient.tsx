@@ -145,7 +145,7 @@ export function ListingBrowseClient({
           The <span className="gold-text">Live</span> Marketplace
         </h1>
         <p className="mt-2 text-lg text-zinc-300">
-          Auctions are watched, not posted. Highest bidder wins on the clock.
+          Local auctions with escrow. Bid up — the market sets the price, not the markup.
         </p>
       </div>
 
@@ -283,7 +283,7 @@ export function ListingBrowseClient({
               description={
                 hasActiveFilters
                   ? 'No auctions match your current filters. Try widening your radius or clearing some filters.'
-                  : 'The room is between rounds. Check back in a few minutes — auctions launch all day.'
+                  : 'The floor is quiet. Check back soon — new listings go live all day. Fair market rates, not the markup.'
               }
               action={
                 hasActiveFilters ? (

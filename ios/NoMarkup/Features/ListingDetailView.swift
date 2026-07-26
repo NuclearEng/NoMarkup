@@ -410,7 +410,7 @@ struct ListingDetailView: View {
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } else if auth.isScaffoldSession {
-                    Text("Scaffold session has no API credentials. Sign in against a live gateway to pay.")
+                    Text("Browse-only mode has no API credentials. Sign in against a live gateway to pay.")
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
                     Button {} label: {
@@ -467,7 +467,7 @@ struct ListingDetailView: View {
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
             } else if auth.isScaffoldSession {
-                Text("Scaffold session has no API credentials. Sign in against a live gateway to place bids.")
+                Text("Browse-only mode has no API credentials. Sign in against a live gateway to place bids.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                 TextField("Bid amount (USD)", text: $bidAmountText)
@@ -590,7 +590,7 @@ struct ListingDetailView: View {
         guard !auth.isScaffoldSession else {
             buyNowStatusIsError = true
             buyNowStatusMessage =
-                "Scaffold session has no API credentials. Sign in against a live gateway to pay."
+                "Browse-only mode has no API credentials. Sign in against a live gateway to pay."
             return
         }
 
@@ -648,7 +648,7 @@ struct ListingDetailView: View {
         guard !auth.isScaffoldSession else {
             bidStatusIsError = true
             bidStatusMessage =
-                "Scaffold session has no API credentials. Sign in against a live gateway to place bids."
+                "Browse-only mode has no API credentials. Sign in against a live gateway to place bids."
             return
         }
 

@@ -162,7 +162,7 @@ describe('(public)/jobs/page', () => {
 
     render(createElement(JobsSearchPage));
     expect(
-      screen.getByText(/There are no jobs posted right now/i),
+      screen.getByText(/No open jobs right now/i),
     ).toBeDefined();
     // No "Clear All Filters" button without active filters.
     expect(screen.queryByRole('button', { name: /clear all filters/i })).toBeNull();
@@ -247,7 +247,7 @@ describe('(public)/jobs/page', () => {
 
     render(createElement(JobsSearchPage));
     // Before applying a filter: empty state shows the no-filters description.
-    expect(screen.getByText(/no jobs posted right now/i)).toBeDefined();
+    expect(screen.getByText(/No open jobs right now/i)).toBeDefined();
     // Apply a filter via the JobSearchFilters mock — this sets `query` so
     // hasActiveFilters becomes true.
     fireEvent.click(screen.getByTestId('apply-test-filter'));
@@ -258,6 +258,6 @@ describe('(public)/jobs/page', () => {
     const clearBtn = screen.getByRole('button', { name: /clear all filters/i });
     fireEvent.click(clearBtn); // exercises the setFilters reset on lines 207-209
     // After clearing, the no-filters message is back.
-    expect(screen.getByText(/no jobs posted right now/i)).toBeDefined();
+    expect(screen.getByText(/No open jobs right now/i)).toBeDefined();
   });
 });

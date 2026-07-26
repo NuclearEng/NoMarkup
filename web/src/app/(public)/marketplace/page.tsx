@@ -109,11 +109,11 @@ const EMPTY_RESPONSE: ListingsResponse = {
 export const metadata: Metadata = {
   title: 'Marketplace · NoMarkup',
   description:
-    'Browse live local auctions on NoMarkup. Highest bidder wins on the clock — bid on furniture, electronics, and more for local pickup near you.',
+    'Local goods auctions with escrow. Bid ascending — the market sets the price, not the markup. Furniture, electronics, and more for pickup near you.',
   openGraph: {
     title: 'The Live Marketplace · NoMarkup',
     description:
-      'Auctions are watched, not posted. Bid on local goods and win on the clock.',
+      'Local auctions with escrow. Bid up — the market sets the price. Highest bidder wins on the clock.',
     type: 'website',
   },
 };

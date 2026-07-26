@@ -30,7 +30,7 @@ struct MessagesView: View {
             BrandEmptyState(
                 title: "Sign in for messages",
                 systemImage: "person.crop.circle.badge.exclamationmark",
-                message: "Scaffold session has no API token. Sign out and sign in with a real account to load chat threads.",
+                message: "Browse-only mode has no API token. Sign out and sign in with a real account to load chat threads.",
                 actionTitle: "Sign out to log in"
             ) {
                 auth.signOut()
@@ -319,7 +319,7 @@ struct ChatThreadView: View {
     private var composerBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             if auth.isScaffoldSession {
-                Text("Scaffold session can’t send messages. Sign out and sign in with a real account.")
+                Text("Browse-only mode can’t send messages. Sign out and sign in with a real account.")
                     .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -119,7 +119,7 @@ export default function ProvidersPage() {
           Find <span className="gold-text">Providers</span>
         </h1>
         <p className="mt-2 text-lg text-zinc-300">
-          Browse verified service providers in your area
+          Verified providers who compete for your jobs — fair market rates, not the markup.
         </p>
       </div>
 

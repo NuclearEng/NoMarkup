@@ -22,12 +22,12 @@ export interface Column<T> {
 /**
  * Opaque backgrounds for pinned cells. They MUST be fully opaque — a
  * semi-transparent sticky cell lets the horizontally-scrolled content bleed
- * through. These values are the effective (flattened) card colors:
- *   - card glass: rgba(13,17,32,0.92) over --background #07080b ≈ #0d111f
- *   - header row: bg-white/[0.03] layered over that ≈ #1a1d28
+ * through. Map to showcase semantic tokens (docs/brand/showcase-ssot.md):
+ *   - body: bg-secondary → surface #0e1017
+ *   - header: bg-accent → card-hover #1a1d28
  */
-const STICKY_BODY_BG = 'bg-[#0d111f]';
-const STICKY_HEADER_BG = 'bg-[#1a1d28]';
+const STICKY_BODY_BG = 'bg-secondary';
+const STICKY_HEADER_BG = 'bg-accent';
 const STICKY_SHADOW = 'shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.6)]';
 
 interface DataTableProps<T> {

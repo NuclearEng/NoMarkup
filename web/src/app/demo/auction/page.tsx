@@ -245,7 +245,7 @@ export default function AuctionDemoPage() {
     sim.currentLowest > 0 ? Math.round((savingsCents / STARTING_PRICE_CENTS) * 100) : 0;
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background">
       {/* Animated gradient mesh — same as landing page */}
       <GradientMesh />
 
@@ -256,7 +256,7 @@ export default function AuctionDemoPage() {
       />
 
       {/* ─── Sticky top bar ─── */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#07080b]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
@@ -268,9 +268,9 @@ export default function AuctionDemoPage() {
               <span className="hidden sm:inline">Back</span>
             </Link>
             <div className="h-4 w-px bg-white/10" />
-            <Badge className="gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-400">
-              <Zap className="h-3 w-3" />
-              Live Demo
+            <Badge className="gap-1 border-brand-gold/25 bg-brand-gold/10 font-mono text-[10px] uppercase tracking-wider text-brand-gold-bright">
+              <Zap className="h-3 w-3" aria-hidden="true" />
+              Live Demo · Reverse Auction
             </Badge>
           </div>
 

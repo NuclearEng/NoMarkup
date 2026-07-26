@@ -40,7 +40,7 @@ const HOW_IT_WORKS = [
   },
   {
     title: 'Lawyers compete',
-    body: 'Licensed attorneys place competing bids. Prices go down, not up — you watch it happen live.',
+    body: 'Licensed attorneys place competing reverse-auction bids. The market sets the price — you watch it live.',
   },
   {
     title: 'Pick your lawyer',
@@ -109,8 +109,8 @@ export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandin
           Lawyers compete for <span className="gold-text">your case</span>
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-300">
-          Post your legal need and let licensed attorneys bid to win your business. No markup,
-          no inflated retainers — just transparent prices that go down.
+          Post your legal need and let licensed attorneys compete. Fair market rates — not the
+          markup, not inflated retainers. Prices go down as they bid.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button asChild size="lg" className="min-h-[44px]">

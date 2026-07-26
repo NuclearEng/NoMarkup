@@ -181,12 +181,12 @@ export function PricingPageContent() {
       : 0;
 
   return (
-    <div className="min-h-screen bg-[#07080b]">
+    <div className="min-h-screen bg-background">
 
       {/* ============================================================ */}
       {/* HERO SECTION                                                  */}
       {/* ============================================================ */}
-      <section className="relative isolate overflow-hidden bg-[#07080b] pb-10 pt-14 sm:pb-16 sm:pt-20">
+      <section className="relative isolate overflow-hidden bg-background pb-10 pt-14 sm:pb-16 sm:pt-20">
         {/* Ambient gradient background */}
         <div
           className="pointer-events-none absolute inset-0 z-0"
@@ -217,7 +217,7 @@ export function PricingPageContent() {
             style={{ animationDelay: '80ms' }}
           >
             The Fair Price Index tracks what home services actually cost — pulled from completed
-            jobs on NoMarkup. Search by ZIP to see local rates.
+            jobs on NoMarkup. Transparent pricing: the market sets the rate, not the markup.
           </p>
 
           {/* ZIP code search bar */}
@@ -283,7 +283,7 @@ export function PricingPageContent() {
       {/* ============================================================ */}
       <section
         ref={statsSection.ref}
-        className="border-y border-white/[0.05] bg-[#14161e] py-8 sm:py-12"
+        className="border-y border-white/[0.05] bg-card py-8 sm:py-12"
         aria-label="Pricing index statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -409,11 +409,11 @@ export function PricingPageContent() {
               id="pricing-cta-heading"
               className="relative z-[3] text-2xl font-black tracking-tight text-white sm:text-3xl"
             >
-              Get these prices for your next project
+              Let the market set your next price
             </h2>
             <p className="text-muted-foreground relative z-[3] mx-auto mt-3 max-w-lg text-base sm:mt-4 sm:text-lg">
-              Post your job on NoMarkup and let providers compete for your business. Our
-              reverse-auction model means you always get a fair price.
+              Post your job and watch providers compete in a reverse auction. Fair market rates —
+              not the markup.
             </p>
             <div className="relative z-[3] mt-8 sm:mt-10">
               <Button

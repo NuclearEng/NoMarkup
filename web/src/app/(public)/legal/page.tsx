@@ -19,11 +19,11 @@ const EMPTY_JOBS: JobsResponse = {
 export const metadata: Metadata = {
   title: 'Legal Services · NoMarkup',
   description:
-    'Post your legal need and let verified, licensed attorneys compete on price. Contracts, business formation, wills, disputes — lawyers bid, prices go down.',
+    'Post your legal need and let licensed attorneys compete in reverse auctions. Fair market rates — not the markup. Contracts, formation, wills, disputes.',
   openGraph: {
     title: 'Lawyers compete for your case · NoMarkup',
     description:
-      'Licensed attorneys bid to win your legal work. Transparent, descending prices — no markup.',
+      'Licensed attorneys bid to win your legal work. Prices go down — the market sets the rate, not the markup.',
     type: 'website',
   },
 };

@@ -93,9 +93,12 @@ Monorepo: `web/` (Next.js) · `gateway/` (Go) · `services/` (Go: user, job, pay
 ## 4. Design System & UI Standards
 
 Platform-native quality — the web app must feel as polished as a native iOS/Android app. Apply
-**Apple HIG** (clarity, deference, depth, feedback; system font stack; 44×44px touch targets; 3-4
-font sizes/page) and **Material Design 3** (adaptive breakpoints, semantic color tokens with
-mandatory light+dark, elevation tokens, meaningful motion only, ≤5 top-level destinations).
+**Apple HIG** (clarity, deference, depth, feedback; 44×44px touch targets; 3-4 font sizes/page) and
+**Material Design 3** (adaptive breakpoints, semantic color tokens with mandatory light+dark,
+elevation tokens, meaningful motion only, ≤5 top-level destinations). **Web type is not
+system-only:** showcase stack Instrument Serif / Syne / Outfit / JetBrains Mono (see
+`docs/brand/showcase-ssot.md` + `docs/design-system.md`). iOS may approximate with system
+serif/mono; colors and voice still follow showcase.
 
 **WCAG 2.2 AA is the product goal** (not a fully axe-certified CI gate yet — jsx-a11y + partial stub axe).
 Apply across all four principles:

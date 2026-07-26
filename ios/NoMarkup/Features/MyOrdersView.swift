@@ -14,64 +14,72 @@ struct MyOrdersView: View {
     var body: some View {
         Group {
             if !auth.isAuthenticated {
-                ContentUnavailableView {
-                    Label("Sign in required", systemImage: "person.crop.circle.badge.exclamationmark")
-                } description: {
-                    Text("Sign in to view your marketplace orders and pay with Apple Pay.")
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "person.crop.circle.badge.exclamationmark",
+                    message: "Sign in to view marketplace orders and pay with Apple Pay when an auction ends or you buy now.",
+                    actionTitle: "Sign in"
+                ) {
+                    auth.signOut()
                 }
             } else if auth.isScaffoldSession {
-                ContentUnavailableView {
-                    Label("Scaffold session", systemImage: "hammer")
-                } description: {
-                    Text("Scaffold sessions have no API credentials. Sign in against a live gateway to load orders.")
-                }
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "hammer",
+                    message: "Browse-only mode has no API credentials. Sign in against a live gateway to load orders and complete escrow payment."
+                )
             } else if isLoading && orders.isEmpty {
                 ProgressView("Loading orders…")
+                    .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.textSecondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .brandScreenBackground()
             } else if let errorMessage, orders.isEmpty {
-                ContentUnavailableView {
-                    Label("Couldn’t load orders", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("Try again") {
-                        Task { await load() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(minHeight: 44)
+                BrandEmptyState(
+                    title: "Couldn’t load orders",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage,
+                    actionTitle: "Try again"
+                ) {
+                    Task { await load() }
                 }
             } else if orders.isEmpty {
-                ContentUnavailableView {
-                    Label("No orders yet", systemImage: "bag")
-                } description: {
-                    Text("When you buy with Buy Now or win an auction, orders show up here.")
-                }
+                BrandEmptyState(
+                    title: "No orders yet",
+                    systemImage: "bag",
+                    message: "When you buy with Buy Now or win a local goods auction, orders show up here. Escrow holds funds until pickup."
+                )
             } else {
                 List {
                     if let statusMessage {
                         Section {
                             Text(statusMessage)
                                 .font(.footnote)
-                                .foregroundStyle(statusIsError ? .red : .secondary)
+                                .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .listRowBackground(BrandTheme.navyElevated)
                         }
                     }
 
                     Section {
                         ForEach(orders) { order in
                             orderRow(order)
+                                .listRowBackground(BrandTheme.navyElevated)
                         }
                     } footer: {
-                        Text("Pending orders use Apple Pay (or card) via Stripe. Escrow holds funds until pickup is confirmed.")
+                        Text("Pending orders use Apple Pay (or card) via Stripe. Escrow holds funds until pickup is confirmed — fair trade, no platform markup on the bid.")
+                            .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
-                .listStyle(.insetGrouped)
+                .brandListBackground()
             }
         }
         .navigationTitle("Orders")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
     }
@@ -81,15 +89,17 @@ struct MyOrdersView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(order.displayTitle)
                 .font(.headline)
+                .foregroundStyle(BrandTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 Text(order.displayAmount)
                     .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
                 Spacer()
                 Text(order.displayStatus)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
             }
 
             if order.needsPayment {
@@ -98,6 +108,7 @@ struct MyOrdersView: View {
                 } label: {
                     if payingOrderID == order.id {
                         ProgressView()
+                            .tint(BrandTheme.navy)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Label("Pay with Apple Pay", systemImage: "apple.logo")
@@ -105,7 +116,7 @@ struct MyOrdersView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color("AccentColor"))
+                .tint(BrandTheme.accent)
                 .disabled(payingOrderID != nil)
                 .accessibilityHint("Opens Apple Pay or card checkout for this order")
             }
@@ -167,4 +178,6 @@ struct MyOrdersView: View {
         MyOrdersView()
             .environmentObject(AuthViewModel())
     }
+    .preferredColorScheme(.dark)
+    .tint(BrandTheme.accent)
 }

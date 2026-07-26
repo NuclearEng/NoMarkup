@@ -24,15 +24,15 @@ struct MyBidsView: View {
         Group {
             if auth.isScaffoldSession {
                 BrandEmptyState(
-                    title: "Scaffold session",
+                    title: "Sign in required",
                     systemImage: "hammer",
-                    message: "Scaffold sessions have no API credentials. Sign in against a live gateway to load your bids."
+                    message: "Browse-only mode has no API credentials. Sign in against a live gateway to load your bids."
                 )
             } else if needsSignIn || !auth.isAuthenticated {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "person.crop.circle.badge.exclamationmark",
-                    message: "Sign in to see marketplace and job bids you’ve placed.",
+                    message: "Sign in to see goods and service bids you’ve placed — reverse-auction jobs and local listings.",
                     actionTitle: "Sign in"
                 ) {
                     auth.signOut()
@@ -85,8 +85,8 @@ struct MyBidsView: View {
                 title: segment == .goods ? "No goods bids yet" : "No service bids yet",
                 systemImage: "hammer.circle",
                 message: segment == .goods
-                    ? "When you bid on marketplace listings, they show up here."
-                    : "When you bid on service jobs as a provider, they show up here."
+                    ? "When you bid up on local marketplace listings, they show up here."
+                    : "When you bid down on service jobs as a provider, they show up here — lower price wins."
             )
         } else {
             List {
@@ -100,7 +100,7 @@ struct MyBidsView: View {
                     } header: {
                         Text("\(listingBids.count) bid\(listingBids.count == 1 ? "" : "s")").brandSectionHeader()
                     } footer: {
-                        Text("Winning status reflects the live auction ladder on each listing.")
+                        Text("Forward auction: highest bid leads. Winning status reflects the live ladder on each listing.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 case .services:
@@ -112,7 +112,7 @@ struct MyBidsView: View {
                     } header: {
                         Text("\(jobBids.count) bid\(jobBids.count == 1 ? "" : "s")").brandSectionHeader()
                     } footer: {
-                        Text("Service bids are reverse-auction (lower price is more competitive).")
+                        Text("Reverse auction: providers compete down. Lower price is more competitive — the market sets the rate.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }

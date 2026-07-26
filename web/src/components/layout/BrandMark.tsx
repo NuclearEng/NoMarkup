@@ -7,7 +7,8 @@ interface BrandMarkProps {
 }
 
 /**
- * Geometric gold “N” inside dual concentric rings — app icon mark as pure SVG.
+ * Terminal monogram — bold gold **N** + downward chevron (reverse auction / price down).
+ * Matches app icon master 37 (`brand/ICON_DECISION.md`), not jewelry dual-ring seal.
  * Colors via currentColor / brand CSS vars only (no raw hex).
  */
 export function BrandMark({ className, title }: BrandMarkProps) {
@@ -23,39 +24,19 @@ export function BrandMark({ className, title }: BrandMarkProps) {
       aria-hidden={decorative ? true : undefined}
       aria-label={decorative ? undefined : title}
     >
-      {/* Outer ring */}
-      <circle
-        cx="16"
-        cy="16"
-        r="14.5"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        opacity="0.5"
+      {/* Geometric N — thick strokes for small sizes */}
+      <path
+        d="M9 24V8h2.6l7.2 11.4V8H23v16h-2.6l-7.2-11.4V24H9z"
+        fill="currentColor"
       />
-      {/* Inner ring — brighter gold via CSS var */}
-      <circle
-        cx="16"
-        cy="16"
-        r="11.25"
+      {/* Down chevron — reverse auction / costs down (showcase product signal) */}
+      <path
+        d="M12 25.5 L16 28.5 L20 25.5"
         stroke="var(--brand-gold-bright)"
-        strokeWidth="1.5"
-        opacity="0.95"
-      />
-      {/* Precision diamond (12 o’clock) — larger, matches app icon seal */}
-      <path
-        d="M16 1.1 L18.35 3.85 L16 6.6 L13.65 3.85 Z"
-        fill="var(--brand-gold-bright)"
-        opacity="0.98"
-      />
-      <path
-        d="M16 1.1 L18.35 3.85 L16 4.6 L13.65 3.85 Z"
-        fill="currentColor"
-        opacity="0.35"
-      />
-      {/* Geometric N */}
-      <path
-        d="M11 22.25V9.75h2.35l5.85 8.85V9.75H21.5v12.5h-2.35l-5.85-8.85v8.85H11z"
-        fill="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
       />
     </svg>
   );

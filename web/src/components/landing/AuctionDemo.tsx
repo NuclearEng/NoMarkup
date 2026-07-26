@@ -237,7 +237,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                 className="animate-savings-bounce inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold"
                 style={{
                   background: 'linear-gradient(135deg, rgba(201,168,76,0.25), rgba(201,168,76,0.08))',
-                  color: '#e4c566',
+                  color: 'var(--brand-gold-bright)',
                   border: '1px solid rgba(201,168,76,0.35)',
                   boxShadow: '0 0 12px rgba(201,168,76,0.15)',
                 }}
@@ -281,7 +281,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                   className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold',
                     isWinner
-                      ? 'bg-[rgba(201,168,76,0.2)] text-[#e4c566] ring-1 ring-[rgba(201,168,76,0.3)]'
+                      ? 'bg-[rgba(201,168,76,0.2)] text-brand-gold-bright ring-1 ring-[rgba(201,168,76,0.3)]'
                       : 'bg-white/10 text-white/70',
                   )}
                 >
@@ -293,7 +293,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                     <span
                       className={cn(
                         'truncate text-sm font-medium',
-                        isWinner ? 'text-[#e4c566]' : 'text-white/90',
+                        isWinner ? 'text-brand-gold-bright' : 'text-white/90',
                       )}
                     >
                       {bid.name}
@@ -305,7 +305,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                 <span
                   className={cn(
                     'shrink-0 text-sm font-bold tabular-nums',
-                    isWinner ? 'text-[#e4c566]' : 'text-emerald-400',
+                    isWinner ? 'text-brand-gold-bright' : 'text-emerald-400',
                   )}
                 >
                   {formatDollars(bid.price)}
@@ -313,7 +313,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
 
                 {/* Winner crown icon */}
                 {isWinner ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#e4c566" aria-hidden="true" className="shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--brand-gold-bright)" aria-hidden="true" className="shrink-0">
                     <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z" />
                     <path d="M5 19h14v2H5z" />
                   </svg>

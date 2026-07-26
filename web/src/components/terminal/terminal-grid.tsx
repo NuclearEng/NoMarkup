@@ -196,16 +196,16 @@ export function TerminalGrid({
                 key={wp.widgetId}
                 className={`group/widget overflow-hidden rounded-2xl transition-shadow ${
                   isEditing
-                    ? 'border border-dashed border-[var(--brand-gold)]/30 bg-[#0d1120] hover:border-[var(--brand-gold)]/50 hover:shadow-md'
-                    : 'bg-[#0d1120]'
+                    ? 'border border-dashed border-[var(--brand-gold)]/30 bg-secondary hover:border-[var(--brand-gold)]/50 hover:shadow-md'
+                    : 'bg-secondary'
                 }`}
                 style={
                   !isEditing
                     ? {
                         border: '1px solid transparent',
                         backgroundImage: isLive
-                          ? 'linear-gradient(#0d1120, #0d1120), linear-gradient(135deg, rgba(34,197,94,0.45), rgba(201,168,76,0.12), rgba(201,168,76,0.3))'
-                          : 'linear-gradient(#0d1120, #0d1120), linear-gradient(135deg, rgba(201,168,76,0.4), rgba(201,168,76,0.1), rgba(201,168,76,0.3))',
+                          ? 'linear-gradient(#0e1017, #0e1017), linear-gradient(135deg, rgba(34,197,94,0.45), rgba(201,168,76,0.12), rgba(201,168,76,0.3))'
+                          : 'linear-gradient(#0e1017, #0e1017), linear-gradient(135deg, rgba(201,168,76,0.4), rgba(201,168,76,0.1), rgba(201,168,76,0.3))',
                         backgroundOrigin: 'border-box',
                         backgroundClip: 'padding-box, border-box',
                         boxShadow:

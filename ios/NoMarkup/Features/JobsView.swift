@@ -44,6 +44,8 @@ struct JobsView: View {
                         .accessibilityLabel("Jobs section")
                     }
                 }
+                .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
                 .navigationDestination(for: JobSummary.self) { job in
                     JobDetailView(jobID: job.id, preview: job)
                 }
@@ -66,31 +68,32 @@ struct JobsView: View {
     private var browseContent: some View {
         if isLoading && jobs.isEmpty {
             ProgressView("Loading jobs…")
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .brandScreenBackground()
         } else if let errorMessage, jobs.isEmpty {
-            ContentUnavailableView {
-                Label("Couldn’t load jobs", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(errorMessage)
-            } actions: {
-                Button("Try again") {
-                    Task { await load(reset: true) }
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Couldn’t load jobs",
+                systemImage: "wifi.exclamationmark",
+                message: errorMessage,
+                actionTitle: "Try again"
+            ) {
+                Task { await load(reset: true) }
             }
         } else if jobs.isEmpty {
-            ContentUnavailableView {
-                Label("No open jobs", systemImage: "wrench.and.screwdriver")
-            } description: {
-                Text("No jobs match your search. Pull down to refresh, clear the search field, or try again later.")
-            }
+            BrandEmptyState(
+                title: "No open reverse auctions",
+                systemImage: "wrench.and.screwdriver",
+                message: "When customers post work, qualified providers compete here on price. Pull to refresh or clear search."
+            )
         } else {
             List {
                 Section {
-                    Text("Customers post jobs; providers compete on price (descending reverse-auction).")
+                    Text("Customers post jobs. Providers compete on price (descending reverse auction). Fair market rates — not lead-gen markup.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
                 }
 
                 Section {
@@ -99,26 +102,31 @@ struct JobsView: View {
                             JobRowView(job: job)
                         }
                         .frame(minHeight: 44)
+                        .listRowBackground(BrandTheme.navyElevated)
                         .accessibilityHint("Opens job detail")
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {
-                        Text("\(jobs.count) of \(total)")
+                        Text("\(jobs.count) of \(total)").brandSectionHeader()
                     } else {
-                        Text("Jobs")
+                        Text("Open jobs").brandSectionHeader()
                     }
                 }
 
-                Section("Location") {
+                Section {
                     Text(LocationPurposeCopy.systemWhenInUseUsageDescription)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
                     Text(LocationPurposeCopy.marketPickerPrePrompt)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Location").brandSectionHeader()
                 }
             }
-            .listStyle(.insetGrouped)
+            .brandListBackground()
         }
     }
 
@@ -127,56 +135,51 @@ struct JobsView: View {
     @ViewBuilder
     private var mineContent: some View {
         if auth.isScaffoldSession {
-            ContentUnavailableView {
-                Label("Sign in for My Jobs", systemImage: "person.crop.circle.badge.exclamationmark")
-            } description: {
-                Text("Scaffold session has no API token. Sign out and sign in with a real account to load jobs you posted.")
-            } actions: {
-                Button("Sign out to log in") {
-                    auth.signOut()
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Sign in for My Jobs",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                message: "Browse-only mode has no API token. Sign out and sign in with a real account to load jobs you posted.",
+                actionTitle: "Sign out to log in"
+            ) {
+                auth.signOut()
             }
         } else if needsSignIn {
-            ContentUnavailableView {
-                Label("Sign in required", systemImage: "lock.circle")
-            } description: {
-                Text("Your session expired or is missing. Sign in again to see jobs you posted.")
-            } actions: {
-                Button("Sign in") {
-                    auth.signOut()
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Sign in required",
+                systemImage: "lock.circle",
+                message: "Your session expired or is missing. Sign in again to see jobs you posted.",
+                actionTitle: "Sign in"
+            ) {
+                auth.signOut()
             }
         } else if isLoading && myJobs.isEmpty {
             ProgressView("Loading your jobs…")
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .brandScreenBackground()
         } else if let errorMessage, myJobs.isEmpty {
-            ContentUnavailableView {
-                Label("Couldn’t load your jobs", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(errorMessage)
-            } actions: {
-                Button("Try again") {
-                    Task { await load(reset: true) }
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
+            BrandEmptyState(
+                title: "Couldn’t load your jobs",
+                systemImage: "wifi.exclamationmark",
+                message: errorMessage,
+                actionTitle: "Try again"
+            ) {
+                Task { await load(reset: true) }
             }
         } else if myJobs.isEmpty {
-            ContentUnavailableView {
-                Label("No jobs yet", systemImage: "tray")
-            } description: {
-                Text("Jobs you post as a customer show up here. Pull to refresh after posting on the website.")
-            }
+            BrandEmptyState(
+                title: "No jobs yet",
+                systemImage: "tray",
+                message: "Jobs you post as a customer show up here. Providers bid down until the market sets the price. Pull to refresh after posting on the website."
+            )
         } else {
             List {
                 Section {
                     Text("Jobs you posted. Open a row for public detail; manage bids and contracts on the web.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
                 }
 
                 Section {
@@ -185,17 +188,18 @@ struct JobsView: View {
                             JobRowView(job: job)
                         }
                         .frame(minHeight: 44)
+                        .listRowBackground(BrandTheme.navyElevated)
                         .accessibilityHint("Opens job detail")
                     }
                 } header: {
                     if let total = myPagination?.resolvedTotal, total > 0 {
-                        Text("\(myJobs.count) of \(total)")
+                        Text("\(myJobs.count) of \(total)").brandSectionHeader()
                     } else {
-                        Text("My jobs")
+                        Text("My jobs").brandSectionHeader()
                     }
                 }
             }
-            .listStyle(.insetGrouped)
+            .brandListBackground()
         }
     }
 
@@ -256,18 +260,18 @@ private struct JobRowView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(job.displayTitle)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(BrandTheme.textPrimary)
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 if let price = job.displayPrice {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(price)
                             .font(.body.weight(.bold).monospacedDigit())
-                            .foregroundStyle(Color("AccentColor"))
+                            .foregroundStyle(BrandTheme.goldBright)
                         if let caption = job.priceCaption {
                             Text(caption)
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(BrandTheme.textSecondary)
                         }
                     }
                 }
@@ -283,7 +287,7 @@ private struct JobRowView: View {
                 if let category = job.categoryName, !category.isEmpty {
                     Text(category)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -292,18 +296,18 @@ private struct JobRowView: View {
                 if let location = job.locationLabel {
                     Label(location, systemImage: "mappin.and.ellipse")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
                 if let bids = job.bidCount {
                     Label("\(bids) bids", systemImage: "tag")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandTheme.textSecondary)
                 }
                 if let countdown = job.auctionCountdown {
                     Label(countdown, systemImage: "clock")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(countdown == "Ended" ? Color.secondary : Color("AccentColor"))
+                        .foregroundStyle(countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.goldBright)
                         .lineLimit(1)
                 }
             }
@@ -330,11 +334,11 @@ struct StatusChipView: View {
 
     private var foreground: Color {
         switch style {
-        case .success: return Color.green
-        case .info: return Color.blue
-        case .warning: return Color.orange
-        case .danger: return Color.red
-        case .neutral: return Color.secondary
+        case .success: return BrandTheme.success
+        case .info: return BrandTheme.bidActive
+        case .warning: return BrandTheme.warning
+        case .danger: return BrandTheme.destructive
+        case .neutral: return BrandTheme.textSecondary
         }
     }
 
@@ -346,4 +350,6 @@ struct StatusChipView: View {
 #Preview {
     JobsView()
         .environmentObject(AuthViewModel())
+        .preferredColorScheme(.dark)
+        .tint(BrandTheme.accent)
 }

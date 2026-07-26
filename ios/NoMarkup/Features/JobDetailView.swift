@@ -418,7 +418,7 @@ struct JobDetailView: View {
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
             } else if auth.isScaffoldSession {
-                Text("Scaffold session has no API credentials. Sign in against a live gateway to place bids.")
+                Text("Browse-only mode has no API credentials. Sign in against a live gateway to place bids.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                 TextField("Bid amount (USD)", text: $bidAmountText)
@@ -531,7 +531,7 @@ struct JobDetailView: View {
         guard !auth.isScaffoldSession else {
             bidStatusIsError = true
             bidStatusMessage =
-                "Scaffold session has no API credentials. Sign in against a live gateway to place bids."
+                "Browse-only mode has no API credentials. Sign in against a live gateway to place bids."
             return
         }
 

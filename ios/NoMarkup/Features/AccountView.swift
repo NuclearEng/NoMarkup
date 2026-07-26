@@ -13,9 +13,9 @@ struct AccountView: View {
             List {
                 Section {
                     if auth.isScaffoldSession {
-                        Label("Scaffold session", systemImage: "hammer.fill")
-                            .foregroundStyle(.orange)
-                        Text("Browse chrome only — API mutations and chat send stay disabled until you sign in with a real account.")
+                        Label("Browse-only session", systemImage: "hammer.fill")
+                            .foregroundStyle(BrandTheme.warning)
+                        Text("Layout preview only — API mutations and chat send stay disabled until you sign in with a real account.")
                             .font(.caption)
                             .foregroundStyle(BrandTheme.textSecondary)
                     } else if auth.isAuthenticated {
@@ -95,7 +95,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityHint("Read-only list of account notifications")
 
-                    Text("Physical goods and services use Apple Pay / Stripe (not App Store IAP).")
+                    Text("Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). The market sets the price — not a platform markup.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {

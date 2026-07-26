@@ -56,7 +56,7 @@ describe('demo/auction/page', () => {
     render(createElement(AuctionDemoPage));
 
     expect(screen.getByRole('heading', { name: /Kitchen Renovation/ })).toBeDefined();
-    expect(screen.getByText('Live Demo')).toBeDefined();
+    expect(screen.getByText(/Live Demo/i)).toBeDefined();
     expect(screen.getByTestId('terminal-grid')).toBeDefined();
     expect(screen.getByTestId('terminal-toolbar')).toBeDefined();
     // Pause button is rendered initially because the simulation auto-starts

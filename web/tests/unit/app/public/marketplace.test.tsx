@@ -173,7 +173,7 @@ describe('ListingBrowseClient', () => {
     renderClient();
     expect(screen.getByRole('heading', { name: /The .*Live.* Marketplace/i })).toBeDefined();
     expect(
-      screen.getByText(/Auctions are watched, not posted/i),
+      screen.getByText(/the market sets the price, not the markup/i),
     ).toBeDefined();
   });
 

@@ -80,8 +80,31 @@
 | **Body** | Outfit | 300–700 | Body, UI copy |
 | **Mono** | JetBrains Mono | 400–600 | Section labels, prices, timers, data |
 
+**Web:** loaded via `next/font` in `web/src/app/layout.tsx`; CSS maps `--font-display` / `--font-heading` / `--font-sans` / `--font-mono`.  
+**iOS:** system serif / monospaced approximations for hero + labels is acceptable on-device (no custom font bundle required for B0); voice and color must still match.
+
 **Easings (showcase):**  
 `--ease-out: cubic-bezier(0.16, 1, 0.3, 1)` · `--ease-in-out: cubic-bezier(0.65, 0, 0.35, 1)`
+
+---
+
+## App icon
+
+| Item | Spec |
+|------|------|
+| **Master** | Candidate **37** — see `brand/ICON_DECISION.md` |
+| **Mark** | High-chroma amber-gold **N** + optional down-chevron (reverse auction) |
+| **Field** | **Pure black `#000000`** (terminal) — sampled on shipped 1024 masters |
+| **Not** | Jewelry diamond-only seal, champagne silk, UHNW vault plaque |
+
+### Icon canvas: pure black vs shell `#07080b`
+
+| Layer | Hex | Why |
+|-------|-----|-----|
+| **App icon outer field** | `#000000` | Terminal SpringBoard pop; master 37 and shipped `app-icon-1024.png` (brand / web / iOS) are pure black at corners |
+| **In-product dark shell** | `#07080b` | Showcase body / nav / chrome — slightly lifted so UI is not crushed pure black |
+
+Do **not** “correct” icon canvas to `#07080b` without a deliberate brand decision. Code-generated favicons (`web/src/app/icon.tsx`, `apple-icon.tsx`) currently use shell `#07080b` — acceptable as a small browser tile approximation, not a second master.
 
 ---
 
@@ -89,11 +112,46 @@
 
 - Prefer: “The market sets the price”, “Not the markup”, reverse auction, fair market rates, no middleman / no lead-gen markup.  
 - Avoid: private vault, billionaire-only, jewelry metaphors as the sole story.  
-- Full mission pillars: `docs/brand/mission-brand-north-star.md` (subordinate to this SSOT for visuals).
+- Full mission pillars: `docs/brand/mission-brand-north-star.md` (subordinate to this SSOT for visuals).  
+- UHNW trust bar: `docs/brand/billionaire-seller-standard.md` (craft bar for high-ticket rails — **not** the product icon story).
 
 ---
 
-## Surface inventory
+## Surface matrix (repo scan)
+
+Status key: **aligned** · **partial** · **out of scope** · **docs fixed** (was wrong, corrected this pass).
+
+| Surface | Path / note | Status |
+|---------|-------------|--------|
+| Showcase (master) | `qa/showcase/index.html` | **aligned** |
+| Token SSOT | this file | **aligned** |
+| Mission north star | `docs/brand/mission-brand-north-star.md` | **aligned** (narrative; icon brief points at master 37) |
+| Billionaire-seller bar | `docs/brand/billionaire-seller-standard.md` | **partial** — craft bar OK; icon lines must not override terminal master |
+| Design system doc | `docs/design-system.md` | **aligned** (showcase stack + tokens) |
+| CLAUDE.md §4 | HIG + brand type | **aligned** (showcase stack named; HIG “clarity” ≠ system-only type) |
+| Web dark tokens | `web/src/styles/globals.css` `.dark` | **aligned** (`#07080b`, gold scale, font maps) |
+| Web fonts | `web/src/app/layout.tsx` + Tailwind `@theme` | **aligned** Instrument / Syne / Outfit / JetBrains |
+| Wordmark | `web/src/components/layout/Logo.tsx` | **aligned** No + gold Markup, Syne |
+| Brand mark SVG | `web/src/components/layout/BrandMark.tsx` | **partial** — dual rings + crown diamond (seal-era); not terminal monogram |
+| Landing hero | `web/src/app/(public)/LandingPageClient.tsx` | **aligned** tagline + `font-display` + mono eyebrow |
+| PWA manifest | `web/public/manifest.json` | **aligned** `theme_color` / `background_color` `#07080b` |
+| Next `themeColor` | `web/src/app/layout.tsx` | **aligned** `#07080b` |
+| Favicon / Apple touch | `web/src/app/icon.tsx`, `apple-icon.tsx` | **partial** — N on `#07080b`, no chevron terminal art |
+| App icon 1024 masters | `brand/`, `web/public/`, iOS AppIcon | **aligned** pure black field, terminal N (master 37) |
+| PWA icon PNGs | `web/public/icons/icon-*.png` | **aligned** if generated from master (do not reintroduce diamond seal) |
+| iOS `BrandTheme` | `ios/NoMarkup/Core/BrandTheme.swift` | **aligned** hex table |
+| iOS AccentColor | `Assets.xcassets/AccentColor` | **aligned** brand gold (verify catalog if CTAs drift) |
+| iOS home / login voice | `HomeView.swift` (tagline shipped) | **aligned** voice; system serif ≈ display |
+| Launch board brand lines | `docs/compliance/launch-board.md` | **docs fixed** — was “SOTA seal / diamond” |
+| iOS README brand | `ios/README.md` | **docs fixed** — was diamond seal as current |
+| Security / audit narratives | various `docs/` | **out of scope** unless they claim *current* brand wrong |
+| Light-mode shell | `:root` light tokens | **partial** — gold tokens shared; light chrome is product UI, not showcase dark master |
+| Email / transactional HTML | if any | **out of scope** unless brand campaign |
+| Android / other clients | — | **out of scope** |
+
+---
+
+## Surface inventory (paths)
 
 | Surface | Path | Must match |
 |---------|------|------------|
@@ -103,7 +161,7 @@
 | Wordmark | `web/src/components/layout/Logo.tsx` | No + gold Markup, Syne |
 | iOS theme | `ios/NoMarkup/Core/BrandTheme.swift` | Hex table above |
 | Design system notes | `docs/design-system.md` | Points here for brand |
-| App icon | Terminal amber **N** on black (see `brand/ICON_DECISION.md` master 37) | Not jewelry diamond as sole story |
+| App icon | Terminal amber **N** on **pure black** (`brand/ICON_DECISION.md` master 37) | Not jewelry diamond as sole story |
 | Landing hero | `web/src/app/(public)/LandingPageClient.tsx` | Tagline + Instrument display + mono labels |
 | iOS home / login | `HomeView.swift`, `LoginView.swift` | Same voice as showcase |
 
@@ -114,4 +172,5 @@
 1. Edit showcase first (or in the same PR as token code).  
 2. Update this file’s tables.  
 3. Propagate web + iOS + any hardcoded hex (`#07080b`, gold scale).  
-4. Do not invent a third palette in feature work.
+4. Icon masters: keep pure black canvas unless explicitly revised in `ICON_DECISION.md`.  
+5. Do not invent a third palette in feature work.

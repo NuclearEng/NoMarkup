@@ -12,7 +12,8 @@ export default function NotFound() {
           Page not found
         </h1>
         <p className="mt-4 text-base text-zinc-400">
-          Sorry, we couldn&apos;t find the page you&apos;re looking for.
+          This page isn&apos;t on the market. Head home, or browse open jobs where providers compete
+          on price.
         </p>
         <div className="mt-8 flex items-center justify-center gap-4">
           <Link

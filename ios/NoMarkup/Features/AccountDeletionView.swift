@@ -19,16 +19,21 @@ struct AccountDeletionView: View {
             Section {
                 Text("Requesting deletion schedules permanent removal of your NoMarkup account after a grace period (typically 30 days on the server). You can cancel during the grace window on web or a future app build.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            } header: {
+                Text("What happens").brandSectionHeader()
             }
 
-            Section("Confirm") {
+            Section {
                 Toggle("I understand this cannot be undone after the grace period ends.", isOn: $acknowledge)
                     .frame(minHeight: 44)
                 TextField("Type \(requiredPhrase) to confirm", text: $confirmPhrase)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
+                    .foregroundStyle(BrandTheme.textPrimary)
                     .frame(minHeight: 44)
+            } header: {
+                Text("Confirm").brandSectionHeader()
             }
 
             Section {
@@ -38,6 +43,7 @@ struct AccountDeletionView: View {
                     HStack {
                         if isSubmitting {
                             ProgressView()
+                                .tint(BrandTheme.destructive)
                         }
                         Text("Request account deletion")
                             .frame(maxWidth: .infinity)
@@ -51,19 +57,25 @@ struct AccountDeletionView: View {
                 Section {
                     Text(resultMessage)
                         .font(.footnote)
-                        .foregroundStyle(resultIsError ? .red : .secondary)
+                        .foregroundStyle(resultIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                 }
             }
 
-            Section("Also available") {
+            Section {
                 Link("Open web account settings", destination: AppConfig.publicWebBaseURL.appending(path: "settings/account"))
                 Link("Privacy Policy", destination: AppConfig.privacyURL)
+            } header: {
+                Text("Also available").brandSectionHeader()
             }
         }
+        .brandListBackground()
         .navigationTitle("Delete Account")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(BrandTheme.accent)
     }
 
     private var canSubmit: Bool {
@@ -81,7 +93,7 @@ struct AccountDeletionView: View {
         if auth.isScaffoldSession {
             resultIsError = true
             resultMessage =
-                "Scaffold session has no API credentials. Sign in against a live gateway, or use web Settings → Account to request deletion."
+                "Browse-only mode has no API credentials. Sign in against a live gateway, or use web Settings → Account to request deletion."
             return
         }
 

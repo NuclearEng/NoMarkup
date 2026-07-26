@@ -62,7 +62,7 @@ final class AuthViewModel: ObservableObject {
         errorMessage = nil
         isScaffoldSession = true
         isAuthenticated = true
-        statusMessage = "Scaffold session — API calls still need a real login."
+        statusMessage = "Browse-only mode — API calls still need a real login."
     }
 
     func signOut() {

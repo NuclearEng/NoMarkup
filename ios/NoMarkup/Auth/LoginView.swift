@@ -152,7 +152,7 @@ struct LoginView: View {
     }
 
     private var scaffoldBypass: some View {
-        Button("Browse native chrome (scaffold)") {
+        Button("Browse without signing in") {
             auth.enterScaffoldSession()
         }
         .frame(maxWidth: .infinity)
