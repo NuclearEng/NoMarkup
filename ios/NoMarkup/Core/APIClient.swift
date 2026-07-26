@@ -310,6 +310,39 @@ actor APIClient {
         )
     }
 
+    // MARK: - Rail A payments (Stripe / Apple Pay)
+
+    /// POST `/api/v1/listings/{id}/buy-now` — auth required.
+    /// Returns order + PaymentIntent `client_secret` for Apple Pay confirmation.
+    /// Idempotency-Key: `buy-now:{listingId}` (MON-06/22).
+    func buyNow(listingId: String) async throws -> BuyNowResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "listings", listingId, "buy-now"],
+            body: EmptyJSONObject(),
+            authorized: .required,
+            headers: ["Idempotency-Key": "buy-now:\(listingId)"]
+        )
+    }
+
+    /// POST `/api/v1/orders/{id}/pay` — mint/resume PI for `pending_payment` orders.
+    /// Idempotency-Key: `order-pay:{orderId}`.
+    func payOrder(orderId: String) async throws -> PaymentIntentEnvelope {
+        try await postJSON(
+            pathComponents: ["api", "v1", "orders", orderId, "pay"],
+            body: EmptyJSONObject(),
+            authorized: .required,
+            headers: ["Idempotency-Key": "order-pay:\(orderId)"]
+        )
+    }
+
+    /// GET `/api/v1/me/orders` — buyer/seller order list (Bearer required).
+    func fetchMyOrders() async throws -> MyOrdersResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "me", "orders"],
+            authorized: true
+        )
+    }
+
     // MARK: - Helpers
 
     private enum AuthMode {
@@ -344,9 +377,15 @@ actor APIClient {
     private func postJSON<Body: Encodable, T: Decodable>(
         pathComponents: [String],
         body: Body,
-        authorized: AuthMode
+        authorized: AuthMode,
+        headers: [String: String] = [:]
     ) async throws -> T {
-        let data = try await postData(pathComponents: pathComponents, body: body, authorized: authorized)
+        let data = try await postData(
+            pathComponents: pathComponents,
+            body: body,
+            authorized: authorized,
+            headers: headers
+        )
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
@@ -359,14 +398,16 @@ actor APIClient {
     private func postData<Body: Encodable>(
         pathComponents: [String],
         body: Body,
-        authorized: AuthMode
+        authorized: AuthMode,
+        headers: [String: String] = [:]
     ) async throws -> Data {
         try await perform(
             method: "POST",
             pathComponents: pathComponents,
             query: [],
             body: body,
-            auth: authorized
+            auth: authorized,
+            headers: headers
         )
     }
 
@@ -375,7 +416,8 @@ actor APIClient {
         pathComponents: [String],
         query: [URLQueryItem],
         body: Body?,
-        auth: AuthMode
+        auth: AuthMode,
+        headers: [String: String] = [:]
     ) async throws -> Data {
         var url = AppConfig.apiBaseURL
         for component in pathComponents {
@@ -405,7 +447,11 @@ actor APIClient {
                 throw APIClientError.unauthorized
             }
         }
-        request.timeoutInterval = 20
+        request.timeoutInterval = 30
+
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
 
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -459,6 +505,9 @@ actor APIClient {
 
 /// Empty body placeholder for GET-style `perform` calls.
 private struct EmptyBody: Encodable {}
+
+/// Encodes as `{}` for POSTs that require a JSON content-type but no fields.
+private struct EmptyJSONObject: Encodable {}
 
 // MARK: - Models
 

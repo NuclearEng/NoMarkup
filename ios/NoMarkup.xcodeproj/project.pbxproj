@@ -31,6 +31,10 @@
 		A10000000000000000000016 /* ListingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* ListingDetailView.swift */; };
 		A10000000000000000000017 /* JobDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* JobDetailView.swift */; };
 		A10000000000000000000020 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* FeatureFlags.swift */; };
+		A10000000000000000000021 /* RailACheckout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* RailACheckout.swift */; };
+		A10000000000000000000022 /* MyOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* MyOrdersView.swift */; };
+		A10000000000000000000023 /* PassKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* PassKit.framework */; };
+		A10000000000000000000024 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000002 /* StripePaymentSheet */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,6 +64,9 @@
 		B10000000000000000000018 /* ListingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingDetailView.swift; sourceTree = "<group>"; };
 		B10000000000000000000019 /* JobDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDetailView.swift; sourceTree = "<group>"; };
 		B10000000000000000000020 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* RailACheckout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailACheckout.swift; sourceTree = "<group>"; };
+		B10000000000000000000022 /* MyOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyOrdersView.swift; sourceTree = "<group>"; };
+		B10000000000000000000023 /* PassKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PassKit.framework; path = System/Library/Frameworks/PassKit.framework; sourceTree = SDKROOT; };
 		C10000000000000000000001 /* NoMarkup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoMarkup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -71,6 +78,8 @@
 				A10000000000000000000012 /* AuthenticationServices.framework in Frameworks */,
 				A10000000000000000000013 /* SafariServices.framework in Frameworks */,
 				A10000000000000000000014 /* Security.framework in Frameworks */,
+				A10000000000000000000023 /* PassKit.framework in Frameworks */,
+				A10000000000000000000024 /* StripePaymentSheet in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,6 +116,7 @@
 				B10000000000000000000012 /* AuthenticationServices.framework */,
 				B10000000000000000000013 /* SafariServices.framework */,
 				B10000000000000000000014 /* Security.framework */,
+				B10000000000000000000023 /* PassKit.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -127,6 +137,7 @@
 				B10000000000000000000004 /* APIClient.swift */,
 				B10000000000000000000017 /* Models.swift */,
 				B10000000000000000000020 /* FeatureFlags.swift */,
+				B10000000000000000000021 /* RailACheckout.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -152,6 +163,7 @@
 				B10000000000000000000019 /* JobDetailView.swift */,
 				B1000000000000000000000C /* MessagesView.swift */,
 				B1000000000000000000000D /* AccountView.swift */,
+				B10000000000000000000022 /* MyOrdersView.swift */,
 				B1000000000000000000000E /* LegalWebView.swift */,
 				B1000000000000000000000F /* AccountDeletionView.swift */,
 			);
@@ -182,6 +194,9 @@
 			dependencies = (
 			);
 			name = NoMarkup;
+			packageProductDependencies = (
+				P10000000000000000000002 /* StripePaymentSheet */,
+			);
 			productName = NoMarkup;
 			productReference = C10000000000000000000001 /* NoMarkup.app */;
 			productType = "com.apple.product-type.application";
@@ -210,6 +225,9 @@
 				Base,
 			);
 			mainGroup = E10000000000000000000001;
+			packageReferences = (
+				P10000000000000000000001 /* XCRemoteSwiftPackageReference "stripe-ios" */,
+			);
 			productRefGroup = E10000000000000000000004 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -255,6 +273,8 @@
 				A10000000000000000000016 /* ListingDetailView.swift in Sources */,
 				A10000000000000000000017 /* JobDetailView.swift in Sources */,
 				A10000000000000000000020 /* FeatureFlags.swift in Sources */,
+				A10000000000000000000021 /* RailACheckout.swift in Sources */,
+				A10000000000000000000022 /* MyOrdersView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -472,6 +492,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		P10000000000000000000001 /* XCRemoteSwiftPackageReference "stripe-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 24.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		P10000000000000000000002 /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P10000000000000000000001 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = StripePaymentSheet;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F10000000000000000000005 /* Project object */;
 }

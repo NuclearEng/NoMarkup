@@ -508,3 +508,107 @@ struct ChatChannelsResponse: Codable, Sendable {
 struct ChatMessagesResponse: Codable, Sendable {
     let messages: [ChatMessage]
 }
+
+// MARK: - Marketplace orders & payment (Rail A — Stripe / Apple Pay)
+
+/// Response from `POST /api/v1/listings/{id}/buy-now` and `POST /api/v1/orders/{id}/pay`.
+/// Gateway attaches a PaymentIntent `client_secret` for native Apple Pay confirmation.
+struct PaymentIntentEnvelope: Codable, Sendable {
+    var orderId: String?
+    var clientSecret: String?
+    var paymentIntentId: String?
+    var paymentRequired: Bool?
+    var totalCents: Int64?
+    var amountCents: Int64?
+    var feeCents: Int64?
+    var taxCents: Int64?
+    var escrowStatus: String?
+    var chargeError: String?
+
+    /// True when the secret looks like a real Stripe PaymentIntent client secret.
+    var hasConfirmableSecret: Bool {
+        guard let secret = clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !secret.isEmpty else {
+            return false
+        }
+        // Shape: pi_…_secret_…
+        return secret.hasPrefix("pi_") && secret.contains("_secret_")
+    }
+
+    var displayTotalCents: Int64? {
+        if let totalCents, totalCents > 0 { return totalCents }
+        if let amountCents, amountCents > 0 { return amountCents }
+        return nil
+    }
+}
+
+/// Buy-now closeout: order created in `pending_payment` + optional PI secret.
+struct BuyNowResponse: Codable, Sendable {
+    var orderId: String?
+    var escrowStatus: String?
+    var clientSecret: String?
+    var paymentIntentId: String?
+    var paymentRequired: Bool?
+    var totalCents: Int64?
+    var chargeError: String?
+
+    var envelope: PaymentIntentEnvelope {
+        PaymentIntentEnvelope(
+            orderId: orderId,
+            clientSecret: clientSecret,
+            paymentIntentId: paymentIntentId,
+            paymentRequired: paymentRequired,
+            totalCents: totalCents,
+            amountCents: nil,
+            feeCents: nil,
+            taxCents: nil,
+            escrowStatus: escrowStatus,
+            chargeError: chargeError
+        )
+    }
+}
+
+/// Summary row from `GET /api/v1/me/orders`.
+struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var orderId: String?
+    var listingId: String?
+    var listingTitle: String?
+    var buyerId: String?
+    var sellerId: String?
+    var sellerDisplayName: String?
+    var escrowStatus: String?
+    var status: String?
+    var amountCents: Int64?
+    var feeCents: Int64?
+    var platformFeeCents: Int64?
+    var sellerPayoutCents: Int64?
+    var paymentIntentId: String?
+    var pickupCity: String?
+    var pickupState: String?
+
+    var displayTitle: String {
+        let t = listingTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "Order" : t
+    }
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+
+    var needsPayment: Bool {
+        let escrow = (escrowStatus ?? "").lowercased()
+        let mapped = (status ?? "").lowercased()
+        return escrow == "pending_payment" || mapped == "pending"
+    }
+
+    var displayStatus: String {
+        if needsPayment { return "Awaiting payment" }
+        let raw = escrowStatus ?? status ?? "unknown"
+        return raw.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+struct MyOrdersResponse: Codable, Sendable {
+    let orders: [ListingOrderSummary]
+}

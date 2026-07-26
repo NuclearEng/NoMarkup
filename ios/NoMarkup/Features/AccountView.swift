@@ -53,6 +53,20 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                 }
 
+                Section("Orders & payments") {
+                    NavigationLink {
+                        MyOrdersView()
+                    } label: {
+                        Label("Orders", systemImage: "bag")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("View marketplace orders and pay pending ones with Apple Pay")
+
+                    Text("Physical goods and services use Apple Pay / Stripe (not App Store IAP).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Your data") {
                     Button {
                         Task { await exportData() }
@@ -97,7 +111,11 @@ struct AccountView: View {
                 Section("About") {
                     LabeledContent("Version", value: "\(AppConfig.shortVersion) (\(AppConfig.buildNumber))")
                     LabeledContent("API", value: AppConfig.apiBaseURLString)
-                    Text("StoreKit / IAP is intentionally not included in this scaffold. See dual-rail payment design.")
+                    LabeledContent(
+                        "Stripe key",
+                        value: AppConfig.stripePublishableKey.isEmpty ? "not set" : "configured"
+                    )
+                    Text("Rail A: Apple Pay via Stripe. StoreKit / IAP intentionally omitted (digital free-tier only).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

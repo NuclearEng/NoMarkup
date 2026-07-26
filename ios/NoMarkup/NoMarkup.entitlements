@@ -7,5 +7,10 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!-- Apple Pay (Rail A) — merchant ID must match AppConfig.applePayMerchantId + Stripe Dashboard. -->
+	<key>com.apple.developer.in-app-payments</key>
+	<array>
+		<string>merchant.com.nomarkup.app</string>
+	</array>
 </dict>
 </plist>

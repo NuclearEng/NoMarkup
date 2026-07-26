@@ -18,6 +18,10 @@ struct ListingDetailView: View {
     @State private var bidStatusMessage: String?
     @State private var bidStatusIsError = false
 
+    @State private var isBuyingNow = false
+    @State private var buyNowStatusMessage: String?
+    @State private var buyNowStatusIsError = false
+
     init(listingID: String, preview: ListingSummary? = nil) {
         self.listingID = listingID
         self.preview = preview
@@ -158,6 +162,8 @@ struct ListingDetailView: View {
                 }
             }
 
+            buyNowSection(listing)
+
             placeBidSection(listing)
 
             Section {
@@ -177,6 +183,63 @@ struct ListingDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder
+    private func buyNowSection(_ listing: ListingDetail) -> some View {
+        if let buyNowCents = listing.buyNowPriceCents, buyNowCents > 0 {
+            let priceLabel = MoneyFormat.usd(cents: buyNowCents)
+            let isActive = (listing.status ?? "").lowercased() == "active"
+
+            Section {
+                if !auth.isAuthenticated {
+                    Text("Sign in to buy now with Apple Pay.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if auth.isScaffoldSession {
+                    Text("Scaffold session has no API credentials. Sign in against a live gateway to pay.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button {} label: {
+                        Label("Buy now \(priceLabel)", systemImage: "apple.logo")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .disabled(true)
+                } else if !isActive {
+                    Text("Buy now is only available while the auction is active.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Pays \(priceLabel) via Apple Pay (or card). Funds are held in escrow until you confirm pickup. Local pickup only.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    if let buyNowStatusMessage {
+                        Text(buyNowStatusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(buyNowStatusIsError ? .red : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button {
+                        Task { await buyNow() }
+                    } label: {
+                        if isBuyingNow {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Label("Buy now \(priceLabel)", systemImage: "apple.logo")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isBuyingNow || isPlacingBid)
+                    .accessibilityLabel("Buy now for \(priceLabel) with Apple Pay")
+                }
+            } header: {
+                Text("Buy now")
+            }
+        }
     }
 
     @ViewBuilder
@@ -229,10 +292,72 @@ struct ListingDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isPlacingBid || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(
+                    isPlacingBid
+                        || isBuyingNow
+                        || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
             }
         } header: {
             Text("Place a bid")
+        }
+    }
+
+    @MainActor
+    private func buyNow() async {
+        buyNowStatusMessage = nil
+        buyNowStatusIsError = false
+
+        guard !auth.isScaffoldSession else {
+            buyNowStatusIsError = true
+            buyNowStatusMessage =
+                "Scaffold session has no API credentials. Sign in against a live gateway to pay."
+            return
+        }
+
+        isBuyingNow = true
+        defer { isBuyingNow = false }
+
+        do {
+            let response = try await APIClient.shared.buyNow(listingId: listingID)
+            let envelope = response.envelope
+
+            if let secret = envelope.clientSecret, envelope.hasConfirmableSecret {
+                try await RailACheckout.presentPaymentSheet(clientSecret: secret)
+                buyNowStatusIsError = false
+                buyNowStatusMessage =
+                    "Payment complete — order \(response.orderId ?? "") is held in escrow until pickup."
+                await load()
+                return
+            }
+
+            // Order created but PI not attachable — buyer can retry from Orders.
+            if let orderId = response.orderId, !orderId.isEmpty {
+                buyNowStatusIsError = true
+                if let chargeError = response.chargeError, !chargeError.isEmpty {
+                    buyNowStatusMessage =
+                        "Order \(orderId) created, but payment could not start (\(chargeError)). Open Account → Orders to pay with Apple Pay."
+                } else {
+                    buyNowStatusMessage =
+                        "Order \(orderId) created and awaits payment. Open Account → Orders to pay with Apple Pay."
+                }
+                await load()
+                return
+            }
+
+            buyNowStatusIsError = true
+            buyNowStatusMessage = "Buy now did not return an order. Please try again."
+        } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+            buyNowStatusIsError = false
+            buyNowStatusMessage =
+                "Payment canceled. If an order was created, finish paying under Account → Orders."
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            buyNowStatusIsError = true
+            buyNowStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            buyNowStatusIsError = true
+            buyNowStatusMessage = error.localizedDescription
         }
     }
 

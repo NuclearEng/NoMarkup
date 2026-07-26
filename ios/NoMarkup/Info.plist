@@ -47,9 +47,15 @@
 	</array>
 	<key>UIRequiresFullScreen</key>
 	<false/>
-	<!-- Release/API override. Debug falls back to http://localhost:8081 via AppConfig when unset. -->
+	<!-- Release/API override. Debug falls back to http://localhost:8080 via AppConfig when unset. -->
 	<key>APIBaseURL</key>
 	<string>https://api.no-markup.com</string>
+	<!-- Stripe publishable key (pk_test_… / pk_live_…). Override with NOMARKUP_STRIPE_PUBLISHABLE_KEY. -->
+	<key>StripePublishableKey</key>
+	<string></string>
+	<!-- Apple Pay merchant ID — register in Apple Developer + Stripe Dashboard. -->
+	<key>ApplePayMerchantId</key>
+	<string>merchant.com.nomarkup.app</string>
 	<!--
 	  Location: single When-In-Use key covers market picker + job-site check-in.
 	  Check-in-only draft (inventory): "NoMarkup uses your location to confirm you arrived at the job site. Check-in location is stored with the contract for dispute protection."

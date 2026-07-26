@@ -2,8 +2,8 @@
 
 **Program:** `/app-store-launch-readiness`  
 **Updated:** 2026-07-26  
-**Current stage:** **Stage C partial** — B0–B4 + B3+/write (report + bid) + B6 docs + free-tier cut; residual: **B6 ops** (signing, screenshots, ASC) + **pay** (Stripe Rail A) + live review backend + **device smoke**  
-**Binary readiness:** **NOT READY** for App Review (ASC assets, signing, payment not native, smoke not signed off)  
+**Current stage:** **Stage C partial** — B0–B4 + B3+/write + **Rail A Apple Pay** + B6 docs + free-tier cut; residual: **B6 ops** (signing, screenshots, ASC, merchant ID) + live review backend + **device smoke**  
+**Binary readiness:** **NOT READY** for App Review (ASC assets, team signing, Apple Pay merchant + Stripe key on device, smoke not signed off)  
 **v1 digital cut:** **free-tier-only** (StoreKit deferred) — [`v1-ios-product-cut.md`](./v1-ios-product-cut.md)
 
 ---
@@ -24,6 +24,7 @@ All review-logs phase-0…4b, privacy inventory, capability matrix, dual-rail Op
 | B3 | Public catalog list/detail | **done** |
 | B3+ | Auth my jobs + chat channels/messages | **done** |
 | B3++ | Listing report + job/listing place bid | **done** |
+| B3+++ | Rail A Apple Pay (PaymentSheet + buy-now / order pay) | **done** (code); device merchant ID + `pk_` still ops |
 | B4 | Hard-off regulated flags | **done** |
 | B5 | Push | **deferred** |
 | B6 | ASC packaging docs | **done** (docs); ops residual open |
@@ -37,7 +38,7 @@ All review-logs phase-0…4b, privacy inventory, capability matrix, dual-rail Op
 | Launch verification report | **done** — [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) |
 | v1 free-tier-only product cut | **done** — [`v1-ios-product-cut.md`](./v1-ios-product-cut.md) |
 | Binary readiness label | **NOT READY** (honest) |
-| Device smoke matrix | **checklist only** — not human-executed/signed |
+| Device smoke matrix | **checklist only** — not human-executed/signed — [`device-smoke-checklist.md`](./device-smoke-checklist.md) |
 | ASC free-tier notes pasted | **open** (ops) |
 | Remaining submit blockers | See [`submission-blockers.md`](./submission-blockers.md) |
 
@@ -62,16 +63,17 @@ cd ios && xcodebuild -scheme NoMarkup -project NoMarkup.xcodeproj \
 | `asc-packaging-checklist.md` | ASC pre-submit |
 | `app-review-notes.md` | Review paste + native section |
 | `submission-blockers.md` | One-pager |
-| `ios-payment-rails-design.md` | Dual-rail + Option A |
-| `ios/README.md` | How to build |
+| `ios-payment-rails-design.md` | Dual-rail + Option A + Apple Pay native path |
+| `ios/README.md` | How to build · App Icon · Apple Pay setup · device smoke |
+| `device-smoke-checklist.md` | Simulator/device Pass/Fail matrix |
 
 ---
 
 ## Next (human-gated)
 
 1. Apple Developer team + bundle id + SIWA App ID (`APPLE_NATIVE_CLIENT_ID`)  
-2. Capture screenshots from Simulator; fill App Icon  
-3. Paste free-tier-only Review Notes (cut is **documented** — confirm in ASC)  
-4. Staging always-on for App Review  
-5. Execute Stage C **device smoke matrix** and sign off  
-6. Complete bid/pay write funnel (or narrow ASC claims to browse + account scope)
+2. Apple Pay merchant ID `merchant.com.nomarkup.app` + Stripe Dashboard Apple Pay + `NOMARKUP_STRIPE_PUBLISHABLE_KEY`  
+3. Capture screenshots from Simulator; App Icon placeholder present — replace if marketing ships final art  
+4. Paste free-tier-only Review Notes (cut is **documented** — confirm in ASC)  
+5. Staging always-on for App Review  
+6. Execute Stage C **device smoke matrix** (incl. Buy now / Orders pay) and sign off

@@ -32,8 +32,9 @@
 **Does not own:** unlocking purely digital in-app capabilities on iOS.
 
 **Multiplatform parity:** Web and future native clients share the same payment
-service contracts (`services/payment`, gateway handlers). Native clients use
-Stripe mobile SDKs for PaymentSheet / Apple Pay for **Rail A** only.
+service contracts (`services/payment`, gateway handlers). Native iOS uses
+**Stripe PaymentSheet with Apple Pay preferred** (card / Link as fallback) for
+**Rail A** only — see § Apple Pay / native checkout below.
 
 ---
 
@@ -80,11 +81,26 @@ iOS packaging is a **separate** configuration, not a silent change to web defaul
 
 ---
 
-## Apple Pay
+## Apple Pay / native checkout (shipped path)
 
 - Apple Pay is a **wallet on Stripe** for Rail A (and web), not a separate
-  processor.
-- Domain association:
+  processor — **not** StoreKit IAP.
+- **iOS native (current):**
+  1. `POST /api/v1/listings/{id}/buy-now` → `order_id` + PaymentIntent
+     `client_secret` (Idempotency-Key `buy-now:{listingId}`).
+  2. Or pay-retry: `POST /api/v1/orders/{id}/pay` → fresh `client_secret`.
+  3. Client presents **Stripe PaymentSheet** with Apple Pay merchant config
+     (`ios/NoMarkup/Core/RailACheckout.swift`). System Apple Pay sheet when
+     the device can make payments; otherwise PaymentSheet card / Link UI.
+  4. Account → **Orders** (`MyOrdersView`) lists pending orders and re-opens
+     Apple Pay for `pending_payment` escrow.
+- **Config (no secrets in git):**
+  - Publishable key: Info.plist `StripePublishableKey` or env
+    `NOMARKUP_STRIPE_PUBLISHABLE_KEY`.
+  - Merchant ID: `merchant.com.nomarkup.app` (entitlement
+    `com.apple.developer.in-app-payments` + Stripe Dashboard Apple Pay).
+- **Web:** Stripe Payment Request Button (Apple Pay / Google Pay) + Elements;
+  domain association
   `web/public/.well-known/apple-developer-merchantid-domain-association`
   must be the **Stripe/Apple-provided** file in production (placeholder until
   then). See sibling `README.md` in that folder.
