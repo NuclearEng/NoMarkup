@@ -379,3 +379,88 @@ struct JobsResponse: Codable, Sendable {
 struct JobDetailResponse: Codable, Sendable {
     let job: JobDetail
 }
+
+/// Authenticated `GET /api/v1/jobs/mine` uses the same job row shape as public list.
+/// Alias keeps call sites explicit about the owner-scoped surface.
+typealias JobMine = JobSummary
+
+struct JobsMineResponse: Codable, Sendable {
+    let jobs: [JobMine]
+    let pagination: PaginationMeta?
+}
+
+// MARK: - Chat
+
+/// Preview / last message embedded on a channel, or a row from messages list.
+struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var channelId: String?
+    var senderId: String?
+    var messageType: String?
+    var content: String?
+    var isRead: Bool?
+    var createdAt: String?
+
+    var displayBody: String {
+        let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.isEmpty {
+            switch messageType {
+            case "image": return "Photo"
+            case "file": return "File"
+            case "system": return "System message"
+            case "contact_share": return "Contact shared"
+            default: return "Message"
+            }
+        }
+        return raw
+    }
+}
+
+/// Summary row from `GET /api/v1/channels` (`channels` array).
+struct ChatChannelSummary: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var jobId: String?
+    var contractId: String?
+    var customerId: String?
+    var providerId: String?
+    var channelType: String?
+    var unreadCount: Int?
+    var createdAt: String?
+    var updatedAt: String?
+    var customerName: String?
+    var providerName: String?
+    var lastMessage: ChatMessage?
+
+    /// Best-effort title for the inbox row (counterparty when known).
+    var displayTitle: String {
+        let customer = customerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let provider = providerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !customer.isEmpty, !provider.isEmpty {
+            return "\(customer) · \(provider)"
+        }
+        if !customer.isEmpty { return customer }
+        if !provider.isEmpty { return provider }
+        if let jobId, !jobId.isEmpty {
+            return "Job chat"
+        }
+        return "Conversation"
+    }
+
+    var previewText: String? {
+        lastMessage?.displayBody
+    }
+
+    var typeLabel: String? {
+        guard let channelType, !channelType.isEmpty else { return nil }
+        return channelType.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+struct ChatChannelsResponse: Codable, Sendable {
+    let channels: [ChatChannelSummary]
+    let pagination: PaginationMeta?
+}
+
+struct ChatMessagesResponse: Codable, Sendable {
+    let messages: [ChatMessage]
+}

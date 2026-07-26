@@ -1,52 +1,30 @@
 # App Store Launch Board — NoMarkup
 
 **Program:** `/app-store-launch-readiness`  
-**Started:** 2026-07-26  
-**Current stage:** **B0–B4 done** (scaffold, auth hooks, catalog browse, flag-off) → next **B2 StoreKit** when ASC products exist; **B6** packaging  
-**Binary readiness:** **NOT READY** for App Review (no StoreKit digital unlocks, no ASC package, no team signing)
-
-Status: `todo` · `in_progress` · `done` · `blocked` · `deferred`
+**Updated:** 2026-07-26  
+**Current stage:** **B0–B4 + B3+ auth lists + B6 docs** done → residual: **B2 StoreKit** (or free-tier-only ship) + **B6 ops** (signing, screenshots, ASC)  
+**Binary readiness:** **NOT READY** for App Review (no StoreKit decision shipped as product, no ASC assets)
 
 ---
 
-## Stage A — Documentation
+## Stage A — done
 
-| ID | Status | Artifact |
-|----|--------|----------|
-| A0–A6 | **done** | review-logs, inventories, dual-rail Option A, capability-matrix |
+All review-logs phase-0…4b, privacy inventory, capability matrix, dual-rail Option A.
 
 ---
 
-## Stage B — Implementation
+## Stage B
 
-| ID | Item | Status | Notes |
-|----|------|--------|-------|
-| B0 | SwiftUI scaffold | **done** | `ios/NoMarkup.xcodeproj` BUILD SUCCEEDED |
-| B1 | SIWA + purpose strings + legal + delete/export | **done** | + `POST /api/v1/auth/apple/native` |
-| B2 | StoreKit digital dual-rail | **todo** | No stubs; wait ASC products |
-| B3 | Marketplace + jobs list/detail | **done** | Live GET listings/jobs APIs |
-| B4 | iOS hard-off regulated flags | **done** | FeatureFlags.iOSHardOffKeys |
-| B5 | Push | **deferred** | Do not claim in ASC |
-| B6 | ASC packaging | **todo** | Screenshots, labels, IAP, demo |
-
-### Agent team B3/B4 (this turn)
-
-| Stream | Result |
-|--------|--------|
-| B3 catalog | Models + APIClient fetch + Marketplace/Jobs list/detail UI |
-| B4 flags | FeatureFlags hard-off set + Home “Launch gates” + Account StoreKit notice |
-
----
-
-## Decision log
-
-| Date | Decision |
-|------|----------|
-| 2026-07-26 | SwiftUI native chrome; reject pure WKWebView |
-| 2026-07-26 | Dual-rail Option A (web Stripe honor + IAP sell) |
-| 2026-07-26 | Native SIWA: `POST /api/v1/auth/apple/native` |
-| 2026-07-26 | B4 hard-off: bnpl, working_capital, insurance*, legal_services, lead_gen, instant_payout |
-| 2026-07-26 | Public catalog browse on device without auth |
+| ID | Item | Status |
+|----|------|--------|
+| B0 | SwiftUI shell | **done** |
+| B1 | SIWA + purpose strings + legal + delete/export | **done** |
+| B2 | StoreKit digital IAP | **todo** (v1 can ship free-tier-only per ASC checklist) |
+| B3 | Public catalog list/detail | **done** |
+| B3+ | Auth my jobs + chat channels/messages | **done** |
+| B4 | Hard-off regulated flags | **done** |
+| B5 | Push | **deferred** |
+| B6 | ASC packaging docs | **done** (docs); ops residual open |
 
 ---
 
@@ -54,20 +32,28 @@ Status: `todo` · `in_progress` · `done` · `blocked` · `deferred`
 
 ```bash
 export DEVELOPER_DIR=/Applications/Xcode-26.5.0.app/Contents/Developer
-cd ios
-xcodebuild -scheme NoMarkup -project NoMarkup.xcodeproj \
-  -destination 'generic/platform=iOS Simulator' \
-  CODE_SIGNING_ALLOWED=NO build
+cd ios && xcodebuild -scheme NoMarkup -project NoMarkup.xcodeproj \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
 ---
 
-## Next
+## Key docs
 
-```text
-Option A — B6 packaging docs + app icon + ASC checklist (no StoreKit).
-Option B — B2 StoreKit when Apple team + subscription products ready.
-Option C — B3+ bid/pay/chat write paths (auth-gated).
-```
+| Doc | Role |
+|-----|------|
+| `asc-packaging-checklist.md` | ASC pre-submit |
+| `app-review-notes.md` | Review paste + native section |
+| `submission-blockers.md` | One-pager |
+| `ios-payment-rails-design.md` | Dual-rail + Option A |
+| `ios/README.md` | How to build |
 
-Do **not** claim App Store submission-ready until B2 (or explicit “no digital IAP in v1” product cut) + B6 + ops staging.
+---
+
+## Next (human-gated)
+
+1. Apple Developer team + bundle id + SIWA App ID (`APPLE_NATIVE_CLIENT_ID`)  
+2. Capture screenshots from Simulator  
+3. Either implement **B2 StoreKit** or confirm **free-tier-only** digital (no paywall) for v1  
+4. Staging always-on for App Review  
+5. `/app-store-compliance` + device smoke (Stage C)

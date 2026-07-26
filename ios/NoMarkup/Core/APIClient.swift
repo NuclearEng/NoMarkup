@@ -232,12 +232,53 @@ actor APIClient {
         return wrapped.job
     }
 
+    // MARK: - Authenticated catalog / chat
+
+    /// GET `/api/v1/jobs/mine?page=&page_size=` — owner-scoped jobs (Bearer required).
+    func fetchMyJobs(page: Int = 1, pageSize: Int = 20) async throws -> JobsMineResponse {
+        let items = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        return try await getJSON(
+            pathComponents: ["api", "v1", "jobs", "mine"],
+            query: items,
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/channels?page=&page_size=` — chat inbox (Bearer required).
+    func fetchChatChannels(page: Int = 1, pageSize: Int = 40) async throws -> ChatChannelsResponse {
+        let items = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        return try await getJSON(
+            pathComponents: ["api", "v1", "channels"],
+            query: items,
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/channels/{id}/messages?page_size=` — thread messages (Bearer required).
+    func fetchChannelMessages(channelID: String, pageSize: Int = 50) async throws -> ChatMessagesResponse {
+        let items = [
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        return try await getJSON(
+            pathComponents: ["api", "v1", "channels", channelID, "messages"],
+            query: items,
+            authorized: true
+        )
+    }
+
     // MARK: - Helpers
 
-    /// Public (or optionally-authed) JSON GET with path components + query.
+    /// JSON GET with path components + query. When `authorized` is true, attaches Bearer.
     private func getJSON<T: Decodable>(
         pathComponents: [String],
-        query: [URLQueryItem] = []
+        query: [URLQueryItem] = [],
+        authorized: Bool = false
     ) async throws -> T {
         var url = AppConfig.apiBaseURL
         for component in pathComponents {
@@ -253,10 +294,22 @@ actor APIClient {
             throw APIClientError.unreachable
         }
 
-        var request = URLRequest(url: finalURL)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 20
+        let request: URLRequest
+        if authorized {
+            var authorizedRequest = try authorizedRequest(url: finalURL, method: "GET")
+            authorizedRequest.timeoutInterval = 20
+            // authorizedRequest already sets Accept; ensure Bearer was present when required.
+            if authorizedRequest.value(forHTTPHeaderField: "Authorization") == nil {
+                throw APIClientError.unauthorized
+            }
+            request = authorizedRequest
+        } else {
+            var publicRequest = URLRequest(url: finalURL)
+            publicRequest.httpMethod = "GET"
+            publicRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+            publicRequest.timeoutInterval = 20
+            request = publicRequest
+        }
 
         let data: Data
         let response: URLResponse
@@ -357,6 +410,11 @@ enum APIClientError: Error, LocalizedError {
     case unauthorized
     case httpStatus(Int, detail: String = "")
     case decoding(String)
+
+    var isUnauthorized: Bool {
+        if case .unauthorized = self { return true }
+        return false
+    }
 
     var errorDescription: String? {
         switch self {
