@@ -37,6 +37,96 @@ func (s *Profile) GetUser(ctx context.Context, userID string) (*domain.User, err
 	return s.repo.GetUserByID(ctx, userID)
 }
 
+// MaxBatchGetUsers caps a single BatchGetUsers request. Sized for the worst
+// realistic caller (a bid list page's unique bidders, a chat thread's
+// participants) with headroom, and enforced server-side because an unbounded id
+// list is a trivial resource-exhaustion vector: the array is materialised in the
+// query plan and every row in the result set is allocated.
+const MaxBatchGetUsers = 200
+
+// BatchGetUsers resolves up to MaxBatchGetUsers ids to their public projection
+// in ONE database query.
+//
+// Behaviour that callers depend on:
+//   - Over the cap => domain.ErrBatchTooLarge (InvalidArgument). Never
+//     truncated: a silently partial answer is worse than an error, because the
+//     caller cannot tell it happened.
+//   - Duplicates are collapsed before the query.
+//   - Malformed (non-UUID) ids are dropped rather than failing the batch — one
+//     bad id from one caller must not deny the other 199 lookups. They are
+//     logged so a gateway bug producing them is still visible.
+//   - Ids with no live user are simply absent from the result.
+func (s *Profile) BatchGetUsers(ctx context.Context, ids []string) ([]domain.PublicUser, error) {
+	// Check the RAW length first: the cap must bound what we allocate, so it
+	// has to be enforced before dedupe, not after.
+	if len(ids) > MaxBatchGetUsers {
+		return nil, fmt.Errorf("batch get users: %w (%d > %d)", domain.ErrBatchTooLarge, len(ids), MaxBatchGetUsers)
+	}
+
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	malformed := 0
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if !isValidUUID(id) {
+			malformed++
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	if malformed > 0 {
+		slog.WarnContext(ctx, "batch get users: dropped malformed ids",
+			"malformed_count", malformed, "requested_count", len(ids))
+	}
+
+	if len(unique) == 0 {
+		return []domain.PublicUser{}, nil
+	}
+
+	users, err := s.repo.GetPublicUsersByIDs(ctx, unique)
+	if err != nil {
+		return nil, fmt.Errorf("batch get users: %w", err)
+	}
+	if users == nil {
+		users = []domain.PublicUser{}
+	}
+	return users, nil
+}
+
+// isValidUUID reports whether s is a canonical 8-4-4-4-12 hex UUID. Kept local
+// and allocation-free so the batch path can screen ids without pulling in a
+// parser or risking a malformed value reaching the `::uuid[]` cast, where it
+// would abort the whole statement.
+func isValidUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		c := s[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		case c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Profile) UpdateUser(ctx context.Context, userID string, input domain.UpdateUserInput) (*domain.User, error) {
 	return s.repo.UpdateUser(ctx, userID, input)
 }

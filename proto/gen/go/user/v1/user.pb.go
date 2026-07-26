@@ -1931,6 +1931,196 @@ func (x *GetUserResponse) GetUser() *User {
 	return nil
 }
 
+// PublicUser is the non-PII projection of User. It intentionally has NO email,
+// phone, email_verified, phone_verified or mfa_enabled field — matching exactly
+// what gateway/internal/handler/user.go leaves after stripping PII for a
+// non-self, non-admin caller. Field numbers are independent of User: this is a
+// separate message, not a subset view, so User can never accidentally widen it.
+type PublicUser struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	AvatarUrl     string                 `protobuf:"bytes,3,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	Roles         []v1.UserRole          `protobuf:"varint,4,rep,packed,name=roles,proto3,enum=nomarkup.common.v1.UserRole" json:"roles,omitempty"`
+	Status        v1.UserStatus          `protobuf:"varint,5,opt,name=status,proto3,enum=nomarkup.common.v1.UserStatus" json:"status,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastActiveAt  *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=last_active_at,json=lastActiveAt,proto3" json:"last_active_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublicUser) Reset() {
+	*x = PublicUser{}
+	mi := &file_user_v1_user_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicUser) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicUser) ProtoMessage() {}
+
+func (x *PublicUser) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicUser.ProtoReflect.Descriptor instead.
+func (*PublicUser) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *PublicUser) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PublicUser) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *PublicUser) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
+func (x *PublicUser) GetRoles() []v1.UserRole {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *PublicUser) GetStatus() v1.UserStatus {
+	if x != nil {
+		return x.Status
+	}
+	return v1.UserStatus(0)
+}
+
+func (x *PublicUser) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *PublicUser) GetLastActiveAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastActiveAt
+	}
+	return nil
+}
+
+type BatchGetUsersRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Duplicates are de-duplicated server-side. Capped server-side at 200; a
+	// longer list is rejected with InvalidArgument rather than truncated, so a
+	// caller never silently gets a partial answer.
+	UserIds       []string `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchGetUsersRequest) Reset() {
+	*x = BatchGetUsersRequest{}
+	mi := &file_user_v1_user_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchGetUsersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchGetUsersRequest) ProtoMessage() {}
+
+func (x *BatchGetUsersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchGetUsersRequest.ProtoReflect.Descriptor instead.
+func (*BatchGetUsersRequest) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *BatchGetUsersRequest) GetUserIds() []string {
+	if x != nil {
+		return x.UserIds
+	}
+	return nil
+}
+
+type BatchGetUsersResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Contains only the ids that resolved to a live user, in unspecified order.
+	// Callers must index by id and tolerate absences.
+	Users         []*PublicUser `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchGetUsersResponse) Reset() {
+	*x = BatchGetUsersResponse{}
+	mi := &file_user_v1_user_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchGetUsersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchGetUsersResponse) ProtoMessage() {}
+
+func (x *BatchGetUsersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchGetUsersResponse.ProtoReflect.Descriptor instead.
+func (*BatchGetUsersResponse) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *BatchGetUsersResponse) GetUsers() []*PublicUser {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
 type UpdateUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -1944,7 +2134,7 @@ type UpdateUserRequest struct {
 
 func (x *UpdateUserRequest) Reset() {
 	*x = UpdateUserRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[35]
+	mi := &file_user_v1_user_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1956,7 +2146,7 @@ func (x *UpdateUserRequest) String() string {
 func (*UpdateUserRequest) ProtoMessage() {}
 
 func (x *UpdateUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[35]
+	mi := &file_user_v1_user_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1969,7 +2159,7 @@ func (x *UpdateUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateUserRequest.ProtoReflect.Descriptor instead.
 func (*UpdateUserRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{35}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *UpdateUserRequest) GetUserId() string {
@@ -2016,7 +2206,7 @@ type UpdateUserResponse struct {
 
 func (x *UpdateUserResponse) Reset() {
 	*x = UpdateUserResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[36]
+	mi := &file_user_v1_user_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2028,7 +2218,7 @@ func (x *UpdateUserResponse) String() string {
 func (*UpdateUserResponse) ProtoMessage() {}
 
 func (x *UpdateUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[36]
+	mi := &file_user_v1_user_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2041,7 +2231,7 @@ func (x *UpdateUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateUserResponse.ProtoReflect.Descriptor instead.
 func (*UpdateUserResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{36}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *UpdateUserResponse) GetUser() *User {
@@ -2061,7 +2251,7 @@ type EnableRoleRequest struct {
 
 func (x *EnableRoleRequest) Reset() {
 	*x = EnableRoleRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[37]
+	mi := &file_user_v1_user_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2073,7 +2263,7 @@ func (x *EnableRoleRequest) String() string {
 func (*EnableRoleRequest) ProtoMessage() {}
 
 func (x *EnableRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[37]
+	mi := &file_user_v1_user_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2086,7 +2276,7 @@ func (x *EnableRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnableRoleRequest.ProtoReflect.Descriptor instead.
 func (*EnableRoleRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{37}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *EnableRoleRequest) GetUserId() string {
@@ -2112,7 +2302,7 @@ type EnableRoleResponse struct {
 
 func (x *EnableRoleResponse) Reset() {
 	*x = EnableRoleResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[38]
+	mi := &file_user_v1_user_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2124,7 +2314,7 @@ func (x *EnableRoleResponse) String() string {
 func (*EnableRoleResponse) ProtoMessage() {}
 
 func (x *EnableRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[38]
+	mi := &file_user_v1_user_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2137,7 +2327,7 @@ func (x *EnableRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnableRoleResponse.ProtoReflect.Descriptor instead.
 func (*EnableRoleResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{38}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *EnableRoleResponse) GetUser() *User {
@@ -2157,7 +2347,7 @@ type DeactivateAccountRequest struct {
 
 func (x *DeactivateAccountRequest) Reset() {
 	*x = DeactivateAccountRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[39]
+	mi := &file_user_v1_user_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2169,7 +2359,7 @@ func (x *DeactivateAccountRequest) String() string {
 func (*DeactivateAccountRequest) ProtoMessage() {}
 
 func (x *DeactivateAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[39]
+	mi := &file_user_v1_user_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2182,7 +2372,7 @@ func (x *DeactivateAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeactivateAccountRequest.ProtoReflect.Descriptor instead.
 func (*DeactivateAccountRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{39}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *DeactivateAccountRequest) GetUserId() string {
@@ -2207,7 +2397,7 @@ type DeactivateAccountResponse struct {
 
 func (x *DeactivateAccountResponse) Reset() {
 	*x = DeactivateAccountResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[40]
+	mi := &file_user_v1_user_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2219,7 +2409,7 @@ func (x *DeactivateAccountResponse) String() string {
 func (*DeactivateAccountResponse) ProtoMessage() {}
 
 func (x *DeactivateAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[40]
+	mi := &file_user_v1_user_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2232,7 +2422,7 @@ func (x *DeactivateAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeactivateAccountResponse.ProtoReflect.Descriptor instead.
 func (*DeactivateAccountResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{40}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{43}
 }
 
 type RequestAccountDeletionRequest struct {
@@ -2250,7 +2440,7 @@ type RequestAccountDeletionRequest struct {
 
 func (x *RequestAccountDeletionRequest) Reset() {
 	*x = RequestAccountDeletionRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[41]
+	mi := &file_user_v1_user_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2262,7 +2452,7 @@ func (x *RequestAccountDeletionRequest) String() string {
 func (*RequestAccountDeletionRequest) ProtoMessage() {}
 
 func (x *RequestAccountDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[41]
+	mi := &file_user_v1_user_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2275,7 +2465,7 @@ func (x *RequestAccountDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestAccountDeletionRequest.ProtoReflect.Descriptor instead.
 func (*RequestAccountDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{41}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *RequestAccountDeletionRequest) GetUserId() string {
@@ -2312,7 +2502,7 @@ type RequestAccountDeletionResponse struct {
 
 func (x *RequestAccountDeletionResponse) Reset() {
 	*x = RequestAccountDeletionResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[42]
+	mi := &file_user_v1_user_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2324,7 +2514,7 @@ func (x *RequestAccountDeletionResponse) String() string {
 func (*RequestAccountDeletionResponse) ProtoMessage() {}
 
 func (x *RequestAccountDeletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[42]
+	mi := &file_user_v1_user_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2337,7 +2527,7 @@ func (x *RequestAccountDeletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestAccountDeletionResponse.ProtoReflect.Descriptor instead.
 func (*RequestAccountDeletionResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{42}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *RequestAccountDeletionResponse) GetGraceDeadline() *timestamppb.Timestamp {
@@ -2363,7 +2553,7 @@ type CancelAccountDeletionRequest struct {
 
 func (x *CancelAccountDeletionRequest) Reset() {
 	*x = CancelAccountDeletionRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[43]
+	mi := &file_user_v1_user_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2375,7 +2565,7 @@ func (x *CancelAccountDeletionRequest) String() string {
 func (*CancelAccountDeletionRequest) ProtoMessage() {}
 
 func (x *CancelAccountDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[43]
+	mi := &file_user_v1_user_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2388,7 +2578,7 @@ func (x *CancelAccountDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelAccountDeletionRequest.ProtoReflect.Descriptor instead.
 func (*CancelAccountDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{43}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *CancelAccountDeletionRequest) GetUserId() string {
@@ -2410,7 +2600,7 @@ type CancelAccountDeletionResponse struct {
 
 func (x *CancelAccountDeletionResponse) Reset() {
 	*x = CancelAccountDeletionResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[44]
+	mi := &file_user_v1_user_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2422,7 +2612,7 @@ func (x *CancelAccountDeletionResponse) String() string {
 func (*CancelAccountDeletionResponse) ProtoMessage() {}
 
 func (x *CancelAccountDeletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[44]
+	mi := &file_user_v1_user_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2435,7 +2625,7 @@ func (x *CancelAccountDeletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelAccountDeletionResponse.ProtoReflect.Descriptor instead.
 func (*CancelAccountDeletionResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{44}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *CancelAccountDeletionResponse) GetCancelled() bool {
@@ -2460,7 +2650,7 @@ type FinalizeAccountDeletionRequest struct {
 
 func (x *FinalizeAccountDeletionRequest) Reset() {
 	*x = FinalizeAccountDeletionRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[45]
+	mi := &file_user_v1_user_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2472,7 +2662,7 @@ func (x *FinalizeAccountDeletionRequest) String() string {
 func (*FinalizeAccountDeletionRequest) ProtoMessage() {}
 
 func (x *FinalizeAccountDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[45]
+	mi := &file_user_v1_user_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2485,7 +2675,7 @@ func (x *FinalizeAccountDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinalizeAccountDeletionRequest.ProtoReflect.Descriptor instead.
 func (*FinalizeAccountDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{45}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *FinalizeAccountDeletionRequest) GetUserId() string {
@@ -2524,7 +2714,7 @@ type FinalizeAccountDeletionResponse struct {
 
 func (x *FinalizeAccountDeletionResponse) Reset() {
 	*x = FinalizeAccountDeletionResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[46]
+	mi := &file_user_v1_user_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2536,7 +2726,7 @@ func (x *FinalizeAccountDeletionResponse) String() string {
 func (*FinalizeAccountDeletionResponse) ProtoMessage() {}
 
 func (x *FinalizeAccountDeletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[46]
+	mi := &file_user_v1_user_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2549,7 +2739,7 @@ func (x *FinalizeAccountDeletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinalizeAccountDeletionResponse.ProtoReflect.Descriptor instead.
 func (*FinalizeAccountDeletionResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{46}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *FinalizeAccountDeletionResponse) GetFinalizedAt() *timestamppb.Timestamp {
@@ -2617,7 +2807,7 @@ type ProviderProfile struct {
 
 func (x *ProviderProfile) Reset() {
 	*x = ProviderProfile{}
-	mi := &file_user_v1_user_proto_msgTypes[47]
+	mi := &file_user_v1_user_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2629,7 +2819,7 @@ func (x *ProviderProfile) String() string {
 func (*ProviderProfile) ProtoMessage() {}
 
 func (x *ProviderProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[47]
+	mi := &file_user_v1_user_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2642,7 +2832,7 @@ func (x *ProviderProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderProfile.ProtoReflect.Descriptor instead.
 func (*ProviderProfile) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{47}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ProviderProfile) GetId() string {
@@ -2823,7 +3013,7 @@ type MilestoneTemplate struct {
 
 func (x *MilestoneTemplate) Reset() {
 	*x = MilestoneTemplate{}
-	mi := &file_user_v1_user_proto_msgTypes[48]
+	mi := &file_user_v1_user_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2835,7 +3025,7 @@ func (x *MilestoneTemplate) String() string {
 func (*MilestoneTemplate) ProtoMessage() {}
 
 func (x *MilestoneTemplate) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[48]
+	mi := &file_user_v1_user_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2848,7 +3038,7 @@ func (x *MilestoneTemplate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MilestoneTemplate.ProtoReflect.Descriptor instead.
 func (*MilestoneTemplate) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{48}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *MilestoneTemplate) GetDescription() string {
@@ -2878,7 +3068,7 @@ type ServiceCategorySummary struct {
 
 func (x *ServiceCategorySummary) Reset() {
 	*x = ServiceCategorySummary{}
-	mi := &file_user_v1_user_proto_msgTypes[49]
+	mi := &file_user_v1_user_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2890,7 +3080,7 @@ func (x *ServiceCategorySummary) String() string {
 func (*ServiceCategorySummary) ProtoMessage() {}
 
 func (x *ServiceCategorySummary) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[49]
+	mi := &file_user_v1_user_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2903,7 +3093,7 @@ func (x *ServiceCategorySummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceCategorySummary.ProtoReflect.Descriptor instead.
 func (*ServiceCategorySummary) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{49}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ServiceCategorySummary) GetId() string {
@@ -2953,7 +3143,7 @@ type PortfolioImage struct {
 
 func (x *PortfolioImage) Reset() {
 	*x = PortfolioImage{}
-	mi := &file_user_v1_user_proto_msgTypes[50]
+	mi := &file_user_v1_user_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2965,7 +3155,7 @@ func (x *PortfolioImage) String() string {
 func (*PortfolioImage) ProtoMessage() {}
 
 func (x *PortfolioImage) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[50]
+	mi := &file_user_v1_user_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2978,7 +3168,7 @@ func (x *PortfolioImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortfolioImage.ProtoReflect.Descriptor instead.
 func (*PortfolioImage) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{50}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *PortfolioImage) GetId() string {
@@ -3021,7 +3211,7 @@ type VerificationBadge struct {
 
 func (x *VerificationBadge) Reset() {
 	*x = VerificationBadge{}
-	mi := &file_user_v1_user_proto_msgTypes[51]
+	mi := &file_user_v1_user_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3033,7 +3223,7 @@ func (x *VerificationBadge) String() string {
 func (*VerificationBadge) ProtoMessage() {}
 
 func (x *VerificationBadge) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[51]
+	mi := &file_user_v1_user_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3046,7 +3236,7 @@ func (x *VerificationBadge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerificationBadge.ProtoReflect.Descriptor instead.
 func (*VerificationBadge) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{51}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *VerificationBadge) GetDocumentType() string {
@@ -3091,7 +3281,7 @@ type TrustScoreSummary struct {
 
 func (x *TrustScoreSummary) Reset() {
 	*x = TrustScoreSummary{}
-	mi := &file_user_v1_user_proto_msgTypes[52]
+	mi := &file_user_v1_user_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3103,7 +3293,7 @@ func (x *TrustScoreSummary) String() string {
 func (*TrustScoreSummary) ProtoMessage() {}
 
 func (x *TrustScoreSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[52]
+	mi := &file_user_v1_user_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3116,7 +3306,7 @@ func (x *TrustScoreSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrustScoreSummary.ProtoReflect.Descriptor instead.
 func (*TrustScoreSummary) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{52}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *TrustScoreSummary) GetOverallScore() float64 {
@@ -3172,7 +3362,7 @@ type ReviewSummary struct {
 
 func (x *ReviewSummary) Reset() {
 	*x = ReviewSummary{}
-	mi := &file_user_v1_user_proto_msgTypes[53]
+	mi := &file_user_v1_user_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3184,7 +3374,7 @@ func (x *ReviewSummary) String() string {
 func (*ReviewSummary) ProtoMessage() {}
 
 func (x *ReviewSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[53]
+	mi := &file_user_v1_user_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3197,7 +3387,7 @@ func (x *ReviewSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewSummary.ProtoReflect.Descriptor instead.
 func (*ReviewSummary) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{53}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ReviewSummary) GetAverageRating() float64 {
@@ -3230,7 +3420,7 @@ type GetProviderProfileRequest struct {
 
 func (x *GetProviderProfileRequest) Reset() {
 	*x = GetProviderProfileRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[54]
+	mi := &file_user_v1_user_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3242,7 +3432,7 @@ func (x *GetProviderProfileRequest) String() string {
 func (*GetProviderProfileRequest) ProtoMessage() {}
 
 func (x *GetProviderProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[54]
+	mi := &file_user_v1_user_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3255,7 +3445,7 @@ func (x *GetProviderProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProviderProfileRequest.ProtoReflect.Descriptor instead.
 func (*GetProviderProfileRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{54}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *GetProviderProfileRequest) GetUserId() string {
@@ -3274,7 +3464,7 @@ type GetProviderProfileResponse struct {
 
 func (x *GetProviderProfileResponse) Reset() {
 	*x = GetProviderProfileResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[55]
+	mi := &file_user_v1_user_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3286,7 +3476,7 @@ func (x *GetProviderProfileResponse) String() string {
 func (*GetProviderProfileResponse) ProtoMessage() {}
 
 func (x *GetProviderProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[55]
+	mi := &file_user_v1_user_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3299,7 +3489,7 @@ func (x *GetProviderProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProviderProfileResponse.ProtoReflect.Descriptor instead.
 func (*GetProviderProfileResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{55}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *GetProviderProfileResponse) GetProfile() *ProviderProfile {
@@ -3323,7 +3513,7 @@ type UpdateProviderProfileRequest struct {
 
 func (x *UpdateProviderProfileRequest) Reset() {
 	*x = UpdateProviderProfileRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[56]
+	mi := &file_user_v1_user_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3335,7 +3525,7 @@ func (x *UpdateProviderProfileRequest) String() string {
 func (*UpdateProviderProfileRequest) ProtoMessage() {}
 
 func (x *UpdateProviderProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[56]
+	mi := &file_user_v1_user_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3348,7 +3538,7 @@ func (x *UpdateProviderProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProviderProfileRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProviderProfileRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{56}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *UpdateProviderProfileRequest) GetUserId() string {
@@ -3402,7 +3592,7 @@ type UpdateProviderProfileResponse struct {
 
 func (x *UpdateProviderProfileResponse) Reset() {
 	*x = UpdateProviderProfileResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[57]
+	mi := &file_user_v1_user_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3414,7 +3604,7 @@ func (x *UpdateProviderProfileResponse) String() string {
 func (*UpdateProviderProfileResponse) ProtoMessage() {}
 
 func (x *UpdateProviderProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[57]
+	mi := &file_user_v1_user_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3427,7 +3617,7 @@ func (x *UpdateProviderProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProviderProfileResponse.ProtoReflect.Descriptor instead.
 func (*UpdateProviderProfileResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{57}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *UpdateProviderProfileResponse) GetProfile() *ProviderProfile {
@@ -3450,7 +3640,7 @@ type SetGlobalTermsRequest struct {
 
 func (x *SetGlobalTermsRequest) Reset() {
 	*x = SetGlobalTermsRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[58]
+	mi := &file_user_v1_user_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3462,7 +3652,7 @@ func (x *SetGlobalTermsRequest) String() string {
 func (*SetGlobalTermsRequest) ProtoMessage() {}
 
 func (x *SetGlobalTermsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[58]
+	mi := &file_user_v1_user_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3475,7 +3665,7 @@ func (x *SetGlobalTermsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetGlobalTermsRequest.ProtoReflect.Descriptor instead.
 func (*SetGlobalTermsRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{58}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *SetGlobalTermsRequest) GetUserId() string {
@@ -3522,7 +3712,7 @@ type SetGlobalTermsResponse struct {
 
 func (x *SetGlobalTermsResponse) Reset() {
 	*x = SetGlobalTermsResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[59]
+	mi := &file_user_v1_user_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3534,7 +3724,7 @@ func (x *SetGlobalTermsResponse) String() string {
 func (*SetGlobalTermsResponse) ProtoMessage() {}
 
 func (x *SetGlobalTermsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[59]
+	mi := &file_user_v1_user_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3547,7 +3737,7 @@ func (x *SetGlobalTermsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetGlobalTermsResponse.ProtoReflect.Descriptor instead.
 func (*SetGlobalTermsResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{59}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *SetGlobalTermsResponse) GetProfile() *ProviderProfile {
@@ -3567,7 +3757,7 @@ type UpdateServiceCategoriesRequest struct {
 
 func (x *UpdateServiceCategoriesRequest) Reset() {
 	*x = UpdateServiceCategoriesRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[60]
+	mi := &file_user_v1_user_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3579,7 +3769,7 @@ func (x *UpdateServiceCategoriesRequest) String() string {
 func (*UpdateServiceCategoriesRequest) ProtoMessage() {}
 
 func (x *UpdateServiceCategoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[60]
+	mi := &file_user_v1_user_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3592,7 +3782,7 @@ func (x *UpdateServiceCategoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateServiceCategoriesRequest.ProtoReflect.Descriptor instead.
 func (*UpdateServiceCategoriesRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{60}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *UpdateServiceCategoriesRequest) GetUserId() string {
@@ -3618,7 +3808,7 @@ type UpdateServiceCategoriesResponse struct {
 
 func (x *UpdateServiceCategoriesResponse) Reset() {
 	*x = UpdateServiceCategoriesResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[61]
+	mi := &file_user_v1_user_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3630,7 +3820,7 @@ func (x *UpdateServiceCategoriesResponse) String() string {
 func (*UpdateServiceCategoriesResponse) ProtoMessage() {}
 
 func (x *UpdateServiceCategoriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[61]
+	mi := &file_user_v1_user_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3643,7 +3833,7 @@ func (x *UpdateServiceCategoriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateServiceCategoriesResponse.ProtoReflect.Descriptor instead.
 func (*UpdateServiceCategoriesResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{61}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *UpdateServiceCategoriesResponse) GetCategories() []*ServiceCategorySummary {
@@ -3663,7 +3853,7 @@ type UpdatePortfolioRequest struct {
 
 func (x *UpdatePortfolioRequest) Reset() {
 	*x = UpdatePortfolioRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[62]
+	mi := &file_user_v1_user_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3675,7 +3865,7 @@ func (x *UpdatePortfolioRequest) String() string {
 func (*UpdatePortfolioRequest) ProtoMessage() {}
 
 func (x *UpdatePortfolioRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[62]
+	mi := &file_user_v1_user_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3688,7 +3878,7 @@ func (x *UpdatePortfolioRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePortfolioRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePortfolioRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{62}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *UpdatePortfolioRequest) GetUserId() string {
@@ -3714,7 +3904,7 @@ type UpdatePortfolioResponse struct {
 
 func (x *UpdatePortfolioResponse) Reset() {
 	*x = UpdatePortfolioResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[63]
+	mi := &file_user_v1_user_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3726,7 +3916,7 @@ func (x *UpdatePortfolioResponse) String() string {
 func (*UpdatePortfolioResponse) ProtoMessage() {}
 
 func (x *UpdatePortfolioResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[63]
+	mi := &file_user_v1_user_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3739,7 +3929,7 @@ func (x *UpdatePortfolioResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePortfolioResponse.ProtoReflect.Descriptor instead.
 func (*UpdatePortfolioResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{63}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *UpdatePortfolioResponse) GetImages() []*PortfolioImage {
@@ -3761,7 +3951,7 @@ type SetInstantAvailabilityRequest struct {
 
 func (x *SetInstantAvailabilityRequest) Reset() {
 	*x = SetInstantAvailabilityRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[64]
+	mi := &file_user_v1_user_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3773,7 +3963,7 @@ func (x *SetInstantAvailabilityRequest) String() string {
 func (*SetInstantAvailabilityRequest) ProtoMessage() {}
 
 func (x *SetInstantAvailabilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[64]
+	mi := &file_user_v1_user_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3786,7 +3976,7 @@ func (x *SetInstantAvailabilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetInstantAvailabilityRequest.ProtoReflect.Descriptor instead.
 func (*SetInstantAvailabilityRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{64}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *SetInstantAvailabilityRequest) GetUserId() string {
@@ -3828,7 +4018,7 @@ type AvailabilityWindow struct {
 
 func (x *AvailabilityWindow) Reset() {
 	*x = AvailabilityWindow{}
-	mi := &file_user_v1_user_proto_msgTypes[65]
+	mi := &file_user_v1_user_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3840,7 +4030,7 @@ func (x *AvailabilityWindow) String() string {
 func (*AvailabilityWindow) ProtoMessage() {}
 
 func (x *AvailabilityWindow) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[65]
+	mi := &file_user_v1_user_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3853,7 +4043,7 @@ func (x *AvailabilityWindow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AvailabilityWindow.ProtoReflect.Descriptor instead.
 func (*AvailabilityWindow) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{65}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *AvailabilityWindow) GetDay() string {
@@ -3887,7 +4077,7 @@ type SetInstantAvailabilityResponse struct {
 
 func (x *SetInstantAvailabilityResponse) Reset() {
 	*x = SetInstantAvailabilityResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[66]
+	mi := &file_user_v1_user_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3899,7 +4089,7 @@ func (x *SetInstantAvailabilityResponse) String() string {
 func (*SetInstantAvailabilityResponse) ProtoMessage() {}
 
 func (x *SetInstantAvailabilityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[66]
+	mi := &file_user_v1_user_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3912,7 +4102,7 @@ func (x *SetInstantAvailabilityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetInstantAvailabilityResponse.ProtoReflect.Descriptor instead.
 func (*SetInstantAvailabilityResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{66}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *SetInstantAvailabilityResponse) GetInstantEnabled() bool {
@@ -3947,7 +4137,7 @@ type ServiceCategory struct {
 
 func (x *ServiceCategory) Reset() {
 	*x = ServiceCategory{}
-	mi := &file_user_v1_user_proto_msgTypes[67]
+	mi := &file_user_v1_user_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3959,7 +4149,7 @@ func (x *ServiceCategory) String() string {
 func (*ServiceCategory) ProtoMessage() {}
 
 func (x *ServiceCategory) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[67]
+	mi := &file_user_v1_user_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3972,7 +4162,7 @@ func (x *ServiceCategory) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceCategory.ProtoReflect.Descriptor instead.
 func (*ServiceCategory) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{67}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *ServiceCategory) GetId() string {
@@ -4055,7 +4245,7 @@ type GetServiceCategoriesRequest struct {
 
 func (x *GetServiceCategoriesRequest) Reset() {
 	*x = GetServiceCategoriesRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[68]
+	mi := &file_user_v1_user_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4067,7 +4257,7 @@ func (x *GetServiceCategoriesRequest) String() string {
 func (*GetServiceCategoriesRequest) ProtoMessage() {}
 
 func (x *GetServiceCategoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[68]
+	mi := &file_user_v1_user_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4080,7 +4270,7 @@ func (x *GetServiceCategoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServiceCategoriesRequest.ProtoReflect.Descriptor instead.
 func (*GetServiceCategoriesRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{68}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *GetServiceCategoriesRequest) GetLevel() int32 {
@@ -4106,7 +4296,7 @@ type GetServiceCategoriesResponse struct {
 
 func (x *GetServiceCategoriesResponse) Reset() {
 	*x = GetServiceCategoriesResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[69]
+	mi := &file_user_v1_user_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4118,7 +4308,7 @@ func (x *GetServiceCategoriesResponse) String() string {
 func (*GetServiceCategoriesResponse) ProtoMessage() {}
 
 func (x *GetServiceCategoriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[69]
+	mi := &file_user_v1_user_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4131,7 +4321,7 @@ func (x *GetServiceCategoriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServiceCategoriesResponse.ProtoReflect.Descriptor instead.
 func (*GetServiceCategoriesResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{69}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *GetServiceCategoriesResponse) GetCategories() []*ServiceCategory {
@@ -4149,7 +4339,7 @@ type GetCategoryTreeRequest struct {
 
 func (x *GetCategoryTreeRequest) Reset() {
 	*x = GetCategoryTreeRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[70]
+	mi := &file_user_v1_user_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4161,7 +4351,7 @@ func (x *GetCategoryTreeRequest) String() string {
 func (*GetCategoryTreeRequest) ProtoMessage() {}
 
 func (x *GetCategoryTreeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[70]
+	mi := &file_user_v1_user_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4174,7 +4364,7 @@ func (x *GetCategoryTreeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCategoryTreeRequest.ProtoReflect.Descriptor instead.
 func (*GetCategoryTreeRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{70}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{73}
 }
 
 type GetCategoryTreeResponse struct {
@@ -4186,7 +4376,7 @@ type GetCategoryTreeResponse struct {
 
 func (x *GetCategoryTreeResponse) Reset() {
 	*x = GetCategoryTreeResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[71]
+	mi := &file_user_v1_user_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4198,7 +4388,7 @@ func (x *GetCategoryTreeResponse) String() string {
 func (*GetCategoryTreeResponse) ProtoMessage() {}
 
 func (x *GetCategoryTreeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[71]
+	mi := &file_user_v1_user_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4211,7 +4401,7 @@ func (x *GetCategoryTreeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCategoryTreeResponse.ProtoReflect.Descriptor instead.
 func (*GetCategoryTreeResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{71}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *GetCategoryTreeResponse) GetCategories() []*ServiceCategory {
@@ -4236,7 +4426,7 @@ type Property struct {
 
 func (x *Property) Reset() {
 	*x = Property{}
-	mi := &file_user_v1_user_proto_msgTypes[72]
+	mi := &file_user_v1_user_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4248,7 +4438,7 @@ func (x *Property) String() string {
 func (*Property) ProtoMessage() {}
 
 func (x *Property) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[72]
+	mi := &file_user_v1_user_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4261,7 +4451,7 @@ func (x *Property) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Property.ProtoReflect.Descriptor instead.
 func (*Property) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{72}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *Property) GetId() string {
@@ -4326,7 +4516,7 @@ type CreatePropertyRequest struct {
 
 func (x *CreatePropertyRequest) Reset() {
 	*x = CreatePropertyRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[73]
+	mi := &file_user_v1_user_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4338,7 +4528,7 @@ func (x *CreatePropertyRequest) String() string {
 func (*CreatePropertyRequest) ProtoMessage() {}
 
 func (x *CreatePropertyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[73]
+	mi := &file_user_v1_user_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4351,7 +4541,7 @@ func (x *CreatePropertyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePropertyRequest.ProtoReflect.Descriptor instead.
 func (*CreatePropertyRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{73}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *CreatePropertyRequest) GetUserId() string {
@@ -4398,7 +4588,7 @@ type CreatePropertyResponse struct {
 
 func (x *CreatePropertyResponse) Reset() {
 	*x = CreatePropertyResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[74]
+	mi := &file_user_v1_user_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4410,7 +4600,7 @@ func (x *CreatePropertyResponse) String() string {
 func (*CreatePropertyResponse) ProtoMessage() {}
 
 func (x *CreatePropertyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[74]
+	mi := &file_user_v1_user_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4423,7 +4613,7 @@ func (x *CreatePropertyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePropertyResponse.ProtoReflect.Descriptor instead.
 func (*CreatePropertyResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{74}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *CreatePropertyResponse) GetProperty() *Property {
@@ -4445,7 +4635,7 @@ type UpdatePropertyRequest struct {
 
 func (x *UpdatePropertyRequest) Reset() {
 	*x = UpdatePropertyRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[75]
+	mi := &file_user_v1_user_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4457,7 +4647,7 @@ func (x *UpdatePropertyRequest) String() string {
 func (*UpdatePropertyRequest) ProtoMessage() {}
 
 func (x *UpdatePropertyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[75]
+	mi := &file_user_v1_user_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4470,7 +4660,7 @@ func (x *UpdatePropertyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePropertyRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePropertyRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{75}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *UpdatePropertyRequest) GetPropertyId() string {
@@ -4510,7 +4700,7 @@ type UpdatePropertyResponse struct {
 
 func (x *UpdatePropertyResponse) Reset() {
 	*x = UpdatePropertyResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[76]
+	mi := &file_user_v1_user_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4522,7 +4712,7 @@ func (x *UpdatePropertyResponse) String() string {
 func (*UpdatePropertyResponse) ProtoMessage() {}
 
 func (x *UpdatePropertyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[76]
+	mi := &file_user_v1_user_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4535,7 +4725,7 @@ func (x *UpdatePropertyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePropertyResponse.ProtoReflect.Descriptor instead.
 func (*UpdatePropertyResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{76}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *UpdatePropertyResponse) GetProperty() *Property {
@@ -4554,7 +4744,7 @@ type DeletePropertyRequest struct {
 
 func (x *DeletePropertyRequest) Reset() {
 	*x = DeletePropertyRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[77]
+	mi := &file_user_v1_user_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4566,7 +4756,7 @@ func (x *DeletePropertyRequest) String() string {
 func (*DeletePropertyRequest) ProtoMessage() {}
 
 func (x *DeletePropertyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[77]
+	mi := &file_user_v1_user_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4579,7 +4769,7 @@ func (x *DeletePropertyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePropertyRequest.ProtoReflect.Descriptor instead.
 func (*DeletePropertyRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{77}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *DeletePropertyRequest) GetPropertyId() string {
@@ -4597,7 +4787,7 @@ type DeletePropertyResponse struct {
 
 func (x *DeletePropertyResponse) Reset() {
 	*x = DeletePropertyResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[78]
+	mi := &file_user_v1_user_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4609,7 +4799,7 @@ func (x *DeletePropertyResponse) String() string {
 func (*DeletePropertyResponse) ProtoMessage() {}
 
 func (x *DeletePropertyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[78]
+	mi := &file_user_v1_user_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4622,7 +4812,7 @@ func (x *DeletePropertyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePropertyResponse.ProtoReflect.Descriptor instead.
 func (*DeletePropertyResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{78}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{81}
 }
 
 type ListPropertiesRequest struct {
@@ -4634,7 +4824,7 @@ type ListPropertiesRequest struct {
 
 func (x *ListPropertiesRequest) Reset() {
 	*x = ListPropertiesRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[79]
+	mi := &file_user_v1_user_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4646,7 +4836,7 @@ func (x *ListPropertiesRequest) String() string {
 func (*ListPropertiesRequest) ProtoMessage() {}
 
 func (x *ListPropertiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[79]
+	mi := &file_user_v1_user_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4659,7 +4849,7 @@ func (x *ListPropertiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPropertiesRequest.ProtoReflect.Descriptor instead.
 func (*ListPropertiesRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{79}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ListPropertiesRequest) GetUserId() string {
@@ -4678,7 +4868,7 @@ type ListPropertiesResponse struct {
 
 func (x *ListPropertiesResponse) Reset() {
 	*x = ListPropertiesResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[80]
+	mi := &file_user_v1_user_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4690,7 +4880,7 @@ func (x *ListPropertiesResponse) String() string {
 func (*ListPropertiesResponse) ProtoMessage() {}
 
 func (x *ListPropertiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[80]
+	mi := &file_user_v1_user_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4703,7 +4893,7 @@ func (x *ListPropertiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPropertiesResponse.ProtoReflect.Descriptor instead.
 func (*ListPropertiesResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{80}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ListPropertiesResponse) GetProperties() []*Property {
@@ -4725,7 +4915,7 @@ type UploadDocumentRequest struct {
 
 func (x *UploadDocumentRequest) Reset() {
 	*x = UploadDocumentRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[81]
+	mi := &file_user_v1_user_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4737,7 +4927,7 @@ func (x *UploadDocumentRequest) String() string {
 func (*UploadDocumentRequest) ProtoMessage() {}
 
 func (x *UploadDocumentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[81]
+	mi := &file_user_v1_user_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4750,7 +4940,7 @@ func (x *UploadDocumentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadDocumentRequest.ProtoReflect.Descriptor instead.
 func (*UploadDocumentRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{81}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *UploadDocumentRequest) GetUserId() string {
@@ -4791,7 +4981,7 @@ type UploadDocumentResponse struct {
 
 func (x *UploadDocumentResponse) Reset() {
 	*x = UploadDocumentResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[82]
+	mi := &file_user_v1_user_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4803,7 +4993,7 @@ func (x *UploadDocumentResponse) String() string {
 func (*UploadDocumentResponse) ProtoMessage() {}
 
 func (x *UploadDocumentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[82]
+	mi := &file_user_v1_user_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4816,7 +5006,7 @@ func (x *UploadDocumentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadDocumentResponse.ProtoReflect.Descriptor instead.
 func (*UploadDocumentResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{82}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *UploadDocumentResponse) GetDocumentId() string {
@@ -4842,7 +5032,7 @@ type GetDocumentStatusRequest struct {
 
 func (x *GetDocumentStatusRequest) Reset() {
 	*x = GetDocumentStatusRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[83]
+	mi := &file_user_v1_user_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4854,7 +5044,7 @@ func (x *GetDocumentStatusRequest) String() string {
 func (*GetDocumentStatusRequest) ProtoMessage() {}
 
 func (x *GetDocumentStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[83]
+	mi := &file_user_v1_user_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4867,7 +5057,7 @@ func (x *GetDocumentStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDocumentStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetDocumentStatusRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{83}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *GetDocumentStatusRequest) GetDocumentId() string {
@@ -4891,7 +5081,7 @@ type GetDocumentStatusResponse struct {
 
 func (x *GetDocumentStatusResponse) Reset() {
 	*x = GetDocumentStatusResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[84]
+	mi := &file_user_v1_user_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4903,7 +5093,7 @@ func (x *GetDocumentStatusResponse) String() string {
 func (*GetDocumentStatusResponse) ProtoMessage() {}
 
 func (x *GetDocumentStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[84]
+	mi := &file_user_v1_user_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4916,7 +5106,7 @@ func (x *GetDocumentStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDocumentStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetDocumentStatusResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{84}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *GetDocumentStatusResponse) GetId() string {
@@ -4970,7 +5160,7 @@ type ListDocumentsRequest struct {
 
 func (x *ListDocumentsRequest) Reset() {
 	*x = ListDocumentsRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[85]
+	mi := &file_user_v1_user_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4982,7 +5172,7 @@ func (x *ListDocumentsRequest) String() string {
 func (*ListDocumentsRequest) ProtoMessage() {}
 
 func (x *ListDocumentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[85]
+	mi := &file_user_v1_user_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4995,7 +5185,7 @@ func (x *ListDocumentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDocumentsRequest.ProtoReflect.Descriptor instead.
 func (*ListDocumentsRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{85}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ListDocumentsRequest) GetUserId() string {
@@ -5014,7 +5204,7 @@ type ListDocumentsResponse struct {
 
 func (x *ListDocumentsResponse) Reset() {
 	*x = ListDocumentsResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[86]
+	mi := &file_user_v1_user_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5026,7 +5216,7 @@ func (x *ListDocumentsResponse) String() string {
 func (*ListDocumentsResponse) ProtoMessage() {}
 
 func (x *ListDocumentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[86]
+	mi := &file_user_v1_user_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5039,7 +5229,7 @@ func (x *ListDocumentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDocumentsResponse.ProtoReflect.Descriptor instead.
 func (*ListDocumentsResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{86}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ListDocumentsResponse) GetDocuments() []*GetDocumentStatusResponse {
@@ -5058,7 +5248,7 @@ type AdminGetUserRequest struct {
 
 func (x *AdminGetUserRequest) Reset() {
 	*x = AdminGetUserRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[87]
+	mi := &file_user_v1_user_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5070,7 +5260,7 @@ func (x *AdminGetUserRequest) String() string {
 func (*AdminGetUserRequest) ProtoMessage() {}
 
 func (x *AdminGetUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[87]
+	mi := &file_user_v1_user_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5083,7 +5273,7 @@ func (x *AdminGetUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminGetUserRequest.ProtoReflect.Descriptor instead.
 func (*AdminGetUserRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{87}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *AdminGetUserRequest) GetUserId() string {
@@ -5105,7 +5295,7 @@ type AdminGetUserResponse struct {
 
 func (x *AdminGetUserResponse) Reset() {
 	*x = AdminGetUserResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[88]
+	mi := &file_user_v1_user_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5117,7 +5307,7 @@ func (x *AdminGetUserResponse) String() string {
 func (*AdminGetUserResponse) ProtoMessage() {}
 
 func (x *AdminGetUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[88]
+	mi := &file_user_v1_user_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5130,7 +5320,7 @@ func (x *AdminGetUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminGetUserResponse.ProtoReflect.Descriptor instead.
 func (*AdminGetUserResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{88}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *AdminGetUserResponse) GetUser() *User {
@@ -5173,7 +5363,7 @@ type AdminSearchUsersRequest struct {
 
 func (x *AdminSearchUsersRequest) Reset() {
 	*x = AdminSearchUsersRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[89]
+	mi := &file_user_v1_user_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5185,7 +5375,7 @@ func (x *AdminSearchUsersRequest) String() string {
 func (*AdminSearchUsersRequest) ProtoMessage() {}
 
 func (x *AdminSearchUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[89]
+	mi := &file_user_v1_user_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5198,7 +5388,7 @@ func (x *AdminSearchUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSearchUsersRequest.ProtoReflect.Descriptor instead.
 func (*AdminSearchUsersRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{89}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *AdminSearchUsersRequest) GetQuery() string {
@@ -5239,7 +5429,7 @@ type AdminSearchUsersResponse struct {
 
 func (x *AdminSearchUsersResponse) Reset() {
 	*x = AdminSearchUsersResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[90]
+	mi := &file_user_v1_user_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5251,7 +5441,7 @@ func (x *AdminSearchUsersResponse) String() string {
 func (*AdminSearchUsersResponse) ProtoMessage() {}
 
 func (x *AdminSearchUsersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[90]
+	mi := &file_user_v1_user_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5264,7 +5454,7 @@ func (x *AdminSearchUsersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSearchUsersResponse.ProtoReflect.Descriptor instead.
 func (*AdminSearchUsersResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{90}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *AdminSearchUsersResponse) GetUsers() []*User {
@@ -5292,7 +5482,7 @@ type AdminSuspendUserRequest struct {
 
 func (x *AdminSuspendUserRequest) Reset() {
 	*x = AdminSuspendUserRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[91]
+	mi := &file_user_v1_user_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5304,7 +5494,7 @@ func (x *AdminSuspendUserRequest) String() string {
 func (*AdminSuspendUserRequest) ProtoMessage() {}
 
 func (x *AdminSuspendUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[91]
+	mi := &file_user_v1_user_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5317,7 +5507,7 @@ func (x *AdminSuspendUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSuspendUserRequest.ProtoReflect.Descriptor instead.
 func (*AdminSuspendUserRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{91}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *AdminSuspendUserRequest) GetUserId() string {
@@ -5350,7 +5540,7 @@ type AdminSuspendUserResponse struct {
 
 func (x *AdminSuspendUserResponse) Reset() {
 	*x = AdminSuspendUserResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[92]
+	mi := &file_user_v1_user_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5362,7 +5552,7 @@ func (x *AdminSuspendUserResponse) String() string {
 func (*AdminSuspendUserResponse) ProtoMessage() {}
 
 func (x *AdminSuspendUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[92]
+	mi := &file_user_v1_user_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5375,7 +5565,7 @@ func (x *AdminSuspendUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSuspendUserResponse.ProtoReflect.Descriptor instead.
 func (*AdminSuspendUserResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{92}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *AdminSuspendUserResponse) GetUser() *User {
@@ -5396,7 +5586,7 @@ type AdminBanUserRequest struct {
 
 func (x *AdminBanUserRequest) Reset() {
 	*x = AdminBanUserRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[93]
+	mi := &file_user_v1_user_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5408,7 +5598,7 @@ func (x *AdminBanUserRequest) String() string {
 func (*AdminBanUserRequest) ProtoMessage() {}
 
 func (x *AdminBanUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[93]
+	mi := &file_user_v1_user_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5421,7 +5611,7 @@ func (x *AdminBanUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBanUserRequest.ProtoReflect.Descriptor instead.
 func (*AdminBanUserRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{93}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *AdminBanUserRequest) GetUserId() string {
@@ -5454,7 +5644,7 @@ type AdminBanUserResponse struct {
 
 func (x *AdminBanUserResponse) Reset() {
 	*x = AdminBanUserResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[94]
+	mi := &file_user_v1_user_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5466,7 +5656,7 @@ func (x *AdminBanUserResponse) String() string {
 func (*AdminBanUserResponse) ProtoMessage() {}
 
 func (x *AdminBanUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[94]
+	mi := &file_user_v1_user_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5479,7 +5669,7 @@ func (x *AdminBanUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBanUserResponse.ProtoReflect.Descriptor instead.
 func (*AdminBanUserResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{94}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *AdminBanUserResponse) GetUser() *User {
@@ -5500,7 +5690,7 @@ type AdminReactivateUserRequest struct {
 
 func (x *AdminReactivateUserRequest) Reset() {
 	*x = AdminReactivateUserRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[95]
+	mi := &file_user_v1_user_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5512,7 +5702,7 @@ func (x *AdminReactivateUserRequest) String() string {
 func (*AdminReactivateUserRequest) ProtoMessage() {}
 
 func (x *AdminReactivateUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[95]
+	mi := &file_user_v1_user_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5525,7 +5715,7 @@ func (x *AdminReactivateUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReactivateUserRequest.ProtoReflect.Descriptor instead.
 func (*AdminReactivateUserRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{95}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *AdminReactivateUserRequest) GetUserId() string {
@@ -5558,7 +5748,7 @@ type AdminReactivateUserResponse struct {
 
 func (x *AdminReactivateUserResponse) Reset() {
 	*x = AdminReactivateUserResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[96]
+	mi := &file_user_v1_user_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5570,7 +5760,7 @@ func (x *AdminReactivateUserResponse) String() string {
 func (*AdminReactivateUserResponse) ProtoMessage() {}
 
 func (x *AdminReactivateUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[96]
+	mi := &file_user_v1_user_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5583,7 +5773,7 @@ func (x *AdminReactivateUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReactivateUserResponse.ProtoReflect.Descriptor instead.
 func (*AdminReactivateUserResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{96}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *AdminReactivateUserResponse) GetUser() *User {
@@ -5605,7 +5795,7 @@ type AdminReviewDocumentRequest struct {
 
 func (x *AdminReviewDocumentRequest) Reset() {
 	*x = AdminReviewDocumentRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[97]
+	mi := &file_user_v1_user_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5617,7 +5807,7 @@ func (x *AdminReviewDocumentRequest) String() string {
 func (*AdminReviewDocumentRequest) ProtoMessage() {}
 
 func (x *AdminReviewDocumentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[97]
+	mi := &file_user_v1_user_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5630,7 +5820,7 @@ func (x *AdminReviewDocumentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReviewDocumentRequest.ProtoReflect.Descriptor instead.
 func (*AdminReviewDocumentRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{97}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *AdminReviewDocumentRequest) GetDocumentId() string {
@@ -5670,7 +5860,7 @@ type AdminReviewDocumentResponse struct {
 
 func (x *AdminReviewDocumentResponse) Reset() {
 	*x = AdminReviewDocumentResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[98]
+	mi := &file_user_v1_user_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5682,7 +5872,7 @@ func (x *AdminReviewDocumentResponse) String() string {
 func (*AdminReviewDocumentResponse) ProtoMessage() {}
 
 func (x *AdminReviewDocumentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[98]
+	mi := &file_user_v1_user_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5695,7 +5885,7 @@ func (x *AdminReviewDocumentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReviewDocumentResponse.ProtoReflect.Descriptor instead.
 func (*AdminReviewDocumentResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{98}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *AdminReviewDocumentResponse) GetStatus() v1.VerificationStatus {
@@ -5714,7 +5904,7 @@ type AdminListPendingDocumentsRequest struct {
 
 func (x *AdminListPendingDocumentsRequest) Reset() {
 	*x = AdminListPendingDocumentsRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[99]
+	mi := &file_user_v1_user_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5726,7 +5916,7 @@ func (x *AdminListPendingDocumentsRequest) String() string {
 func (*AdminListPendingDocumentsRequest) ProtoMessage() {}
 
 func (x *AdminListPendingDocumentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[99]
+	mi := &file_user_v1_user_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5739,7 +5929,7 @@ func (x *AdminListPendingDocumentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminListPendingDocumentsRequest.ProtoReflect.Descriptor instead.
 func (*AdminListPendingDocumentsRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{99}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *AdminListPendingDocumentsRequest) GetPagination() *v1.PaginationRequest {
@@ -5768,7 +5958,7 @@ type PendingDocument struct {
 
 func (x *PendingDocument) Reset() {
 	*x = PendingDocument{}
-	mi := &file_user_v1_user_proto_msgTypes[100]
+	mi := &file_user_v1_user_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5780,7 +5970,7 @@ func (x *PendingDocument) String() string {
 func (*PendingDocument) ProtoMessage() {}
 
 func (x *PendingDocument) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[100]
+	mi := &file_user_v1_user_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5793,7 +5983,7 @@ func (x *PendingDocument) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingDocument.ProtoReflect.Descriptor instead.
 func (*PendingDocument) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{100}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *PendingDocument) GetId() string {
@@ -5869,7 +6059,7 @@ type AdminListPendingDocumentsResponse struct {
 
 func (x *AdminListPendingDocumentsResponse) Reset() {
 	*x = AdminListPendingDocumentsResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[101]
+	mi := &file_user_v1_user_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5881,7 +6071,7 @@ func (x *AdminListPendingDocumentsResponse) String() string {
 func (*AdminListPendingDocumentsResponse) ProtoMessage() {}
 
 func (x *AdminListPendingDocumentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[101]
+	mi := &file_user_v1_user_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5894,7 +6084,7 @@ func (x *AdminListPendingDocumentsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use AdminListPendingDocumentsResponse.ProtoReflect.Descriptor instead.
 func (*AdminListPendingDocumentsResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{101}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *AdminListPendingDocumentsResponse) GetDocuments() []*PendingDocument {
@@ -5928,7 +6118,7 @@ type SearchProvidersRequest struct {
 
 func (x *SearchProvidersRequest) Reset() {
 	*x = SearchProvidersRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[102]
+	mi := &file_user_v1_user_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5940,7 +6130,7 @@ func (x *SearchProvidersRequest) String() string {
 func (*SearchProvidersRequest) ProtoMessage() {}
 
 func (x *SearchProvidersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[102]
+	mi := &file_user_v1_user_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5953,7 +6143,7 @@ func (x *SearchProvidersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchProvidersRequest.ProtoReflect.Descriptor instead.
 func (*SearchProvidersRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{102}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *SearchProvidersRequest) GetCategoryIds() []string {
@@ -6029,7 +6219,7 @@ type SearchProvidersResponse struct {
 
 func (x *SearchProvidersResponse) Reset() {
 	*x = SearchProvidersResponse{}
-	mi := &file_user_v1_user_proto_msgTypes[103]
+	mi := &file_user_v1_user_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6041,7 +6231,7 @@ func (x *SearchProvidersResponse) String() string {
 func (*SearchProvidersResponse) ProtoMessage() {}
 
 func (x *SearchProvidersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[103]
+	mi := &file_user_v1_user_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6054,7 +6244,7 @@ func (x *SearchProvidersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchProvidersResponse.ProtoReflect.Descriptor instead.
 func (*SearchProvidersResponse) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{103}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *SearchProvidersResponse) GetProviders() []*ProviderSearchResult {
@@ -6089,7 +6279,7 @@ type ProviderSearchResult struct {
 
 func (x *ProviderSearchResult) Reset() {
 	*x = ProviderSearchResult{}
-	mi := &file_user_v1_user_proto_msgTypes[104]
+	mi := &file_user_v1_user_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6101,7 +6291,7 @@ func (x *ProviderSearchResult) String() string {
 func (*ProviderSearchResult) ProtoMessage() {}
 
 func (x *ProviderSearchResult) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[104]
+	mi := &file_user_v1_user_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6114,7 +6304,7 @@ func (x *ProviderSearchResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderSearchResult.ProtoReflect.Descriptor instead.
 func (*ProviderSearchResult) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{104}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *ProviderSearchResult) GetUserId() string {
@@ -6315,7 +6505,22 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x0eGetUserRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\"=\n" +
 	"\x0fGetUserResponse\x12*\n" +
-	"\x04user\x18\x01 \x01(\v2\x16.nomarkup.user.v1.UserR\x04user\"\xeb\x01\n" +
+	"\x04user\x18\x01 \x01(\v2\x16.nomarkup.user.v1.UserR\x04user\"\xc7\x02\n" +
+	"\n" +
+	"PublicUser\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\x03 \x01(\tR\tavatarUrl\x122\n" +
+	"\x05roles\x18\x04 \x03(\x0e2\x1c.nomarkup.common.v1.UserRoleR\x05roles\x126\n" +
+	"\x06status\x18\x05 \x01(\x0e2\x1e.nomarkup.common.v1.UserStatusR\x06status\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12@\n" +
+	"\x0elast_active_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"1\n" +
+	"\x14BatchGetUsersRequest\x12\x19\n" +
+	"\buser_ids\x18\x01 \x03(\tR\auserIds\"K\n" +
+	"\x15BatchGetUsersResponse\x122\n" +
+	"\x05users\x18\x01 \x03(\v2\x1c.nomarkup.user.v1.PublicUserR\x05users\"\xeb\x01\n" +
 	"\x11UpdateUserRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12&\n" +
 	"\fdisplay_name\x18\x02 \x01(\tH\x00R\vdisplayName\x88\x01\x01\x12\x19\n" +
@@ -6684,7 +6889,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"categories\x18\t \x03(\v2(.nomarkup.user.v1.ServiceCategorySummaryR\n" +
 	"categories\x12+\n" +
 	"\x11instant_available\x18\n" +
-	" \x01(\bR\x10instantAvailable2\xac%\n" +
+	" \x01(\bR\x10instantAvailable2\x8e&\n" +
 	"\vUserService\x12Q\n" +
 	"\bRegister\x12!.nomarkup.user.v1.RegisterRequest\x1a\".nomarkup.user.v1.RegisterResponse\x12H\n" +
 	"\x05Login\x12\x1e.nomarkup.user.v1.LoginRequest\x1a\x1f.nomarkup.user.v1.LoginResponse\x12]\n" +
@@ -6703,7 +6908,8 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\tVerifyMFA\x12\".nomarkup.user.v1.VerifyMFARequest\x1a#.nomarkup.user.v1.VerifyMFAResponse\x12W\n" +
 	"\n" +
 	"DisableMFA\x12#.nomarkup.user.v1.DisableMFARequest\x1a$.nomarkup.user.v1.DisableMFAResponse\x12N\n" +
-	"\aGetUser\x12 .nomarkup.user.v1.GetUserRequest\x1a!.nomarkup.user.v1.GetUserResponse\x12W\n" +
+	"\aGetUser\x12 .nomarkup.user.v1.GetUserRequest\x1a!.nomarkup.user.v1.GetUserResponse\x12`\n" +
+	"\rBatchGetUsers\x12&.nomarkup.user.v1.BatchGetUsersRequest\x1a'.nomarkup.user.v1.BatchGetUsersResponse\x12W\n" +
 	"\n" +
 	"UpdateUser\x12#.nomarkup.user.v1.UpdateUserRequest\x1a$.nomarkup.user.v1.UpdateUserResponse\x12W\n" +
 	"\n" +
@@ -6748,7 +6954,7 @@ func file_user_v1_user_proto_rawDescGZIP() []byte {
 	return file_user_v1_user_proto_rawDescData
 }
 
-var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 106)
+var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 109)
 var file_user_v1_user_proto_goTypes = []any{
 	(*RegisterRequest)(nil),                   // 0: nomarkup.user.v1.RegisterRequest
 	(*RegisterResponse)(nil),                  // 1: nomarkup.user.v1.RegisterResponse
@@ -6785,271 +6991,281 @@ var file_user_v1_user_proto_goTypes = []any{
 	(*User)(nil),                              // 32: nomarkup.user.v1.User
 	(*GetUserRequest)(nil),                    // 33: nomarkup.user.v1.GetUserRequest
 	(*GetUserResponse)(nil),                   // 34: nomarkup.user.v1.GetUserResponse
-	(*UpdateUserRequest)(nil),                 // 35: nomarkup.user.v1.UpdateUserRequest
-	(*UpdateUserResponse)(nil),                // 36: nomarkup.user.v1.UpdateUserResponse
-	(*EnableRoleRequest)(nil),                 // 37: nomarkup.user.v1.EnableRoleRequest
-	(*EnableRoleResponse)(nil),                // 38: nomarkup.user.v1.EnableRoleResponse
-	(*DeactivateAccountRequest)(nil),          // 39: nomarkup.user.v1.DeactivateAccountRequest
-	(*DeactivateAccountResponse)(nil),         // 40: nomarkup.user.v1.DeactivateAccountResponse
-	(*RequestAccountDeletionRequest)(nil),     // 41: nomarkup.user.v1.RequestAccountDeletionRequest
-	(*RequestAccountDeletionResponse)(nil),    // 42: nomarkup.user.v1.RequestAccountDeletionResponse
-	(*CancelAccountDeletionRequest)(nil),      // 43: nomarkup.user.v1.CancelAccountDeletionRequest
-	(*CancelAccountDeletionResponse)(nil),     // 44: nomarkup.user.v1.CancelAccountDeletionResponse
-	(*FinalizeAccountDeletionRequest)(nil),    // 45: nomarkup.user.v1.FinalizeAccountDeletionRequest
-	(*FinalizeAccountDeletionResponse)(nil),   // 46: nomarkup.user.v1.FinalizeAccountDeletionResponse
-	(*ProviderProfile)(nil),                   // 47: nomarkup.user.v1.ProviderProfile
-	(*MilestoneTemplate)(nil),                 // 48: nomarkup.user.v1.MilestoneTemplate
-	(*ServiceCategorySummary)(nil),            // 49: nomarkup.user.v1.ServiceCategorySummary
-	(*PortfolioImage)(nil),                    // 50: nomarkup.user.v1.PortfolioImage
-	(*VerificationBadge)(nil),                 // 51: nomarkup.user.v1.VerificationBadge
-	(*TrustScoreSummary)(nil),                 // 52: nomarkup.user.v1.TrustScoreSummary
-	(*ReviewSummary)(nil),                     // 53: nomarkup.user.v1.ReviewSummary
-	(*GetProviderProfileRequest)(nil),         // 54: nomarkup.user.v1.GetProviderProfileRequest
-	(*GetProviderProfileResponse)(nil),        // 55: nomarkup.user.v1.GetProviderProfileResponse
-	(*UpdateProviderProfileRequest)(nil),      // 56: nomarkup.user.v1.UpdateProviderProfileRequest
-	(*UpdateProviderProfileResponse)(nil),     // 57: nomarkup.user.v1.UpdateProviderProfileResponse
-	(*SetGlobalTermsRequest)(nil),             // 58: nomarkup.user.v1.SetGlobalTermsRequest
-	(*SetGlobalTermsResponse)(nil),            // 59: nomarkup.user.v1.SetGlobalTermsResponse
-	(*UpdateServiceCategoriesRequest)(nil),    // 60: nomarkup.user.v1.UpdateServiceCategoriesRequest
-	(*UpdateServiceCategoriesResponse)(nil),   // 61: nomarkup.user.v1.UpdateServiceCategoriesResponse
-	(*UpdatePortfolioRequest)(nil),            // 62: nomarkup.user.v1.UpdatePortfolioRequest
-	(*UpdatePortfolioResponse)(nil),           // 63: nomarkup.user.v1.UpdatePortfolioResponse
-	(*SetInstantAvailabilityRequest)(nil),     // 64: nomarkup.user.v1.SetInstantAvailabilityRequest
-	(*AvailabilityWindow)(nil),                // 65: nomarkup.user.v1.AvailabilityWindow
-	(*SetInstantAvailabilityResponse)(nil),    // 66: nomarkup.user.v1.SetInstantAvailabilityResponse
-	(*ServiceCategory)(nil),                   // 67: nomarkup.user.v1.ServiceCategory
-	(*GetServiceCategoriesRequest)(nil),       // 68: nomarkup.user.v1.GetServiceCategoriesRequest
-	(*GetServiceCategoriesResponse)(nil),      // 69: nomarkup.user.v1.GetServiceCategoriesResponse
-	(*GetCategoryTreeRequest)(nil),            // 70: nomarkup.user.v1.GetCategoryTreeRequest
-	(*GetCategoryTreeResponse)(nil),           // 71: nomarkup.user.v1.GetCategoryTreeResponse
-	(*Property)(nil),                          // 72: nomarkup.user.v1.Property
-	(*CreatePropertyRequest)(nil),             // 73: nomarkup.user.v1.CreatePropertyRequest
-	(*CreatePropertyResponse)(nil),            // 74: nomarkup.user.v1.CreatePropertyResponse
-	(*UpdatePropertyRequest)(nil),             // 75: nomarkup.user.v1.UpdatePropertyRequest
-	(*UpdatePropertyResponse)(nil),            // 76: nomarkup.user.v1.UpdatePropertyResponse
-	(*DeletePropertyRequest)(nil),             // 77: nomarkup.user.v1.DeletePropertyRequest
-	(*DeletePropertyResponse)(nil),            // 78: nomarkup.user.v1.DeletePropertyResponse
-	(*ListPropertiesRequest)(nil),             // 79: nomarkup.user.v1.ListPropertiesRequest
-	(*ListPropertiesResponse)(nil),            // 80: nomarkup.user.v1.ListPropertiesResponse
-	(*UploadDocumentRequest)(nil),             // 81: nomarkup.user.v1.UploadDocumentRequest
-	(*UploadDocumentResponse)(nil),            // 82: nomarkup.user.v1.UploadDocumentResponse
-	(*GetDocumentStatusRequest)(nil),          // 83: nomarkup.user.v1.GetDocumentStatusRequest
-	(*GetDocumentStatusResponse)(nil),         // 84: nomarkup.user.v1.GetDocumentStatusResponse
-	(*ListDocumentsRequest)(nil),              // 85: nomarkup.user.v1.ListDocumentsRequest
-	(*ListDocumentsResponse)(nil),             // 86: nomarkup.user.v1.ListDocumentsResponse
-	(*AdminGetUserRequest)(nil),               // 87: nomarkup.user.v1.AdminGetUserRequest
-	(*AdminGetUserResponse)(nil),              // 88: nomarkup.user.v1.AdminGetUserResponse
-	(*AdminSearchUsersRequest)(nil),           // 89: nomarkup.user.v1.AdminSearchUsersRequest
-	(*AdminSearchUsersResponse)(nil),          // 90: nomarkup.user.v1.AdminSearchUsersResponse
-	(*AdminSuspendUserRequest)(nil),           // 91: nomarkup.user.v1.AdminSuspendUserRequest
-	(*AdminSuspendUserResponse)(nil),          // 92: nomarkup.user.v1.AdminSuspendUserResponse
-	(*AdminBanUserRequest)(nil),               // 93: nomarkup.user.v1.AdminBanUserRequest
-	(*AdminBanUserResponse)(nil),              // 94: nomarkup.user.v1.AdminBanUserResponse
-	(*AdminReactivateUserRequest)(nil),        // 95: nomarkup.user.v1.AdminReactivateUserRequest
-	(*AdminReactivateUserResponse)(nil),       // 96: nomarkup.user.v1.AdminReactivateUserResponse
-	(*AdminReviewDocumentRequest)(nil),        // 97: nomarkup.user.v1.AdminReviewDocumentRequest
-	(*AdminReviewDocumentResponse)(nil),       // 98: nomarkup.user.v1.AdminReviewDocumentResponse
-	(*AdminListPendingDocumentsRequest)(nil),  // 99: nomarkup.user.v1.AdminListPendingDocumentsRequest
-	(*PendingDocument)(nil),                   // 100: nomarkup.user.v1.PendingDocument
-	(*AdminListPendingDocumentsResponse)(nil), // 101: nomarkup.user.v1.AdminListPendingDocumentsResponse
-	(*SearchProvidersRequest)(nil),            // 102: nomarkup.user.v1.SearchProvidersRequest
-	(*SearchProvidersResponse)(nil),           // 103: nomarkup.user.v1.SearchProvidersResponse
-	(*ProviderSearchResult)(nil),              // 104: nomarkup.user.v1.ProviderSearchResult
-	nil,                                       // 105: nomarkup.user.v1.FinalizeAccountDeletionResponse.RowsAffectedEntry
-	(v1.UserRole)(0),                          // 106: nomarkup.common.v1.UserRole
-	(*timestamppb.Timestamp)(nil),             // 107: google.protobuf.Timestamp
-	(v1.UserStatus)(0),                        // 108: nomarkup.common.v1.UserStatus
-	(*v1.Location)(nil),                       // 109: nomarkup.common.v1.Location
-	(v1.PaymentTiming)(0),                     // 110: nomarkup.common.v1.PaymentTiming
-	(v1.VerificationStatus)(0),                // 111: nomarkup.common.v1.VerificationStatus
-	(v1.TrustTier)(0),                         // 112: nomarkup.common.v1.TrustTier
-	(*v1.Address)(nil),                        // 113: nomarkup.common.v1.Address
-	(*v1.FileReference)(nil),                  // 114: nomarkup.common.v1.FileReference
-	(*v1.PaginationRequest)(nil),              // 115: nomarkup.common.v1.PaginationRequest
-	(*v1.PaginationResponse)(nil),             // 116: nomarkup.common.v1.PaginationResponse
-	(*v1.SortRequest)(nil),                    // 117: nomarkup.common.v1.SortRequest
+	(*PublicUser)(nil),                        // 35: nomarkup.user.v1.PublicUser
+	(*BatchGetUsersRequest)(nil),              // 36: nomarkup.user.v1.BatchGetUsersRequest
+	(*BatchGetUsersResponse)(nil),             // 37: nomarkup.user.v1.BatchGetUsersResponse
+	(*UpdateUserRequest)(nil),                 // 38: nomarkup.user.v1.UpdateUserRequest
+	(*UpdateUserResponse)(nil),                // 39: nomarkup.user.v1.UpdateUserResponse
+	(*EnableRoleRequest)(nil),                 // 40: nomarkup.user.v1.EnableRoleRequest
+	(*EnableRoleResponse)(nil),                // 41: nomarkup.user.v1.EnableRoleResponse
+	(*DeactivateAccountRequest)(nil),          // 42: nomarkup.user.v1.DeactivateAccountRequest
+	(*DeactivateAccountResponse)(nil),         // 43: nomarkup.user.v1.DeactivateAccountResponse
+	(*RequestAccountDeletionRequest)(nil),     // 44: nomarkup.user.v1.RequestAccountDeletionRequest
+	(*RequestAccountDeletionResponse)(nil),    // 45: nomarkup.user.v1.RequestAccountDeletionResponse
+	(*CancelAccountDeletionRequest)(nil),      // 46: nomarkup.user.v1.CancelAccountDeletionRequest
+	(*CancelAccountDeletionResponse)(nil),     // 47: nomarkup.user.v1.CancelAccountDeletionResponse
+	(*FinalizeAccountDeletionRequest)(nil),    // 48: nomarkup.user.v1.FinalizeAccountDeletionRequest
+	(*FinalizeAccountDeletionResponse)(nil),   // 49: nomarkup.user.v1.FinalizeAccountDeletionResponse
+	(*ProviderProfile)(nil),                   // 50: nomarkup.user.v1.ProviderProfile
+	(*MilestoneTemplate)(nil),                 // 51: nomarkup.user.v1.MilestoneTemplate
+	(*ServiceCategorySummary)(nil),            // 52: nomarkup.user.v1.ServiceCategorySummary
+	(*PortfolioImage)(nil),                    // 53: nomarkup.user.v1.PortfolioImage
+	(*VerificationBadge)(nil),                 // 54: nomarkup.user.v1.VerificationBadge
+	(*TrustScoreSummary)(nil),                 // 55: nomarkup.user.v1.TrustScoreSummary
+	(*ReviewSummary)(nil),                     // 56: nomarkup.user.v1.ReviewSummary
+	(*GetProviderProfileRequest)(nil),         // 57: nomarkup.user.v1.GetProviderProfileRequest
+	(*GetProviderProfileResponse)(nil),        // 58: nomarkup.user.v1.GetProviderProfileResponse
+	(*UpdateProviderProfileRequest)(nil),      // 59: nomarkup.user.v1.UpdateProviderProfileRequest
+	(*UpdateProviderProfileResponse)(nil),     // 60: nomarkup.user.v1.UpdateProviderProfileResponse
+	(*SetGlobalTermsRequest)(nil),             // 61: nomarkup.user.v1.SetGlobalTermsRequest
+	(*SetGlobalTermsResponse)(nil),            // 62: nomarkup.user.v1.SetGlobalTermsResponse
+	(*UpdateServiceCategoriesRequest)(nil),    // 63: nomarkup.user.v1.UpdateServiceCategoriesRequest
+	(*UpdateServiceCategoriesResponse)(nil),   // 64: nomarkup.user.v1.UpdateServiceCategoriesResponse
+	(*UpdatePortfolioRequest)(nil),            // 65: nomarkup.user.v1.UpdatePortfolioRequest
+	(*UpdatePortfolioResponse)(nil),           // 66: nomarkup.user.v1.UpdatePortfolioResponse
+	(*SetInstantAvailabilityRequest)(nil),     // 67: nomarkup.user.v1.SetInstantAvailabilityRequest
+	(*AvailabilityWindow)(nil),                // 68: nomarkup.user.v1.AvailabilityWindow
+	(*SetInstantAvailabilityResponse)(nil),    // 69: nomarkup.user.v1.SetInstantAvailabilityResponse
+	(*ServiceCategory)(nil),                   // 70: nomarkup.user.v1.ServiceCategory
+	(*GetServiceCategoriesRequest)(nil),       // 71: nomarkup.user.v1.GetServiceCategoriesRequest
+	(*GetServiceCategoriesResponse)(nil),      // 72: nomarkup.user.v1.GetServiceCategoriesResponse
+	(*GetCategoryTreeRequest)(nil),            // 73: nomarkup.user.v1.GetCategoryTreeRequest
+	(*GetCategoryTreeResponse)(nil),           // 74: nomarkup.user.v1.GetCategoryTreeResponse
+	(*Property)(nil),                          // 75: nomarkup.user.v1.Property
+	(*CreatePropertyRequest)(nil),             // 76: nomarkup.user.v1.CreatePropertyRequest
+	(*CreatePropertyResponse)(nil),            // 77: nomarkup.user.v1.CreatePropertyResponse
+	(*UpdatePropertyRequest)(nil),             // 78: nomarkup.user.v1.UpdatePropertyRequest
+	(*UpdatePropertyResponse)(nil),            // 79: nomarkup.user.v1.UpdatePropertyResponse
+	(*DeletePropertyRequest)(nil),             // 80: nomarkup.user.v1.DeletePropertyRequest
+	(*DeletePropertyResponse)(nil),            // 81: nomarkup.user.v1.DeletePropertyResponse
+	(*ListPropertiesRequest)(nil),             // 82: nomarkup.user.v1.ListPropertiesRequest
+	(*ListPropertiesResponse)(nil),            // 83: nomarkup.user.v1.ListPropertiesResponse
+	(*UploadDocumentRequest)(nil),             // 84: nomarkup.user.v1.UploadDocumentRequest
+	(*UploadDocumentResponse)(nil),            // 85: nomarkup.user.v1.UploadDocumentResponse
+	(*GetDocumentStatusRequest)(nil),          // 86: nomarkup.user.v1.GetDocumentStatusRequest
+	(*GetDocumentStatusResponse)(nil),         // 87: nomarkup.user.v1.GetDocumentStatusResponse
+	(*ListDocumentsRequest)(nil),              // 88: nomarkup.user.v1.ListDocumentsRequest
+	(*ListDocumentsResponse)(nil),             // 89: nomarkup.user.v1.ListDocumentsResponse
+	(*AdminGetUserRequest)(nil),               // 90: nomarkup.user.v1.AdminGetUserRequest
+	(*AdminGetUserResponse)(nil),              // 91: nomarkup.user.v1.AdminGetUserResponse
+	(*AdminSearchUsersRequest)(nil),           // 92: nomarkup.user.v1.AdminSearchUsersRequest
+	(*AdminSearchUsersResponse)(nil),          // 93: nomarkup.user.v1.AdminSearchUsersResponse
+	(*AdminSuspendUserRequest)(nil),           // 94: nomarkup.user.v1.AdminSuspendUserRequest
+	(*AdminSuspendUserResponse)(nil),          // 95: nomarkup.user.v1.AdminSuspendUserResponse
+	(*AdminBanUserRequest)(nil),               // 96: nomarkup.user.v1.AdminBanUserRequest
+	(*AdminBanUserResponse)(nil),              // 97: nomarkup.user.v1.AdminBanUserResponse
+	(*AdminReactivateUserRequest)(nil),        // 98: nomarkup.user.v1.AdminReactivateUserRequest
+	(*AdminReactivateUserResponse)(nil),       // 99: nomarkup.user.v1.AdminReactivateUserResponse
+	(*AdminReviewDocumentRequest)(nil),        // 100: nomarkup.user.v1.AdminReviewDocumentRequest
+	(*AdminReviewDocumentResponse)(nil),       // 101: nomarkup.user.v1.AdminReviewDocumentResponse
+	(*AdminListPendingDocumentsRequest)(nil),  // 102: nomarkup.user.v1.AdminListPendingDocumentsRequest
+	(*PendingDocument)(nil),                   // 103: nomarkup.user.v1.PendingDocument
+	(*AdminListPendingDocumentsResponse)(nil), // 104: nomarkup.user.v1.AdminListPendingDocumentsResponse
+	(*SearchProvidersRequest)(nil),            // 105: nomarkup.user.v1.SearchProvidersRequest
+	(*SearchProvidersResponse)(nil),           // 106: nomarkup.user.v1.SearchProvidersResponse
+	(*ProviderSearchResult)(nil),              // 107: nomarkup.user.v1.ProviderSearchResult
+	nil,                                       // 108: nomarkup.user.v1.FinalizeAccountDeletionResponse.RowsAffectedEntry
+	(v1.UserRole)(0),                          // 109: nomarkup.common.v1.UserRole
+	(*timestamppb.Timestamp)(nil),             // 110: google.protobuf.Timestamp
+	(v1.UserStatus)(0),                        // 111: nomarkup.common.v1.UserStatus
+	(*v1.Location)(nil),                       // 112: nomarkup.common.v1.Location
+	(v1.PaymentTiming)(0),                     // 113: nomarkup.common.v1.PaymentTiming
+	(v1.VerificationStatus)(0),                // 114: nomarkup.common.v1.VerificationStatus
+	(v1.TrustTier)(0),                         // 115: nomarkup.common.v1.TrustTier
+	(*v1.Address)(nil),                        // 116: nomarkup.common.v1.Address
+	(*v1.FileReference)(nil),                  // 117: nomarkup.common.v1.FileReference
+	(*v1.PaginationRequest)(nil),              // 118: nomarkup.common.v1.PaginationRequest
+	(*v1.PaginationResponse)(nil),             // 119: nomarkup.common.v1.PaginationResponse
+	(*v1.SortRequest)(nil),                    // 120: nomarkup.common.v1.SortRequest
 }
 var file_user_v1_user_proto_depIdxs = []int32{
-	106, // 0: nomarkup.user.v1.RegisterRequest.roles:type_name -> nomarkup.common.v1.UserRole
-	107, // 1: nomarkup.user.v1.RegisterResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	107, // 2: nomarkup.user.v1.LoginResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	107, // 3: nomarkup.user.v1.RefreshTokenResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	107, // 4: nomarkup.user.v1.VerifyMFAResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	107, // 5: nomarkup.user.v1.FindOrCreateByOAuthResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	106, // 6: nomarkup.user.v1.User.roles:type_name -> nomarkup.common.v1.UserRole
-	108, // 7: nomarkup.user.v1.User.status:type_name -> nomarkup.common.v1.UserStatus
-	107, // 8: nomarkup.user.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	107, // 9: nomarkup.user.v1.User.last_active_at:type_name -> google.protobuf.Timestamp
+	109, // 0: nomarkup.user.v1.RegisterRequest.roles:type_name -> nomarkup.common.v1.UserRole
+	110, // 1: nomarkup.user.v1.RegisterResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	110, // 2: nomarkup.user.v1.LoginResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	110, // 3: nomarkup.user.v1.RefreshTokenResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	110, // 4: nomarkup.user.v1.VerifyMFAResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	110, // 5: nomarkup.user.v1.FindOrCreateByOAuthResponse.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	109, // 6: nomarkup.user.v1.User.roles:type_name -> nomarkup.common.v1.UserRole
+	111, // 7: nomarkup.user.v1.User.status:type_name -> nomarkup.common.v1.UserStatus
+	110, // 8: nomarkup.user.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	110, // 9: nomarkup.user.v1.User.last_active_at:type_name -> google.protobuf.Timestamp
 	32,  // 10: nomarkup.user.v1.GetUserResponse.user:type_name -> nomarkup.user.v1.User
-	32,  // 11: nomarkup.user.v1.UpdateUserResponse.user:type_name -> nomarkup.user.v1.User
-	106, // 12: nomarkup.user.v1.EnableRoleRequest.role:type_name -> nomarkup.common.v1.UserRole
-	32,  // 13: nomarkup.user.v1.EnableRoleResponse.user:type_name -> nomarkup.user.v1.User
-	107, // 14: nomarkup.user.v1.RequestAccountDeletionResponse.grace_deadline:type_name -> google.protobuf.Timestamp
-	107, // 15: nomarkup.user.v1.FinalizeAccountDeletionResponse.finalized_at:type_name -> google.protobuf.Timestamp
-	105, // 16: nomarkup.user.v1.FinalizeAccountDeletionResponse.rows_affected:type_name -> nomarkup.user.v1.FinalizeAccountDeletionResponse.RowsAffectedEntry
-	109, // 17: nomarkup.user.v1.ProviderProfile.service_location:type_name -> nomarkup.common.v1.Location
-	110, // 18: nomarkup.user.v1.ProviderProfile.default_payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
-	48,  // 19: nomarkup.user.v1.ProviderProfile.default_milestones:type_name -> nomarkup.user.v1.MilestoneTemplate
-	49,  // 20: nomarkup.user.v1.ProviderProfile.service_categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
-	50,  // 21: nomarkup.user.v1.ProviderProfile.portfolio:type_name -> nomarkup.user.v1.PortfolioImage
-	51,  // 22: nomarkup.user.v1.ProviderProfile.verification_badges:type_name -> nomarkup.user.v1.VerificationBadge
-	52,  // 23: nomarkup.user.v1.ProviderProfile.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
-	53,  // 24: nomarkup.user.v1.ProviderProfile.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
-	107, // 25: nomarkup.user.v1.ProviderProfile.member_since:type_name -> google.protobuf.Timestamp
-	111, // 26: nomarkup.user.v1.VerificationBadge.status:type_name -> nomarkup.common.v1.VerificationStatus
-	107, // 27: nomarkup.user.v1.VerificationBadge.verified_at:type_name -> google.protobuf.Timestamp
-	107, // 28: nomarkup.user.v1.VerificationBadge.expires_at:type_name -> google.protobuf.Timestamp
-	112, // 29: nomarkup.user.v1.TrustScoreSummary.tier:type_name -> nomarkup.common.v1.TrustTier
-	47,  // 30: nomarkup.user.v1.GetProviderProfileResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
-	109, // 31: nomarkup.user.v1.UpdateProviderProfileRequest.service_location:type_name -> nomarkup.common.v1.Location
-	47,  // 32: nomarkup.user.v1.UpdateProviderProfileResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
-	110, // 33: nomarkup.user.v1.SetGlobalTermsRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
-	48,  // 34: nomarkup.user.v1.SetGlobalTermsRequest.milestones:type_name -> nomarkup.user.v1.MilestoneTemplate
-	47,  // 35: nomarkup.user.v1.SetGlobalTermsResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
-	49,  // 36: nomarkup.user.v1.UpdateServiceCategoriesResponse.categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
-	50,  // 37: nomarkup.user.v1.UpdatePortfolioRequest.images:type_name -> nomarkup.user.v1.PortfolioImage
-	50,  // 38: nomarkup.user.v1.UpdatePortfolioResponse.images:type_name -> nomarkup.user.v1.PortfolioImage
-	65,  // 39: nomarkup.user.v1.SetInstantAvailabilityRequest.schedule:type_name -> nomarkup.user.v1.AvailabilityWindow
-	67,  // 40: nomarkup.user.v1.ServiceCategory.children:type_name -> nomarkup.user.v1.ServiceCategory
-	67,  // 41: nomarkup.user.v1.GetServiceCategoriesResponse.categories:type_name -> nomarkup.user.v1.ServiceCategory
-	67,  // 42: nomarkup.user.v1.GetCategoryTreeResponse.categories:type_name -> nomarkup.user.v1.ServiceCategory
-	113, // 43: nomarkup.user.v1.Property.address:type_name -> nomarkup.common.v1.Address
-	107, // 44: nomarkup.user.v1.Property.created_at:type_name -> google.protobuf.Timestamp
-	113, // 45: nomarkup.user.v1.CreatePropertyRequest.address:type_name -> nomarkup.common.v1.Address
-	72,  // 46: nomarkup.user.v1.CreatePropertyResponse.property:type_name -> nomarkup.user.v1.Property
-	72,  // 47: nomarkup.user.v1.UpdatePropertyResponse.property:type_name -> nomarkup.user.v1.Property
-	72,  // 48: nomarkup.user.v1.ListPropertiesResponse.properties:type_name -> nomarkup.user.v1.Property
-	114, // 49: nomarkup.user.v1.UploadDocumentRequest.file:type_name -> nomarkup.common.v1.FileReference
-	107, // 50: nomarkup.user.v1.UploadDocumentRequest.expires_at:type_name -> google.protobuf.Timestamp
-	111, // 51: nomarkup.user.v1.UploadDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
-	111, // 52: nomarkup.user.v1.GetDocumentStatusResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
-	107, // 53: nomarkup.user.v1.GetDocumentStatusResponse.expires_at:type_name -> google.protobuf.Timestamp
-	84,  // 54: nomarkup.user.v1.ListDocumentsResponse.documents:type_name -> nomarkup.user.v1.GetDocumentStatusResponse
-	32,  // 55: nomarkup.user.v1.AdminGetUserResponse.user:type_name -> nomarkup.user.v1.User
-	47,  // 56: nomarkup.user.v1.AdminGetUserResponse.provider_profile:type_name -> nomarkup.user.v1.ProviderProfile
-	84,  // 57: nomarkup.user.v1.AdminGetUserResponse.documents:type_name -> nomarkup.user.v1.GetDocumentStatusResponse
-	52,  // 58: nomarkup.user.v1.AdminGetUserResponse.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
-	108, // 59: nomarkup.user.v1.AdminSearchUsersRequest.status_filter:type_name -> nomarkup.common.v1.UserStatus
-	106, // 60: nomarkup.user.v1.AdminSearchUsersRequest.role_filter:type_name -> nomarkup.common.v1.UserRole
-	115, // 61: nomarkup.user.v1.AdminSearchUsersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	32,  // 62: nomarkup.user.v1.AdminSearchUsersResponse.users:type_name -> nomarkup.user.v1.User
-	116, // 63: nomarkup.user.v1.AdminSearchUsersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	32,  // 64: nomarkup.user.v1.AdminSuspendUserResponse.user:type_name -> nomarkup.user.v1.User
-	32,  // 65: nomarkup.user.v1.AdminBanUserResponse.user:type_name -> nomarkup.user.v1.User
-	32,  // 66: nomarkup.user.v1.AdminReactivateUserResponse.user:type_name -> nomarkup.user.v1.User
-	111, // 67: nomarkup.user.v1.AdminReviewDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
-	115, // 68: nomarkup.user.v1.AdminListPendingDocumentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	111, // 69: nomarkup.user.v1.PendingDocument.status:type_name -> nomarkup.common.v1.VerificationStatus
-	107, // 70: nomarkup.user.v1.PendingDocument.created_at:type_name -> google.protobuf.Timestamp
-	100, // 71: nomarkup.user.v1.AdminListPendingDocumentsResponse.documents:type_name -> nomarkup.user.v1.PendingDocument
-	116, // 72: nomarkup.user.v1.AdminListPendingDocumentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	109, // 73: nomarkup.user.v1.SearchProvidersRequest.location:type_name -> nomarkup.common.v1.Location
-	112, // 74: nomarkup.user.v1.SearchProvidersRequest.min_trust_tier:type_name -> nomarkup.common.v1.TrustTier
-	117, // 75: nomarkup.user.v1.SearchProvidersRequest.sort:type_name -> nomarkup.common.v1.SortRequest
-	115, // 76: nomarkup.user.v1.SearchProvidersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	104, // 77: nomarkup.user.v1.SearchProvidersResponse.providers:type_name -> nomarkup.user.v1.ProviderSearchResult
-	116, // 78: nomarkup.user.v1.SearchProvidersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	53,  // 79: nomarkup.user.v1.ProviderSearchResult.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
-	52,  // 80: nomarkup.user.v1.ProviderSearchResult.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
-	51,  // 81: nomarkup.user.v1.ProviderSearchResult.badges:type_name -> nomarkup.user.v1.VerificationBadge
-	49,  // 82: nomarkup.user.v1.ProviderSearchResult.categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
-	0,   // 83: nomarkup.user.v1.UserService.Register:input_type -> nomarkup.user.v1.RegisterRequest
-	2,   // 84: nomarkup.user.v1.UserService.Login:input_type -> nomarkup.user.v1.LoginRequest
-	4,   // 85: nomarkup.user.v1.UserService.RefreshToken:input_type -> nomarkup.user.v1.RefreshTokenRequest
-	6,   // 86: nomarkup.user.v1.UserService.Logout:input_type -> nomarkup.user.v1.LogoutRequest
-	8,   // 87: nomarkup.user.v1.UserService.VerifyEmail:input_type -> nomarkup.user.v1.VerifyEmailRequest
-	10,  // 88: nomarkup.user.v1.UserService.ResendVerification:input_type -> nomarkup.user.v1.ResendVerificationRequest
-	12,  // 89: nomarkup.user.v1.UserService.VerifyPhone:input_type -> nomarkup.user.v1.VerifyPhoneRequest
-	14,  // 90: nomarkup.user.v1.UserService.SendPhoneOTP:input_type -> nomarkup.user.v1.SendPhoneOTPRequest
-	16,  // 91: nomarkup.user.v1.UserService.RequestPasswordReset:input_type -> nomarkup.user.v1.RequestPasswordResetRequest
-	18,  // 92: nomarkup.user.v1.UserService.ResetPassword:input_type -> nomarkup.user.v1.ResetPasswordRequest
-	20,  // 93: nomarkup.user.v1.UserService.ChangePassword:input_type -> nomarkup.user.v1.ChangePasswordRequest
-	30,  // 94: nomarkup.user.v1.UserService.FindOrCreateByOAuth:input_type -> nomarkup.user.v1.FindOrCreateByOAuthRequest
-	22,  // 95: nomarkup.user.v1.UserService.EnableMFA:input_type -> nomarkup.user.v1.EnableMFARequest
-	24,  // 96: nomarkup.user.v1.UserService.ConfirmMFASetup:input_type -> nomarkup.user.v1.ConfirmMFASetupRequest
-	26,  // 97: nomarkup.user.v1.UserService.VerifyMFA:input_type -> nomarkup.user.v1.VerifyMFARequest
-	28,  // 98: nomarkup.user.v1.UserService.DisableMFA:input_type -> nomarkup.user.v1.DisableMFARequest
-	33,  // 99: nomarkup.user.v1.UserService.GetUser:input_type -> nomarkup.user.v1.GetUserRequest
-	35,  // 100: nomarkup.user.v1.UserService.UpdateUser:input_type -> nomarkup.user.v1.UpdateUserRequest
-	37,  // 101: nomarkup.user.v1.UserService.EnableRole:input_type -> nomarkup.user.v1.EnableRoleRequest
-	39,  // 102: nomarkup.user.v1.UserService.DeactivateAccount:input_type -> nomarkup.user.v1.DeactivateAccountRequest
-	41,  // 103: nomarkup.user.v1.UserService.RequestAccountDeletion:input_type -> nomarkup.user.v1.RequestAccountDeletionRequest
-	43,  // 104: nomarkup.user.v1.UserService.CancelAccountDeletion:input_type -> nomarkup.user.v1.CancelAccountDeletionRequest
-	45,  // 105: nomarkup.user.v1.UserService.FinalizeAccountDeletion:input_type -> nomarkup.user.v1.FinalizeAccountDeletionRequest
-	54,  // 106: nomarkup.user.v1.UserService.GetProviderProfile:input_type -> nomarkup.user.v1.GetProviderProfileRequest
-	56,  // 107: nomarkup.user.v1.UserService.UpdateProviderProfile:input_type -> nomarkup.user.v1.UpdateProviderProfileRequest
-	58,  // 108: nomarkup.user.v1.UserService.SetGlobalTerms:input_type -> nomarkup.user.v1.SetGlobalTermsRequest
-	60,  // 109: nomarkup.user.v1.UserService.UpdateServiceCategories:input_type -> nomarkup.user.v1.UpdateServiceCategoriesRequest
-	62,  // 110: nomarkup.user.v1.UserService.UpdatePortfolio:input_type -> nomarkup.user.v1.UpdatePortfolioRequest
-	64,  // 111: nomarkup.user.v1.UserService.SetInstantAvailability:input_type -> nomarkup.user.v1.SetInstantAvailabilityRequest
-	68,  // 112: nomarkup.user.v1.UserService.GetServiceCategories:input_type -> nomarkup.user.v1.GetServiceCategoriesRequest
-	70,  // 113: nomarkup.user.v1.UserService.GetCategoryTree:input_type -> nomarkup.user.v1.GetCategoryTreeRequest
-	73,  // 114: nomarkup.user.v1.UserService.CreateProperty:input_type -> nomarkup.user.v1.CreatePropertyRequest
-	75,  // 115: nomarkup.user.v1.UserService.UpdateProperty:input_type -> nomarkup.user.v1.UpdatePropertyRequest
-	77,  // 116: nomarkup.user.v1.UserService.DeleteProperty:input_type -> nomarkup.user.v1.DeletePropertyRequest
-	79,  // 117: nomarkup.user.v1.UserService.ListProperties:input_type -> nomarkup.user.v1.ListPropertiesRequest
-	81,  // 118: nomarkup.user.v1.UserService.UploadDocument:input_type -> nomarkup.user.v1.UploadDocumentRequest
-	83,  // 119: nomarkup.user.v1.UserService.GetDocumentStatus:input_type -> nomarkup.user.v1.GetDocumentStatusRequest
-	85,  // 120: nomarkup.user.v1.UserService.ListDocuments:input_type -> nomarkup.user.v1.ListDocumentsRequest
-	87,  // 121: nomarkup.user.v1.UserService.AdminGetUser:input_type -> nomarkup.user.v1.AdminGetUserRequest
-	89,  // 122: nomarkup.user.v1.UserService.AdminSearchUsers:input_type -> nomarkup.user.v1.AdminSearchUsersRequest
-	91,  // 123: nomarkup.user.v1.UserService.AdminSuspendUser:input_type -> nomarkup.user.v1.AdminSuspendUserRequest
-	93,  // 124: nomarkup.user.v1.UserService.AdminBanUser:input_type -> nomarkup.user.v1.AdminBanUserRequest
-	95,  // 125: nomarkup.user.v1.UserService.AdminReactivateUser:input_type -> nomarkup.user.v1.AdminReactivateUserRequest
-	97,  // 126: nomarkup.user.v1.UserService.AdminReviewDocument:input_type -> nomarkup.user.v1.AdminReviewDocumentRequest
-	99,  // 127: nomarkup.user.v1.UserService.AdminListPendingDocuments:input_type -> nomarkup.user.v1.AdminListPendingDocumentsRequest
-	102, // 128: nomarkup.user.v1.UserService.SearchProviders:input_type -> nomarkup.user.v1.SearchProvidersRequest
-	1,   // 129: nomarkup.user.v1.UserService.Register:output_type -> nomarkup.user.v1.RegisterResponse
-	3,   // 130: nomarkup.user.v1.UserService.Login:output_type -> nomarkup.user.v1.LoginResponse
-	5,   // 131: nomarkup.user.v1.UserService.RefreshToken:output_type -> nomarkup.user.v1.RefreshTokenResponse
-	7,   // 132: nomarkup.user.v1.UserService.Logout:output_type -> nomarkup.user.v1.LogoutResponse
-	9,   // 133: nomarkup.user.v1.UserService.VerifyEmail:output_type -> nomarkup.user.v1.VerifyEmailResponse
-	11,  // 134: nomarkup.user.v1.UserService.ResendVerification:output_type -> nomarkup.user.v1.ResendVerificationResponse
-	13,  // 135: nomarkup.user.v1.UserService.VerifyPhone:output_type -> nomarkup.user.v1.VerifyPhoneResponse
-	15,  // 136: nomarkup.user.v1.UserService.SendPhoneOTP:output_type -> nomarkup.user.v1.SendPhoneOTPResponse
-	17,  // 137: nomarkup.user.v1.UserService.RequestPasswordReset:output_type -> nomarkup.user.v1.RequestPasswordResetResponse
-	19,  // 138: nomarkup.user.v1.UserService.ResetPassword:output_type -> nomarkup.user.v1.ResetPasswordResponse
-	21,  // 139: nomarkup.user.v1.UserService.ChangePassword:output_type -> nomarkup.user.v1.ChangePasswordResponse
-	31,  // 140: nomarkup.user.v1.UserService.FindOrCreateByOAuth:output_type -> nomarkup.user.v1.FindOrCreateByOAuthResponse
-	23,  // 141: nomarkup.user.v1.UserService.EnableMFA:output_type -> nomarkup.user.v1.EnableMFAResponse
-	25,  // 142: nomarkup.user.v1.UserService.ConfirmMFASetup:output_type -> nomarkup.user.v1.ConfirmMFASetupResponse
-	27,  // 143: nomarkup.user.v1.UserService.VerifyMFA:output_type -> nomarkup.user.v1.VerifyMFAResponse
-	29,  // 144: nomarkup.user.v1.UserService.DisableMFA:output_type -> nomarkup.user.v1.DisableMFAResponse
-	34,  // 145: nomarkup.user.v1.UserService.GetUser:output_type -> nomarkup.user.v1.GetUserResponse
-	36,  // 146: nomarkup.user.v1.UserService.UpdateUser:output_type -> nomarkup.user.v1.UpdateUserResponse
-	38,  // 147: nomarkup.user.v1.UserService.EnableRole:output_type -> nomarkup.user.v1.EnableRoleResponse
-	40,  // 148: nomarkup.user.v1.UserService.DeactivateAccount:output_type -> nomarkup.user.v1.DeactivateAccountResponse
-	42,  // 149: nomarkup.user.v1.UserService.RequestAccountDeletion:output_type -> nomarkup.user.v1.RequestAccountDeletionResponse
-	44,  // 150: nomarkup.user.v1.UserService.CancelAccountDeletion:output_type -> nomarkup.user.v1.CancelAccountDeletionResponse
-	46,  // 151: nomarkup.user.v1.UserService.FinalizeAccountDeletion:output_type -> nomarkup.user.v1.FinalizeAccountDeletionResponse
-	55,  // 152: nomarkup.user.v1.UserService.GetProviderProfile:output_type -> nomarkup.user.v1.GetProviderProfileResponse
-	57,  // 153: nomarkup.user.v1.UserService.UpdateProviderProfile:output_type -> nomarkup.user.v1.UpdateProviderProfileResponse
-	59,  // 154: nomarkup.user.v1.UserService.SetGlobalTerms:output_type -> nomarkup.user.v1.SetGlobalTermsResponse
-	61,  // 155: nomarkup.user.v1.UserService.UpdateServiceCategories:output_type -> nomarkup.user.v1.UpdateServiceCategoriesResponse
-	63,  // 156: nomarkup.user.v1.UserService.UpdatePortfolio:output_type -> nomarkup.user.v1.UpdatePortfolioResponse
-	66,  // 157: nomarkup.user.v1.UserService.SetInstantAvailability:output_type -> nomarkup.user.v1.SetInstantAvailabilityResponse
-	69,  // 158: nomarkup.user.v1.UserService.GetServiceCategories:output_type -> nomarkup.user.v1.GetServiceCategoriesResponse
-	71,  // 159: nomarkup.user.v1.UserService.GetCategoryTree:output_type -> nomarkup.user.v1.GetCategoryTreeResponse
-	74,  // 160: nomarkup.user.v1.UserService.CreateProperty:output_type -> nomarkup.user.v1.CreatePropertyResponse
-	76,  // 161: nomarkup.user.v1.UserService.UpdateProperty:output_type -> nomarkup.user.v1.UpdatePropertyResponse
-	78,  // 162: nomarkup.user.v1.UserService.DeleteProperty:output_type -> nomarkup.user.v1.DeletePropertyResponse
-	80,  // 163: nomarkup.user.v1.UserService.ListProperties:output_type -> nomarkup.user.v1.ListPropertiesResponse
-	82,  // 164: nomarkup.user.v1.UserService.UploadDocument:output_type -> nomarkup.user.v1.UploadDocumentResponse
-	84,  // 165: nomarkup.user.v1.UserService.GetDocumentStatus:output_type -> nomarkup.user.v1.GetDocumentStatusResponse
-	86,  // 166: nomarkup.user.v1.UserService.ListDocuments:output_type -> nomarkup.user.v1.ListDocumentsResponse
-	88,  // 167: nomarkup.user.v1.UserService.AdminGetUser:output_type -> nomarkup.user.v1.AdminGetUserResponse
-	90,  // 168: nomarkup.user.v1.UserService.AdminSearchUsers:output_type -> nomarkup.user.v1.AdminSearchUsersResponse
-	92,  // 169: nomarkup.user.v1.UserService.AdminSuspendUser:output_type -> nomarkup.user.v1.AdminSuspendUserResponse
-	94,  // 170: nomarkup.user.v1.UserService.AdminBanUser:output_type -> nomarkup.user.v1.AdminBanUserResponse
-	96,  // 171: nomarkup.user.v1.UserService.AdminReactivateUser:output_type -> nomarkup.user.v1.AdminReactivateUserResponse
-	98,  // 172: nomarkup.user.v1.UserService.AdminReviewDocument:output_type -> nomarkup.user.v1.AdminReviewDocumentResponse
-	101, // 173: nomarkup.user.v1.UserService.AdminListPendingDocuments:output_type -> nomarkup.user.v1.AdminListPendingDocumentsResponse
-	103, // 174: nomarkup.user.v1.UserService.SearchProviders:output_type -> nomarkup.user.v1.SearchProvidersResponse
-	129, // [129:175] is the sub-list for method output_type
-	83,  // [83:129] is the sub-list for method input_type
-	83,  // [83:83] is the sub-list for extension type_name
-	83,  // [83:83] is the sub-list for extension extendee
-	0,   // [0:83] is the sub-list for field type_name
+	109, // 11: nomarkup.user.v1.PublicUser.roles:type_name -> nomarkup.common.v1.UserRole
+	111, // 12: nomarkup.user.v1.PublicUser.status:type_name -> nomarkup.common.v1.UserStatus
+	110, // 13: nomarkup.user.v1.PublicUser.created_at:type_name -> google.protobuf.Timestamp
+	110, // 14: nomarkup.user.v1.PublicUser.last_active_at:type_name -> google.protobuf.Timestamp
+	35,  // 15: nomarkup.user.v1.BatchGetUsersResponse.users:type_name -> nomarkup.user.v1.PublicUser
+	32,  // 16: nomarkup.user.v1.UpdateUserResponse.user:type_name -> nomarkup.user.v1.User
+	109, // 17: nomarkup.user.v1.EnableRoleRequest.role:type_name -> nomarkup.common.v1.UserRole
+	32,  // 18: nomarkup.user.v1.EnableRoleResponse.user:type_name -> nomarkup.user.v1.User
+	110, // 19: nomarkup.user.v1.RequestAccountDeletionResponse.grace_deadline:type_name -> google.protobuf.Timestamp
+	110, // 20: nomarkup.user.v1.FinalizeAccountDeletionResponse.finalized_at:type_name -> google.protobuf.Timestamp
+	108, // 21: nomarkup.user.v1.FinalizeAccountDeletionResponse.rows_affected:type_name -> nomarkup.user.v1.FinalizeAccountDeletionResponse.RowsAffectedEntry
+	112, // 22: nomarkup.user.v1.ProviderProfile.service_location:type_name -> nomarkup.common.v1.Location
+	113, // 23: nomarkup.user.v1.ProviderProfile.default_payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	51,  // 24: nomarkup.user.v1.ProviderProfile.default_milestones:type_name -> nomarkup.user.v1.MilestoneTemplate
+	52,  // 25: nomarkup.user.v1.ProviderProfile.service_categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
+	53,  // 26: nomarkup.user.v1.ProviderProfile.portfolio:type_name -> nomarkup.user.v1.PortfolioImage
+	54,  // 27: nomarkup.user.v1.ProviderProfile.verification_badges:type_name -> nomarkup.user.v1.VerificationBadge
+	55,  // 28: nomarkup.user.v1.ProviderProfile.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
+	56,  // 29: nomarkup.user.v1.ProviderProfile.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
+	110, // 30: nomarkup.user.v1.ProviderProfile.member_since:type_name -> google.protobuf.Timestamp
+	114, // 31: nomarkup.user.v1.VerificationBadge.status:type_name -> nomarkup.common.v1.VerificationStatus
+	110, // 32: nomarkup.user.v1.VerificationBadge.verified_at:type_name -> google.protobuf.Timestamp
+	110, // 33: nomarkup.user.v1.VerificationBadge.expires_at:type_name -> google.protobuf.Timestamp
+	115, // 34: nomarkup.user.v1.TrustScoreSummary.tier:type_name -> nomarkup.common.v1.TrustTier
+	50,  // 35: nomarkup.user.v1.GetProviderProfileResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
+	112, // 36: nomarkup.user.v1.UpdateProviderProfileRequest.service_location:type_name -> nomarkup.common.v1.Location
+	50,  // 37: nomarkup.user.v1.UpdateProviderProfileResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
+	113, // 38: nomarkup.user.v1.SetGlobalTermsRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	51,  // 39: nomarkup.user.v1.SetGlobalTermsRequest.milestones:type_name -> nomarkup.user.v1.MilestoneTemplate
+	50,  // 40: nomarkup.user.v1.SetGlobalTermsResponse.profile:type_name -> nomarkup.user.v1.ProviderProfile
+	52,  // 41: nomarkup.user.v1.UpdateServiceCategoriesResponse.categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
+	53,  // 42: nomarkup.user.v1.UpdatePortfolioRequest.images:type_name -> nomarkup.user.v1.PortfolioImage
+	53,  // 43: nomarkup.user.v1.UpdatePortfolioResponse.images:type_name -> nomarkup.user.v1.PortfolioImage
+	68,  // 44: nomarkup.user.v1.SetInstantAvailabilityRequest.schedule:type_name -> nomarkup.user.v1.AvailabilityWindow
+	70,  // 45: nomarkup.user.v1.ServiceCategory.children:type_name -> nomarkup.user.v1.ServiceCategory
+	70,  // 46: nomarkup.user.v1.GetServiceCategoriesResponse.categories:type_name -> nomarkup.user.v1.ServiceCategory
+	70,  // 47: nomarkup.user.v1.GetCategoryTreeResponse.categories:type_name -> nomarkup.user.v1.ServiceCategory
+	116, // 48: nomarkup.user.v1.Property.address:type_name -> nomarkup.common.v1.Address
+	110, // 49: nomarkup.user.v1.Property.created_at:type_name -> google.protobuf.Timestamp
+	116, // 50: nomarkup.user.v1.CreatePropertyRequest.address:type_name -> nomarkup.common.v1.Address
+	75,  // 51: nomarkup.user.v1.CreatePropertyResponse.property:type_name -> nomarkup.user.v1.Property
+	75,  // 52: nomarkup.user.v1.UpdatePropertyResponse.property:type_name -> nomarkup.user.v1.Property
+	75,  // 53: nomarkup.user.v1.ListPropertiesResponse.properties:type_name -> nomarkup.user.v1.Property
+	117, // 54: nomarkup.user.v1.UploadDocumentRequest.file:type_name -> nomarkup.common.v1.FileReference
+	110, // 55: nomarkup.user.v1.UploadDocumentRequest.expires_at:type_name -> google.protobuf.Timestamp
+	114, // 56: nomarkup.user.v1.UploadDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
+	114, // 57: nomarkup.user.v1.GetDocumentStatusResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
+	110, // 58: nomarkup.user.v1.GetDocumentStatusResponse.expires_at:type_name -> google.protobuf.Timestamp
+	87,  // 59: nomarkup.user.v1.ListDocumentsResponse.documents:type_name -> nomarkup.user.v1.GetDocumentStatusResponse
+	32,  // 60: nomarkup.user.v1.AdminGetUserResponse.user:type_name -> nomarkup.user.v1.User
+	50,  // 61: nomarkup.user.v1.AdminGetUserResponse.provider_profile:type_name -> nomarkup.user.v1.ProviderProfile
+	87,  // 62: nomarkup.user.v1.AdminGetUserResponse.documents:type_name -> nomarkup.user.v1.GetDocumentStatusResponse
+	55,  // 63: nomarkup.user.v1.AdminGetUserResponse.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
+	111, // 64: nomarkup.user.v1.AdminSearchUsersRequest.status_filter:type_name -> nomarkup.common.v1.UserStatus
+	109, // 65: nomarkup.user.v1.AdminSearchUsersRequest.role_filter:type_name -> nomarkup.common.v1.UserRole
+	118, // 66: nomarkup.user.v1.AdminSearchUsersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	32,  // 67: nomarkup.user.v1.AdminSearchUsersResponse.users:type_name -> nomarkup.user.v1.User
+	119, // 68: nomarkup.user.v1.AdminSearchUsersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	32,  // 69: nomarkup.user.v1.AdminSuspendUserResponse.user:type_name -> nomarkup.user.v1.User
+	32,  // 70: nomarkup.user.v1.AdminBanUserResponse.user:type_name -> nomarkup.user.v1.User
+	32,  // 71: nomarkup.user.v1.AdminReactivateUserResponse.user:type_name -> nomarkup.user.v1.User
+	114, // 72: nomarkup.user.v1.AdminReviewDocumentResponse.status:type_name -> nomarkup.common.v1.VerificationStatus
+	118, // 73: nomarkup.user.v1.AdminListPendingDocumentsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	114, // 74: nomarkup.user.v1.PendingDocument.status:type_name -> nomarkup.common.v1.VerificationStatus
+	110, // 75: nomarkup.user.v1.PendingDocument.created_at:type_name -> google.protobuf.Timestamp
+	103, // 76: nomarkup.user.v1.AdminListPendingDocumentsResponse.documents:type_name -> nomarkup.user.v1.PendingDocument
+	119, // 77: nomarkup.user.v1.AdminListPendingDocumentsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	112, // 78: nomarkup.user.v1.SearchProvidersRequest.location:type_name -> nomarkup.common.v1.Location
+	115, // 79: nomarkup.user.v1.SearchProvidersRequest.min_trust_tier:type_name -> nomarkup.common.v1.TrustTier
+	120, // 80: nomarkup.user.v1.SearchProvidersRequest.sort:type_name -> nomarkup.common.v1.SortRequest
+	118, // 81: nomarkup.user.v1.SearchProvidersRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	107, // 82: nomarkup.user.v1.SearchProvidersResponse.providers:type_name -> nomarkup.user.v1.ProviderSearchResult
+	119, // 83: nomarkup.user.v1.SearchProvidersResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	56,  // 84: nomarkup.user.v1.ProviderSearchResult.review_summary:type_name -> nomarkup.user.v1.ReviewSummary
+	55,  // 85: nomarkup.user.v1.ProviderSearchResult.trust_score:type_name -> nomarkup.user.v1.TrustScoreSummary
+	54,  // 86: nomarkup.user.v1.ProviderSearchResult.badges:type_name -> nomarkup.user.v1.VerificationBadge
+	52,  // 87: nomarkup.user.v1.ProviderSearchResult.categories:type_name -> nomarkup.user.v1.ServiceCategorySummary
+	0,   // 88: nomarkup.user.v1.UserService.Register:input_type -> nomarkup.user.v1.RegisterRequest
+	2,   // 89: nomarkup.user.v1.UserService.Login:input_type -> nomarkup.user.v1.LoginRequest
+	4,   // 90: nomarkup.user.v1.UserService.RefreshToken:input_type -> nomarkup.user.v1.RefreshTokenRequest
+	6,   // 91: nomarkup.user.v1.UserService.Logout:input_type -> nomarkup.user.v1.LogoutRequest
+	8,   // 92: nomarkup.user.v1.UserService.VerifyEmail:input_type -> nomarkup.user.v1.VerifyEmailRequest
+	10,  // 93: nomarkup.user.v1.UserService.ResendVerification:input_type -> nomarkup.user.v1.ResendVerificationRequest
+	12,  // 94: nomarkup.user.v1.UserService.VerifyPhone:input_type -> nomarkup.user.v1.VerifyPhoneRequest
+	14,  // 95: nomarkup.user.v1.UserService.SendPhoneOTP:input_type -> nomarkup.user.v1.SendPhoneOTPRequest
+	16,  // 96: nomarkup.user.v1.UserService.RequestPasswordReset:input_type -> nomarkup.user.v1.RequestPasswordResetRequest
+	18,  // 97: nomarkup.user.v1.UserService.ResetPassword:input_type -> nomarkup.user.v1.ResetPasswordRequest
+	20,  // 98: nomarkup.user.v1.UserService.ChangePassword:input_type -> nomarkup.user.v1.ChangePasswordRequest
+	30,  // 99: nomarkup.user.v1.UserService.FindOrCreateByOAuth:input_type -> nomarkup.user.v1.FindOrCreateByOAuthRequest
+	22,  // 100: nomarkup.user.v1.UserService.EnableMFA:input_type -> nomarkup.user.v1.EnableMFARequest
+	24,  // 101: nomarkup.user.v1.UserService.ConfirmMFASetup:input_type -> nomarkup.user.v1.ConfirmMFASetupRequest
+	26,  // 102: nomarkup.user.v1.UserService.VerifyMFA:input_type -> nomarkup.user.v1.VerifyMFARequest
+	28,  // 103: nomarkup.user.v1.UserService.DisableMFA:input_type -> nomarkup.user.v1.DisableMFARequest
+	33,  // 104: nomarkup.user.v1.UserService.GetUser:input_type -> nomarkup.user.v1.GetUserRequest
+	36,  // 105: nomarkup.user.v1.UserService.BatchGetUsers:input_type -> nomarkup.user.v1.BatchGetUsersRequest
+	38,  // 106: nomarkup.user.v1.UserService.UpdateUser:input_type -> nomarkup.user.v1.UpdateUserRequest
+	40,  // 107: nomarkup.user.v1.UserService.EnableRole:input_type -> nomarkup.user.v1.EnableRoleRequest
+	42,  // 108: nomarkup.user.v1.UserService.DeactivateAccount:input_type -> nomarkup.user.v1.DeactivateAccountRequest
+	44,  // 109: nomarkup.user.v1.UserService.RequestAccountDeletion:input_type -> nomarkup.user.v1.RequestAccountDeletionRequest
+	46,  // 110: nomarkup.user.v1.UserService.CancelAccountDeletion:input_type -> nomarkup.user.v1.CancelAccountDeletionRequest
+	48,  // 111: nomarkup.user.v1.UserService.FinalizeAccountDeletion:input_type -> nomarkup.user.v1.FinalizeAccountDeletionRequest
+	57,  // 112: nomarkup.user.v1.UserService.GetProviderProfile:input_type -> nomarkup.user.v1.GetProviderProfileRequest
+	59,  // 113: nomarkup.user.v1.UserService.UpdateProviderProfile:input_type -> nomarkup.user.v1.UpdateProviderProfileRequest
+	61,  // 114: nomarkup.user.v1.UserService.SetGlobalTerms:input_type -> nomarkup.user.v1.SetGlobalTermsRequest
+	63,  // 115: nomarkup.user.v1.UserService.UpdateServiceCategories:input_type -> nomarkup.user.v1.UpdateServiceCategoriesRequest
+	65,  // 116: nomarkup.user.v1.UserService.UpdatePortfolio:input_type -> nomarkup.user.v1.UpdatePortfolioRequest
+	67,  // 117: nomarkup.user.v1.UserService.SetInstantAvailability:input_type -> nomarkup.user.v1.SetInstantAvailabilityRequest
+	71,  // 118: nomarkup.user.v1.UserService.GetServiceCategories:input_type -> nomarkup.user.v1.GetServiceCategoriesRequest
+	73,  // 119: nomarkup.user.v1.UserService.GetCategoryTree:input_type -> nomarkup.user.v1.GetCategoryTreeRequest
+	76,  // 120: nomarkup.user.v1.UserService.CreateProperty:input_type -> nomarkup.user.v1.CreatePropertyRequest
+	78,  // 121: nomarkup.user.v1.UserService.UpdateProperty:input_type -> nomarkup.user.v1.UpdatePropertyRequest
+	80,  // 122: nomarkup.user.v1.UserService.DeleteProperty:input_type -> nomarkup.user.v1.DeletePropertyRequest
+	82,  // 123: nomarkup.user.v1.UserService.ListProperties:input_type -> nomarkup.user.v1.ListPropertiesRequest
+	84,  // 124: nomarkup.user.v1.UserService.UploadDocument:input_type -> nomarkup.user.v1.UploadDocumentRequest
+	86,  // 125: nomarkup.user.v1.UserService.GetDocumentStatus:input_type -> nomarkup.user.v1.GetDocumentStatusRequest
+	88,  // 126: nomarkup.user.v1.UserService.ListDocuments:input_type -> nomarkup.user.v1.ListDocumentsRequest
+	90,  // 127: nomarkup.user.v1.UserService.AdminGetUser:input_type -> nomarkup.user.v1.AdminGetUserRequest
+	92,  // 128: nomarkup.user.v1.UserService.AdminSearchUsers:input_type -> nomarkup.user.v1.AdminSearchUsersRequest
+	94,  // 129: nomarkup.user.v1.UserService.AdminSuspendUser:input_type -> nomarkup.user.v1.AdminSuspendUserRequest
+	96,  // 130: nomarkup.user.v1.UserService.AdminBanUser:input_type -> nomarkup.user.v1.AdminBanUserRequest
+	98,  // 131: nomarkup.user.v1.UserService.AdminReactivateUser:input_type -> nomarkup.user.v1.AdminReactivateUserRequest
+	100, // 132: nomarkup.user.v1.UserService.AdminReviewDocument:input_type -> nomarkup.user.v1.AdminReviewDocumentRequest
+	102, // 133: nomarkup.user.v1.UserService.AdminListPendingDocuments:input_type -> nomarkup.user.v1.AdminListPendingDocumentsRequest
+	105, // 134: nomarkup.user.v1.UserService.SearchProviders:input_type -> nomarkup.user.v1.SearchProvidersRequest
+	1,   // 135: nomarkup.user.v1.UserService.Register:output_type -> nomarkup.user.v1.RegisterResponse
+	3,   // 136: nomarkup.user.v1.UserService.Login:output_type -> nomarkup.user.v1.LoginResponse
+	5,   // 137: nomarkup.user.v1.UserService.RefreshToken:output_type -> nomarkup.user.v1.RefreshTokenResponse
+	7,   // 138: nomarkup.user.v1.UserService.Logout:output_type -> nomarkup.user.v1.LogoutResponse
+	9,   // 139: nomarkup.user.v1.UserService.VerifyEmail:output_type -> nomarkup.user.v1.VerifyEmailResponse
+	11,  // 140: nomarkup.user.v1.UserService.ResendVerification:output_type -> nomarkup.user.v1.ResendVerificationResponse
+	13,  // 141: nomarkup.user.v1.UserService.VerifyPhone:output_type -> nomarkup.user.v1.VerifyPhoneResponse
+	15,  // 142: nomarkup.user.v1.UserService.SendPhoneOTP:output_type -> nomarkup.user.v1.SendPhoneOTPResponse
+	17,  // 143: nomarkup.user.v1.UserService.RequestPasswordReset:output_type -> nomarkup.user.v1.RequestPasswordResetResponse
+	19,  // 144: nomarkup.user.v1.UserService.ResetPassword:output_type -> nomarkup.user.v1.ResetPasswordResponse
+	21,  // 145: nomarkup.user.v1.UserService.ChangePassword:output_type -> nomarkup.user.v1.ChangePasswordResponse
+	31,  // 146: nomarkup.user.v1.UserService.FindOrCreateByOAuth:output_type -> nomarkup.user.v1.FindOrCreateByOAuthResponse
+	23,  // 147: nomarkup.user.v1.UserService.EnableMFA:output_type -> nomarkup.user.v1.EnableMFAResponse
+	25,  // 148: nomarkup.user.v1.UserService.ConfirmMFASetup:output_type -> nomarkup.user.v1.ConfirmMFASetupResponse
+	27,  // 149: nomarkup.user.v1.UserService.VerifyMFA:output_type -> nomarkup.user.v1.VerifyMFAResponse
+	29,  // 150: nomarkup.user.v1.UserService.DisableMFA:output_type -> nomarkup.user.v1.DisableMFAResponse
+	34,  // 151: nomarkup.user.v1.UserService.GetUser:output_type -> nomarkup.user.v1.GetUserResponse
+	37,  // 152: nomarkup.user.v1.UserService.BatchGetUsers:output_type -> nomarkup.user.v1.BatchGetUsersResponse
+	39,  // 153: nomarkup.user.v1.UserService.UpdateUser:output_type -> nomarkup.user.v1.UpdateUserResponse
+	41,  // 154: nomarkup.user.v1.UserService.EnableRole:output_type -> nomarkup.user.v1.EnableRoleResponse
+	43,  // 155: nomarkup.user.v1.UserService.DeactivateAccount:output_type -> nomarkup.user.v1.DeactivateAccountResponse
+	45,  // 156: nomarkup.user.v1.UserService.RequestAccountDeletion:output_type -> nomarkup.user.v1.RequestAccountDeletionResponse
+	47,  // 157: nomarkup.user.v1.UserService.CancelAccountDeletion:output_type -> nomarkup.user.v1.CancelAccountDeletionResponse
+	49,  // 158: nomarkup.user.v1.UserService.FinalizeAccountDeletion:output_type -> nomarkup.user.v1.FinalizeAccountDeletionResponse
+	58,  // 159: nomarkup.user.v1.UserService.GetProviderProfile:output_type -> nomarkup.user.v1.GetProviderProfileResponse
+	60,  // 160: nomarkup.user.v1.UserService.UpdateProviderProfile:output_type -> nomarkup.user.v1.UpdateProviderProfileResponse
+	62,  // 161: nomarkup.user.v1.UserService.SetGlobalTerms:output_type -> nomarkup.user.v1.SetGlobalTermsResponse
+	64,  // 162: nomarkup.user.v1.UserService.UpdateServiceCategories:output_type -> nomarkup.user.v1.UpdateServiceCategoriesResponse
+	66,  // 163: nomarkup.user.v1.UserService.UpdatePortfolio:output_type -> nomarkup.user.v1.UpdatePortfolioResponse
+	69,  // 164: nomarkup.user.v1.UserService.SetInstantAvailability:output_type -> nomarkup.user.v1.SetInstantAvailabilityResponse
+	72,  // 165: nomarkup.user.v1.UserService.GetServiceCategories:output_type -> nomarkup.user.v1.GetServiceCategoriesResponse
+	74,  // 166: nomarkup.user.v1.UserService.GetCategoryTree:output_type -> nomarkup.user.v1.GetCategoryTreeResponse
+	77,  // 167: nomarkup.user.v1.UserService.CreateProperty:output_type -> nomarkup.user.v1.CreatePropertyResponse
+	79,  // 168: nomarkup.user.v1.UserService.UpdateProperty:output_type -> nomarkup.user.v1.UpdatePropertyResponse
+	81,  // 169: nomarkup.user.v1.UserService.DeleteProperty:output_type -> nomarkup.user.v1.DeletePropertyResponse
+	83,  // 170: nomarkup.user.v1.UserService.ListProperties:output_type -> nomarkup.user.v1.ListPropertiesResponse
+	85,  // 171: nomarkup.user.v1.UserService.UploadDocument:output_type -> nomarkup.user.v1.UploadDocumentResponse
+	87,  // 172: nomarkup.user.v1.UserService.GetDocumentStatus:output_type -> nomarkup.user.v1.GetDocumentStatusResponse
+	89,  // 173: nomarkup.user.v1.UserService.ListDocuments:output_type -> nomarkup.user.v1.ListDocumentsResponse
+	91,  // 174: nomarkup.user.v1.UserService.AdminGetUser:output_type -> nomarkup.user.v1.AdminGetUserResponse
+	93,  // 175: nomarkup.user.v1.UserService.AdminSearchUsers:output_type -> nomarkup.user.v1.AdminSearchUsersResponse
+	95,  // 176: nomarkup.user.v1.UserService.AdminSuspendUser:output_type -> nomarkup.user.v1.AdminSuspendUserResponse
+	97,  // 177: nomarkup.user.v1.UserService.AdminBanUser:output_type -> nomarkup.user.v1.AdminBanUserResponse
+	99,  // 178: nomarkup.user.v1.UserService.AdminReactivateUser:output_type -> nomarkup.user.v1.AdminReactivateUserResponse
+	101, // 179: nomarkup.user.v1.UserService.AdminReviewDocument:output_type -> nomarkup.user.v1.AdminReviewDocumentResponse
+	104, // 180: nomarkup.user.v1.UserService.AdminListPendingDocuments:output_type -> nomarkup.user.v1.AdminListPendingDocumentsResponse
+	106, // 181: nomarkup.user.v1.UserService.SearchProviders:output_type -> nomarkup.user.v1.SearchProvidersResponse
+	135, // [135:182] is the sub-list for method output_type
+	88,  // [88:135] is the sub-list for method input_type
+	88,  // [88:88] is the sub-list for extension type_name
+	88,  // [88:88] is the sub-list for extension extendee
+	0,   // [0:88] is the sub-list for field type_name
 }
 
 func init() { file_user_v1_user_proto_init() }
@@ -7057,19 +7273,19 @@ func file_user_v1_user_proto_init() {
 	if File_user_v1_user_proto != nil {
 		return
 	}
-	file_user_v1_user_proto_msgTypes[35].OneofWrappers = []any{}
-	file_user_v1_user_proto_msgTypes[56].OneofWrappers = []any{}
-	file_user_v1_user_proto_msgTypes[68].OneofWrappers = []any{}
-	file_user_v1_user_proto_msgTypes[75].OneofWrappers = []any{}
-	file_user_v1_user_proto_msgTypes[89].OneofWrappers = []any{}
-	file_user_v1_user_proto_msgTypes[102].OneofWrappers = []any{}
+	file_user_v1_user_proto_msgTypes[38].OneofWrappers = []any{}
+	file_user_v1_user_proto_msgTypes[59].OneofWrappers = []any{}
+	file_user_v1_user_proto_msgTypes[71].OneofWrappers = []any{}
+	file_user_v1_user_proto_msgTypes[78].OneofWrappers = []any{}
+	file_user_v1_user_proto_msgTypes[92].OneofWrappers = []any{}
+	file_user_v1_user_proto_msgTypes[105].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_v1_user_proto_rawDesc), len(file_user_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   106,
+			NumMessages:   109,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

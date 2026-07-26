@@ -522,6 +522,23 @@ func (s *Server) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*user
 	return &userv1.GetUserResponse{User: domainUserToProto(user)}, nil
 }
 
+// BatchGetUsers resolves many ids in one query. See the RPC comment in
+// user.proto for the visibility contract: the response type physically cannot
+// carry PII, so this handler needs no caller-identity check that a future edit
+// could forget.
+func (s *Server) BatchGetUsers(ctx context.Context, req *userv1.BatchGetUsersRequest) (*userv1.BatchGetUsersResponse, error) {
+	users, err := s.profile.BatchGetUsers(ctx, req.GetUserIds())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	out := make([]*userv1.PublicUser, 0, len(users))
+	for i := range users {
+		out = append(out, domainPublicUserToProto(&users[i]))
+	}
+	return &userv1.BatchGetUsersResponse{Users: out}, nil
+}
+
 func (s *Server) UpdateUser(ctx context.Context, req *userv1.UpdateUserRequest) (*userv1.UpdateUserResponse, error) {
 	input := domain.UpdateUserInput{
 		DisplayName: req.DisplayName,
@@ -1284,6 +1301,27 @@ func domainUserToProto(u *domain.User) *userv1.User {
 	return pb
 }
 
+// domainPublicUserToProto maps the public projection. Note there is no PII
+// branch to get wrong: domain.PublicUser has no email/phone/MFA fields to copy.
+func domainPublicUserToProto(u *domain.PublicUser) *userv1.PublicUser {
+	protoRoles := make([]commonv1.UserRole, 0, len(u.Roles))
+	for _, r := range u.Roles {
+		protoRoles = append(protoRoles, stringToProtoRole(r))
+	}
+	pb := &userv1.PublicUser{
+		Id:          u.ID,
+		DisplayName: u.DisplayName,
+		AvatarUrl:   u.AvatarURL,
+		Roles:       protoRoles,
+		Status:      stringToProtoUserStatus(u.Status),
+		CreatedAt:   timestamppb.New(u.CreatedAt),
+	}
+	if u.LastActiveAt != nil {
+		pb.LastActiveAt = timestamppb.New(*u.LastActiveAt)
+	}
+	return pb
+}
+
 func domainProviderToProto(p *domain.ProviderProfile) *userv1.ProviderProfile {
 	pb := &userv1.ProviderProfile{
 		Id:                       p.ID,
@@ -1477,6 +1515,14 @@ func mapDomainError(err error) error {
 		return status.Error(codes.Unauthenticated, "token expired")
 	case errors.Is(err, domain.ErrTokenRevoked):
 		return status.Error(codes.Unauthenticated, "token revoked")
+	// Reuse detection deliberately returns the SAME code and message as a plain
+	// revocation. The family has already been revoked and the event logged; an
+	// attacker probing with a stolen token must not learn from the response
+	// whether detection fired.
+	case errors.Is(err, domain.ErrRefreshTokenReuse):
+		return status.Error(codes.Unauthenticated, "token revoked")
+	case errors.Is(err, domain.ErrBatchTooLarge):
+		return status.Errorf(codes.InvalidArgument, "batch size exceeds limit of %d", service.MaxBatchGetUsers)
 	case errors.Is(err, domain.ErrAccountSuspended):
 		return status.Error(codes.PermissionDenied, "account suspended")
 	case errors.Is(err, domain.ErrAccountBanned):

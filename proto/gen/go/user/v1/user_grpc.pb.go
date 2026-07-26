@@ -36,6 +36,7 @@ const (
 	UserService_VerifyMFA_FullMethodName                 = "/nomarkup.user.v1.UserService/VerifyMFA"
 	UserService_DisableMFA_FullMethodName                = "/nomarkup.user.v1.UserService/DisableMFA"
 	UserService_GetUser_FullMethodName                   = "/nomarkup.user.v1.UserService/GetUser"
+	UserService_BatchGetUsers_FullMethodName             = "/nomarkup.user.v1.UserService/BatchGetUsers"
 	UserService_UpdateUser_FullMethodName                = "/nomarkup.user.v1.UserService/UpdateUser"
 	UserService_EnableRole_FullMethodName                = "/nomarkup.user.v1.UserService/EnableRole"
 	UserService_DeactivateAccount_FullMethodName         = "/nomarkup.user.v1.UserService/DeactivateAccount"
@@ -95,6 +96,20 @@ type UserServiceClient interface {
 	DisableMFA(ctx context.Context, in *DisableMFARequest, opts ...grpc.CallOption) (*DisableMFAResponse, error)
 	// User profile
 	GetUser(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*GetUserResponse, error)
+	// BatchGetUsers resolves many user ids in ONE round trip (and one database
+	// query). It exists to kill the serial N+1 display-name fan-outs in the
+	// gateway, where a job with 50 unique bidders cost 50 sequential GetUser
+	// calls and alone blew the p95 < 200ms budget.
+	//
+	// It returns PublicUser, NOT User: strictly the fields that survive the
+	// gateway's PII strip for a non-self, non-admin caller. There is no caller
+	// identity on this RPC and therefore no per-caller widening — a batch
+	// endpoint that could return more than the single-user endpoint would be a
+	// privilege escalation, so it is structurally incapable of doing so.
+	//
+	// Unknown / soft-deleted ids are omitted from the response rather than
+	// failing the call. Additive to v1 (CLAUDE.md §15).
+	BatchGetUsers(ctx context.Context, in *BatchGetUsersRequest, opts ...grpc.CallOption) (*BatchGetUsersResponse, error)
 	UpdateUser(ctx context.Context, in *UpdateUserRequest, opts ...grpc.CallOption) (*UpdateUserResponse, error)
 	EnableRole(ctx context.Context, in *EnableRoleRequest, opts ...grpc.CallOption) (*EnableRoleResponse, error)
 	DeactivateAccount(ctx context.Context, in *DeactivateAccountRequest, opts ...grpc.CallOption) (*DeactivateAccountResponse, error)
@@ -310,6 +325,16 @@ func (c *userServiceClient) GetUser(ctx context.Context, in *GetUserRequest, opt
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetUserResponse)
 	err := c.cc.Invoke(ctx, UserService_GetUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) BatchGetUsers(ctx context.Context, in *BatchGetUsersRequest, opts ...grpc.CallOption) (*BatchGetUsersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BatchGetUsersResponse)
+	err := c.cc.Invoke(ctx, UserService_BatchGetUsers_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -634,6 +659,20 @@ type UserServiceServer interface {
 	DisableMFA(context.Context, *DisableMFARequest) (*DisableMFAResponse, error)
 	// User profile
 	GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error)
+	// BatchGetUsers resolves many user ids in ONE round trip (and one database
+	// query). It exists to kill the serial N+1 display-name fan-outs in the
+	// gateway, where a job with 50 unique bidders cost 50 sequential GetUser
+	// calls and alone blew the p95 < 200ms budget.
+	//
+	// It returns PublicUser, NOT User: strictly the fields that survive the
+	// gateway's PII strip for a non-self, non-admin caller. There is no caller
+	// identity on this RPC and therefore no per-caller widening — a batch
+	// endpoint that could return more than the single-user endpoint would be a
+	// privilege escalation, so it is structurally incapable of doing so.
+	//
+	// Unknown / soft-deleted ids are omitted from the response rather than
+	// failing the call. Additive to v1 (CLAUDE.md §15).
+	BatchGetUsers(context.Context, *BatchGetUsersRequest) (*BatchGetUsersResponse, error)
 	UpdateUser(context.Context, *UpdateUserRequest) (*UpdateUserResponse, error)
 	EnableRole(context.Context, *EnableRoleRequest) (*EnableRoleResponse, error)
 	DeactivateAccount(context.Context, *DeactivateAccountRequest) (*DeactivateAccountResponse, error)
@@ -735,6 +774,9 @@ func (UnimplementedUserServiceServer) DisableMFA(context.Context, *DisableMFAReq
 }
 func (UnimplementedUserServiceServer) GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetUser not implemented")
+}
+func (UnimplementedUserServiceServer) BatchGetUsers(context.Context, *BatchGetUsersRequest) (*BatchGetUsersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BatchGetUsers not implemented")
 }
 func (UnimplementedUserServiceServer) UpdateUser(context.Context, *UpdateUserRequest) (*UpdateUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateUser not implemented")
@@ -1146,6 +1188,24 @@ func _UserService_GetUser_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UserServiceServer).GetUser(ctx, req.(*GetUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_BatchGetUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchGetUsersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).BatchGetUsers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_BatchGetUsers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).BatchGetUsers(ctx, req.(*BatchGetUsersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1746,6 +1806,10 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetUser",
 			Handler:    _UserService_GetUser_Handler,
+		},
+		{
+			MethodName: "BatchGetUsers",
+			Handler:    _UserService_BatchGetUsers_Handler,
 		},
 		{
 			MethodName: "UpdateUser",

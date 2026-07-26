@@ -297,7 +297,7 @@ func (a *Auth) CompleteMFALogin(ctx context.Context, challengeToken, totpCode, d
 		slog.Warn("failed to update last login after mfa", "user_id", userID, "error", err)
 	}
 
-	pair, err := a.generateTokenPair(ctx, user, deviceInfo, ipAddress)
+	pair, err := a.generateTokenPair(ctx, user, deviceInfo, ipAddress, "", nil)
 	if err != nil {
 		return "", nil, fmt.Errorf("complete mfa login: %w", err)
 	}

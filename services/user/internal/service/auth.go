@@ -39,7 +39,39 @@ type Auth struct {
 	jwt                   *JWTManager
 	verificationSecret    []byte
 	skipEmailVerification bool
+	// reuseGraceWindow is how recently a token may have been rotated for a
+	// replay of it to be forgiven as a benign client race. See
+	// defaultReuseGraceWindow.
+	reuseGraceWindow time.Duration
 }
+
+// defaultReuseGraceWindow is the tolerance for the ONE legitimate way a client
+// presents an already-rotated refresh token: it raced itself.
+//
+// Two real-world cases produce a replay with no attacker involved:
+//  1. Concurrent refresh — two in-flight API calls both 401, both trigger a
+//     refresh, and the loser presents a token the winner already spent.
+//  2. Retry after a network timeout that actually succeeded — the client never
+//     saw the new pair and retries with the old token.
+//
+// Both resolve within a couple of seconds of the rotation; neither is
+// distinguishable from theft by inspection. Theft, by contrast, is a replay
+// separated from the rotation by however long it took the attacker to exfiltrate
+// and use the token — and the damaging case (attacker refreshes first, victim
+// replays later) has the victim's replay arriving a full refresh-interval after
+// the attacker's rotation, far outside any few-second window.
+//
+// So: forgive replays within the window, prosecute outside it. 30s is
+// deliberately generous relative to the ~1s a client race actually needs,
+// because the cost asymmetry runs the other way — a false positive logs a real
+// user out of every device, while a false negative only delays detection to the
+// victim's NEXT refresh, at which point the same check fires and still catches
+// the thief. Widening the window cannot let an attacker keep a session
+// indefinitely; it only costs one extra refresh cycle of exposure.
+//
+// Note the window is measured from rotated_at, not created_at, so a client that
+// legitimately refreshes every 14 minutes never approaches it.
+const defaultReuseGraceWindow = 30 * time.Second
 
 // NewAuth creates a new Auth service. The verificationSecret is used to sign
 // email verification tokens with HMAC-SHA256. It must not be empty. When
@@ -51,6 +83,7 @@ func NewAuth(repo domain.UserRepository, jwt *JWTManager, verificationSecret str
 		jwt:                   jwt,
 		verificationSecret:    []byte(verificationSecret),
 		skipEmailVerification: skipEmailVerification,
+		reuseGraceWindow:      defaultReuseGraceWindow,
 	}
 }
 
@@ -76,7 +109,7 @@ func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string
 		return "", nil, "", fmt.Errorf("register user: %w", err)
 	}
 
-	pair, err := a.generateTokenPair(ctx, user, "", "")
+	pair, err := a.generateTokenPair(ctx, user, "", "", "", nil)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("register user: %w", err)
 	}
@@ -135,7 +168,7 @@ func (a *Auth) Login(ctx context.Context, input domain.LoginInput) (string, *dom
 		slog.Warn("failed to update last login", "user_id", user.ID, "error", err)
 	}
 
-	pair, err := a.generateTokenPair(ctx, user, input.DeviceInfo, input.IPAddress)
+	pair, err := a.generateTokenPair(ctx, user, input.DeviceInfo, input.IPAddress, "", nil)
 	if err != nil {
 		return "", nil, false, "", fmt.Errorf("login user: %w", err)
 	}
@@ -160,7 +193,7 @@ func (a *Auth) FindOrCreateByOAuth(ctx context.Context, input domain.OAuthInput)
 			slog.Warn("failed to update last login", "user_id", user.ID, "error", updateErr)
 		}
 
-		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "")
+		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "", "", nil)
 		if err != nil {
 			return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
 		}
@@ -186,7 +219,7 @@ func (a *Auth) FindOrCreateByOAuth(ctx context.Context, input domain.OAuthInput)
 			slog.Warn("failed to update last login", "user_id", user.ID, "error", updateErr)
 		}
 
-		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "")
+		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "", "", nil)
 		if err != nil {
 			return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
 		}
@@ -214,7 +247,7 @@ func (a *Auth) FindOrCreateByOAuth(ctx context.Context, input domain.OAuthInput)
 		return "", nil, false, fmt.Errorf("oauth create user: %w", err)
 	}
 
-	pair, err := a.generateTokenPair(ctx, newUser, "oauth-"+input.Provider, "")
+	pair, err := a.generateTokenPair(ctx, newUser, "oauth-"+input.Provider, "", "", nil)
 	if err != nil {
 		return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
 	}
@@ -244,15 +277,16 @@ func (a *Auth) RefreshToken(ctx context.Context, rawToken string) (*domain.Token
 	// revoked_at IS NULL, so among N concurrent refreshes sharing one token,
 	// exactly one observes rows-affected == 1 and is allowed to mint a new
 	// pair. Every loser (already-revoked token, or a concurrent request that
-	// won the race) sees revoked == false and is rejected with ErrTokenRevoked
+	// won the race) sees rotated == false and is rejected with ErrTokenRevoked
 	// (the gateway maps it to 401). This preserves the single-valid-refresh
 	// happy path while making a leaked/forked token unusable more than once.
-	revoked, err := a.repo.RevokeRefreshTokenIfActive(ctx, tokenHash)
+	rotated, err := a.repo.RotateRefreshTokenIfActive(ctx, tokenHash)
 	if err != nil {
-		return nil, fmt.Errorf("refresh token revoke old: %w", err)
+		return nil, fmt.Errorf("refresh token rotate old: %w", err)
 	}
-	if !revoked {
-		return nil, fmt.Errorf("refresh token: %w", domain.ErrTokenRevoked)
+	if !rotated {
+		// Losing the gate is not automatically theft. Classify it.
+		return nil, a.classifyRefreshRejection(ctx, stored)
 	}
 
 	user, err := a.repo.GetUserByID(ctx, stored.UserID)
@@ -260,12 +294,100 @@ func (a *Auth) RefreshToken(ctx context.Context, rawToken string) (*domain.Token
 		return nil, fmt.Errorf("refresh token get user: %w", err)
 	}
 
-	pair, err := a.generateTokenPair(ctx, user, stored.DeviceInfo, "")
+	// The successor inherits the lineage, so a later replay of ANY token in
+	// this chain can revoke the whole chain including this new token.
+	pair, err := a.generateTokenPair(ctx, user, stored.DeviceInfo, "", stored.FamilyID, &stored.ID)
 	if err != nil {
 		return nil, fmt.Errorf("refresh token: %w", err)
 	}
 
 	return pair, nil
+}
+
+// classifyRefreshRejection decides what a failed rotation gate MEANS, and acts
+// on it. Every branch returns a 401-equivalent to the caller; they differ only
+// in whether the token family survives, and in what ops sees.
+//
+// The three cases:
+//
+//	rotated_at IS NULL      The token was revoked by logout, password change or
+//	                        admin action and never had a successor. Replaying it
+//	                        is expected background noise, not evidence of
+//	                        anything. Reject; family untouched.
+//	rotated recently        Benign client race (see defaultReuseGraceWindow).
+//	                        Reject the request; family untouched.
+//	rotated long ago        Two parties hold the same token. Revoke the ENTIRE
+//	                        family and alert.
+func (a *Auth) classifyRefreshRejection(ctx context.Context, stored *domain.RefreshToken) error {
+	// Re-read. `stored` was fetched BEFORE the atomic gate, so under a genuine
+	// concurrent double-refresh our copy still shows rotated_at == NULL even
+	// though the winning sibling has since stamped it. Without this re-read the
+	// benign race would be misfiled as case 1 (and, worse, a real replay could
+	// be misfiled the same way). The re-read is what makes the grace window
+	// observable at all.
+	current, err := a.repo.GetRefreshToken(ctx, stored.TokenHash)
+	if err != nil {
+		// Cannot classify. Fail closed on the SIGNAL (don't claim innocence)
+		// but do not destroy sessions on incomplete evidence — a DB blip must
+		// not log the fleet out.
+		slog.ErrorContext(ctx, "refresh token: could not re-read token to classify rejection",
+			"user_id", stored.UserID, "error", err)
+		return fmt.Errorf("refresh token: %w", domain.ErrTokenRevoked)
+	}
+
+	if current.RotatedAt == nil {
+		refreshTokenRevokedReplayTotal.Inc()
+		slog.InfoContext(ctx, "refresh token rejected: revoked without rotation",
+			"user_id", current.UserID,
+			"token_id", current.ID,
+			"device_info", current.DeviceInfo,
+		)
+		return fmt.Errorf("refresh token: %w", domain.ErrTokenRevoked)
+	}
+
+	sinceRotation := time.Since(*current.RotatedAt)
+	if sinceRotation <= a.reuseGraceWindow {
+		refreshTokenReplayGraceTotal.Inc()
+		slog.InfoContext(ctx, "refresh token replay inside grace window: treating as benign client race",
+			"user_id", current.UserID,
+			"token_id", current.ID,
+			"family_id", current.FamilyID,
+			"since_rotation_ms", sinceRotation.Milliseconds(),
+			"grace_window_ms", a.reuseGraceWindow.Milliseconds(),
+		)
+		return fmt.Errorf("refresh token: %w", domain.ErrTokenRevoked)
+	}
+
+	// Confirmed reuse. The token was spent long enough ago that no honest
+	// client would still be holding it, yet somebody presented it. Either the
+	// legitimate user or an attacker is replaying a stolen token — and we
+	// cannot tell which of the two currently holds the live descendant. So kill
+	// the lineage and force a re-authentication that requires the password.
+	revokedCount, revokeErr := a.repo.RevokeRefreshTokenFamily(ctx, current.FamilyID)
+	if revokeErr != nil {
+		slog.ErrorContext(ctx, "refresh token reuse detected but family revocation FAILED",
+			"user_id", current.UserID,
+			"family_id", current.FamilyID,
+			"error", revokeErr,
+		)
+		return fmt.Errorf("refresh token reuse: %w", revokeErr)
+	}
+
+	refreshTokenReuseTotal.Inc()
+	refreshTokenFamilyRevokedTotal.Inc()
+	refreshTokenFamilySessionsRevokedTotal.Add(float64(revokedCount))
+
+	slog.ErrorContext(ctx, "refresh token reuse detected: revoked token family",
+		"user_id", current.UserID,
+		"token_id", current.ID,
+		"family_id", current.FamilyID,
+		"device_info", current.DeviceInfo,
+		"since_rotation_seconds", int64(sinceRotation.Seconds()),
+		"sessions_revoked", revokedCount,
+		"security_event", "refresh_token_reuse",
+	)
+
+	return fmt.Errorf("refresh token: %w", domain.ErrRefreshTokenReuse)
 }
 
 // Logout revokes a refresh token.
@@ -593,7 +715,18 @@ func (a *Auth) ValidateVerificationToken(token string) (string, error) {
 }
 
 // generateTokenPair creates a new access token + refresh token and stores the refresh token.
-func (a *Auth) generateTokenPair(ctx context.Context, user *domain.User, deviceInfo, ipAddress string) (*domain.TokenPair, error) {
+// generateTokenPair mints an access+refresh pair. familyID and parentID carry
+// the session lineage: pass "" and nil to start a NEW family (a fresh
+// login/register/OAuth/MFA completion), or the predecessor's family and id to
+// extend an existing chain (rotation). A new family is minted by the database,
+// so an empty familyID can never collide with an existing lineage.
+func (a *Auth) generateTokenPair(
+	ctx context.Context,
+	user *domain.User,
+	deviceInfo, ipAddress string,
+	familyID string,
+	parentID *string,
+) (*domain.TokenPair, error) {
 	accessToken, expiresAt, err := a.jwt.GenerateAccessToken(user.ID, user.Email, user.Roles)
 	if err != nil {
 		return nil, err
@@ -610,6 +743,8 @@ func (a *Auth) generateTokenPair(ctx context.Context, user *domain.User, deviceI
 		DeviceInfo: deviceInfo,
 		IPAddress:  net.ParseIP(ipAddress),
 		ExpiresAt:  time.Now().Add(RefreshTokenExpiry()),
+		FamilyID:   familyID,
+		ParentID:   parentID,
 	}
 	if err := a.repo.CreateRefreshToken(ctx, rt); err != nil {
 		return nil, err

@@ -29,8 +29,10 @@ type mockUserRepo struct {
 	createRefreshTokenFn         func(ctx context.Context, token *domain.RefreshToken) error
 	getRefreshTokenFn            func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
 	revokeRefreshTokenFn         func(ctx context.Context, tokenHash string) error
-	revokeRefreshTokenIfActiveFn func(ctx context.Context, tokenHash string) (bool, error)
+	rotateRefreshTokenIfActiveFn func(ctx context.Context, tokenHash string) (bool, error)
+	revokeRefreshTokenFamilyFn   func(ctx context.Context, familyID string) (int64, error)
 	revokeAllUserTokensFn        func(ctx context.Context, userID string) error
+	getPublicUsersByIDsFn        func(ctx context.Context, ids []string) ([]domain.PublicUser, error)
 	updateUserFn            func(ctx context.Context, userID string, input domain.UpdateUserInput) (*domain.User, error)
 	enableRoleFn            func(ctx context.Context, userID string, role string) (*domain.User, error)
 	createProviderProfileFn func(ctx context.Context, userID string) (*domain.ProviderProfile, error)
@@ -84,8 +86,20 @@ func (m *mockUserRepo) GetRefreshToken(ctx context.Context, tokenHash string) (*
 func (m *mockUserRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
 	return m.revokeRefreshTokenFn(ctx, tokenHash)
 }
-func (m *mockUserRepo) RevokeRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error) {
-	return m.revokeRefreshTokenIfActiveFn(ctx, tokenHash)
+func (m *mockUserRepo) RotateRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error) {
+	return m.rotateRefreshTokenIfActiveFn(ctx, tokenHash)
+}
+func (m *mockUserRepo) RevokeRefreshTokenFamily(ctx context.Context, familyID string) (int64, error) {
+	if m.revokeRefreshTokenFamilyFn != nil {
+		return m.revokeRefreshTokenFamilyFn(ctx, familyID)
+	}
+	return 0, nil
+}
+func (m *mockUserRepo) GetPublicUsersByIDs(ctx context.Context, ids []string) ([]domain.PublicUser, error) {
+	if m.getPublicUsersByIDsFn != nil {
+		return m.getPublicUsersByIDsFn(ctx, ids)
+	}
+	return nil, nil
 }
 func (m *mockUserRepo) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	if m.revokeAllUserTokensFn != nil {
@@ -591,7 +605,7 @@ func TestAuth_RefreshToken(t *testing.T) {
 
 			repo := &mockUserRepo{
 				getRefreshTokenFn:            tt.getRefreshToken,
-				revokeRefreshTokenIfActiveFn: tt.revokeIfActive,
+				rotateRefreshTokenIfActiveFn: tt.revokeIfActive,
 				getUserByIDFn:                tt.getUserByIDFn,
 				createRefreshTokenFn: func(_ context.Context, _ *domain.RefreshToken) error {
 					return nil
@@ -638,7 +652,7 @@ func TestAuth_RefreshToken_ConcurrentSingleWinner(t *testing.T) {
 				ExpiresAt: time.Now().Add(time.Hour),
 			}, nil
 		},
-		revokeRefreshTokenIfActiveFn: func(_ context.Context, _ string) (bool, error) {
+		rotateRefreshTokenIfActiveFn: func(_ context.Context, _ string) (bool, error) {
 			return atomic.CompareAndSwapInt32(&revoked, 0, 1), nil
 		},
 		getUserByIDFn: func(_ context.Context, _ string) (*domain.User, error) {
@@ -1305,7 +1319,7 @@ func TestAuth_generateTokenPair_stores_refresh_token(t *testing.T) {
 		Roles: []string{"customer"},
 	}
 
-	pair, err := auth.generateTokenPair(context.Background(), user, "Chrome/100", "192.168.1.1")
+	pair, err := auth.generateTokenPair(context.Background(), user, "Chrome/100", "192.168.1.1", "", nil)
 	require.NoError(t, err)
 	require.NotNil(t, pair)
 
@@ -1315,4 +1329,38 @@ func TestAuth_generateTokenPair_stores_refresh_token(t *testing.T) {
 	assert.True(t, net.ParseIP("192.168.1.1").Equal(storedToken.IPAddress))
 	assert.NotEmpty(t, storedToken.TokenHash)
 	assert.True(t, storedToken.ExpiresAt.After(time.Now()))
+	// A session root carries no lineage: the DB mints the family (COALESCE to
+	// gen_random_uuid()), so the service must NOT invent one.
+	assert.Empty(t, storedToken.FamilyID, "session root must let the DB mint the family id")
+	assert.Nil(t, storedToken.ParentID, "session root has no parent")
+}
+
+// TestAuth_generateTokenPair_rotation_inherits_lineage pins the other half of
+// the contract: a rotation must extend the existing family, not start a new
+// one. If this regresses, reuse detection silently stops working — every token
+// becomes its own family and revoking a family revokes nothing.
+func TestAuth_generateTokenPair_rotation_inherits_lineage(t *testing.T) {
+	t.Parallel()
+
+	var storedToken *domain.RefreshToken
+	repo := &mockUserRepo{
+		createRefreshTokenFn: func(_ context.Context, token *domain.RefreshToken) error {
+			storedToken = token
+			return nil
+		},
+	}
+
+	key := testKeyPair(t)
+	auth := NewAuth(repo, NewJWTManager(key), testHMACKey(), false)
+
+	user := &domain.User{ID: "user-1", Email: "test@example.com", Roles: []string{"customer"}}
+	parentID := "parent-token-id"
+
+	_, err := auth.generateTokenPair(context.Background(), user, "Chrome/100", "", "fam-1", &parentID)
+	require.NoError(t, err)
+
+	require.NotNil(t, storedToken)
+	assert.Equal(t, "fam-1", storedToken.FamilyID, "rotation must inherit the parent's family")
+	require.NotNil(t, storedToken.ParentID)
+	assert.Equal(t, parentID, *storedToken.ParentID)
 }

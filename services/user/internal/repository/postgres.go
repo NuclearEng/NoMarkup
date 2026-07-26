@@ -75,6 +75,59 @@ func (r *PostgresRepository) GetUserByID(ctx context.Context, id string) (*domai
 	return u, nil
 }
 
+// GetPublicUsersByIDs resolves N user ids in ONE round trip.
+//
+// `id = ANY($1::uuid[])` is a single index-driven lookup against users_pkey —
+// not a loop, and not an IN-list built by string concatenation (parameterized
+// only, CLAUDE.md §5/§6). The projection is deliberately narrow: this statement
+// cannot return email, phone, mfa_enabled or any other PII because it never
+// selects those columns, so the batch path cannot leak more than the single-user
+// path after the gateway's strip.
+//
+// Ids with no live row are simply absent from the slice; callers treat that as
+// "unknown user", never as an error.
+func (r *PostgresRepository) GetPublicUsersByIDs(ctx context.Context, ids []string) ([]domain.PublicUser, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT id, display_name, avatar_url, roles, status, created_at, last_active_at
+		FROM users
+		WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`
+
+	rows, err := r.pool.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("get public users by ids: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]domain.PublicUser, 0, len(ids))
+	for rows.Next() {
+		var u domain.PublicUser
+		var avatarURL *string
+		if err := rows.Scan(
+			&u.ID,
+			&u.DisplayName,
+			&avatarURL,
+			&u.Roles,
+			&u.Status,
+			&u.CreatedAt,
+			&u.LastActiveAt,
+		); err != nil {
+			return nil, fmt.Errorf("get public users by ids scan: %w", err)
+		}
+		if avatarURL != nil {
+			u.AvatarURL = *avatarURL
+		}
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get public users by ids rows: %w", err)
+	}
+	return out, nil
+}
+
 func (r *PostgresRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `
 		SELECT id, email, email_verified, password_hash, phone, phone_verified,
@@ -133,15 +186,23 @@ func (r *PostgresRepository) UpdatePassword(ctx context.Context, userID, passwor
 }
 
 func (r *PostgresRepository) CreateRefreshToken(ctx context.Context, token *domain.RefreshToken) error {
+	// family_id is passed as NULL for a session root and COALESCEd to a fresh
+	// uuid, so the caller never has to mint one. A rotation passes the parent's
+	// family so the whole lineage stays addressable by a single id.
 	query := `
-		INSERT INTO refresh_tokens (user_id, token_hash, device_info, ip_address, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at`
+		INSERT INTO refresh_tokens (user_id, token_hash, device_info, ip_address, expires_at, family_id, parent_id)
+		VALUES ($1, $2, $3, $4, $5, COALESCE($6::uuid, gen_random_uuid()), $7::uuid)
+		RETURNING id, created_at, family_id`
 
 	var ipStr *string
 	if token.IPAddress != nil {
 		s := token.IPAddress.String()
 		ipStr = &s
+	}
+
+	var familyID *string
+	if token.FamilyID != "" {
+		familyID = &token.FamilyID
 	}
 
 	err := r.pool.QueryRow(ctx, query,
@@ -150,7 +211,9 @@ func (r *PostgresRepository) CreateRefreshToken(ctx context.Context, token *doma
 		token.DeviceInfo,
 		ipStr,
 		token.ExpiresAt,
-	).Scan(&token.ID, &token.CreatedAt)
+		familyID,
+		token.ParentID,
+	).Scan(&token.ID, &token.CreatedAt, &token.FamilyID)
 	if err != nil {
 		return fmt.Errorf("create refresh token: %w", err)
 	}
@@ -160,7 +223,8 @@ func (r *PostgresRepository) CreateRefreshToken(ctx context.Context, token *doma
 func (r *PostgresRepository) GetRefreshToken(ctx context.Context, tokenHash string) (*domain.RefreshToken, error) {
 	query := `
 		SELECT id, user_id, token_hash, device_info, ip_address::text,
-		       expires_at, revoked_at, created_at
+		       expires_at, revoked_at, created_at,
+		       family_id, parent_id::text, rotated_at
 		FROM refresh_tokens
 		WHERE token_hash = $1`
 
@@ -175,6 +239,9 @@ func (r *PostgresRepository) GetRefreshToken(ctx context.Context, tokenHash stri
 		&rt.ExpiresAt,
 		&rt.RevokedAt,
 		&rt.CreatedAt,
+		&rt.FamilyID,
+		&rt.ParentID,
+		&rt.RotatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -197,20 +264,41 @@ func (r *PostgresRepository) RevokeRefreshToken(ctx context.Context, tokenHash s
 	return nil
 }
 
-// RevokeRefreshTokenIfActive runs the same revoke UPDATE but reports whether a
-// row was actually transitioned from active to revoked (RowsAffected == 1).
+// RotateRefreshTokenIfActive runs the same revoke UPDATE but reports whether a
+// row was actually transitioned from active to consumed (RowsAffected == 1).
 // Because Postgres applies the row lock + `revoked_at IS NULL` predicate
 // atomically, only the FIRST of N concurrent statements touching the same token
 // matches the predicate and affects a row; every later statement sees
 // revoked_at already set and affects 0 rows. The caller uses this boolean as
 // the single-winner gate for refresh-token rotation.
-func (r *PostgresRepository) RevokeRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error) {
-	query := `UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`
+//
+// It additionally stamps rotated_at. Plain revocation paths (logout, password
+// change, admin revoke, family revoke) set revoked_at only, so `rotated_at IS
+// NOT NULL` means precisely "this token was spent on a rotation and has a
+// successor" — the premise reuse detection needs.
+func (r *PostgresRepository) RotateRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error) {
+	query := `
+		UPDATE refresh_tokens
+		SET revoked_at = now(), rotated_at = now()
+		WHERE token_hash = $1 AND revoked_at IS NULL`
 	tag, err := r.pool.Exec(ctx, query, tokenHash)
 	if err != nil {
-		return false, fmt.Errorf("revoke refresh token if active: %w", err)
+		return false, fmt.Errorf("rotate refresh token if active: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// RevokeRefreshTokenFamily revokes every still-active token sharing a lineage
+// and returns the count killed. Uses the partial index
+// idx_refresh_tokens_family_active, so the cost is proportional to the live
+// descendants (in practice 1-2), not the table.
+func (r *PostgresRepository) RevokeRefreshTokenFamily(ctx context.Context, familyID string) (int64, error) {
+	query := `UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL`
+	tag, err := r.pool.Exec(ctx, query, familyID)
+	if err != nil {
+		return 0, fmt.Errorf("revoke refresh token family: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *PostgresRepository) RevokeAllUserTokens(ctx context.Context, userID string) error {

@@ -196,7 +196,7 @@ func TestIntegration_TokenRefresh_and_Logout(t *testing.T) {
 		revokeRefreshTokenFn: func(_ context.Context, _ string) error {
 			return nil
 		},
-		revokeRefreshTokenIfActiveFn: func(_ context.Context, _ string) (bool, error) {
+		rotateRefreshTokenIfActiveFn: func(_ context.Context, _ string) (bool, error) {
 			return true, nil
 		},
 		getUserByIDFn: func(_ context.Context, _ string) (*domain.User, error) {

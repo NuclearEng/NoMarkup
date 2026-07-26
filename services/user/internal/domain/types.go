@@ -40,6 +40,20 @@ var (
 	ErrDeletionAlreadyFinalized  = errors.New("account deletion already finalized")
 	ErrDeletionGracePeriodActive = errors.New("account deletion grace period still active")
 	ErrDeletionConfirmation      = errors.New("deletion confirmation phrase invalid")
+
+	// ErrRefreshTokenReuse means an already-rotated refresh token was presented
+	// outside the benign-race grace window — i.e. two parties hold the same
+	// token, which is unambiguous evidence of compromise. The whole token
+	// family has been revoked. It maps to the SAME wire status and message as
+	// ErrTokenRevoked on purpose: an attacker must not be able to probe whether
+	// detection fired. The distinction lives in logs and metrics, not the
+	// response.
+	ErrRefreshTokenReuse = errors.New("refresh token reuse detected")
+
+	// ErrBatchTooLarge means a batch request exceeded the server-side cap. An
+	// unbounded id list is a trivial resource-exhaustion vector, so the cap is
+	// enforced server-side regardless of what the caller claims.
+	ErrBatchTooLarge = errors.New("batch size exceeds limit")
 )
 
 // DeletionGracePeriod is the window between a user requesting account
@@ -111,6 +125,35 @@ type RefreshToken struct {
 	ExpiresAt  time.Time
 	RevokedAt  *time.Time
 	CreatedAt  time.Time
+
+	// FamilyID identifies the session lineage this token belongs to. A fresh
+	// login/register/OAuth mints a new family; every rotation inherits its
+	// parent's. Reuse detection revokes by family, so one compromised lineage
+	// dies without touching the user's other devices.
+	FamilyID string
+	// ParentID is the token this one was rotated from (nil for a session root).
+	// Forensics only — revocation keys off FamilyID.
+	ParentID *string
+	// RotatedAt is set ONLY when the token was consumed by rotation. It is the
+	// discriminator between theft-replay and a benign replay of a token that
+	// was revoked by logout / password change / admin action: those set
+	// RevokedAt but never RotatedAt.
+	RotatedAt *time.Time
+}
+
+// PublicUser is the strictly-public projection of a user: the exact field set
+// that survives the gateway's PII strip for a non-self, non-admin caller
+// (gateway/internal/handler/user.go). It deliberately has no place to put
+// email, phone, or MFA state, so a batch lookup cannot become a privilege
+// escalation by omission of a check.
+type PublicUser struct {
+	ID           string
+	DisplayName  string
+	AvatarURL    string
+	Roles        []string
+	Status       string
+	CreatedAt    time.Time
+	LastActiveAt *time.Time
 }
 
 // OAuthAccount represents a linked OAuth provider account.
@@ -401,6 +444,11 @@ type UserRepository interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUserByID(ctx context.Context, id string) (*User, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	// GetPublicUsersByIDs resolves many ids in a SINGLE query (= ANY on the
+	// UUID primary key). Ids that do not exist (or are soft-deleted) are simply
+	// absent from the result — a missing id is not an error, because the
+	// callers are display-name hydration paths that must fail soft.
+	GetPublicUsersByIDs(ctx context.Context, ids []string) ([]PublicUser, error)
 	UpdateLastLogin(ctx context.Context, userID string, at time.Time) error
 	UpdateEmailVerified(ctx context.Context, userID string, verified bool) error
 	UpdatePassword(ctx context.Context, userID, passwordHash string) error
@@ -408,13 +456,22 @@ type UserRepository interface {
 	CreateRefreshToken(ctx context.Context, token *RefreshToken) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
-	// RevokeRefreshTokenIfActive atomically revokes a refresh token only if it
+	// RotateRefreshTokenIfActive atomically consumes a refresh token only if it
 	// is currently active (not already revoked) and reports whether a row was
-	// actually revoked. The UPDATE ... WHERE revoked_at IS NULL is the atomic
+	// actually consumed. The UPDATE ... WHERE revoked_at IS NULL is the atomic
 	// gate: of N concurrent refreshes sharing one single-use token, exactly one
 	// observes rows-affected == 1 (true); the rest see 0 (false) and must be
 	// rejected. This enforces one-time refresh-token rotation under concurrency.
-	RevokeRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error)
+	//
+	// It also stamps rotated_at, which plain revocation (logout, password
+	// change, admin revoke) never does. That is what lets the caller tell a
+	// theft-replay apart from a replay of a legitimately-revoked token.
+	RotateRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error)
+	// RevokeRefreshTokenFamily revokes every still-active token in a session
+	// lineage and returns how many it killed. Used by reuse detection: if two
+	// parties hold the same token, no descendant of that lineage can be
+	// trusted, including the one the thief just minted.
+	RevokeRefreshTokenFamily(ctx context.Context, familyID string) (int64, error)
 	RevokeAllUserTokens(ctx context.Context, userID string) error
 
 	UpdateUser(ctx context.Context, userID string, input UpdateUserInput) (*User, error)
