@@ -13,9 +13,15 @@ use tonic::transport::{Certificate, Identity, ServerTlsConfig};
 /// Load server TLS config from the same env vars as Go `pkg/grpmtls`.
 ///
 /// Returns `Ok(None)` when mTLS is not configured (insecure plaintext).
-/// Returns `Err` on partial paths, force-without-paths, or unreadable files.
+///
+/// # Errors
+///
+/// Returns `Err` when the TLS paths are partially set, when `GRPC_MTLS` forces
+/// mTLS without a complete set of paths, or when a certificate file cannot be
+/// read. Every case is fatal by design: a server that silently falls back to
+/// plaintext after being told to require mTLS is the failure this guards.
 pub fn load_server_tls() -> Result<Option<ServerTlsConfig>, String> {
-    let force = truthy(std::env::var("GRPC_MTLS").unwrap_or_default());
+    let force = truthy(&std::env::var("GRPC_MTLS").unwrap_or_default());
     let cert_file = std::env::var("GRPC_TLS_CERT_FILE").unwrap_or_default();
     let key_file = std::env::var("GRPC_TLS_KEY_FILE").unwrap_or_default();
     let ca_file = std::env::var("GRPC_TLS_CA_FILE").unwrap_or_default();
@@ -59,7 +65,7 @@ fn read_pem(path: &str) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("read {}: {e}", Path::new(path).display()))
 }
 
-fn truthy(v: String) -> bool {
+fn truthy(v: &str) -> bool {
     matches!(
         v.trim().to_ascii_lowercase().as_str(),
         "1" | "true" | "yes" | "on"
@@ -75,10 +81,10 @@ mod tests {
         // Env is process-global; only assert the no-path path when vars are empty.
         // Other tests may set them; we only check the pure function of empty.
         // Use a scoped approach: if any path is set in the ambient env, skip.
-        if std::env::var("GRPC_TLS_CERT_FILE").ok().filter(|s| !s.is_empty()).is_some() {
+        if std::env::var("GRPC_TLS_CERT_FILE").is_ok_and(|s| !s.is_empty()) {
             return;
         }
-        if std::env::var("GRPC_MTLS").ok().filter(|s| truthy(s.clone())).is_some() {
+        if std::env::var("GRPC_MTLS").is_ok_and(|s| truthy(&s)) {
             return;
         }
         let got = load_server_tls().expect("load");

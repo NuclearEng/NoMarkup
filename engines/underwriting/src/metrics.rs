@@ -91,6 +91,10 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>,
     }
 }
 
+/// # Errors
+///
+/// Returns the underlying `std::io::Error` when the metrics listener cannot
+/// bind its address or the HTTP server exits abnormally.
 pub async fn serve_metrics(addr: SocketAddr) -> std::io::Result<()> {
     init();
     let listener = TcpListener::bind(addr).await?;
