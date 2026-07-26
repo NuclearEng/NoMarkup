@@ -1,14 +1,20 @@
 # Next-session handoff — remaining gaps
 
-**As of:** 2026-07-25, branch `fix/security-audit-2026-04-23` (pushed, 40 commits ahead of `main`)
+**As of:** 2026-07-25 (evening), branch `fix/security-audit-2026-04-23`
+(local commits ahead of origin; push only when asked)
 
 A production-readiness review closed 18 blockers and ~30 further defects the
-fixes uncovered. This is what is left, why, and what "done" looks like for each.
+fixes uncovered. A later session closed most of **section C** (see
+"Closed in code" below). This is what is left, why, and what "done" looks like.
 
 **Read this first:** everything below is either (a) blocked on a decision only a
 human can make, (b) unverifiable in a sandbox with no cluster / no Stripe keys /
 no load generator, or (c) real code work with a known shape. They are separated
 because mixing them is how the first two silently become nobody's job.
+
+**Do not reverse:** `docs/adr/0001-marketplace-payment-collection.md`. In
+particular do not default `MARKETPLACE_OFFSESSION_CHARGE` or
+`MARKETPLACE_PAYMENT_EXPIRY` on without the decisions in section A.
 
 ---
 
@@ -23,8 +29,8 @@ terms text in the tree states that authorization, and the content is
 admin-managed so it cannot be confirmed from the repo.
 
 **Done when:** legal confirms the terms shipped and someone flips the env var.
-Until then the marketplace collects via the "pay for your win" surface, which
-works — this is not a broken state, it is a deliberate one. See ADR-0001.
+Until then the marketplace collects via the "pay for your win" surface
+(`POST /api/v1/orders/{id}/pay` — **now shipped**, see C3 closed). See ADR-0001.
 
 ### A2. Payment window (72h) and expiry arming
 `MARKETPLACE_PAYMENT_WINDOW`, `MARKETPLACE_PAYMENT_EXPIRY` (currently off).
@@ -54,12 +60,16 @@ of thing whose first real run is where you find out.
 ### B1. Every Kubernetes change is hand-traced only
 No `kubectl`, no cluster. Affects: readiness/liveness probes, the gRPC health
 registration, the least-privilege NetworkPolicies, automatic rollback, metrics
-scrape auth, the JWT key file mounts.
+scrape auth, the JWT key file mounts, **and arming mesh mTLS** (see Closed C1).
 
 The NetworkPolicy work is the riskiest: it replaced an allow-all rule, and
 removing an allow-all silently removes whatever else it was permitting. Two such
 cases were caught (otel-collector ingress, web→gateway) by enumerating the
 reachability matrix. **A third may exist.**
+
+When mTLS is armed, native gRPC kubelet probes **cannot** present a client
+cert — switch Deployments to the HTTP healthz/readyz ports first
+(`docs/operations/mesh-mtls.md`).
 
 **Done when:** applied to a staging cluster and every service reaches its
 dependencies. Check tracing still flows and server-rendered pages still load —
@@ -80,7 +90,9 @@ test needs exists, and total wall-clock (it now gates `build`).
 ### B3. The entire payment path is proven against mocks
 No Stripe keys. Unproven: that a real 3DS challenge renders and completes, that
 a test card declines as expected, that the redirect-return path works, that
-Stripe accepts the argument shapes.
+Stripe accepts the argument shapes — including the new
+`POST /api/v1/orders/{id}/pay` path and re-read `client_secret` on charge
+re-entry.
 
 **Done when:** exercised end-to-end against Stripe test keys with a live stack
 (see `E2E.md`).
@@ -102,101 +114,41 @@ PostGIS types. The spatial DDL is untested on the real target version.
 
 ---
 
-## C. Real code work, known shape
-
-### C1. mTLS for the gRPC mesh — the largest remaining security gap
-The mesh runs on `insecure.NewCredentials()` (6 dial sites) and the RPCs take
-the acting user's identity as a **request field** (`AwardBidRequest.customer_id`,
-the `provider_id` fields). The service trusts what it is told, so anything that
-can open a TCP connection to a service port can impersonate any user.
-
-The network half is done — `deploy/k8s/base/network-policy.yaml` now grants
-least privilege derived from the real call graph — but that reduces blast radius,
-it does not authenticate. Until mTLS lands, **network position is the
-authentication boundary.**
-
-**Done when:** peer identity is cryptographic and the services derive the caller
-from the certificate rather than the request body.
+## C. Real code work still open
 
 ### C2. The frontend cannot save EIN/TIN or insurance policy number
-`proto/user/v1/user.proto` has no fields for them (verified: 0 matches), so the
-new encrypt-on-write path is unreachable from the UI —
+`proto/user/v1/user.proto` has no fields for them (re-verified: 0 matches), so the
+encrypt-on-write path is unreachable from the UI —
 `web/src/app/.../provider/onboarding/page.tsx` collects both and silently drops
 them. The load-bearing half is done (those columns can never be written in
 plaintext); the contract is additive work spanning proto → gRPC → gateway → web.
-
-### C3. `POST /api/v1/orders/{id}/pay` does not exist
-Verified: no such route. The web "pay for your win" surface was built against it
-and degrades to an explanatory message on 404/405/501 rather than crashing — but
-until it exists, a buyer whose off-session charge fails has no way to pay.
-
-**This is the gap that most directly blocks A1/A2 being meaningful.**
-
-Two related contract gaps: `ChargeListingWinner`'s idempotent re-entry returns
-an **empty** `ClientSecret` (`listing_charge.go`), so a retry hands the browser
-nothing — whoever wires the route must re-read or persist it. And the gateway
-drops `total_cents` from `ChargeListingWinnerResponse`, so the client cannot
-show the real total (item + fee + tax) and the button says "Pay now" rather than
-an amount.
 
 ### C4. No SCA notification type
 The enum has no member for "authentication required", so it reuses
 `PAYMENT_FAILED` with the distinction in `Data["outcome"]`. A dedicated member
 would let the UI render an "Authenticate" button instead of a generic failure.
 
-### C5. `stale-if-error=86400` on the feature-flag endpoint
-`gateway/internal/handler/feature_flag.go:66` — `writeCachedJSON(..., 60, 300)`
-inherits the flat 24h `stale-if-error`. During an origin outage the edge can
-serve a **day-old flag map**. Combined with flags failing *open* on a missing
-row, disabling a financial flag and then hitting an origin error keeps it
-enabled at the edge for up to a day.
+### C7. The CDN half of the cache guard — **origin cannot finish this**
+`writeCachedJSON` refuses to publicly **store** a response for an identified
+caller. That does **not** prevent a public body already at the edge from being
+**served** to a signed-in caller.
 
-**Done when:** `stale-if-error` is a parameter bounded relative to `s-maxage`
-rather than a flat constant.
-
-### C6. `MyListings` is reachable from a public route with no `Cache-Control`
-`gateway/internal/handler/listings.go` delegates `GET /api/v1/listings/{id}` to
-`MyListings` when `id == "mine"` (a chi route-collision workaround).
-`MyListings` (`listings_bid.go:883`) reads claims, 401s on that path, and writes
-with `writeJSON` and **no** cache header, outside the `PrivateNoStore` subtree.
-Nothing leaks today. If that route ever gains `optionalAuth` it would emit a
-per-user body with no cache header on a public path.
-
-**Done when:** `w.Header().Set("Cache-Control", "private, no-store")` at the top
-of `MyListings`.
-
-### C7. The CDN half of the cache guard
-`writeCachedJSON` now refuses to publicly cache a response for an identified
-caller. That prevents a per-user body being **stored**. It does **not** prevent a
-public body being **served** to a signed-in caller — if the edge holds a fresh
-copy the origin is never consulted.
+**Origin work:** documented only —
+`docs/operations/cdn-cache-auth-bypass.md` (Cloudflare expression + verification
+steps).
 
 **Done when:** a Cloudflare rule on the API zone bypasses cache when
-`Authorization` or the `refresh_token` cookie is present. Cannot be done from
-the origin.
+`Authorization` or the `refresh_token` cookie is present. Needs CF account
+access; not doable from the repo alone.
 
 ### C8. Web has zero OpenTelemetry
-Verified: no `@opentelemetry/*` anywhere in `web/`. The Go tier is now genuinely
-instrumented and the Rust engines emit spans, so the trace starts at the gateway
-— the browser and server-rendered hops are missing.
+Verified: no `@opentelemetry/*` anywhere in `web/`. The Go tier is instrumented
+and the Rust engines emit spans, so the trace starts at the gateway — the
+browser and server-rendered hops are missing.
 
-### C9. `pricing` and `underwriting` export no Prometheus metrics
-No `metrics.rs` in either (the other four have one). `underwriting` also
-declares `prometheus`/`hyper`/`http-body-util` dependencies it never uses.
-
-### C10. The web client defeats its own idempotency
-`web/src/lib/api.ts` mints a **fresh** UUID per call, so a retry presents a new
-key and the middleware cannot dedupe. Idempotency keys are now correctly scoped
-per caller and route server-side, and the middleware fails closed — but the
-client makes it a header-presence tax rather than a retry guarantee.
-
-**Done when:** the key is derived from the logical operation and reused across
-retries of that operation.
-
-### C11. Smaller, verified, uncontroversial
-- `CreateInsurancePaymentIntent` sets `IdempotencyKey` without the empty-guard
-  every other money method has. Its only caller always passes one, so it is
-  latent, not live.
+### C11. Remaining small items (partially closed)
+- ~~`CreateInsurancePaymentIntent` empty idempotency key~~ — **closed** (empty
+  key fails closed; `TestCreateInsurancePaymentIntent_requiresIdempotencyKey`).
 - GDPR erasure leaves `jobs` geometries at their ~1 km cell rather than zeroing
   (zeroing would move a deleted user's public jobs to 0,0). Documented trade.
 - The licence read path 500s on an unopenable ciphertext, so a key rotation
@@ -209,6 +161,67 @@ retries of that operation.
   `ST_DWithin` target and backs the distance `ORDER BY`; ciphertext cannot be
   indexed and coarsening perturbs a 30%-weighted ranking term. Documented as a
   `COMMENT ON COLUMN` with a revisit condition.
+
+---
+
+## Closed in code (do not re-open without re-verifying)
+
+### C1. mTLS for the gRPC mesh — **code complete, default OFF**
+Shared `pkg/grpmtls` (Go) + `engine_telemetry::load_server_tls` (Rust). All Go
+dial sites and servers, and all six Rust engines, load mTLS when
+`GRPC_TLS_CERT_FILE` / `KEY` / `CA` are set (or `GRPC_MTLS=true`). Dev/default
+still uses insecure credentials so compose and tests keep working.
+
+- Cert generator: `./scripts/gen-mesh-certs.sh`
+- Ops: `docs/operations/mesh-mtls.md`
+- Peer name helper: `grpmtls.PeerServiceName` (SPIFFE URI SAN or CN)
+
+**Still open (not “done” by the original definition):**
+
+1. Certs mounted and mTLS **armed** in a real cluster (B1).
+2. Kubelet probes switched to HTTP before arming.
+3. Handlers do **not** yet reject unexpected mesh peers via allowlists; end-user
+   identity still rides on request fields set by the gateway after JWT (that is
+   intentional — mTLS authenticates the mesh peer, not the browser user).
+
+### C3. `POST /api/v1/orders/{id}/pay` — **shipped**
+- Route: `ListingOrdersHandler.PayOrder`, buyer-only, idempotent key required,
+  409 if not `pending_payment`, 503 if empty `client_secret`.
+- `ChargeListingWinner` re-entry re-reads ClientSecret from Stripe / dev store
+  (mutation-tested).
+- Dev marketplace secrets shaped so web `hasConfirmablePayment` accepts them.
+- `total_cents` forwarded on pay, buy-now, and offer-accept.
+
+Unverified: live Stripe 3DS against this route (B3).
+
+### C5. `stale-if-error` bounded — **shipped**
+`staleIfErrorSeconds(sMaxAge, swr)` = `max(sMaxAge*10, swr*2)`, hard-capped at
+1h. Feature flags (60/300) → 600s, not 86400.
+
+### C6. `MyListings` Cache-Control — **shipped**
+`private, no-store` set first on `MyListings`; `GetListing` delegates `id=mine`
+before the nil-DB check so the collision path always stamps it.
+
+### C9. `pricing` and `underwriting` Prometheus metrics — **shipped**
+`engines/{pricing,underwriting}/src/metrics.rs`; observe in gRPC handlers;
+optional HTTP server on `PRICING_METRICS_PORT` / `UNDERWRITING_METRICS_PORT`.
+
+### C10. Web idempotency key reuse — **shipped (money paths)**
+`idempotencyHeader(operationKey)` reuses a UUID per logical operation until
+`clearIdempotencyKey`. Wired on order-pay, buy-now, create-payment, process-payment.
+Legacy no-arg still mints a fresh key — prefer always passing an operation key
+on new money call sites.
+
+---
+
+## Suggested order for the next session
+
+1. **C2** if product needs onboarding EIN/TIN (proto → web contract).
+2. **C4** if SCA UX needs a dedicated notification type.
+3. **C8** if tracing browser → gateway is a release gate.
+4. Otherwise stay on **A** (human) and **B** (staging/Stripe/k6) — those gate
+   production claims more than residual C polish.
+5. **C7** only when someone has Cloudflare API access.
 
 ---
 
@@ -232,3 +245,8 @@ Cheap to state, expensive to rediscover.
 4. **Anything encrypted needs a write path AND a read path.** Encrypting on
    backfill alone means new rows silently land in plaintext while the docs claim
    coverage. That bug has occurred here twice.
+5. **ChargeListingWinner re-entry must return a non-empty ClientSecret** for
+   `pending_payment` (pay-route / SCA). Do not strip the re-read; the unit test
+   pins it and mutation-fails without it.
+6. **Mesh mTLS stays default-off** until certs + HTTP probes are real. Do not
+   set `GRPC_MTLS=true` in production manifests without the probe switch.
