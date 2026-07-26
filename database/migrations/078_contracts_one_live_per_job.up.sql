@@ -1,0 +1,43 @@
+-- Migration 078 — at most ONE live contract per job. Money invariant.
+--
+-- Pairs with 077, which collapsed the pre-existing duplicates this index would
+-- otherwise reject with a 23505.
+--
+-- Closes the second-escrow-lifecycle path described in 077's header: a job
+-- could carry two contracts, each with its own amount_cents, acceptance
+-- handshake and payment/escrow lifecycle, because idx_contracts_job and
+-- idx_contracts_job_status are both NON-unique and CreateContract is a bare
+-- INSERT. The in-repo precedent is listing_orders' real UNIQUE(listing_id).
+--
+-- ── Why PARTIAL rather than a plain UNIQUE (job_id) ──────────────────────
+-- Two reasons, both load-bearing:
+--
+--   1. contracts is soft-deleted. Every read path in contract_repo.go filters
+--      `deleted_at IS NULL`, and 077 retires duplicates by setting deleted_at
+--      rather than DELETEing them — it cannot DELETE them, because payments,
+--      milestones, installment_plans, disputes and working_capital_advances all
+--      hold contract_id FKs. A plain UNIQUE(job_id) would make those retired
+--      rows unrepresentable and force a cascading hard delete of money history.
+--
+--   2. 'cancelled'/'voided' contracts must free the job. A customer whose
+--      provider declined, or whose contract was cancelled before any work
+--      started, can legitimately award a different bid; ContractRepo's cancel
+--      path (`status = 'cancelled' WHERE status IN ('pending_acceptance',
+--      'active')`) is a normal product transition, not a failure. Blocking a
+--      re-award would be a regression. This mirrors 069, where a completed /
+--      cancelled installment plan frees its contract for a new one.
+--
+-- 'completed', 'abandoned', 'suspended' and 'disputed' deliberately COUNT as
+-- live: the job's money history hangs off that contract and a second contract
+-- for the same job would start a parallel escrow against work already paid for.
+-- Fail closed on money (CLAUDE.md §15).
+--
+-- Note this index does NOT replace idx_contracts_job for FK-check purposes:
+-- a partial index on a `status NOT IN (...)` predicate cannot serve a DELETE's
+-- reference check against jobs. idx_contracts_job (non-partial, from 004)
+-- still does that job and is intentionally left in place.
+--
+-- Single statement, CONCURRENTLY — see 076's header for the full explanation of
+-- why golang-migrate + lib/pq forces exactly one statement per file here and
+-- why a blocking build is not an acceptable alternative on a populated table.
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_contracts_live_job ON contracts (job_id) WHERE deleted_at IS NULL AND status NOT IN ('cancelled', 'voided');

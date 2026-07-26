@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -761,40 +762,118 @@ func (r *PostgresRepository) GetRevenueReport(ctx context.Context, startTime, en
 	return report, nil
 }
 
-// RecordStripeEventStart inserts a row into stripe_events for the given event ID.
-// Returns alreadyProcessed=true ONLY when the event was fully handled
-// (processed_at IS NOT NULL). A prior failed attempt leaves processed_at NULL
-// so Stripe retries are allowed to reprocess (MON-12).
+// stripeEventClaimLease is how long one caller's claim on a Stripe event blocks
+// other deliveries of the same event from reprocessing it.
+//
+// It bounds two opposite failures. Too short and two concurrent deliveries of a
+// slow handler both run. Too long and a crashed attempt sits un-retried while
+// Stripe redelivers (Stripe retries for up to 3 days, so a stuck event does get
+// another chance — but only after this window). Five minutes is well past the
+// p99 of any handler in dispatchWebhookEvent (all of which are a handful of
+// database round trips plus at most one Stripe call) while still recovering a
+// crashed pod within one Stripe retry cycle.
+const stripeEventClaimLease = 5 * time.Minute
+
+// markStripeEventProcessedAttempts is how many times MarkStripeEventProcessed
+// retries before giving up. See its doc comment for why the retry exists.
+const markStripeEventProcessedAttempts = 3
+
+// RecordStripeEventStart atomically CLAIMS a Stripe event for processing.
+//
+// Returns alreadyProcessed=true when this caller must NOT run the handler:
+// either the event was already fully handled (processed_at set) or another
+// caller currently holds a live claim on it. false means this caller owns the
+// event and should process it.
+//
+// Signature verification is unrelated to and upstream of this function: every
+// delivery is verified against STRIPE_WEBHOOK_SECRET by StripeWebhookValidator
+// before an event id reaches here.
+//
+// CONCURRENCY: the previous implementation was check-then-act. It ran
+// `INSERT ... ON CONFLICT (id) DO NOTHING`, DISCARDED the insert's RowsAffected,
+// and then issued a SEPARATE `SELECT processed_at`. stripe_events.id is the
+// primary key, so the row was unique — but nothing CLAIMED it. Two concurrent
+// deliveries of the same event both observed processed_at IS NULL and both ran
+// the handler to completion: double refunds, double escrow transitions, double
+// dispute rows. The INSERT already knew which caller won; the code threw that
+// away.
+//
+// This is now a single statement whose ON CONFLICT DO UPDATE takes a row lock,
+// so concurrent callers serialise and exactly one gets a row back. The WHERE on
+// the DO UPDATE is what makes it a claim rather than an upsert:
+//
+//   - processed_at IS NOT NULL  → no row returned → already handled, skip.
+//   - a claim newer than the lease → no row returned → another worker owns it.
+//   - never claimed, or the claim has expired → this caller takes it.
+//
+// The lease preserves MON-12 (a crashed attempt must be retryable, since Stripe
+// redelivers for up to 3 days) without leaving the "processed_at IS NULL means
+// go ahead" hole the old code had. It also bounds the swallowed-stamp failure
+// described on MarkStripeEventProcessed: even if processed_at never gets set,
+// duplicate work is blocked for the whole lease window instead of not at all.
 func (r *PostgresRepository) RecordStripeEventStart(ctx context.Context, eventID, eventType string) (bool, error) {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO stripe_events (id, type)
-		VALUES ($1, $2)
-		ON CONFLICT (id) DO NOTHING`, eventID, eventType)
+	var claimed string
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO stripe_events (id, type, claimed_at, attempts)
+		VALUES ($1, $2, now(), 1)
+		ON CONFLICT (id) DO UPDATE
+		   SET claimed_at = now(),
+		       attempts   = stripe_events.attempts + 1,
+		       type       = EXCLUDED.type
+		 WHERE stripe_events.processed_at IS NULL
+		   AND (stripe_events.claimed_at IS NULL
+		        OR stripe_events.claimed_at < now() - $3::interval)
+		RETURNING id`, eventID, eventType, stripeEventClaimLease.String()).Scan(&claimed)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Not an error: the claim was refused because the event is already
+			// processed or is in flight elsewhere. Both mean "skip".
+			return true, nil
+		}
 		return false, fmt.Errorf("record stripe event start: %w", err)
 	}
-
-	var processedAt *time.Time
-	err = r.pool.QueryRow(ctx, `
-		SELECT processed_at FROM stripe_events WHERE id = $1`, eventID).Scan(&processedAt)
-	if err != nil {
-		return false, fmt.Errorf("record stripe event start lookup: %w", err)
-	}
-	// Only skip when a prior delivery fully completed.
-	return processedAt != nil, nil
+	return false, nil
 }
 
-// MarkStripeEventProcessed stamps processed_at on the stripe_events row for
-// the given event ID. Called after the event has been successfully handled.
+// MarkStripeEventProcessed stamps processed_at on the stripe_events row for the
+// given event ID. Called after the event has been successfully handled.
+//
+// Retries on failure. The caller (HandleWebhook) deliberately logs and swallows
+// an error here — returning one would make Stripe redeliver an event whose side
+// effects already landed — so this is the last line of defence. A permanently
+// unstamped row leaves processed_at NULL, and once the claim lease expires the
+// next redelivery reprocesses an event that in fact succeeded. Retrying a few
+// times turns a transient connection blip (by far the most likely cause) into a
+// non-event rather than a duplicated payment operation.
+//
+// Retries use a short fixed backoff and respect ctx cancellation. If every
+// attempt fails the error is returned so the caller can log it; the row is then
+// discoverable via idx_stripe_events_unprocessed
+// (WHERE processed_at IS NULL, ordered by claimed_at) for alerting.
 func (r *PostgresRepository) MarkStripeEventProcessed(ctx context.Context, eventID string) error {
-	_, err := r.pool.Exec(ctx, `
-		UPDATE stripe_events
-		SET processed_at = now()
-		WHERE id = $1`, eventID)
-	if err != nil {
-		return fmt.Errorf("mark stripe event processed: %w", err)
+	var lastErr error
+	for attempt := range markStripeEventProcessedAttempts {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("mark stripe event processed: %w", ctx.Err())
+			case <-time.After(time.Duration(attempt) * 100 * time.Millisecond):
+			}
+		}
+		_, err := r.pool.Exec(ctx, `
+			UPDATE stripe_events
+			SET processed_at = now()
+			WHERE id = $1`, eventID)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		slog.WarnContext(ctx, "mark stripe event processed failed, retrying",
+			"event_id", eventID, "attempt", attempt+1,
+			"max_attempts", markStripeEventProcessedAttempts, "error", err)
 	}
-	return nil
+	return fmt.Errorf("mark stripe event processed after %d attempts: %w",
+		markStripeEventProcessedAttempts, lastErr)
 }
 
 // --- Instant payout ledger ---

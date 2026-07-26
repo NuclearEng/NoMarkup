@@ -433,6 +433,18 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 	}
 
 	// Calculate total repayment: 20% of provider payout, capped at total remaining balance.
+	//
+	// MONEY (MON-03 follow-up): totalRepayment is accumulated from what the
+	// repository ACTUALLY applied — the difference between the advance's
+	// repaid_cents before and after the call — not from the deduction this loop
+	// asked for. The two diverge on the resume path above: when a prior release
+	// already deducted from this advance for this payment, UpdateAdvanceRepayment
+	// is a no-op (its INSERT hits the unique index from migration 076) and
+	// returns the advance unchanged, so appliedDelta is 0. Trusting `deduction`
+	// there would double-count a withholding that only happened once, understate
+	// the transfer, and misreport the release in the logs and metrics. The
+	// database is the authority on what was credited; this loop just reads it
+	// back.
 	var totalRepayment int64
 	if len(activeAdvances) > 0 {
 		repaymentPool := int64(float64(payment.ProviderPayoutCents) * advanceRepaymentRate)
@@ -453,7 +465,8 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 				deduction = remaining
 			}
 
-			if _, err := s.repo.UpdateAdvanceRepayment(ctx, advance.ID, paymentID, deduction); err != nil {
+			updated, err := s.repo.UpdateAdvanceRepayment(ctx, advance.ID, paymentID, deduction)
+			if err != nil {
 				slog.Error("release escrow: failed to record advance repayment",
 					"payment_id", paymentID,
 					"advance_id", advance.ID,
@@ -464,15 +477,30 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 				continue
 			}
 
+			appliedDelta := updated.RepaidCents - advance.RepaidCents
+			if appliedDelta <= 0 {
+				// Already recorded by an earlier release of this same payment
+				// (the crash-then-retry path). Nothing was withheld this time,
+				// so nothing may be subtracted from the transfer.
+				slog.Info("advance repayment already recorded for this payment, skipping",
+					"payment_id", paymentID,
+					"advance_id", advance.ID,
+					"requested_deduction_cents", deduction,
+					"advance_repaid_cents", updated.RepaidCents,
+				)
+				continue
+			}
+
 			slog.Info("advance repayment deducted",
 				"payment_id", paymentID,
 				"advance_id", advance.ID,
-				"deduction_cents", deduction,
-				"advance_remaining_after", remaining-deduction,
+				"deduction_cents", appliedDelta,
+				"advance_remaining_after",
+				(updated.AdvanceAmountCents+updated.FeeCents)-updated.RepaidCents,
 			)
 
-			totalRepayment += deduction
-			repaymentPool -= deduction
+			totalRepayment += appliedDelta
+			repaymentPool -= appliedDelta
 		}
 	}
 
