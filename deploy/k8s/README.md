@@ -82,6 +82,35 @@ never the gateway. Prometheus scrapes `/metrics` in-cluster via the pod
 annotations (`prometheus.io/scrape`). If a future ingress change ever routes
 `/` or `/metrics` to the gateway, add an explicit deny/exclusion path first.
 
+In production `/metrics` is *also* bearer-gated (`protectMetrics`, SEC-08): a
+non-loopback request with no `Authorization: Bearer <token>` gets **401**.
+Because Prometheus scrapes cross-pod from the `monitoring` namespace, the token
+must be configured on **both** sides or all gateway-derived alerts go dark
+without warning:
+
+- gateway: `METRICS_BEARER_TOKEN` from `nomarkup-secrets` (explicit
+  `secretKeyRef`, non-optional — see [`SECRETS.md`](./SECRETS.md))
+- Prometheus: same value mounted as a file, referenced by `authorization:` on
+  the `kubernetes-pods` job in `deploy/monitoring/prometheus/prometheus.yml`
+
+Do **not** "fix" a 401 by setting `METRICS_PUBLIC=true` — that serves metrics
+unauthenticated to anything that can reach the pod.
+
+## Health vs readiness probes
+
+`livenessProbe` and `readinessProbe` are deliberately **not** the same endpoint
+on the gateway:
+
+- liveness → `/health`, an unconditional 200. Dependency-**independent** on
+  purpose: a Postgres/Redis blip must not restart every pod at once.
+- readiness → `/readyz`, which pings Postgres + Redis with a 1s deadline and
+  returns 503 on failure, so an unhealthy pod leaves the Service endpoints
+  instead of serving errors.
+
+Never point liveness at `/readyz`, and never point readiness at `/health`.
+The `web` Deployment probes `/robots.txt` as an interim target because the
+Next.js app has no health route yet (see the TODO in `base/web/deployment.yaml`).
+
 ## Known caveat (staging)
 
 `overlays/staging` applies `namePrefix: staging-`, which renames Services

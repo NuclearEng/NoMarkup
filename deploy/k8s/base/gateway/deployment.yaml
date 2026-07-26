@@ -65,6 +65,22 @@ spec:
                 secretKeyRef:
                   name: nomarkup-secrets
                   key: INTERNAL_WS_SECRET
+            # Prometheus /metrics bearer token (SEC-08, protectMetrics in
+            # gateway/internal/router/router.go). In production, with no token
+            # set and METRICS_PUBLIC unset, ANY non-loopback request to /metrics
+            # gets 401 — which meant the cross-pod Prometheus scrape was being
+            # rejected and every http_requests_total / http_request_duration_seconds
+            # alert (both P0 payment alerts included) was permanently dark.
+            # Prometheus sends the identical value via `authorization:` on the
+            # kubernetes-pods job (deploy/monitoring/prometheus/prometheus.yml).
+            # Deliberately NOT `optional: true`: the pod must fail to start rather
+            # than boot with metrics silently unscrapeable. Never set
+            # METRICS_PUBLIC=true — that exposes /metrics unauthenticated.
+            - name: METRICS_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: METRICS_BEARER_TOKEN
             # Category-tree cache key + Sentry release; set in nomarkup-config (overlay).
             - name: APP_VERSION
               valueFrom:
@@ -84,6 +100,10 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # Liveness MUST stay dependency-INDEPENDENT. `/health` (healthHandler,
+          # gateway/internal/router/router.go) is an unconditional 200 — that is
+          # deliberate: a Postgres/Redis blip must never restart every gateway
+          # pod at once (restart storm). Only a wedged process fails this.
           livenessProbe:
             httpGet:
               path: /health
@@ -92,9 +112,14 @@ spec:
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
+          # Readiness MUST be dependency-CHECKING. `/readyz` (readinessHandler)
+          # pings Postgres + Redis with a 1s deadline and returns 503 when either
+          # is unreachable, so the pod is pulled from Service endpoints instead of
+          # serving 500s. Previously this pointed at `/health`, which meant a pod
+          # with both datastores dead still advertised itself as ready.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10

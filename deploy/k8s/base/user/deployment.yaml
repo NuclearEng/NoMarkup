@@ -44,6 +44,19 @@ spec:
               value: "50051"
             - name: METRICS_PORT
               value: "51051"
+            # REQUIRED. The user service refuses to start outside development
+            # without this: registration must be able to send a verification
+            # email, and deriving "skip verification" from a nil notification
+            # client meant an unset value silently marked every new account
+            # email_verified=true. It was previously set on the gateway
+            # deployment only, so this service never saw it.
+            - name: NOTIFICATION_SERVICE_ADDR
+              value: "notification:50059"
+            # Base for the links in verification / password-reset emails.
+            # Without it the service defaults to http://localhost:3000 and
+            # emits unusable links.
+            - name: BASE_URL
+              value: "https://no-markup.com"
             - name: APP_VERSION
               valueFrom:
                 configMapKeyRef:

@@ -50,6 +50,34 @@ scrape_configs:
   #   prometheus.io/port: "<port>"       (optional, defaults to container port)
   #   prometheus.io/path: "<path>"       (optional, defaults to /metrics)
   - job_name: kubernetes-pods
+    # The gateway gates /metrics behind a bearer token (SEC-08 protectMetrics,
+    # gateway/internal/router/router.go): in production, a non-loopback request
+    # with no Authorization header gets 401. Without this stanza every scrape of
+    # the gateway was rejected, so http_requests_total /
+    # http_request_duration_seconds never existed and every alert derived from
+    # them — including the P0 NoMarkupPaymentFailureSpike and
+    # NoMarkupPaymentPathDown — could never fire.
+    #
+    # `credentials_file` must contain the SAME value as the METRICS_BEARER_TOKEN
+    # key of the `nomarkup-secrets` Secret (see deploy/k8s/SECRETS.md). Mount it
+    # into the Prometheus pod, e.g.:
+    #
+    #   volumes:
+    #     - name: metrics-token
+    #       secret:
+    #         secretName: nomarkup-metrics-token   # in the `monitoring` namespace
+    #         items: [{ key: METRICS_BEARER_TOKEN, path: metrics-bearer-token }]
+    #         defaultMode: 0400
+    #   volumeMounts:
+    #     - name: metrics-token
+    #       mountPath: /etc/prometheus/secrets
+    #       readOnly: true
+    #
+    # Targets that do not check the header (Go service /metrics ports, Rust
+    # engines) simply ignore it — sending it job-wide is safe.
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/metrics-bearer-token
     kubernetes_sd_configs:
       - role: pod
         namespaces:
@@ -157,3 +185,16 @@ scrape_configs:
   #     - targets: ["pgbouncer-exporter:9127"]
   #       labels:
   #         service: pgbouncer
+
+  # -------------------------------------------------------------------------
+  # Database exporters — NOT DEPLOYED
+  # -------------------------------------------------------------------------
+  # There is no pgbouncer / pgbouncer-exporter / postgres_exporter workload in
+  # deploy/k8s (pgbouncer exists only in docker-compose.yml for local dev, and
+  # Go services connect to Postgres directly via DATABASE_URL). The two alert
+  # rules that consumed those series — NoMarkupDBConnectionPoolExhausted
+  # (pgbouncer_pools_server_*) and NoMarkupDBSlowQueries
+  # (pg_stat_activity_max_tx_duration) — are therefore COMMENTED OUT in
+  # alerts.yml rather than left as permanently-silent rules that read as
+  # coverage. To re-enable: deploy the exporters, add scrape jobs here, then
+  # uncomment the matching block in alerts.yml (`nomarkup.database`).

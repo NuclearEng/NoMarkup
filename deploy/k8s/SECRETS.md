@@ -32,6 +32,52 @@ environments.
 | `APPLE_CLIENT_SECRET` | gateway | Apple OAuth token exchange |
 | `ENCRYPTION_KEY` | user, services with PII | base64 32-byte AES-256-GCM key |
 | `MEILISEARCH_API_KEY` | gateway, job service, meilisearch (as `MEILI_MASTER_KEY`) | search index admin operations + gateway listings search; the in-cluster Meilisearch Deployment (`base/meilisearch/deployment.yaml`) boots with this same value as its master key — identical to the docker-compose wiring |
+| `METRICS_BEARER_TOKEN` | gateway (+ Prometheus, see below) | Bearer token for `GET /metrics`. Without it the gateway's `protectMetrics` gate (SEC-08) returns **401 to every non-loopback request in production**, so Prometheus scrapes from the `monitoring` namespace fail and every alert built on `http_requests_total` / `http_request_duration_seconds` — including the P0 `NoMarkupPaymentFailureSpike` and `NoMarkupPaymentPathDown` — silently never fires. Generate with `openssl rand -base64 32`. |
+
+### `METRICS_BEARER_TOKEN` — both sides must match
+
+The gateway reads it from env (`METRICS_BEARER_TOKEN`, falling back to
+`METRICS_TOKEN`) via an explicit `secretKeyRef` in
+`base/gateway/deployment.yaml` — deliberately **not** `optional: true`, so a
+missing key stops the pod from starting instead of booting with metrics
+unscrapeable.
+
+Prometheus runs in the `monitoring` namespace, so it needs the **same value**
+mirrored there as a file. Provision and mount it:
+
+```bash
+# same value as nomarkup-secrets/METRICS_BEARER_TOKEN
+kubectl create secret generic nomarkup-metrics-token \
+  --from-literal=METRICS_BEARER_TOKEN="$TOKEN" \
+  --namespace=monitoring
+```
+
+```yaml
+# Prometheus Deployment (monitoring namespace)
+volumes:
+  - name: metrics-token
+    secret:
+      secretName: nomarkup-metrics-token
+      items:
+        - key: METRICS_BEARER_TOKEN
+          path: metrics-bearer-token
+      defaultMode: 0400
+volumeMounts:
+  - name: metrics-token
+    mountPath: /etc/prometheus/secrets
+    readOnly: true
+```
+
+`deploy/monitoring/prometheus/prometheus.yml` consumes it on the
+`kubernetes-pods` job as
+`authorization: {type: Bearer, credentials_file: /etc/prometheus/secrets/metrics-bearer-token}`.
+Rotating this key means rotating **both** Secrets together, then restarting the
+gateway and Prometheus — a mismatch takes alerting dark without any alert firing
+about it (watch the `up{job="kubernetes-pods"}` series and Prometheus' own
+`scrape_samples_scraped` after any rotation).
+
+**Never** set `METRICS_PUBLIC=true` as a workaround — that serves `/metrics`
+unauthenticated to anything that can reach the pod.
 
 ## Provisioning (recommended via External Secrets Operator + Vault)
 

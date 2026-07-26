@@ -240,18 +240,144 @@ jobs:
           kubectl logs "job/${JOB_NAME}" -n nomarkup || true
 
       - name: Apply Kubernetes manifests
+        id: rollout
         run: |
           set -euo pipefail
           kubectl apply -k deploy/k8s/overlays/production
-          kubectl rollout status deployment -n nomarkup --timeout=600s
+          # `kubectl rollout status deployment` with no name errors out
+          # ("rollout status is only supported on individual resources...")
+          # whenever the namespace holds more than one Deployment, so wait on
+          # each Deployment explicitly. Any non-converging rollout fails this
+          # step, which triggers the automatic rollback step below.
+          deployments="$(kubectl get deployments -n nomarkup \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+          if [ -z "$deployments" ]; then
+            echo "::error::No Deployments found in namespace nomarkup after apply."
+            exit 1
+          fi
+          echo "Waiting for rollouts:"
+          echo "$deployments"
+          for d in $deployments; do
+            echo "::group::rollout status deployment/${d}"
+            kubectl rollout status "deployment/${d}" -n nomarkup --timeout=600s
+            echo "::endgroup::"
+          done
 
       - name: Smoke checks
+        id: smoke
         run: |
-          set -euo pipefail
+          # No `set -e`: curl failures are inspected, not fatal on their own.
+          set -uo pipefail
           echo "Deployed version: ${{ steps.version.outputs.VERSION }}"
           kubectl get pods -n nomarkup -o wide
-          if curl -fsS --max-time 15 "https://no-markup.com/api/v1/markets" >/dev/null 2>&1; then
-            echo "Public markets endpoint OK"
-          else
-            echo "::warning::Public smoke check skipped/failed (cluster may be private or DNS pending)"
+
+          URL="https://no-markup.com/api/v1/markets"
+          BODY="$(mktemp)"
+          attempts=5
+          delay=5
+          reached=0   # 1 once the endpoint answered with ANY HTTP status
+          ok=0        # 1 once it answered 2xx
+          last_code="none"
+
+          for attempt in $(seq 1 "$attempts"); do
+            code="$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 15 "$URL")"
+            rc=$?
+            if [ "$rc" -ne 0 ] || [ -z "$code" ] || [ "$code" = "000" ]; then
+              # Transport-level failure: DNS not resolving, connection refused,
+              # TLS handshake failed. Cannot distinguish "app broken" from
+              # "cluster is private / DNS not propagated yet" — keep retrying.
+              echo "attempt ${attempt}/${attempts}: endpoint UNREACHABLE (curl rc=${rc})"
+              last_code="unreachable"
+            else
+              reached=1
+              last_code="$code"
+              echo "attempt ${attempt}/${attempts}: HTTP ${code}"
+              case "$code" in
+                2*) ok=1; break ;;
+              esac
+            fi
+            if [ "$attempt" -lt "$attempts" ]; then
+              sleep "$delay"
+              delay=$((delay * 2))   # 5s, 10s, 20s, 40s
+            fi
+          done
+
+          if [ "$ok" -eq 1 ]; then
+            echo "Public markets endpoint OK (HTTP ${last_code})"
+            exit 0
           fi
+
+          if [ "$reached" -eq 0 ]; then
+            # Never got a single HTTP response across all attempts — this is the
+            # genuinely-expected case for a private cluster or pending DNS, and
+            # says nothing about whether the deploy is healthy. Warn, don't fail.
+            echo "::warning::Public smoke check inconclusive — ${URL} was unreachable on all ${attempts} attempts (private cluster or DNS not yet propagated). Deploy NOT verified end-to-end."
+            exit 0
+          fi
+
+          # Reachable but erroring: the public API is live and broken. Fail hard
+          # so the rollback step below runs.
+          echo "::error::Public smoke check FAILED — ${URL} is reachable but returned HTTP ${last_code} on all ${attempts} attempts. The public API is serving errors on the newly deployed version."
+          echo "Last response body (truncated):"
+          head -c 2000 "$BODY" || true
+          exit 1
+
+      # --------------------------------------------------------------------
+      # Automatic rollback — runs ONLY when the rollout or the smoke check
+      # failed after manifests were already applied. Earlier failures (build,
+      # migrations) never reach this because their step ids never get an
+      # outcome, so nothing is rolled back when nothing was deployed.
+      #
+      # Migrations are FORWARD-ONLY, so this restores CODE only — the schema
+      # stays at the new version. That is safe here because every migration
+      # newer than 019 is additive / backward-compatible (new tables, new
+      # nullable columns, new indexes), so the previous image runs fine against
+      # the newer schema. 019 is the only rolling-deploy-unsafe migration and it
+      # is historical — long since applied in every environment. If a future
+      # migration is NOT backward-compatible, it must be split
+      # (expand → deploy → contract) or this rollback will not save the deploy.
+      # --------------------------------------------------------------------
+      - name: Automatic rollback
+        if: ${{ failure() && (steps.rollout.outcome == 'failure' || steps.smoke.outcome == 'failure') }}
+        run: |
+          set -uo pipefail
+          echo "::error::Deploy of ${{ steps.version.outputs.VERSION }} FAILED after manifests were applied — rolling back all Deployments to their previous revision."
+
+          deployments="$(kubectl get deployments -n nomarkup \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+          if [ -z "$deployments" ]; then
+            echo "::error::Could not list Deployments in namespace nomarkup — MANUAL INTERVENTION REQUIRED (see docs/runbook.md)."
+            exit 1
+          fi
+
+          undone=""
+          for d in $deployments; do
+            echo "::group::kubectl rollout undo deployment/${d}"
+            if kubectl rollout undo "deployment/${d}" -n nomarkup; then
+              undone="${undone} ${d}"
+            else
+              echo "::warning::deployment/${d}: no previous revision to roll back to (left as-is)."
+            fi
+            echo "::endgroup::"
+          done
+
+          rollback_ok=1
+          for d in $undone; do
+            echo "::group::rollout status (undo) deployment/${d}"
+            if ! kubectl rollout status "deployment/${d}" -n nomarkup --timeout=300s; then
+              echo "::error::deployment/${d} did NOT converge after rollback."
+              rollback_ok=0
+            fi
+            echo "::endgroup::"
+          done
+
+          echo "Post-rollback cluster state:"
+          kubectl get pods -n nomarkup -o wide || true
+
+          if [ "$rollback_ok" -eq 1 ]; then
+            echo "::error::ROLLBACK COMPLETE — cluster restored to the previous image revision. Release ${{ steps.version.outputs.VERSION }} is NOT live. DB schema was NOT rolled back (migrations are forward-only). Investigate before re-tagging."
+          else
+            echo "::error::ROLLBACK INCOMPLETE — one or more Deployments failed to converge on their previous revision. The cluster may be serving a mix of versions. PAGE ON-CALL NOW: docs/runbook.md"
+          fi
+          # Always fail the job: a rolled-back deploy is a failed deploy.
+          exit 1

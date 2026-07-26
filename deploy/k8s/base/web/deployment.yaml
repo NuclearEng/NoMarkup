@@ -53,9 +53,18 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # NOTE: these previously probed `/health`, which did NOT exist in the
+          # Next.js app — App Router answered 404, a 404 is a probe failure, so
+          # web pods would never have gone Ready and the rollout would have hung
+          # until timeout. `web/src/app/api/health/route.ts` now serves this.
+          #
+          # It is deliberately dependency-free: this process renders pages and
+          # proxies to the gateway, which has its own /readyz covering Postgres
+          # and Redis. Making the web probe depend on the backend would turn a
+          # gateway blip into a frontend restart storm.
           livenessProbe:
             httpGet:
-              path: /health
+              path: /api/health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 15
@@ -63,7 +72,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /api/health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
