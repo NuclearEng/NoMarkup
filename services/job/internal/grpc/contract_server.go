@@ -694,6 +694,12 @@ func mapContractDomainError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrContractNotFound):
 		return status.Error(codes.NotFound, "contract not found")
+	case errors.Is(err, domain.ErrJobAlreadyContracted):
+		// codes.AlreadyExists → 409 Conflict at the gateway. Retrying the SAME
+		// award never reaches here (CreateContract returns the existing
+		// contract); this fires only for a second bid on a job that is already
+		// contracted.
+		return status.Error(codes.AlreadyExists, "This job already has an active contract. Cancel it before awarding a different bid.")
 	case errors.Is(err, domain.ErrNotContractParty):
 		return status.Error(codes.PermissionDenied, "You are not a party to this contract")
 	case errors.Is(err, domain.ErrNotContractProvider):

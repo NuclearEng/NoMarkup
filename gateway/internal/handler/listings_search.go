@@ -35,6 +35,12 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 )
 
+// listingsSearchIndexUID is the Meilisearch index the goods marketplace reads
+// and writes. Must stay in sync with listingsIndexUID in
+// services/job/internal/service/listing_search_indexer.go — the job service
+// owns writes, the gateway reads and evicts.
+const listingsSearchIndexUID = "listings"
+
 // ListingsSearchHandler exposes the autocomplete and similar-listings endpoints.
 //
 // listingsHandler is reused so we can call its loadListingJSON helper to
@@ -48,7 +54,18 @@ type ListingsSearchHandler struct {
 // NewListingsSearchHandler constructs the handler. meili and listingsHandler
 // may both be nil — endpoints degrade to empty payloads when search is
 // not configured, which is the expected sandbox/dev state.
+//
+// Side effect: the meili client is also handed to the ListingsHandler so its
+// hard-delete path can evict the search document (see
+// ListingsHandler.deleteListingDocument). The gateway constructs exactly one
+// ListingsHandler and passes that same pointer here
+// (gateway/cmd/server/main.go), so back-wiring at this seam keeps the search
+// dependency in one file and needs no change to the composition root. A nil
+// meili leaves the ListingsHandler exactly as it was.
 func NewListingsSearchHandler(db *pgxpool.Pool, meili meilisearch.ServiceManager, lh *ListingsHandler) *ListingsSearchHandler {
+	if lh != nil && meili != nil {
+		lh.meili = meili
+	}
 	return &ListingsSearchHandler{db: db, meili: meili, listingsHandler: lh}
 }
 
@@ -95,7 +112,13 @@ func (h *ListingsSearchHandler) Autocomplete(w http.ResponseWriter, r *http.Requ
 	categorySuggestions := h.matchCategories(r.Context(), q, 4)
 
 	// Listings: Meilisearch hit. When meili is nil, skip silently.
-	listingSuggestions := h.matchListingsViaMeili(r.Context(), q, int64(limit))
+	// Over-fetch so the Postgres liveness filter below can drop stale hits
+	// without shrinking the visible suggestion count.
+	listingSuggestions := h.matchListingsViaMeili(r.Context(), q, int64(limit)*2)
+	listingSuggestions = h.keepLiveListings(r.Context(), listingSuggestions)
+	if len(listingSuggestions) > limit {
+		listingSuggestions = listingSuggestions[:limit]
+	}
 
 	combined := make([]autocompleteSuggestionJSON, 0, len(categorySuggestions)+len(listingSuggestions))
 	// Categories first — they're navigation-aiding hints.
@@ -163,7 +186,7 @@ func (h *ListingsSearchHandler) matchListingsViaMeili(ctx context.Context, q str
 	if h.meili == nil {
 		return nil
 	}
-	resp, err := h.meili.Index("listings").SearchWithContext(ctx, q, &meilisearch.SearchRequest{
+	resp, err := h.meili.Index(listingsSearchIndexUID).SearchWithContext(ctx, q, &meilisearch.SearchRequest{
 		Limit:  limit,
 		Filter: "status = active",
 		AttributesToRetrieve: []string{
@@ -194,6 +217,81 @@ func (h *ListingsSearchHandler) matchListingsViaMeili(ctx context.Context, q str
 			continue
 		}
 		out = append(out, s)
+	}
+	return out
+}
+
+// keepLiveListings drops suggestions whose listing is no longer an active row
+// in Postgres, preserving Meilisearch's relevance order for the survivors.
+//
+// ── Why verify at all, given the delete path now evicts documents ──────────
+// Eviction is best-effort and only covers the one code path that hard-deletes.
+// The index also drifts whenever a status leaves 'active' (sold, cancelled,
+// expired — the auction-close worker writes those straight to Postgres), when
+// a Meili write fails, and for every document written before the eviction fix
+// shipped. Postgres is the authority; the index is a hint.
+//
+// ── Why filter instead of fully hydrating ─────────────────────────────────
+// Autocomplete only renders id/title/category_slug/starting_price_cents, all
+// of which Meili already returns, so hydration would buy nothing but latency.
+// Verification costs ONE primary-key `= ANY` lookup over at most 50 UUIDs —
+// index-only, sub-millisecond — against an endpoint whose alternative is
+// serving dead links out of a 60s/300s CDN cache, where each phantom is a
+// guaranteed 404 click and stays wrong for the whole TTL. The latency is worth
+// it; that trade is the entire reason for the extra round trip.
+//
+// Fails CLOSED: with no DB handle, or on a query error, listing suggestions are
+// dropped rather than served unverified. Category suggestions are unaffected,
+// so the typeahead still helps the user navigate — consistent with this file's
+// stated policy that autocomplete degrades rather than errors.
+func (h *ListingsSearchHandler) keepLiveListings(ctx context.Context, in []autocompleteSuggestionJSON) []autocompleteSuggestionJSON {
+	if len(in) == 0 {
+		return in
+	}
+	if h.db == nil {
+		slog.WarnContext(ctx, "autocomplete: no db handle, dropping unverified listing suggestions",
+			"dropped", len(in))
+		return nil
+	}
+
+	ids := make([]string, 0, len(in))
+	for _, s := range in {
+		ids = append(ids, s.ID)
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT id::text FROM listings
+		 WHERE id = ANY($1::uuid[]) AND status = 'active'`, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "autocomplete: listing liveness check failed, dropping listing suggestions",
+			"error", err, "candidates", len(in))
+		return nil
+	}
+	defer rows.Close()
+
+	live := make(map[string]struct{}, len(in))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			slog.WarnContext(ctx, "autocomplete: liveness scan failed", "error", err)
+			return nil
+		}
+		live[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		slog.WarnContext(ctx, "autocomplete: liveness iterate failed", "error", err)
+		return nil
+	}
+
+	out := make([]autocompleteSuggestionJSON, 0, len(in))
+	for _, s := range in {
+		if _, ok := live[s.ID]; ok {
+			out = append(out, s)
+		}
+	}
+	if stale := len(in) - len(out); stale > 0 {
+		slog.InfoContext(ctx, "autocomplete: dropped stale meilisearch hits",
+			"stale", stale, "kept", len(out))
 	}
 	return out
 }
@@ -291,7 +389,7 @@ func (h *ListingsSearchHandler) findSimilarIDs(ctx context.Context, sourceID, ti
 	if categorySlug != "" {
 		filter = fmt.Sprintf("status = active AND category_slug = %q", categorySlug)
 	}
-	resp, err := h.meili.Index("listings").SearchWithContext(ctx, q, &meilisearch.SearchRequest{
+	resp, err := h.meili.Index(listingsSearchIndexUID).SearchWithContext(ctx, q, &meilisearch.SearchRequest{
 		Limit:                int64(limit) + 1, // +1 to drop the source
 		Filter:               filter,
 		AttributesToRetrieve: []string{"id"},

@@ -775,7 +775,32 @@ func (h *ListingsHandler) DeleteListingDraft(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// The row is gone from Postgres; evict the search document too. Without
+	// this the listing keeps being served by /listings/autocomplete (which
+	// reads Meilisearch and is CDN-cached), so a deleted listing stays
+	// clickable indefinitely. Best-effort AFTER commit: search is a derived
+	// index, and a failure here must not turn a committed delete into a 5xx.
+	// Autocomplete independently verifies hits against Postgres, so a missed
+	// eviction degrades to a wasted row, never a phantom result.
+	h.deleteListingDocument(r.Context(), id)
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteListingDocument removes a listing from the Meilisearch `listings`
+// index. No-op when search is not configured (nil client), which is the
+// expected dev/sandbox state. Errors are logged, never returned: every caller
+// has already committed its Postgres change and search is derived state.
+func (h *ListingsHandler) deleteListingDocument(ctx context.Context, listingID string) {
+	if h == nil || h.meili == nil {
+		return
+	}
+	if _, err := h.meili.Index(listingsSearchIndexUID).DeleteDocumentWithContext(ctx, listingID, nil); err != nil {
+		slog.WarnContext(ctx, "listing search document delete failed; index may serve a stale row until the next reindex",
+			"error", err, "listing_id", listingID, "index", listingsSearchIndexUID)
+		return
+	}
+	slog.InfoContext(ctx, "listing search document deleted", "listing_id", listingID, "index", listingsSearchIndexUID)
 }
 
 // ─────────────────────────────────────────────────────────────────────────

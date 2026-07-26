@@ -930,6 +930,10 @@ func cancelListingTx(ctx context.Context, db *pgxpool.Pool, listingID, _adminID,
 // and a max ceiling so a runaway client can't exhaust DB rows. Distinct
 // from the gRPC-flavored `parsePagination` in admin_users.go (which returns
 // a *commonv1.PaginationRequest). Used by handlers that talk to pgx directly.
+//
+// maxSize stays a per-caller argument because callers legitimately differ
+// (public listings 100, user_blocks 200); page is clamped to the shared
+// maxPageNumber, which no caller has a reason to vary.
 func parseDirectPagination(q map[string][]string, defaultPage, defaultSize, maxSize int) (int, int) {
 	get := func(k string) string {
 		if v, ok := q[k]; ok && len(v) > 0 {
@@ -947,6 +951,9 @@ func parseDirectPagination(q map[string][]string, defaultPage, defaultSize, maxS
 	}
 	if size > maxSize {
 		size = maxSize
+	}
+	if page > maxPageNumber {
+		page = maxPageNumber
 	}
 	return page, size
 }

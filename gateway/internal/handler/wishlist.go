@@ -170,16 +170,51 @@ func (h *WishlistHandler) CreateWishlistItem(w http.ResponseWriter, r *http.Requ
 // GET /api/v1/me/wishlist — list (owner-scoped)
 // ─────────────────────────────────────────────────────────────────────────
 
+// wishlistPageDefault / wishlistPageMax bound the list response.
+//
+// Nothing caps how many wishlist items a user may insert, so an unpaginated
+// SELECT returns however many rows the account holds — a user with 100K items
+// gets a 100K-row response. The default is deliberately larger than the
+// package's usual 20: a wishlist is a personal standing-wants list that is
+// small in practice and the current web client (web/src/hooks/useWishlist.ts)
+// has no pager, so a small default would silently truncate real lists. 100
+// keeps every realistic account whole while removing the unbounded tail.
+const (
+	wishlistPageDefault = 100
+	wishlistPageMax     = 200
+)
+
 // ListWishlist returns the authenticated user's live (non-deleted) wishlist
 // items, newest first, with the category name joined for display.
+//
+// Paginated via the package-standard page/page_size params (see
+// parseDirectPagination). The response gains a "pagination" block alongside the
+// existing "wishlist_items" array; "wishlist_items" keeps its exact shape, so
+// clients reading only that key are unaffected.
 func (h *WishlistHandler) ListWishlist(w http.ResponseWriter, r *http.Request) {
 	if h.db == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"wishlist_items": []wishlistItemJSON{}})
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"wishlist_items": []wishlistItemJSON{},
+			"pagination":     pageMeta(1, 0, 0),
+		})
 		return
 	}
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	page, pageSize := parseDirectPagination(r.URL.Query(), 1, wishlistPageDefault, wishlistPageMax)
+
+	var total int
+	if err := h.db.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM wishlist_items
+		 WHERE user_id = $1 AND deleted_at IS NULL`,
+		claims.UserID,
+	).Scan(&total); err != nil {
+		slog.ErrorContext(r.Context(), "wishlist list: count failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load wishlist")
 		return
 	}
 
@@ -190,8 +225,9 @@ func (h *WishlistHandler) ListWishlist(w http.ResponseWriter, r *http.Request) {
 		  FROM wishlist_items wi
 		  LEFT JOIN service_categories c ON c.id = wi.category_id
 		 WHERE wi.user_id = $1 AND wi.deleted_at IS NULL
-		 ORDER BY wi.created_at DESC`,
-		claims.UserID)
+		 ORDER BY wi.created_at DESC
+		 LIMIT $2 OFFSET $3`,
+		claims.UserID, pageSize, (page-1)*pageSize)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "wishlist list: query failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load wishlist")
@@ -219,8 +255,16 @@ func (h *WishlistHandler) ListWishlist(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, item)
 	}
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(r.Context(), "wishlist list: iterate failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load wishlist")
+		return
+	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"wishlist_items": out})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"wishlist_items": out,
+		"pagination":     pageMeta(page, pageSize, total),
+	})
 }
 
 // ─────────────────────────────────────────────────────────────────────────

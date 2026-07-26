@@ -9,6 +9,13 @@ import (
 // Sentinel errors for the contract domain.
 var (
 	ErrContractNotFound        = errors.New("contract not found")
+	// ErrJobAlreadyContracted means the job already carries a LIVE contract
+	// for a DIFFERENT bid (migration 078's uq_contracts_live_job). Awarding a
+	// second bid would start a parallel escrow lifecycle against the same job,
+	// so it is refused. Retrying the award of the SAME bid is not this error —
+	// that returns the existing contract (CreateContract is idempotent per
+	// bid). Gateways should map this to 409 Conflict.
+	ErrJobAlreadyContracted = errors.New("job already has a live contract for a different bid")
 	ErrNotContractParty        = errors.New("not a party to this contract")
 	ErrNotContractProvider     = errors.New("only the provider can mark this contract complete")
 	ErrAlreadyAccepted         = errors.New("contract already accepted by this party")

@@ -738,33 +738,94 @@ func (r *PostgresRepository) GetCategoryMetrics(ctx context.Context, startDate, 
 	// jobs.category_id instead, which is the canonical category for the job.
 	// jobs.status uses 'active' (not 'bidding') and 'closed' for closed-with-bids,
 	// so the fill-rate filter set is updated accordingly.
+	//
+	// ── Why four pre-aggregated CTEs instead of one wide GROUP BY ────────────
+	// The previous shape was a 3-way LEFT JOIN fan-out
+	// (service_categories → jobs → bids → analytics_transactions) where the
+	// date range appeared ONLY inside `FILTER (...)` aggregate clauses. A
+	// FILTER prunes rows AFTER they are read, so nothing bounded the scan:
+	// every admin analytics page load re-read the entire GMV ledger plus every
+	// bid ever placed (EXPLAIN: `Seq Scan on analytics_transactions`, `Seq Scan
+	// on bids`, plus a multi-MB external merge sort). `LIMIT 100` sits above
+	// the GROUP BY and bounds nothing.
+	//
+	// Each metric has its OWN date column — jobs.created_at, jobs.updated_at,
+	// bids.created_at, analytics_transactions.completed_at — so no single WHERE
+	// on the joined row can bound all four without changing the numbers. Split
+	// per source instead: each CTE puts its own range in a WHERE (index-range
+	// scan) and aggregates to one row per category before anything is joined.
+	//
+	// `JOIN job_stats` (inner) reproduces the old
+	// `HAVING COUNT(...) FILTER (created_at in window) > 0` exactly: a category
+	// with no jobs posted in the window is omitted. Every other join stays LEFT
+	// so a category with jobs but no bids / no transactions still appears with
+	// zeroes, as before.
+	//
+	// NOTE — this also FIXES a GMV over-count. In the old shape the bids and
+	// analytics_transactions joins multiplied each other, so the non-DISTINCT
+	// `SUM(at.amount_cents)` counted every transaction once per bid on the same
+	// job. COUNT(DISTINCT ...) hid this for the count columns; SUM had no such
+	// protection. Aggregating transactions in their own CTE counts each row
+	// once. Reported GMV (and avg_job_value_cents, derived from it) therefore
+	// drops to the true value — see the equivalence run in the fix notes.
 	rows, err := r.pool.Query(ctx, `
+		WITH job_stats AS (
+			SELECT j.category_id,
+			       COUNT(*)::int AS jobs_posted,
+			       COUNT(*) FILTER (
+			           WHERE j.status IN ('active','awarded','in_progress','completed')
+			       )::int AS jobs_filled
+			  FROM jobs j
+			 WHERE j.deleted_at IS NULL
+			   AND j.created_at >= $1 AND j.created_at <= $2
+			 GROUP BY j.category_id
+		),
+		completed_stats AS (
+			SELECT j.category_id, COUNT(*)::int AS jobs_completed
+			  FROM jobs j
+			 WHERE j.deleted_at IS NULL
+			   AND j.status = 'completed'
+			   AND j.updated_at >= $1 AND j.updated_at <= $2
+			 GROUP BY j.category_id
+		),
+		bid_stats AS (
+			SELECT j.category_id,
+			       COUNT(DISTINCT b.id)::int AS bids_placed,
+			       COUNT(DISTINCT b.provider_id)::int AS active_providers
+			  FROM bids b
+			  JOIN jobs j ON j.id = b.job_id AND j.deleted_at IS NULL
+			 WHERE b.created_at >= $1 AND b.created_at <= $2
+			 GROUP BY j.category_id
+		),
+		gmv_stats AS (
+			SELECT j.category_id,
+			       COALESCE(SUM(at.amount_cents), 0)::bigint AS gmv_cents
+			  FROM analytics_transactions at
+			  JOIN jobs j ON j.id = at.job_id AND j.deleted_at IS NULL
+			 WHERE at.completed_at >= $1 AND at.completed_at <= $2
+			 GROUP BY j.category_id
+		)
 		SELECT sc.id AS category_id,
 		       COALESCE(sc.name, '') AS category_name,
-		       COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::int AS jobs_posted,
-		       COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2)::int AS jobs_completed,
-		       COALESCE(SUM(at.amount_cents) FILTER (WHERE at.completed_at >= $1 AND at.completed_at <= $2), 0)::bigint AS gmv_cents,
-		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
-		            THEN COUNT(DISTINCT b.id) FILTER (WHERE b.created_at >= $1 AND b.created_at <= $2)::float
-		                 / NULLIF(COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float, 0)
-		            ELSE 0 END AS avg_bids_per_job,
-		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2) > 0
-		            THEN COALESCE(SUM(at.amount_cents) FILTER (WHERE at.completed_at >= $1 AND at.completed_at <= $2), 0)::bigint
-		                 / NULLIF(COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'completed' AND j.updated_at >= $1 AND j.updated_at <= $2), 0)::bigint
+		       js.jobs_posted,
+		       COALESCE(cs.jobs_completed, 0) AS jobs_completed,
+		       COALESCE(gs.gmv_cents, 0)::bigint AS gmv_cents,
+		       COALESCE(bs.bids_placed, 0)::float
+		           / NULLIF(js.jobs_posted::float, 0) AS avg_bids_per_job,
+		       CASE WHEN COALESCE(cs.jobs_completed, 0) > 0
+		            THEN COALESCE(gs.gmv_cents, 0)::bigint
+		                 / NULLIF(cs.jobs_completed, 0)::bigint
 		            ELSE 0 END AS avg_job_value_cents,
-		       CASE WHEN COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
-		            THEN COUNT(DISTINCT j.id) FILTER (WHERE j.status IN ('active','awarded','in_progress','completed') AND j.created_at >= $1 AND j.created_at <= $2)::float
-		                 / NULLIF(COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2)::float, 0)
-		            ELSE 0 END AS fill_rate,
-		       COUNT(DISTINCT b.provider_id) FILTER (WHERE b.created_at >= $1 AND b.created_at <= $2)::int AS active_providers
-		FROM service_categories sc
-		LEFT JOIN jobs j ON j.category_id = sc.id AND j.deleted_at IS NULL
-		LEFT JOIN bids b ON b.job_id = j.id
-		LEFT JOIN analytics_transactions at ON at.job_id = j.id
-		GROUP BY sc.id, sc.name
-		HAVING COUNT(DISTINCT j.id) FILTER (WHERE j.created_at >= $1 AND j.created_at <= $2) > 0
-		ORDER BY gmv_cents DESC
-		LIMIT 100`,
+		       js.jobs_filled::float
+		           / NULLIF(js.jobs_posted::float, 0) AS fill_rate,
+		       COALESCE(bs.active_providers, 0) AS active_providers
+		  FROM job_stats js
+		  JOIN service_categories sc ON sc.id = js.category_id
+		  LEFT JOIN completed_stats cs ON cs.category_id = js.category_id
+		  LEFT JOIN bid_stats      bs ON bs.category_id = js.category_id
+		  LEFT JOIN gmv_stats      gs ON gs.category_id = js.category_id
+		 ORDER BY gmv_cents DESC
+		 LIMIT 100`,
 		startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("category metrics: %w", err)

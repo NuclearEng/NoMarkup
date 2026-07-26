@@ -85,16 +85,24 @@ func (se *ListingSearchEngine) TrustRankingEnabled() bool {
 // ConfigureIndex sets up the Meilisearch `listings` index with searchable,
 // filterable, and sortable attributes.
 func (se *ListingSearchEngine) ConfigureIndex() error {
+	return se.configureIndexUID(listingsIndexUID)
+}
+
+// configureIndexUID applies the listings index settings to an arbitrary index
+// UID. Split out from ConfigureIndex so a rebuild can configure its staging
+// index with byte-identical settings — if the two ever drifted, a swap would
+// silently change relevance ordering in production.
+func (se *ListingSearchEngine) configureIndexUID(uid string) error {
 	_, err := se.client.CreateIndex(&meilisearch.IndexConfig{
-		Uid:        listingsIndexUID,
+		Uid:        uid,
 		PrimaryKey: "id",
 	})
 	if err != nil {
 		// Index may already exist. Meilisearch returns 4xx but we tolerate.
-		slog.Warn("listings search index may already exist", "error", err)
+		slog.Warn("listings search index may already exist", "error", err, "index", uid)
 	}
 
-	index := se.client.Index(listingsIndexUID)
+	index := se.client.Index(uid)
 
 	_, err = index.UpdateSearchableAttributes(&[]string{
 		"title", "description", "category_name", "pickup_city",
@@ -196,6 +204,161 @@ func (se *ListingSearchEngine) RemoveListing(ctx context.Context, listingID stri
 		return fmt.Errorf("remove listing from index: %w", err)
 	}
 	return nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Converging rebuild (used by cmd/reindex-listings)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// A backfill that only calls AddDocuments cannot converge: Meilisearch upserts
+// by primary key, so documents whose Postgres row has since been deleted, sold,
+// cancelled or expired are never touched and keep being served forever. The
+// only way for the index to end up EQUAL to (not a superset of) the source of
+// truth is to build a fresh index and swap it in.
+//
+// Sequence: stage → configure → fill → swap → drop.
+// The swap is a single atomic Meilisearch operation, so search never sees an
+// empty or half-built index; readers keep hitting `listings` throughout and
+// flip to the complete new content in one step. If any step before the swap
+// fails, the live index is untouched and the run aborts.
+
+// listingsRebuildIndexUID is the staging index a rebuild fills before swapping
+// it into place. A fixed name (rather than a timestamp) means a crashed run
+// leaves at most one stale staging index, which the next run drops on entry.
+const listingsRebuildIndexUID = "listings_rebuild"
+
+// rebuildTaskPollInterval is how often we poll Meilisearch for async task
+// completion. Meilisearch applies document writes and swaps asynchronously; the
+// swap MUST NOT be issued until the fill has actually finished, or it would
+// promote a partially-populated index.
+const rebuildTaskPollInterval = 200 * time.Millisecond
+
+// meiliErrIndexNotFound is the error code Meilisearch reports when an operation
+// targets an index that does not exist. Deleting the staging index is expected
+// to hit this on any run that did not crash, so it is a success, not a failure.
+const meiliErrIndexNotFound = "index_not_found"
+
+// BeginRebuild drops any leftover staging index and creates a freshly
+// configured empty one. Call once before streaming documents to AddRebuildBatch.
+func (se *ListingSearchEngine) BeginRebuild(ctx context.Context) error {
+	// Drop first so a crashed previous run can't leave rows behind that would
+	// survive into the swapped-in index. "Already absent" is the normal
+	// outcome; any OTHER failure means we might be about to build on top of
+	// stale documents, so it aborts the run.
+	if err := se.dropIndexIfExists(ctx, listingsRebuildIndexUID); err != nil {
+		return fmt.Errorf("rebuild: drop stale staging index: %w", err)
+	}
+
+	if err := se.configureIndexUID(listingsRebuildIndexUID); err != nil {
+		return fmt.Errorf("rebuild: configure staging index: %w", err)
+	}
+	return nil
+}
+
+// dropIndexIfExists deletes an index, treating "it wasn't there" as success.
+//
+// Note Meilisearch accepts the delete and then FAILS the async task with
+// index_not_found — the synchronous call returns no error at all — so the
+// absent case can only be recognised after waiting on the task.
+func (se *ListingSearchEngine) dropIndexIfExists(ctx context.Context, uid string) error {
+	task, err := se.client.DeleteIndexWithContext(ctx, uid)
+	if err != nil {
+		// Synchronous rejection: some servers answer 404 here instead.
+		slog.DebugContext(ctx, "rebuild: index delete rejected outright", "error", err, "index", uid)
+		return nil
+	}
+	code, err := se.waitForTaskCode(ctx, task)
+	if err != nil {
+		return err
+	}
+	if code != "" && code != meiliErrIndexNotFound {
+		return fmt.Errorf("delete index %s failed with code %q", uid, code)
+	}
+	return nil
+}
+
+// AddRebuildBatch writes a batch of listings into the staging index. Batching
+// matters: the previous backfill issued one HTTP round trip per listing.
+func (se *ListingSearchEngine) AddRebuildBatch(ctx context.Context, listings []*domain.Listing, hydrate ListingHydrator) error {
+	if len(listings) == 0 {
+		return nil
+	}
+	docs := make([]map[string]interface{}, 0, len(listings))
+	for _, l := range listings {
+		docs = append(docs, buildListingDoc(l, hydrate, se.trustRanking))
+	}
+	task, err := se.client.Index(listingsRebuildIndexUID).AddDocumentsWithContext(ctx, docs, nil)
+	if err != nil {
+		return fmt.Errorf("rebuild: add batch of %d: %w", len(docs), err)
+	}
+	if err := se.waitForTask(ctx, task); err != nil {
+		return fmt.Errorf("rebuild: add batch of %d: %w", len(docs), err)
+	}
+	return nil
+}
+
+// CommitRebuild atomically swaps the staging index into `listings`, then drops
+// the staging index (which now holds the OLD content). After this returns, the
+// live index contains exactly the documents written since BeginRebuild — every
+// stale document is gone.
+func (se *ListingSearchEngine) CommitRebuild(ctx context.Context) error {
+	task, err := se.client.SwapIndexesWithContext(ctx, []*meilisearch.SwapIndexesParams{
+		{Indexes: []string{listingsIndexUID, listingsRebuildIndexUID}},
+	})
+	if err != nil {
+		return fmt.Errorf("rebuild: swap indexes: %w", err)
+	}
+	if err := se.waitForTask(ctx, task); err != nil {
+		return fmt.Errorf("rebuild: swap indexes: %w", err)
+	}
+
+	// Staging now holds the superseded content. Dropping it is cleanup, not
+	// correctness — the swap already happened, so a failure here is a warning.
+	if derr := se.dropIndexIfExists(ctx, listingsRebuildIndexUID); derr != nil {
+		slog.WarnContext(ctx, "rebuild: swap succeeded but staging index drop failed",
+			"error", derr, "index", listingsRebuildIndexUID)
+	}
+	return nil
+}
+
+// waitForTask blocks until an async Meilisearch task settles, and turns a
+// task that finished in the "failed" state into a Go error — TaskInfo alone
+// only says the task was accepted, not that it succeeded.
+func (se *ListingSearchEngine) waitForTask(ctx context.Context, task *meilisearch.TaskInfo) error {
+	code, err := se.waitForTaskCode(ctx, task)
+	if err != nil {
+		return err
+	}
+	if code != "" {
+		return fmt.Errorf("meilisearch task %d failed with code %q", task.TaskUID, code)
+	}
+	return nil
+}
+
+// waitForTaskCode blocks until an async task settles and reports its failure
+// code ("" when it succeeded). Callers that can tolerate a specific failure —
+// see dropIndexIfExists and index_not_found — use this rather than waitForTask.
+func (se *ListingSearchEngine) waitForTaskCode(ctx context.Context, task *meilisearch.TaskInfo) (string, error) {
+	if task == nil {
+		return "", nil
+	}
+	done, err := se.client.WaitForTaskWithContext(ctx, task.TaskUID, rebuildTaskPollInterval)
+	if err != nil {
+		return "", fmt.Errorf("wait for meilisearch task %d: %w", task.TaskUID, err)
+	}
+	if done.Status == meilisearch.TaskStatusSucceeded {
+		return "", nil
+	}
+	code := done.Error.Code
+	if code == "" {
+		// Cancelled, or failed without a machine-readable code; give the caller
+		// something non-empty so it is never mistaken for success.
+		code = string(done.Status)
+	}
+	slog.DebugContext(ctx, "meilisearch task did not succeed",
+		"task_uid", task.TaskUID, "status", done.Status,
+		"code", done.Error.Code, "message", done.Error.Message)
+	return code, nil
 }
 
 // SearchListings runs a Meilisearch full-text query restricted to active

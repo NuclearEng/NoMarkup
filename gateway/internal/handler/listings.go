@@ -33,6 +33,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/redis/go-redis/v9"
 
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
@@ -58,6 +59,11 @@ type ListingsHandler struct {
 	// so they never sit in held without a PaymentIntent (MON-06). Optional:
 	// nil skips the charge call and leaves the order in pending_payment.
 	paymentClient paymentv1.PaymentServiceClient
+	// meili lets the hard-delete path evict the listing's search document, so
+	// a deleted draft cannot keep surfacing in /listings/autocomplete. Set by
+	// NewListingsSearchHandler, which already receives the client. Optional:
+	// nil makes deleteListingDocument a no-op.
+	meili meilisearch.ServiceManager
 }
 
 // NewListingsHandler returns a ListingsHandler. Both deps may be nil:

@@ -11,13 +11,89 @@ import (
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
 
+// liveContractForJob returns the id of the job's existing LIVE contract, or ""
+// when there is none. The WHERE clause mirrors uq_contracts_live_job's
+// predicate (migration 078) so this sees exactly the rows the unique index
+// treats as live.
+//
+// When the live contract belongs to a different bid than wantBidID, it returns
+// domain.ErrJobAlreadyContracted instead of an id — awarding a second bid on an
+// already-contracted job is a conflict, not a retry.
+func liveContractForJob(ctx context.Context, tx pgx.Tx, jobID, wantBidID string) (string, error) {
+	var existingID, existingBidID string
+	err := tx.QueryRow(ctx, `
+		SELECT id, bid_id
+		  FROM contracts
+		 WHERE job_id = $1
+		   AND deleted_at IS NULL
+		   AND status NOT IN ('cancelled', 'voided')
+		 LIMIT 1`, jobID).Scan(&existingID, &existingBidID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("create contract lookup live contract: %w", err)
+	}
+	if existingBidID != wantBidID {
+		return "", fmt.Errorf("create contract for job %s (bid %s): existing live contract %s is for bid %s: %w",
+			jobID, wantBidID, existingID, existingBidID, domain.ErrJobAlreadyContracted)
+	}
+	return existingID, nil
+}
+
 // CreateContract inserts a contract and its milestones in a transaction.
+//
+// Idempotent per bid. Migration 078 added uq_contracts_live_job — a partial
+// UNIQUE index on contracts(job_id) WHERE deleted_at IS NULL AND status NOT IN
+// ('cancelled','voided') — so a job can carry at most one LIVE contract. The
+// documented award-failure recovery path tells the caller to re-invoke this
+// endpoint (gateway/internal/handler/bid.go), and against a bare INSERT that
+// retry now raises a raw 23505 that surfaces as a 500. A predictable condition
+// must never be a 500 (CLAUDE.md §15), so the retry is resolved here:
+//
+//   - a live contract exists for the SAME bid → return it unchanged. The retry
+//     is a no-op success, which is what a recovery path wants: the caller gets
+//     the contract it was trying to create either way, and no second escrow
+//     lifecycle is started.
+//   - a live contract exists for a DIFFERENT bid → domain.ErrJobAlreadyContracted.
+//     This is not a retry, it is an attempt to award a second provider on a job
+//     that is already contracted. Returning the other bid's contract would be
+//     an outright wrong answer, so it gets its own typed sentinel for the
+//     gateway to map to 409 Conflict.
+//
+// Concurrency: the job row is locked FOR UPDATE before the check, which
+// serialises concurrent awards of the same job — the same pattern
+// CloseListingAuction uses against listing_orders' UNIQUE(listing_id). The
+// ON CONFLICT DO NOTHING clause below is the backstop for anything that still
+// slips past the lock (e.g. a contract created by a path that does not take
+// it), so a 23505 can never escape as a 500.
 func (r *PostgresRepository) CreateContract(ctx context.Context, contract *domain.Contract, milestones []domain.MilestoneInput) (*domain.Contract, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create contract begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Serialise concurrent awards for this job. A missing job is left to the
+	// INSERT's FK to reject; this lock only orders the racers.
+	var lockedJobID string
+	err = tx.QueryRow(ctx, `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, contract.JobID).Scan(&lockedJobID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("create contract lock job: %w", err)
+	}
+
+	// Already contracted? Resolve the retry before spending a contract number.
+	existingID, err := liveContractForJob(ctx, tx, contract.JobID, contract.BidID)
+	if err != nil {
+		return nil, err
+	}
+	if existingID != "" {
+		// Read-only path; release the lock without writing anything.
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("create contract commit existing lookup: %w", err)
+		}
+		return r.GetContract(ctx, existingID)
+	}
 
 	// Generate contract number using sequence: NM-YYYY-NNNNN
 	var seqVal int64
@@ -29,6 +105,10 @@ func (r *PostgresRepository) CreateContract(ctx context.Context, contract *domai
 
 	var contractID string
 	var createdAt, updatedAt time.Time
+	// The ON CONFLICT target restates uq_contracts_live_job's predicate exactly
+	// so Postgres infers that index as the arbiter. DO NOTHING (rather than
+	// letting the constraint raise) turns the race into an empty result set,
+	// handled just below.
 	err = tx.QueryRow(ctx, `
 		INSERT INTO contracts (
 			contract_number, job_id, customer_id, provider_id, bid_id,
@@ -41,12 +121,34 @@ func (r *PostgresRepository) CreateContract(ctx context.Context, contract *domai
 			$10, $11, $12,
 			$13, ''
 		)
+		ON CONFLICT (job_id)
+			WHERE deleted_at IS NULL AND status NOT IN ('cancelled', 'voided')
+			DO NOTHING
 		RETURNING id, created_at, updated_at`,
 		contractNumber, contract.JobID, contract.CustomerID, contract.ProviderID, contract.BidID,
 		contract.AmountCents, contract.PaymentTiming, contract.TermsJSON, contract.ScheduleJSON,
 		contract.Status, contract.CustomerAccepted, contract.ProviderAccepted,
 		contract.AcceptanceDeadline,
 	).Scan(&contractID, &createdAt, &updatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// DO NOTHING fired: another transaction created the live contract
+		// between our lock and this insert. Resolve it the same way as the
+		// pre-check so the outcome does not depend on who won the race.
+		raced, lookupErr := liveContractForJob(ctx, tx, contract.JobID, contract.BidID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if raced == "" {
+			// No live contract, yet the unique index still rejected the row —
+			// the predicate and this query have diverged. Fail loudly rather
+			// than silently dropping a contract on the floor.
+			return nil, fmt.Errorf("create contract insert: conflict on uq_contracts_live_job but no live contract found for job %s", contract.JobID)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("create contract commit raced lookup: %w", err)
+		}
+		return r.GetContract(ctx, raced)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create contract insert: %w", err)
 	}

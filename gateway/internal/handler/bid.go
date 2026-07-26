@@ -11,12 +11,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // BidHandler handles HTTP endpoints for bids.
@@ -397,8 +399,14 @@ func (h *BidHandler) AwardBid(w http.ResponseWriter, r *http.Request) {
 	// reverse the award (it spans services / a separate Rust pool), so we log
 	// loudly and emit a metric for ops to follow up on. The customer still
 	// sees their bid awarded, and the recovery path is to re-call this
-	// endpoint or have ops insert the contract manually. This mirrors the
-	// "saga without compensating action" pattern called out in the task brief.
+	// endpoint. That recovery is now genuinely idempotent: contracts carries a
+	// partial UNIQUE index on the live job (migration 078) and CreateContract
+	// resolves the retry rather than minting a second contract, so re-calling
+	// returns the SAME contract instead of forking the escrow lifecycle. A
+	// re-call naming a DIFFERENT bid is refused, because returning another
+	// provider's contract would be a wrong answer rather than a retry. This
+	// mirrors the "saga without compensating action" pattern called out in the
+	// task brief.
 	contractID := ""
 	if h.contractClient != nil {
 		contractResp, contractErr := h.contractClient.CreateContractFromAward(r.Context(), &contractv1.CreateContractFromAwardRequest{
@@ -410,6 +418,14 @@ func (h *BidHandler) AwardBid(w http.ResponseWriter, r *http.Request) {
 			PaymentTiming: commonv1.PaymentTiming_PAYMENT_TIMING_COMPLETION,
 		})
 		if contractErr != nil {
+			// A live contract already exists for this job under a DIFFERENT
+			// bid. Not a failure to recover from — the job is already
+			// contracted, so tell the caller plainly instead of logging it as
+			// a broken saga and returning 200.
+			if status.Code(contractErr) == codes.AlreadyExists {
+				writeError(w, http.StatusConflict, "this job already has an active contract")
+				return
+			}
 			// Bid is already awarded; the contract is missing. This is the
 			// state the original bug produced — log loudly so ops can recover.
 			slog.ErrorContext(r.Context(), "contract creation after award failed (manual recovery required)",
@@ -634,7 +650,7 @@ func (h *BidHandler) ListMyBids(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -779,15 +795,15 @@ func protoBidToJSON(b *bidv1.Bid) map[string]interface{} {
 	}
 
 	result := map[string]interface{}{
-		"id":                     b.GetId(),
-		"job_id":                 b.GetJobId(),
-		"provider_id":            b.GetProviderId(),
-		"amount_cents":           b.GetAmountCents(),
-		"is_offer_accepted":      b.GetIsOfferAccepted(),
-		"status":                 bidStatusToString(b.GetStatus()),
-		"original_amount_cents":  b.GetOriginalAmountCents(),
-		"created_at":             formatTimestamp(b.GetCreatedAt()),
-		"updated_at":             formatTimestamp(b.GetUpdatedAt()),
+		"id":                    b.GetId(),
+		"job_id":                b.GetJobId(),
+		"provider_id":           b.GetProviderId(),
+		"amount_cents":          b.GetAmountCents(),
+		"is_offer_accepted":     b.GetIsOfferAccepted(),
+		"status":                bidStatusToString(b.GetStatus()),
+		"original_amount_cents": b.GetOriginalAmountCents(),
+		"created_at":            formatTimestamp(b.GetCreatedAt()),
+		"updated_at":            formatTimestamp(b.GetUpdatedAt()),
 	}
 
 	if b.GetAwardedAt() != nil {

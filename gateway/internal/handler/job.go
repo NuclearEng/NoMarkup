@@ -35,9 +35,19 @@ const (
 	maxJobDescriptionLen = 5000
 )
 
-// maxPageSize caps a client-supplied page_size so a huge value can't ask the
-// service for an unbounded result set.
-const maxPageSize = 100
+// Shared pagination ceilings for the list endpoints in this package.
+//
+//   - maxPageSize caps a client-supplied page_size so a huge value can't ask
+//     the service for an unbounded result set.
+//   - maxPageNumber caps how deep a client may page. page becomes an OFFSET,
+//     and OFFSET makes the database produce and then discard every preceding
+//     row, so an unbounded page number is a full scan even with a small
+//     page_size. 10000 pages is far past any real admin or user workflow;
+//     anything deeper wants a filter or a cursor, not an offset.
+const (
+	maxPageSize   = 100
+	maxPageNumber = 10000
+)
 
 // parseGeoParam reads an optional float query param, validating it is within
 // [min,max]. Returns ok=false with the value zeroed when the param is present
