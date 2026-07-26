@@ -86,7 +86,7 @@ func TestPaymentService_CreateRefund_AccumulatesTotalRefunded(t *testing.T) {
 	svc := newTestPaymentService(repo, nil)
 
 	// Refund the remaining 4000 -> cumulative must be 10000 (fully refunded), not 4000.
-	_, err := svc.CreateRefund(context.Background(), "pay-acc", 4000, "remainder")
+	_, err := svc.CreateRefund(context.Background(), "pay-acc", 4000, "remainder", ReleaseActor{IsAdmin: true})
 	require.NoError(t, err)
 	assert.Equal(t, int64(10000), persistedTotal, "UpdateRefund must persist the CUMULATIVE refunded total (6000 prior + 4000)")
 	assert.Equal(t, "refunded", persistedStatus, "reaching the captured amount must mark the payment fully refunded")

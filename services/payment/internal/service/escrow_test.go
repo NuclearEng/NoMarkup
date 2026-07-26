@@ -141,7 +141,7 @@ func TestEscrowStateMachine_escrow_to_released_creates_transfer(t *testing.T) {
 	}
 	f := newEscrowFixture(t, "escrow", payment)
 
-	got, err := f.svc.ReleaseEscrow(context.Background(), payment.ID, "customer accepted")
+	got, err := f.svc.ReleaseEscrow(context.Background(), payment.ID, "customer accepted", ReleaseActor{IsAdmin: true})
 	require.NoError(t, err)
 	assert.Equal(t, "released", got.Status)
 	assert.Equal(t, 1, f.updateCalls["released"], "must transition to released exactly once")
@@ -160,7 +160,7 @@ func TestEscrowStateMachine_escrow_to_refunded_full(t *testing.T) {
 	}
 	f := newEscrowFixture(t, "escrow", payment)
 
-	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "customer requested")
+	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "customer requested", ReleaseActor{IsAdmin: true})
 	require.NoError(t, err)
 	assert.Equal(t, "refunded", got.Status)
 	assert.Equal(t, 1, f.refundCalls)
@@ -179,7 +179,7 @@ func TestEscrowStateMachine_escrow_to_partially_refunded(t *testing.T) {
 	}
 	f := newEscrowFixture(t, "escrow", payment)
 
-	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 10000, "minor revision")
+	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 10000, "minor revision", ReleaseActor{IsAdmin: true})
 	require.NoError(t, err)
 	assert.Equal(t, "partially_refunded", got.Status)
 	assert.Equal(t, int64(10000), f.transferAmount, "partial refund records partial amount")
@@ -198,7 +198,7 @@ func TestEscrowStateMachine_released_to_refunded(t *testing.T) {
 	}
 	f := newEscrowFixture(t, "released", payment)
 
-	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "post-release dispute")
+	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "post-release dispute", ReleaseActor{IsAdmin: true})
 	require.NoError(t, err)
 	assert.Equal(t, "refunded", got.Status)
 }
@@ -209,7 +209,7 @@ func TestEscrowStateMachine_pending_cannot_release(t *testing.T) {
 	payment := &domain.Payment{ID: "pay-6", ProviderID: "prov-1", StripePaymentIntentID: "pi_x"}
 	f := newEscrowFixture(t, "pending", payment)
 
-	_, err := f.svc.ReleaseEscrow(context.Background(), payment.ID, "premature")
+	_, err := f.svc.ReleaseEscrow(context.Background(), payment.ID, "premature", ReleaseActor{IsAdmin: true})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrInvalidStatus))
 	assert.Equal(t, 0, f.transferCalls, "no transfer must occur on rejected transition")
@@ -221,7 +221,7 @@ func TestEscrowStateMachine_pending_cannot_refund(t *testing.T) {
 	payment := &domain.Payment{ID: "pay-7", ProviderID: "prov-1", StripePaymentIntentID: "pi_y"}
 	f := newEscrowFixture(t, "pending", payment)
 
-	_, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "")
+	_, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "", ReleaseActor{IsAdmin: true})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrInvalidStatus))
 	assert.Equal(t, 0, f.refundCalls)

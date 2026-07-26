@@ -248,6 +248,19 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	totalFee := breakdown.PlatformFeeCents + breakdown.GuaranteeFeeCents + breakdown.LeadGenFeeCents
 	piID, clientSecret, err := s.stripe.CreatePaymentIntent(ctx, input.AmountCents, "usd", providerAccountID, totalFee, idempotencyKey)
 	if err != nil {
+		// The payments row was inserted above, before this call. Leaving it in
+		// 'pending' with a NULL payment intent is not inert: ProcessPayment
+		// skips capture when the PI is empty and CASes straight to 'escrow',
+		// and CreateTransfer then omits SourceTransaction and pays the
+		// provider out of the PLATFORM balance. Mark it failed so a payment
+		// nobody charged can never be walked forward.
+		if markErr := s.repo.UpdatePaymentStatus(ctx, paymentID, "failed"); markErr != nil {
+			slog.Error("failed to mark payment failed after stripe error; row may be left in pending with no payment intent",
+				"payment_id", paymentID,
+				"stripe_error", err,
+				"mark_error", markErr,
+			)
+		}
 		return nil, "", fmt.Errorf("create payment stripe: %w", err)
 	}
 
@@ -286,7 +299,21 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, paymentID string, p
 	}
 
 	// Capture the payment intent with a deterministic key.
-	if payment.StripePaymentIntentID != "" {
+	//
+	// An empty PI means no money was ever authorized — CreatePayment failed at
+	// the Stripe call and left this row behind. Refuse rather than skipping
+	// the capture: falling through would CAS the row to 'escrow' and make an
+	// uncharged payment releasable, paying the provider from platform funds.
+	// Dev mode is the one legitimate no-PI case.
+	if payment.StripePaymentIntentID == "" {
+		if !s.stripe.IsDevMode() {
+			slog.Error("refusing to process payment with no stripe payment intent",
+				"payment_id", paymentID,
+			)
+			_ = s.repo.ClaimPaymentStatus(ctx, paymentID, "processing", "failed")
+			return nil, fmt.Errorf("process payment: %w", domain.ErrInvalidStatus)
+		}
+	} else {
 		captureKey := "capture:" + paymentID
 		if err := s.stripe.CapturePaymentIntent(ctx, payment.StripePaymentIntentID, captureKey); err != nil {
 			// Mark as failed if capture fails (CAS processing→failed).
@@ -315,9 +342,54 @@ const advanceRepaymentRate = 0.20
 // only one concurrent release wins. Transfer uses deterministic key
 // "escrow-release:<paymentID>" so a crash/retry never double-pays at Stripe.
 // On transfer failure the claim is reverted to escrow.
-func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, reason string) (*domain.Payment, error) {
+// ReleaseActor identifies who is asking for an escrow action. The gateway's
+// RequirePartyAccess admits EITHER party to a payment, so it cannot tell a
+// customer approving completion apart from a provider paying themselves. That
+// distinction is made here, where the payment row is already loaded.
+//
+// System is set only by trusted in-process callers (the auto-release cron)
+// that act with no human actor.
+type ReleaseActor struct {
+	UserID  string
+	IsAdmin bool
+	System  bool
+}
+
+// authorizeRelease reports whether actor may release this payment's escrow.
+//
+// Releasing escrow moves money to the provider. The provider is therefore the
+// one party who must NOT be able to trigger it: a self-release pays them for
+// work the customer never confirmed, and there is no compensating check
+// downstream (ReleaseEscrow's only other gate is status=='escrow', and
+// contract approval never calls this at all).
+func authorizeRelease(payment *domain.Payment, actor ReleaseActor) error {
+	if actor.System || actor.IsAdmin {
+		return nil
+	}
+	if actor.UserID == "" {
+		// A caller-initiated release with no actor cannot be authorized. Fail
+		// closed rather than assuming a trusted caller.
+		return fmt.Errorf("release escrow: %w", domain.ErrNotAuthorizedActor)
+	}
+	if actor.UserID == payment.CustomerID {
+		return nil
+	}
+	return fmt.Errorf("release escrow: %w", domain.ErrNotAuthorizedActor)
+}
+
+func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, reason string, actor ReleaseActor) (*domain.Payment, error) {
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := authorizeRelease(payment, actor); err != nil {
+		slog.Warn("escrow release refused",
+			"payment_id", paymentID,
+			"actor_user_id", actor.UserID,
+			"provider_id", payment.ProviderID,
+			"customer_id", payment.CustomerID,
+		)
 		return nil, err
 	}
 
@@ -443,7 +515,7 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 // Concurrency (MON-13): remaining balance is re-checked against the CAS'd
 // prior refund total so concurrent refunds cannot over-refund. Stripe key
 // includes payment id + target cumulative amount so retries are safe.
-func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amountCents int64, reason string) (*domain.Payment, error) {
+func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amountCents int64, reason string, actor ReleaseActor) (*domain.Payment, error) {
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil {
 		return nil, err
@@ -452,6 +524,29 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 	if payment.Status != "escrow" && payment.Status != "released" && payment.Status != "completed" &&
 		payment.Status != "partially_refunded" {
 		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidStatus)
+	}
+
+	// Actor authority. Payouts are separate charge + transfer: once a payment
+	// is released or completed, the provider already holds their transfer, so
+	// a refund at that point pulls from the PLATFORM balance and the platform
+	// eats the difference. That is a dispute-resolution decision, not
+	// something either party may trigger unilaterally.
+	//
+	// While the payment is still in escrow no transfer has happened, so a
+	// party-initiated refund is just returning held funds — allowed.
+	if !actor.System && !actor.IsAdmin {
+		switch payment.Status {
+		case "released", "completed", "partially_refunded":
+			slog.Warn("post-payout refund refused for non-admin actor",
+				"payment_id", paymentID,
+				"actor_user_id", actor.UserID,
+				"status", payment.Status,
+			)
+			return nil, fmt.Errorf("create refund: %w", domain.ErrNotAuthorizedActor)
+		}
+		if actor.UserID == "" {
+			return nil, fmt.Errorf("create refund: %w", domain.ErrNotAuthorizedActor)
+		}
 	}
 
 	// Server-side amount authority: the refund amount is supplied by the caller

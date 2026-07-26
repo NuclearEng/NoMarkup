@@ -240,7 +240,11 @@ func (s *Server) ProcessPayment(ctx context.Context, req *paymentv1.ProcessPayme
 }
 
 func (s *Server) ReleaseEscrow(ctx context.Context, req *paymentv1.ReleaseEscrowRequest) (*paymentv1.ReleaseEscrowResponse, error) {
-	payment, err := s.svc.ReleaseEscrow(ctx, req.GetPaymentId(), req.GetReason())
+	payment, err := s.svc.ReleaseEscrow(ctx, req.GetPaymentId(), req.GetReason(), service.ReleaseActor{
+		UserID:  req.GetActorUserId(),
+		IsAdmin: req.GetActorIsAdmin(),
+		System:  req.GetSystemInitiated(),
+	})
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -314,7 +318,11 @@ func (s *Server) ListPayments(ctx context.Context, req *paymentv1.ListPaymentsRe
 // --- Refunds ---
 
 func (s *Server) CreateRefund(ctx context.Context, req *paymentv1.CreateRefundRequest) (*paymentv1.CreateRefundResponse, error) {
-	payment, err := s.svc.CreateRefund(ctx, req.GetPaymentId(), req.GetAmountCents(), req.GetReason())
+	payment, err := s.svc.CreateRefund(ctx, req.GetPaymentId(), req.GetAmountCents(), req.GetReason(), service.ReleaseActor{
+		UserID:  req.GetInitiatedBy(),
+		IsAdmin: req.GetActorIsAdmin(),
+		System:  req.GetSystemInitiated(),
+	})
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -670,6 +678,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "invalid status for this operation")
 	case errors.Is(err, domain.ErrPaymentAlreadyProcessed):
 		return status.Error(codes.FailedPrecondition, "payment already processed")
+	case errors.Is(err, domain.ErrNotAuthorizedActor):
+		return status.Error(codes.PermissionDenied, "you are not permitted to perform this action on this payment")
 	case errors.Is(err, domain.ErrFeeConfigNotFound):
 		return status.Error(codes.NotFound, "fee configuration not found")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):

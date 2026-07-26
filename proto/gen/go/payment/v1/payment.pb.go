@@ -1884,11 +1884,21 @@ func (x *ProcessPaymentResponse) GetPayment() *Payment {
 }
 
 type ReleaseEscrowRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PaymentId     string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // "milestone_approved", "completion_approved", "auto_release"
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	PaymentId string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	Reason    string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // "milestone_approved", "completion_approved", "auto_release"
+	// Who is asking. Required for caller-initiated releases so the service can
+	// refuse a payee releasing their own escrow — the gateway's party check
+	// admits BOTH parties, so it cannot make this distinction on its own.
+	ActorUserId string `protobuf:"bytes,3,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	// True when the actor holds the admin role. Admins may release on behalf of
+	// either party (dispute resolution).
+	ActorIsAdmin bool `protobuf:"varint,4,opt,name=actor_is_admin,json=actorIsAdmin,proto3" json:"actor_is_admin,omitempty"`
+	// Set by trusted in-process/system callers (auto-release cron) that have no
+	// human actor. Never set this from a request handler.
+	SystemInitiated bool `protobuf:"varint,5,opt,name=system_initiated,json=systemInitiated,proto3" json:"system_initiated,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ReleaseEscrowRequest) Reset() {
@@ -1933,6 +1943,27 @@ func (x *ReleaseEscrowRequest) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *ReleaseEscrowRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *ReleaseEscrowRequest) GetActorIsAdmin() bool {
+	if x != nil {
+		return x.ActorIsAdmin
+	}
+	return false
+}
+
+func (x *ReleaseEscrowRequest) GetSystemInitiated() bool {
+	if x != nil {
+		return x.SystemInitiated
+	}
+	return false
 }
 
 type ReleaseEscrowResponse struct {
@@ -2196,13 +2227,19 @@ func (x *ListPaymentsResponse) GetPagination() *v1.PaginationResponse {
 }
 
 type CreateRefundRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PaymentId     string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
-	AmountCents   int64                  `protobuf:"varint,2,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"` // 0 = full refund
-	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
-	InitiatedBy   string                 `protobuf:"bytes,4,opt,name=initiated_by,json=initiatedBy,proto3" json:"initiated_by,omitempty"` // admin or dispute resolution
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	PaymentId   string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	AmountCents int64                  `protobuf:"varint,2,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"` // 0 = full refund
+	Reason      string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	InitiatedBy string                 `protobuf:"bytes,4,opt,name=initiated_by,json=initiatedBy,proto3" json:"initiated_by,omitempty"` // user id of the actor
+	// True when the actor holds the admin role. Refunding a payment that has
+	// already been RELEASED or COMPLETED pulls from the platform balance while
+	// the provider keeps their transfer, so it is admin-only.
+	ActorIsAdmin bool `protobuf:"varint,5,opt,name=actor_is_admin,json=actorIsAdmin,proto3" json:"actor_is_admin,omitempty"`
+	// Trusted internal callers (dispute resolution worker, Stripe event handler).
+	SystemInitiated bool `protobuf:"varint,6,opt,name=system_initiated,json=systemInitiated,proto3" json:"system_initiated,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateRefundRequest) Reset() {
@@ -2261,6 +2298,20 @@ func (x *CreateRefundRequest) GetInitiatedBy() string {
 		return x.InitiatedBy
 	}
 	return ""
+}
+
+func (x *CreateRefundRequest) GetActorIsAdmin() bool {
+	if x != nil {
+		return x.ActorIsAdmin
+	}
+	return false
+}
+
+func (x *CreateRefundRequest) GetSystemInitiated() bool {
+	if x != nil {
+		return x.SystemInitiated
+	}
+	return false
 }
 
 type CreateRefundResponse struct {
@@ -8949,11 +9000,14 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12*\n" +
 	"\x11payment_method_id\x18\x02 \x01(\tR\x0fpaymentMethodId\"P\n" +
 	"\x16ProcessPaymentResponse\x126\n" +
-	"\apayment\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.PaymentR\apayment\"M\n" +
+	"\apayment\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.PaymentR\apayment\"\xc2\x01\n" +
 	"\x14ReleaseEscrowRequest\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"O\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\"\n" +
+	"\ractor_user_id\x18\x03 \x01(\tR\vactorUserId\x12$\n" +
+	"\x0eactor_is_admin\x18\x04 \x01(\bR\factorIsAdmin\x12)\n" +
+	"\x10system_initiated\x18\x05 \x01(\bR\x0fsystemInitiated\"O\n" +
 	"\x15ReleaseEscrowResponse\x126\n" +
 	"\apayment\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.PaymentR\apayment\"2\n" +
 	"\x11GetPaymentRequest\x12\x1d\n" +
@@ -8976,13 +9030,15 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\bpayments\x18\x01 \x03(\v2\x1c.nomarkup.payment.v1.PaymentR\bpayments\x12F\n" +
 	"\n" +
 	"pagination\x18\x02 \x01(\v2&.nomarkup.common.v1.PaginationResponseR\n" +
-	"pagination\"\x92\x01\n" +
+	"pagination\"\xe3\x01\n" +
 	"\x13CreateRefundRequest\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12!\n" +
 	"\famount_cents\x18\x02 \x01(\x03R\vamountCents\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12!\n" +
-	"\finitiated_by\x18\x04 \x01(\tR\vinitiatedBy\"N\n" +
+	"\finitiated_by\x18\x04 \x01(\tR\vinitiatedBy\x12$\n" +
+	"\x0eactor_is_admin\x18\x05 \x01(\bR\factorIsAdmin\x12)\n" +
+	"\x10system_initiated\x18\x06 \x01(\bR\x0fsystemInitiated\"N\n" +
 	"\x14CreateRefundResponse\x126\n" +
 	"\apayment\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.PaymentR\apayment\"T\n" +
 	"\x1aHandleStripeWebhookRequest\x12\x18\n" +

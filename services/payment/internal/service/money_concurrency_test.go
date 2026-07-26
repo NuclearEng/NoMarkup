@@ -108,7 +108,7 @@ func TestReleaseEscrow_Concurrent_ExactlyOneTransfer(t *testing.T) {
 		i := i
 		go func() {
 			defer wg.Done()
-			_, errs[i] = svc.ReleaseEscrow(context.Background(), "pay-race-release", "done")
+			_, errs[i] = svc.ReleaseEscrow(context.Background(), "pay-race-release", "done", ReleaseActor{IsAdmin: true})
 		}()
 	}
 	wg.Wait()
@@ -161,7 +161,7 @@ func TestCreateRefund_Concurrent_NoOverRefund(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			// Each tries a full refund (0 = remaining).
-			_, errs[i] = svc.CreateRefund(context.Background(), "pay-race-refund", 0, "race")
+			_, errs[i] = svc.CreateRefund(context.Background(), "pay-race-refund", 0, "race", ReleaseActor{IsAdmin: true})
 		}()
 	}
 	wg.Wait()
@@ -207,7 +207,7 @@ func TestCreateRefund_Concurrent_PartialNoOverRefund(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = svc.CreateRefund(context.Background(), "pay-race-partial", 6000, "partial race")
+			_, _ = svc.CreateRefund(context.Background(), "pay-race-partial", 6000, "partial race", ReleaseActor{IsAdmin: true})
 		}()
 	}
 	wg.Wait()

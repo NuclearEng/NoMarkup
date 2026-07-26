@@ -16,6 +16,12 @@ type InsuranceService struct {
 	repo   domain.InsuranceRepository
 	stripe *StripeService
 
+	// accounts resolves a claimant's platform user id to their Stripe Connect
+	// acct_*. Without it, claim payouts sent the raw claimant UUID as the
+	// transfer Destination — the same MON-08 defect already fixed for goods
+	// (resolveSellerConnectAccount) and advances. See resolveClaimantAccount.
+	accounts ConnectAccountResolver
+
 	// trust is the optional trust-engine source used to read a provider's tier
 	// for trust-tiered premium pricing. When nil (or the lookup errors), pricing
 	// fails CLOSED: no discount, never an error.
@@ -29,6 +35,33 @@ type InsuranceService struct {
 // NewInsuranceService creates a new insurance service.
 func NewInsuranceService(repo domain.InsuranceRepository, stripe *StripeService) *InsuranceService {
 	return &InsuranceService{repo: repo, stripe: stripe}
+}
+
+// SetAccountResolver wires the platform-user-id → Stripe Connect acct_*
+// resolver used for claim payouts. Mirrors MarketplaceService.SetAccountResolver.
+// Without it, claim payouts are refused outside dev mode rather than sending a
+// bare user UUID to Stripe as the transfer destination.
+func (s *InsuranceService) SetAccountResolver(r ConnectAccountResolver) {
+	s.accounts = r
+}
+
+// resolveClaimantAccount returns the Stripe Connect acct_* for a claimant.
+// Never returns a bare user UUID in production (MON-08).
+func (s *InsuranceService) resolveClaimantAccount(ctx context.Context, claimantID string) (string, error) {
+	if s.accounts != nil {
+		acct, err := s.accounts.GetStripeAccountID(ctx, claimantID)
+		if err != nil {
+			return "", fmt.Errorf("resolve claimant connect account: %w", err)
+		}
+		if acct == "" || (!s.stripe.IsDevMode() && !strings.HasPrefix(acct, "acct_")) {
+			return "", fmt.Errorf("resolve claimant connect account: invalid account id for claimant %s", claimantID)
+		}
+		return acct, nil
+	}
+	if s.stripe.IsDevMode() {
+		return claimantID, nil
+	}
+	return "", fmt.Errorf("resolve claimant connect account: no account resolver configured")
 }
 
 // SetTrustSource wires the trust-engine client used to read a provider's tier
@@ -381,6 +414,27 @@ func (s *InsuranceService) ReviewInsuranceClaim(ctx context.Context, input domai
 		payout = 0
 	}
 
+	// Resolve the payout destination BEFORE marking the claim approved.
+	//
+	// Ordering matters: UpdateInsuranceClaimReview moves the claim to
+	// 'approved', which is outside the {filed, under_review, appealed} set
+	// this function requires on entry. So if anything after that write fails,
+	// the claim can never be re-reviewed and the claimant can never be paid —
+	// a permanent wedge. Everything that can fail is therefore done first.
+	destination := ""
+	if payout > 0 {
+		var resolveErr error
+		destination, resolveErr = s.resolveClaimantAccount(ctx, claim.ClaimantID)
+		if resolveErr != nil {
+			slog.Error("cannot resolve insurance claimant payout account; leaving claim reviewable",
+				"claim_id", input.ClaimID,
+				"claimant_id", claim.ClaimantID,
+				"error", resolveErr,
+			)
+			return nil, fmt.Errorf("review insurance claim: %w", resolveErr)
+		}
+	}
+
 	// Update claim as approved.
 	if err := s.repo.UpdateInsuranceClaimReview(ctx, input.ClaimID, "approved", &approvedAmount, input.AssessorNotes, "", input.ReviewerID); err != nil {
 		return nil, fmt.Errorf("review insurance claim approve: %w", err)
@@ -389,7 +443,7 @@ func (s *InsuranceService) ReviewInsuranceClaim(ctx context.Context, input domai
 	// Create platform transfer to claimant if payout > 0. Deterministic idempotency
 	// key keyed on the claim id so a retried claim review never double-pays out.
 	if payout > 0 {
-		transferID, err := s.stripe.CreatePlatformTransfer(ctx, payout, "usd", claim.ClaimantID, "insurance-claim-payout:"+input.ClaimID)
+		transferID, err := s.stripe.CreatePlatformTransfer(ctx, payout, "usd", destination, "insurance-claim-payout:"+input.ClaimID)
 		if err != nil {
 			slog.Error("failed to create insurance claim payout transfer",
 				"claim_id", input.ClaimID,

@@ -15,6 +15,12 @@ var (
 	ErrInvalidStatus         = errors.New("invalid status transition")
 	ErrPaymentAlreadyProcessed = errors.New("payment already processed")
 	ErrFeeConfigNotFound     = errors.New("fee config not found")
+	// ErrNotAuthorizedActor is returned when the caller is a party to the
+	// payment but not the RIGHT party for this operation — e.g. a provider
+	// trying to release their own escrow, or a customer trying to refund a
+	// payment that has already been paid out. The gateway's party check
+	// admits both parties, so this distinction has to be made here.
+	ErrNotAuthorizedActor    = errors.New("actor not authorized for this operation")
 	ErrStripeAccountNotFound = errors.New("stripe account not found")
 	ErrPlatformBankAccountNotFound = errors.New("platform bank account not found")
 )

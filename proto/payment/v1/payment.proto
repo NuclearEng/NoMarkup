@@ -347,6 +347,16 @@ message ProcessPaymentResponse {
 message ReleaseEscrowRequest {
   string payment_id = 1;
   string reason = 2;  // "milestone_approved", "completion_approved", "auto_release"
+  // Who is asking. Required for caller-initiated releases so the service can
+  // refuse a payee releasing their own escrow — the gateway's party check
+  // admits BOTH parties, so it cannot make this distinction on its own.
+  string actor_user_id = 3;
+  // True when the actor holds the admin role. Admins may release on behalf of
+  // either party (dispute resolution).
+  bool actor_is_admin = 4;
+  // Set by trusted in-process/system callers (auto-release cron) that have no
+  // human actor. Never set this from a request handler.
+  bool system_initiated = 5;
 }
 
 message ReleaseEscrowResponse {
@@ -382,7 +392,13 @@ message CreateRefundRequest {
   string payment_id = 1;
   int64 amount_cents = 2;  // 0 = full refund
   string reason = 3;
-  string initiated_by = 4;  // admin or dispute resolution
+  string initiated_by = 4;  // user id of the actor
+  // True when the actor holds the admin role. Refunding a payment that has
+  // already been RELEASED or COMPLETED pulls from the platform balance while
+  // the provider keeps their transfer, so it is admin-only.
+  bool actor_is_admin = 5;
+  // Trusted internal callers (dispute resolution worker, Stripe event handler).
+  bool system_initiated = 6;
 }
 
 message CreateRefundResponse {

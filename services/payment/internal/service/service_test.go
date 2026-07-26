@@ -1047,7 +1047,7 @@ func TestPaymentService_ReleaseEscrow(t *testing.T) {
 			}
 			svc := newTestPaymentService(repo, nil)
 
-			payment, err := svc.ReleaseEscrow(context.Background(), tt.payment.ID, "job completed")
+			payment, err := svc.ReleaseEscrow(context.Background(), tt.payment.ID, "job completed", ReleaseActor{IsAdmin: true})
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -1170,7 +1170,7 @@ func TestPaymentService_CreateRefund(t *testing.T) {
 			}
 			svc := newTestPaymentService(repo, nil)
 
-			payment, err := svc.CreateRefund(context.Background(), tt.payment.ID, tt.refundCents, "customer requested")
+			payment, err := svc.CreateRefund(context.Background(), tt.payment.ID, tt.refundCents, "customer requested", ReleaseActor{IsAdmin: true})
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -1250,9 +1250,9 @@ func TestPaymentService_EscrowStateTransitions(t *testing.T) {
 			case "process":
 				_, err = svc.ProcessPayment(ctx, payment.ID, "pm_test")
 			case "release":
-				_, err = svc.ReleaseEscrow(ctx, payment.ID, "completed")
+				_, err = svc.ReleaseEscrow(ctx, payment.ID, "completed", ReleaseActor{IsAdmin: true})
 			case "refund":
-				_, err = svc.CreateRefund(ctx, payment.ID, 0, "requested")
+				_, err = svc.CreateRefund(ctx, payment.ID, 0, "requested", ReleaseActor{IsAdmin: true})
 			}
 
 			if tt.wantErr {

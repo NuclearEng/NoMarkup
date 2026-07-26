@@ -511,11 +511,16 @@ func (h *PaymentHandler) RefundPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The party check on this route admits BOTH the customer and the provider,
+	// so the actor and their role travel to the payment service, which decides
+	// what this particular party may do. Refunding an already-paid-out payment
+	// draws on the platform balance, so the service restricts it to admins.
 	resp, err := h.paymentClient.CreateRefund(r.Context(), &paymentv1.CreateRefundRequest{
-		PaymentId:   paymentID,
-		AmountCents: req.AmountCents,
-		Reason:      req.Reason,
-		InitiatedBy: claims.UserID,
+		PaymentId:    paymentID,
+		AmountCents:  req.AmountCents,
+		Reason:       req.Reason,
+		InitiatedBy:  claims.UserID,
+		ActorIsAdmin: hasRole(claims, "admin"),
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -548,9 +553,14 @@ func (h *PaymentHandler) ReleasePayment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Same reasoning as RefundPayment: the route's party check cannot tell the
+	// payer from the payee, and releasing escrow pays the provider. The service
+	// refuses a provider releasing their own escrow.
 	resp, err := h.paymentClient.ReleaseEscrow(r.Context(), &paymentv1.ReleaseEscrowRequest{
-		PaymentId: paymentID,
-		Reason:    req.Reason,
+		PaymentId:    paymentID,
+		Reason:       req.Reason,
+		ActorUserId:  claims.UserID,
+		ActorIsAdmin: hasRole(claims, "admin"),
 	})
 	if err != nil {
 		writeGRPCError(w, err)
