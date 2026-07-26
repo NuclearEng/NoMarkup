@@ -15,6 +15,7 @@
 )]
 
 pub mod grpc;
+pub mod metrics;
 pub mod model;
 
 /// Generated gRPC types (`nomarkup.pricing.v1`).

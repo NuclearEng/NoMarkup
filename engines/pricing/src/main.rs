@@ -133,6 +133,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(50061);
     let addr: SocketAddr = ([0, 0, 0, 0], port).into();
 
+    if let Ok(metrics_port) = std::env::var("PRICING_METRICS_PORT") {
+        match format!("0.0.0.0:{metrics_port}").parse() {
+            Ok(metrics_addr) => {
+                tokio::spawn(async move {
+                    if let Err(e) = pricing::metrics::serve_metrics(metrics_addr).await {
+                        tracing::warn!(error = %e, "pricing metrics server exited");
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, port = %metrics_port, "invalid PRICING_METRICS_PORT, metrics disabled");
+            }
+        }
+    } else {
+        tracing::info!("PRICING_METRICS_PORT not set, /metrics endpoint disabled");
+    }
+
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
         .set_serving::<PricingServiceServer<PricingServer>>()

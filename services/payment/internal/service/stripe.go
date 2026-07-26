@@ -1396,7 +1396,14 @@ func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amoun
 
 // CreateInsurancePaymentIntent creates a PaymentIntent for an insurance premium.
 // Unlike regular payments, insurance premiums are pure platform revenue — no destination charge.
+//
+// Idempotency key is mandatory (same empty-guard as every other money method).
+// The only production caller always passes one; the guard is latent safety so a
+// future caller cannot mint an unkeyed charge.
 func (s *StripeService) CreateInsurancePaymentIntent(ctx context.Context, amountCents int64, currency string, idempotencyKey string, policyID string) (string, string, error) {
+	if idempotencyKey == "" {
+		return "", "", fmt.Errorf("create insurance payment intent: idempotency key required")
+	}
 	if s.devMode {
 		slog.Info("dev mode: stub CreateInsurancePaymentIntent", "amountCents", amountCents, "policyID", policyID)
 		return "pi_ins_dev_" + idempotencyKey, "pi_ins_dev_secret_" + idempotencyKey, nil

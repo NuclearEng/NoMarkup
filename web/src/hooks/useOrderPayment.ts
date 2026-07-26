@@ -31,11 +31,15 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { ApiError, api, idempotencyHeader } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api';
 import type { PaymentIntentEnvelope } from '@/lib/payment-outcome';
 
 export interface OrderPaymentIntentResponse extends PaymentIntentEnvelope {
   order_id?: string;
+}
+
+function orderPayOperationKey(orderId: string): string {
+  return `order-pay:${orderId}`;
 }
 
 /**
@@ -83,10 +87,12 @@ export function useOrderPaymentIntent(orderId: string) {
       api.post<OrderPaymentIntentResponse>(
         `/api/v1/orders/${orderId}/pay`,
         undefined,
-        // Money mutation: never let a double-tap mint a second PaymentIntent.
-        idempotencyHeader(),
+        // Money mutation: reuse one key per order across retries/double-taps.
+        idempotencyHeader(orderPayOperationKey(orderId)),
       ),
     onSuccess: () => {
+      // Terminal success for this charge attempt — next intentional pay mints fresh.
+      clearIdempotencyKey(orderPayOperationKey(orderId));
       void qc.invalidateQueries({ queryKey: ['listingOrders', orderId] });
     },
   });

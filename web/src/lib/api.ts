@@ -182,17 +182,60 @@ export const api = {
 };
 
 /**
- * Fresh Idempotency-Key header for payment/subscription mutations. The gateway
- * requires this header on all POSTs under the payment + subscription route
- * groups (middleware.RequireIdempotencyKey) and 400s without it. A per-call
- * UUID matches the gateway's "dedupe identical retries" contract.
+ * Mint a single Idempotency-Key UUID (not yet bound to an operation).
  */
-export function idempotencyHeader(): Record<string, string> {
-  const key =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${String(Date.now())}-${Math.random().toString(36).slice(2)}`;
+function mintIdempotencyKey(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${String(Date.now())}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * In-memory map of logical-operation id → Idempotency-Key. Retries of the SAME
+ * operation (double-tap, network retry, React Query retry) must present the same
+ * key or the gateway cannot dedupe and a second charge can land.
+ *
+ * Cleared via clearIdempotencyKey after a terminal success so a later intentional
+ * re-attempt (e.g. pay again after refund) mints a new key.
+ */
+const idempotencyKeyByOperation = new Map<string, string>();
+
+/**
+ * Idempotency-Key header for payment/subscription mutations.
+ *
+ * The gateway requires this on all POSTs under payment + subscription route
+ * groups (middleware.RequireIdempotencyKey) and 400s without it.
+ *
+ * Pass a stable `operationKey` derived from the logical mutation
+ * (`order-pay:${orderId}`, `buy-now:${listingId}`, …). The same key is reused
+ * for every call with that id until clearIdempotencyKey is invoked. Omitting
+ * the argument still mints a fresh UUID (legacy callers) but that defeats
+ * retry dedupe — prefer always passing an operation key on money paths.
+ */
+export function idempotencyHeader(operationKey?: string): Record<string, string> {
+  let key: string;
+  if (operationKey !== undefined && operationKey.length > 0) {
+    const existing = idempotencyKeyByOperation.get(operationKey);
+    if (existing !== undefined) {
+      key = existing;
+    } else {
+      key = mintIdempotencyKey();
+      idempotencyKeyByOperation.set(operationKey, key);
+    }
+  } else {
+    key = mintIdempotencyKey();
+  }
   return { 'Idempotency-Key': key };
+}
+
+/** Drop a stored key so the next call for this operation mints a fresh one. */
+export function clearIdempotencyKey(operationKey: string): void {
+  idempotencyKeyByOperation.delete(operationKey);
+}
+
+/** Test helper: wipe the in-memory map between cases. */
+export function __resetIdempotencyKeysForTests(): void {
+  idempotencyKeyByOperation.clear();
 }
 
 // downloadAuthenticated fetches a protected file endpoint with the current

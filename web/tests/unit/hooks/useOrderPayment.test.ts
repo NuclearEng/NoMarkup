@@ -21,7 +21,10 @@ class FakeApiError extends Error {
 
 vi.mock('@/lib/api', () => ({
   api: { post },
-  idempotencyHeader: () => ({ 'Idempotency-Key': 'test-key' }),
+  idempotencyHeader: (op?: string) => ({
+    'Idempotency-Key': op ? `key-for-${op}` : 'test-key',
+  }),
+  clearIdempotencyKey: () => undefined,
   ApiError: FakeApiError,
 }));
 
@@ -101,7 +104,9 @@ describe('useOrderPaymentIntent', () => {
     expect(post).toHaveBeenCalledWith(
       '/api/v1/orders/order-9/pay',
       undefined,
-      expect.objectContaining({ 'Idempotency-Key': expect.any(String) as string }),
+      expect.objectContaining({
+        'Idempotency-Key': 'key-for-order-pay:order-9',
+      }),
     );
     expect(result.current.data?.total_cents).toBe(1000);
   });

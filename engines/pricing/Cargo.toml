@@ -28,6 +28,10 @@ nomarkup-engine-telemetry.workspace = true
 http.workspace = true
 tower.workspace = true
 tower-http.workspace = true
+prometheus.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
 
 # Optional ONNX inference (ort) for learned pricing model.
 # Off by default — see CLAUDE.md ("ML Inference: RESERVED for v2").

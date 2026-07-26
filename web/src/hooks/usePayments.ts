@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
+import { api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type {
   CreatePaymentInput,
   FeeCalculationInput,
@@ -49,14 +49,18 @@ export function useCreatePayment() {
 
   return useMutation({
     mutationFn: async (input: CreatePaymentInput) => {
+      const opKey = `create-payment:${input.contract_id ?? ''}:${String(input.amount_cents)}:${input.milestone_id ?? ''}`;
       const raw = await api.post<Record<string, unknown>>(
         '/api/v1/payments',
         input,
-        idempotencyHeader(),
+        idempotencyHeader(opKey),
       );
       return raw as unknown as Payment;
     },
-    onSuccess: () => {
+    onSuccess: (_data, input) => {
+      clearIdempotencyKey(
+        `create-payment:${input.contract_id ?? ''}:${String(input.amount_cents)}:${input.milestone_id ?? ''}`,
+      );
       toast.success('Payment created');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
     },
@@ -74,11 +78,16 @@ export function useProcessPayment() {
       const raw = await api.post<Record<string, unknown>>(
         `/api/v1/payments/${variables.paymentId}/process`,
         { payment_method_id: variables.payment_method_id },
-        idempotencyHeader(),
+        idempotencyHeader(
+          `process-payment:${variables.paymentId}:${variables.payment_method_id}`,
+        ),
       );
       return raw as unknown as Payment;
     },
     onSuccess: (_data, variables) => {
+      clearIdempotencyKey(
+        `process-payment:${variables.paymentId}:${variables.payment_method_id}`,
+      );
       toast.success('Payment processed');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
       void queryClient.invalidateQueries({ queryKey: ['payment', variables.paymentId] });

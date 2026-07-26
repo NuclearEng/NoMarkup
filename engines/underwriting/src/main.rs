@@ -134,6 +134,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(50060);
     let addr: SocketAddr = ([0, 0, 0, 0], port).into();
 
+    if let Ok(metrics_port) = std::env::var("UNDERWRITING_METRICS_PORT") {
+        match format!("0.0.0.0:{metrics_port}").parse() {
+            Ok(metrics_addr) => {
+                tokio::spawn(async move {
+                    if let Err(e) = underwriting::metrics::serve_metrics(metrics_addr).await {
+                        tracing::warn!(error = %e, "underwriting metrics server exited");
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, port = %metrics_port, "invalid UNDERWRITING_METRICS_PORT, metrics disabled");
+            }
+        }
+    } else {
+        tracing::info!("UNDERWRITING_METRICS_PORT not set, /metrics endpoint disabled");
+    }
+
     // gRPC health service so bin/dev / k8s probes can report readiness. The
     // reporter handle is kept alive so the shutdown path can flip it to
     // NOT_SERVING before draining.

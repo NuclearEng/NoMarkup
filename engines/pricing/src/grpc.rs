@@ -76,7 +76,10 @@ impl PricingService for PricingServer {
         };
         let txns: Vec<model::Txn> = req.transactions.iter().map(model::Txn::from).collect();
 
+        let started = std::time::Instant::now();
         let fp = model::fair_price(&txns, &query);
+        crate::metrics::REQUEST_DURATION.observe(started.elapsed().as_secs_f64());
+        crate::metrics::REQUESTS_TOTAL.inc();
 
         let span = tracing::Span::current();
         span.record("has_data", fp.has_data);

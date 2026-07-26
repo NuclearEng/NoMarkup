@@ -77,7 +77,10 @@ impl UnderwritingService for UnderwritingServer {
             return Err(Status::invalid_argument("provider_id is required"));
         }
 
+        let started = std::time::Instant::now();
         let d = model::underwrite(&model::Features::from(features));
+        crate::metrics::REQUEST_DURATION.observe(started.elapsed().as_secs_f64());
+        crate::metrics::REQUESTS_TOTAL.inc();
 
         let span = tracing::Span::current();
         span.record("provider_id", d.provider_id.as_str());

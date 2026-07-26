@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
+import { api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type { PaymentIntentEnvelope } from '@/lib/payment-outcome';
 import type { Listing } from '@/types';
 
@@ -43,10 +43,11 @@ export function useBuyNow(listingId: string) {
       api.post<BuyNowResponse>(
         `/api/v1/listings/${listingId}/buy-now`,
         undefined,
-        // MON-06/22: the gateway requires an Idempotency-Key on this route.
-        idempotencyHeader(),
+        // MON-06/22: reuse one key per listing across double-tap / retries.
+        idempotencyHeader(`buy-now:${listingId}`),
       ),
     onSuccess: () => {
+      clearIdempotencyKey(`buy-now:${listingId}`);
       void qc.invalidateQueries({ queryKey: ['listings', listingId] });
       void qc.invalidateQueries({ queryKey: ['listings', 'search'] });
       void qc.invalidateQueries({ queryKey: ['listingBids', 'mine'] });
