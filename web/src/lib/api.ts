@@ -1,5 +1,4 @@
 import { getAccessToken, setAccessToken, clearTokens } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/constants';
 import type { TokenPair } from '@/types';
 
 export class ApiError extends Error {

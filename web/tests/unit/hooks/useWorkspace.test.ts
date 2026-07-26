@@ -37,10 +37,6 @@ vi.mock('@/lib/auth', () => ({
   getAccessToken: vi.fn(() => 'test-token'),
 }));
 
-vi.mock('@/lib/constants', () => ({
-  API_BASE_URL: 'http://test.local',
-}));
-
 const { api } = await import('@/lib/api');
 const { getAccessToken } = await import('@/lib/auth');
 
@@ -201,8 +197,11 @@ describe('useUploadCompletionPhoto', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const callArgs = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(callArgs[0]).toBe('http://test.local/api/v1/contracts/c-1/completion-photos');
+    // Relative (same-origin) URL: the multipart upload goes through the Next
+    // rewrite proxy so the session cookie is sent without a CORS preflight.
+    expect(callArgs[0]).toBe('/api/v1/contracts/c-1/completion-photos');
     expect(callArgs[1].method).toBe('POST');
+    expect(callArgs[1].credentials).toBe('include');
     expect((callArgs[1].headers as Record<string, string>)['Authorization']).toBe('Bearer test-token');
     expect(result.current.data?.url).toBe('https://cdn/img.jpg');
   });

@@ -170,17 +170,23 @@ describe('canNextImageLoad', () => {
   });
 
   it('allows allowlisted remote hosts (next.config remotePatterns)', () => {
+    // MUST mirror `images.remotePatterns` in next.config.ts exactly. When a host
+    // is added/removed there, this list moves with it.
     expect(canNextImageLoad('http://localhost:9000/nomarkup-dev/p.jpg')).toBe(true);
+    expect(
+      canNextImageLoad('https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800'),
+    ).toBe(true);
+    expect(canNextImageLoad('https://picsum.photos/seed/nomarkup/800/600')).toBe(true);
   });
 
   it('rejects un-allowlisted remote hosts so the page degrades instead of crashing', () => {
-    // Regression guard: unsplash seed photos must NOT be handed to next/image,
-    // which throws "Invalid src prop … hostname not configured" and crashes
-    // the whole tree to the root error boundary.
-    expect(
-      canNextImageLoad('https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800'),
-    ).toBe(false);
+    // Regression guard: a host that is NOT in next.config's remotePatterns must
+    // never be handed to next/image, which throws "Invalid src prop … hostname
+    // not configured" and crashes the whole tree to the root error boundary.
     expect(canNextImageLoad('https://example.com/p.jpg')).toBe(false);
+    expect(canNextImageLoad('https://evil.cdn.example.net/p.jpg')).toBe(false);
+    // Sub-domain / suffix confusion must not sneak past the exact-host check.
+    expect(canNextImageLoad('https://images.unsplash.com.evil.test/p.jpg')).toBe(false);
   });
 
   it('rejects unparseable values', () => {

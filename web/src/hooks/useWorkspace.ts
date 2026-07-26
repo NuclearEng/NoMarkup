@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 
 import { api, getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/constants';
 
 // ----------------------------------------------------------------
 // Types

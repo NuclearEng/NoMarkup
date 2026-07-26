@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { USER_ROLE } from '@/types';
+
 import { withQueryClient } from './_helpers';
 
 const bidsState: {
@@ -34,6 +36,18 @@ vi.mock('@/components/bids/ProviderBidCard', () => ({
     createElement('article', { 'data-testid': `bid-${bid.id}` }, bid.id),
 }));
 
+// The Services half of the page is provider-only: `MyBidsPage` reads
+// `state.user.roles` and swaps the All/Active/Won/Lost sub-tabs for a notice
+// when the account is not a provider. Default to a provider so the sub-tab
+// tests see the real content; individual tests can flip the roles.
+const authState: { user: { id: string; roles: string[] } | null } = {
+  user: { id: 'u-1', roles: [USER_ROLE.PROVIDER] },
+};
+
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: <T,>(selector: (state: typeof authState) => T): T => selector(authState),
+}));
+
 vi.mock('@/hooks/useBids', () => ({
   useMyBids: () => bidsState,
 }));
@@ -54,6 +68,7 @@ beforeEach(() => {
   bidsState.isLoading = false;
   bidsState.isError = false;
   bidsState.refetch = vi.fn();
+  authState.user = { id: 'u-1', roles: [USER_ROLE.PROVIDER] };
 });
 
 afterEach(() => {
@@ -152,5 +167,18 @@ describe('BidsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Lost' }));
     expect(screen.getAllByText(/No lost bids/i).length).toBeGreaterThan(0);
+  });
+
+  it('hides the services sub-tabs behind an explanation for a non-provider account', () => {
+    authState.user = { id: 'u-1', roles: [USER_ROLE.CUSTOMER] };
+    bidsState.data = { bids: [] };
+    render(withQueryClient(createElement(BidsPage)));
+
+    expect(screen.queryByRole('tab', { name: 'Won' })).toBeNull();
+    expect(
+      screen.getByText(/Services bids are only available to provider accounts/i),
+    ).toBeInTheDocument();
+    // The Services/Goods split stays available so goods bids remain reachable.
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
   });
 });

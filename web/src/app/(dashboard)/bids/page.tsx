@@ -218,7 +218,7 @@ function GoodsBidContent() {
 
 export default function MyBidsPage() {
   const user = useAuthStore((state) => state.user);
-  const isProvider = user?.roles?.includes(USER_ROLE.PROVIDER) ?? false;
+  const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
 
   return (
     <PageTransition>

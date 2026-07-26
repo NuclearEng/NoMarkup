@@ -19,13 +19,14 @@ import {
   useBidStream,
   useOrderBook,
 } from '@/hooks/useBids';
-import type {
-  Bid,
-  BidsForJobResponse,
-  LiveAuctionState,
-  MyBidsResponse,
-  ProviderStreak,
-  UserSavings,
+import {
+  USER_ROLE,
+  type Bid,
+  type BidsForJobResponse,
+  type LiveAuctionState,
+  type MyBidsResponse,
+  type ProviderStreak,
+  type UserSavings,
 } from '@/types';
 
 // ApiError mock — the toast.error path calls `err.userMessage(fallback)`,
@@ -74,10 +75,26 @@ vi.mock('@/lib/auction-websocket', () => ({
   },
 }));
 
+// Auth store double. `useAuthStore` is used two ways in this import chain:
+//  - as a hook with a selector (`useMyBids` reads `state.user` to gate the
+//    provider-only /bids/mine query), and
+//  - as a namespace object (`useAuthStore.getState()`) for imperative reads.
+// The double has to satisfy both, and the state is mutable so a test can drop
+// the provider role. `authState` is only dereferenced inside closures, so the
+// hoisted `vi.mock` factory never touches it before initialization.
+const authState: {
+  user: { id: string; roles: string[] } | null;
+  accessToken: string | null;
+} = {
+  user: { id: 'user-1', roles: [USER_ROLE.PROVIDER] },
+  accessToken: 'mock-token',
+};
+
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: {
-    getState: vi.fn(() => ({ accessToken: 'mock-token' })),
-  },
+  useAuthStore: Object.assign(
+    <T,>(selector: (state: typeof authState) => T): T => selector(authState),
+    { getState: () => authState },
+  ),
 }));
 
 const { api, ApiError } = (await import('@/lib/api')) as unknown as {
@@ -503,11 +520,35 @@ describe('useMyBids', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: 'user-1', roles: [USER_ROLE.PROVIDER] };
     queryClient = createTestQueryClient();
   });
 
   afterEach(() => {
     queryClient.clear();
+    authState.user = { id: 'user-1', roles: [USER_ROLE.PROVIDER] };
+  });
+
+  it('does not fetch for a non-provider (the /bids/mine query is role-gated)', () => {
+    authState.user = { id: 'user-1', roles: [USER_ROLE.CUSTOMER] };
+
+    const { result } = renderHook(() => useMyBids(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch when there is no signed-in user', () => {
+    authState.user = null;
+
+    const { result } = renderHook(() => useMyBids(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
   });
 
   it('fetches user bids with filters', async () => {

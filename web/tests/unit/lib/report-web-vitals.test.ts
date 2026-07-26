@@ -11,7 +11,7 @@ describe('reportWebVitals', () => {
     const sink = vi.fn();
     const unsub = reportWebVitals(sink);
     expect(typeof unsub).toBe('function');
-    expect(() => unsub()).not.toThrow();
+    expect(() => { unsub(); }).not.toThrow();
   });
 
   it('emits TTFB when navigation timing is available', () => {

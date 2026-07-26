@@ -265,11 +265,18 @@ function RankEstimateBar({ rank, totalBids }: { rank: number; totalBids: number 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility */}
-        <div
-          className="cursor-default space-y-1"
-          tabIndex={0}
-          role="img"
+        {/*
+          A real button rather than a div with role="img" and tabIndex={0}.
+          The element exists specifically to be focusable so keyboard users can
+          open the tooltip, which makes it interactive by definition — putting
+          tabIndex on a non-interactive role is what jsx-a11y flags, and the
+          previous eslint-disable sat on the wrong line so it suppressed
+          nothing. A button carries the right role and focus behaviour for
+          free; aria-label supplies the accessible name.
+        */}
+        <button
+          type="button"
+          className="cursor-default space-y-1 text-left"
           aria-label={`Rank estimate: ${label}, illustrative strength ${String(strength)} of 100`}
         >
           <div className="flex items-center justify-between">
@@ -289,7 +296,7 @@ function RankEstimateBar({ rank, totalBids }: { rank: number; totalBids: number 
               aria-hidden="true"
             />
           </div>
-        </div>
+        </button>
       </TooltipTrigger>
       <TooltipContent>
         <p className="font-semibold">Rank estimate</p>

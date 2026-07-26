@@ -65,6 +65,18 @@ vi.mock('@/lib/api', () => ({
   api: { post: vi.fn(), get: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 
+// Feature flags drive which provider nav entries exist. `working_capital` is a
+// FINANCIAL key, so the real hook fails closed (false) whenever the flags fetch
+// hasn't resolved — which is always in a unit test — and the "Working Capital"
+// link is filtered out of the nav. Drive the flags explicitly so the nav
+// variants are asserted against a known flag state instead of the fetch race.
+const flagState: Record<string, boolean> = { working_capital: true };
+
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: (key: string) => flagState[key] ?? false,
+  useFeatureFlags: () => flagState,
+}));
+
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: (selector: (s: unknown) => unknown) =>
     selector({
@@ -84,6 +96,7 @@ beforeEach(() => {
   authStoreState.user = { id: 'u1', roles: ['customer'] };
   authStoreState.isHydrating = false;
   pathnameRef.current = '/dashboard';
+  flagState['working_capital'] = true;
 });
 
 afterEach(() => {
@@ -112,6 +125,16 @@ describe('DashboardLayout', () => {
     expect(screen.getAllByText('Working Capital').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Business Tools').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Challenges').length).toBeGreaterThan(0);
+  });
+
+  it('drops the Working Capital nav entry when the working_capital flag is off', () => {
+    // Fail-closed money surface (SEC-02): with the flag off the gateway 503s
+    // /provider/advances, so the nav must not offer a dead link.
+    flagState['working_capital'] = false;
+    authStoreState.user = { id: 'u2', roles: ['provider'] };
+    render(withQueryClient(createElement(DashboardLayout, { children: 'x' })));
+    expect(screen.getAllByText('Provider Dashboard').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Working Capital')).toBeNull();
   });
 
   it('renders the single Admin entry when user has admin role', () => {

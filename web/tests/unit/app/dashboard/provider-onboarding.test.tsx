@@ -56,6 +56,29 @@ vi.mock('@/components/payments/StripeOnboarding', () => ({
   StripeOnboarding: () => createElement('div', { 'data-testid': 'stripe-onboarding' }, 'stripe'),
 }));
 
+// `legal_services` is a FINANCIAL flag, so the real hook fails closed (false)
+// until the flags endpoint answers — which never happens in a unit test — and
+// <ProfessionalLicenseSection /> renders nothing. Drive the flag explicitly so
+// the License step is asserted against a known state; a dedicated test flips it
+// off to prove the step still lets a non-legal provider through.
+const flagState: Record<string, boolean> = { legal_services: true };
+
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: (key: string) => flagState[key] ?? false,
+  useFeatureFlags: () => flagState,
+}));
+
+vi.mock('@/hooks/useProviderLicenses', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useProviderLicenses')>(
+    '@/hooks/useProviderLicenses',
+  );
+  return {
+    ...actual,
+    useMyLicenses: () => ({ data: [], isLoading: false }),
+    useSubmitLicense: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  };
+});
+
 // The onboarding page renders a `<FormMessage />` outside of a `<FormItem>`
 // inside the milestone editor (a known source-side quirk that we don't fix
 // from a test). Override only `FormMessage` with a tolerant stub that no-ops
@@ -150,6 +173,7 @@ beforeEach(() => {
   updateProviderMutate.mockResolvedValue(undefined);
   setGlobalTermsMutate.mockResolvedValue(undefined);
   uploadVerifDocMutate.mockResolvedValue(undefined);
+  flagState['legal_services'] = true;
 });
 
 afterEach(() => {
@@ -450,6 +474,19 @@ describe('ProviderOnboardingPage', () => {
     // The License step (added between Verification and Payments) shows the
     // professional-license submit affordance.
     expect(screen.getByRole('button', { name: /Submit for verification/i })).toBeDefined();
+  });
+
+  it('License step never dead-ends when legal_services is off', () => {
+    // Flag off → <ProfessionalLicenseSection /> renders nothing, so the step is
+    // just an explanatory note. Previous/Continue must still be there or a
+    // non-legal provider is stuck one step short of Payments.
+    flagState['legal_services'] = false;
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /License/i }));
+    expect(screen.queryByRole('button', { name: /Submit for verification/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Continue/i })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /Continue/i }));
+    expect(screen.getByTestId('stripe-onboarding')).toBeDefined();
   });
 
   // -------- New tests for uncovered handlers / branches --------

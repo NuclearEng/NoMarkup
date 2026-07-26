@@ -440,7 +440,7 @@ describe('wsManager (chat WebSocket client)', () => {
   });
 });
 
-describe('wsManager — non-empty API_BASE_URL builds a WS URL from it', () => {
+describe('wsManager — an explicit NEXT_PUBLIC_WS_URL overrides same-origin', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     FakeWebSocket.instances = [];
@@ -451,15 +451,18 @@ describe('wsManager — non-empty API_BASE_URL builds a WS URL from it', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
-    vi.doUnmock('@/lib/constants');
     vi.doUnmock('@/lib/auth');
   });
 
-  it('uses API_BASE_URL.replace(/^http/, ws) when it is set', async () => {
-    vi.doMock('@/lib/constants', () => ({
-      API_BASE_URL: 'https://api.nomarkup.test',
-    }));
+  it('dials the configured backend host from resolveWsBase()', async () => {
+    // Since "prefer same-origin proxy for API/WS in dev", the socket host comes
+    // from `resolveWsBase()` (@/lib/constants), not from API_BASE_URL directly:
+    // an explicit NEXT_PUBLIC_WS_URL wins, otherwise the browser origin is used
+    // so the Next rewrite proxies /ws/*. The real resolver is exercised here —
+    // mocking it away would only assert the mock.
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://api.nomarkup.test');
     vi.doMock('@/lib/auth', () => ({
       getAccessToken: vi.fn(() => 'tok-zzz'),
     }));

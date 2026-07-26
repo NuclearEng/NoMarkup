@@ -29,6 +29,15 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+// `useUnreadCount` gates its query on `enabled: isAuthenticated`, so the auth
+// store has to report a signed-in session or the query never fires. Mutable so
+// a test can assert the signed-out (disabled) path too. Only dereferenced
+// inside the selector closure, so the hoisted factory is safe.
+const authState = { isAuthenticated: true, isHydrating: false };
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: <T,>(selector: (state: typeof authState) => T): T => selector(authState),
+}));
+
 const { api } = await import('@/lib/api');
 
 function createTestQueryClient(): QueryClient {
@@ -269,11 +278,13 @@ describe('useUnreadCount', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    authState.isAuthenticated = true;
     queryClient = createTestQueryClient();
   });
 
   afterEach(() => {
     queryClient.clear();
+    authState.isAuthenticated = true;
   });
 
   it('fetches the global unread count', async () => {
@@ -286,5 +297,16 @@ describe('useUnreadCount', () => {
 
     expect(result.current.data?.total_unread).toBe(7);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/channels/unread');
+  });
+
+  it('does not poll the unread endpoint while signed out', () => {
+    authState.isAuthenticated = false;
+
+    const { result } = renderHook(() => useUnreadCount(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
   });
 });

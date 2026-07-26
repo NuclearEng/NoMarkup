@@ -137,6 +137,20 @@ describe('laplacianVariance', () => {
     };
     expect(laplacianVariance(broken)).toBe(Number.POSITIVE_INFINITY);
   });
+
+  it('returns 0 for a canvas with no pixels at all', () => {
+    const empty = makeFakeCanvas(0, 0, new Uint8ClampedArray(0));
+    expect(laplacianVariance(empty)).toBe(0);
+  });
+
+  it('treats a truncated pixel buffer as black rather than producing NaN', () => {
+    // 4x4 canvas but only two pixels' worth of RGBA bytes — every read past the
+    // end must fall back to 0 so the variance stays a real number.
+    const data = new Uint8ClampedArray(8).fill(255);
+    const variance = laplacianVariance(makeFakeCanvas(4, 4, data));
+    expect(Number.isNaN(variance)).toBe(false);
+    expect(variance).toBeGreaterThan(0);
+  });
 });
 
 describe('scorePhotoQuality (integration)', () => {
@@ -177,6 +191,170 @@ describe('scorePhotoQuality (integration)', () => {
     }
   });
 });
+
+describe('scorePhotoQuality (decode path)', () => {
+  it('falls back to a size-only score when the environment has no Image constructor', async () => {
+    const OriginalImage = globalThis.Image;
+    Reflect.deleteProperty(globalThis, 'Image');
+    try {
+      const file = new File(['abc'], 'no-dom.jpg', { type: 'image/jpeg' });
+      const result = await scorePhotoQuality(file);
+      // width/height fall back to 0 → small + aspect penalties, blur rule skipped.
+      expect(result.score).toBe(70);
+      expect(result.hints).toContain(__testing.HINT_SMALL);
+      expect(result.hints).toContain(__testing.HINT_ASPECT);
+      expect(result.hints).not.toContain(__testing.HINT_BLURRY);
+    } finally {
+      globalThis.Image = OriginalImage;
+    }
+  });
+
+  it('scores a sharp, well-sized photo without a blur hint', async () => {
+    const stubs = installDecodeStubs({
+      naturalWidth: 2000,
+      naturalHeight: 1500,
+      pattern: 'checkerboard',
+    });
+    try {
+      const file = new File(['tiny'], 'sharp.jpg', { type: 'image/jpeg' });
+      const result = await scorePhotoQuality(file);
+      expect(result.hints).not.toContain(__testing.HINT_BLURRY);
+      expect(result.hints).not.toContain(__testing.HINT_SMALL);
+      expect(result.hints).not.toContain(__testing.HINT_ASPECT);
+      // A 4-byte "file" at 3MP is still flagged as over-compressed.
+      expect(result.hints).toContain(__testing.HINT_COMPRESSED);
+      expect(result.score).toBe(85);
+    } finally {
+      stubs.restore();
+    }
+  });
+
+  it('flags a flat, edgeless photo as blurry from the computed variance', async () => {
+    const stubs = installDecodeStubs({
+      naturalWidth: 2000,
+      naturalHeight: 1500,
+      pattern: 'flat',
+    });
+    try {
+      const file = new File(['tiny'], 'blurry.jpg', { type: 'image/jpeg' });
+      const result = await scorePhotoQuality(file);
+      expect(result.hints).toContain(__testing.HINT_BLURRY);
+      expect(result.score).toBe(60);
+    } finally {
+      stubs.restore();
+    }
+  });
+
+  it('skips the blur penalty when the browser gives us no 2d context', async () => {
+    const stubs = installDecodeStubs({
+      naturalWidth: 2000,
+      naturalHeight: 1500,
+      pattern: 'no-context',
+    });
+    try {
+      const file = new File(['tiny'], 'no-ctx.jpg', { type: 'image/jpeg' });
+      const result = await scorePhotoQuality(file);
+      expect(result.hints).not.toContain(__testing.HINT_BLURRY);
+      expect(result.score).toBe(85);
+    } finally {
+      stubs.restore();
+    }
+  });
+
+  it('skips the blur penalty when the decoded image reports zero dimensions', async () => {
+    const stubs = installDecodeStubs({
+      naturalWidth: 0,
+      naturalHeight: 0,
+      pattern: 'checkerboard',
+    });
+    try {
+      const file = new File(['abcd'], 'zero.jpg', { type: 'image/jpeg' });
+      const result = await scorePhotoQuality(file);
+      expect(result.hints).not.toContain(__testing.HINT_BLURRY);
+      expect(result.hints).toContain(__testing.HINT_SMALL);
+      expect(result.hints).toContain(__testing.HINT_ASPECT);
+      expect(result.score).toBe(70);
+    } finally {
+      stubs.restore();
+    }
+  });
+});
+
+interface DecodeStubOptions {
+  naturalWidth: number;
+  naturalHeight: number;
+  /** Pixel content handed back by getImageData, or no context at all. */
+  pattern: 'checkerboard' | 'flat' | 'no-context';
+}
+
+function makePixels(w: number, h: number, checkerboard: boolean): Uint8ClampedArray {
+  const data = new Uint8ClampedArray(Math.max(0, w * h * 4));
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 4;
+      const v = checkerboard ? ((x + y) % 2 === 0 ? 0 : 255) : 128;
+      data[i] = v;
+      data[i + 1] = v;
+      data[i + 2] = v;
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+}
+
+/**
+ * Stubs the three browser surfaces scorePhotoQuality touches — Image decoding,
+ * canvas 2d context, and object URLs — so the full decode path runs under jsdom
+ * (which ships no canvas backend). Returns a restore handle for `finally`.
+ */
+function installDecodeStubs(opts: DecodeStubOptions): { restore: () => void } {
+  const OriginalImage = globalThis.Image;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalCreate = URL.createObjectURL as ((b: Blob) => string) | undefined;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalRevoke = URL.revokeObjectURL as ((u: string) => void) | undefined;
+
+  class StubImage {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    naturalWidth = opts.naturalWidth;
+    naturalHeight = opts.naturalHeight;
+    set src(_value: string) {
+      setTimeout(() => {
+        this.onload?.();
+      }, 0);
+    }
+  }
+  globalThis.Image = StubImage as unknown as typeof Image;
+
+  function stubGetContext(this: HTMLCanvasElement, kind: string) {
+    if (kind !== '2d' || opts.pattern === 'no-context') return null;
+    const w = this.width;
+    const h = this.height;
+    return {
+      drawImage: () => undefined,
+      getImageData: () => ({ data: makePixels(w, h, opts.pattern === 'checkerboard') }),
+    };
+  }
+  HTMLCanvasElement.prototype.getContext =
+    stubGetContext as unknown as typeof HTMLCanvasElement.prototype.getContext;
+
+  URL.createObjectURL = () => 'blob:fake';
+  URL.revokeObjectURL = () => undefined;
+
+  return {
+    restore: () => {
+      globalThis.Image = OriginalImage;
+      HTMLCanvasElement.prototype.getContext = originalGetContext;
+      if (originalCreate) URL.createObjectURL = originalCreate;
+      else delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+      if (originalRevoke) URL.revokeObjectURL = originalRevoke;
+      else delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    },
+  };
+}
 
 interface FakeCanvas {
   width: number;

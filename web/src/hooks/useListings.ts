@@ -1,4 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { ApiError, api } from '@/lib/api';
@@ -106,9 +107,9 @@ export function useListings(
     queryKey: ['listings', 'search', params],
     queryFn: () =>
       api
-        .getPublic<Omit<ListingsResponse, 'listings'> & { listings: RawListing[] }>(
-          `/api/v1/listings${buildSearchParams(params)}`,
-        )
+        .getPublic<
+          Omit<ListingsResponse, 'listings'> & { listings: RawListing[] }
+        >(`/api/v1/listings${buildSearchParams(params)}`)
         .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
     placeholderData: keepPreviousData,
     ...(options?.initialData ? { initialData: options.initialData } : {}),
@@ -128,9 +129,9 @@ export function useTrendingListings(limit = 12) {
     queryKey: ['listings', 'trending', limit],
     queryFn: () =>
       api
-        .getPublic<Omit<ListingsResponse, 'listings'> & { listings: RawListing[] }>(
-          `/api/v1/listings?sort_by=trending&page_size=${String(limit)}`,
-        )
+        .getPublic<
+          Omit<ListingsResponse, 'listings'> & { listings: RawListing[] }
+        >(`/api/v1/listings?sort_by=trending&page_size=${String(limit)}`)
         .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
     staleTime: 30_000,
   });
@@ -145,7 +146,15 @@ export function useTrendingListings(limit = 12) {
  * query still refetches in the background (invalidated by live bids / the
  * spectator stream), so the seeded value is only the first-paint snapshot.
  */
-export function useListing(id: string, options?: { initialData?: ListingDetail }) {
+// Return type is pinned explicitly. With a possibly-undefined initialData,
+// TanStack's overloads resolve to the "initialData is always present"
+// variant, which types `data` as always-defined — false whenever the query
+// is loading or disabled via `enabled`, and it made every `!listing`
+// loading guard look like dead code to the linter.
+export function useListing(
+  id: string,
+  options?: { initialData?: ListingDetail },
+): UseQueryResult<ListingDetail> {
   return useQuery({
     queryKey: ['listings', id],
     queryFn: () =>
@@ -153,7 +162,8 @@ export function useListing(id: string, options?: { initialData?: ListingDetail }
         .getPublic<{ listing: RawListing<ListingDetail> }>(`/api/v1/listings/${id}`)
         .then((res) => normalizeListing(res.listing)),
     enabled: !!id,
-    ...(options?.initialData ? { initialData: options.initialData } : {}),
+    // Passing `undefined` is equivalent to omitting the key at runtime.
+    initialData: options?.initialData,
   });
 }
 
@@ -193,9 +203,7 @@ export function useSimilarListings(listingId: string) {
     queryKey: ['listings', listingId, 'similar'],
     queryFn: () =>
       api
-        .getPublic<SimilarListingsResponse>(
-          `/api/v1/listings/${listingId}/similar?limit=12`,
-        )
+        .getPublic<SimilarListingsResponse>(`/api/v1/listings/${listingId}/similar?limit=12`)
         .then((res) => ({ ...res, listings: res.listings.map(normalizeListing) })),
     enabled: !!listingId,
     staleTime: 60_000,
@@ -205,8 +213,7 @@ export function useSimilarListings(listingId: string) {
 export function useListingBids(listingId: string) {
   return useQuery({
     queryKey: ['listings', listingId, 'bids'],
-    queryFn: () =>
-      api.getPublic<ListingBidHistory>(`/api/v1/listings/${listingId}/bids`),
+    queryFn: () => api.getPublic<ListingBidHistory>(`/api/v1/listings/${listingId}/bids`),
     enabled: !!listingId,
     refetchInterval: 5000,
   });

@@ -150,7 +150,7 @@ export function useBidsForJob(jobId: string) {
 
 export function useMyBids(statusFilter?: string, page?: number) {
   const user = useAuthStore((state) => state.user);
-  const isProvider = user?.roles?.includes(USER_ROLE.PROVIDER) ?? false;
+  const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
 
   const searchParams = new URLSearchParams();
   if (statusFilter) searchParams.set('status', statusFilter);

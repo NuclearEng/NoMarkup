@@ -93,7 +93,9 @@ export function JobsSearchClient({
 
   const { data, isLoading, isError, refetch } = useSearchJobs(
     filters,
-    seedMatches && initialJobs ? { initialData: initialJobs } : undefined,
+    // `seedMatches` already requires initialJobs !== undefined, and TS narrows
+    // through the const boolean alias, so re-checking it here is redundant.
+    seedMatches ? { initialData: initialJobs } : undefined,
   );
 
   const currentPage = filters.page ?? 1;

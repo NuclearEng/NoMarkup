@@ -21,13 +21,7 @@ export default function ListingSpectatePage() {
   const params = useParams<{ id: string }>();
   const listingId = params.id;
 
-  const {
-    data: listing,
-    isLoading,
-    isError,
-    refetch,
-    isFetching,
-  } = useListing(listingId);
+  const { data: listing, isLoading, isError, refetch, isFetching } = useListing(listingId);
   const { data: bidHistory } = useListingBids(listingId);
 
   // Live order flow over the marketplace spectator socket (FE-06).
@@ -56,9 +50,12 @@ export default function ListingSpectatePage() {
     return [listing.starting_price_cents, displayBidCents ?? listing.current_bid_cents];
   }, [listing, bidHistory, liveBidCents, displayBidCents]);
 
-  if (isLoading && !listing) {
+  // `isLoading` already implies `listing === undefined` — UseQueryResult is a
+  // discriminated union and the pending arm types `data` as undefined — so the
+  // extra `&& !listing` was unreachable narrowing, not a safety net.
+  if (isLoading) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
+      <div className="dark bg-background relative min-h-screen overflow-y-auto text-zinc-100">
         <GradientMesh />
         <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
           <div className="space-y-4">
@@ -72,7 +69,7 @@ export default function ListingSpectatePage() {
 
   if (isError && !listing) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
+      <div className="dark bg-background relative min-h-screen overflow-y-auto text-zinc-100">
         <GradientMesh />
         <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
           <EmptyState
@@ -99,7 +96,7 @@ export default function ListingSpectatePage() {
 
   if (!listing) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
+      <div className="dark bg-background relative min-h-screen overflow-y-auto text-zinc-100">
         <GradientMesh />
         <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
           <EmptyState title="Listing not found" />
@@ -115,7 +112,7 @@ export default function ListingSpectatePage() {
       : 'OFFLINE';
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-background text-zinc-100">
+    <div className="dark bg-background relative min-h-screen overflow-y-auto text-zinc-100">
       <GradientMesh />
 
       <div
@@ -124,7 +121,7 @@ export default function ListingSpectatePage() {
       />
 
       {/* Sticky header */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
+      <div className="bg-background/90 sticky top-0 z-50 border-b border-white/[0.06] backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
@@ -240,10 +237,7 @@ export default function ListingSpectatePage() {
             {bidHistory && bidHistory.bids.length > 0 ? (
               <ul className="divide-y divide-white/[0.06] font-mono text-sm">
                 {bidHistory.bids.slice(0, 20).map((bid) => (
-                  <li
-                    key={bid.id}
-                    className="grid grid-cols-3 gap-2 py-1.5 text-xs sm:grid-cols-4"
-                  >
+                  <li key={bid.id} className="grid grid-cols-3 gap-2 py-1.5 text-xs sm:grid-cols-4">
                     <span className="truncate text-white/70">{bid.bidder_display_name}</span>
                     <span className="text-emerald-300 tabular-nums">
                       {formatCents(bid.amount_cents)}

@@ -37,6 +37,16 @@ vi.mock('@/stores/notification-store', () => ({
   useNotificationStore: vi.fn(),
 }));
 
+// The list / unread-count / preferences queries are all gated on
+// `enabled: isAuthenticated`, so the auth store has to report a signed-in
+// session or they stay idle forever. Mutable so the signed-out path is
+// assertable; only read inside the selector closure, so the hoisted factory
+// never touches it before initialization.
+const authState = { isAuthenticated: true, isHydrating: false };
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: <T,>(selector: (state: typeof authState) => T): T => selector(authState),
+}));
+
 const { api } = await import('@/lib/api');
 const { useNotificationStore } = await import('@/stores/notification-store');
 
@@ -70,10 +80,19 @@ describe('useNotifications', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     primeStore();
+    authState.isAuthenticated = true;
     client = qc();
   });
   afterEach(() => {
     client.clear();
+    authState.isAuthenticated = true;
+  });
+
+  it('does not fetch notifications while signed out', () => {
+    authState.isAuthenticated = false;
+    const { result } = renderHook(() => useNotifications(), { wrapper: wrap(client) });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
   });
 
   it('fetches the notifications list with no params', async () => {

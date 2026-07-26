@@ -1,6 +1,6 @@
 import { attemptRefresh } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
-import { API_BASE_URL, resolveWsBase } from '@/lib/constants';
+import { resolveWsBase } from '@/lib/constants';
 
 // ─── WebSocket message types (Client → Server) ───────────────────
 const WS_CLIENT_MSG = {
