@@ -8,11 +8,22 @@ import { expect, test } from '@playwright/test';
  *   - frontend pages (/marketplace, /sell, /orders)
  *   - payment escrow + pickup flow
  *
- * The test is defensive — every assertion that would otherwise depend on
- * the parallel agent's UI shipping degrades to a "skip if missing" check.
- * That way the spec runs green against the live stack even when the
- * frontend agent's wizard isn't fully wired yet, and tightens up
- * automatically once the marketplace pages are live.
+ * SKIP POLICY (changed 2026-07 — do not reintroduce the old behaviour):
+ *   These tests used to bail out with a "page not yet shipped" skip whenever
+ *   the route rendered a 404. That made the suite report GREEN precisely when
+ *   the feature was broken: a marketplace outage returns 404, the spec skips,
+ *   CI passes. A test that passes while the feature is down is worse than no
+ *   test at all.
+ *
+ *   The repo already has one signal for "this environment cannot run the
+ *   test": `HAS_STACK` (tests/e2e/helpers/stack.ts, wired into
+ *   playwright.config.ts). Environment capability is the ONLY legitimate
+ *   reason to skip. Every route referenced below now exists in the App Router
+ *   (`src/app/(public)/marketplace`, `src/app/(dashboard)/sell`,
+ *   `src/app/(dashboard)/sell/mine`, `src/app/(dashboard)/bids`), so
+ *   "not yet shipped" is no longer a reachable state — a 404 can only mean a
+ *   regression. `expectRouteExists` therefore asserts instead of skipping,
+ *   keeping "not runnable here" and "broken" distinguishable.
  *
  * The auction-close + winner flow is documented but not actively driven
  * here because manipulating `auction_ends_at` requires DB access that
@@ -27,10 +38,28 @@ const BUYER = { email: 'customer@nomarkup.com', password: SEED_PASSWORD };
 const SELLER = { email: 'provider@nomarkup.com', password: SEED_PASSWORD };
 
 /**
+ * Assert the current page is NOT Next.js's not-found shell.
+ *
+ * Deliberately an assertion and not a `test.skip` — see the SKIP POLICY note
+ * in the file header. `route` is only used to make the failure message name
+ * the broken URL instead of reporting a bare "expected 0, received 1".
+ */
+async function expectRouteExists(
+  page: import('@playwright/test').Page,
+  route: string,
+): Promise<void> {
+  const notFoundCount = await page.getByText(/404|page not found/i).count();
+  expect(notFoundCount, `${route} rendered a 404 — the route regressed`).toBe(0);
+}
+
+/**
  * Programmatically log in via the public auth API. Faster + more reliable
  * than driving the UI form, and matches the pattern used by /tests/e2e/auth.spec.ts.
  *
- * Returns true on success, false on failure (so callers can skip cleanly).
+ * Returns true on success, false on failure. Callers ASSERT on the result
+ * rather than skipping: these tests only run when HAS_STACK already declared a
+ * seeded stack is up, so a failed seed login is a genuine auth regression, not
+ * an environment limitation.
  */
 async function loginViaAPI(
   page: import('@playwright/test').Page,
@@ -64,10 +93,10 @@ test.describe('Goods marketplace', () => {
       await page.goto('/marketplace');
       await page.waitForLoadState('networkidle');
 
-      // /marketplace MUST exist after the frontend agent lands its work.
-      // If we land on a 404, fail fast — that's a real regression.
-      const is404 = await page.getByText(/404|page not found/i).count();
-      test.skip(is404 > 0, 'Marketplace page not yet shipped — frontend agent pending.');
+      // /marketplace is shipped (src/app/(public)/marketplace/page.tsx). A 404
+      // here is a regression, not a "not yet built" state — assert, never skip.
+      // See the file header for why the old self-skip was removed.
+      await expectRouteExists(page, '/marketplace');
 
       // The page should render at least one listing card (seed has 13).
       const cards = page.locator('[data-testid="listing-card"], article, [role="article"]');
@@ -138,12 +167,11 @@ test.describe('Goods marketplace', () => {
 
     test('logged-in buyer can navigate marketplace and view bid UI', async ({ page }) => {
       const ok = await loginViaAPI(page, BUYER);
-      test.skip(!ok, 'Live stack auth not available; skipping.');
+      expect(ok, 'seed-account login failed against the announced stack').toBe(true);
 
       await page.goto('/marketplace');
       await page.waitForLoadState('networkidle');
-      const is404 = await page.getByText(/404|page not found/i).count();
-      test.skip(is404 > 0, 'Marketplace page not yet shipped.');
+      await expectRouteExists(page, '/marketplace');
 
       // Click into a listing with bids (the seeded "Peloton Bike+").
       const link = page.locator('a[href*="/marketplace/"]').first();
@@ -166,14 +194,13 @@ test.describe('Goods marketplace', () => {
 
     test('buyer sees their bids in /bids', async ({ page }) => {
       const ok = await loginViaAPI(page, BUYER);
-      test.skip(!ok, 'Live stack auth not available; skipping.');
+      expect(ok, 'seed-account login failed against the announced stack').toBe(true);
 
       await page.goto('/bids');
       await page.waitForLoadState('networkidle');
 
-      const is404 = await page.getByText(/404|page not found/i).count();
       // /bids is shared with the services flow today — should always exist.
-      expect(is404).toBe(0);
+      await expectRouteExists(page, '/bids');
     });
   });
 
@@ -183,13 +210,12 @@ test.describe('Goods marketplace', () => {
 
     test('seller can reach the new-listing wizard', async ({ page }) => {
       const ok = await loginViaAPI(page, SELLER);
-      test.skip(!ok, 'Live stack auth not available; skipping.');
+      expect(ok, 'seed-account login failed against the announced stack').toBe(true);
 
       await page.goto('/sell');
       await page.waitForLoadState('networkidle');
 
-      const is404 = await page.getByText(/404|page not found/i).count();
-      test.skip(is404 > 0, '/sell wizard not yet shipped — frontend agent pending.');
+      await expectRouteExists(page, '/sell');
 
       // Should show either a "post a listing" CTA or the wizard form itself.
       const hasCTA = await page.getByRole('button', { name: /list|post|create/i }).count();
@@ -199,13 +225,12 @@ test.describe('Goods marketplace', () => {
 
     test('seller sees their listings in /sell/mine', async ({ page }) => {
       const ok = await loginViaAPI(page, SELLER);
-      test.skip(!ok, 'Live stack auth not available; skipping.');
+      expect(ok, 'seed-account login failed against the announced stack').toBe(true);
 
       await page.goto('/sell/mine');
       await page.waitForLoadState('networkidle');
 
-      const is404 = await page.getByText(/404|page not found/i).count();
-      test.skip(is404 > 0, '/sell/mine page not yet shipped — frontend agent pending.');
+      await expectRouteExists(page, '/sell/mine');
 
       // Provider seed has at least 5 listings as seller — should render.
       const rows = await page.getByRole('row').count();
