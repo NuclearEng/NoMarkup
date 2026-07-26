@@ -13,6 +13,24 @@ BEGIN
   END IF;
 END $$;
 
+-- Remove seeded tiers.
+-- ORDERING IS LOAD-BEARING: this DELETE filters on `slug`, a column the
+-- ALTER below drops. It used to run last, so the whole file raised
+-- `column "slug" does not exist`; because golang-migrate runs each file in a
+-- transaction, the rollback then did NOTHING while still leaving
+-- (version, dirty=true) stamped — wedging every later migrate operation.
+--
+-- The NOT EXISTS guard is the same class of protection: subscriptions.tier_id
+-- is `NOT NULL REFERENCES subscription_tiers(id)`, so deleting a tier that a
+-- subscription still points at would raise 23503 and re-wedge the rollback.
+-- A tier still in use is left in place; the columns 019 added come off it
+-- either way, which is what "revert 019" means.
+DELETE FROM subscription_tiers st
+ WHERE st.slug IN ('free', 'pro', 'business')
+   AND NOT EXISTS (
+       SELECT 1 FROM subscriptions s WHERE s.tier_id = st.id
+   );
+
 -- Revert subscription_tiers changes
 DROP INDEX IF EXISTS idx_subscription_tiers_slug;
 ALTER TABLE subscription_tiers
@@ -32,6 +50,3 @@ ALTER TABLE subscription_tiers
   DROP COLUMN IF EXISTS is_active,
   DROP COLUMN IF EXISTS stripe_price_id_monthly,
   DROP COLUMN IF EXISTS stripe_price_id_annual;
-
--- Remove seeded tiers
-DELETE FROM subscription_tiers WHERE slug IN ('free', 'pro', 'business');
