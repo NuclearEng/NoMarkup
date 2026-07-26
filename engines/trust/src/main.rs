@@ -43,7 +43,9 @@ mod metrics;
 mod models;
 mod scoring;
 
+use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 
 use opentelemetry::KeyValue;
 use opentelemetry::global;
@@ -54,6 +56,7 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::runtime::Tokio;
 use opentelemetry_sdk::trace::TracerProvider;
 use sqlx::postgres::PgPoolOptions;
+use tokio::signal::unix::{SignalKind, signal};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -95,6 +98,159 @@ fn handle_panic(
         .header("grpc-message", "internal error")
         .body(tonic::body::empty_body())
         .expect("static gRPC panic response is always well-formed")
+}
+
+/// Deployment environment, mirroring the Go services' canonical `ENVIRONMENT`
+/// contract (`services/payment/cmd/server/main.go`): `development` | `staging`
+/// | `production`, required, no default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Environment {
+    Development,
+    Staging,
+    Production,
+}
+
+impl Environment {
+    const fn is_development(self) -> bool {
+        matches!(self, Self::Development)
+    }
+
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Development => "development",
+            Self::Staging => "staging",
+            Self::Production => "production",
+        }
+    }
+}
+
+/// Parse the canonical `ENVIRONMENT` value.
+fn parse_environment(raw: &str) -> anyhow::Result<Environment> {
+    match raw {
+        "development" => Ok(Environment::Development),
+        "staging" => Ok(Environment::Staging),
+        "production" => Ok(Environment::Production),
+        other => Err(anyhow::anyhow!(
+            "ENVIRONMENT must be one of development|staging|production, got {other:?}"
+        )),
+    }
+}
+
+/// Read and validate `ENVIRONMENT`.
+///
+/// Required with no default, exactly like the Go services: a missing value must
+/// never silently select the development branch of any config below, because
+/// that is how a production pod ends up pointed at `localhost`.
+fn load_environment() -> anyhow::Result<Environment> {
+    let raw = std::env::var("ENVIRONMENT")
+        .map_err(|_| anyhow::anyhow!("ENVIRONMENT is required (development|staging|production)"))?;
+
+    parse_environment(&raw)
+}
+
+/// Read a config value that may only fall back to a development default.
+///
+/// The pool below is built with `connect_lazy`, so a wrong or missing
+/// `DATABASE_URL` does not fail at startup — the process boots green, the
+/// readiness probe passes, traffic is routed to it, and only the first query
+/// discovers there is no database. Failing here instead keeps a misconfigured
+/// pod out of rotation entirely.
+fn require_env(key: &str, environment: Environment, dev_default: &str) -> anyhow::Result<String> {
+    resolve_required(key, environment, std::env::var(key).ok(), dev_default)
+}
+
+/// Pure core of [`require_env`], split out so the fail-fast rule is testable
+/// without mutating process environment (`std::env::set_var` is `unsafe` in the
+/// 2024 edition, and `unsafe_code` is denied workspace-wide).
+fn resolve_required(
+    key: &str,
+    environment: Environment,
+    value: Option<String>,
+    dev_default: &str,
+) -> anyhow::Result<String> {
+    let value = value.unwrap_or_default();
+    if !value.trim().is_empty() {
+        return Ok(value);
+    }
+
+    if environment.is_development() {
+        tracing::warn!(
+            var = key,
+            default = dev_default,
+            "ENVIRONMENT=development: falling back to development default"
+        );
+        return Ok(dev_default.to_string());
+    }
+
+    Err(anyhow::anyhow!(
+        "{key} is required when ENVIRONMENT={} (development defaults must never apply in a deployed environment)",
+        environment.as_str()
+    ))
+}
+
+/// Resolve to the first of SIGTERM or SIGINT, returning the signal name.
+///
+/// The previous `serve_with_shutdown(addr, tokio::signal::ctrl_c())` listened
+/// for SIGINT only. Kubernetes terminates pods with **SIGTERM**, which hit the
+/// default disposition and killed the process instantly — no drain, no
+/// in-flight completion — on every rolling deploy.
+async fn shutdown_signal() -> &'static str {
+    let mut sigterm = signal(SignalKind::terminate())
+        .inspect_err(|e| tracing::error!(error = %e, "failed to install SIGTERM handler"))
+        .ok();
+    let mut sigint = signal(SignalKind::interrupt())
+        .inspect_err(|e| tracing::error!(error = %e, "failed to install SIGINT handler"))
+        .ok();
+
+    match (sigterm.as_mut(), sigint.as_mut()) {
+        (Some(term), Some(int)) => {
+            tokio::select! {
+                _ = term.recv() => "SIGTERM",
+                _ = int.recv() => "SIGINT",
+            }
+        }
+        (Some(term), None) => {
+            term.recv().await;
+            "SIGTERM"
+        }
+        (None, Some(int)) => {
+            int.recv().await;
+            "SIGINT"
+        }
+        (None, None) => {
+            // Should be unreachable on Linux. Never resolving is the safe
+            // failure: keep serving rather than exiting immediately and
+            // crash-looping the deployment.
+            tracing::error!("no shutdown signal handler installed; graceful shutdown disabled");
+            std::future::pending().await
+        }
+    }
+}
+
+/// How long to keep answering after flipping gRPC health to `NOT_SERVING`.
+///
+/// Kubernetes probes this same health service on a period (`periodSeconds: 10`
+/// in `deploy/k8s/base/trust/deployment.yaml`), so a pod that stops answering
+/// the instant SIGTERM lands is still in the Service's endpoint list and keeps
+/// being handed new RPCs. Sleeping here lets at least one readiness probe
+/// observe `NOT_SERVING`, so the pod leaves rotation *before* it drains.
+/// Override with `SHUTDOWN_GRACE_SECS`; zero in development so a local Ctrl-C
+/// exits immediately.
+fn shutdown_grace(environment: Environment) -> Duration {
+    const DEPLOYED_GRACE_SECS: u64 = 5;
+
+    let default_secs = if environment.is_development() {
+        0
+    } else {
+        DEPLOYED_GRACE_SECS
+    };
+
+    let secs = std::env::var("SHUTDOWN_GRACE_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(default_secs);
+
+    Duration::from_secs(secs)
 }
 
 fn init_tracing(service_name: &str) {
@@ -146,11 +302,30 @@ fn init_tracing(service_name: &str) {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> ExitCode {
     init_tracing("trust-engine");
 
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://localhost:5433/nomarkup".into());
+    let code = match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            let detail = format!("{e:#}");
+            tracing::error!(error = detail.as_str(), "trust engine exited with error");
+            ExitCode::FAILURE
+        }
+    };
+
+    global::shutdown_tracer_provider();
+    code
+}
+
+async fn run() -> anyhow::Result<()> {
+    let environment = load_environment()?;
+
+    let database_url = require_env(
+        "DATABASE_URL",
+        environment,
+        "postgres://localhost:5433/nomarkup",
+    )?;
     let port = std::env::var("TRUST_ENGINE_PORT").unwrap_or_else(|_| "50057".into());
     let addr = format!("0.0.0.0:{port}").parse()?;
 
@@ -179,26 +354,136 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("TRUST_METRICS_PORT not set, /metrics endpoint disabled");
     }
 
-    // gRPC health check — see bidding/src/main.rs for design notes.
+    // gRPC health check — see bidding/src/main.rs for design notes. The
+    // reporter handle is kept alive so the shutdown path can flip it to
+    // NOT_SERVING before draining.
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
         .set_serving::<TrustServiceServer<TrustServiceImpl>>()
         .await;
 
-    tracing::info!("trust engine starting on {}", addr);
+    let grace = shutdown_grace(environment);
+    let shutdown = async move {
+        let signal = shutdown_signal().await;
+
+        // Leave rotation BEFORE draining — see bidding/src/main.rs.
+        health_reporter
+            .set_not_serving::<TrustServiceServer<TrustServiceImpl>>()
+            .await;
+
+        tracing::info!(
+            signal,
+            grace_secs = grace.as_secs(),
+            "shutdown signal received; health NOT_SERVING, waiting for rotation before drain"
+        );
+
+        if !grace.is_zero() {
+            tokio::time::sleep(grace).await;
+        }
+
+        tracing::info!("trust engine draining in-flight requests");
+    };
+
+    tracing::info!(
+        environment = environment.as_str(),
+        "trust engine starting on {}",
+        addr
+    );
 
     tonic::transport::Server::builder()
         .layer(CatchPanicLayer::custom(handle_panic))
         .add_service(health_service)
         .add_service(TrustServiceServer::new(service))
-        .serve_with_shutdown(addr, async {
-            if let Err(e) = tokio::signal::ctrl_c().await {
-                tracing::error!(error = %e, "failed to listen for ctrl_c");
-            }
-            tracing::info!("trust engine shutting down");
-        })
+        .serve_with_shutdown(addr, shutdown)
         .await?;
 
-    global::shutdown_tracer_provider();
+    tracing::info!("trust engine shut down cleanly");
     Ok(())
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::{Environment, parse_environment, resolve_required, shutdown_grace};
+
+    const DEV_DEFAULT: &str = "postgres://localhost:5433/nomarkup";
+    const KEY: &str = "DATABASE_URL";
+
+    #[test]
+    fn environment_accepts_only_the_three_canonical_values() {
+        assert_eq!(
+            parse_environment("development").expect("development"),
+            Environment::Development
+        );
+        assert_eq!(
+            parse_environment("staging").expect("staging"),
+            Environment::Staging
+        );
+        assert_eq!(
+            parse_environment("production").expect("production"),
+            Environment::Production
+        );
+
+        for bad in ["", "prod", "Production", "dev", "test"] {
+            let err = parse_environment(bad).expect_err("must reject non-canonical value");
+            assert!(
+                err.to_string().contains("development|staging|production"),
+                "error should name the allowed values, got: {err}"
+            );
+        }
+    }
+
+    /// The defect: a missing value fell back to a localhost default and the
+    /// process booted green in production. It must now fail fast instead.
+    #[test]
+    fn missing_config_is_fatal_outside_development() {
+        for environment in [Environment::Staging, Environment::Production] {
+            for value in [None, Some(String::new()), Some("   ".to_string())] {
+                let err = resolve_required(KEY, environment, value, DEV_DEFAULT)
+                    .expect_err("missing config must be fatal in a deployed environment");
+                let msg = err.to_string();
+                assert!(msg.contains(KEY), "error should name the variable: {msg}");
+                assert!(
+                    !msg.contains(DEV_DEFAULT),
+                    "the development default must never be used here: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn development_still_gets_its_default() {
+        let resolved = resolve_required(KEY, Environment::Development, None, DEV_DEFAULT)
+            .expect("development falls back");
+        assert_eq!(resolved, DEV_DEFAULT);
+    }
+
+    #[test]
+    fn an_explicit_value_always_wins() {
+        for environment in [
+            Environment::Development,
+            Environment::Staging,
+            Environment::Production,
+        ] {
+            let resolved = resolve_required(
+                KEY,
+                environment,
+                Some("explicit-value".to_string()),
+                DEV_DEFAULT,
+            )
+            .expect("explicit value accepted");
+            assert_eq!(resolved, "explicit-value");
+        }
+    }
+
+    /// Deployed environments wait for a readiness probe to observe
+    /// NOT_SERVING before draining; local development exits immediately.
+    #[test]
+    fn shutdown_grace_is_zero_only_in_development() {
+        // SHUTDOWN_GRACE_SECS is unset in the test process, so these exercise
+        // the defaults.
+        assert!(std::env::var("SHUTDOWN_GRACE_SECS").is_err());
+        assert!(shutdown_grace(Environment::Development).is_zero());
+        assert!(!shutdown_grace(Environment::Staging).is_zero());
+        assert!(!shutdown_grace(Environment::Production).is_zero());
+    }
 }

@@ -15,12 +15,15 @@
 /// with the rest of the metadata, the decoder applies it to the pixels first
 /// (see [`decode_image`]), so stripped outputs still display upright.
 use std::io::Cursor;
+use std::sync::Arc;
 
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use image::imageops::FilterType;
 use image::metadata::Orientation;
-use image::{DynamicImage, GenericImageView, ImageDecoder, ImageFormat as ImgFmt, ImageReader, Limits};
+use image::{
+    DynamicImage, GenericImageView, ImageDecoder, ImageFormat as ImgFmt, ImageReader, Limits,
+};
 use uuid::Uuid;
 
 use crate::models::{
@@ -28,6 +31,161 @@ use crate::models::{
     MAX_DECODE_ALLOC_BYTES, MAX_DECODE_DIMENSION, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
     ProcessedJobPhoto, ProcessingOptions, ResizeMode, UploadContext,
 };
+
+// ---------------------------------------------------------------------------
+// Blocking-pool boundary
+// ---------------------------------------------------------------------------
+//
+// Everything in this section is the CPU half of the pipeline. The S3 calls
+// around it stay on the async runtime; only pure decode/resize/encode/BlurHash
+// work crosses onto `spawn_blocking`.
+
+/// A CPU-rendered image, ready to hand to S3.
+#[derive(Debug, Clone)]
+pub struct RenderedImage {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Output of the single-image render stage.
+#[derive(Debug, Clone)]
+pub struct ProcessedRender {
+    pub image: RenderedImage,
+    pub original_width: u32,
+    pub original_height: u32,
+    pub blur_hash: Option<String>,
+}
+
+/// Run a CPU-bound image transform on Tokio's blocking pool.
+///
+/// Decode → resize → encode is pure CPU: a measured ~29.5 ms for one
+/// 1080p → 800 px WebP resize (`benches/imaging_bench.rs`). Executed inline on
+/// the async runtime it owns a Tokio worker for that entire time, and with
+/// roughly `num_cpus` concurrent requests every worker is busy — so *all*
+/// async work on the instance stalls, including this process's own gRPC health
+/// responses. The liveness probe then fails and Kubernetes restarts the pod
+/// mid-work. `spawn_blocking` moves the work onto the blocking pool, off the
+/// runtime's workers (CLAUDE.md §5: "Tokio — never block the runtime").
+///
+/// A panic inside the closure arrives as a `JoinError` and is mapped to
+/// `Internal` rather than unwinding through the connection.
+async fn run_cpu<F, T>(f: F) -> Result<T, ImagingError>
+where
+    F: FnOnce() -> Result<T, ImagingError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| ImagingError::Internal(format!("image worker task failed: {e}")))?
+}
+
+/// Decode raw bytes into a shared image, off the async runtime.
+///
+/// Returns an `Arc` so the multi-variant pipelines can hand the same decoded
+/// image to several blocking renders without re-decoding or deep-copying it.
+pub async fn decode_shared(raw: Vec<u8>) -> Result<Arc<DynamicImage>, ImagingError> {
+    run_cpu(move || decode_image(&raw).map(Arc::new)).await
+}
+
+/// Full single-image render — validate, decode, resize, encode, and optionally
+/// compute the `BlurHash` — in one trip to the blocking pool.
+pub async fn render_processed(
+    raw: Vec<u8>,
+    opts: ProcessingOptions,
+) -> Result<ProcessedRender, ImagingError> {
+    run_cpu(move || {
+        validate_image_format(&raw)?;
+
+        let img = decode_image_with_orientation(&raw, opts.auto_orient)?;
+        let (original_width, original_height) = img.dimensions();
+
+        let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
+        let data = encode_image(&resized, opts.format, opts.quality)?;
+        if data.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
+
+        let (width, height) = resized.dimensions();
+        let blur_hash = if opts.generate_blur_hash {
+            Some(compute_blur_hash(&resized))
+        } else {
+            None
+        };
+
+        Ok(ProcessedRender {
+            image: RenderedImage {
+                data,
+                width,
+                height,
+            },
+            original_width,
+            original_height,
+            blur_hash,
+        })
+    })
+    .await
+}
+
+/// Resize and encode one variant of an already-decoded image, off the runtime.
+pub async fn render_variant(
+    img: Arc<DynamicImage>,
+    max_w: u32,
+    max_h: u32,
+    mode: ResizeMode,
+    fmt: ImageFormat,
+    quality: u8,
+) -> Result<RenderedImage, ImagingError> {
+    run_cpu(move || {
+        let resized = resize_image(&img, max_w, max_h, mode);
+        let data = encode_image(&resized, fmt, quality)?;
+        if data.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
+
+        let (width, height) = resized.dimensions();
+        Ok(RenderedImage {
+            data,
+            width,
+            height,
+        })
+    })
+    .await
+}
+
+/// Re-encode an already-decoded image at full resolution, off the runtime.
+pub async fn render_full_size(
+    img: Arc<DynamicImage>,
+    fmt: ImageFormat,
+    quality: u8,
+) -> Result<RenderedImage, ImagingError> {
+    run_cpu(move || {
+        let data = encode_image(&img, fmt, quality)?;
+        if data.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
+
+        let (width, height) = img.dimensions();
+        Ok(RenderedImage {
+            data,
+            width,
+            height,
+        })
+    })
+    .await
+}
+
+/// Compute the `BlurHash` off the runtime (a 32x32 downscale plus a DCT).
+pub async fn render_blur_hash(img: Arc<DynamicImage>) -> Result<String, ImagingError> {
+    run_cpu(move || Ok(compute_blur_hash(&img))).await
+}
+
+/// Center-crop to a square off the runtime.
+pub async fn render_center_square(
+    img: Arc<DynamicImage>,
+) -> Result<Arc<DynamicImage>, ImagingError> {
+    run_cpu(move || Ok(Arc::new(crop_center_square(&img)))).await
+}
 
 /// Core image pipeline — stateless beyond the S3 client handle.
 pub struct ImagePipeline {
@@ -69,7 +227,6 @@ impl ImagePipeline {
     ) -> Result<(ImageVariant, Option<String>), ImagingError> {
         let _timer = crate::metrics::IMAGE_PROCESSING_DURATION.start_timer();
         let raw = self.download_from_s3(source_key).await?;
-        validate_image_format(&raw)?;
 
         // Stripping is the only supported mode: the output below is always a
         // re-encode (which drops all metadata), never a copy of the original
@@ -83,32 +240,20 @@ impl ImagePipeline {
             );
         }
 
-        let img = decode_image_with_orientation(&raw, opts.auto_orient)?;
-        let (orig_w, orig_h) = img.dimensions();
+        // Validate + decode + resize + encode (+ BlurHash) on the blocking
+        // pool; the S3 round trips on either side stay on the async runtime.
+        let rendered = render_processed(raw, opts.clone()).await?;
 
-        let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
-        let encoded = encode_image(&resized, opts.format, opts.quality)?;
-        if encoded.is_empty() {
-            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
-        }
-
-        let (rw, rh) = resized.dimensions();
         let dest_key = self.variant_key(source_key, "processed", opts.format);
-        self.upload_to_s3(&dest_key, &encoded, opts.format.mime_type())
+        self.upload_to_s3(&dest_key, &rendered.image.data, opts.format.mime_type())
             .await?;
-
-        let blur_hash = if opts.generate_blur_hash {
-            Some(compute_blur_hash(&resized))
-        } else {
-            None
-        };
 
         let variant = ImageVariant {
             url: self.public_url(&dest_key),
-            width: rw,
-            height: rh,
+            width: rendered.image.width,
+            height: rendered.image.height,
             format: opts.format,
-            size_bytes: encoded.len() as u32,
+            size_bytes: rendered.image.data.len() as u32,
             variant_name: "processed".into(),
         };
 
@@ -116,16 +261,16 @@ impl ImagePipeline {
 
         tracing::info!(
             source = source_key,
-            orig_w,
-            orig_h,
-            out_w = rw,
-            out_h = rh,
+            orig_w = rendered.original_width,
+            orig_h = rendered.original_height,
+            out_w = rendered.image.width,
+            out_h = rendered.image.height,
             format = ?opts.format,
-            size = encoded.len(),
+            size = rendered.image.data.len(),
             "image processed"
         );
 
-        Ok((variant, blur_hash))
+        Ok((variant, rendered.blur_hash))
     }
 
     /// Generate a single thumbnail from a source image.
@@ -137,24 +282,21 @@ impl ImagePipeline {
         mode: ResizeMode,
     ) -> Result<ImageVariant, ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
-        let resized = resize_image(&img, width, height, mode);
-        let encoded = encode_image(&resized, ImageFormat::Jpeg, DEFAULT_QUALITY)?;
-        if encoded.is_empty() {
-            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
-        }
 
-        let (rw, rh) = resized.dimensions();
+        let img = decode_shared(raw).await?;
+        let rendered =
+            render_variant(img, width, height, mode, ImageFormat::Jpeg, DEFAULT_QUALITY).await?;
+
         let dest_key = self.variant_key(source_key, "thumbnail", ImageFormat::Jpeg);
-        self.upload_to_s3(&dest_key, &encoded, ImageFormat::Jpeg.mime_type())
+        self.upload_to_s3(&dest_key, &rendered.data, ImageFormat::Jpeg.mime_type())
             .await?;
 
         Ok(ImageVariant {
             url: self.public_url(&dest_key),
-            width: rw,
-            height: rh,
+            width: rendered.width,
+            height: rendered.height,
             format: ImageFormat::Jpeg,
-            size_bytes: encoded.len() as u32,
+            size_bytes: rendered.data.len() as u32,
             variant_name: "thumbnail".into(),
         })
     }
@@ -170,8 +312,8 @@ impl ImagePipeline {
 
         for source_key in source_keys {
             let raw = self.download_from_s3(source_key).await?;
-            let img = decode_image(&raw)?;
-            let blur_hash = compute_blur_hash(&img);
+            let img = decode_shared(raw).await?;
+            let blur_hash = render_blur_hash(Arc::clone(&img)).await?;
 
             // Privacy: never hand back the raw upload's URL. The raw object
             // retains whatever EXIF the camera wrote — including GPS
@@ -179,14 +321,14 @@ impl ImagePipeline {
             // customer's location. Re-encode the original at full resolution
             // (metadata-free, orientation already applied by decode_image)
             // and return that sanitized copy as the "original".
-            let original_encoded = encode_image(&img, ImageFormat::Jpeg, 90)?;
+            let original = render_full_size(Arc::clone(&img), ImageFormat::Jpeg, 90).await?;
             let original_key = format!("{job_id}/original/{}.jpg", Uuid::now_v7());
-            self.upload_to_s3(&original_key, &original_encoded, "image/jpeg")
+            self.upload_to_s3(&original_key, &original.data, "image/jpeg")
                 .await?;
 
             let large = self
                 .create_variant(
-                    &img,
+                    Arc::clone(&img),
                     source_key,
                     job_id,
                     "large",
@@ -197,7 +339,7 @@ impl ImagePipeline {
                 .await?;
             let medium = self
                 .create_variant(
-                    &img,
+                    Arc::clone(&img),
                     source_key,
                     job_id,
                     "medium",
@@ -208,7 +350,7 @@ impl ImagePipeline {
                 .await?;
             let thumbnail = self
                 .create_variant(
-                    &img,
+                    img,
                     source_key,
                     job_id,
                     "thumbnail",
@@ -238,12 +380,12 @@ impl ImagePipeline {
         source_key: &str,
     ) -> Result<(ImageVariant, ImageVariant, ImageVariant, String), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
-        let blur_hash = compute_blur_hash(&img);
+        let img = decode_shared(raw).await?;
+        let blur_hash = render_blur_hash(Arc::clone(&img)).await?;
 
         let full = self
             .create_variant(
-                &img,
+                Arc::clone(&img),
                 source_key,
                 user_id,
                 "full",
@@ -254,7 +396,7 @@ impl ImagePipeline {
             .await?;
         let display = self
             .create_variant(
-                &img,
+                Arc::clone(&img),
                 source_key,
                 user_id,
                 "display",
@@ -265,7 +407,7 @@ impl ImagePipeline {
             .await?;
         let thumb = self
             .create_variant(
-                &img,
+                img,
                 source_key,
                 user_id,
                 "thumbnail",
@@ -286,15 +428,15 @@ impl ImagePipeline {
         source_key: &str,
     ) -> Result<(ImageVariant, ImageVariant, ImageVariant, String), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
+        let img = decode_shared(raw).await?;
 
         // Center-crop to square before resizing.
-        let square = crop_center_square(&img);
-        let blur_hash = compute_blur_hash(&square);
+        let square = render_center_square(img).await?;
+        let blur_hash = render_blur_hash(Arc::clone(&square)).await?;
 
         let large = self
             .create_variant(
-                &square,
+                Arc::clone(&square),
                 source_key,
                 user_id,
                 "large",
@@ -305,7 +447,7 @@ impl ImagePipeline {
             .await?;
         let medium = self
             .create_variant(
-                &square,
+                Arc::clone(&square),
                 source_key,
                 user_id,
                 "medium",
@@ -316,7 +458,7 @@ impl ImagePipeline {
             .await?;
         let small = self
             .create_variant(
-                &square,
+                square,
                 source_key,
                 user_id,
                 "small",
@@ -339,27 +481,29 @@ impl ImagePipeline {
         _document_type: &str,
     ) -> Result<(ImageVariant, ImageVariant, u32, u32), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
-        let (orig_w, orig_h) = img.dimensions();
+        let img = decode_shared(raw).await?;
 
         // Re-encode at original size (strips EXIF, auto-orients).
-        let encoded = encode_image(&img, ImageFormat::Jpeg, 90)?;
+        let original = render_full_size(Arc::clone(&img), ImageFormat::Jpeg, 90).await?;
+        let (orig_w, orig_h) = (original.width, original.height);
+
         let dest_key = format!("documents/{user_id}/processed/{}.jpg", Uuid::now_v7());
-        self.upload_to_s3(&dest_key, &encoded, "image/jpeg").await?;
+        self.upload_to_s3(&dest_key, &original.data, "image/jpeg")
+            .await?;
 
         let processed = ImageVariant {
             url: self.public_url(&dest_key),
             width: orig_w,
             height: orig_h,
             format: ImageFormat::Jpeg,
-            size_bytes: encoded.len() as u32,
+            size_bytes: original.data.len() as u32,
             variant_name: "processed".into(),
         };
 
         // Thumbnail for admin review UI.
         let thumb = self
             .create_variant(
-                &img,
+                img,
                 source_key,
                 user_id,
                 "doc-thumb",
@@ -561,9 +705,12 @@ impl ImagePipeline {
     }
 
     /// Create a resized variant, upload it, and return metadata.
+    ///
+    /// Takes the decoded image by `Arc` so the resize/encode can be moved onto
+    /// the blocking pool without cloning pixel data; the upload stays async.
     async fn create_variant(
         &self,
-        img: &DynamicImage,
+        img: Arc<DynamicImage>,
         _source_key: &str,
         context_id: &str,
         variant_name: &str,
@@ -571,19 +718,19 @@ impl ImagePipeline {
         max_h: u32,
         mode: ResizeMode,
     ) -> Result<ImageVariant, ImagingError> {
-        let resized = resize_image(img, max_w, max_h, mode);
-        let encoded = encode_image(&resized, ImageFormat::Jpeg, DEFAULT_QUALITY)?;
-        let (rw, rh) = resized.dimensions();
+        let rendered =
+            render_variant(img, max_w, max_h, mode, ImageFormat::Jpeg, DEFAULT_QUALITY).await?;
 
         let dest_key = format!("{context_id}/{variant_name}/{}.jpg", Uuid::now_v7());
-        self.upload_to_s3(&dest_key, &encoded, "image/jpeg").await?;
+        self.upload_to_s3(&dest_key, &rendered.data, "image/jpeg")
+            .await?;
 
         Ok(ImageVariant {
             url: self.public_url(&dest_key),
-            width: rw,
-            height: rh,
+            width: rendered.width,
+            height: rendered.height,
             format: ImageFormat::Jpeg,
-            size_bytes: encoded.len() as u32,
+            size_bytes: rendered.data.len() as u32,
             variant_name: variant_name.into(),
         })
     }
@@ -1549,6 +1696,154 @@ mod tests {
         assert_eq!(v.width, 800);
         assert_eq!(v.height, 600);
         assert_eq!(v.format, ImageFormat::Jpeg);
+    }
+
+    // ------------------------------------------------------------------
+    // Blocking-pool boundary
+    // ------------------------------------------------------------------
+
+    /// The CPU stage must run on the blocking pool, not on a runtime worker.
+    ///
+    /// The runtime here has exactly one async worker thread, which is the
+    /// sharpest form of the production failure: if decode/resize/encode is
+    /// polled inline, nothing else on that thread — including this process's
+    /// own gRPC health handler — makes progress until it finishes.
+    ///
+    /// The test asserts both directions so it cannot silently pass if the
+    /// `spawn_blocking` hop is removed:
+    ///
+    ///   * control — the same work called directly advances the heartbeat by
+    ///     exactly zero ticks (the old behaviour),
+    ///   * treatment — the same work via [`render_processed`] lets the
+    ///     heartbeat keep ticking.
+    #[test]
+    fn cpu_render_runs_off_the_async_runtime() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::time::Duration;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build single-worker runtime");
+
+        rt.block_on(async {
+            let raw = encode_image(&make_test_image(1600, 1200), ImageFormat::Jpeg, 90)
+                .expect("encode fixture");
+
+            let ticks = Arc::new(AtomicU64::new(0));
+            let counter = Arc::clone(&ticks);
+            let heartbeat = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
+            });
+
+            // Let the heartbeat get scheduled and start ticking.
+            tokio::time::sleep(Duration::from_millis(20)).await;
+
+            let opts = ProcessingOptions {
+                max_width: 800,
+                max_height: 800,
+                generate_blur_hash: true,
+                ..ProcessingOptions::default()
+            };
+
+            // Control: the pre-fix code path — pure CPU polled inline. There is
+            // no await between these two reads, so on a single-worker runtime
+            // the heartbeat provably cannot advance.
+            let before_inline = ticks.load(Ordering::Relaxed);
+            let img = decode_image_with_orientation(&raw, opts.auto_orient).expect("decode");
+            let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
+            let inline_encoded = encode_image(&resized, opts.format, opts.quality).expect("encode");
+            let after_inline = ticks.load(Ordering::Relaxed);
+
+            assert!(!inline_encoded.is_empty());
+            assert_eq!(
+                after_inline, before_inline,
+                "control: inline CPU work starves every other task on the runtime"
+            );
+
+            // Treatment: the same work through the blocking-pool boundary.
+            let before = ticks.load(Ordering::Relaxed);
+            let rendered = render_processed(raw, opts).await.expect("render");
+            let after = ticks.load(Ordering::Relaxed);
+
+            heartbeat.abort();
+
+            assert!(!rendered.image.data.is_empty());
+            assert!(rendered.blur_hash.is_some());
+            assert_eq!(rendered.original_width, 1600);
+            assert_eq!(rendered.original_height, 1200);
+            assert!(
+                after > before,
+                "runtime must keep polling other tasks while the CPU render is in flight \
+                 (heartbeat ticks {before} -> {after})"
+            );
+        });
+    }
+
+    /// Every render helper is an `async fn` that hands its work to
+    /// `spawn_blocking`, so a panic inside the image crate arrives as a
+    /// `JoinError` and becomes an `Internal` error instead of unwinding
+    /// through the gRPC connection.
+    #[tokio::test]
+    async fn render_helpers_surface_decode_errors_not_panics() {
+        let err = decode_shared(vec![0, 1, 2, 3])
+            .await
+            .expect_err("garbage bytes must not decode");
+        assert!(matches!(err, ImagingError::DecodeError(_)));
+
+        let err = render_processed(vec![0, 1, 2, 3], ProcessingOptions::default())
+            .await
+            .expect_err("garbage bytes must not render");
+        // guess_format runs first, so this is the unsupported-format arm.
+        assert!(matches!(
+            err,
+            ImagingError::DecodeError(_) | ImagingError::UnsupportedFormat(_)
+        ));
+    }
+
+    /// The multi-variant paths share one decoded image across renders.
+    #[tokio::test]
+    async fn render_variant_reuses_a_shared_decode() {
+        let raw = encode_image(&make_test_image(400, 300), ImageFormat::Jpeg, 90)
+            .expect("encode fixture");
+        let img = decode_shared(raw).await.expect("decode");
+
+        let large = render_variant(
+            Arc::clone(&img),
+            200,
+            200,
+            ResizeMode::Fit,
+            ImageFormat::Jpeg,
+            DEFAULT_QUALITY,
+        )
+        .await
+        .expect("render large");
+        let small = render_variant(
+            Arc::clone(&img),
+            50,
+            50,
+            ResizeMode::Exact,
+            ImageFormat::Jpeg,
+            DEFAULT_QUALITY,
+        )
+        .await
+        .expect("render small");
+
+        assert!(large.width <= 200 && large.height <= 200);
+        assert_eq!((small.width, small.height), (50, 50));
+        assert!(!large.data.is_empty() && !small.data.is_empty());
+
+        // The source image is still owned solely by this test plus the two
+        // completed renders' released clones.
+        assert_eq!(Arc::strong_count(&img), 1);
+
+        let square = render_center_square(img).await.expect("crop");
+        assert_eq!(square.dimensions(), (300, 300));
+        let hash = render_blur_hash(square).await.expect("blur hash");
+        assert_eq!(hash.len(), 28);
     }
 
     // ------------------------------------------------------------------

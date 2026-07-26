@@ -189,6 +189,20 @@ pub const MAX_DECODE_DIMENSION: u32 = 20_000;
 /// would take the whole process down rather than failing one request.
 pub const MAX_DECODE_ALLOC_BYTES: u64 = 256 * 1024 * 1024;
 
+/// Maximum number of images accepted in a single batch RPC.
+///
+/// `BatchProcessImages` and `ProcessJobPhotos` previously validated only that
+/// the list was non-empty, so one caller could hand the engine an unbounded
+/// amount of CPU work in a single request. Each 1080p image costs roughly
+/// 30 ms of decode + resize + encode (`benches/imaging_bench.rs`), and the
+/// job-photo path renders four outputs per image, so an uncapped batch is a
+/// trivial denial-of-service against a fixed-size blocking pool.
+///
+/// 16 sits above the product limit — the job and listing forms cap uploads at
+/// 10 photos (`web/src/components/forms/JobPostingForm.tsx`) — while bounding
+/// one request to well under a second of pooled CPU.
+pub const MAX_BATCH_IMAGES: usize = 16;
+
 /// Default JPEG/WebP quality.
 pub const DEFAULT_QUALITY: u8 = 85;
 

@@ -24,6 +24,10 @@ thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+# Panic boundary for the gRPC stack (CatchPanicLayer) — see src/main.rs.
+http.workspace = true
+tower.workspace = true
+tower-http.workspace = true
 
 # Optional ONNX inference (ort) for learned pricing model.
 # Off by default — see CLAUDE.md ("ML Inference: RESERVED for v2").

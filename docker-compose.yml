@@ -255,6 +255,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: bidding
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       BID_ENGINE_PORT: "50053"
       RUST_LOG: "info"
@@ -270,6 +275,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: fraud
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       FRAUD_ENGINE_PORT: "50056"
       RUST_LOG: "info"
@@ -285,6 +295,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: trust
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       TRUST_ENGINE_PORT: "50057"
       RUST_LOG: "info"
@@ -300,6 +315,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: imaging
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       IMAGING_SERVICE_PORT: "50058"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "imaging-service"
@@ -322,6 +342,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: underwriting
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       UNDERWRITING_ENGINE_PORT: "50060"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -333,6 +358,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: pricing
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       PRICING_ENGINE_PORT: "50061"
       RUST_LOG: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"

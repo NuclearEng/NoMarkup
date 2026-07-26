@@ -27,7 +27,8 @@ use tracing::{info, warn};
 
 use crate::engine::ImagePipeline;
 use crate::models::{
-    ImageFormat, ImageVariant, ImagingError, ProcessingOptions, ResizeMode, UploadContext,
+    ImageFormat, ImageVariant, ImagingError, MAX_BATCH_IMAGES, ProcessingOptions, ResizeMode,
+    UploadContext,
 };
 
 /// gRPC service implementation wrapping the image processing pipeline.
@@ -118,6 +119,15 @@ impl ImagingService for ImagingServiceImpl {
                 "at least one image request is required",
             ));
         }
+        // Bound the CPU work one caller can request. Without this the batch
+        // size is whatever the client sends, and each image is tens of ms of
+        // decode/resize/encode on the blocking pool.
+        if req.images.len() > MAX_BATCH_IMAGES {
+            return Err(Status::invalid_argument(format!(
+                "batch too large: {} images exceeds the limit of {MAX_BATCH_IMAGES}; split the request",
+                req.images.len()
+            )));
+        }
 
         let mut results = Vec::with_capacity(req.images.len());
         let mut succeeded = 0i32;
@@ -191,6 +201,15 @@ impl ImagingService for ImagingServiceImpl {
             return Err(Status::invalid_argument(
                 "at least one source_url is required",
             ));
+        }
+        // Same bound as BatchProcessImages — this path is heavier still, since
+        // every source renders four outputs (original + large + medium +
+        // thumbnail) plus a BlurHash.
+        if req.source_urls.len() > MAX_BATCH_IMAGES {
+            return Err(Status::invalid_argument(format!(
+                "batch too large: {} photos exceeds the limit of {MAX_BATCH_IMAGES}; split the request",
+                req.source_urls.len()
+            )));
         }
 
         let keys: Vec<String> = req.source_urls.iter().map(|u| url_to_key(u)).collect();
@@ -500,6 +519,7 @@ fn parse_upload_context(s: &str) -> Result<UploadContext, Status> {
 }
 
 /// Map `ImagingError` to a gRPC `Status`.
+// (tests for the batch bounds live at the bottom of this file)
 fn imaging_error_to_status(err: ImagingError) -> Status {
     match err {
         ImagingError::InvalidArgument(msg) => Status::invalid_argument(msg),
@@ -525,6 +545,129 @@ fn imaging_error_to_status(err: ImagingError) -> Status {
         ImagingError::Internal(msg) => {
             tracing::error!(error = msg.as_str(), "internal imaging error");
             Status::internal("internal error")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A pipeline pointed at an S3 endpoint that is never contacted: every
+    /// assertion below is about request validation, which runs before the
+    /// first network call.
+    fn test_service() -> ImagingServiceImpl {
+        let config = aws_sdk_s3::config::Builder::new()
+            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "test", "test", None, None, "test",
+            ))
+            .force_path_style(true)
+            .build();
+
+        let pipeline = ImagePipeline::new(
+            aws_sdk_s3::Client::from_conf(config),
+            "test-bucket".to_string(),
+            "http://localhost:9000/test-bucket".to_string(),
+        );
+
+        ImagingServiceImpl::new(Arc::new(pipeline))
+    }
+
+    fn image_request(idx: usize) -> imaging_proto::ProcessImageRequest {
+        imaging_proto::ProcessImageRequest {
+            source_url: format!("http://localhost:9000/test-bucket/raw/{idx}.jpg"),
+            options: None,
+            context: String::new(),
+        }
+    }
+
+    /// An oversized batch is rejected up front, before any CPU work is queued.
+    /// Without this bound one caller could hand the engine an unbounded number
+    /// of decode/resize/encode jobs in a single RPC.
+    #[tokio::test]
+    async fn batch_process_rejects_oversized_batch() {
+        let service = test_service();
+
+        let images: Vec<_> = (0..=MAX_BATCH_IMAGES).map(image_request).collect();
+        let status = service
+            .batch_process_images(Request::new(imaging_proto::BatchProcessImagesRequest {
+                images,
+            }))
+            .await
+            .expect_err("batch above the cap must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(
+            status.message().contains("batch too large"),
+            "message should explain the limit, got: {}",
+            status.message()
+        );
+        assert!(status.message().contains(&MAX_BATCH_IMAGES.to_string()));
+    }
+
+    #[tokio::test]
+    async fn batch_process_rejects_empty_batch() {
+        let service = test_service();
+
+        let status = service
+            .batch_process_images(Request::new(imaging_proto::BatchProcessImagesRequest {
+                images: Vec::new(),
+            }))
+            .await
+            .expect_err("empty batch must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    /// The job-photo path renders four outputs per source, so it carries the
+    /// same bound.
+    #[tokio::test]
+    async fn process_job_photos_rejects_oversized_batch() {
+        let service = test_service();
+
+        let source_urls: Vec<String> = (0..=MAX_BATCH_IMAGES)
+            .map(|i| format!("http://localhost:9000/test-bucket/raw/{i}.jpg"))
+            .collect();
+
+        let status = service
+            .process_job_photos(Request::new(imaging_proto::ProcessJobPhotosRequest {
+                job_id: "job-1".to_string(),
+                source_urls,
+            }))
+            .await
+            .expect_err("photo batch above the cap must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("batch too large"));
+    }
+
+    #[tokio::test]
+    async fn process_job_photos_rejects_empty_batch() {
+        let service = test_service();
+
+        let status = service
+            .process_job_photos(Request::new(imaging_proto::ProcessJobPhotosRequest {
+                job_id: "job-1".to_string(),
+                source_urls: Vec::new(),
+            }))
+            .await
+            .expect_err("empty photo batch must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    /// The cap must stay at or above the product limit (10 photos per job /
+    /// listing form) so a legitimate upload is never rejected.
+    #[test]
+    fn batch_cap_covers_the_product_photo_limit() {
+        const PRODUCT_PHOTO_LIMIT: usize = 10;
+        const {
+            assert!(
+                MAX_BATCH_IMAGES >= PRODUCT_PHOTO_LIMIT,
+                "cap must not reject a full 10-photo job posting"
+            );
         }
     }
 }

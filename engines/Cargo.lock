@@ -2437,6 +2437,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion",
+ "http 1.4.0",
  "proptest",
  "prost",
  "prost-types",
@@ -2445,6 +2446,8 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tonic-health",
+ "tower 0.4.13",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]

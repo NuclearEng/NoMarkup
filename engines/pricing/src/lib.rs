@@ -34,5 +34,7 @@ pub use model::{FairPrice, MODEL_VERSION, Query, Side, Txn, fair_price};
 pub mod ml_stub {
     // TODO: use ort::Session, load from env MODEL_PATH or baked bytes,
     // run predict on featurized Query + context, blend or replace heuristic.
-    pub fn load_and_predict(_bytes: &[u8], _features: &[f32]) -> Option<f64> { None }
+    pub fn load_and_predict(_bytes: &[u8], _features: &[f32]) -> Option<f64> {
+        None
+    }
 }
