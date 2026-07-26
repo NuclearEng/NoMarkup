@@ -104,7 +104,10 @@ func TestDecryptShortCiphertext(t *testing.T) {
 func TestFromEnv_DevFallback(t *testing.T) {
 	t.Setenv("ENCRYPTION_KEY", "")
 	t.Setenv("ENCRYPTION_KEY_PREVIOUS", "")
-	t.Setenv("ENVIRONMENT", "")
+	// Must be explicitly development. An EMPTY value used to reach this
+	// fallback too, which is what let staging pods generate a different
+	// ephemeral key each — see TestFromEnv_NonDevelopmentFailsClosed.
+	t.Setenv("ENVIRONMENT", "development")
 	c, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
@@ -124,5 +127,45 @@ func TestFromEnv_ProductionRefusesMissingKey(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "production")
 	if _, err := FromEnv(); err == nil {
 		t.Error("expected production to refuse missing ENCRYPTION_KEY")
+	}
+}
+
+// TestFromEnv_NonDevelopmentFailsClosed pins the polarity of the environment
+// gate. The check is "is this development?" — NOT "is this production?".
+//
+// Under the old `env == "production"` check, every value below fell through to
+// the ephemeral-key branch. That mattered most for "staging", which the
+// overlay sets explicitly and which runs multiple replicas: each pod generated
+// its own random key, so PII written by one was undecryptable by another and
+// by itself after a restart — silent, permanent corruption, logged as
+// "DEV ONLY". Anything not recognizably development must fail closed.
+func TestFromEnv_NonDevelopmentFailsClosed(t *testing.T) {
+	for _, env := range []string{"", "staging", "prod", "Production", "test", "qa"} {
+		name := env
+		if name == "" {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ENCRYPTION_KEY", "")
+			t.Setenv("ENCRYPTION_KEY_PREVIOUS", "")
+			t.Setenv("ENVIRONMENT", env)
+			if _, err := FromEnv(); err == nil {
+				t.Errorf("FromEnv with ENVIRONMENT=%q and no key: expected an error, got nil", env)
+			}
+		})
+	}
+}
+
+// Casing and surrounding whitespace must not flip a security decision.
+func TestFromEnv_DevelopmentIsCaseAndSpaceInsensitive(t *testing.T) {
+	for _, env := range []string{"development", "Development", " development ", "DEVELOPMENT"} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv("ENCRYPTION_KEY", "")
+			t.Setenv("ENCRYPTION_KEY_PREVIOUS", "")
+			t.Setenv("ENVIRONMENT", env)
+			if _, err := FromEnv(); err != nil {
+				t.Errorf("FromEnv with ENVIRONMENT=%q: expected the dev fallback, got %v", env, err)
+			}
+		})
 	}
 }

@@ -17,8 +17,8 @@ environments.
 |---|---|---|
 | `DATABASE_URL` | every Go service + migration Job | DB connection string |
 | `REDIS_URL` | gateway, services | session/idempotency cache |
-| `JWT_PRIVATE_KEY` | user service | RS256 signing |
-| `JWT_PUBLIC_KEY` | gateway, every service | JWT verification |
+| `JWT_PRIVATE_KEY` | user service | RS256 signing. **Mounted as a file, not read from env** — see below. |
+| `JWT_PUBLIC_KEY` | gateway, every service | JWT verification. **Mounted as a file, not read from env** — see below. |
 | `SESSION_SECRET` | gateway | secure cookie sealing |
 | `INTERNAL_WS_SECRET` | gateway + chat | Shared secret for gateway→chat WebSocket hop auth. Generate with `openssl rand -base64 32`. Same value on both Deployments (explicit `secretKeyRef` + `envFrom`). |
 | `STRIPE_SECRET_KEY` | payment service | server-side Stripe API |
@@ -30,9 +30,36 @@ environments.
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | every service | error tracking (TODOS-7) |
 | `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth token exchange |
 | `APPLE_CLIENT_SECRET` | gateway | Apple OAuth token exchange |
-| `ENCRYPTION_KEY` | user, services with PII | base64 32-byte AES-256-GCM key |
+| `ENCRYPTION_KEY` | user, services with PII | base64 32-byte key for **XSalsa20-Poly1305** (`nacl/secretbox`), not AES-256-GCM — see CLAUDE.md §6. Required in staging as well as production: the code's ephemeral-key fallback is keyed on `ENVIRONMENT == "production"`, so a staging pod without this generates a **different random key per replica** and writes permanently undecryptable PII. |
 | `MEILISEARCH_API_KEY` | gateway, job service, meilisearch (as `MEILI_MASTER_KEY`) | search index admin operations + gateway listings search; the in-cluster Meilisearch Deployment (`base/meilisearch/deployment.yaml`) boots with this same value as its master key — identical to the docker-compose wiring |
 | `METRICS_BEARER_TOKEN` | gateway (+ Prometheus, see below) | Bearer token for `GET /metrics`. Without it the gateway's `protectMetrics` gate (SEC-08) returns **401 to every non-loopback request in production**, so Prometheus scrapes from the `monitoring` namespace fail and every alert built on `http_requests_total` / `http_request_duration_seconds` — including the P0 `NoMarkupPaymentFailureSpike` and `NoMarkupPaymentPathDown` — silently never fires. Generate with `openssl rand -base64 32`. |
+
+### RS256 keys are consumed as FILES, not env values
+
+This is the one place where "put it in the Secret and `envFrom` it" is not
+enough, and getting it wrong is a hard startup failure rather than a silent
+degradation.
+
+Every consumer reads a **path** and opens the file — `gateway/cmd/server/main.go`
+(`os.ReadFile`), `services/user/cmd/server/main.go`, and
+`web/src/lib/server/verify-jwt.ts`. None of them read the PEM out of the
+environment. So the Secret keys `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` still hold
+the PEM **content**, but they reach the process by being projected as files:
+
+- `base/gateway/deployment.yaml` mounts the **public key only** at
+  `/etc/nomarkup/jwt/public.pem` and sets `JWT_PUBLIC_KEY_PATH`. The gateway
+  verifies tokens and must never hold the signing key.
+- `base/user/deployment.yaml` mounts **both** keys and sets
+  `JWT_PRIVATE_KEY_PATH` + `JWT_PUBLIC_KEY_PATH`. The user service is the only
+  component that mints tokens.
+
+Both volumes use `defaultMode: 0400`, and the containers run as non-root with a
+read-only mount.
+
+Before this was wired, the Secret supplied the PEMs as environment values that
+nothing read, no `volumeMounts` existed, and neither `*_KEY_PATH` variable was
+set — so the gateway and the user service would both have exited 1 at startup
+on the first real deploy.
 
 ### `METRICS_BEARER_TOKEN` — both sides must match
 

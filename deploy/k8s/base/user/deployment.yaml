@@ -44,6 +44,15 @@ spec:
               value: "50051"
             - name: METRICS_PORT
               value: "51051"
+            # RS256 keypair. The code reads FILE PATHS, not the PEM contents,
+            # so both keys are projected from nomarkup-secrets as files by the
+            # jwt-keys volume below. The user service is the only component
+            # that holds the signing key — it mints tokens; everyone else only
+            # verifies.
+            - name: JWT_PRIVATE_KEY_PATH
+              value: "/etc/nomarkup/jwt/private.pem"
+            - name: JWT_PUBLIC_KEY_PATH
+              value: "/etc/nomarkup/jwt/public.pem"
             # REQUIRED. The user service refuses to start outside development
             # without this: registration must be able to send a verification
             # email, and deriving "skip verification" from a nil notification
@@ -89,6 +98,10 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /etc/nomarkup/jwt
+              readOnly: true
           resources:
             requests:
               memory: "128Mi"
@@ -96,3 +109,13 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+      volumes:
+        - name: jwt-keys
+          secret:
+            secretName: nomarkup-secrets
+            defaultMode: 0400
+            items:
+              - key: JWT_PRIVATE_KEY
+                path: private.pem
+              - key: JWT_PUBLIC_KEY
+                path: public.pem

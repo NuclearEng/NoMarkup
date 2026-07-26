@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/nacl/secretbox"
 )
@@ -55,9 +56,18 @@ func New(primary, previous *[KeySize]byte) *Cipher {
 }
 
 // FromEnv constructs a Cipher from ENCRYPTION_KEY (and optional
-// ENCRYPTION_KEY_PREVIOUS). In production (ENVIRONMENT=production) a missing
-// or invalid primary key returns an error. In development an ephemeral key
-// is generated and a WARN is logged so the service can still boot.
+// ENCRYPTION_KEY_PREVIOUS). A missing or invalid primary key is an ERROR
+// everywhere except development, where an ephemeral key is generated and a
+// WARN is logged so the service can still boot.
+//
+// The gate is "is this development?", NOT "is this production?". That
+// polarity matters: the previous `env == "production"` check meant STAGING —
+// which is explicitly ENVIRONMENT=staging in the overlay, and which runs
+// multiple replicas — silently generated a DIFFERENT random key per pod.
+// Every PII field written by one replica was undecryptable by another and by
+// the same pod after any restart: silent, permanent data corruption with a
+// log line that says "DEV ONLY". Anything not recognizably development now
+// fails closed.
 func FromEnv() (*Cipher, error) {
 	primaryB64 := os.Getenv("ENCRYPTION_KEY")
 	prevB64 := os.Getenv("ENCRYPTION_KEY_PREVIOUS")
@@ -65,7 +75,7 @@ func FromEnv() (*Cipher, error) {
 
 	primary, err := decodeKey(primaryB64)
 	if err != nil {
-		if env == "production" {
+		if !isDevelopmentEnv(env) {
 			return nil, fmt.Errorf("%w: %v", ErrKeyMissing, err)
 		}
 		slog.Warn("ENCRYPTION_KEY missing or invalid; generating ephemeral key (DEV ONLY)",
@@ -150,4 +160,12 @@ func (c *Cipher) DecryptString(ciphertext string) (string, error) {
 		}
 	}
 	return "", ErrDecryptFailed
+}
+
+// isDevelopmentEnv reports whether env names the development environment.
+// Trimmed and case-insensitive so a stray space or capital letter in a
+// ConfigMap cannot silently downgrade crypto; anything unrecognized is
+// treated as NOT development, which is the fail-closed direction.
+func isDevelopmentEnv(env string) bool {
+	return strings.EqualFold(strings.TrimSpace(env), "development")
 }

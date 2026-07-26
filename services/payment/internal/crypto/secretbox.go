@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/nacl/secretbox"
 )
@@ -66,7 +67,14 @@ func FromEnv() (*Cipher, error) {
 
 	primary, err := decodeKey(primaryB64)
 	if err != nil {
-		if env == "production" {
+		// Gate on "is this development?", NOT "is this production?". The
+		// previous polarity meant STAGING — explicitly ENVIRONMENT=staging in
+		// the overlay, running multiple replicas — silently generated a
+		// DIFFERENT random key per pod, so PII written by one replica was
+		// undecryptable by another and by the same pod after restart: silent,
+		// permanent corruption behind a log line reading "DEV ONLY". Anything
+		// not recognizably development now fails closed.
+		if !isDevelopmentEnv(env) {
 			return nil, fmt.Errorf("%w: %v", ErrKeyMissing, err)
 		}
 		slog.Warn("ENCRYPTION_KEY missing or invalid; generating ephemeral key (DEV ONLY)",
@@ -151,4 +159,12 @@ func (c *Cipher) DecryptString(ciphertext string) (string, error) {
 		}
 	}
 	return "", ErrDecryptFailed
+}
+
+// isDevelopmentEnv reports whether env names the development environment.
+// Trimmed and case-insensitive so a stray space or capital letter in a
+// ConfigMap cannot silently downgrade crypto; anything unrecognized is
+// treated as NOT development, which is the fail-closed direction.
+func isDevelopmentEnv(env string) bool {
+	return strings.EqualFold(strings.TrimSpace(env), "development")
 }

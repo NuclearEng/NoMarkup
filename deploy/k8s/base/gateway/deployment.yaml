@@ -39,6 +39,13 @@ spec:
           env:
             - name: GATEWAY_PORT
               value: "8080"
+            # RS256 verification key. The code reads a FILE PATH, not the PEM
+            # itself, so the key is projected from nomarkup-secrets as a file
+            # by the jwt-keys volume below. Documented as a Secret *value* in
+            # SECRETS.md previously, which meant the gateway would exit 1 at
+            # startup because the path was never set and the file never existed.
+            - name: JWT_PUBLIC_KEY_PATH
+              value: "/etc/nomarkup/jwt/public.pem"
             - name: USER_SERVICE_ADDR
               value: "user:50051"
             - name: JOB_SERVICE_ADDR
@@ -125,6 +132,10 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /etc/nomarkup/jwt
+              readOnly: true
           resources:
             requests:
               memory: "256Mi"
@@ -132,3 +143,14 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
+      volumes:
+        # Projects the RS256 keypair out of nomarkup-secrets as files. Only the
+        # public key is projected here — the gateway verifies tokens and must
+        # never hold the signing key.
+        - name: jwt-keys
+          secret:
+            secretName: nomarkup-secrets
+            defaultMode: 0400
+            items:
+              - key: JWT_PUBLIC_KEY
+                path: public.pem
