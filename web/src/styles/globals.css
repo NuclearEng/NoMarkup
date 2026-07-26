@@ -93,6 +93,20 @@ body {
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Elevation (Material-style surface depth) */
+  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --elevation-2: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --elevation-3: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --elevation-4: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --elevation-5: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  /* Motion — enter 250ms ease-out, exit 200ms ease-in */
+  --duration-enter: 250ms;
+  --duration-exit: 200ms;
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark {
@@ -157,6 +171,14 @@ body {
   --status-in-progress: 38 80% 45%;
   --status-completed: 142 60% 40%;
   --status-disputed: 0 63% 45%;
+
+  /* Elevation on dark terminal surfaces — slightly stronger ambient */
+  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --elevation-2: 0 1px 3px 0 rgb(0 0 0 / 0.45), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --elevation-3: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --elevation-4: 0 10px 15px -3px rgb(0 0 0 / 0.55), 0 4px 6px -4px rgb(0 0 0 / 0.45);
+  --elevation-5: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -231,6 +253,8 @@ body {
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Core semantic surfaces */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -262,6 +286,76 @@ body {
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Brand gold — utilities: bg-brand-gold, text-brand-gold, etc. */
+  --color-brand-gold: var(--brand-gold);
+  --color-brand-gold-dim: var(--brand-gold-dim);
+  --color-brand-gold-bright: var(--brand-gold-bright);
+  --color-brand-gold-glow: var(--brand-gold-glow);
+
+  /* Trust tiers — bg-trust-high, text-trust-low, … */
+  --color-trust-low: hsl(var(--trust-low));
+  --color-trust-medium: hsl(var(--trust-medium));
+  --color-trust-high: hsl(var(--trust-high));
+  --color-trust-elite: hsl(var(--trust-elite));
+
+  /* Bid state — bg-bid-active, text-bid-winning, … */
+  --color-bid-active: hsl(var(--bid-active));
+  --color-bid-winning: hsl(var(--bid-winning));
+  --color-bid-expired: hsl(var(--bid-expired));
+
+  /* Job status — bg-status-open, text-status-disputed, … */
+  --color-status-open: hsl(var(--status-open));
+  --color-status-in-progress: hsl(var(--status-in-progress));
+  --color-status-completed: hsl(var(--status-completed));
+  --color-status-disputed: hsl(var(--status-disputed));
+
+  /* Apple system colors (optional semantic aliases) */
+  --color-apple-blue: var(--apple-blue);
+  --color-apple-green: var(--apple-green);
+  --color-apple-red: var(--apple-red);
+  --color-apple-orange: var(--apple-orange);
+  --color-apple-yellow: var(--apple-yellow);
+  --color-apple-purple: var(--apple-purple);
+  --color-apple-pink: var(--apple-pink);
+  --color-apple-gray: var(--apple-gray);
+  --color-apple-gray2: var(--apple-gray2);
+  --color-apple-gray3: var(--apple-gray3);
+  --color-apple-gray4: var(--apple-gray4);
+  --color-apple-gray5: var(--apple-gray5);
+  --color-apple-gray6: var(--apple-gray6);
+
+  /* Elevation — shadow-elevation-1 … shadow-elevation-5 */
+  --shadow-elevation-1: var(--elevation-1);
+  --shadow-elevation-2: var(--elevation-2);
+  --shadow-elevation-3: var(--elevation-3);
+  --shadow-elevation-4: var(--elevation-4);
+  --shadow-elevation-5: var(--elevation-5);
+
+  /* Motion — duration-enter / duration-exit, ease-enter / ease-exit */
+  --duration-enter: 250ms;
+  --duration-exit: 200ms;
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Strict type scale (xs…4xl) with line heights */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
 }
 
 /* Smooth page transitions */

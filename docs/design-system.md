@@ -51,8 +51,50 @@ All four principles — **Perceivable, Operable, Understandable, Robust** — at
 
 ## Tailwind Design Tokens
 
+**Live source of truth:** `web/src/styles/globals.css` (`:root` / `.dark` CSS vars + `@theme inline`).
+Tailwind v4 maps `--color-*`, `--shadow-*`, `--duration-*`, `--ease-*`, and `--text-*` from `@theme`.
+`web/tailwind.config.ts` mirrors the same tokens for editor/intellisense and v3-compat paths.
+
+### Brand
+| Token | Utilities | Notes |
+|-------|-----------|--------|
+| `--brand-gold` / dim / bright / glow | `bg-brand-gold`, `text-brand-gold`, … | Prefer tokens over raw hex. Existing `.gold-text` / `.gold-gradient` / `.gold-glow` utilities stay. |
+
+### Trust / bid / status (semantic)
+| Group | Keys | Utilities |
+|-------|------|-----------|
+| trust | low, medium, high, elite | `bg-trust-high`, `text-trust-low`, … |
+| bid | active, winning, expired | `bg-bid-active`, `text-bid-winning`, … |
+| status | open, in-progress, completed, disputed | `bg-status-open`, `text-status-disputed`, … |
+
+HSL channel vars (`--trust-low: 0 84% 60%`) are wrapped as `hsl(var(--trust-*))` in `@theme`.
+
+### Elevation & motion
+- Shadows: `--elevation-1`…`5` → `shadow-elevation-1`…`5`
+- Enter: `--duration-enter: 250ms` + `--ease-enter` → `duration-enter` / `ease-enter`
+- Exit: `--duration-exit: 200ms` + `--ease-exit` → `duration-exit` / `ease-exit`
+- Dark terminal palette background remains `#070b14` (`.dark`)
+
+### Type scale (strict — xs…4xl only)
 ```typescript
-// tailwind.config.ts — canonical tokens
+// Mirrored in tailwind.config.ts + @theme --text-*
+xs: ['0.75rem', { lineHeight: '1rem' }],
+sm: ['0.875rem', { lineHeight: '1.25rem' }],
+base: ['1rem', { lineHeight: '1.5rem' }],
+lg: ['1.125rem', { lineHeight: '1.75rem' }],
+xl: ['1.25rem', { lineHeight: '1.75rem' }],
+'2xl': ['1.5rem', { lineHeight: '2rem' }],
+'3xl': ['1.875rem', { lineHeight: '2.25rem' }],
+'4xl': ['2.25rem', { lineHeight: '2.5rem' }],
+```
+
+### Brand mark
+- SVG component: `web/src/components/layout/BrandMark.tsx` (dual rings + geometric N; `text-brand-gold` / currentColor only)
+- Wordmark + mark: `web/src/components/layout/Logo.tsx`
+- Favicon / Apple touch: `web/src/app/icon.tsx` (32px), `web/src/app/apple-icon.tsx` (180px) — code-generated ImageResponse (inline hex OK; not React component tree)
+
+```typescript
+// tailwind.config.ts — canonical shape (values resolve via CSS vars)
 const config = {
   theme: {
     extend: {
@@ -65,23 +107,18 @@ const config = {
         accent: { DEFAULT: '', foreground: '' },
         card: { DEFAULT: '', foreground: '' },
         border: '', input: '', ring: '', background: '', foreground: '',
-        // NoMarkup-specific
+        brand: { gold: '', 'gold-dim': '', 'gold-bright': '', 'gold-glow': '' },
         trust: { low: '', medium: '', high: '', elite: '' },
         bid: { active: '', winning: '', expired: '' },
-        status: { open: '', in_progress: '', completed: '', disputed: '' },
+        status: { open: '', 'in-progress': '', completed: '', disputed: '' },
       },
       borderRadius: { lg: '0.75rem', md: '0.5rem', sm: '0.25rem' },
-      fontSize: {
-        // Strict type scale — only these sizes
-        xs: ['0.75rem', { lineHeight: '1rem' }],
-        sm: ['0.875rem', { lineHeight: '1.25rem' }],
-        base: ['1rem', { lineHeight: '1.5rem' }],
-        lg: ['1.125rem', { lineHeight: '1.75rem' }],
-        xl: ['1.25rem', { lineHeight: '1.75rem' }],
-        '2xl': ['1.5rem', { lineHeight: '2rem' }],
-        '3xl': ['1.875rem', { lineHeight: '2.25rem' }],
-        '4xl': ['2.25rem', { lineHeight: '2.5rem' }],
+      fontSize: { /* xs…4xl with lineHeight — see above */ },
+      boxShadow: {
+        'elevation-1': 'var(--elevation-1)',
+        /* … elevation-2..5 */
       },
+      transitionDuration: { enter: 'var(--duration-enter)', exit: 'var(--duration-exit)' },
     },
   },
 }

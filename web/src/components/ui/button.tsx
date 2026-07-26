@@ -21,11 +21,11 @@ const buttonVariants = cva(
         glass:
           'glass-button text-foreground hover:text-foreground',
         accept:
-          'bg-emerald-600 text-white shadow-sm hover:bg-emerald-500 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:scale-[0.97] animate-accept-attention',
+          'bg-bid-winning text-white shadow-sm hover:bg-trust-high hover:shadow-[0_0_20px_hsl(var(--trust-high)_/_0.35)] hover:-translate-y-0.5 active:scale-[0.97] animate-accept-attention',
         bid:
-          'bg-blue-600 text-white shadow-sm hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-[0.97]',
+          'bg-bid-active text-white shadow-sm hover:bg-status-open hover:shadow-[0_0_20px_hsl(var(--bid-active)_/_0.35)] active:scale-[0.97]',
         urgent:
-          'bg-amber-500 text-black shadow-sm hover:bg-amber-400 animate-[gold-pulse_2s_ease-in-out_infinite]',
+          'bg-trust-medium text-black shadow-sm hover:bg-trust-medium/90 animate-[gold-pulse_2s_ease-in-out_infinite]',
         premium:
           'gold-gradient text-white shadow-sm hover:shadow-[0_0_24px_var(--brand-gold-glow)] hover:-translate-y-0.5 relative overflow-hidden after:absolute after:inset-0 after:translate-x-[-100%] after:bg-gradient-to-r after:from-transparent after:via-white/30 after:to-transparent after:animate-[shimmer-sweep_3s_ease-in-out_infinite]',
       },

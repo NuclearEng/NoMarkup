@@ -1,13 +1,13 @@
 import { ImageResponse } from 'next/og';
 
 export const size = {
-  width: 32,
-  height: 32,
+  width: 180,
+  height: 180,
 };
 export const contentType = 'image/png';
 
-/** Favicon: deep navy + gold geometric N with dual rings (code-generated). */
-export default function Icon() {
+/** Apple touch icon: deep navy + gold geometric N with dual rings. */
+export default function AppleIcon() {
   return new ImageResponse(
     (
       <div
@@ -18,18 +18,28 @@ export default function Icon() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          borderRadius: '7px',
           position: 'relative',
         }}
       >
+        {/* Soft gold glow */}
+        <div
+          style={{
+            position: 'absolute',
+            width: 120,
+            height: 120,
+            borderRadius: '9999px',
+            background: 'rgba(201, 168, 76, 0.12)',
+            display: 'flex',
+          }}
+        />
         {/* Outer ring */}
         <div
           style={{
             position: 'absolute',
-            width: 28,
-            height: 28,
+            width: 148,
+            height: 148,
             borderRadius: '9999px',
-            border: '1.5px solid rgba(201, 168, 76, 0.45)',
+            border: '3px solid rgba(201, 168, 76, 0.4)',
             display: 'flex',
           }}
         />
@@ -37,16 +47,16 @@ export default function Icon() {
         <div
           style={{
             position: 'absolute',
-            width: 22,
-            height: 22,
+            width: 118,
+            height: 118,
             borderRadius: '9999px',
-            border: '1.5px solid #d4af57',
+            border: '3px solid #d4af57',
             display: 'flex',
           }}
         />
         <span
           style={{
-            fontSize: 16,
+            fontSize: 88,
             color: '#c9a84c',
             fontWeight: 800,
             fontFamily: 'sans-serif',
