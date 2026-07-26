@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -25,6 +28,107 @@ import (
 	stripesub "github.com/stripe/stripe-go/v82/subscription"
 	"github.com/stripe/stripe-go/v82/transfer"
 )
+
+// Stripe backend tuning.
+//
+// stripe-go's out-of-the-box backend is built for batch jobs, not for a
+// request-serving payment service: its shared http.Client uses an 80s timeout
+// and the backend retries twice on top of that. A single unlucky call can
+// therefore occupy a goroutine — and the pgx pool connection it is holding —
+// for 80s + 0.5s + 80s + ~2s + 80s ≈ 4 minutes, long after the gateway's 15s
+// http.Server WriteTimeout (gateway/cmd/server/main.go) has already abandoned
+// the client. That is the shortest path from "Stripe is degraded" to "the
+// payment service is out of DB connections".
+//
+// The numbers below are chosen against the budgets in CLAUDE.md §8 (API p99
+// < 500ms) and the gateway's 15s write timeout:
+//
+//   - stripeAttemptTimeout = 5s bounds ONE HTTP attempt. It is 10x the p99 API
+//     budget, so it never trips on a healthy Stripe (p99 is a few hundred ms),
+//     but it is 16x tighter than the SDK default. It is deliberately not set
+//     near 500ms: Stripe is a third party we do not control, and cutting off a
+//     mutating call that Stripe is actively processing costs more (ambiguous
+//     writes) than waiting a few seconds.
+//   - stripeMaxNetworkRetries = 1 still absorbs a genuine transient blip (a
+//     dropped connection, a 500, a 409 lock contention) but caps the worst case
+//     at 5s + ~0.5s backoff + 5s ≈ 10.5s, which fits inside the gateway's 15s
+//     write timeout instead of overrunning it by 16x.
+//
+// These are only the backstop. The primary control is params.Context: every
+// call in this file now propagates the caller's context, so a caller with a
+// tighter deadline (or a client that hung up) cancels the in-flight request
+// immediately, and stripe-go's shouldRetry declines to retry once the request
+// context is in error.
+const (
+	stripeAttemptTimeout          = 5 * time.Second
+	stripeMaxNetworkRetries int64 = 1
+	stripeIdleConnsPerHost        = 32
+)
+
+// stripeBackendOnce guards the one-time installation of the bounded backend.
+// stripe-go's resource clients resolve their backend from package-level state,
+// so this is the only place the configuration can be applied; the Once keeps
+// repeated NewStripeService calls (tests, multiple constructions) from
+// allocating a new backend each time.
+var stripeBackendOnce sync.Once
+
+// newStripeBackendConfig returns the bounded backend configuration. Exposed as
+// a function (rather than inlined) so tests can assert the timeout/retry values
+// actually applied to the SDK.
+func newStripeBackendConfig() *stripe.BackendConfig {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = stripeIdleConnsPerHost
+	return &stripe.BackendConfig{
+		HTTPClient: &http.Client{
+			Timeout:   stripeAttemptTimeout,
+			Transport: transport,
+		},
+		MaxNetworkRetries: stripe.Int64(stripeMaxNetworkRetries),
+	}
+}
+
+// configureStripeBackend installs the bounded backend on the API surface, the
+// only stripe-go backend this service talks to (every call in this package and
+// in stripe_deleter.go goes through the standard API resource clients).
+func configureStripeBackend() {
+	stripeBackendOnce.Do(func() {
+		stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, newStripeBackendConfig()))
+		slog.Info("stripe backend configured",
+			"attempt_timeout", stripeAttemptTimeout.String(),
+			"max_network_retries", stripeMaxNetworkRetries,
+		)
+	})
+}
+
+// stripeIdempotencyKey builds a deterministic, length-bounded idempotency key
+// from a stable logical scope plus the arguments that identify the operation.
+//
+// It hashes rather than concatenates because Stripe rejects keys longer than
+// 255 characters (stripe-go returns an error before the request leaves the
+// process) and some inputs — email addresses, bank-account tokens — can get
+// close to that on their own. The output is a pure function of its inputs: the
+// same logical operation always produces the same key, which is what makes
+// stripe-go's network retries safe on mutating calls.
+func stripeIdempotencyKey(scope string, parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return scope + ":" + hex.EncodeToString(sum[:])
+}
+
+// getPlatformAccount retrieves the account that owns the configured secret key.
+//
+// stripe-go's account.Get() takes no *stripe.AccountParams, so there is no way
+// to hand it a context; calling it would leave two uncancellable requests in
+// the external-bank-account flows. This issues the same GET /v1/account against
+// the configured backend with a context-carrying params struct.
+func getPlatformAccount(ctx context.Context) (*stripe.Account, error) {
+	acct := &stripe.Account{}
+	params := &stripe.AccountParams{}
+	params.Context = ctx
+	if err := stripe.GetBackend(stripe.APIBackend).Call(http.MethodGet, "/v1/account", stripe.Key, params, acct); err != nil {
+		return nil, err
+	}
+	return acct, nil
+}
 
 // StripeService wraps Stripe SDK operations.
 type StripeService struct {
@@ -63,6 +167,11 @@ func NewStripeService(env string) *StripeService {
 	devMode := placeholder // implies env=="development" by the check above
 	if devMode {
 		slog.Warn("Stripe service running in dev mode (ENVIRONMENT=development with placeholder/missing STRIPE_SECRET_KEY); payment/subscription flows use an in-memory store that resets on restart")
+	} else {
+		// Only when we will actually talk to Stripe. Dev mode short-circuits
+		// every method before the SDK, so configuring a backend there would be
+		// pure overhead and would mutate global SDK state from tests.
+		configureStripeBackend()
 	}
 	return &StripeService{devMode: devMode, dev: newDevStore()}
 }
@@ -131,7 +240,13 @@ func (s *StripeService) CreateStripeAccount(ctx context.Context, email, business
 		}
 	}
 
-	acct, err := observability.TraceStripeCall(ctx, "Account.Create", func(context.Context) (*stripe.Account, error) {
+	// Mutating call: a network retry must not create a second Connect account
+	// for the same provider. The email is the stable identity of the account
+	// being created, so the key is derived from it.
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("connect-account", email))
+
+	acct, err := observability.TraceStripeCall(ctx, "Account.Create", func(ctx context.Context) (*stripe.Account, error) {
+		params.Context = ctx
 		return account.New(params)
 	})
 	if err != nil {
@@ -154,7 +269,11 @@ func (s *StripeService) GetOnboardingLink(ctx context.Context, accountID, return
 		RefreshURL: stripe.String(refreshURL),
 	}
 
-	link, err := observability.TraceStripeCall(ctx, "AccountLink.Create", func(context.Context) (*stripe.AccountLink, error) {
+	// No idempotency key by design: an AccountLink is a single-use, short-lived
+	// onboarding URL. Replaying a key would hand the provider back an already
+	// consumed or expired link instead of a fresh one.
+	link, err := observability.TraceStripeCall(ctx, "AccountLink.Create", func(ctx context.Context) (*stripe.AccountLink, error) {
+		params.Context = ctx
 		return accountlink.New(params)
 	})
 	if err != nil {
@@ -175,8 +294,10 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 		}, nil
 	}
 
-	acct, err := observability.TraceStripeCall(ctx, "Account.Get", func(context.Context) (*stripe.Account, error) {
-		return account.GetByID(accountID, nil)
+	acct, err := observability.TraceStripeCall(ctx, "Account.Get", func(ctx context.Context) (*stripe.Account, error) {
+		params := &stripe.AccountParams{}
+		params.Context = ctx
+		return account.GetByID(accountID, params)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get account status: %w", err)
@@ -207,7 +328,10 @@ func (s *StripeService) GetDashboardLink(ctx context.Context, accountID string) 
 		Account: stripe.String(accountID),
 	}
 
-	link, err := observability.TraceStripeCall(ctx, "LoginLink.Create", func(context.Context) (*stripe.LoginLink, error) {
+	// No idempotency key by design: a LoginLink is a single-use dashboard URL
+	// with a short TTL — see the AccountLink comment above.
+	link, err := observability.TraceStripeCall(ctx, "LoginLink.Create", func(ctx context.Context) (*stripe.LoginLink, error) {
+		params.Context = ctx
 		return loginlink.New(params)
 	})
 	if err != nil {
@@ -231,7 +355,14 @@ func (s *StripeService) CreateSetupIntent(ctx context.Context, customerID string
 		params.AddMetadata("platform_customer_id", customerID)
 	}
 
-	si, err := observability.TraceStripeCall(ctx, "SetupIntent.Create", func(context.Context) (*stripe.SetupIntent, error) {
+	// No idempotency key by design: nothing in the arguments identifies WHICH
+	// setup attempt this is. A key derived from customerID alone would pin one
+	// SetupIntent per customer for the 24h key window, so a customer adding a
+	// second card (or retrying after abandoning the first) would be handed the
+	// stale intent. A random key would defeat the purpose. SetupIntent creation
+	// moves no money, so an extra unconfirmed intent is harmless.
+	si, err := observability.TraceStripeCall(ctx, "SetupIntent.Create", func(ctx context.Context) (*stripe.SetupIntent, error) {
+		params.Context = ctx
 		return setupintent.New(params)
 	})
 	if err != nil {
@@ -294,10 +425,12 @@ func (s *StripeService) GetSetupIntentStatus(ctx context.Context, clientSecret, 
 		return SetupIntentStatus{}, fmt.Errorf("get setup intent status: malformed client secret")
 	}
 
-	si, err := observability.TraceStripeCall(ctx, "SetupIntent.Get", func(context.Context) (*stripe.SetupIntent, error) {
-		return setupintent.Get(id, &stripe.SetupIntentParams{
+	si, err := observability.TraceStripeCall(ctx, "SetupIntent.Get", func(ctx context.Context) (*stripe.SetupIntent, error) {
+		getParams := &stripe.SetupIntentParams{
 			ClientSecret: stripe.String(clientSecret),
-		})
+		}
+		getParams.Context = ctx
+		return setupintent.Get(id, getParams)
 	})
 	if err != nil {
 		return SetupIntentStatus{}, fmt.Errorf("get setup intent status: %w", err)
@@ -332,7 +465,12 @@ func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID
 	// The span covers the whole iteration, not each page: the Stripe iterator
 	// fetches lazily, so ending it at List() would report ~0ms and hide the
 	// actual pagination cost.
-	_, span := observability.StartStripeSpan(ctx, "PaymentMethod.List")
+	spanCtx, span := observability.StartStripeSpan(ctx, "PaymentMethod.List")
+
+	// ListParams.Context is carried onto every page request the iterator makes
+	// (stripe.ListParams.ToParams), so a cancelled caller stops the pagination
+	// rather than walking the whole customer's history.
+	params.Context = spanCtx
 
 	var methods []domain.PaymentMethod
 	i := paymentmethod.List(params)
@@ -365,8 +503,14 @@ func (s *StripeService) DeletePaymentMethod(ctx context.Context, paymentMethodID
 		return nil
 	}
 
-	_, err := observability.TraceStripeCall(ctx, "PaymentMethod.Detach", func(context.Context) (*stripe.PaymentMethod, error) {
-		return paymentmethod.Detach(paymentMethodID, nil)
+	_, err := observability.TraceStripeCall(ctx, "PaymentMethod.Detach", func(ctx context.Context) (*stripe.PaymentMethod, error) {
+		params := &stripe.PaymentMethodDetachParams{}
+		params.Context = ctx
+		// Mutating POST: the payment method id fully identifies the logical
+		// operation, so a network retry replays the original detach instead of
+		// erroring with "already detached".
+		params.IdempotencyKey = stripe.String(stripeIdempotencyKey("pm-detach", paymentMethodID))
+		return paymentmethod.Detach(paymentMethodID, params)
 	})
 	if err != nil {
 		return fmt.Errorf("delete payment method: %w", err)
@@ -407,7 +551,8 @@ func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+		params.Context = ctx
 		return paymentintent.New(params)
 	})
 	if err != nil {
@@ -430,7 +575,8 @@ func (s *StripeService) CapturePaymentIntent(ctx context.Context, paymentIntentI
 
 	params := &stripe.PaymentIntentCaptureParams{}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
-	_, err := observability.TraceStripeCall(ctx, "PaymentIntent.Capture", func(context.Context) (*stripe.PaymentIntent, error) {
+	_, err := observability.TraceStripeCall(ctx, "PaymentIntent.Capture", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+		params.Context = ctx
 		return paymentintent.Capture(paymentIntentID, params)
 	})
 	if err != nil {
@@ -460,7 +606,8 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	if strings.HasPrefix(paymentIntentID, "pi_") {
 		getParams := &stripe.PaymentIntentParams{}
 		getParams.AddExpand("latest_charge")
-		pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(context.Context) (*stripe.PaymentIntent, error) {
+		pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+			getParams.Context = ctx
 			return paymentintent.Get(paymentIntentID, getParams)
 		})
 		if err != nil {
@@ -492,7 +639,8 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(context.Context) (*stripe.Transfer, error) {
+	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(ctx context.Context) (*stripe.Transfer, error) {
+		params.Context = ctx
 		return transfer.New(params)
 	})
 	if err != nil {
@@ -526,7 +674,8 @@ func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents 
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(context.Context) (*stripe.Transfer, error) {
+	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(ctx context.Context) (*stripe.Transfer, error) {
+		params.Context = ctx
 		return transfer.New(params)
 	})
 	if err != nil {
@@ -555,7 +704,8 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	r, err := observability.TraceStripeCall(ctx, "Refund.Create", func(context.Context) (*stripe.Refund, error) {
+	r, err := observability.TraceStripeCall(ctx, "Refund.Create", func(ctx context.Context) (*stripe.Refund, error) {
+		params.Context = ctx
 		return refund.New(params)
 	})
 	if err != nil {
@@ -595,7 +745,8 @@ func (s *StripeService) CreateConnectInstantPayout(ctx context.Context, amountCe
 	params.SetStripeAccount(connectAccountID)
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	p, err := observability.TraceStripeCall(ctx, "Payout.Create", func(context.Context) (*stripe.Payout, error) {
+	p, err := observability.TraceStripeCall(ctx, "Payout.Create", func(ctx context.Context) (*stripe.Payout, error) {
+		params.Context = ctx
 		return payout.New(params)
 	})
 	if err != nil {
@@ -640,9 +791,7 @@ func (s *StripeService) CreatePlatformExternalBankAccount(ctx context.Context, b
 	}
 
 	// Resolve the platform's own account (the account tied to the secret key).
-	platformAcct, err := observability.TraceStripeCall(ctx, "Account.Get", func(context.Context) (*stripe.Account, error) {
-		return account.Get()
-	})
+	platformAcct, err := observability.TraceStripeCall(ctx, "Account.Get", getPlatformAccount)
 	if err != nil {
 		return nil, fmt.Errorf("create platform external bank account: resolve platform account: %w", err)
 	}
@@ -658,7 +807,14 @@ func (s *StripeService) CreatePlatformExternalBankAccount(ctx context.Context, b
 		params.AccountHolderType = stripe.String(holderType)
 	}
 
-	ba, err := observability.TraceStripeCall(ctx, "BankAccount.Create", func(context.Context) (*stripe.BankAccount, error) {
+	// Mutating call: a bank_account token is single-use and unique per
+	// tokenization, so it deterministically identifies this attach. Without a
+	// key, a network retry would either double-attach or fail on the consumed
+	// token.
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("platform-bank-attach", bankAccountToken))
+
+	ba, err := observability.TraceStripeCall(ctx, "BankAccount.Create", func(ctx context.Context) (*stripe.BankAccount, error) {
+		params.Context = ctx
 		return bankaccount.New(params)
 	})
 	if err != nil {
@@ -692,9 +848,7 @@ func (s *StripeService) DeletePlatformExternalBankAccount(ctx context.Context, e
 		return nil
 	}
 
-	platformAcct, err := observability.TraceStripeCall(ctx, "Account.Get", func(context.Context) (*stripe.Account, error) {
-		return account.Get()
-	})
+	platformAcct, err := observability.TraceStripeCall(ctx, "Account.Get", getPlatformAccount)
 	if err != nil {
 		return fmt.Errorf("delete platform external bank account: resolve platform account: %w", err)
 	}
@@ -702,7 +856,13 @@ func (s *StripeService) DeletePlatformExternalBankAccount(ctx context.Context, e
 	params := &stripe.BankAccountParams{
 		Account: stripe.String(platformAcct.ID),
 	}
-	if _, err := observability.TraceStripeCall(ctx, "BankAccount.Delete", func(context.Context) (*stripe.BankAccount, error) {
+	// DELETE is a write method: stripe-go would otherwise stamp a RANDOM
+	// idempotency key, so a network retry after an ambiguous timeout would be
+	// treated as a fresh request. The external account id fully identifies the
+	// detach.
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("platform-bank-detach", externalAccountID))
+	if _, err := observability.TraceStripeCall(ctx, "BankAccount.Delete", func(ctx context.Context) (*stripe.BankAccount, error) {
+		params.Context = ctx
 		return bankaccount.Del(externalAccountID, params)
 	}); err != nil {
 		return fmt.Errorf("delete platform external bank account: %w", err)
@@ -753,7 +913,8 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+		params.Context = ctx
 		return paymentintent.New(params)
 	})
 	if err != nil {
@@ -806,7 +967,8 @@ func (s *StripeService) CreateMarketplaceTransfer(
 		if strings.HasPrefix(paymentIntentID, "pi_") {
 			getParams := &stripe.PaymentIntentParams{}
 			getParams.AddExpand("latest_charge")
-			pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(context.Context) (*stripe.PaymentIntent, error) {
+			pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+				getParams.Context = ctx
 				return paymentintent.Get(paymentIntentID, getParams)
 			})
 			if err != nil {
@@ -822,7 +984,8 @@ func (s *StripeService) CreateMarketplaceTransfer(
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(context.Context) (*stripe.Transfer, error) {
+	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(ctx context.Context) (*stripe.Transfer, error) {
+		params.Context = ctx
 		return transfer.New(params)
 	})
 	if err != nil {
@@ -859,7 +1022,8 @@ func (s *StripeService) CreateMarketplaceRefund(
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	r, err := observability.TraceStripeCall(ctx, "Refund.Create", func(context.Context) (*stripe.Refund, error) {
+	r, err := observability.TraceStripeCall(ctx, "Refund.Create", func(ctx context.Context) (*stripe.Refund, error) {
+		params.Context = ctx
 		return refund.New(params)
 	})
 	if err != nil {
@@ -896,7 +1060,8 @@ func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amoun
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+		params.Context = ctx
 		return paymentintent.New(params)
 	})
 	if err != nil {
@@ -923,7 +1088,8 @@ func (s *StripeService) CreateInsurancePaymentIntent(ctx context.Context, amount
 	params.AddMetadata("policy_id", policyID)
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+		params.Context = ctx
 		return paymentintent.New(params)
 	})
 	if err != nil {
@@ -954,7 +1120,13 @@ func (s *StripeService) CreateStripeSubscription(ctx context.Context, customerID
 	params.AddExpand("latest_invoice.payment_intent")
 	params.AddMetadata("platform_customer_id", customerID)
 
-	sub, err := observability.TraceStripeCall(ctx, "Subscription.Create", func(context.Context) (*stripe.Subscription, error) {
+	// No idempotency key by design: (customerID, priceID, paymentMethodID) does
+	// not identify a unique logical subscription. A customer who cancels and
+	// re-subscribes to the same plan inside Stripe's 24h key window would be
+	// handed the cancelled subscription back instead of a new one. Duplicate
+	// creation is guarded upstream by the subscription table, not here.
+	sub, err := observability.TraceStripeCall(ctx, "Subscription.Create", func(ctx context.Context) (*stripe.Subscription, error) {
+		params.Context = ctx
 		return stripesub.New(params)
 	})
 	if err != nil {
@@ -977,8 +1149,14 @@ func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubs
 	}
 
 	if cancelImmediately {
-		_, err := observability.TraceStripeCall(ctx, "Subscription.Cancel", func(context.Context) (*stripe.Subscription, error) {
-			return stripesub.Cancel(stripeSubscriptionID, nil)
+		_, err := observability.TraceStripeCall(ctx, "Subscription.Cancel", func(ctx context.Context) (*stripe.Subscription, error) {
+			params := &stripe.SubscriptionCancelParams{}
+			params.Context = ctx
+			// The subscription id fully identifies this cancellation, so a
+			// network retry replays it instead of erroring on an already
+			// cancelled subscription.
+			params.IdempotencyKey = stripe.String(stripeIdempotencyKey("sub-cancel", stripeSubscriptionID))
+			return stripesub.Cancel(stripeSubscriptionID, params)
 		})
 		if err != nil {
 			return fmt.Errorf("cancel stripe subscription: %w", err)
@@ -987,7 +1165,9 @@ func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubs
 		params := &stripe.SubscriptionParams{
 			CancelAtPeriodEnd: stripe.Bool(true),
 		}
-		_, err := observability.TraceStripeCall(ctx, "Subscription.Update", func(context.Context) (*stripe.Subscription, error) {
+		params.IdempotencyKey = stripe.String(stripeIdempotencyKey("sub-cancel-at-period-end", stripeSubscriptionID))
+		_, err := observability.TraceStripeCall(ctx, "Subscription.Update", func(ctx context.Context) (*stripe.Subscription, error) {
+			params.Context = ctx
 			return stripesub.Update(stripeSubscriptionID, params)
 		})
 		if err != nil {
@@ -1010,8 +1190,10 @@ func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubs
 	}
 
 	// Get current subscription to find the item ID.
-	sub, err := observability.TraceStripeCall(ctx, "Subscription.Get", func(context.Context) (*stripe.Subscription, error) {
-		return stripesub.Get(stripeSubscriptionID, nil)
+	sub, err := observability.TraceStripeCall(ctx, "Subscription.Get", func(ctx context.Context) (*stripe.Subscription, error) {
+		getParams := &stripe.SubscriptionParams{}
+		getParams.Context = ctx
+		return stripesub.Get(stripeSubscriptionID, getParams)
 	})
 	if err != nil {
 		return "", 0, fmt.Errorf("get stripe subscription for update: %w", err)
@@ -1032,8 +1214,15 @@ func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubs
 		},
 		ProrationBehavior: stripe.String("create_prorations"),
 	}
+	// Mutating and money-affecting: ProrationBehavior=create_prorations writes
+	// proration line items. Without a key, a stripe-go network retry after an
+	// ambiguous timeout would prorate the same plan change twice. The
+	// (subscription, item, new price) triple deterministically identifies the
+	// change.
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("sub-update", stripeSubscriptionID, itemID, newStripePriceID))
 
-	updated, err := observability.TraceStripeCall(ctx, "Subscription.Update", func(context.Context) (*stripe.Subscription, error) {
+	updated, err := observability.TraceStripeCall(ctx, "Subscription.Update", func(ctx context.Context) (*stripe.Subscription, error) {
+		params.Context = ctx
 		return stripesub.Update(stripeSubscriptionID, params)
 	})
 	if err != nil {
@@ -1056,7 +1245,11 @@ func (s *StripeService) ListStripeInvoices(ctx context.Context, stripeSubscripti
 	params.Filters.AddFilter("limit", "", "50")
 
 	// One span for the whole iteration — see ListPaymentMethods for why.
-	_, span := observability.StartStripeSpan(ctx, "Invoice.List")
+	spanCtx, span := observability.StartStripeSpan(ctx, "Invoice.List")
+
+	// Carried onto every page the iterator fetches, so a cancelled caller stops
+	// paginating immediately.
+	params.Context = spanCtx
 
 	var invoices []*domain.Invoice
 	i := invoice.List(params)

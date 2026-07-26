@@ -94,8 +94,18 @@ func (d *StripeDeleter) DeleteCustomer(ctx context.Context, customerID string) (
 		return "skipped_no_client", nil
 	}
 
-	span := startDeleteSpan(ctx, "Customer.Delete")
-	_, err := d.customerClient.Del(customerID, nil)
+	spanCtx, span := startDeleteSpan(ctx, "Customer.Delete")
+	params := &stripe.CustomerParams{}
+	// Without a Context the SDK ignores the caller entirely: a GDPR cron tick
+	// that has been cancelled would still hold this goroutine for the backend's
+	// full timeout-plus-retries budget.
+	params.Context = spanCtx
+	// DELETE is a write method, so stripe-go stamps a RANDOM idempotency key
+	// when none is supplied. The customer id deterministically identifies the
+	// erasure, which makes the backend's network retry a replay rather than a
+	// second distinct request.
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("gdpr-customer-delete", customerID))
+	_, err := d.customerClient.Del(customerID, params)
 	observability.EndStripeSpan(span, err)
 	if err == nil {
 		return "deleted", nil
@@ -119,8 +129,11 @@ func (d *StripeDeleter) DeleteConnectAccount(ctx context.Context, accountID stri
 		return "skipped_no_client", nil
 	}
 
-	span := startDeleteSpan(ctx, "Account.Delete")
-	_, err := d.accountClient.Del(accountID, nil)
+	spanCtx, span := startDeleteSpan(ctx, "Account.Delete")
+	params := &stripe.AccountParams{}
+	params.Context = spanCtx
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("gdpr-account-delete", accountID))
+	_, err := d.accountClient.Del(accountID, params)
 	observability.EndStripeSpan(span, err)
 	if err == nil {
 		return "deleted", nil
@@ -133,12 +146,12 @@ func (d *StripeDeleter) DeleteConnectAccount(ctx context.Context, accountID stri
 	return "", err
 }
 
-// startDeleteSpan opens the Stripe client span for a GDPR deletion call. The
+// startDeleteSpan opens the Stripe client span for a GDPR deletion call and
+// returns the span-annotated context to hand to the SDK via params.Context. The
 // deleter uses injected client interfaces rather than the package-level SDK
 // functions, so it cannot use the TraceStripeCall wrapper's closure form.
-func startDeleteSpan(ctx context.Context, op string) trace.Span {
-	_, span := observability.StartStripeSpan(ctx, op)
-	return span
+func startDeleteSpan(ctx context.Context, op string) (context.Context, trace.Span) {
+	return observability.StartStripeSpan(ctx, op)
 }
 
 type classifyKind int
