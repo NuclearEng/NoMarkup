@@ -271,8 +271,13 @@ func main() {
 
 	s := grpclib.NewServer(
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
-		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
+		// RequestID first (it seeds the context both the recovery and logging
+		// interceptors read), then recovery — outside logging so a panic in
+		// either the logging interceptor or the handler is contained (RES-03).
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, recoveryUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
+		grpclib.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
+		grpclib.KeepaliveParams(grpcKeepaliveParams()),
 	)
 	grpcserver.Register(s, srv)
 

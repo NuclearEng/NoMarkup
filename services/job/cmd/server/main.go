@@ -235,8 +235,13 @@ func main() {
 
 	s := grpclib.NewServer(
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
-		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
+		// RequestID first (it seeds the context both the recovery and logging
+		// interceptors read), then recovery — outside logging so a panic in
+		// either the logging interceptor or the handler is contained (RES-03).
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, recoveryUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
+		grpclib.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
+		grpclib.KeepaliveParams(grpcKeepaliveParams()),
 	)
 	grpcserver.Register(s, srv)
 	grpcserver.RegisterContract(s, contractSrv)
@@ -278,6 +283,19 @@ func main() {
 		envDuration("AUCTION_CLOSE_INTERVAL", 30*time.Second),
 		envDuration("AUCTION_CLOSE_INITIAL_DELAY", 15*time.Second),
 		envInt("AUCTION_CLOSE_BATCH", 100),
+	)
+
+	// Fair Price Index refresher. `fair_price_index` is a materialized view: it
+	// is a snapshot that never updates itself, and nothing in the tree refreshed
+	// it, so the public pricing endpoint served an empty list on every database
+	// built from the migration chain. Hourly by default, advisory-locked so a
+	// multi-replica deployment refreshes once per interval rather than once per
+	// pod. Tied to sigCtx so it drains on shutdown like the auction worker.
+	service.RunFairPriceRefreshCron(
+		sigCtx,
+		service.NewFairPriceRefresher(pool, envDuration("FAIR_PRICE_REFRESH_MIN_INTERVAL", 30*time.Minute)),
+		envDuration("FAIR_PRICE_REFRESH_INTERVAL", time.Hour),
+		envDuration("FAIR_PRICE_REFRESH_INITIAL_DELAY", 30*time.Second),
 	)
 
 	go func() {

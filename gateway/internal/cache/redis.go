@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -158,12 +159,32 @@ func Key(parts ...string) string {
 
 // --- Rate Limiting via Redis Sorted Sets ---
 
-// RateLimitCheck performs a sliding-window rate limit check using Redis sorted sets.
-// Returns (allowed bool, retryAfterSeconds int).
-// If Redis is unavailable, it returns (true, 0) to fail open.
+// ErrRateLimitUnavailable reports that the rate-limit backend could not be
+// consulted, so the (allowed, retryAfter) pair returned alongside it is
+// meaningless. Callers MUST fall back to a local limiter rather than treat the
+// call as an allow — see middleware.RateLimiter.allow.
+var ErrRateLimitUnavailable = errors.New("cache: rate limit backend unavailable")
+
+// RateLimitCheck performs a sliding-window rate limit check using Redis sorted
+// sets and reports whether the request is allowed.
+//
+// Deprecated behaviour note: this signature cannot distinguish "allowed" from
+// "backend down", which is exactly the SEC-05 defect — a Redis outage silently
+// disabled every tier including TierAuth. New call sites must use
+// RateLimitCheckErr and handle ErrRateLimitUnavailable explicitly.
 func (c *Client) RateLimitCheck(ctx context.Context, key string, limit int, window time.Duration) (bool, int) {
+	allowed, retryAfter, _ := c.RateLimitCheckErr(ctx, key, limit, window)
+	return allowed, retryAfter
+}
+
+// RateLimitCheckErr is RateLimitCheck with the failure mode made explicit.
+//
+// It returns ErrRateLimitUnavailable when Redis could not answer (nil client,
+// pipeline error, timeout). On that path the boolean is NOT an authorization
+// decision; the caller is responsible for applying a local limiter instead.
+func (c *Client) RateLimitCheckErr(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
 	if c == nil {
-		return true, 0
+		return true, 0, ErrRateLimitUnavailable
 	}
 
 	now := time.Now()
@@ -182,8 +203,9 @@ func (c *Client) RateLimitCheck(ctx context.Context, key string, limit int, wind
 	pipe.Expire(ctx, key, window+time.Second)
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Warn("cache: rate limit pipeline error, failing open", "error", err)
-		return true, 0
+		// Do NOT decide here. The caller owns the degraded-mode policy; this
+		// layer only reports that the shared window is unreadable.
+		return true, 0, fmt.Errorf("%w: %w", ErrRateLimitUnavailable, err)
 	}
 
 	count := countCmd.Val()
@@ -198,10 +220,10 @@ func (c *Client) RateLimitCheck(ctx context.Context, key string, limit int, wind
 				retryAfter = 1
 			}
 		}
-		return false, retryAfter
+		return false, retryAfter, nil
 	}
 
-	return true, 0
+	return true, 0, nil
 }
 
 // Close shuts down the Redis connection.

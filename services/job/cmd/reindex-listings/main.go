@@ -15,9 +15,24 @@
 //   2 — DB connection or query error
 //   3 — Meilisearch index configuration / write error
 //
-// The CLI walks every status='active' listing and indexes it directly
-// (no goroutine retry). Designed to run in CI/CD as a post-deploy step
-// or on demand when the index drifts.
+// The CLI walks every status='active' listing and rebuilds the index from
+// them. Designed to run in CI/CD as a post-deploy step or on demand when the
+// index drifts.
+//
+// ── Convergence ───────────────────────────────────────────────────────────
+// This tool used to only call AddDocuments. Meilisearch upserts by primary
+// key, so that could ADD and UPDATE but never REMOVE: a listing hard-deleted
+// from Postgres, or one that left status='active' (sold / cancelled /
+// expired), kept its document forever. The index was a strict superset of
+// reality and /listings/autocomplete served those phantoms — from behind a
+// 60s/300s CDN cache, so they stayed clickable long after the row was gone.
+//
+// The run now builds a staging index, fills it, and atomically SWAPS it into
+// place (ListingSearchEngine.BeginRebuild / AddRebuildBatch / CommitRebuild).
+// The post-swap index equals the active-listing set exactly — stale documents
+// are dropped by construction rather than hunted down. Readers keep hitting
+// the live index the whole time and flip over in a single atomic step; if any
+// step before the swap fails, the run aborts and the live index is untouched.
 package main
 
 import (
@@ -35,6 +50,10 @@ import (
 	"github.com/nomarkup/nomarkup/services/job/internal/observability"
 	"github.com/nomarkup/nomarkup/services/job/internal/service"
 )
+
+// rebuildBatchSize is how many listing documents are sent per Meilisearch
+// write. The previous implementation issued one HTTP round trip per listing.
+const rebuildBatchSize = 500
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -55,7 +74,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	pool, err := observability.NewPGXPool(ctx, dbURL)
+	// Batch settings: this tool streams every active listing in one statement,
+	// which legitimately runs far past the request-path statement_timeout the
+	// service pools use. The 5-minute context above is the bound instead.
+	pool, err := observability.NewPGXPoolWithSettings(ctx, dbURL, observability.BatchPoolSettings())
 	if err != nil {
 		slog.Error("connect to database", "error", err)
 		os.Exit(2)
@@ -75,7 +97,8 @@ func main() {
 
 	// Trust-tiered ranking (MOVE B2): mirror the running service's mode so a
 	// backfill produces consistent trust_rank attributes + ranking rules. Off by
-	// default (fail closed).
+	// default (fail closed). Set BEFORE BeginRebuild so the staging index is
+	// configured with the same ranking rules the live index will get.
 	trustRanking := envBool("TRUST_RANKING", false)
 	se.SetTrustRanking(trustRanking)
 	if trustRanking {
@@ -83,6 +106,13 @@ func main() {
 			slog.Error("re-configure listings index for trust ranking", "error", err)
 			os.Exit(3)
 		}
+	}
+
+	// Stage a fresh, correctly configured index. Everything below fills it;
+	// nothing is visible to readers until CommitRebuild swaps it in.
+	if err := se.BeginRebuild(ctx); err != nil {
+		slog.Error("begin rebuild", "error", err)
+		os.Exit(3)
 	}
 
 	hasCondition := columnExists(ctx, pool, "listings", "condition")
@@ -109,8 +139,34 @@ func main() {
 	}
 	defer rows.Close()
 
+	// Per-listing extras are resolved during the scan and looked up by listing
+	// ID at document-build time, so one hydrator can serve a whole batch.
+	extrasByID := make(map[string]service.ListingExtraFields, rebuildBatchSize)
+	hydrate := func(_ context.Context, l *domain.Listing) service.ListingExtraFields {
+		if l == nil {
+			return service.ListingExtraFields{}
+		}
+		return extrasByID[l.ID]
+	}
+
+	batch := make([]*domain.Listing, 0, rebuildBatchSize)
 	indexed := 0
 	failed := 0
+
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if err := se.AddRebuildBatch(ctx, batch, hydrate); err != nil {
+			return err
+		}
+		indexed += len(batch)
+		slog.Info("rebuild progress", "indexed", indexed, "failed", failed)
+		batch = batch[:0]
+		clear(extrasByID)
+		return nil
+	}
+
 	for rows.Next() {
 		var (
 			l                  domain.Listing
@@ -139,8 +195,8 @@ func main() {
 			CategorySlug: slug,
 			Condition:    condition,
 		}
-		// Trust-tiered ranking: read the seller's provider tier so IndexListing
-		// emits trust_rank. Only when the flag is on; fail-soft on missing row.
+		// Trust-tiered ranking: read the seller's provider tier so the document
+		// carries trust_rank. Only when the flag is on; fail-soft on missing row.
 		if trustRanking && l.SellerID != "" {
 			var tier string
 			if err := pool.QueryRow(ctx, `
@@ -150,24 +206,45 @@ func main() {
 				extras.TrustTier = tier
 			}
 		}
-		hydrate := func(_ context.Context, _ *domain.Listing) service.ListingExtraFields {
-			return extras
-		}
-		if err := se.IndexListing(ctx, &l, hydrate); err != nil {
-			slog.Error("index listing", "id", l.ID, "error", err)
-			failed++
-			continue
-		}
-		indexed++
-		if indexed%100 == 0 {
-			slog.Info("backfill progress", "indexed", indexed, "failed", failed)
+
+		listing := l // copy: batch holds pointers past this iteration
+		extrasByID[listing.ID] = extras
+		batch = append(batch, &listing)
+
+		if len(batch) >= rebuildBatchSize {
+			if err := flush(); err != nil {
+				slog.Error("rebuild batch failed; live index left untouched", "error", err)
+				os.Exit(3)
+			}
 		}
 	}
-
-	slog.Info("backfill complete", "indexed", indexed, "failed", failed)
-	if failed > 0 {
+	if err := rows.Err(); err != nil {
+		slog.Error("iterate active listings", "error", err)
+		os.Exit(2)
+	}
+	if err := flush(); err != nil {
+		slog.Error("rebuild final batch failed; live index left untouched", "error", err)
 		os.Exit(3)
 	}
+
+	// A row that failed to scan means the staging index is missing a listing
+	// that Postgres says is active. Swapping it in would DELETE that listing
+	// from search. Abort instead and leave the live index alone — a slightly
+	// stale index beats a silently truncated one.
+	if failed > 0 {
+		slog.Error("rebuild aborted: some rows failed to scan; live index left untouched",
+			"indexed", indexed, "failed", failed)
+		os.Exit(2)
+	}
+
+	// Atomic cutover. Everything in the live index that is not in the staging
+	// index — deleted, sold, cancelled, expired listings — disappears here.
+	if err := se.CommitRebuild(ctx); err != nil {
+		slog.Error("commit rebuild (swap); live index left untouched", "error", err)
+		os.Exit(3)
+	}
+
+	slog.Info("rebuild complete", "indexed", indexed, "failed", failed)
 }
 
 func columnExists(ctx context.Context, pool *pgxpool.Pool, table, col string) bool {

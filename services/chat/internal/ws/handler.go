@@ -413,6 +413,24 @@ func (c *Connection) handleUnsubscribe(channelID string) {
 	)
 }
 
+// isSubscribed reports whether this connection currently holds a subscription
+// for channelID.
+//
+// RES-04: c.subs MUST NOT be read without subsMu. cleanupSubscriptions
+// REASSIGNS the map (c.subs = make(...)) and it runs from Close(), which is
+// reached from the read loop, the listenRedis goroutine and the send-buffer
+// overflow path — concurrently with the read loop's handleTyping. A concurrent
+// map read + map write is a Go RUNTIME FATAL ERROR, not a panic: no recover()
+// and no interceptor can contain it, the whole pod dies and every other
+// WebSocket connection on it drops.
+func (c *Connection) isSubscribed(channelID string) bool {
+	c.subsMu.Lock()
+	defer c.subsMu.Unlock()
+
+	_, ok := c.subs[channelID]
+	return ok
+}
+
 // handleTyping publishes a typing indicator via Redis.
 // SEC-10: only allow typing on channels this connection has successfully
 // subscribed to (subscribe already enforces IsChannelMember). Fail closed if
@@ -422,7 +440,7 @@ func (c *Connection) handleTyping(ctx context.Context, channelID string) {
 		c.sendError("channel_id is required for typing")
 		return
 	}
-	if _, ok := c.subs[channelID]; !ok {
+	if !c.isSubscribed(channelID) {
 		c.sendError("not subscribed to this channel")
 		slog.Warn("ws typing denied: not subscribed",
 			"user_id", c.userID,

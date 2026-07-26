@@ -110,12 +110,25 @@ func main() {
 
 	// Shared dial options for every backend connection. otelgrpc's stats handler
 	// continues the inbound HTTP server span across the hop; the interceptors
-	// observe the outbound gRPC metrics and forward the request id as metadata.
+	// bound the call, observe the outbound gRPC metrics and forward the request
+	// id as metadata.
+	//
+	// RES-01: the timeout interceptor is chained OUTERMOST so a wedged backend
+	// releases the gateway goroutine after middleware.GRPCCallTimeout rather
+	// than being held for the full http.Server.WriteTimeout (which does not
+	// cancel r.Context() anyway), and so the metrics interceptor beneath it
+	// records the resulting DeadlineExceeded status instead of never firing.
+	// Keepalive makes a black-holed connection fail fast instead of hanging on
+	// the OS TCP timeout.
 	grpcDialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-		grpc.WithUnaryInterceptor(middleware.GRPCClientInterceptor),
+		grpc.WithChainUnaryInterceptor(
+			middleware.GRPCTimeoutUnaryInterceptor,
+			middleware.GRPCClientInterceptor,
+		),
 		grpc.WithStreamInterceptor(middleware.GRPCStreamClientInterceptor),
+		grpc.WithKeepaliveParams(middleware.GRPCClientKeepalive()),
 	}
 
 	// Connect to User Service via gRPC.

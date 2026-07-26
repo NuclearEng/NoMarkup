@@ -247,8 +247,12 @@ func main() {
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
 		// RequestID first: it seeds the context the logging interceptor and
 		// every downstream slog.*Context call read.
-		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
+		// Recovery sits outside logging so a panic in either the logging
+		// interceptor or the handler is contained (RES-03).
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, recoveryUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
+		grpclib.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
+		grpclib.KeepaliveParams(grpcKeepaliveParams()),
 	)
 	paymentgrpc.Register(s, grpcServer)
 	paymentgrpc.RegisterSubscription(s, subscriptionGRPCServer)

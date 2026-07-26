@@ -2,12 +2,17 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 )
@@ -53,6 +58,51 @@ const (
 	// cleanupInterval is how often stale entries are removed from the in-memory fallback map.
 	cleanupInterval = 5 * time.Minute
 )
+
+// --- Degraded-mode observability (SEC-05) ---
+
+var (
+	// rateLimitFallbackTotal counts requests whose limit decision came from the
+	// per-pod in-memory limiter instead of the shared Redis window.
+	//
+	// This metric is the point of the fix as much as the fallback is: before it,
+	// a Redis outage disabled every tier — including TierAuth's 5-attempts/15-min
+	// brute-force defense — and the only trace was a slog.Warn per request. There
+	// is no compensating DB-level lockout (the users table has no failed-attempt
+	// or locked_until columns), so a silent disablement is a silent removal of
+	// the only credential-stuffing defense. Alert on any sustained non-zero rate.
+	rateLimitFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "rate_limit_fallback_total",
+			Help: "Rate limit decisions served by the in-memory fallback instead of Redis, by reason.",
+		},
+		[]string{"reason", "tier"},
+	)
+
+	// rateLimitBackendDegraded is 1 while the shared Redis window is unusable
+	// and 0 once a check succeeds again, so a dashboard shows the current state
+	// rather than only the rate of change.
+	rateLimitBackendDegraded = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "rate_limit_backend_degraded",
+			Help: "1 when rate limiting has fallen back to per-pod in-memory windows, 0 when Redis is authoritative.",
+		},
+	)
+)
+
+// fallbackReason labels for rateLimitFallbackTotal.
+const (
+	// reasonNoBackend: Redis was absent at boot (dev, or REDIS_URL unset).
+	reasonNoBackend = "no_backend"
+	// reasonBackendError: Redis was present at boot and failed at runtime.
+	// This is the case that used to fail open.
+	reasonBackendError = "backend_error"
+)
+
+// fallbackLogInterval throttles the degraded-mode log line. Under a Redis
+// outage every single request takes this path; logging each one would push the
+// signal out of the log pipeline exactly when it is most needed.
+const fallbackLogInterval = 10 * time.Second
 
 // --- In-memory fallback (used when Redis is unavailable) ---
 
@@ -226,12 +276,23 @@ func tierForPath(path string) RateLimitTier {
 
 // --- Rate Limiter (Redis-backed with in-memory fallback) ---
 
+// rateLimitBackend is the shared, cross-pod sliding window. Satisfied by
+// *cache.Client; an interface so the degraded path is testable without a live
+// Redis.
+type rateLimitBackend interface {
+	RateLimitCheckErr(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error)
+}
+
 // RateLimiter performs per-IP and per-user rate limiting. When a cache.Client is
-// provided, limits are enforced in Redis (distributed). Otherwise it falls back
-// to in-memory sliding windows.
+// provided, limits are enforced in Redis (distributed). Otherwise — and whenever
+// Redis fails at runtime — it falls back to in-memory sliding windows.
 type RateLimiter struct {
-	cache    *cache.Client
+	cache    rateLimitBackend
 	fallback *memoryLimiter
+
+	// lastFallbackLog is a unix-nano timestamp used to throttle the degraded
+	// mode log line. Atomic: allow() runs on every request goroutine.
+	lastFallbackLog atomic.Int64
 
 	standardLimit   int
 	strictLimit     int
@@ -270,14 +331,22 @@ func NewRateLimiter(cacheClient *cache.Client, production bool, authLimitOverrid
 		"window", rateLimitWindow,
 	)
 
-	return &RateLimiter{
-		cache:           cacheClient,
+	rl := &RateLimiter{
 		fallback:        newMemoryLimiter(),
 		standardLimit:   stdLimit,
 		strictLimit:     strictLimit,
 		authLimit:       authLimit,
 		publicReadLimit: publicReadLimit,
 	}
+	// Guard the typed-nil trap: assigning a nil *cache.Client to the interface
+	// field would make `rl.cache != nil` true forever.
+	if cacheClient != nil {
+		rl.cache = cacheClient
+	} else {
+		rateLimitBackendDegraded.Set(1)
+	}
+
+	return rl
 }
 
 func (rl *RateLimiter) limitForTier(tier RateLimitTier) int {
@@ -305,12 +374,68 @@ func windowForTier(tier RateLimitTier) time.Duration {
 	return rateLimitWindow
 }
 
+// allow resolves one rate-limit decision, preferring the shared Redis window
+// and degrading to the per-pod in-memory window.
+//
+// SEC-05: this used to consult rl.fallback ONLY when rl.cache was nil — i.e.
+// only when Redis was missing AT BOOT. A Redis that died later left the
+// fallback unreachable while cache.RateLimitCheck returned "allowed" on every
+// pipeline error, so an outage silently removed rate limiting from every tier,
+// TierAuth included. There is no DB-level account lockout behind it.
+//
+// The fallback is per-pod, so N gateway replicas enforce N x the intended
+// limit. That is a real weakening and is why it is counted and alerted on —
+// but N x 5 login attempts per 15 minutes is still a bounded brute-force
+// budget, whereas failing open is an unbounded one.
 func (rl *RateLimiter) allow(key string, limit int, window time.Duration) (bool, int) {
-	if rl.cache != nil {
-		redisKey := cache.Key("rl", key)
-		return rl.cache.RateLimitCheck(context.Background(), redisKey, limit, window)
+	if rl.cache == nil {
+		rateLimitFallbackTotal.WithLabelValues(reasonNoBackend, tierLabelFromKey(key)).Inc()
+		return rl.fallback.allow(key, limit, window)
 	}
+
+	redisKey := cache.Key("rl", key)
+	allowed, retryAfter, err := rl.cache.RateLimitCheckErr(context.Background(), redisKey, limit, window)
+	if err == nil {
+		rateLimitBackendDegraded.Set(0)
+		return allowed, retryAfter
+	}
+
+	tier := tierLabelFromKey(key)
+	rateLimitFallbackTotal.WithLabelValues(reasonBackendError, tier).Inc()
+	rateLimitBackendDegraded.Set(1)
+	rl.logFallback(tier, err)
+
 	return rl.fallback.allow(key, limit, window)
+}
+
+// logFallback emits at most one degraded-mode log line per
+// fallbackLogInterval, so an outage is visible without flooding the pipeline.
+func (rl *RateLimiter) logFallback(tier string, err error) {
+	now := time.Now().UnixNano()
+	last := rl.lastFallbackLog.Load()
+	if now-last < int64(fallbackLogInterval) {
+		return
+	}
+	if !rl.lastFallbackLog.CompareAndSwap(last, now) {
+		return // another goroutine just logged it
+	}
+
+	slog.Error("rate limit backend unavailable, falling back to per-pod in-memory limits",
+		"tier", tier,
+		"error", err,
+		"unavailable", errors.Is(err, cache.ErrRateLimitUnavailable),
+		"impact", "limits are enforced per gateway pod, not cluster-wide",
+	)
+}
+
+// tierLabelFromKey recovers the tier from a rate-limit key
+// ("<tier>:ip:<addr>" / "<tier>:user:<id>") for metric labelling. Cardinality
+// is bounded by tierString's fixed set.
+func tierLabelFromKey(key string) string {
+	if idx := strings.Index(key, ":"); idx > 0 {
+		return key[:idx]
+	}
+	return "unknown"
 }
 
 // Middleware returns an http.Handler middleware that enforces rate limits.
