@@ -90,9 +90,9 @@ struct HomeView: View {
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Eyebrow pill
-            Text("REVERSE AUCTION")
+            Text("PRIVATE MARKET · ESCROW")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(1.4)
+                .tracking(1.6)
                 .foregroundStyle(BrandTheme.goldBright)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -106,7 +106,7 @@ struct HomeView: View {
                 )
                 .padding(.bottom, 18)
 
-            Text("Providers compete.\nYou save.")
+            Text("Serious value.\nFair discovery.")
                 .font(.system(size: 34, weight: .bold, design: .default))
                 .foregroundStyle(BrandTheme.textPrimary)
                 .lineSpacing(2)
@@ -115,9 +115,9 @@ struct HomeView: View {
                 .padding(.bottom, 12)
 
             (
-                Text("Home services at market prices. Providers bid ")
+                Text("Reverse auctions for services — providers bid ")
                     + Text("down").foregroundColor(BrandTheme.goldBright).fontWeight(.semibold)
-                    + Text(" against each other — you award the best offer.")
+                    + Text(". Forward auctions for goods. Funds held in escrow until handoff. Built for people who don’t gamble with reputation.")
             )
             .font(.system(size: 16, weight: .regular))
             .foregroundStyle(BrandTheme.textSecondary)
