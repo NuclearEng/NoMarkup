@@ -281,7 +281,7 @@ struct ChatThreadView: View {
                 title: "No messages yet",
                 systemImage: "text.bubble",
                 message: canCompose
-                    ? "Say hello below — your first message starts the thread. Pull to refresh anytime."
+                    ? "Say hello below — your first message starts the thread. Messages are plain text only (don’t paste scripts or HTML). Pull to refresh anytime."
                     : "This channel has no messages yet."
             )
         } else {
@@ -459,9 +459,10 @@ private struct MessageBubbleRow: View {
             if isMine { Spacer(minLength: 48) }
 
             VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
+                // Plain `Text` only — never attributed HTML (XSS-safe).
                 Text(message.displayBody)
                     .font(.body)
-                    .foregroundStyle(isMine ? BrandTheme.navy : BrandTheme.textPrimary)
+                    .foregroundStyle(isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(isMine ? .trailing : .leading)
 
@@ -481,12 +482,13 @@ private struct MessageBubbleRow: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isMine ? BrandTheme.accent : BrandTheme.navyElevated)
+                    .fill(isMine ? BrandTheme.accent : BrandTheme.surfaceRaised)
             )
             .overlay {
                 if !isMine {
+                    // Incoming: subtle electric-blue border (not gold).
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(BrandTheme.gold.opacity(0.12), lineWidth: 1)
+                        .strokeBorder(BrandTheme.chatIncomingBorder, lineWidth: 1)
                 }
             }
             .frame(maxWidth: 320, alignment: isMine ? .trailing : .leading)

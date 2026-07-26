@@ -16,6 +16,12 @@ enum AppConfig {
     static let communityGuidelinesURL = publicWebBaseURL.appending(path: "community-guidelines")
     static let supportURL = publicWebBaseURL.appending(path: "support")
 
+    /// Post a service job — native form not shipped; open web until Stage C.
+    static let postJobURL = publicWebBaseURL.appending(path: "jobs/new")
+
+    /// List a physical goods item for sale — native form not shipped; open web `/sell`.
+    static let sellItemURL = publicWebBaseURL.appending(path: "sell")
+
     /// Gateway HTTP base (no trailing slash).
     ///
     /// Resolution:

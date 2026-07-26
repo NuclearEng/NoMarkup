@@ -48,6 +48,30 @@ struct AccountView: View {
 
                 Section {
                     NavigationLink {
+                        LegalWebView(title: "Post a job (web)", url: AppConfig.postJobURL)
+                    } label: {
+                        Label("Post a job", systemImage: "plus.circle")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Opens the web job form in Safari until the native form ships")
+
+                    NavigationLink {
+                        LegalWebView(title: "Sell an item (web)", url: AppConfig.sellItemURL)
+                    } label: {
+                        Label("Sell an item", systemImage: "tag")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Opens the web sell form in Safari until the native form ships")
+
+                    Text("Native create flows are not in this build — these open no-markup.com in Safari (SFSafariViewController).")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                } header: {
+                    Text("Create (web)").brandSectionHeader()
+                }
+
+                Section {
+                    NavigationLink {
                         MyOrdersView()
                     } label: {
                         Label("Orders", systemImage: "bag")
@@ -55,11 +79,27 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityHint("View marketplace orders and pay pending ones with Apple Pay")
 
+                    NavigationLink {
+                        MyBidsView()
+                    } label: {
+                        Label("My bids", systemImage: "hammer")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("View goods and service bids you have placed")
+
+                    NavigationLink {
+                        NotificationsView()
+                    } label: {
+                        Label("Notifications", systemImage: "bell")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Read-only list of account notifications")
+
                     Text("Physical goods and services use Apple Pay / Stripe (not App Store IAP).")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {
-                    Text("Orders & payments").brandSectionHeader()
+                    Text("Orders, bids & alerts").brandSectionHeader()
                 }
 
                 Section {

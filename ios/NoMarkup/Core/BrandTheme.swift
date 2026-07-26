@@ -7,11 +7,13 @@ import UIKit
 //
 // Aligned with web `globals.css` dark terminal tokens and the App Store seal:
 // navy field `#070b14`, card `#0c0f18`, gold `#c9a84c` / bright `#d4af57`.
+// Auction / trust semantics mirror web HSL tokens (`--bid-active`, `--bid-winning`,
+// `--trust-high`, `--trust-medium`, `--trust-elite`) so native chips match the site.
 // Prefer these tokens over system gray list chrome so the native shell matches
 // the luxury brand mark (not a plain iOS settings list).
 
 enum BrandTheme {
-    // MARK: Colors
+    // MARK: Colors — core chrome
 
     /// App icon / dark terminal background — `#070b14`.
     static let navy = Color(red: 0x07 / 255, green: 0x0B / 255, blue: 0x14 / 255)
@@ -19,24 +21,53 @@ enum BrandTheme {
     /// Elevated card / grouped list row surface — `#0c0f18`.
     static let navyElevated = Color(red: 0x0C / 255, green: 0x0F / 255, blue: 0x18 / 255)
 
-    /// Brand gold (light token / primary CTA) — `#c9a84c`.
+    /// Surface one step above `navyElevated` (raised cards, incoming chat) — `#141824`.
+    static let surfaceRaised = Color(red: 0x14 / 255, green: 0x18 / 255, blue: 0x24 / 255)
+
+    /// Brand gold (light token / primary CTA fill) — `#c9a84c`.
     /// Prefer `Color("AccentColor")` for interactive tint so the asset catalog stays authoritative.
     static let gold = Color(red: 0xC9 / 255, green: 0xA8 / 255, blue: 0x4C / 255)
 
     /// Brand gold bright (dark-mode / emphasis) — `#d4af57`.
     static let goldBright = Color(red: 0xD4 / 255, green: 0xAF / 255, blue: 0x57 / 255)
 
-    /// Primary body text on navy — near-white for Dynamic Type / contrast.
+    /// Primary body text on navy — near-white for Dynamic Type / contrast — `#f2f4f8`.
     static let textPrimary = Color(red: 0xF2 / 255, green: 0xF4 / 255, blue: 0xF8 / 255)
 
-    /// Secondary / muted copy on navy.
+    /// Secondary / muted copy on navy — `#9aa3b5`.
     static let textSecondary = Color(red: 0x9A / 255, green: 0xA3 / 255, blue: 0xB5 / 255)
 
-    /// Success status (healthy API, signed-in).
+    /// Success status (healthy API, signed-in) — `#34c759`.
     static let success = Color(red: 0x34 / 255, green: 0xC7 / 255, blue: 0x59 / 255)
 
-    /// Destructive / error status.
+    /// Destructive / error status — `#ff453a`.
     static let destructive = Color(red: 0xFF / 255, green: 0x45 / 255, blue: 0x3A / 255)
+
+    // MARK: Colors — auction / marketplace semantics (web parity)
+
+    /// Leading / active bid highlight — electric blue ≈ web `--bid-active` / `--trust-elite`
+    /// (hsl 220 70% 60% dark shell) — `#4d8af0`.
+    static let bidLeading = Color(red: 0x4D / 255, green: 0x8A / 255, blue: 0xF0 / 255)
+
+    /// Alias of `bidLeading` for “live auction / your bid is active” chips.
+    static let bidActive = bidLeading
+
+    /// Winning bid / high-trust emerald ≈ web `--bid-winning` / `--trust-high`
+    /// (hsl 142 60% 40%) — `#2fbf6b`.
+    static let bidWinning = Color(red: 0x2F / 255, green: 0xBF / 255, blue: 0x6B / 255)
+
+    /// Savings / positive delta (same emerald as winning for consistency).
+    static let savings = bidWinning
+
+    /// Warning / medium-trust amber ≈ web `--trust-medium` (hsl 38 80% 45%) — `#d9921a`.
+    static let warning = Color(red: 0xD9 / 255, green: 0x92 / 255, blue: 0x1A / 255)
+
+    /// Subtle blue border for incoming chat (not gold) — derived from `bidActive` at low opacity use sites.
+    static let chatIncomingBorder = bidActive.opacity(0.35)
+
+    /// **Label / icon on gold filled CTAs** — navy (`#070b14`), not pure black and not white.
+    /// Gold `#c9a84c` needs dark text for WCAG contrast; muted-gold + black failures are a known miss.
+    static let ctaLabelOnGold = navy
 
     /// Asset-catalog gold used for `.tint` / prominent CTAs (falls back to static gold).
     static var accent: Color {
@@ -46,6 +77,19 @@ enum BrandTheme {
 
     /// Section header / eyebrow label — muted gold for hierarchy without competing with CTAs.
     static let sectionHeader = gold.opacity(0.85)
+
+    /// Optional gold mesh for home hero cards (subtle, not full-bleed).
+    static var gradientHero: LinearGradient {
+        LinearGradient(
+            colors: [
+                gold.opacity(0.22),
+                goldBright.opacity(0.08),
+                navyElevated.opacity(0.0),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 
     // MARK: Global chrome (UIKit appearance)
 
@@ -147,15 +191,22 @@ private struct BrandScreenBackgroundModifier: ViewModifier {
 
 private struct BrandCardModifier: ViewModifier {
     var padding: CGFloat
+    var useHeroGradient: Bool
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                BrandTheme.navyElevated,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
+            .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(BrandTheme.navyElevated)
+                    .overlay {
+                        if useHeroGradient {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(BrandTheme.gradientHero)
+                        }
+                    }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(BrandTheme.gold.opacity(0.12), lineWidth: 1)
@@ -175,8 +226,9 @@ extension View {
     }
 
     /// Elevated card surface with subtle gold edge (empty states, hero blocks).
-    func brandCard(padding: CGFloat = 16) -> some View {
-        modifier(BrandCardModifier(padding: padding))
+    /// Pass `heroGradient: true` for home / marketplace promo cards (`gradientHero`).
+    func brandCard(padding: CGFloat = 16, heroGradient: Bool = false) -> some View {
+        modifier(BrandCardModifier(padding: padding, useHeroGradient: heroGradient))
     }
 
     /// Apply elevated navy as the list row surface (call on row content inside `List`).
@@ -190,6 +242,14 @@ extension View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(BrandTheme.sectionHeader)
             .textCase(nil)
+    }
+
+    /// Gold filled CTA with **navy** label (contrast-safe on `#c9a84c` / AccentColor).
+    func brandGoldProminentButton() -> some View {
+        self
+            .buttonStyle(.borderedProminent)
+            .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
     }
 }
 
@@ -235,8 +295,7 @@ struct BrandEmptyState: View {
 
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
-                    .tint(BrandTheme.accent)
+                    .brandGoldProminentButton()
                     .frame(minHeight: 44)
             }
             if let secondaryActionTitle, let secondaryAction {

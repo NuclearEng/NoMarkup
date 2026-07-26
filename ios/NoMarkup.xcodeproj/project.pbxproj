@@ -36,6 +36,8 @@
 		A10000000000000000000023 /* PassKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* PassKit.framework */; };
 		A10000000000000000000024 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000002 /* StripePaymentSheet */; };
 		A10000000000000000000025 /* BrandTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* BrandTheme.swift */; };
+		A10000000000000000000026 /* MyBidsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* MyBidsView.swift */; };
+		A10000000000000000000027 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000027 /* NotificationsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -69,6 +71,8 @@
 		B10000000000000000000022 /* MyOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyOrdersView.swift; sourceTree = "<group>"; };
 		B10000000000000000000023 /* PassKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PassKit.framework; path = System/Library/Frameworks/PassKit.framework; sourceTree = SDKROOT; };
 		B10000000000000000000025 /* BrandTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandTheme.swift; sourceTree = "<group>"; };
+		B10000000000000000000026 /* MyBidsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBidsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000027 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
 		C10000000000000000000001 /* NoMarkup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoMarkup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -167,6 +171,8 @@
 				B1000000000000000000000C /* MessagesView.swift */,
 				B1000000000000000000000D /* AccountView.swift */,
 				B10000000000000000000022 /* MyOrdersView.swift */,
+				B10000000000000000000026 /* MyBidsView.swift */,
+				B10000000000000000000027 /* NotificationsView.swift */,
 				B1000000000000000000000E /* LegalWebView.swift */,
 				B1000000000000000000000F /* AccountDeletionView.swift */,
 			);
@@ -279,6 +285,8 @@
 				A10000000000000000000020 /* FeatureFlags.swift in Sources */,
 				A10000000000000000000021 /* RailACheckout.swift in Sources */,
 				A10000000000000000000022 /* MyOrdersView.swift in Sources */,
+				A10000000000000000000026 /* MyBidsView.swift in Sources */,
+				A10000000000000000000027 /* NotificationsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

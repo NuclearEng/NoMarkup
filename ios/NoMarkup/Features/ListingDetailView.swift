@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Listing detail for a single goods auction. Public read; native report + optional bid.
+/// Listing detail for a single goods **forward auction**.
+/// Buyers bid **up** — highest bid leads; optional buy-now for instant win.
 struct ListingDetailView: View {
     let listingID: String
     var preview: ListingSummary?
@@ -12,6 +13,11 @@ struct ListingDetailView: View {
     @State private var errorMessage: String?
     @State private var showReportSheet = false
     @State private var showWebSafari = false
+
+    @State private var bidRows: [ListingBidRow] = []
+    @State private var ladderState: ListingLadderState = .idle
+    @State private var ladderCurrentBidCents: Int64?
+    @State private var ladderBidderCount: Int?
 
     @State private var bidAmountText = ""
     @State private var isPlacingBid = false
@@ -34,6 +40,30 @@ struct ListingDetailView: View {
         AppConfig.publicWebBaseURL
             .appending(path: "marketplace")
             .appending(path: listingID)
+    }
+
+    /// Forward auction: highest amount first; winning bid (or #1) is leading.
+    private var sortedLadder: [ListingBidRow] {
+        bidRows.sorted { lhs, rhs in
+            let a = lhs.amountCents ?? 0
+            let b = rhs.amountCents ?? 0
+            if a != b { return a > b }
+            // Prefer isWinning when amounts tie.
+            if (lhs.isWinning ?? false) != (rhs.isWinning ?? false) {
+                return lhs.isWinning ?? false
+            }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+    }
+
+    private var leadingBidCents: Int64? {
+        if let winning = sortedLadder.first(where: { $0.isWinning == true })?.amountCents {
+            return winning
+        }
+        if let first = sortedLadder.first?.amountCents {
+            return first
+        }
+        return ladderCurrentBidCents ?? detail?.currentBidCents
     }
 
     var body: some View {
@@ -91,61 +121,11 @@ struct ListingDetailView: View {
     @ViewBuilder
     private func detailContent(_ listing: ListingDetail) -> some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(listing.displayTitle)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(BrandTheme.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text(listing.displayPrice)
-                        .font(.title3.weight(.bold).monospacedDigit())
-                        .foregroundStyle(BrandTheme.goldBright)
-
-                    if let start = listing.startingPriceCents, start != listing.displayPriceCents {
-                        Text("Started at \(MoneyFormat.usd(cents: start))")
-                            .font(.caption)
-                            .foregroundStyle(BrandTheme.textSecondary)
-                    }
-                }
-                .padding(.vertical, 4)
-                .accessibilityElement(children: .combine)
-            }
-
-            Section {
-                if let status = listing.status {
-                    LabeledContent("Status") {
-                        Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
-                    }
-                }
-                if let category = listing.categoryName, !category.isEmpty {
-                    LabeledContent("Category", value: category)
-                }
-                if let condition = listing.condition, !condition.isEmpty {
-                    LabeledContent("Condition") {
-                        Text(condition.replacingOccurrences(of: "_", with: " ").capitalized)
-                    }
-                }
-                if let location = listing.locationLabel {
-                    LabeledContent("Pickup", value: location)
-                }
-                if let ends = listing.auctionEndsAt {
-                    LabeledContent("Ends") {
-                        Text(ends.formatted(date: .abbreviated, time: .shortened))
-                    }
-                }
-                if let bids = listing.bidCount {
-                    LabeledContent("Bids", value: "\(bids)")
-                }
-                if let bidders = listing.bidderCount {
-                    LabeledContent("Bidders", value: "\(bidders)")
-                }
-                if let buyNow = listing.buyNowPriceCents {
-                    LabeledContent("Buy now", value: MoneyFormat.usd(cents: buyNow))
-                }
-            } header: {
-                Text("Details").brandSectionHeader()
-            }
+            auctionHeroSection(listing)
+            bidLadderSection(listing)
+            buyNowSection(listing)
+            placeBidSection(listing)
+            detailsSection(listing)
 
             if let description = listing.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                !description.isEmpty {
@@ -175,10 +155,6 @@ struct ListingDetailView: View {
                 }
             }
 
-            buyNowSection(listing)
-
-            placeBidSection(listing)
-
             Section {
                 Button {
                     showReportSheet = true
@@ -197,6 +173,230 @@ struct ListingDetailView: View {
         }
         .brandListBackground()
     }
+
+    // MARK: - Auction hero (forward auction)
+
+    @ViewBuilder
+    private func auctionHeroSection(_ listing: ListingDetail) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    forwardAuctionBadge
+                    Spacer(minLength: 8)
+                    if let status = listing.status, !status.isEmpty {
+                        StatusChipView(
+                            label: StatusChipStyle.displayLabel(status),
+                            style: StatusChipStyle.forStatus(status)
+                        )
+                    }
+                }
+
+                Text(listing.displayTitle)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(heroPriceAmount(listing))
+                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .accessibilityLabel("\(heroPriceCaption(listing)): \(heroPriceAmount(listing))")
+
+                Text(heroPriceCaption(listing))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .textCase(.uppercase)
+
+                if let start = listing.startingPriceCents,
+                   start != listing.displayPriceCents,
+                   leadingBidCents == nil || start != leadingBidCents {
+                    Text("Started at \(MoneyFormat.usd(cents: start))")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                (
+                    Text("Buyers bid ")
+                        + Text("up").fontWeight(.semibold)
+                        + Text(" — highest bid leads")
+                )
+                .font(.subheadline)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 12) {
+                    if listing.auctionEndsAt != nil {
+                        liveCountdownChip(date: listing.auctionEndsAt)
+                    }
+                    bidCountChip(listing: listing)
+                }
+            }
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var forwardAuctionBadge: some View {
+        Text("Forward auction · goods")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(BrandTheme.goldBright)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .overlay(
+                Capsule()
+                    .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
+            )
+            .accessibilityLabel("Forward auction, goods")
+    }
+
+    @ViewBuilder
+    private func liveCountdownChip(date: Date?) -> some View {
+        if let date {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let label = CatalogDateFormat.countdownLabel(until: date, now: context.date)
+                Label(label, systemImage: "clock.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(label == "Ended" ? BrandTheme.textSecondary : BrandTheme.goldBright)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(BrandTheme.navyElevated, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(BrandTheme.gold.opacity(0.25), lineWidth: 1)
+                    )
+                    .accessibilityLabel("Auction \(label)")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func bidCountChip(listing: ListingDetail) -> some View {
+        let count = effectiveBidCount(listing: listing)
+        Label("\(count) bid\(count == 1 ? "" : "s")", systemImage: "arrow.up.circle")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(BrandTheme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(BrandTheme.navyElevated, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(BrandTheme.gold.opacity(0.2), lineWidth: 1)
+            )
+            .accessibilityLabel("\(count) bids")
+    }
+
+    private func effectiveBidCount(listing: ListingDetail) -> Int {
+        if case .loaded = ladderState, !bidRows.isEmpty {
+            return bidRows.count
+        }
+        return listing.bidCount ?? bidRows.count
+    }
+
+    private func heroPriceAmount(_ listing: ListingDetail) -> String {
+        if let leading = leadingBidCents {
+            return MoneyFormat.usd(cents: leading)
+        }
+        return listing.displayPrice
+    }
+
+    private func heroPriceCaption(_ listing: ListingDetail) -> String {
+        if leadingBidCents != nil || listing.currentBidCents != nil {
+            return "Current high bid"
+        }
+        return "Starting price"
+    }
+
+    // MARK: - Bid ladder (public)
+
+    @ViewBuilder
+    private func bidLadderSection(_ listing: ListingDetail) -> some View {
+        Section {
+            switch ladderState {
+            case .idle, .loading:
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                    Text("Loading bid ladder…")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .frame(minHeight: 44)
+
+            case .failed(let message):
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Retry") {
+                        Task { await loadBids() }
+                    }
+                    .frame(minHeight: 44)
+                }
+
+            case .loaded:
+                if sortedLadder.isEmpty {
+                    Text("No bids yet — be first to bid")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityLabel("No bids yet — be first to bid")
+                } else {
+                    ForEach(Array(sortedLadder.enumerated()), id: \.element.id) { index, row in
+                        listingBidRow(row: row, rank: index + 1)
+                    }
+                }
+            }
+        } header: {
+            Text("Bid ladder").brandSectionHeader()
+        } footer: {
+            Text("Highest bid leads in a forward auction. The winning bid is highlighted.")
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private func listingBidRow(row: ListingBidRow, rank: Int) -> some View {
+        let isWinning = row.isWinning == true || (rank == 1 && sortedLadder.first?.id == row.id)
+
+        HStack(alignment: .center, spacing: 12) {
+            Text("#\(rank)")
+                .font(.caption.weight(.bold).monospacedDigit())
+                .foregroundStyle(isWinning ? BrandTheme.success : BrandTheme.textSecondary)
+                .frame(width: 28, alignment: .leading)
+
+            Text(row.displayName)
+                .font(.body.weight(.medium))
+                .foregroundStyle(BrandTheme.textPrimary)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(row.displayAmount)
+                    .font(.body.weight(.bold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+                if isWinning {
+                    Text("Winning")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.success)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(BrandTheme.success.opacity(0.15), in: Capsule())
+                        .accessibilityLabel("Winning bid")
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            isWinning
+                ? "Rank \(rank), winning, \(row.displayName), \(row.displayAmount)"
+                : "Rank \(rank), \(row.displayName), \(row.displayAmount)"
+        )
+    }
+
+    // MARK: - Buy now
 
     @ViewBuilder
     private func buyNowSection(_ listing: ListingDetail) -> some View {
@@ -230,7 +430,7 @@ struct ListingDetailView: View {
                     if let buyNowStatusMessage {
                         Text(buyNowStatusMessage)
                             .font(.footnote)
-                            .foregroundStyle(buyNowStatusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
+                            .foregroundStyle(buyNowStatusIsError ? BrandTheme.destructive : BrandTheme.success)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -257,6 +457,8 @@ struct ListingDetailView: View {
         }
     }
 
+    // MARK: - Place bid (forward auction)
+
     @ViewBuilder
     private func placeBidSection(_ listing: ListingDetail) -> some View {
         Section {
@@ -277,21 +479,22 @@ struct ListingDetailView: View {
                     .disabled(true)
                     .frame(maxWidth: .infinity, minHeight: 44)
             } else {
-                Text("Enter your bid in dollars. Current price is \(listing.displayPrice).")
+                Text(bidHint(for: listing))
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                TextField("Bid amount (USD)", text: $bidAmountText)
+                TextField("Your bid (USD) — higher wins", text: $bidAmountText)
                     .keyboardType(.decimalPad)
                     .textContentType(.none)
                     .autocorrectionDisabled()
                     .frame(minHeight: 44)
-                    .accessibilityLabel("Bid amount in dollars")
+                    .accessibilityLabel("Bid amount in dollars — forward auction, higher wins")
 
                 if let bidStatusMessage {
                     Text(bidStatusMessage)
                         .font(.footnote)
-                        .foregroundStyle(bidStatusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
+                        .foregroundStyle(bidStatusIsError ? BrandTheme.destructive : BrandTheme.success)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -314,11 +517,70 @@ struct ListingDetailView: View {
                         || isBuyingNow
                         || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
+                .accessibilityHint("Submit a higher bid to lead this forward auction")
             }
         } header: {
             Text("Place a bid").brandSectionHeader()
+        } footer: {
+            Text("Goods are forward auctions — bid above the current high bid to take the lead.")
+                .foregroundStyle(BrandTheme.textSecondary)
         }
     }
+
+    private func bidHint(for listing: ListingDetail) -> String {
+        if let leading = leadingBidCents {
+            let minHint: String
+            if let inc = listing.minIncrementCents, inc > 0 {
+                minHint = " Minimum next bid is about \(MoneyFormat.usd(cents: leading + inc))."
+            } else {
+                minHint = ""
+            }
+            return "Forward auction: enter more than the current high bid (\(MoneyFormat.usd(cents: leading))).\(minHint)"
+        }
+        return "Forward auction: enter your bid in dollars. Current price is \(listing.displayPrice)."
+    }
+
+    // MARK: - Details
+
+    @ViewBuilder
+    private func detailsSection(_ listing: ListingDetail) -> some View {
+        Section {
+            if let status = listing.status {
+                LabeledContent("Status") {
+                    Text(StatusChipStyle.displayLabel(status))
+                }
+            }
+            if let category = listing.categoryName, !category.isEmpty {
+                LabeledContent("Category", value: category)
+            }
+            if let condition = listing.condition, !condition.isEmpty {
+                LabeledContent("Condition") {
+                    Text(condition.replacingOccurrences(of: "_", with: " ").capitalized)
+                }
+            }
+            if let location = listing.locationLabel {
+                LabeledContent("Pickup", value: location)
+            }
+            if let ends = listing.auctionEndsAt {
+                LabeledContent("Ends") {
+                    Text(ends.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+            if let bids = listing.bidCount {
+                LabeledContent("Bids", value: "\(bids)")
+            }
+            if let bidders = listing.bidderCount ?? ladderBidderCount {
+                LabeledContent("Bidders", value: "\(bidders)")
+            }
+            if let buyNow = listing.buyNowPriceCents {
+                LabeledContent("Buy now", value: MoneyFormat.usd(cents: buyNow))
+            }
+        } header: {
+            Text("Details").brandSectionHeader()
+        }
+    }
+
+    // MARK: - Actions
 
     @MainActor
     private func buyNow() async {
@@ -396,6 +658,13 @@ struct ListingDetailView: View {
             return
         }
 
+        if let leading = leadingBidCents, cents <= leading {
+            bidStatusIsError = true
+            bidStatusMessage =
+                "Forward auction: bid above the current high of \(MoneyFormat.usd(cents: leading))."
+            return
+        }
+
         isPlacingBid = true
         defer { isPlacingBid = false }
 
@@ -427,7 +696,33 @@ struct ListingDetailView: View {
                 errorMessage = error.localizedDescription
             }
         }
+
+        await loadBids()
     }
+
+    @MainActor
+    private func loadBids() async {
+        ladderState = .loading
+        do {
+            let response = try await APIClient.shared.fetchListingBids(listingId: listingID)
+            bidRows = response.bids
+            ladderCurrentBidCents = response.currentBidCents
+            ladderBidderCount = response.bidderCount
+            ladderState = .loaded
+        } catch {
+            bidRows = []
+            ladderState = .failed(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - Ladder load state
+
+private enum ListingLadderState: Equatable {
+    case idle
+    case loading
+    case loaded
+    case failed(String)
 }
 
 // MARK: - Report sheet

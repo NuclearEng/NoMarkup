@@ -716,3 +716,182 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
 struct MyOrdersResponse: Codable, Sendable {
     let orders: [ListingOrderSummary]
 }
+
+// MARK: - Auction bid ladders
+
+/// Public bid row from `GET /api/v1/listings/{id}/bids`.
+struct ListingBidRow: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var listingId: String?
+    var bidderId: String?
+    var bidderDisplayName: String?
+    var amountCents: Int64?
+    var isWinning: Bool?
+    var createdAt: String?
+
+    var displayName: String {
+        let n = bidderDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "Bidder" : n
+    }
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+}
+
+struct ListingBidsResponse: Codable, Sendable {
+    let bids: [ListingBidRow]
+    var currentBidCents: Int64?
+    var bidderCount: Int?
+}
+
+/// Nested bid from job owner bid list (auth). Flexible keys for proto JSON.
+struct JobBidCore: Codable, Sendable, Hashable {
+    var id: String?
+    var jobId: String?
+    var providerId: String?
+    var amountCents: Int64?
+    var status: String?
+    var createdAt: String?
+}
+
+struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
+    var bid: JobBidCore?
+    var providerDisplayName: String?
+    var providerBusinessName: String?
+    var trustScore: Double?
+
+    var id: String {
+        bid?.id ?? UUID().uuidString
+    }
+
+    var displayName: String {
+        let biz = providerBusinessName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !biz.isEmpty { return biz }
+        let n = providerDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "Provider" : n
+    }
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: bid?.amountCents ?? 0)
+    }
+}
+
+struct JobBidsResponse: Codable, Sendable {
+    let bids: [JobBidEntry]
+}
+
+// MARK: - My bids (account)
+
+/// Nested listing snapshot on `GET /api/v1/listings/bids/mine`.
+struct MyListingBidListing: Codable, Sendable, Hashable {
+    var id: String?
+    var sellerId: String?
+    var title: String?
+    var status: String?
+    var currentBidCents: Int64?
+    var bidCount: Int?
+    var auctionEndsAt: String?
+
+    var displayTitle: String {
+        let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "Listing" : t
+    }
+}
+
+/// Row from goods bid history: `{ "bid": {...}, "listing": {...} }`.
+struct MyListingBidEntry: Codable, Sendable, Hashable, Identifiable {
+    var bid: ListingBidRow?
+    var listing: MyListingBidListing?
+
+    var id: String {
+        bid?.id ?? listing?.id ?? UUID().uuidString
+    }
+
+    var displayTitle: String {
+        listing?.displayTitle ?? "Listing bid"
+    }
+
+    var displayAmount: String {
+        bid?.displayAmount ?? MoneyFormat.usd(cents: 0)
+    }
+
+    var isWinning: Bool {
+        bid?.isWinning == true
+    }
+}
+
+struct MyListingBidsResponse: Codable, Sendable {
+    let bids: [MyListingBidEntry]
+    let pagination: PaginationMeta?
+}
+
+/// Provider service bid from `GET /api/v1/bids/mine` (proto JSON flat shape).
+struct MyJobBidRow: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var jobId: String?
+    var providerId: String?
+    var amountCents: Int64?
+    var status: String?
+    var isOfferAccepted: Bool?
+    var createdAt: String?
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+
+    var displayStatus: String {
+        let raw = status ?? "unknown"
+        return raw.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var displayTitle: String {
+        if let jobId, !jobId.isEmpty {
+            return "Job · \(String(jobId.prefix(8)))…"
+        }
+        return "Service bid"
+    }
+}
+
+struct MyJobBidsResponse: Codable, Sendable {
+    let bids: [MyJobBidRow]
+    let pagination: PaginationMeta?
+}
+
+// MARK: - Notifications (read-only)
+
+/// Row from `GET /api/v1/notifications`.
+struct AppNotification: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var userId: String?
+    var notificationType: String?
+    var title: String?
+    var body: String?
+    var actionUrl: String?
+    var isRead: Bool?
+    var createdAt: String?
+    var readAt: String?
+
+    var displayTitle: String {
+        let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "Notification" : t
+    }
+
+    var displayBody: String {
+        body?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    var typeLabel: String? {
+        guard let notificationType, !notificationType.isEmpty else { return nil }
+        return notificationType.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var unread: Bool {
+        isRead != true
+    }
+}
+
+struct NotificationsResponse: Codable, Sendable {
+    let notifications: [AppNotification]
+    let pagination: PaginationMeta?
+}

@@ -320,26 +320,46 @@ actor APIClient {
 
     /// POST `/api/v1/jobs/{id}/bids` — auth required (provider role on server).
     /// Body: `{ "amount_cents": N }`
+    /// Idempotency-Key: `job-bid:{jobId}:{amountCents}:{uuid}` (money-adjacent; safe retries).
     @discardableResult
     func placeJobBid(jobId: String, amountCents: Int64) async throws -> Data {
         let body = AmountCentsBody(amountCents: amountCents)
+        let idem = "job-bid:\(jobId):\(amountCents):\(UUID().uuidString)"
         return try await postData(
             pathComponents: ["api", "v1", "jobs", jobId, "bids"],
             body: body,
-            authorized: .required
+            authorized: .required,
+            headers: ["Idempotency-Key": idem]
         )
     }
 
     /// POST `/api/v1/listings/{id}/bids` — auth required.
     /// Body: `{ "amount_cents": N }` (optional `max_bid_cents` omitted for MVP).
+    /// Idempotency-Key required by gateway middleware (MON-06/22).
     @discardableResult
     func placeListingBid(listingId: String, amountCents: Int64) async throws -> Data {
         let body = AmountCentsBody(amountCents: amountCents)
+        // Unique per attempt so intentional re-bids are not blocked as replays.
+        let idem = "listing-bid:\(listingId):\(amountCents):\(UUID().uuidString)"
         return try await postData(
             pathComponents: ["api", "v1", "listings", listingId, "bids"],
             body: body,
-            authorized: .required
+            authorized: .required,
+            headers: ["Idempotency-Key": idem]
         )
+    }
+
+    /// GET `/api/v1/jobs/{id}/bids` — reverse-auction ladder (job owner / auth required).
+    func fetchJobBids(jobId: String) async throws -> JobBidsResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "jobs", jobId, "bids"],
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/listings/{id}/bids` — public bid history (forward auction, ascending).
+    func fetchListingBids(listingId: String) async throws -> ListingBidsResponse {
+        try await getJSON(pathComponents: ["api", "v1", "listings", listingId, "bids"])
     }
 
     // MARK: - Rail A payments (Stripe / Apple Pay)
@@ -371,6 +391,45 @@ actor APIClient {
     func fetchMyOrders() async throws -> MyOrdersResponse {
         try await getJSON(
             pathComponents: ["api", "v1", "me", "orders"],
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/listings/bids/mine` — goods auction bids placed by the signed-in user.
+    func fetchMyListingBids(page: Int = 1, pageSize: Int = 40) async throws -> MyListingBidsResponse {
+        let items = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        return try await getJSON(
+            pathComponents: ["api", "v1", "listings", "bids", "mine"],
+            query: items,
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/bids/mine` — service (job) bids placed by the signed-in provider.
+    func fetchMyJobBids(page: Int = 1, pageSize: Int = 40) async throws -> MyJobBidsResponse {
+        let items = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        return try await getJSON(
+            pathComponents: ["api", "v1", "bids", "mine"],
+            query: items,
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/notifications` — in-app notification inbox (read-only list on iOS).
+    func fetchNotifications(page: Int = 1, pageSize: Int = 40) async throws -> NotificationsResponse {
+        let items = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        return try await getJSON(
+            pathComponents: ["api", "v1", "notifications"],
+            query: items,
             authorized: true
         )
     }
@@ -680,6 +739,12 @@ enum APIClientError: Error, LocalizedError {
 
     var isUnauthorized: Bool {
         if case .unauthorized = self { return true }
+        return false
+    }
+
+    /// 403 Forbidden — e.g. job bid ladder visible only to the job owner.
+    var isForbidden: Bool {
+        if case .httpStatus(let code, _) = self, code == 403 { return true }
         return false
     }
 
