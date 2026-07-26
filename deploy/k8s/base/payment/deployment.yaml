@@ -48,6 +48,13 @@ spec:
               value: "trust:50057"
             - name: UNDERWRITING_ENGINE_ADDR
               value: "underwriting:50060"
+            # Required for marketplace notifications (escrow released, dispute
+            # filed/resolved, and — since off-session collection — payment
+            # captured / card declined / authentication required). Without it the
+            # payment service falls back to localhost:50059, which does not
+            # resolve in-cluster, and every notification is silently dropped.
+            - name: NOTIFICATION_SERVICE_ADDR
+              value: "notification:50059"
             - name: APP_VERSION
               valueFrom:
                 configMapKeyRef:

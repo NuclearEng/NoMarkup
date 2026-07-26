@@ -160,7 +160,18 @@ func main() {
 	repo := repository.NewPostgresRepository(pool)
 	repo.SetCipher(piiCipher)
 	stripeSvc := service.NewStripeService(env)
+
+	// Stripe Customer provisioning + saved-card persistence (migrations 102/103).
+	//
+	// Before this existed, no Stripe Customer was ever created anywhere in this
+	// repo: CreateSetupIntent never set params.Customer, so every card a user
+	// "saved" attached to nothing, ListPaymentMethods returned [] for everyone,
+	// and every off-session charge path was structurally impossible. This is the
+	// object that makes the payment system have a subject.
+	customerProvisioner := service.NewCustomerProvisioner(repo, stripeSvc)
+
 	paymentSvc := service.NewPaymentService(repo, stripeSvc)
+	paymentSvc.SetCustomerProvisioner(customerProvisioner)
 	paymentSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))
 
 	// Working-capital underwriting: dial the trust + underwriting engines. Dials
@@ -226,6 +237,31 @@ func main() {
 	marketplaceRepo := repository.NewMarketplaceRepository(pool)
 	marketplaceSvc := service.NewMarketplaceService(marketplaceRepo, stripeSvc)
 	marketplaceSvc.SetAccountResolver(repo) // GetStripeAccountID → acct_*
+	// Buyer-side Stripe Customer + default card, so the settlement sweeper can
+	// collect an auction win off-session.
+	marketplaceSvc.SetCustomerProvisioner(customerProvisioner)
+
+	// Notifications. SetNotifier was NEVER called here, so every one of
+	// MarketplaceNotifier's methods was a silent no-op in production: sellers
+	// were never told their escrow released, sellers were never told a dispute
+	// had been filed against them, and a buyer whose card failed was never told
+	// at all. With off-session collection enabled below, that last case would
+	// mean a buyer's only signal was an order quietly expiring.
+	//
+	// Degrades rather than blocks startup: if the notification service cannot be
+	// dialled the marketplace keeps its no-op notifier and every send site
+	// already logs-and-continues. Money correctness never depends on a
+	// notification being delivered.
+	notificationAddr := envOrDefault("NOTIFICATION_SERVICE_ADDR", "localhost:50059")
+	if notifyClient, err := paymentclient.NewNotificationClient(notificationAddr); err != nil {
+		slog.Error("failed to create notification client; marketplace notifications will be dropped",
+			"error", err, "addr", notificationAddr)
+	} else {
+		marketplaceSvc.SetNotifier(service.NewMarketplaceNotifier(notifyClient))
+		defer func() { _ = notifyClient.Close() }()
+		slog.Info("marketplace notifier wired", "addr", notificationAddr)
+	}
+
 	marketplaceCfg := service.DefaultMarketplaceConfig()
 	marketplaceCfg.PaymentWindow = envDurationOr("MARKETPLACE_PAYMENT_WINDOW", marketplaceCfg.PaymentWindow)
 	marketplaceSvc.SetConfig(marketplaceCfg)
@@ -234,9 +270,36 @@ func main() {
 	// made the sweeper only reports the condition (loudly) rather than acting.
 	marketplaceExpiry := envBool("MARKETPLACE_PAYMENT_EXPIRY", false)
 	marketplaceSvc.SetExpireUnfunded(marketplaceExpiry)
+
+	// Merchant-initiated collection on auction wins. Default ON: an auction that
+	// cannot collect from the winner is not an auction, and the off_session
+	// SetupIntent mandate exists precisely to authorize this.
+	//
+	// DEFAULTS OFF, and the reason is legal rather than technical.
+	//
+	// Charging a saved card while the buyer is away requires that the bidding
+	// terms told them placing a bid authorizes it. Searched the tree: the
+	// tos_versions / tos_acceptances tables exist, but no terms text anywhere
+	// states that authorization, and the content is admin-managed so it cannot
+	// be confirmed from here. Charging without it is a chargeback problem and,
+	// under SCA, a mandate problem — both of which land on the platform.
+	//
+	// Defaulting ON would mean an unverified legal predicate silently becomes
+	// a live card charge the first time an auction closes. Defaulting OFF is
+	// not a degraded product: buyers pay through the "pay for your win"
+	// surface instead, which is how eBay operates, and the settlement sweeper
+	// still attaches the PaymentIntent and chases unfunded orders. The asymmetry
+	// settles it — enabling this later is a one-line env change, while
+	// un-charging a card is a refund, a chargeback and an apology.
+	//
+	// Set MARKETPLACE_OFFSESSION_CHARGE=true once the terms have shipped.
+	offSessionCharge := envBool("MARKETPLACE_OFFSESSION_CHARGE", false)
+	marketplaceSvc.SetOffSessionCharge(offSessionCharge)
+
 	slog.Info("goods settlement configured",
 		"payment_window", marketplaceCfg.PaymentWindow.String(),
 		"expire_unfunded_orders", marketplaceExpiry,
+		"off_session_charge", offSessionCharge,
 	)
 	paymentSvc.SetMarketplaceHandler(marketplaceSvc)
 	grpcServer.SetMarketplaceService(marketplaceSvc)

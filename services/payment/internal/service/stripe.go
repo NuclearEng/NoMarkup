@@ -18,6 +18,7 @@ import (
 	"github.com/stripe/stripe-go/v82/account"
 	"github.com/stripe/stripe-go/v82/accountlink"
 	"github.com/stripe/stripe-go/v82/bankaccount"
+	"github.com/stripe/stripe-go/v82/customer"
 	"github.com/stripe/stripe-go/v82/invoice"
 	"github.com/stripe/stripe-go/v82/loginlink"
 	"github.com/stripe/stripe-go/v82/paymentintent"
@@ -340,23 +341,214 @@ func (s *StripeService) GetDashboardLink(ctx context.Context, accountID string) 
 	return link.URL, nil
 }
 
-// CreateSetupIntent creates a SetupIntent for saving customer payment methods.
-func (s *StripeService) CreateSetupIntent(ctx context.Context, customerID string) (string, error) {
+// CreateStripeCustomer creates a Stripe Customer for a platform user.
+//
+// The idempotency key is DETERMINISTIC in platformUserID and nothing else. That
+// is the single most important property of this function, and the reason it
+// takes the platform user id as a separate argument from the display fields: if
+// two requests race to provision the same person, both send the same key and
+// Stripe returns the SAME Customer object to both. Duplicate Customers are not
+// merely wasteful — they silently split a person's saved cards across two
+// objects, so a card saved through one is invisible and uncharageable through
+// the other, and unwinding it requires re-collecting the card from the user.
+//
+// Email/name are labels for the Stripe dashboard only. They are deliberately
+// NOT part of the key: a user who changes their display name must not thereby
+// mint a second Customer.
+//
+// Caveat the caller must know: Stripe idempotency keys expire after 24 hours.
+// Two provisioning attempts more than 24h apart that both reach Stripe WILL
+// create two Customers. CustomerProvisioner closes that window by consulting the
+// database first and by claiming the id with a guarded UPDATE; this function is
+// only the Stripe half.
+func (s *StripeService) CreateStripeCustomer(ctx context.Context, platformUserID, email, name string) (string, error) {
+	if platformUserID == "" {
+		return "", fmt.Errorf("create stripe customer: platform user id required")
+	}
 	if s.devMode {
-		slog.Info("dev mode: CreateSetupIntent issued dev client_secret", "customerID", customerID)
-		return s.DevStore().NewSetupIntent(customerID), nil
+		return s.DevStore().EnsureCustomer(platformUserID), nil
+	}
+
+	params := &stripe.CustomerParams{}
+	if email != "" {
+		params.Email = stripe.String(email)
+	}
+	if name != "" {
+		params.Name = stripe.String(name)
+	}
+	// The reverse index: given a Stripe object, which platform user is it? Used
+	// by findStripeCustomerByUser below and by anyone reconciling in the Stripe
+	// dashboard after an incident.
+	params.AddMetadata("platform_user_id", platformUserID)
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("customer-create", platformUserID))
+
+	c, err := observability.TraceStripeCall(ctx, "Customer.Create", func(ctx context.Context) (*stripe.Customer, error) {
+		params.Context = ctx
+		return customer.New(params)
+	})
+	if err != nil {
+		return "", fmt.Errorf("create stripe customer: %w", err)
+	}
+	return c.ID, nil
+}
+
+// FindStripeCustomerByUser looks for an existing Customer tagged with this
+// platform user id, using Stripe's search index.
+//
+// This is the reconciliation backstop for the one window CreateStripeCustomer
+// cannot cover: an attempt that created a Customer at Stripe but crashed before
+// the DB claim, more than 24h ago (so the idempotency key no longer replays).
+// Without this, the next attempt mints a second Customer and orphans the first
+// along with any card attached to it.
+//
+// Returns ("", nil) when nothing matches — the ordinary first-time case.
+//
+// Search is EVENTUALLY CONSISTENT (Stripe documents up to ~a minute of indexing
+// lag), so it is explicitly NOT a substitute for the deterministic idempotency
+// key on the concurrent path — it would happily miss a Customer created one
+// second ago. The two mechanisms cover different windows: the key covers
+// seconds-to-24h, search covers beyond that.
+func (s *StripeService) FindStripeCustomerByUser(ctx context.Context, platformUserID string) (string, error) {
+	if platformUserID == "" {
+		return "", fmt.Errorf("find stripe customer: platform user id required")
+	}
+	if s.devMode {
+		return s.DevStore().LookupCustomer(platformUserID), nil
+	}
+
+	// Stripe search query syntax; the user id is a UUID we generated, so it
+	// cannot contain a quote, but escape defensively anyway.
+	query := fmt.Sprintf("metadata['platform_user_id']:'%s'", strings.ReplaceAll(platformUserID, "'", ""))
+	params := &stripe.CustomerSearchParams{
+		SearchParams: stripe.SearchParams{Query: query},
+	}
+
+	spanCtx, span := observability.StartStripeSpan(ctx, "Customer.Search")
+	params.Context = spanCtx
+
+	iter := customer.Search(params)
+	var found string
+	for iter.Next() {
+		found = iter.Customer().ID
+		break
+	}
+	if err := iter.Err(); err != nil {
+		observability.EndStripeSpan(span, err)
+		return "", fmt.Errorf("find stripe customer: %w", err)
+	}
+	observability.EndStripeSpan(span, nil)
+	return found, nil
+}
+
+// SetCustomerDefaultPaymentMethod points the Customer's invoice settings at a
+// payment method, which is what makes an off-session PaymentIntent created with
+// a Customer but no explicit PaymentMethod chargeable.
+func (s *StripeService) SetCustomerDefaultPaymentMethod(ctx context.Context, customerStripeID, paymentMethodID string) error {
+	if customerStripeID == "" || paymentMethodID == "" {
+		return fmt.Errorf("set customer default payment method: customer id and payment method id required")
+	}
+	if s.devMode {
+		s.DevStore().SetDefaultPaymentMethod(customerStripeID, paymentMethodID)
+		return nil
+	}
+
+	params := &stripe.CustomerParams{
+		InvoiceSettings: &stripe.CustomerInvoiceSettingsParams{
+			DefaultPaymentMethod: stripe.String(paymentMethodID),
+		},
+	}
+	// Mutating POST. The (customer, payment method) pair fully identifies this
+	// logical operation, so a network retry replays it rather than racing.
+	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("customer-default-pm", customerStripeID, paymentMethodID))
+
+	if _, err := observability.TraceStripeCall(ctx, "Customer.Update", func(ctx context.Context) (*stripe.Customer, error) {
+		params.Context = ctx
+		return customer.Update(customerStripeID, params)
+	}); err != nil {
+		return fmt.Errorf("set customer default payment method: %w", err)
+	}
+	return nil
+}
+
+// GetPaymentMethod fetches one PaymentMethod's display fields.
+//
+// Needed because the setup_intent.succeeded event carries the payment method as
+// a bare id, not an expanded object, so brand/last4/expiry have to be read back
+// before they can be persisted.
+func (s *StripeService) GetPaymentMethod(ctx context.Context, paymentMethodID string) (domain.PaymentMethod, error) {
+	if paymentMethodID == "" {
+		return domain.PaymentMethod{}, fmt.Errorf("get payment method: payment method id required")
+	}
+	if s.devMode {
+		return s.DevStore().GetPaymentMethod(paymentMethodID), nil
+	}
+
+	pm, err := observability.TraceStripeCall(ctx, "PaymentMethod.Get", func(ctx context.Context) (*stripe.PaymentMethod, error) {
+		params := &stripe.PaymentMethodParams{}
+		params.Context = ctx
+		return paymentmethod.Get(paymentMethodID, params)
+	})
+	if err != nil {
+		return domain.PaymentMethod{}, fmt.Errorf("get payment method: %w", err)
+	}
+	out := domain.PaymentMethod{ID: pm.ID, Type: string(pm.Type)}
+	if pm.Card != nil {
+		out.LastFour = pm.Card.Last4
+		out.Brand = string(pm.Card.Brand)
+		out.ExpMonth = int32(pm.Card.ExpMonth)
+		out.ExpYear = int32(pm.Card.ExpYear)
+	}
+	return out, nil
+}
+
+// CreateSetupIntent creates a SetupIntent for saving a customer's payment method.
+//
+// customerStripeID is the cus_... the resulting card will be ATTACHED to.
+// platformUserID is the platform user id, recorded as metadata so a later
+// confirmation can be bound to the caller who started it (the IDOR guard in
+// GetSetupIntentStatus).
+//
+// Two things here are load-bearing and were both missing before:
+//
+//   - params.Customer. Without it Stripe creates a "customerless" SetupIntent:
+//     the buyer completes Stripe Elements, sees a success screen, and the
+//     resulting PaymentMethod is attached to NOTHING. It is unlistable,
+//     uncharageable, and garbage-collected. Every card any user ever "saved" on
+//     this platform went into that void, which is why GET /payments/methods
+//     returned [] for everyone.
+//
+//   - Usage = off_session. This tells Stripe the card is being collected for
+//     LATER merchant-initiated use, so it performs the correct mandate/3DS setup
+//     up front. Without it the card is only ever authorized for on-session use,
+//     and the first off-session charge fails with authentication_required — at
+//     which point the buyer is not present to authenticate. That is the entire
+//     point of a SetupIntent, and this is the parameter that delivers it.
+func (s *StripeService) CreateSetupIntent(ctx context.Context, customerStripeID, platformUserID string) (string, error) {
+	if s.devMode {
+		slog.Info("dev mode: CreateSetupIntent issued dev client_secret",
+			"customer_stripe_id", customerStripeID, "platform_user_id", platformUserID)
+		return s.DevStore().NewSetupIntentForCustomer(platformUserID, customerStripeID), nil
+	}
+
+	if customerStripeID == "" {
+		// Fail closed. Handing back a customerless client_secret would reproduce
+		// exactly the bug this function exists to fix: the buyer would complete
+		// card entry, be told it worked, and have saved nothing. Better to error
+		// than to lie to the user about their card being on file.
+		return "", fmt.Errorf("create setup intent: stripe customer id required (provision one first)")
 	}
 
 	params := &stripe.SetupIntentParams{
+		Customer:           stripe.String(customerStripeID),
 		PaymentMethodTypes: stripe.StringSlice([]string{"card"}),
+		Usage:              stripe.String("off_session"),
 	}
-	// If the customer has a Stripe customer ID, attach it.
-	if customerID != "" {
-		params.AddMetadata("platform_customer_id", customerID)
+	if platformUserID != "" {
+		params.AddMetadata("platform_customer_id", platformUserID)
 	}
 
 	// No idempotency key by design: nothing in the arguments identifies WHICH
-	// setup attempt this is. A key derived from customerID alone would pin one
+	// setup attempt this is. A key derived from the customer alone would pin one
 	// SetupIntent per customer for the 24h key window, so a customer adding a
 	// second card (or retrying after abandoning the first) would be handed the
 	// stale intent. A random key would defeat the purpose. SetupIntent creation
@@ -376,6 +568,12 @@ type SetupIntentStatus struct {
 	Status          string
 	Succeeded       bool
 	PaymentMethodID string
+	// CustomerID is the cus_... the confirmed method was attached to. Carried so
+	// the caller can persist (customer, payment method) as one consistent pair
+	// without a second Stripe round-trip. Empty on a customerless intent — which,
+	// since CreateSetupIntent now refuses to make one, only happens for intents
+	// created before that fix.
+	CustomerID string
 }
 
 // setupIntentIDFromSecret extracts the SetupIntent id from a client_secret.
@@ -413,10 +611,12 @@ func (s *StripeService) GetSetupIntentStatus(ctx context.Context, clientSecret, 
 		if owner, ok := s.DevStore().SetupIntentOwner(clientSecret); !ok || (customerKey != "" && owner != customerKey) {
 			return SetupIntentStatus{Status: "unknown"}, nil
 		}
+		pmID, cusID := s.DevStore().ConfirmSetupIntent(clientSecret)
 		return SetupIntentStatus{
 			Status:          "succeeded",
 			Succeeded:       true,
-			PaymentMethodID: "pm_dev_setupintent",
+			PaymentMethodID: pmID,
+			CustomerID:      cusID,
 		}, nil
 	}
 
@@ -446,6 +646,9 @@ func (s *StripeService) GetSetupIntentStatus(ctx context.Context, clientSecret, 
 	out := SetupIntentStatus{Status: string(si.Status)}
 	if si.PaymentMethod != nil {
 		out.PaymentMethodID = si.PaymentMethod.ID
+	}
+	if si.Customer != nil {
+		out.CustomerID = si.Customer.ID
 	}
 	out.Succeeded = si.Status == stripe.SetupIntentStatusSucceeded && out.PaymentMethodID != ""
 	return out, nil
@@ -883,10 +1086,16 @@ func (s *StripeService) DeletePlatformExternalBankAccount(ctx context.Context, e
 // not by Stripe's capture mechanism.
 //
 // Idempotency key is mandatory.
+// buyerStripeCustomerID, when non-empty, binds the PaymentIntent to the buyer's
+// Stripe Customer. This is what later makes ConfirmOffSessionPaymentIntent
+// possible: Stripe will only charge a saved payment method off-session if the
+// PaymentIntent and the method belong to the same Customer. Passing "" preserves
+// the old customerless behaviour for callers that genuinely have no customer.
 func (s *StripeService) CreateMarketplacePaymentIntent(
 	ctx context.Context,
 	totalCents int64,
 	currency string,
+	buyerStripeCustomerID string,
 	idempotencyKey string,
 	metadata map[string]string,
 ) (string, string, error) {
@@ -896,9 +1105,12 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 	if s.devMode {
 		slog.Info("dev mode: stub CreateMarketplacePaymentIntent",
 			"total_cents", totalCents,
+			"customer", buyerStripeCustomerID,
 			"idem", idempotencyKey,
 		)
-		return "pi_listing_dev_" + idempotencyKey, "pi_listing_dev_secret_" + idempotencyKey, nil
+		piID := "pi_listing_dev_" + idempotencyKey
+		s.DevStore().RecordPaymentIntent(piID, buyerStripeCustomerID, totalCents)
+		return piID, "pi_listing_dev_secret_" + idempotencyKey, nil
 	}
 
 	params := &stripe.PaymentIntentParams{
@@ -907,6 +1119,9 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 		// Auto-capture: funds move to platform balance. Held in escrow by
 		// the marketplace state machine (escrow_status='held').
 		CaptureMethod: stripe.String(string(stripe.PaymentIntentCaptureMethodAutomatic)),
+	}
+	if buyerStripeCustomerID != "" {
+		params.Customer = stripe.String(buyerStripeCustomerID)
 	}
 	for k, v := range metadata {
 		params.AddMetadata(k, v)
@@ -921,6 +1136,67 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 		return "", "", fmt.Errorf("create marketplace payment intent: %w", err)
 	}
 	return pi.ID, pi.ClientSecret, nil
+}
+
+// ConfirmOffSessionPaymentIntent confirms an EXISTING PaymentIntent against a
+// saved payment method, with the buyer not present.
+//
+// Why confirm an existing PI rather than create-and-confirm in one call (as
+// CreateOffSessionPaymentIntent does for BNPL): a listing order already carries
+// exactly one PaymentIntent, created under the deterministic key
+// "listing-charge:<orderID>" and persisted on the row. That PI is the order's
+// single financial object — the thing the escrow state machine, the
+// payment_intent.succeeded handler, the transfer's SourceTransaction and the
+// refund path all key on. Creating a second PI per retry would mean an order
+// with several PIs, several possible authorization holds on the buyer's card,
+// and no single answer to "was this order paid?". So: create once, confirm many.
+//
+// The idempotency key must be ATTEMPT-scoped, not order-scoped. A declined
+// confirm leaves the PI in requires_payment_method, which is retryable — but
+// replaying the same key would make Stripe return the cached DECLINE rather than
+// re-attempt the card, so a buyer who topped up their balance could never
+// succeed. This mirrors the attempt-numbered key already used for BNPL
+// installments (processOneInstallment).
+//
+// Returns the PaymentIntent status on success. A non-nil error from Stripe is
+// classified by the caller (classifyChargeError) into the distinct outcomes that
+// must not collapse: no instrument, SCA required, insufficient funds, declined.
+func (s *StripeService) ConfirmOffSessionPaymentIntent(ctx context.Context, paymentIntentID, paymentMethodID, idempotencyKey string) (string, error) {
+	if paymentIntentID == "" {
+		return "", fmt.Errorf("confirm off-session payment intent: payment intent id required")
+	}
+	if paymentMethodID == "" {
+		// Fail closed. Confirming with no payment method would either error at
+		// Stripe or silently fall through to a customer default we did not
+		// choose. "Which card did we charge?" must never be an open question.
+		return "", fmt.Errorf("confirm off-session payment intent: %w", ErrNoPaymentInstrument)
+	}
+	if idempotencyKey == "" {
+		return "", fmt.Errorf("confirm off-session payment intent: idempotency key required")
+	}
+	if s.devMode {
+		return s.DevStore().ConfirmPaymentIntent(paymentIntentID, paymentMethodID, idempotencyKey)
+	}
+
+	params := &stripe.PaymentIntentConfirmParams{
+		PaymentMethod: stripe.String(paymentMethodID),
+		// OffSession tells Stripe the customer is NOT in the checkout flow. It
+		// changes Stripe's behaviour in two ways that both matter here: it
+		// applies the stored mandate from the off_session SetupIntent, and when
+		// the issuer demands 3DS it fails fast with authentication_required
+		// instead of parking the PI waiting for a browser that will never come.
+		OffSession: stripe.Bool(true),
+	}
+	params.IdempotencyKey = stripe.String(idempotencyKey)
+
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Confirm", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+		params.Context = ctx
+		return paymentintent.Confirm(paymentIntentID, params)
+	})
+	if err != nil {
+		return "", fmt.Errorf("confirm off-session payment intent: %w", err)
+	}
+	return string(pi.Status), nil
 }
 
 // CreateMarketplaceTransfer pays the seller for a confirmed listing order.

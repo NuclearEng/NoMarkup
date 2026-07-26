@@ -503,6 +503,13 @@ func newTestPaymentService(repo *mockPaymentRepo, stripe *mockStripeService) *Pa
 	// exercise specific underwriting outcomes override these.
 	svc.SetUnderwriter(healthyUnderwriter())
 	svc.SetTrustSource(healthyTrust())
+	// Wire a customer provisioner backed by an in-memory directory. Payment-method
+	// flows now fail closed without one (a Stripe Customer is a hard prerequisite
+	// for saving a card), so the default fixture supplies a working one; tests
+	// that exercise the unprovisioned path build their own service.
+	dir := newFakeCustomerDirectory()
+	dir.addUser("user-1", "user-1@example.com", "User One")
+	svc.SetCustomerProvisioner(NewCustomerProvisioner(dir, ss))
 	return svc
 }
 

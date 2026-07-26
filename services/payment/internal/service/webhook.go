@@ -163,6 +163,15 @@ func (s *PaymentService) dispatchWebhookEvent(ctx context.Context, event stripe.
 	case "account.updated":
 		return s.handleAccountUpdated(ctx, event)
 
+	// Payment-method setup. This is the authoritative signal that a buyer's card
+	// is saved and chargeable.
+	case "setup_intent.succeeded":
+		return s.handleSetupIntentSucceeded(ctx, event)
+	case "setup_intent.setup_failed":
+		return s.handleSetupIntentFailed(ctx, event)
+	case "payment_method.detached":
+		return s.handlePaymentMethodDetached(ctx, event)
+
 	// Subscription events — delegate to SubscriptionService
 	case "customer.subscription.updated",
 		"customer.subscription.deleted",
@@ -489,6 +498,153 @@ func (s *PaymentService) handleChargeRefunded(ctx context.Context, event stripe.
 	}
 	slog.Info("payment refunded via webhook", "payment_id", payment.ID, "amount", refundAmount)
 
+	return nil
+}
+
+// handleSetupIntentSucceeded persists a payment method the buyer just saved and
+// makes it their default.
+//
+// WHY THIS IS THE AUTHORITATIVE SIGNAL. A card is only chargeable off-session
+// once Stripe says the SetupIntent succeeded. The browser saying so is not
+// evidence (the existing GetSetupIntentStatus comment makes the same point), and
+// the browser may never say anything at all: the buyer can complete a 3DS
+// challenge in a bank app and close the tab, in which case this event is the
+// ONLY notification the platform ever receives. Persisting solely on the
+// synchronous path would silently lose exactly those cards.
+//
+// Signature verification and dedup are inherited, not reimplemented: this
+// handler is only reachable from dispatchWebhookEvent, which HandleWebhook calls
+// after stripe.webhooks.constructEvent() has verified the payload against
+// STRIPE_WEBHOOK_SECRET and after RecordStripeEventStart has established that
+// this event.id has not already been fully processed.
+//
+// Idempotency on top of that: Stripe redelivers successful events, and the
+// synchronous path writes the same method. Both converge because the DB upsert
+// keys on the pm_ id (unique) and the default-update carries a deterministic
+// Stripe idempotency key.
+//
+// Fail-safe vs fail-retry: a payload we cannot act on (no method, no customer, a
+// customer we do not recognise) is logged and ACKed, because returning an error
+// makes Stripe retry it for three days and no retry will make an unknown
+// customer known. A genuine persistence failure DOES return an error, so Stripe
+// retries and the card is not lost.
+func (s *PaymentService) handleSetupIntentSucceeded(ctx context.Context, event stripe.Event) error {
+	var si stripe.SetupIntent
+	if err := json.Unmarshal(event.Data.Raw, &si); err != nil {
+		return fmt.Errorf("parse setup_intent.succeeded: %w", err)
+	}
+
+	if s.customers == nil {
+		slog.ErrorContext(ctx, "setup_intent.succeeded received but customer provisioner is not configured; card not persisted",
+			"setup_intent_id", si.ID)
+		return nil
+	}
+
+	if si.PaymentMethod == nil || si.PaymentMethod.ID == "" {
+		slog.WarnContext(ctx, "setup_intent.succeeded has no payment method, acking", "setup_intent_id", si.ID)
+		return nil
+	}
+	if si.Customer == nil || si.Customer.ID == "" {
+		// A customerless SetupIntent cannot have attached anything. This is the
+		// pre-fix shape; CreateSetupIntent now refuses to produce one.
+		slog.WarnContext(ctx, "setup_intent.succeeded has no customer; the payment method is attached to nothing, acking",
+			"setup_intent_id", si.ID, "payment_method_id", si.PaymentMethod.ID)
+		return nil
+	}
+
+	// Resolve the platform user. Prefer our own index on the Stripe customer id
+	// (unique per migration 102) over the metadata tag: metadata is set by us at
+	// creation, but the DB is the record of who owns the customer, and it is the
+	// mapping every other money path uses.
+	userID, err := s.customers.dir.FindUserByStripeCustomerID(ctx, si.Customer.ID)
+	if err != nil {
+		if tagged := si.Metadata["platform_customer_id"]; tagged != "" {
+			slog.WarnContext(ctx, "setup_intent.succeeded for a stripe customer not in our records; falling back to metadata tag",
+				"setup_intent_id", si.ID, "stripe_customer_id", si.Customer.ID, "tagged_user_id", tagged)
+			userID = tagged
+		} else {
+			// Not our customer and no tag. Could be another environment sharing
+			// the Stripe account. Ack — retrying cannot help.
+			slog.WarnContext(ctx, "setup_intent.succeeded for an unknown stripe customer, acking",
+				"setup_intent_id", si.ID, "stripe_customer_id", si.Customer.ID, "error", err)
+			return nil
+		}
+	}
+
+	if err := s.customers.RecordConfirmedPaymentMethod(ctx, userID, si.Customer.ID, si.PaymentMethod.ID); err != nil {
+		// Real failure: return an error so Stripe retries. Losing this event
+		// means the buyer believes their card is saved and no charge will ever
+		// find it.
+		return fmt.Errorf("persist payment method from setup_intent.succeeded: %w", err)
+	}
+
+	slog.InfoContext(ctx, "payment method saved from setup intent",
+		"setup_intent_id", si.ID,
+		"user_id", userID,
+		"stripe_customer_id", si.Customer.ID,
+		"payment_method_id", si.PaymentMethod.ID,
+	)
+	return nil
+}
+
+// handleSetupIntentFailed records a card the buyer tried and failed to save.
+//
+// Nothing to persist — no method was attached — but this is the only signal that
+// distinguishes "the buyer never tried to add a card" from "the buyer tried and
+// their bank refused", which are very different explanations for an order that
+// later cannot be collected. Always ACKs: a failed setup is not a platform fault
+// and no retry changes it.
+func (s *PaymentService) handleSetupIntentFailed(ctx context.Context, event stripe.Event) error {
+	var si stripe.SetupIntent
+	if err := json.Unmarshal(event.Data.Raw, &si); err != nil {
+		return fmt.Errorf("parse setup_intent.setup_failed: %w", err)
+	}
+	reason := "unknown"
+	if si.LastSetupError != nil && si.LastSetupError.Msg != "" {
+		reason = si.LastSetupError.Msg
+	}
+	customerID := ""
+	if si.Customer != nil {
+		customerID = si.Customer.ID
+	}
+	slog.WarnContext(ctx, "setup intent failed; buyer has no saved card from this attempt",
+		"setup_intent_id", si.ID,
+		"stripe_customer_id", customerID,
+		"platform_user_id", si.Metadata["platform_customer_id"],
+		"reason", reason,
+	)
+	return nil
+}
+
+// handlePaymentMethodDetached soft-deletes a card removed at Stripe.
+//
+// Keeps the fail-closed chargeability check honest: without this, a card the
+// user detached in a Stripe-hosted surface (or that Stripe removed itself) would
+// stay marked as the local default, and every subsequent off-session charge
+// would fail as resource_missing. Acks unknown methods — a detach we have no
+// record of is already in the desired end state.
+func (s *PaymentService) handlePaymentMethodDetached(ctx context.Context, event stripe.Event) error {
+	var pm stripe.PaymentMethod
+	if err := json.Unmarshal(event.Data.Raw, &pm); err != nil {
+		return fmt.Errorf("parse payment_method.detached: %w", err)
+	}
+	if s.customers == nil || pm.ID == "" {
+		return nil
+	}
+
+	// The detached event no longer carries the customer, so resolve the owner
+	// from our own record of the method.
+	userID, err := s.customers.dir.FindUserByPaymentMethodID(ctx, pm.ID)
+	if err != nil {
+		slog.InfoContext(ctx, "payment_method.detached for a method we do not track, acking",
+			"payment_method_id", pm.ID)
+		return nil
+	}
+	if err := s.customers.dir.SoftDeleteUserPaymentMethod(ctx, userID, pm.ID); err != nil {
+		return fmt.Errorf("soft delete detached payment method: %w", err)
+	}
+	slog.InfoContext(ctx, "payment method detached at stripe, marked deleted locally",
+		"user_id", userID, "payment_method_id", pm.ID)
 	return nil
 }
 

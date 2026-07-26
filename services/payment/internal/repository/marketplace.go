@@ -189,6 +189,99 @@ func (r *MarketplaceRepository) ClaimListingOrderForRelease(ctx context.Context,
 	return o, nil
 }
 
+// ListListingOrdersAwaitingPayment returns orders still sitting in
+// escrow_status='pending_payment', oldest first. This is the settlement
+// sweeper's input set — orders whose buyer has not funded escrow — and it is
+// served by idx_listing_orders_awaiting_payment (migration 101), a partial
+// index on exactly that status so the scan never walks the funded majority.
+//
+// Deliberately a narrow projection: the sweeper needs identity, the PI (or its
+// absence) and the payment clock, so this query does not have to join listings
+// or carry the escrow/dispute columns the full-row SELECTs above return.
+func (r *MarketplaceRepository) ListListingOrdersAwaitingPayment(ctx context.Context, limit int) ([]*service.PendingListingOrder, error) {
+	const q = `
+		SELECT id, listing_id, seller_id, buyer_id, amount_cents,
+		       COALESCE(payment_intent_id,''), payment_attempts,
+		       payment_due_at, created_at
+		  FROM listing_orders
+		 WHERE escrow_status = 'pending_payment'
+		 ORDER BY created_at ASC
+		 LIMIT $1`
+	rows, err := r.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list listing orders awaiting payment: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*service.PendingListingOrder
+	for rows.Next() {
+		o := &service.PendingListingOrder{}
+		if err := rows.Scan(&o.ID, &o.ListingID, &o.SellerID, &o.BuyerID, &o.AmountCents,
+			&o.PaymentIntentID, &o.PaymentAttempts, &o.PaymentDueAt, &o.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan pending listing order: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// RecordListingPaymentAttempt increments payment_attempts and stamps
+// last_payment_error (an empty string clears a previous failure).
+//
+// paymentDueAt is applied only when non-nil AND the row does not already carry
+// one: the buyer's deadline is set once, by the pass that first attaches the
+// PaymentIntent. A later retry must never quietly extend a clock that is
+// already running, or an unfunded order could outlive its window indefinitely.
+func (r *MarketplaceRepository) RecordListingPaymentAttempt(ctx context.Context, orderID string, paymentDueAt *time.Time, lastErr string) error {
+	const q = `
+		UPDATE listing_orders
+		   SET payment_attempts   = payment_attempts + 1,
+		       payment_due_at     = COALESCE(payment_due_at, $2),
+		       last_payment_error = NULLIF($3, ''),
+		       updated_at         = now()
+		 WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q, orderID, paymentDueAt, lastErr)
+	if err != nil {
+		return fmt.Errorf("record listing payment attempt: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return service.ErrListingOrderNotFound
+	}
+	return nil
+}
+
+// FailListingOrderPayment moves an unfunded order to the terminal
+// 'payment_failed' state (migration 101).
+//
+// The `escrow_status = 'pending_payment'` guard lives in the UPDATE itself, so
+// an order that funded between the sweeper's SELECT and this write is left
+// exactly as it is — a paid order can never be cancelled by a stale read. Zero
+// rows affected therefore means "no longer eligible", reported as
+// ErrInvalidEscrowState, not as a missing row.
+//
+// Money-safety: 'payment_failed' is invisible to ListListingOrdersForAutoRelease
+// (which selects only 'held' and 'released'), so an expired order can never
+// transfer funds to a seller.
+func (r *MarketplaceRepository) FailListingOrderPayment(ctx context.Context, orderID, reason string) error {
+	const q = `
+		UPDATE listing_orders
+		   SET escrow_status      = 'payment_failed',
+		       last_payment_error = $2,
+		       updated_at         = now()
+		 WHERE id = $1
+		   AND escrow_status = 'pending_payment'`
+	tag, err := r.pool.Exec(ctx, q, orderID, reason)
+	if err != nil {
+		return fmt.Errorf("fail listing order payment: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("fail listing order payment: order %s no longer pending_payment: %w",
+			orderID, service.ErrInvalidEscrowState)
+	}
+	return nil
+}
+
 // UpdateListingOrderDispute links / unlinks a dispute_id.
 func (r *MarketplaceRepository) UpdateListingOrderDispute(ctx context.Context, orderID string, disputeID *string) error {
 	const q = `UPDATE listing_orders SET dispute_id = $2, updated_at = now() WHERE id = $1`

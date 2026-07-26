@@ -120,7 +120,7 @@ func allStripeCalls() []stripeCallCase {
 			return err
 		}},
 		{"SetupIntent.Create", func(ctx context.Context, s *StripeService) error {
-			_, err := s.CreateSetupIntent(ctx, "cus_1")
+			_, err := s.CreateSetupIntent(ctx, "cus_1", "user-1")
 			return err
 		}},
 		{"SetupIntent.Get", func(ctx context.Context, s *StripeService) error {
@@ -171,7 +171,7 @@ func allStripeCalls() []stripeCallCase {
 			return s.DeletePlatformExternalBankAccount(ctx, "ba_1")
 		}},
 		{"PaymentIntent.Create-marketplace", func(ctx context.Context, s *StripeService) error {
-			_, _, err := s.CreateMarketplacePaymentIntent(ctx, 1000, "usd", "idem-mpi", map[string]string{"order_id": "o1"})
+			_, _, err := s.CreateMarketplacePaymentIntent(ctx, 1000, "usd", "cus_1", "idem-mpi", map[string]string{"order_id": "o1"})
 			return err
 		}},
 		{"PaymentIntent.Get-plus-Transfer.Create-marketplace", func(ctx context.Context, s *StripeService) error {
@@ -436,7 +436,7 @@ func TestStripeMutatingCalls_SendDeterministicIdempotencyKey(t *testing.T) {
 			return s.DeletePlatformExternalBankAccount(ctx, "ba_1")
 		}},
 		{"PaymentIntent.Create-marketplace", func(ctx context.Context, s *StripeService) error {
-			_, _, err := s.CreateMarketplacePaymentIntent(ctx, 1000, "usd", "idem-mpi", nil)
+			_, _, err := s.CreateMarketplacePaymentIntent(ctx, 1000, "usd", "cus_1", "idem-mpi", nil)
 			return err
 		}},
 		{"Transfer.Create-marketplace", func(ctx context.Context, s *StripeService) error {

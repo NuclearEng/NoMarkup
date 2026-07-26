@@ -491,9 +491,42 @@ func (r *PostgresRepository) SetStripeOnboardingComplete(ctx context.Context, st
 	return nil
 }
 
+// GetStripeCustomerID returns the Stripe Customer id for a platform user.
+//
+// It reads users.stripe_customer_id (migration 102) FIRST. That column is the
+// billing identity of the person and is the only one that is ever populated —
+// see below.
+//
+// The subscriptions fallback is retained deliberately, and it is dead weight by
+// design rather than by accident. Before migration 102 this function read ONLY
+// subscriptions.stripe_customer_id, and SubscriptionService.CreateSubscription
+// never populated that column: the INSERT wrote '' and no UPDATE ever touched
+// it. So this function returned ("", nil) — success, empty — for every user who
+// has ever existed, which is why no off-session charge in this repo could work.
+// The fallback stays because it costs one indexed lookup only in the
+// not-yet-provisioned case, and because if anyone ever backfills that column
+// from Stripe the value is still honored. It must NEVER become the primary
+// source again.
+//
+// Returns ("", nil) when the user has no Customer yet. That is a normal state
+// and NOT an error — callers that need a chargeable customer must either
+// provision one (service.CustomerProvisioner) or fail closed. Callers must not
+// substitute the platform user id: it is not a cus_ id and Stripe will reject
+// it (or, worse, silently accept it as a metadata-free unknown).
 func (r *PostgresRepository) GetStripeCustomerID(ctx context.Context, userID string) (string, error) {
 	var customerID *string
 	err := r.pool.QueryRow(ctx, `
+		SELECT stripe_customer_id FROM users
+		WHERE id = $1 AND deleted_at IS NULL`, userID).Scan(&customerID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("get stripe customer id: %w", err)
+	}
+	if err == nil && customerID != nil && *customerID != "" {
+		return *customerID, nil
+	}
+
+	// Legacy fallback — see the note above.
+	err = r.pool.QueryRow(ctx, `
 		SELECT stripe_customer_id FROM subscriptions
 		WHERE user_id = $1 AND status IN ('active', 'trialing', 'past_due')
 		ORDER BY created_at DESC

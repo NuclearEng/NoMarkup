@@ -54,6 +54,30 @@ type PaymentService struct {
 	webhookValidator WebhookEventValidator
 	underwriter      Underwriter
 	trust            ProviderTrustSource
+	// customers provisions and records the user's Stripe Customer + saved cards.
+	// Optional so existing tests that construct PaymentService directly keep
+	// compiling; every path that needs it degrades explicitly and fail-closed
+	// when it is nil (see requireCustomers).
+	customers *CustomerProvisioner
+}
+
+// SetCustomerProvisioner wires Stripe Customer provisioning and payment-method
+// persistence. Production wires one built over *repository.PostgresRepository.
+func (s *PaymentService) SetCustomerProvisioner(p *CustomerProvisioner) {
+	s.customers = p
+}
+
+// requireCustomers returns the provisioner or an error.
+//
+// Fail closed rather than fall back: the historical fallback here was to pass
+// the platform user id to Stripe wherever a cus_ id was expected, which is what
+// let every payment-method flow appear to work while attaching cards to nothing.
+// An explicit error is strictly better than silently saving a card into a void.
+func (s *PaymentService) requireCustomers() (*CustomerProvisioner, error) {
+	if s.customers == nil {
+		return nil, fmt.Errorf("stripe customer provisioner not configured")
+	}
+	return s.customers, nil
 }
 
 // NewPaymentService creates a new payment service.
@@ -748,29 +772,74 @@ func (s *PaymentService) GetStripeDashboardLink(ctx context.Context, userID stri
 	return s.stripe.GetDashboardLink(ctx, accountID)
 }
 
-// CreateSetupIntent creates a SetupIntent for saving customer payment methods.
+// CreateSetupIntent creates a SetupIntent for saving a user's payment method.
+//
+// This is the one place in the product where a Stripe Customer is genuinely
+// needed and the user is present, so it is the natural provisioning trigger:
+// EnsureCustomer runs here (idempotently), and the resulting cus_ id is passed
+// to Stripe as params.Customer so the confirmed card ATTACHES to the person.
+//
+// Provisioning happens on this write path and never on a read path — see
+// ListPaymentMethods.
 func (s *PaymentService) CreateSetupIntent(ctx context.Context, customerID string) (string, error) {
-	// Look up the user's Stripe customer ID if one exists.
-	stripeCustomerID, err := s.repo.GetStripeCustomerID(ctx, customerID)
+	customers, err := s.requireCustomers()
 	if err != nil {
-		slog.Warn("failed to look up stripe customer id for setup intent",
-			"user_id", customerID,
-			"error", err,
-		)
+		return "", fmt.Errorf("create setup intent: %w", err)
 	}
-	// Pass the Stripe customer ID if available, otherwise pass the platform user ID
-	// (the Stripe service stores it as metadata).
-	if stripeCustomerID != "" {
-		return s.stripe.CreateSetupIntent(ctx, stripeCustomerID)
+	stripeCustomerID, err := customers.EnsureCustomer(ctx, customerID)
+	if err != nil {
+		return "", fmt.Errorf("create setup intent: %w", err)
 	}
-	return s.stripe.CreateSetupIntent(ctx, customerID)
+	return s.stripe.CreateSetupIntent(ctx, stripeCustomerID, customerID)
 }
 
 // GetSetupIntentStatus asks Stripe whether a SetupIntent actually confirmed.
 // Callers gate privileges on this instead of trusting a client-side "it
 // succeeded" POST.
+//
+// On a confirmed intent this ALSO persists the payment method as a side effect.
+// That is deliberate: it is the synchronous fast path, complementing the
+// setup_intent.succeeded event handler which is the authoritative one. Either
+// may arrive first and both are idempotent (the DB upsert keys on the pm_ id),
+// so the card is on file as soon as EITHER lands — the user does not have to
+// wait on event delivery to see the card they just saved.
+//
+// A persistence failure does NOT fail the status read: the caller asked "did it
+// confirm?", the answer is yes, and answering "no" would be wrong. The event
+// handler retries the persistence.
 func (s *PaymentService) GetSetupIntentStatus(ctx context.Context, clientSecret, customerID string) (SetupIntentStatus, error) {
-	return s.stripe.GetSetupIntentStatus(ctx, clientSecret, customerID)
+	status, err := s.stripe.GetSetupIntentStatus(ctx, clientSecret, customerID)
+	if err != nil {
+		return status, err
+	}
+	if !status.Succeeded || status.PaymentMethodID == "" {
+		return status, nil
+	}
+	if s.customers == nil || customerID == "" {
+		return status, nil
+	}
+
+	stripeCustomerID := status.CustomerID
+	if stripeCustomerID == "" {
+		// Intent created before params.Customer was set, or a dev intent with no
+		// customer binding. Resolve from our own record rather than guessing.
+		resolved, lookupErr := s.customers.Lookup(ctx, customerID)
+		if lookupErr != nil || resolved == "" {
+			slog.WarnContext(ctx, "confirmed setup intent has no stripe customer; cannot persist payment method",
+				"user_id", customerID, "payment_method_id", status.PaymentMethodID)
+			return status, nil
+		}
+		stripeCustomerID = resolved
+	}
+
+	if persistErr := s.customers.RecordConfirmedPaymentMethod(ctx, customerID, stripeCustomerID, status.PaymentMethodID); persistErr != nil {
+		slog.ErrorContext(ctx, "failed to persist confirmed payment method on the synchronous path; the setup_intent.succeeded handler remains the backstop",
+			"user_id", customerID,
+			"payment_method_id", status.PaymentMethodID,
+			"error", persistErr,
+		)
+	}
+	return status, nil
 }
 
 // ChargePromotion collects a listing-promotion fee off-session against the
@@ -798,15 +867,24 @@ func (s *PaymentService) ChargePromotion(ctx context.Context, customerID, client
 		return "", si.Status, false, nil
 	}
 
-	stripeCustomerID, lookupErr := s.repo.GetStripeCustomerID(ctx, customerID)
-	if lookupErr != nil {
-		slog.Warn("charge promotion: stripe customer lookup failed",
-			"user_id", customerID,
-			"error", lookupErr,
-		)
+	// The SetupIntent tells us which Customer the confirmed card is attached to.
+	// Prefer it over any local lookup: it is the pair Stripe itself just
+	// validated, and an off-session charge REQUIRES the customer and the payment
+	// method to belong together.
+	stripeCustomerID := si.CustomerID
+	if stripeCustomerID == "" && s.customers != nil {
+		resolved, lookupErr := s.customers.Lookup(ctx, customerID)
+		if lookupErr != nil {
+			slog.WarnContext(ctx, "charge promotion: stripe customer lookup failed",
+				"user_id", customerID, "error", lookupErr)
+		}
+		stripeCustomerID = resolved
 	}
 	if stripeCustomerID == "" {
-		stripeCustomerID = customerID
+		// Fail closed. Previously this substituted the platform user id, which is
+		// not a cus_ id — the charge could only ever be rejected by Stripe, and
+		// the rejection was then reported as a payment failure by the buyer.
+		return "", "", false, fmt.Errorf("charge promotion: %w", ErrNoPaymentInstrument)
 	}
 
 	piID, _, err := s.stripe.CreateOffSessionPaymentIntent(
@@ -828,22 +906,62 @@ func (s *PaymentService) ChargePromotion(ctx context.Context, customerID, client
 	return piID, "succeeded", true, nil
 }
 
-// ListPaymentMethods lists a customer's payment methods.
-// If the customer has no Stripe customer ID configured, returns an empty list.
+// ListPaymentMethods lists a user's saved payment methods.
+//
+// Before migration 102 this returned [] for EVERY user, always: it resolved the
+// Stripe customer id from subscriptions.stripe_customer_id, a column nothing
+// ever wrote, so the lookup produced "" and the function short-circuited to an
+// empty slice. The cards were not missing from the response — they had never
+// been attached to anything in the first place.
+//
+// Now: Stripe is the source of truth for WHICH cards exist (it knows about
+// detachments, expiries and cards added through any other surface), and the
+// local table supplies WHICH ONE IS DEFAULT. Merging the two is what lets the UI
+// mark a default without a second round-trip.
+//
+// This path deliberately does NOT provision. A read must not create a Stripe
+// object: a user who opens the billing page and saves nothing should leave no
+// trace at Stripe. No customer id simply means no saved cards, which is exactly
+// what an empty list says.
 func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerID string) ([]domain.PaymentMethod, error) {
 	if s.stripe.IsDevMode() {
 		// DevStore is keyed by platform user id, not stripe customer id.
 		return s.stripe.ListPaymentMethods(ctx, customerID)
 	}
-	// Look up the user's Stripe customer ID. If none exists, return empty.
-	stripeCustomerID, err := s.repo.GetStripeCustomerID(ctx, customerID)
-	if err != nil || stripeCustomerID == "" {
-		slog.Info("no stripe customer id for user, returning empty payment methods",
-			"user_id", customerID,
-		)
+
+	customers, err := s.requireCustomers()
+	if err != nil {
+		return nil, fmt.Errorf("list payment methods: %w", err)
+	}
+
+	stripeCustomerID, err := customers.Lookup(ctx, customerID)
+	if err != nil {
+		// A lookup failure is NOT "no cards". Returning [] here would tell a user
+		// with saved cards that they have none, and would let a caller that gates
+		// on "has a payment method" take the wrong branch during a DB blip.
+		return nil, fmt.Errorf("list payment methods: %w", err)
+	}
+	if stripeCustomerID == "" {
 		return []domain.PaymentMethod{}, nil
 	}
-	return s.stripe.ListPaymentMethods(ctx, stripeCustomerID)
+
+	methods, err := s.stripe.ListPaymentMethods(ctx, stripeCustomerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Overlay the default flag from local state. A failure to read it degrades
+	// to "no card marked default" rather than failing the list.
+	defaultPM, err := customers.DefaultPaymentMethod(ctx, customerID)
+	if err != nil {
+		slog.WarnContext(ctx, "could not resolve default payment method for list",
+			"user_id", customerID, "error", err)
+		return methods, nil
+	}
+	for i := range methods {
+		methods[i].IsDefault = methods[i].ID == defaultPM
+	}
+	return methods, nil
 }
 
 // AddDevPaymentMethod appends a card to the in-memory dev store. Callable
@@ -880,7 +998,22 @@ func (s *PaymentService) DeletePaymentMethod(ctx context.Context, customerID, pa
 	if !owned {
 		return domain.ErrPaymentNotFound
 	}
-	return s.stripe.DeletePaymentMethod(ctx, paymentMethodID)
+	if err := s.stripe.DeletePaymentMethod(ctx, paymentMethodID); err != nil {
+		return err
+	}
+	// Mirror the detach locally so the fail-closed chargeability check stops
+	// offering a card that no longer exists at Stripe. Ordering is Stripe-first:
+	// if the local write fails the card is gone at Stripe and merely stale here,
+	// and the next off-session charge fails cleanly as resource_missing (which
+	// classifies to ChargeOutcomeNoPaymentMethod, not a buyer decline). The
+	// reverse order could leave a card we believe is deleted still chargeable.
+	if s.customers != nil {
+		if err := s.customers.dir.SoftDeleteUserPaymentMethod(ctx, customerID, paymentMethodID); err != nil {
+			slog.ErrorContext(ctx, "detached payment method at stripe but failed to mark it deleted locally",
+				"user_id", customerID, "payment_method_id", paymentMethodID, "error", err)
+		}
+	}
+	return nil
 }
 
 // AdminListPayments lists payments with optional filters for admin use.

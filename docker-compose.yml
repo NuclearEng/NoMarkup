@@ -216,6 +216,11 @@ services:
       # is wrong inside a container (underwriting would fail closed: no offers).
       TRUST_ENGINE_ADDR: "trust:50057"
       UNDERWRITING_ENGINE_ADDR: "underwriting:50060"
+      # Marketplace notifications (escrow released, dispute filed/resolved,
+      # payment captured / declined / authentication required). The binary
+      # default is localhost, which is wrong inside a container: every
+      # notification would be dropped silently.
+      NOTIFICATION_SERVICE_ADDR: "notification:50059"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "payment-service"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"

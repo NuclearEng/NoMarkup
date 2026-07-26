@@ -374,7 +374,7 @@ func TestInstallmentService_ProcessDueInstallments(t *testing.T) {
 			},
 		}
 		svc := newTestInstallmentService(repo)
-		err := svc.ProcessDueInstallments(context.Background())
+		_, err := svc.ProcessDueInstallments(context.Background())
 		require.NoError(t, err)
 	})
 
@@ -386,7 +386,7 @@ func TestInstallmentService_ProcessDueInstallments(t *testing.T) {
 			},
 		}
 		svc := newTestInstallmentService(repo)
-		err := svc.ProcessDueInstallments(context.Background())
+		_, err := svc.ProcessDueInstallments(context.Background())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "db unreachable")
 	})
@@ -418,7 +418,7 @@ func TestInstallmentService_ProcessDueInstallments(t *testing.T) {
 			},
 		}
 		svc := newTestInstallmentService(repo)
-		err := svc.ProcessDueInstallments(context.Background())
+		_, err := svc.ProcessDueInstallments(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, 2, paidCount, "both installments should be marked paid")
 	})

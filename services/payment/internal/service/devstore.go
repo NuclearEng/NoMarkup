@@ -25,6 +25,50 @@ type DevStore struct {
 	captureKeys    map[string]string                 // idempotencyKey -> payment intent id
 	payoutKeys     map[string]string                 // idempotencyKey -> payout id
 	setupIntents   map[string]string                 // clientSecret -> customerKey
+
+	// customers models Stripe's Customer object well enough to exercise the
+	// provisioning contract: EnsureCustomer is idempotent per platform user, so
+	// N racing goroutines observe exactly one id — the same guarantee the
+	// deterministic Stripe idempotency key provides in production.
+	customers map[string]string // platformUserID -> cus_ id
+
+	// setupIntentCustomer records which cus_ a dev SetupIntent was minted
+	// against, so confirmation can return a consistent (pm, customer) pair.
+	setupIntentCustomer map[string]string // clientSecret -> cus_ id
+	// setupIntentPM is the payment method a confirmed dev SetupIntent yields.
+	// Allocated once per intent so repeated confirmation is idempotent.
+	setupIntentPM map[string]string // clientSecret -> pm_ id
+
+	// paymentMethodByID indexes every dev payment method by its pm_ id, so
+	// GetPaymentMethod can return display fields the way Stripe does.
+	paymentMethodByID map[string]domain.PaymentMethod
+	// defaultPM mirrors customer.invoice_settings.default_payment_method.
+	defaultPM map[string]string // cus_ id -> pm_ id
+
+	// paymentIntents backs the off-session confirm path.
+	paymentIntents map[string]*devPaymentIntent // pi id -> record
+	// confirmKeys gives dev confirms Stripe's idempotency-key semantics: a
+	// replayed key returns the ORIGINAL outcome, including an original failure.
+	confirmKeys map[string]devConfirmResult
+
+	// declineRules lets a test force a specific issuer outcome for a payment
+	// method, so each distinct failure mode can be exercised end to end.
+	declineRules map[string]error // pm_ id -> error to raise on confirm
+}
+
+// devPaymentIntent is the subset of a Stripe PaymentIntent the dev off-session
+// confirm path needs.
+type devPaymentIntent struct {
+	ID         string
+	CustomerID string
+	AmountCts  int64
+	Status     string
+}
+
+// devConfirmResult is a memoized confirm outcome keyed by idempotency key.
+type devConfirmResult struct {
+	status string
+	err    error
 }
 
 type devSubscription struct {
@@ -54,7 +98,51 @@ func newDevStore() *DevStore {
 		captureKeys:    make(map[string]string),
 		payoutKeys:     make(map[string]string),
 		setupIntents:   make(map[string]string),
+
+		customers:           make(map[string]string),
+		setupIntentCustomer: make(map[string]string),
+		setupIntentPM:       make(map[string]string),
+		paymentMethodByID:   make(map[string]domain.PaymentMethod),
+		defaultPM:           make(map[string]string),
+		paymentIntents:      make(map[string]*devPaymentIntent),
+		confirmKeys:         make(map[string]devConfirmResult),
+		declineRules:        make(map[string]error),
 	}
+}
+
+// --- Customers ---
+
+// EnsureCustomer returns the dev Stripe Customer id for a platform user,
+// allocating one on first call.
+//
+// Idempotent under concurrency by holding the write lock across the
+// check-and-set: N goroutines racing on the same user observe exactly ONE id.
+// That is the dev-mode analogue of the deterministic Stripe idempotency key in
+// CreateStripeCustomer, and it is what makes the concurrency test meaningful
+// rather than a test of the mutex alone.
+func (d *DevStore) EnsureCustomer(platformUserID string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if existing, ok := d.customers[platformUserID]; ok {
+		return existing
+	}
+	id := "cus_dev_" + uuid.NewString()
+	d.customers[platformUserID] = id
+	return id
+}
+
+// LookupCustomer returns the dev customer id for a user, or "" if none.
+func (d *DevStore) LookupCustomer(platformUserID string) string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.customers[platformUserID]
+}
+
+// CustomerCount reports how many distinct customers were minted (test helper).
+func (d *DevStore) CustomerCount() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return len(d.customers)
 }
 
 // --- Payment methods ---
@@ -71,7 +159,117 @@ func (d *DevStore) AddPaymentMethod(customerKey, brand, last4 string, expMonth, 
 		ExpYear:  expYear,
 	}
 	d.paymentMethods[customerKey] = append(d.paymentMethods[customerKey], pm)
+	d.paymentMethodByID[pm.ID] = pm
 	return pm
+}
+
+// GetPaymentMethod returns a dev payment method's display fields by id.
+// Returns a bare card record for unknown ids, mirroring the fact that a real
+// pm_ id is opaque and may predate this process.
+func (d *DevStore) GetPaymentMethod(paymentMethodID string) domain.PaymentMethod {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if pm, ok := d.paymentMethodByID[paymentMethodID]; ok {
+		return pm
+	}
+	return domain.PaymentMethod{ID: paymentMethodID, Type: "card"}
+}
+
+// SetDefaultPaymentMethod mirrors customer.invoice_settings.default_payment_method.
+func (d *DevStore) SetDefaultPaymentMethod(customerStripeID, paymentMethodID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.defaultPM[customerStripeID] = paymentMethodID
+}
+
+// DefaultPaymentMethod returns the dev customer's default method (test helper).
+func (d *DevStore) DefaultPaymentMethod(customerStripeID string) string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.defaultPM[customerStripeID]
+}
+
+// SetDeclineRule makes a subsequent ConfirmPaymentIntent against paymentMethodID
+// fail with err. Test-only: this is how each distinct issuer failure mode
+// (declined, insufficient funds, SCA) is exercised end to end without Stripe.
+// Passing a nil err clears the rule.
+func (d *DevStore) SetDeclineRule(paymentMethodID string, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err == nil {
+		delete(d.declineRules, paymentMethodID)
+		return
+	}
+	d.declineRules[paymentMethodID] = err
+}
+
+// --- Payment intents (off-session confirm) ---
+
+// RecordPaymentIntent registers a dev PaymentIntent so it can later be confirmed.
+func (d *DevStore) RecordPaymentIntent(piID, customerStripeID string, amountCts int64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, ok := d.paymentIntents[piID]; ok {
+		return
+	}
+	d.paymentIntents[piID] = &devPaymentIntent{
+		ID:         piID,
+		CustomerID: customerStripeID,
+		AmountCts:  amountCts,
+		Status:     "requires_payment_method",
+	}
+}
+
+// ConfirmPaymentIntent simulates an off-session confirmation.
+//
+// Reproduces the two Stripe behaviours the settlement path depends on:
+//
+//   - Idempotency-key replay returns the ORIGINAL outcome, failures included.
+//     This is why the production key must be attempt-scoped: an order-scoped key
+//     would replay a decline forever and a buyer who fixed their card could
+//     never pay.
+//   - A decline leaves the intent in requires_payment_method (retryable), while
+//     a success is terminal.
+func (d *DevStore) ConfirmPaymentIntent(piID, paymentMethodID, idempotencyKey string) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if prior, ok := d.confirmKeys[idempotencyKey]; ok {
+		return prior.status, prior.err
+	}
+
+	pi, ok := d.paymentIntents[piID]
+	if !ok {
+		// Unknown intent: register it so dev flows that skipped creation still
+		// work, mirroring the permissiveness of the other dev stubs.
+		pi = &devPaymentIntent{ID: piID, Status: "requires_payment_method"}
+		d.paymentIntents[piID] = pi
+	}
+
+	if pi.Status == "succeeded" {
+		// Already paid. Terminal and idempotent.
+		d.confirmKeys[idempotencyKey] = devConfirmResult{status: "succeeded"}
+		return "succeeded", nil
+	}
+
+	if ruleErr, ok := d.declineRules[paymentMethodID]; ok {
+		d.confirmKeys[idempotencyKey] = devConfirmResult{err: ruleErr}
+		return "", ruleErr
+	}
+
+	pi.Status = "succeeded"
+	d.confirmKeys[idempotencyKey] = devConfirmResult{status: "succeeded"}
+	return "succeeded", nil
+}
+
+// PaymentIntentStatus reports a dev intent's status (test helper).
+func (d *DevStore) PaymentIntentStatus(piID string) string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if pi, ok := d.paymentIntents[piID]; ok {
+		return pi.Status
+	}
+	return ""
 }
 
 func (d *DevStore) ListPaymentMethods(customerKey string) []domain.PaymentMethod {
@@ -108,6 +306,61 @@ func (d *DevStore) NewSetupIntent(customerKey string) string {
 	token := "dev_seti_" + uuid.NewString()
 	d.setupIntents[token] = customerKey
 	return token
+}
+
+// NewSetupIntentForCustomer allocates a dev client_secret bound to BOTH the
+// platform user (for the ownership check in GetSetupIntentStatus) and the Stripe
+// Customer the resulting card attaches to.
+//
+// The customer binding is the dev-mode counterpart of params.Customer in
+// CreateSetupIntent: without it, a confirmed dev card would attach to nothing,
+// which is precisely the production bug this work removes — so the stub must not
+// be more forgiving than production.
+func (d *DevStore) NewSetupIntentForCustomer(platformUserID, customerStripeID string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	token := "dev_seti_" + uuid.NewString()
+	d.setupIntents[token] = platformUserID
+	d.setupIntentCustomer[token] = customerStripeID
+	return token
+}
+
+// ConfirmSetupIntent resolves a dev SetupIntent to its (paymentMethodID,
+// customerID) pair, allocating and attaching the card on first call.
+//
+// Allocated ONCE per intent and memoized, so repeated confirmation — which
+// happens routinely, since both the event handler and the synchronous fast path
+// resolve the same intent — yields the same method rather than a new card each
+// time.
+func (d *DevStore) ConfirmSetupIntent(clientSecret string) (paymentMethodID, customerID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	customerID = d.setupIntentCustomer[clientSecret]
+	if existing, ok := d.setupIntentPM[clientSecret]; ok {
+		return existing, customerID
+	}
+
+	pm := domain.PaymentMethod{
+		ID:       "pm_dev_" + uuid.NewString(),
+		Type:     "card",
+		Brand:    "visa",
+		LastFour: "4242",
+		ExpMonth: 12,
+		ExpYear:  2030,
+	}
+	d.setupIntentPM[clientSecret] = pm.ID
+	d.paymentMethodByID[pm.ID] = pm
+
+	// Attach to the owning platform user's method list so dev ListPaymentMethods
+	// (which is keyed by platform user id) sees it.
+	if owner, ok := d.setupIntents[clientSecret]; ok && owner != "" {
+		d.paymentMethods[owner] = append(d.paymentMethods[owner], pm)
+	}
+	if customerID != "" {
+		d.paymentMethods[customerID] = append(d.paymentMethods[customerID], pm)
+	}
+	return pm.ID, customerID
 }
 
 // IsDevSetupIntent reports whether a client_secret was issued by DevStore.

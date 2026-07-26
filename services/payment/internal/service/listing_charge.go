@@ -178,10 +178,33 @@ type MarketplaceNotifier interface {
 	NotifyAutoReleaseToSeller(ctx context.Context, sellerID, orderID string, amountCents int64) error
 	NotifyDisputeFiled(ctx context.Context, sellerID, orderID, disputeID string) error
 	NotifyDisputeResolved(ctx context.Context, userID, orderID, disputeID, resolution string) error
+
+	// NotifyListingPaymentProblem tells the BUYER that collecting payment for an
+	// order they owe did not succeed, and what they must do about it.
+	//
+	// outcome distinguishes the cases that must never be collapsed (no card on
+	// file / SCA required / insufficient funds / declined); buyerMessage is the
+	// already-audience-appropriate text from ChargeOutcome.BuyerMessage. The
+	// buyer must be told: an auction win they cannot pay for, that nobody
+	// mentions, is how a marketplace loses both sides of a trade.
+	NotifyListingPaymentProblem(ctx context.Context, buyerID, orderID string, outcome ChargeOutcome, buyerMessage string) error
+
+	// NotifyListingPaymentCaptured confirms to the BUYER that an off-session
+	// charge succeeded and their order is funded. Required because the charge
+	// happens while they are away: the first they would otherwise know of a
+	// completed payment is their card statement.
+	NotifyListingPaymentCaptured(ctx context.Context, buyerID, orderID string, totalCents int64) error
 }
 
 // noopMarketplaceNotifier is the default if no notifier is wired.
 type noopMarketplaceNotifier struct{}
+
+func (noopMarketplaceNotifier) NotifyListingPaymentProblem(_ context.Context, _, _ string, _ ChargeOutcome, _ string) error {
+	return nil
+}
+func (noopMarketplaceNotifier) NotifyListingPaymentCaptured(_ context.Context, _, _ string, _ int64) error {
+	return nil
+}
 
 func (noopMarketplaceNotifier) NotifyPaymentReleased(_ context.Context, _, _ string, _ int64) error {
 	return nil
@@ -246,6 +269,24 @@ type MarketplaceService struct {
 	cfg      MarketplaceConfig
 	now      func() time.Time // injectable for tests
 
+	// buyers resolves a buyer's Stripe Customer and default payment method so an
+	// auction win can be collected off-session. Optional: when nil the sweeper
+	// keeps its previous behaviour exactly (attach a PaymentIntent, collect
+	// nothing) rather than guessing at a card.
+	buyers *CustomerProvisioner
+
+	// offSessionCharge gates merchant-initiated collection on auction wins.
+	//
+	// This is the only place in the goods flow where the platform moves a
+	// buyer's money without the buyer present. It is legitimate — it is what the
+	// off_session SetupIntent mandate is FOR, and it is how every auction
+	// marketplace settles — but it depends on a product/legal prerequisite that
+	// lives outside this code: the bidding terms must state that placing a bid
+	// authorizes NoMarkup to charge the saved card if the bid wins. Wired ON by
+	// default because an auction that cannot collect is not an auction, with
+	// MARKETPLACE_OFFSESSION_CHARGE=false as the operator kill switch.
+	offSessionCharge bool
+
 	// expireUnfunded gates the ONLY irreversible half of the settlement sweeper:
 	// moving an unfunded order to the terminal 'payment_failed'. Default false.
 	//
@@ -261,12 +302,71 @@ type MarketplaceService struct {
 // NewMarketplaceService constructs a service with sane defaults.
 func NewMarketplaceService(repo MarketplaceRepository, stripe *StripeService) *MarketplaceService {
 	return &MarketplaceService{
-		repo:     repo,
-		stripe:   stripe,
-		notifier: noopMarketplaceNotifier{},
-		cfg:      DefaultMarketplaceConfig(),
-		now:      time.Now,
+		repo:             repo,
+		stripe:           stripe,
+		notifier:         noopMarketplaceNotifier{},
+		cfg:              DefaultMarketplaceConfig(),
+		now:              time.Now,
+		offSessionCharge: true,
 	}
+}
+
+// SetCustomerProvisioner wires buyer Stripe Customer / default-card resolution.
+// Without it the sweeper cannot collect off-session and says so explicitly.
+func (s *MarketplaceService) SetCustomerProvisioner(p *CustomerProvisioner) {
+	s.buyers = p
+}
+
+// SetOffSessionCharge arms or disarms merchant-initiated collection on auction
+// wins. See MarketplaceService.offSessionCharge.
+func (s *MarketplaceService) SetOffSessionCharge(enabled bool) {
+	s.offSessionCharge = enabled
+}
+
+// lookupBuyerCustomer returns the buyer's Stripe Customer id, or "" when there
+// isn't one.
+//
+// Never provisions: creating a Stripe Customer for someone on a background cron,
+// as a side effect of them winning an auction, would mint objects for users who
+// have never entered a card. Provisioning belongs on the setup-intent path where
+// the user is present and asking to save a card.
+func (s *MarketplaceService) lookupBuyerCustomer(ctx context.Context, buyerID string) string {
+	if s.buyers == nil || buyerID == "" {
+		return ""
+	}
+	cus, err := s.buyers.Lookup(ctx, buyerID)
+	if err != nil {
+		slog.WarnContext(ctx, "could not resolve buyer stripe customer",
+			"buyer_id", buyerID, "error", err)
+		return ""
+	}
+	return cus
+}
+
+// resolveBuyerInstrument returns the payment method to charge off-session.
+//
+// Fails closed with ErrNoPaymentInstrument on every uncertain path — no
+// provisioner, no customer, no default card, or a DB error. "We are not sure
+// which card to charge" must never resolve to "charge something".
+func (s *MarketplaceService) resolveBuyerInstrument(ctx context.Context, buyerID string) (customerID, paymentMethodID string, err error) {
+	if s.buyers == nil {
+		return "", "", fmt.Errorf("resolve buyer instrument: customer provisioner not configured: %w", ErrNoPaymentInstrument)
+	}
+	customerID, err = s.buyers.Lookup(ctx, buyerID)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve buyer instrument for %s: %w", buyerID, err)
+	}
+	if customerID == "" {
+		return "", "", fmt.Errorf("resolve buyer instrument for %s: no stripe customer: %w", buyerID, ErrNoPaymentInstrument)
+	}
+	paymentMethodID, err = s.buyers.DefaultPaymentMethod(ctx, buyerID)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve buyer instrument for %s: %w", buyerID, err)
+	}
+	if paymentMethodID == "" {
+		return "", "", fmt.Errorf("resolve buyer instrument for %s: no default payment method: %w", buyerID, ErrNoPaymentInstrument)
+	}
+	return customerID, paymentMethodID, nil
 }
 
 // SetAccountResolver injects the Connect account lookup used before seller
@@ -374,12 +474,21 @@ func (s *MarketplaceService) ChargeListingWinner(ctx context.Context, orderID st
 	// Idempotency key: deterministic per order + stage so retries dedupe.
 	idemKey := fmt.Sprintf("listing-charge:%s", order.ID)
 
+	// Bind the PaymentIntent to the buyer's Stripe Customer. Without this the PI
+	// is customerless and can only ever be confirmed by a browser holding the
+	// client_secret — which is fine for buy-now (the buyer is present) and
+	// useless for an auction win (they are not). Best-effort: a buyer with no
+	// Customer yet still gets a PI they can pay on-session; only the off-session
+	// path requires one, and that path checks separately.
+	buyerCustomerID := s.lookupBuyerCustomer(ctx, order.BuyerID)
+
 	// Funds are held in the platform Stripe account (no destination charge).
 	// The seller is paid via a separate transfer when escrow releases.
 	piID, clientSecret, err := s.stripe.CreateMarketplacePaymentIntent(
 		ctx,
 		totalCents,
 		"usd",
+		buyerCustomerID,
 		idemKey,
 		map[string]string{
 			"listing_order_id":   order.ID,
@@ -810,12 +919,46 @@ func (s *MarketplaceService) ResolveListingDispute(
 // --- Settlement sweeper (auction close) ---
 
 // SettlementStats summarises one SettlePendingListingOrders pass.
+//
+// The collection counters are deliberately one-per-outcome rather than a single
+// "failed" tally. They are the operational readout of the whole payment system:
+// a spike in NoInstrument means the card-saving funnel is broken (a platform
+// problem), a spike in AuthRequired means buyers are being asked to authenticate
+// and are not coming back (a UX problem), and a spike in Declined means exactly
+// what it says (a buyer-quality problem). One combined number would hide all
+// three behind each other.
 type SettlementStats struct {
 	Scanned      int // orders in 'pending_payment' examined this pass
 	Charged      int // PaymentIntents newly created (or replayed idempotently)
 	ChargeFailed int // ChargeListingWinner returned an error
 	Overdue      int // unfunded past their payment deadline
 	Expired      int // moved to terminal 'payment_failed' (only when armed)
+
+	// Off-session collection outcomes.
+	Collected      int // funds captured off-session; order moved to 'held'
+	NoInstrument   int // no chargeable card on file — never attempted
+	AuthRequired   int // SCA: the buyer must return to the app
+	Declined       int // issuer declined (any reason other than funds)
+	InsufficientFn int // issuer declined specifically for insufficient funds
+	CollectError   int // infrastructure failure; not attributable to the buyer
+}
+
+// countOutcome folds one collection result into the stats.
+func (st *SettlementStats) countOutcome(o ChargeOutcome) {
+	switch o {
+	case ChargeOutcomeSucceeded:
+		st.Collected++
+	case ChargeOutcomeNoPaymentMethod:
+		st.NoInstrument++
+	case ChargeOutcomeAuthenticationRequired:
+		st.AuthRequired++
+	case ChargeOutcomeInsufficientFunds:
+		st.InsufficientFn++
+	case ChargeOutcomeCardDeclined:
+		st.Declined++
+	default:
+		st.CollectError++
+	}
 }
 
 // SettlePendingListingOrders is the missing caller for ChargeListingWinner.
@@ -879,6 +1022,12 @@ func (s *MarketplaceService) SettlePendingListingOrders(ctx context.Context, bat
 		if o.PaymentIntentID == "" {
 			if s.chargeOnePendingOrder(ctx, o, now) {
 				stats.Charged++
+				// A PaymentIntent now exists. Try to collect against it in this
+				// same pass rather than waiting a full tick: the buyer just won
+				// an auction and the mandate is freshest now.
+				if outcome, ok := s.collectOnePendingOrder(ctx, o, &stats); ok && outcome == ChargeOutcomeSucceeded {
+					continue
+				}
 				// The deadline was just stamped at now + window, so it is in the
 				// future by construction: nothing to expire on this pass.
 				continue
@@ -890,6 +1039,28 @@ func (s *MarketplaceService) SettlePendingListingOrders(ctx context.Context, bat
 			// the deadline check below (which uses created_at + window, since a
 			// failed attempt never stamps payment_due_at) gives it the same
 			// finite life as any other unfunded order.
+		} else {
+			// A PaymentIntent is already attached but the order is still
+			// unfunded. This is the auction-settlement case: nobody is going to
+			// confirm it client-side, because the buyer is not on the site.
+			outcome, attempted := s.collectOnePendingOrder(ctx, o, &stats)
+			if attempted {
+				if outcome == ChargeOutcomeSucceeded {
+					continue
+				}
+				if outcome == ChargeOutcomeAuthenticationRequired {
+					// SCA. The buyer has been told to come back and authenticate;
+					// expiring the order underneath them would cancel a purchase
+					// that is actively waiting on a step WE asked them to take.
+					// Skip the expiry branch this pass. This can keep an order
+					// alive indefinitely if the buyer never returns — accepted
+					// deliberately, because the alternative (cancelling a
+					// solvent, willing buyer's win) is the worse error, and the
+					// condition is visible in stats.AuthRequired and in the
+					// ERROR log below.
+					continue
+				}
+			}
 		}
 
 		deadline := o.CreatedAt.Add(s.cfg.PaymentWindow)
@@ -986,6 +1157,183 @@ func (s *MarketplaceService) chargeOnePendingOrder(ctx context.Context, o *Pendi
 		"payment_due_at", due.Format(time.RFC3339),
 	)
 	return true
+}
+
+// collectOnePendingOrder attempts an off-session charge against the buyer's
+// saved card for an order that already carries a PaymentIntent.
+//
+// Returns (outcome, attempted). attempted is false when collection is disarmed
+// or the order carries no PaymentIntent — in that case the caller falls through
+// to the ordinary deadline logic and nothing is recorded against the buyer.
+//
+// EVERY exit path is fail-closed on money: the order moves to 'held' if and only
+// if Stripe reports the PaymentIntent succeeded. Any error, any ambiguous
+// status, any classification we do not recognise leaves the order exactly where
+// it was, unfunded, and lets the next pass or a human decide.
+func (s *MarketplaceService) collectOnePendingOrder(ctx context.Context, o *PendingListingOrder, stats *SettlementStats) (ChargeOutcome, bool) {
+	if !s.offSessionCharge {
+		return "", false
+	}
+	if s.buyers == nil {
+		// No provisioner wired: collection is not merely failing, it is not
+		// configured. Report NOTHING rather than classifying every order as
+		// "buyer has no card" — that would blame buyers for a deployment gap and
+		// bury a real card-saving outage in a metric that is always saturated.
+		// Behaviour is then identical to before off-session collection existed:
+		// attach a PaymentIntent, collect nothing.
+		return "", false
+	}
+
+	// Re-read the order: chargeOnePendingOrder may have just stamped the
+	// PaymentIntent, and the projection we were handed predates that write.
+	order, err := s.repo.GetListingOrder(ctx, o.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "collect: could not reload order, skipping",
+			"order_id", o.ID, "error", err)
+		return "", false
+	}
+	if order.PaymentIntentID == "" {
+		return "", false
+	}
+	// Guard against collecting on an order that moved on between the sweep query
+	// and now. Charging a refunded or already-held order would take money for
+	// nothing.
+	if order.EscrowStatus != "pending_payment" {
+		slog.InfoContext(ctx, "collect: order left pending_payment before collection, skipping",
+			"order_id", order.ID, "status", order.EscrowStatus)
+		return "", false
+	}
+
+	totalCents := order.AmountCents + order.FeeCents + order.TaxCents
+
+	customerID, paymentMethodID, err := s.resolveBuyerInstrument(ctx, order.BuyerID)
+	if err != nil {
+		outcome, classified := classifyChargeError(err)
+		s.recordCollectionOutcome(ctx, order, outcome, classified, stats)
+		return outcome, true
+	}
+
+	// ATTEMPT-scoped idempotency key, deterministic in (order, attempt). Not
+	// random and not order-scoped:
+	//   - random would defeat the point and risk double-charging on a retry
+	//     after an ambiguous timeout;
+	//   - order-scoped would make Stripe replay a cached DECLINE forever, so a
+	//     buyer who added funds could never pay.
+	// Same construction as the BNPL installment key (processOneInstallment).
+	idemKey := fmt.Sprintf("listing-collect:%s:attempt-%d", order.ID, o.PaymentAttempts+1)
+
+	status, confirmErr := s.stripe.ConfirmOffSessionPaymentIntent(ctx, order.PaymentIntentID, paymentMethodID, idemKey)
+	if confirmErr != nil {
+		outcome, classified := classifyChargeError(confirmErr)
+		s.recordCollectionOutcome(ctx, order, outcome, classified, stats)
+		return outcome, true
+	}
+
+	outcome := classifyChargeStatus(status)
+	if outcome != ChargeOutcomeSucceeded {
+		// Stripe returned success at the API level but the intent did not
+		// actually collect (requires_action, processing, ...). Treat it as the
+		// classified non-success — never as payment.
+		s.recordCollectionOutcome(ctx, order, outcome,
+			fmt.Errorf("payment intent %s ended in status %q", order.PaymentIntentID, status), stats)
+		return outcome, true
+	}
+
+	// Funds captured. Move the order to 'held'.
+	//
+	// HandleListingPaymentIntentSucceeded is the same transition the
+	// payment_intent.succeeded event drives, and it is idempotent (a second call
+	// on an already-'held' order returns nil). Doing it synchronously means the
+	// sweeper's own stats are truthful in the same pass; the event remains the
+	// backstop if this process dies between the capture and this write.
+	if err := s.HandleListingPaymentIntentSucceeded(ctx, order.PaymentIntentID); err != nil {
+		// Money HAS moved and the order is not marked funded. The event handler
+		// will reconcile, but this must be loud: it is the one window where our
+		// records understate what the buyer was charged.
+		slog.ErrorContext(ctx, "collect: charged buyer but failed to move order to held; awaiting event reconciliation",
+			"order_id", order.ID,
+			"payment_intent_id", order.PaymentIntentID,
+			"total_cents", totalCents,
+			"error", err,
+		)
+	}
+
+	if recErr := s.repo.RecordListingPaymentAttempt(ctx, order.ID, nil, ""); recErr != nil {
+		slog.WarnContext(ctx, "collect: could not clear last_payment_error after success",
+			"order_id", order.ID, "error", recErr)
+	}
+
+	stats.countOutcome(ChargeOutcomeSucceeded)
+	slog.InfoContext(ctx, "collected listing order off-session",
+		"order_id", order.ID,
+		"listing_id", order.ListingID,
+		"buyer_id", order.BuyerID,
+		"seller_id", order.SellerID,
+		"payment_intent_id", order.PaymentIntentID,
+		"stripe_customer_id", customerID,
+		"total_cents", totalCents,
+	)
+
+	if err := s.notifier.NotifyListingPaymentCaptured(ctx, order.BuyerID, order.ID, totalCents); err != nil {
+		slog.WarnContext(ctx, "collect: failed to notify buyer of successful capture",
+			"order_id", order.ID, "buyer_id", order.BuyerID, "error", err)
+	}
+	return ChargeOutcomeSucceeded, true
+}
+
+// recordCollectionOutcome persists and reports one unsuccessful collection.
+//
+// Three separate audiences, each getting what they can act on:
+//   - the ROW gets last_payment_error, so support can see why an order is stuck;
+//   - the LOG gets the full classification at a severity matching whose problem
+//     it is (platform gaps and infra are ERROR; buyer-side declines are WARN);
+//   - the BUYER gets ChargeOutcome.BuyerMessage, which is self-serve guidance and
+//     never a raw Stripe string.
+func (s *MarketplaceService) recordCollectionOutcome(
+	ctx context.Context,
+	order *MarketplaceListingOrder,
+	outcome ChargeOutcome,
+	cause error,
+	stats *SettlementStats,
+) {
+	stats.countOutcome(outcome)
+
+	reason := fmt.Sprintf("%s: %v", outcome, cause)
+	if len(reason) > 500 {
+		reason = reason[:500]
+	}
+	// Never stamp a deadline here. A charge that failed must not start or extend
+	// the buyer's clock — and for the outcomes that are not their fault it must
+	// not consume it either.
+	if recErr := s.repo.RecordListingPaymentAttempt(ctx, order.ID, nil, reason); recErr != nil {
+		slog.ErrorContext(ctx, "collect: failed to record payment attempt",
+			"order_id", order.ID, "error", recErr)
+	}
+
+	attrs := []any{
+		"order_id", order.ID,
+		"listing_id", order.ListingID,
+		"buyer_id", order.BuyerID,
+		"seller_id", order.SellerID,
+		"payment_intent_id", order.PaymentIntentID,
+		"outcome", string(outcome),
+		"attributable_to_buyer", outcome.AttributableToBuyer(),
+		"retryable", outcome.Retryable(),
+		"error", cause,
+	}
+	if outcome.AttributableToBuyer() {
+		slog.WarnContext(ctx, "collect: off-session charge did not complete", attrs...)
+	} else {
+		// No card on file, or Stripe/infra failure. Both are the platform's
+		// problem to fix and neither is the buyer's fault — CLAUDE.md §15:
+		// platform-config failures alert the admin, not the end user.
+		slog.ErrorContext(ctx, "collect: off-session charge blocked by a platform-side condition", attrs...)
+	}
+
+	if err := s.notifier.NotifyListingPaymentProblem(ctx, order.BuyerID, order.ID, outcome, outcome.BuyerMessage()); err != nil {
+		slog.WarnContext(ctx, "collect: failed to notify buyer of payment problem",
+			"order_id", order.ID, "buyer_id", order.BuyerID, "outcome", string(outcome), "error", err)
+	}
 }
 
 // --- Auto-release cron ---

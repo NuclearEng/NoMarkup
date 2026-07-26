@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +25,18 @@ type mockMarketplaceRepo struct {
 	// transferStamps records each MarkListingOrderTransferred call so tests can
 	// assert "exactly one seller payout per order" / idempotency.
 	transferStamps []transferStamp
+
+	// Settlement-sweeper state. listing_orders.payment_* live on the row in
+	// Postgres but not on MarketplaceListingOrder (the sweeper reads them through
+	// the narrow PendingListingOrder projection), so the mock keeps them beside
+	// the order map.
+	paymentAttempts map[string]int
+	paymentDueAt    map[string]*time.Time
+	lastPaymentErr  map[string]string
+	// updatePIErr, when set for an order id, makes stamping the PaymentIntent
+	// fail — the deterministic way to drive the sweeper's charge-failure branch
+	// without a live Stripe.
+	updatePIErr map[string]error
 }
 
 type transferStamp struct {
@@ -38,9 +52,77 @@ type taxIncrement struct {
 
 func newMockRepo() *mockMarketplaceRepo {
 	return &mockMarketplaceRepo{
-		orders:   map[string]*MarketplaceListingOrder{},
-		disputes: map[string]*MarketplaceDispute{},
+		orders:          map[string]*MarketplaceListingOrder{},
+		disputes:        map[string]*MarketplaceDispute{},
+		paymentAttempts: map[string]int{},
+		paymentDueAt:    map[string]*time.Time{},
+		lastPaymentErr:  map[string]string{},
+		updatePIErr:     map[string]error{},
 	}
+}
+
+// --- Settlement sweeper surface ---
+
+func (m *mockMarketplaceRepo) ListListingOrdersAwaitingPayment(_ context.Context, limit int) ([]*PendingListingOrder, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*PendingListingOrder
+	for _, o := range m.orders {
+		if o.EscrowStatus != "pending_payment" {
+			continue
+		}
+		out = append(out, &PendingListingOrder{
+			ID:              o.ID,
+			ListingID:       o.ListingID,
+			SellerID:        o.SellerID,
+			BuyerID:         o.BuyerID,
+			AmountCents:     o.AmountCents,
+			PaymentIntentID: o.PaymentIntentID,
+			PaymentAttempts: m.paymentAttempts[o.ID],
+			PaymentDueAt:    m.paymentDueAt[o.ID],
+			CreatedAt:       o.CreatedAt,
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	// Deterministic order: the SQL sorts by created_at ASC, and map iteration
+	// does not, so sort here or a multi-order assertion is flaky.
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (m *mockMarketplaceRepo) RecordListingPaymentAttempt(_ context.Context, orderID string, paymentDueAt *time.Time, lastErr string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.orders[orderID]; !ok {
+		return ErrListingOrderNotFound
+	}
+	m.paymentAttempts[orderID]++
+	// Mirrors COALESCE(payment_due_at, $2): first writer wins, so a retry never
+	// extends a deadline that is already running.
+	if paymentDueAt != nil && m.paymentDueAt[orderID] == nil {
+		t := *paymentDueAt
+		m.paymentDueAt[orderID] = &t
+	}
+	m.lastPaymentErr[orderID] = lastErr
+	return nil
+}
+
+func (m *mockMarketplaceRepo) FailListingOrderPayment(_ context.Context, orderID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.orders[orderID]
+	if !ok {
+		return ErrListingOrderNotFound
+	}
+	// Mirrors the status-guarded UPDATE: a funded order is never cancelled.
+	if o.EscrowStatus != "pending_payment" {
+		return ErrInvalidEscrowState
+	}
+	o.EscrowStatus = "payment_failed"
+	m.lastPaymentErr[orderID] = reason
+	return nil
 }
 
 func (m *mockMarketplaceRepo) addOrder(o *MarketplaceListingOrder) {
@@ -96,6 +178,9 @@ func (m *mockMarketplaceRepo) UpdateListingOrderEscrowStatus(_ context.Context, 
 func (m *mockMarketplaceRepo) UpdateListingOrderPaymentIntent(_ context.Context, orderID, paymentIntentID, idempotencyKey string, taxCents, feeCents int64, autoReleaseAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err, blocked := m.updatePIErr[orderID]; blocked {
+		return err
+	}
 	o, ok := m.orders[orderID]
 	if !ok {
 		return ErrListingOrderNotFound
@@ -237,6 +322,16 @@ func (n *captureNotifier) push(e string) {
 	defer n.mu.Unlock()
 	n.events = append(n.events, e)
 }
+
+// snapshot returns a copy of the recorded events, safe to read while the
+// service under test may still be pushing.
+func (n *captureNotifier) snapshot() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	out := make([]string, len(n.events))
+	copy(out, n.events)
+	return out
+}
 func (n *captureNotifier) NotifyPaymentReleased(_ context.Context, sellerID, orderID string, amountCents int64) error {
 	n.push("released:" + sellerID + ":" + orderID)
 	return nil
@@ -255,6 +350,14 @@ func (n *captureNotifier) NotifyDisputeFiled(_ context.Context, sellerID, orderI
 }
 func (n *captureNotifier) NotifyDisputeResolved(_ context.Context, userID, orderID, disputeID, resolution string) error {
 	n.push("dispute_resolved:" + userID + ":" + orderID + ":" + disputeID + ":" + resolution)
+	return nil
+}
+func (n *captureNotifier) NotifyListingPaymentProblem(_ context.Context, buyerID, orderID string, outcome ChargeOutcome, _ string) error {
+	n.push("payment_problem:" + buyerID + ":" + orderID + ":" + string(outcome))
+	return nil
+}
+func (n *captureNotifier) NotifyListingPaymentCaptured(_ context.Context, buyerID, orderID string, amountCents int64) error {
+	n.push(fmt.Sprintf("payment_captured:%s:%s:%d", buyerID, orderID, amountCents))
 	return nil
 }
 

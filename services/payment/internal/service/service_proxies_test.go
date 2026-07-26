@@ -221,31 +221,76 @@ func TestPaymentService_GetStripeDashboardLink(t *testing.T) {
 func TestPaymentService_CreateSetupIntent(t *testing.T) {
 	t.Parallel()
 
-	t.Run("uses_stripe_customer_id_when_available", func(t *testing.T) {
+	t.Run("provisions_a_stripe_customer_and_binds_the_intent_to_it", func(t *testing.T) {
 		t.Parallel()
-		repo := &mockPaymentRepo{
-			getStripeCustomerIDFn: func(_ context.Context, _ string) (string, error) {
-				return "cus_xyz", nil
-			},
-		}
-		svc := newTestPaymentService(repo, nil)
+		ss := &StripeService{devMode: true}
+		dir := newFakeCustomerDirectory()
+		dir.addUser("user-1", "user-1@example.com", "User One")
+		svc := NewPaymentService(&mockPaymentRepo{}, ss)
+		svc.SetCustomerProvisioner(NewCustomerProvisioner(dir, ss))
+
 		secret, err := svc.CreateSetupIntent(context.Background(), "user-1")
 		require.NoError(t, err)
 		// Dev-mode setup intents are sentinel-prefixed.
 		assert.True(t, strings.HasPrefix(secret, "dev_seti_"))
+
+		// The whole point: a Customer now exists for this person and the intent
+		// is bound to it, so a confirmed card attaches to something.
+		cus, err := dir.GetUserStripeCustomerID(context.Background(), "user-1")
+		require.NoError(t, err)
+		assert.NotEmpty(t, cus, "creating a setup intent must provision a stripe customer")
+
+		_, boundCustomer := ss.DevStore().ConfirmSetupIntent(secret)
+		assert.Equal(t, cus, boundCustomer, "the setup intent must carry the customer the card will attach to")
 	})
 
-	t.Run("falls_back_to_user_id_when_no_stripe_customer", func(t *testing.T) {
+	t.Run("second_call_reuses_the_same_customer", func(t *testing.T) {
 		t.Parallel()
-		repo := &mockPaymentRepo{
-			getStripeCustomerIDFn: func(_ context.Context, _ string) (string, error) {
-				return "", errors.New("not configured")
-			},
-		}
-		svc := newTestPaymentService(repo, nil)
-		secret, err := svc.CreateSetupIntent(context.Background(), "user-1")
+		ss := &StripeService{devMode: true}
+		dir := newFakeCustomerDirectory()
+		dir.addUser("user-1", "user-1@example.com", "User One")
+		svc := NewPaymentService(&mockPaymentRepo{}, ss)
+		svc.SetCustomerProvisioner(NewCustomerProvisioner(dir, ss))
+
+		_, err := svc.CreateSetupIntent(context.Background(), "user-1")
 		require.NoError(t, err)
-		assert.NotEmpty(t, secret)
+		first, err := dir.GetUserStripeCustomerID(context.Background(), "user-1")
+		require.NoError(t, err)
+
+		// Adding a SECOND card must not mint a second Customer — that would split
+		// the user's cards across two objects.
+		_, err = svc.CreateSetupIntent(context.Background(), "user-1")
+		require.NoError(t, err)
+		second, err := dir.GetUserStripeCustomerID(context.Background(), "user-1")
+		require.NoError(t, err)
+
+		assert.Equal(t, first, second)
+		assert.Equal(t, 1, ss.DevStore().CustomerCount(), "exactly one stripe customer for the person")
+	})
+
+	t.Run("fails_closed_without_a_provisioner", func(t *testing.T) {
+		t.Parallel()
+		// Regression guard. The old behaviour was to fall back to passing the
+		// PLATFORM USER ID to Stripe as if it were a customer id, which produced a
+		// customerless SetupIntent: the buyer completed card entry, was told it
+		// worked, and had saved nothing. An error is strictly better than that lie.
+		svc := NewPaymentService(&mockPaymentRepo{}, &StripeService{devMode: true})
+		_, err := svc.CreateSetupIntent(context.Background(), "user-1")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "provisioner not configured")
+	})
+
+	t.Run("fails_closed_for_an_unknown_user", func(t *testing.T) {
+		t.Parallel()
+		ss := &StripeService{devMode: true}
+		// Directory with no such user: we must not mint a Stripe Customer for a
+		// person who does not exist.
+		svc := NewPaymentService(&mockPaymentRepo{}, ss)
+		svc.SetCustomerProvisioner(NewCustomerProvisioner(newFakeCustomerDirectory(), ss))
+
+		_, err := svc.CreateSetupIntent(context.Background(), "ghost")
+		require.Error(t, err)
+		assert.Equal(t, 0, ss.DevStore().CustomerCount())
 	})
 }
 
