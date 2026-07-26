@@ -163,15 +163,32 @@ These are non-negotiable. The hooks enforce many automatically.
 - Parameterized queries only. String interpolation in SQL is blocked by Claude Code hooks where configured.
 
 ### Data Protection
-- **PII at rest:** selected fields encrypted with **XSalsa20-Poly1305** (`nacl/secretbox`). Inventory
-  includes phone, MFA secret, provider service address (see migrations `031`/`033`). **Email remains
-  plaintext** for auth lookup. Not AES-256-GCM whole-row.
-  **Known gaps — do not claim these are covered:** `ein_tin` and `insurance_policy_number` are
-  encrypted by the one-shot backfill tool ONLY, with no runtime write path, so new rows land in
-  plaintext. `properties.location` / `service_location` geometry is unencrypted next to the
-  encrypted address, and reverse-geocodes back to it. `jobs.service_address` (a customer home
-  address), `ssn_last_four`, `users.dob`, and provider licence numbers are in neither migration.
-  The `/users/me/export` GDPR handler holds no cipher and returns ciphertext.
+- **PII at rest:** selected fields encrypted with **XSalsa20-Poly1305** (`nacl/secretbox`). Every
+  field below has BOTH a runtime write path and a runtime read path — a backfill without a writer
+  is not coverage. **Email remains plaintext** for auth lookup. Not AES-256-GCM whole-row.
+  **Detection is per VALUE, by authentication** (`crypto.Cipher.DecryptStringOrPassthrough`): the
+  `pii_encrypted_v1` columns are a ROW flag over PER-COLUMN encryption and are **advisory only** —
+  never branch on them (migration `098`).
+  **Encrypted inventory** (`031`/`033`, extended by `104`-`107`): `users.phone`, `users.mfa_secret`,
+  `users.dob_encrypted`; `provider_profiles.service_address` / `.ein_tin` /
+  `.insurance_policy_number`; `provider_employees.email` / `.phone` / `.license_number` /
+  `.insurance_policy_number` / `.date_of_birth_encrypted`; `provider_licenses.license_number`;
+  `properties.address` / `.notes` / `.location_encrypted`; `jobs.service_address` /
+  `.service_location_encrypted`.
+  **Geometry is coarsened, not encrypted** — a point beside an encrypted address is the same secret
+  in another encoding, but it cannot be encrypted because GiST cannot index ciphertext. So
+  `jobs.service_location`, `jobs.approximate_location` and `properties.location` are snapped at rest
+  to a 0.01° grid (`pii_coarsen_point`, ~1.1 km) with the exact point kept encrypted alongside;
+  readers that need precision decrypt it. **`jobs.approximate_location` was previously written from
+  the exact coordinate and is served on the unauthenticated, edge-cached `/jobs/map`** — never write
+  an un-coarsened point there.
+  **Documented limitation — do not claim it is fixed:** `provider_profiles.service_location` stays
+  exact and plaintext. It is the `ST_DWithin`/`ST_DistanceSphere` target of provider matching and
+  search and carries two GiST indexes, so the only available control is precision reduction, which
+  would perturb live match ranking for a partial gain. `listings.location` is published by design
+  (25 mi local pickup). `company_employees.*` is dormant and plaintext (`099`).
+  **Audit:** `pii_plaintext_audit` and `pii_exact_geometry_audit` must both be EMPTY on a fully
+  backfilled database; `make encrypt-pii` drains them and is idempotent per value.
   **Key handling:** `ENCRYPTION_KEY` is mandatory outside development — the ephemeral-key fallback
   is gated on "is this development?", not "is this production?", because staging runs multiple
   replicas and a per-pod key silently corrupts PII.

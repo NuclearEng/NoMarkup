@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/services/job/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	"github.com/nomarkup/nomarkup/services/job/internal/repository"
 	"github.com/stretchr/testify/require"
@@ -73,7 +74,12 @@ func authzTestSvc(t *testing.T) (*ContractService, *repository.PostgresRepositor
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	ensureChangeOrderFixtures(t, pool)
-	repo := repository.NewPostgresRepository(pool)
+	// The repository decrypts jobs.service_address (migration 104) on every
+	// read; with no ENCRYPTION_KEY set crypto.FromEnv yields an ephemeral
+	// development key, and the fixture rows above carry no address at all.
+	cipher, err := crypto.FromEnv()
+	require.NoError(t, err, "build PII cipher")
+	repo := repository.NewPostgresRepository(pool, cipher)
 	return NewContractService(repo, repo), repo, pool
 }
 

@@ -5,22 +5,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/services/job/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
 
 // PostgresRepository implements domain.JobRepository using pgx.
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
-// NewPostgresRepository creates a new PostgreSQL-backed job repository.
-func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{pool: pool}
+// NewPostgresRepository creates a new PostgreSQL-backed job repository with the
+// given PII cipher. Pass a cipher built from crypto.FromEnv() — the at-rest PII
+// columns this service owns (jobs.service_address, a CUSTOMER HOME address, and
+// jobs.service_location_encrypted, the exact service point; migration 104) are
+// encrypted and decrypted through it, as is the linked property's address and
+// exact point (migrations 033 and 105).
+func NewPostgresRepository(pool *pgxpool.Pool, cipher *crypto.Cipher) *PostgresRepository {
+	return &PostgresRepository{pool: pool, cipher: cipher}
 }
 
 func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJobInput) (*domain.Job, error) {
@@ -31,20 +39,38 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	defer tx.Rollback(ctx)
 
 	// Look up the property to get location data.
+	//
+	// properties.address has been secretbox-encrypted since migration 033 and
+	// properties.location is COARSENED at rest since migration 105, with the
+	// exact point preserved in properties.location_encrypted. Both therefore
+	// have to come back through the cipher before they can seed the job:
+	// copying the column verbatim would write ciphertext into
+	// jobs.service_address (which is what this code did before 104) and would
+	// silently downgrade the job's service point to the property's privacy
+	// grid.
 	var serviceAddress, serviceCity, serviceState, serviceZip *string
 	var propLng, propLat *float64
+	var propLocationEncrypted *string
 	if input.PropertyID != "" {
 		err := tx.QueryRow(ctx, `
 			SELECT address, city, state, zip_code,
-			       ST_X(location) AS lng, ST_Y(location) AS lat
+			       ST_X(location) AS lng, ST_Y(location) AS lat,
+			       location_encrypted
 			FROM properties
 			WHERE id = $1 AND deleted_at IS NULL`, input.PropertyID).
-			Scan(&serviceAddress, &serviceCity, &serviceState, &serviceZip, &propLng, &propLat)
+			Scan(&serviceAddress, &serviceCity, &serviceState, &serviceZip, &propLng, &propLat, &propLocationEncrypted)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, fmt.Errorf("create job: %w", domain.ErrPropertyNotFound)
 			}
 			return nil, fmt.Errorf("create job lookup property: %w", err)
+		}
+		if serviceAddress != nil {
+			plain, derr := r.cipher.DecryptStringOrPassthrough(*serviceAddress)
+			if derr != nil {
+				return nil, fmt.Errorf("create job decrypt property address: %w", derr)
+			}
+			serviceAddress = &plain
 		}
 	}
 
@@ -77,6 +103,11 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	}
 
 	// Use property location, falling back to direct location input.
+	//
+	// The encrypted copy is preferred because the geometry is coarsened at rest
+	// (migration 105). Legacy rows written before 105 have a NULL
+	// location_encrypted and still hold an exact point in the geometry, so the
+	// fallback is not a degradation for them.
 	lng := 0.0
 	lat := 0.0
 	if propLng != nil {
@@ -84,6 +115,26 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	}
 	if propLat != nil {
 		lat = *propLat
+	}
+	if propLocationEncrypted != nil && *propLocationEncrypted != "" {
+		plain, derr := r.cipher.DecryptStringOrPassthrough(*propLocationEncrypted)
+		if derr != nil {
+			// A key problem must be loud: silently falling back here would
+			// mask a mis-configured ENCRYPTION_KEY behind a slightly-off job
+			// location that nobody would ever notice.
+			return nil, fmt.Errorf("create job decrypt property location: %w", derr)
+		}
+		exactLat, exactLng, perr := domain.ParseExactPoint(plain)
+		if perr != nil {
+			// Corruption, not a key failure. The coarse geometry is still a
+			// usable point, so degrade rather than fail the job creation.
+			slog.Warn("create job: property location_encrypted is malformed; falling back to coarse geometry",
+				"property_id", input.PropertyID,
+				"error", perr,
+			)
+		} else {
+			lat, lng = exactLat, exactLng
+		}
 	}
 
 	// Override with direct location fields if provided (no property linked).
@@ -113,6 +164,37 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 		recurrenceFreq = input.RecurrenceFrequency
 	}
 
+	// ── At-rest PII for the two customer-home columns (migration 104) ────
+	//
+	// service_address is the street address of the place the customer LIVES.
+	// No index, constraint or predicate references it, so encryption costs no
+	// query. EncryptString maps "" to "", which keeps the COALESCE(...,'')
+	// reads behaving exactly as before for jobs with no address.
+	encAddr, err := r.cipher.EncryptString(addr)
+	if err != nil {
+		return nil, fmt.Errorf("create job encrypt service_address: %w", err)
+	}
+
+	// BOTH geometry columns get the COARSE point. approximate_location is the
+	// one projected to GET /api/v1/jobs/map, which is unauthenticated and
+	// edge-cached; before 104 this INSERT wrote the exact customer coordinate
+	// into it verbatim, publishing home locations to anonymous callers. It
+	// must never again be written from an un-coarsened point.
+	coarseLat, coarseLng := domain.CoarsenPoint(lat, lng)
+
+	// The exact point survives, encrypted, so the change stays reversible and
+	// GetJobLocation keeps its exact match centre. A job with no known
+	// location stores NULL rather than the ciphertext of "0,0" — 0,0 is a real
+	// place in the Gulf of Guinea and must not be mistaken for one.
+	var encLocation *string
+	if lat != 0 || lng != 0 {
+		sealed, eerr := r.cipher.EncryptString(domain.FormatExactPoint(lat, lng))
+		if eerr != nil {
+			return nil, fmt.Errorf("create job encrypt service_location: %w", eerr)
+		}
+		encLocation = &sealed
+	}
+
 	var jobID string
 	var createdAt, updatedAt time.Time
 	err = tx.QueryRow(ctx, `
@@ -126,7 +208,8 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			starting_bid_cents, offer_accepted_cents,
 			auction_duration_hours, auction_ends_at, min_provider_rating,
 			status, auction_type,
-			is_hourly, hourly_rate_cents, same_day_requested
+			is_hourly, hourly_rate_cents, same_day_requested,
+			service_location_encrypted
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, $3, $4,
 			$5, NULLIF($6, '')::uuid, NULLIF($7, '')::uuid,
@@ -138,19 +221,21 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			$20, $21,
 			$22, $23, $24,
 			$25, $26,
-			$27, $28, $29
+			$27, $28, $29,
+			$30
 		)
 		RETURNING id, created_at, updated_at`,
 		input.CustomerID, input.PropertyID, input.Title, input.Description,
 		input.CategoryID, input.SubcategoryID, input.ServiceTypeID,
-		addr, city, state, zip,
-		lng, lat,
+		encAddr, city, state, zip,
+		coarseLng, coarseLat,
 		input.ScheduleType, input.ScheduledDate, input.ScheduleRangeStart, input.ScheduleRangeEnd,
 		input.IsRecurring, recurrenceFreq,
 		input.StartingBidCents, input.OfferAcceptedCents,
 		durationHours, auctionEndsAt, input.MinProviderRating,
 		status, auctionType,
 		input.IsHourly, input.HourlyRateCents, input.SameDayRequested,
+		encLocation,
 	).Scan(&jobID, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create job insert: %w", err)
@@ -634,7 +719,7 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, nil, fmt.Errorf("search jobs scan: %w", err)
 		}
@@ -784,7 +869,7 @@ func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID st
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, nil, fmt.Errorf("list customer jobs scan: %w", err)
 		}
@@ -829,7 +914,7 @@ func (r *PostgresRepository) ListDrafts(ctx context.Context, customerID string) 
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, fmt.Errorf("list drafts scan: %w", err)
 		}
@@ -1005,7 +1090,7 @@ func (r *PostgresRepository) AdminListJobs(ctx context.Context, statusFilter *st
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, nil, fmt.Errorf("admin list jobs scan: %w", err)
 		}
@@ -1245,7 +1330,11 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		j.ServiceTypeID = serviceTypeID
 	}
 	if serviceAddress != "" {
-		j.ServiceAddress = serviceAddress
+		plain, derr := r.cipher.DecryptStringOrPassthrough(serviceAddress)
+		if derr != nil {
+			return nil, fmt.Errorf("get job decrypt service_address: %w", derr)
+		}
+		j.ServiceAddress = plain
 	}
 	j.RecurrenceFrequency = recurrenceFrequency
 	if awardedProviderID != "" {
@@ -1306,8 +1395,16 @@ func (r *PostgresRepository) getJobPhotos(ctx context.Context, jobID string) ([]
 	return photos, nil
 }
 
-// scanJobRow scans a job from a row that includes category name, slug, icon at the end.
-func scanJobRow(rows pgx.Rows) (*domain.Job, error) {
+// scanJobRow scans a job from a row that includes category name, slug, icon at
+// the end.
+//
+// cipher decrypts jobs.service_address (migration 104). Detection is per VALUE,
+// not per row: `jobs` deliberately carries no pii_encrypted_v1 flag, because a
+// row flag over per-column encryption is exactly the drift bug migration 098
+// exists to document. DecryptStringOrPassthrough gives the three outcomes —
+// opens, legacy plaintext passes through, and secretbox-shaped-but-unopenable
+// escalates rather than leaking raw base64 to a caller.
+func scanJobRow(rows pgx.Rows, cipher *crypto.Cipher) (*domain.Job, error) {
 	var j domain.Job
 	var propertyID, subcategoryID, serviceTypeID, serviceAddress string
 	var awardedProviderID, awardedBidID, repostedFromID string
@@ -1345,7 +1442,11 @@ func scanJobRow(rows pgx.Rows) (*domain.Job, error) {
 		j.ServiceTypeID = serviceTypeID
 	}
 	if serviceAddress != "" {
-		j.ServiceAddress = serviceAddress
+		plain, derr := cipher.DecryptStringOrPassthrough(serviceAddress)
+		if derr != nil {
+			return nil, fmt.Errorf("decrypt service_address: %w", derr)
+		}
+		j.ServiceAddress = plain
 	}
 	j.RecurrenceFrequency = recurrenceFrequency
 	if awardedProviderID != "" {

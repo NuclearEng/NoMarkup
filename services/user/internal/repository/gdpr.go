@@ -222,6 +222,12 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 	//    We keep the row so foreign keys (jobs.customer_id, bids.provider_id,
 	//    reviews.reviewer_id, etc.) stay valid. Email is replaced with a
 	//    deterministic-looking tombstone so analytics counts don't break.
+	//
+	//    dob / dob_verified_at / dob_encrypted are cleared here as of migration
+	//    106. Before that they were absent from this statement, so a full date
+	//    of birth SURVIVED a right-to-erasure request. dob_encrypted is in the
+	//    list for the same reason the plaintext is: an encrypted copy of an
+	//    erased identifier is still a retained identifier.
 	if err := exec("users", `
 		UPDATE users
 		   SET email             = 'deleted-' || id::text || '@deleted.local',
@@ -236,6 +242,9 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 		       mfa_enabled       = false,
 		       mfa_secret        = NULL,
 		       mfa_backup_codes  = NULL,
+		       dob               = NULL,
+		       dob_verified_at   = NULL,
+		       dob_encrypted     = NULL,
 		       deletion_finalized_at = now(),
 		       deleted_at        = now(),
 		       updated_at        = now()
@@ -259,6 +268,9 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 
 	// 3. provider_employees — these are real people other than the user.
 	//    Wipe their PII because the user can no longer manage consent.
+	//    date_of_birth_encrypted (migration 106) is nulled alongside the DATE
+	//    it is being drained into — otherwise erasure would clear the column
+	//    the backfill empties and leave the one it fills.
 	if err := exec("provider_employees", `
 		UPDATE provider_employees
 		   SET first_name              = 'Deleted',
@@ -266,6 +278,7 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 		       email                   = NULL,
 		       phone                   = NULL,
 		       date_of_birth           = NULL,
+		       date_of_birth_encrypted = NULL,
 		       license_number          = NULL,
 		       license_state           = NULL,
 		       insurance_policy_number = NULL,
@@ -285,6 +298,13 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 	// 5. properties — anonymize street address but KEEP zip_code so analytics
 	//    and market-range computations continue to work. location is NOT NULL
 	//    so we set it to a known sentinel point (NULL would violate the schema).
+	//
+	//    location_encrypted (migration 105) MUST be nulled in the same
+	//    statement: it holds the exact coordinate of the home whose address
+	//    this update is erasing, and an encrypted copy of an erased address is
+	//    still a retained address. Zeroing the geometry while leaving the
+	//    ciphertext behind would erase only the approximation and keep the
+	//    precise original.
 	if err := exec("properties", `
 		UPDATE properties
 		   SET nickname   = NULL,
@@ -292,6 +312,7 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 		       city       = '[deleted]',
 		       state      = '[deleted]',
 		       location   = ST_SetSRID(ST_MakePoint(0, 0), 4326),
+		       location_encrypted = NULL,
 		       notes      = NULL,
 		       deleted_at = COALESCE(deleted_at, now()),
 		       updated_at = now()
@@ -309,10 +330,18 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 	// 7. jobs — keep the row (jobs are platform-public listings; providers
 	//    needed to see them publicly during the auction). Anonymize the
 	//    free-text description in case the user wrote something identifying.
+	//
+	//    service_address was already cleared here. service_location_encrypted
+	//    (migration 104) holds the EXACT coordinate of that same address and
+	//    is cleared for the identical reason it is on properties: erasing the
+	//    text while keeping a reverse-geocodable point is not erasure. The
+	//    service_location / approximate_location geometries are left alone —
+	//    they are NOT NULL and, post-104, coarsened to a ~1 km grid cell.
 	if err := exec("jobs", `
 		UPDATE jobs
 		   SET description     = '[deleted]',
 		       service_address = NULL,
+		       service_location_encrypted = NULL,
 		       updated_at      = now()
 		 WHERE customer_id = $1`, userID); err != nil {
 		return nil, err

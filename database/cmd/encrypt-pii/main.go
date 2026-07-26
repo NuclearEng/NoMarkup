@@ -57,6 +57,38 @@
 // mfa_backup_codes are argon2id hashes (one-way), not ciphertext; they are
 // hashed once and thereafter recognized by their "argon2id$" prefix.
 //
+// ── Three shapes of column, one discriminator ────────────────────────────
+// Migrations 104-107 extended the inventory past "TEXT column, encrypted in
+// place". The classifier above is unchanged and still decides every case; what
+// differs is where the plaintext comes from and what else moves with it.
+//
+//	in place   — a TEXT column that becomes its own ciphertext. The original
+//	             031/033 shape, plus jobs.service_address (104) and
+//	             provider_licenses.license_number (106). Note that neither
+//	             `jobs` nor `provider_licenses` has a pii_encrypted_v1 column
+//	             and neither should ever gain one: a row flag over per-column
+//	             encryption is the drift bug migration 098 exists to document.
+//	             tableSpec.hasFlag records which tables carry the legacy flag.
+//
+//	date pair  — a DATE column drained into a sibling *_encrypted TEXT column
+//	             (106: users.dob, provider_employees.date_of_birth). secretbox
+//	             output is base64 text and a DATE cannot hold it. The date is
+//	             formatted "YYYY-MM-DD", encrypted into the sibling, and the
+//	             DATE is set to NULL in the SAME UPDATE — so a surviving
+//	             non-NULL DATE always means "not yet processed", which is
+//	             exactly what pii_plaintext_audit (107) tests.
+//
+//	geometry   — an exact point encrypted into a sibling *_encrypted column
+//	             while the geometry itself is coarsened to a privacy grid
+//	             (104/105: jobs.service_location + approximate_location,
+//	             properties.location). Coarsening is IRREVERSIBLE, so the
+//	             encryption and the coarsening are one statement. See geo.go,
+//	             which owns that half in full.
+//
+// Two audit views decide whether a run is finished, and a successful run must
+// drain BOTH to zero: pii_plaintext_audit and pii_exact_geometry_audit
+// (migration 107).
+//
 // Usage:
 //
 //	DATABASE_URL=... ENCRYPTION_KEY=... go run ./database/cmd/encrypt-pii [-dry-run]
@@ -236,21 +268,159 @@ func reconcileBackupCode(raw string) (string, bool, error) {
 	return hashed, true, nil
 }
 
+// ── DATE columns draining into sibling TEXT columns (migration 106) ──────
+
+// dateDecision is what reconcileDatePair concluded for one DATE/ciphertext
+// pair.
+type dateDecision struct {
+	// enc is the value to bind for the *_encrypted column. It is the pair's
+	// EXISTING value whenever the ciphertext must not be rewritten.
+	enc       *string
+	write     bool
+	encrypted bool
+	rekeyed   bool
+	// warn describes a state that is handled but should not exist.
+	warn string
+}
+
+// reconcileDatePair decides how to drain one DATE column into its sibling
+// *_encrypted column.
+//
+// The rules, and the reasoning behind the awkward one:
+//
+//	DATE NULL      — the row is done, or the date was never set. Untouched.
+//	                 This is what makes a second run free: the DATE is the only
+//	                 thing that says "work remains", and it is cleared in the
+//	                 same UPDATE that writes the ciphertext.
+//	ciphertext current — the encrypted copy is authoritative and is NEVER
+//	                 rewritten (rewriting means re-sealing, and a fresh nonce on
+//	                 an unchanged value is churn at best). If a DATE is ALSO
+//	                 present the two disagree in principle, and the CIPHERTEXT
+//	                 WINS: it was written by the runtime path or an earlier run,
+//	                 whereas a surviving DATE means a partially applied state.
+//	                 That case is logged WARN because it should not exist.
+//	ciphertext rekey — rotation: decrypt under PREVIOUS, re-seal under PRIMARY.
+//	unknown        — secretbox-shaped, opens under neither key. Fatal, exactly
+//	                 as everywhere else in this tool.
+//
+// The caller pairs the returned ciphertext with a literal `dateCol = NULL` in
+// the same UPDATE, so the plaintext date is never cleared unless its
+// replacement lands in the same statement.
+func reconcileDatePair(kr keyring, spec dateColSpec, p datePair) (dateDecision, error) {
+	d := dateDecision{enc: p.enc}
+
+	cur := ""
+	if p.enc != nil {
+		cur = *p.enc
+	}
+	class, plain := classify(kr, cur)
+
+	switch class {
+	case classUnknown:
+		return d, fmt.Errorf("%s: %w", spec.encCol, errUnknownKey)
+
+	case classCurrent:
+		if p.date == nil {
+			return d, nil
+		}
+		// Both present. Keep the ciphertext, drop the plaintext.
+		d.write = true
+		d.warn = fmt.Sprintf("%s was already current while %s still held a plaintext date; keeping the ciphertext and clearing the DATE (a partially applied earlier run)",
+			spec.encCol, spec.dateCol)
+		return d, nil
+
+	case classRekey:
+		ct, err := encrypt(kr.primary, plain)
+		if err != nil {
+			return d, fmt.Errorf("%s: %w", spec.encCol, err)
+		}
+		if err := verifyRoundTrip(kr.primary, ct, plain); err != nil {
+			return d, fmt.Errorf("%s: %w", spec.encCol, err)
+		}
+		d.enc = &ct
+		d.write = true
+		d.rekeyed = true
+		if p.date != nil {
+			d.warn = fmt.Sprintf("%s held stale ciphertext while %s still held a plaintext date; re-keying the ciphertext and clearing the DATE",
+				spec.encCol, spec.dateCol)
+		}
+		return d, nil
+
+	case classPlaintext:
+		// The *_encrypted column holds something that is not our wire format —
+		// in practice a raw "YYYY-MM-DD" written by a path that forgot the
+		// cipher. Seal it; it is the value the read paths already prefer.
+		ct, err := encrypt(kr.primary, cur)
+		if err != nil {
+			return d, fmt.Errorf("%s: %w", spec.encCol, err)
+		}
+		if err := verifyRoundTrip(kr.primary, ct, cur); err != nil {
+			return d, fmt.Errorf("%s: %w", spec.encCol, err)
+		}
+		d.enc = &ct
+		d.write = true
+		d.encrypted = true
+		if p.date != nil {
+			d.warn = fmt.Sprintf("%s held an unencrypted value while %s still held a plaintext date; sealing the former and clearing the latter",
+				spec.encCol, spec.dateCol)
+		}
+		return d, nil
+
+	case classEmpty:
+		if p.date == nil {
+			// Never set, or already drained. Nothing to do.
+			return d, nil
+		}
+		ct, err := encrypt(kr.primary, *p.date)
+		if err != nil {
+			return d, fmt.Errorf("%s: %w", spec.encCol, err)
+		}
+		if err := verifyRoundTrip(kr.primary, ct, *p.date); err != nil {
+			return d, fmt.Errorf("%s: %w", spec.encCol, err)
+		}
+		d.enc = &ct
+		d.write = true
+		d.encrypted = true
+		return d, nil
+
+	default:
+		return d, fmt.Errorf("%s: unhandled value class %d", spec.encCol, class)
+	}
+}
+
 // ── table specification ──────────────────────────────────────────────────
+
+// dateColSpec is a DATE column being drained into a sibling *_encrypted TEXT
+// column (migration 106). dateCol is projected as text and bound to nothing —
+// the update always writes NULL into it, because the only way this tool leaves
+// a date behind is by not writing the row at all.
+type dateColSpec struct {
+	dateCol string
+	encCol  string
+}
 
 // tableSpec describes one table's PII surface. SQL is stored as complete
 // literals rather than assembled from fragments so no identifier is ever
 // interpolated and every statement is auditable by reading this file.
 //
-// selectSQL must project: id::text, pii_encrypted_v1, then piiCols in order,
-// then hashCols in order. It takes ($1 = keyset cursor, $2 = limit) and must
-// be ordered by id so the cursor advances.
+// selectSQL must project, in order: id::text, pii_encrypted_v1 IF AND ONLY IF
+// hasFlag, then piiCols, then for each dateCols entry the PAIR
+// (to_char(dateCol,'YYYY-MM-DD'), encCol), then hashCols. It takes ($1 = keyset
+// cursor, $2 = limit) and must be ordered by id so the cursor advances.
 //
-// updateSQL must take $1 = id, then the reconciled pii values, then the
-// reconciled hash arrays, in the same order.
+// updateSQL must take $1 = id, then the reconciled pii values, then one
+// reconciled ciphertext per dateCols entry (with the DATE column set to a
+// literal NULL beside it), then the reconciled hash arrays, in the same order.
+//
+// hasFlag is false for tables with no pii_encrypted_v1 column — `jobs` and
+// `provider_licenses`, which deliberately never get one (migrations 104/106).
+// The flag was only ever advisory; correctness comes from classifying each
+// VALUE, and these two specs are the proof that nothing depends on it.
 type tableSpec struct {
 	name      string
+	hasFlag   bool
 	piiCols   []string
+	dateCols  []dateColSpec
 	hashCols  []string
 	selectSQL string
 	updateSQL string
@@ -259,22 +429,38 @@ type tableSpec struct {
 var specs = []tableSpec{
 	{
 		name:     "users",
+		hasFlag:  true,
 		piiCols:  []string{"phone", "mfa_secret"},
+		dateCols: []dateColSpec{{dateCol: "dob", encCol: "dob_encrypted"}},
 		hashCols: []string{"mfa_backup_codes"},
+		// dob is rendered with to_char rather than scanned as a time.Time so the
+		// value encrypted here is byte-identical to what
+		// gateway/internal/handler/compliance.go SetDOB writes, with no timezone
+		// or layout to disagree about.
 		selectSQL: `
-			SELECT id::text, pii_encrypted_v1, phone, mfa_secret, mfa_backup_codes
+			SELECT id::text, pii_encrypted_v1, phone, mfa_secret,
+			       to_char(dob, 'YYYY-MM-DD'), dob_encrypted,
+			       mfa_backup_codes
 			  FROM users
 			 WHERE deleted_at IS NULL AND id::text > $1
 			 ORDER BY id::text
 			 LIMIT $2`,
+		// dob = NULL is unconditional and safe: the reconciler only lets this
+		// statement run when either dob is already NULL (no-op) or a ciphertext
+		// for it is being written in the same row of the same UPDATE. The
+		// plaintext date can therefore never be cleared without its replacement
+		// landing atomically.
 		updateSQL: `
 			UPDATE users
-			   SET phone = $2, mfa_secret = $3, mfa_backup_codes = $4,
+			   SET phone = $2, mfa_secret = $3,
+			       dob = NULL, dob_encrypted = $4,
+			       mfa_backup_codes = $5,
 			       pii_encrypted_v1 = TRUE, updated_at = now()
 			 WHERE id::text = $1`,
 	},
 	{
 		name:    "provider_profiles",
+		hasFlag: true,
 		piiCols: []string{"service_address", "ein_tin", "insurance_policy_number"},
 		selectSQL: `
 			SELECT id::text, pii_encrypted_v1,
@@ -290,11 +476,14 @@ var specs = []tableSpec{
 			 WHERE id::text = $1`,
 	},
 	{
-		name:    "provider_employees",
-		piiCols: []string{"email", "phone", "license_number", "insurance_policy_number"},
+		name:     "provider_employees",
+		hasFlag:  true,
+		piiCols:  []string{"email", "phone", "license_number", "insurance_policy_number"},
+		dateCols: []dateColSpec{{dateCol: "date_of_birth", encCol: "date_of_birth_encrypted"}},
 		selectSQL: `
 			SELECT id::text, pii_encrypted_v1,
-			       email, phone, license_number, insurance_policy_number
+			       email, phone, license_number, insurance_policy_number,
+			       to_char(date_of_birth, 'YYYY-MM-DD'), date_of_birth_encrypted
 			  FROM provider_employees
 			 WHERE id::text > $1
 			 ORDER BY id::text
@@ -303,14 +492,18 @@ var specs = []tableSpec{
 			UPDATE provider_employees
 			   SET email = $2, phone = $3, license_number = $4,
 			       insurance_policy_number = $5,
+			       date_of_birth = NULL, date_of_birth_encrypted = $6,
 			       pii_encrypted_v1 = TRUE, updated_at = now()
 			 WHERE id::text = $1`,
 	},
 	{
 		// properties.address is NOT NULL; the reconciler preserves non-nil-ness
 		// because it only ever maps a non-nil source to a non-nil result.
-		// city/state/zip_code/location stay plaintext on purpose (migration 033).
+		// city/state/zip_code stay plaintext on purpose (migration 033).
+		// properties.location is NOT handled here — it is a geometry, and
+		// geoSpecs in geo.go owns it (migration 105).
 		name:    "properties",
+		hasFlag: true,
 		piiCols: []string{"address", "notes"},
 		selectSQL: `
 			SELECT id::text, pii_encrypted_v1, address, notes
@@ -324,6 +517,47 @@ var specs = []tableSpec{
 			       pii_encrypted_v1 = TRUE, updated_at = now()
 			 WHERE id::text = $1`,
 	},
+	{
+		// Migration 104. jobs.service_address is a CUSTOMER HOME address that
+		// has been in plaintext since 001. The table has NO pii_encrypted_v1
+		// column and must not gain one, so hasFlag is false and every decision
+		// is made per VALUE.
+		//
+		// The paired geometry columns are handled by geoSpecs in geo.go:
+		// encrypting the address while leaving an exact point beside it is
+		// decorative, since the point reverse-geocodes back to the address.
+		name:    "jobs",
+		hasFlag: false,
+		piiCols: []string{"service_address"},
+		selectSQL: `
+			SELECT id::text, service_address
+			  FROM jobs
+			 WHERE deleted_at IS NULL AND id::text > $1
+			 ORDER BY id::text
+			 LIMIT $2`,
+		updateSQL: `
+			UPDATE jobs
+			   SET service_address = $2
+			 WHERE id::text = $1`,
+	},
+	{
+		// Migration 106. NOT NULL, so there is no NULL sentinel — and none is
+		// needed: per-VALUE classification answers "is this row done" by asking
+		// whether the value opens under the key. No flag column here either.
+		name:    "provider_licenses",
+		hasFlag: false,
+		piiCols: []string{"license_number"},
+		selectSQL: `
+			SELECT id::text, license_number
+			  FROM provider_licenses
+			 WHERE id::text > $1
+			 ORDER BY id::text
+			 LIMIT $2`,
+		updateSQL: `
+			UPDATE provider_licenses
+			   SET license_number = $2, updated_at = now()
+			 WHERE id::text = $1`,
+	},
 }
 
 // ── database plumbing ────────────────────────────────────────────────────
@@ -334,13 +568,29 @@ type querier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
-// row is one scanned record: its id, its flag, its PII values and its hash
-// arrays, positionally matching the spec.
+// datePair is one scanned DATE/ciphertext pair. date is the DATE column
+// rendered "YYYY-MM-DD" (nil when the column is NULL, which for a processed row
+// means "already drained"); enc is the sibling *_encrypted TEXT column.
+type datePair struct {
+	date *string
+	enc  *string
+}
+
+// row is one scanned record: its id, its flag (meaningful only when
+// spec.hasFlag), its PII values, its date pairs and its hash arrays,
+// positionally matching the spec.
 type row struct {
-	id   string
-	flag bool
-	pii  []*string
-	hash [][]string
+	id    string
+	flag  bool
+	pii   []*string
+	dates []datePair
+	hash  [][]string
+}
+
+// flagSatisfied reports whether the legacy advisory flag needs no attention —
+// either because the table has none, or because it is already TRUE.
+func (r row) flagSatisfied(spec tableSpec) bool {
+	return !spec.hasFlag || r.flag
 }
 
 // scanTable streams every row of spec in id order and hands each to visit.
@@ -373,13 +623,20 @@ func fetchBatch(ctx context.Context, db querier, spec tableSpec, cursor string) 
 	var out []row
 	for rows.Next() {
 		r := row{
-			pii:  make([]*string, len(spec.piiCols)),
-			hash: make([][]string, len(spec.hashCols)),
+			pii:   make([]*string, len(spec.piiCols)),
+			dates: make([]datePair, len(spec.dateCols)),
+			hash:  make([][]string, len(spec.hashCols)),
 		}
-		dest := make([]any, 0, 2+len(spec.piiCols)+len(spec.hashCols))
-		dest = append(dest, &r.id, &r.flag)
+		dest := make([]any, 0, 2+len(spec.piiCols)+2*len(spec.dateCols)+len(spec.hashCols))
+		dest = append(dest, &r.id)
+		if spec.hasFlag {
+			dest = append(dest, &r.flag)
+		}
 		for i := range r.pii {
 			dest = append(dest, &r.pii[i])
+		}
+		for i := range r.dates {
+			dest = append(dest, &r.dates[i].date, &r.dates[i].enc)
 		}
 		for i := range r.hash {
 			dest = append(dest, &r.hash[i])
@@ -409,20 +666,49 @@ func preflight(ctx context.Context, db querier, kr keyring) error {
 	totals := map[valueClass]int{}
 	var offenders []string
 
+	// note records one classification and remembers the first few offenders.
+	note := func(class valueClass, where string) {
+		totals[class]++
+		if class == classUnknown && len(offenders) < 20 {
+			offenders = append(offenders, where)
+		}
+	}
+	classifyCol := func(v *string, where string) {
+		if v == nil {
+			totals[classEmpty]++
+			return
+		}
+		class, _ := classify(kr, *v)
+		note(class, where)
+	}
+
 	for _, spec := range specs {
 		err := scanTable(ctx, db, spec, func(r row) error {
 			for i, v := range r.pii {
-				if v == nil {
-					totals[classEmpty]++
-					continue
-				}
-				class, _ := classify(kr, *v)
-				totals[class]++
-				if class == classUnknown && len(offenders) < 20 {
-					offenders = append(offenders,
-						fmt.Sprintf("%s.%s id=%s", spec.name, spec.piiCols[i], r.id))
-				}
+				classifyCol(v, fmt.Sprintf("%s.%s id=%s", spec.name, spec.piiCols[i], r.id))
 			}
+			// The DATE columns of migration 106 contribute their SIBLING
+			// ciphertext column, not the date: a plaintext date is not a value
+			// any key could open, and the class that matters here is whether the
+			// ciphertext already in the sibling is one we can read.
+			for i, p := range r.dates {
+				classifyCol(p.enc, fmt.Sprintf("%s.%s id=%s", spec.name, spec.dateCols[i].encCol, r.id))
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	// The encrypted-point columns of migrations 104/105 go through the same
+	// gate. Missing them would be the worst possible omission: the geometry pass
+	// COARSENS in the same statement that writes the ciphertext, so a key we
+	// cannot open must abort before the run starts, or an unreadable exact point
+	// would be traded for a permanently rounded-off geometry.
+	for _, spec := range geoSpecs {
+		err := scanGeoTable(ctx, db, spec, func(r geoRow) error {
+			classifyCol(r.enc, fmt.Sprintf("%s.%s id=%s", spec.name, spec.encCol, r.id))
 			return nil
 		})
 		if err != nil {
@@ -447,12 +733,42 @@ func preflight(ctx context.Context, db querier, kr keyring) error {
 
 // ── reconcile pass ───────────────────────────────────────────────────────
 
+// stats is one pass's counters. The geo fields are reported separately from
+// the in-place ones because "how many points were encrypted" and "how many
+// geometries were coarsened" are different questions with different failure
+// modes — a run that encrypts points without coarsening leaves the exposure
+// open, and a run that coarsens without encrypting has destroyed data.
 type stats struct {
 	rowsSeen    int
 	rowsWritten int
 	encrypted   int
 	rekeyed     int
 	skipped     int
+	// migration 106: DATE columns drained into sibling TEXT columns.
+	datesEncrypted int
+	datesRekeyed   int
+	// migrations 104/105: exact point geometry.
+	pointsEncrypted      int
+	pointsRekeyed        int
+	geomsCoarsened       int
+	pointsAlreadyCurrent int
+	sentinelSkipped      int
+}
+
+// add accumulates another pass's counters, so run can report one total.
+func (s *stats) add(o stats) {
+	s.rowsSeen += o.rowsSeen
+	s.rowsWritten += o.rowsWritten
+	s.encrypted += o.encrypted
+	s.rekeyed += o.rekeyed
+	s.skipped += o.skipped
+	s.datesEncrypted += o.datesEncrypted
+	s.datesRekeyed += o.datesRekeyed
+	s.pointsEncrypted += o.pointsEncrypted
+	s.pointsRekeyed += o.pointsRekeyed
+	s.geomsCoarsened += o.geomsCoarsened
+	s.pointsAlreadyCurrent += o.pointsAlreadyCurrent
+	s.sentinelSkipped += o.sentinelSkipped
 }
 
 func reconcileTable(ctx context.Context, db querier, spec tableSpec, kr keyring, dryRun bool) (stats, error) {
@@ -461,7 +777,7 @@ func reconcileTable(ctx context.Context, db querier, spec tableSpec, kr keyring,
 	err := scanTable(ctx, db, spec, func(r row) error {
 		st.rowsSeen++
 		changed := false
-		args := make([]any, 0, 1+len(spec.piiCols)+len(spec.hashCols))
+		args := make([]any, 0, 1+len(spec.piiCols)+len(spec.dateCols)+len(spec.hashCols))
 		args = append(args, r.id)
 
 		for i, v := range r.pii {
@@ -486,6 +802,33 @@ func reconcileTable(ctx context.Context, db querier, spec tableSpec, kr keyring,
 			args = append(args, out)
 		}
 
+		// Migration 106: DATE -> sibling ciphertext. The decision function
+		// pairs its output with the literal `dateCol = NULL` in updateSQL, so
+		// the plaintext date and its replacement move in one statement.
+		for i, p := range r.dates {
+			d, err := reconcileDatePair(kr, spec.dateCols[i], p)
+			if err != nil {
+				return fmt.Errorf("%s id=%s: %w", spec.name, r.id, err)
+			}
+			if d.warn != "" {
+				log.Printf("WARN %s id=%s: %s", spec.name, r.id, d.warn)
+			}
+			switch {
+			case d.rekeyed:
+				st.datesRekeyed++
+			case d.encrypted:
+				st.datesEncrypted++
+			default:
+				st.skipped++
+			}
+			changed = changed || d.write
+			if d.enc == nil {
+				args = append(args, nil)
+			} else {
+				args = append(args, *d.enc)
+			}
+		}
+
 		for i, codes := range r.hash {
 			if codes == nil {
 				args = append(args, nil)
@@ -504,8 +847,10 @@ func reconcileTable(ctx context.Context, db querier, spec tableSpec, kr keyring,
 		}
 
 		// Write only when something actually changed, or when the advisory flag
-		// still needs flipping. A second run therefore issues ZERO updates.
-		if !changed && r.flag {
+		// still needs flipping. A second run therefore issues ZERO updates —
+		// including on the flagless tables (jobs, provider_licenses), where
+		// flagSatisfied is vacuously true and only a real value change writes.
+		if !changed && r.flagSatisfied(spec) {
 			return nil
 		}
 		if dryRun {
@@ -523,21 +868,43 @@ func reconcileTable(ctx context.Context, db querier, spec tableSpec, kr keyring,
 		return st, err
 	}
 
-	log.Printf("%s: rows=%d written=%d encrypted=%d rekeyed=%d already_current=%d",
-		spec.name, st.rowsSeen, st.rowsWritten, st.encrypted, st.rekeyed, st.skipped)
+	log.Printf("%s: rows=%d written=%d encrypted=%d rekeyed=%d dates_encrypted=%d dates_rekeyed=%d already_current=%d",
+		spec.name, st.rowsSeen, st.rowsWritten, st.encrypted, st.rekeyed,
+		st.datesEncrypted, st.datesRekeyed, st.skipped)
 	return st, nil
 }
 
-// run executes the pre-flight and then the reconcile pass over every table.
+// run executes the pre-flight and then the reconcile passes: the in-place /
+// date-pair columns first, then the geometry columns.
+//
+// The order between the two passes does not matter — they touch disjoint
+// columns and each is individually idempotent. What matters is that BOTH run,
+// because a database is only finished when pii_plaintext_audit AND
+// pii_exact_geometry_audit (migration 107) are both empty.
 func run(ctx context.Context, db querier, kr keyring, dryRun bool) error {
 	if err := preflight(ctx, db, kr); err != nil {
 		return err
 	}
+	var total stats
 	for _, spec := range specs {
-		if _, err := reconcileTable(ctx, db, spec, kr, dryRun); err != nil {
+		st, err := reconcileTable(ctx, db, spec, kr, dryRun)
+		if err != nil {
 			return err
 		}
+		total.add(st)
 	}
+	for _, spec := range geoSpecs {
+		st, err := reconcileGeoTable(ctx, db, spec, kr, dryRun)
+		if err != nil {
+			return err
+		}
+		total.add(st)
+	}
+	log.Printf("total: rows=%d written=%d encrypted=%d rekeyed=%d dates_encrypted=%d dates_rekeyed=%d points_encrypted=%d points_rekeyed=%d geometries_coarsened=%d points_already_current=%d erasure_sentinels=%d",
+		total.rowsSeen, total.rowsWritten, total.encrypted, total.rekeyed,
+		total.datesEncrypted, total.datesRekeyed,
+		total.pointsEncrypted, total.pointsRekeyed, total.geomsCoarsened,
+		total.pointsAlreadyCurrent, total.sentinelSkipped)
 	return nil
 }
 

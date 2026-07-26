@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
@@ -125,15 +126,51 @@ func (r *PostgresRepository) QueryMatchingProviders(ctx context.Context, categor
 	return providers, nil
 }
 
-// GetJobLocation retrieves the latitude and longitude of a job's service location.
+// GetJobLocation retrieves the latitude and longitude of a job's service
+// location. It is the only reader of jobs.service_location, and the value it
+// returns never leaves the server — it seeds the provider-match radius
+// (defaultMatchRadius, 50 km).
+//
+// Since migration 104 the geometry is COARSENED at rest to the 0.01-degree
+// privacy grid and the exact point lives encrypted in
+// service_location_encrypted. Prefer the encrypted copy so matching keeps its
+// exact centre; fall back to the geometry for legacy rows written before 104,
+// which still hold an exact point there. Either way the result is
+// bit-identical to the pre-104 behaviour.
 func (r *PostgresRepository) GetJobLocation(ctx context.Context, jobID string) (float64, float64, error) {
 	var lat, lng float64
+	var encrypted *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT ST_Y(service_location) AS lat, ST_X(service_location) AS lng
+		SELECT ST_Y(service_location) AS lat, ST_X(service_location) AS lng,
+		       service_location_encrypted
 		FROM jobs
-		WHERE id = $1 AND deleted_at IS NULL`, jobID).Scan(&lat, &lng)
+		WHERE id = $1 AND deleted_at IS NULL`, jobID).Scan(&lat, &lng, &encrypted)
 	if err != nil {
 		return 0, 0, fmt.Errorf("get job location: %w", err)
 	}
+
+	if encrypted != nil && *encrypted != "" {
+		plain, derr := r.cipher.DecryptStringOrPassthrough(*encrypted)
+		if derr != nil {
+			// A value that IS our wire format but opens under no configured
+			// key is a KEY problem. Falling back to the coarse geometry here
+			// would hide a mis-keyed deployment behind results that look
+			// almost right, so it fails loudly instead.
+			return 0, 0, fmt.Errorf("get job location decrypt: %w", derr)
+		}
+		exactLat, exactLng, perr := domain.ParseExactPoint(plain)
+		if perr != nil {
+			// A decrypted value that is not a point is corruption, not a key
+			// failure, and the coarse geometry is still usable at the 50 km
+			// scale this feeds. Degrade, but say so.
+			slog.Warn("job service_location_encrypted is malformed; falling back to coarse geometry",
+				"job_id", jobID,
+				"error", perr,
+			)
+		} else {
+			return exactLat, exactLng, nil
+		}
+	}
+
 	return lat, lng, nil
 }

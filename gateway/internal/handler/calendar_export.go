@@ -19,6 +19,7 @@ package handler
 // DB pool (503 when DATABASE_URL isn't wired), structured slog errors.
 
 import (
+	"context"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -40,14 +42,63 @@ import (
 // publicKey is used to verify the optional ?token= JWT query-param fallback.
 // When auth is provided via the standard cookie / Authorization header,
 // the middleware-stamped Claims are used directly.
+//
+// cipher opens jobs.service_address, which is PII at rest as of migration 104.
+// This feed is the gateway's only consumer of that column.
 type CalendarExportHandler struct {
 	db        *pgxpool.Pool
 	publicKey *rsa.PublicKey
+	cipher    *crypto.Cipher
 }
 
 // NewCalendarExportHandler returns a CalendarExportHandler.
-func NewCalendarExportHandler(db *pgxpool.Pool, publicKey *rsa.PublicKey) *CalendarExportHandler {
-	return &CalendarExportHandler{db: db, publicKey: publicKey}
+//
+// cipher is variadic so the existing two-argument composition root keeps
+// compiling; callers SHOULD pass the gateway's shared piiCipher for guaranteed
+// key parity. Mirrors NewDataExportHandler.
+func NewCalendarExportHandler(db *pgxpool.Pool, publicKey *rsa.PublicKey, cipher ...*crypto.Cipher) *CalendarExportHandler {
+	h := &CalendarExportHandler{db: db, publicKey: publicKey}
+	if len(cipher) > 0 && cipher[0] != nil {
+		h.cipher = cipher[0]
+		return h
+	}
+	c, err := crypto.FromEnv()
+	if err != nil {
+		// No key: every encrypted address degrades to an omitted LOCATION.
+		// The feed still serves — see decryptEventAddress.
+		slog.Error("calendar export: no PII cipher; encrypted addresses will be omitted from LOCATION", "error", err)
+		return h
+	}
+	slog.Warn("calendar export: constructed its own cipher from env; pass the shared piiCipher to NewCalendarExportHandler for guaranteed key parity")
+	h.cipher = c
+	return h
+}
+
+// decryptEventAddress renders jobs.service_address for an ICS LOCATION line.
+//
+// Unlike the licence read path this DEGRADES rather than erroring. A calendar
+// subscription is a background fetch by a third-party client; a hard failure
+// takes out every event in the feed, including the ones with no address at all.
+// So a value that cannot be opened is logged and dropped, producing a VEVENT
+// with no LOCATION — an entry missing an address is far better than one whose
+// address is a base64 blob, and far better than no calendar.
+//
+// Detection is per VALUE: a legacy plaintext address (written before migration
+// 104) is not our wire format and passes straight through.
+func (h *CalendarExportHandler) decryptEventAddress(ctx context.Context, stored string) string {
+	if stored == "" {
+		return ""
+	}
+	if h.cipher == nil {
+		slog.ErrorContext(ctx, "calendar export: no PII cipher; omitting event address")
+		return ""
+	}
+	plain, err := h.cipher.DecryptStringOrPassthrough(stored)
+	if err != nil {
+		slog.ErrorContext(ctx, "calendar export: service address is secretbox-shaped but no configured key opens it; omitting LOCATION", "error", err)
+		return ""
+	}
+	return plain
 }
 
 // ExportICS renders the user's calendar.ics. We prefer middleware-set
@@ -102,6 +153,8 @@ func (h *CalendarExportHandler) ExportICS(w http.ResponseWriter, r *http.Request
 				slog.ErrorContext(r.Context(), "calendar contract scan failed", "error", err)
 				continue
 			}
+			// jobs.service_address is PII at rest (migration 104).
+			ev.Address = h.decryptEventAddress(r.Context(), ev.Address)
 			contracts = append(contracts, ev)
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {

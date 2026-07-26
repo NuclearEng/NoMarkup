@@ -62,7 +62,7 @@ func seedActiveContract(t *testing.T, repo *PostgresRepository, amountCents int6
 // move by exactly the delta (integer cents), and the change order is 'accepted'.
 func TestChangeOrder_Accept_AppliesDeltaToContractAndMilestone(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	const start int64 = 100_000
@@ -92,7 +92,7 @@ func TestChangeOrder_Accept_AppliesDeltaToContractAndMilestone(t *testing.T) {
 // the amount by exactly the delta (no sign/abs bug).
 func TestChangeOrder_NegativeDelta_ReducesAmount(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	const start int64 = 100_000
@@ -119,7 +119,7 @@ func TestChangeOrder_NegativeDelta_ReducesAmount(t *testing.T) {
 // unchanged (no double-apply money bug).
 func TestChangeOrder_DoubleAccept_IsIdempotent(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	const start int64 = 50_000
@@ -147,7 +147,7 @@ func TestChangeOrder_DoubleAccept_IsIdempotent(t *testing.T) {
 // status becomes 'rejected'.
 func TestChangeOrder_Reject_NoMoneyChange(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	const start int64 = 80_000
@@ -173,7 +173,7 @@ func TestChangeOrder_Reject_NoMoneyChange(t *testing.T) {
 // cannot subsequently be accepted (state machine integrity).
 func TestChangeOrder_RejectThenAccept_Blocked(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	cid := seedActiveContract(t, repo, 40_000)
@@ -197,7 +197,7 @@ func TestChangeOrder_RejectThenAccept_Blocked(t *testing.T) {
 // TestChangeOrder_GetMissing returns ErrChangeOrderNotFound for an unknown id.
 func TestChangeOrder_GetMissing(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	_, err := repo.GetChangeOrder(context.Background(), "00000000-0000-0000-0000-0000000000ff")
 	require.ErrorIs(t, err, domain.ErrChangeOrderNotFound)
 }

@@ -32,18 +32,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // ComplianceHandler exposes cookie-consent / ToS / DOB endpoints.
+//
+// cipher seals users.dob_encrypted (migration 106). The DOB is PII with no
+// production read path at all — the derived fact the platform consumes is
+// dob_verified_at — so SetDOB retains the date only as encrypted evidence
+// behind the age assertion and writes the plaintext DATE column NULL.
 type ComplianceHandler struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
 // NewComplianceHandler returns a ComplianceHandler. A nil db short-circuits
 // every endpoint to a 503, mirroring the rest of the marketplace surface.
-func NewComplianceHandler(db *pgxpool.Pool) *ComplianceHandler {
-	return &ComplianceHandler{db: db}
+//
+// cipher is variadic so the existing single-argument composition root keeps
+// compiling; callers SHOULD pass the gateway's shared piiCipher for guaranteed
+// key parity. Mirrors NewDataExportHandler.
+func NewComplianceHandler(db *pgxpool.Pool, cipher ...*crypto.Cipher) *ComplianceHandler {
+	h := &ComplianceHandler{db: db}
+	if len(cipher) > 0 && cipher[0] != nil {
+		h.cipher = cipher[0]
+		return h
+	}
+	c, err := crypto.FromEnv()
+	if err != nil {
+		// Outside development FromEnv fails closed on a missing key. A nil
+		// cipher makes SetDOB a 503 rather than persisting a plaintext DOB.
+		slog.Error("compliance: no PII cipher; DOB capture will fail closed", "error", err)
+		return h
+	}
+	slog.Warn("compliance: constructed its own cipher from env; pass the shared piiCipher to NewComplianceHandler for guaranteed key parity")
+	h.cipher = c
+	return h
 }
 
 // minAgeYears is the global minimum age. Some categories (alcohol/tobacco)
@@ -307,15 +332,38 @@ func (h *ComplianceHandler) SetDOB(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "dob cannot be in the future")
 		return
 	}
+	// The age check runs in memory on the parsed date, BEFORE anything is
+	// persisted, and is unchanged by encryption — encrypting the evidence must
+	// never weaken the gate that produced dob_verified_at.
 	if !meetsMinimumAge(dob, minAgeYears, time.Now()) {
 		writeError(w, http.StatusForbidden, "must be at least 18 years old")
 		return
 	}
+
+	// PII at rest (migration 106). The DOB is sealed into dob_encrypted and the
+	// plaintext DATE column is written NULL: nothing in production ever SELECTs
+	// users.dob, so retaining the cleartext buys nothing and costs a full date
+	// of birth in every backup and replica. The date survives only as encrypted
+	// evidence behind the age assertion; the assertion itself is
+	// dob_verified_at, which stays a plain timestamp because it is a derived
+	// fact, not an identifier.
+	if h.cipher == nil {
+		slog.ErrorContext(r.Context(), "dob capture blocked: no PII cipher configured", "user_id", claims.UserID)
+		writeError(w, http.StatusServiceUnavailable, "age verification is temporarily unavailable")
+		return
+	}
+	encDOB, err := h.cipher.EncryptString(dob.Format("2006-01-02"))
+	if err != nil {
+		slog.ErrorContext(r.Context(), "dob encrypt failed", "error", err, "user_id", claims.UserID)
+		writeError(w, http.StatusInternalServerError, "failed to record dob")
+		return
+	}
+
 	if _, err := h.db.Exec(r.Context(), `
 		UPDATE users
-		   SET dob = $2, dob_verified_at = now(), updated_at = now()
+		   SET dob = NULL, dob_encrypted = $2, dob_verified_at = now(), updated_at = now()
 		 WHERE id = $1`,
-		claims.UserID, dob,
+		claims.UserID, encDOB,
 	); err != nil {
 		slog.ErrorContext(r.Context(), "dob update failed", "error", err, "user_id", claims.UserID)
 		writeError(w, http.StatusInternalServerError, "failed to record dob")
@@ -328,6 +376,12 @@ func (h *ComplianceHandler) SetDOB(w http.ResponseWriter, r *http.Request) {
 
 // GetMyAgeStatus returns whether the user has cleared the age gate. Does
 // NOT return the DOB itself.
+//
+// It reads dob_verified_at ALONE and must keep doing so. That single column is
+// the entire production read path for the DOB pair, which is what makes it safe
+// for SetDOB to clear users.dob and keep only dob_encrypted. Adding a
+// dob/dob_encrypted SELECT here would re-introduce a plaintext DOB into a
+// response body and undo migration 106's data minimisation.
 func (h *ComplianceHandler) GetMyAgeStatus(w http.ResponseWriter, r *http.Request) {
 	if h.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")

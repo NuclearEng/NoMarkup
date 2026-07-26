@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -20,8 +21,16 @@ import (
 // pattern in user.go.
 //
 // Sensitive columns (email, phone, license_number, insurance_policy_number)
-// are encrypted at rest via crypto.Cipher and the pii_encrypted_v1 flag added
-// in migration 033.
+// are encrypted at rest via crypto.Cipher since migration 033;
+// date_of_birth joined them in migration 106, which added the sibling
+// date_of_birth_encrypted TEXT column because secretbox output cannot live in
+// a DATE.
+//
+// Detection is per VALUE, by AUTHENTICATION — the pii_encrypted_v1 flag is
+// advisory only (migration 098) and is NOT branched on: the flag is per ROW
+// while encryption is per COLUMN, so a row whose email was rewritten through
+// the encrypting update path reads TRUE even while a sibling column is still
+// the plaintext the backfill never revisited.
 type EmployeesHandler struct {
 	db     *pgxpool.Pool
 	cipher *crypto.Cipher
@@ -64,6 +73,16 @@ func dateToString(t *time.Time) *string {
 	return &s
 }
 
+// isoDate renders a parsed date as the canonical "YYYY-MM-DD" plaintext that
+// goes into the cipher, or "" when absent. Normalising here means the encrypted
+// column always holds exactly the format scanEmployee hands back to clients.
+func isoDate(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
 func parseDate(s string) (*time.Time, error) {
 	if s == "" {
 		return nil, nil
@@ -75,24 +94,31 @@ func parseDate(s string) (*time.Time, error) {
 	return &t, nil
 }
 
-// scanEmployee scans a row and decrypts encrypted PII fields when the row's
-// pii_encrypted_v1 flag is true. Legacy rows (flag=false) pass plaintext
-// through so the gateway keeps working pre-backfill.
+// scanEmployee scans a row and decrypts the encrypted PII columns.
+//
+// Every encrypted column is resolved per VALUE via
+// crypto.DecryptStringOrPassthrough: a value that opens under a configured key
+// is returned as plaintext, a value that is not our wire format at all is
+// legacy plaintext and passes through unchanged, and a value that IS our wire
+// format but which no configured key opens is an error — the raw base64 is
+// never handed to a caller. pii_encrypted_v1 is still selected (and logged on
+// failure) for observability, but nothing branches on it.
 func scanEmployee(row pgx.Row, cipher *crypto.Cipher) (employeeRow, error) {
 	var (
-		e             employeeRow
-		email         sql.NullString
-		phone         sql.NullString
-		dob           sql.NullTime
-		hireDate      sql.NullTime
-		bgDate        sql.NullTime
-		licNumber     sql.NullString
-		licState      sql.NullString
-		licExpiry     sql.NullTime
-		insPolicy     sql.NullString
-		insExpiry     sql.NullTime
-		createdAt     time.Time
-		piiEncrypted  bool
+		e            employeeRow
+		email        sql.NullString
+		phone        sql.NullString
+		dob          sql.NullTime
+		hireDate     sql.NullTime
+		bgDate       sql.NullTime
+		licNumber    sql.NullString
+		licState     sql.NullString
+		licExpiry    sql.NullTime
+		insPolicy    sql.NullString
+		insExpiry    sql.NullTime
+		createdAt    time.Time
+		piiEncrypted bool
+		dobEncrypted sql.NullString
 	)
 	if err := row.Scan(
 		&e.ID, &e.ProviderID, &e.FirstName, &e.LastName,
@@ -100,24 +126,45 @@ func scanEmployee(row pgx.Row, cipher *crypto.Cipher) (employeeRow, error) {
 		&e.BackgroundCheckStatus, &bgDate,
 		&licNumber, &licState, &licExpiry,
 		&insPolicy, &insExpiry, &createdAt, &piiEncrypted,
+		&dobEncrypted,
 	); err != nil {
 		return employeeRow{}, err
 	}
+	decrypt := func(field, value string) (string, error) {
+		v, err := decryptEmployeePII(cipher, value)
+		if err != nil {
+			slog.Error("employee PII decrypt failed",
+				"employee_id", e.ID, "field", field,
+				"pii_encrypted_v1", piiEncrypted, "error", err)
+			return "", err
+		}
+		return v, nil
+	}
 	if email.Valid {
-		v, err := decryptIfEncrypted(cipher, email.String, piiEncrypted)
+		v, err := decrypt("email", email.String)
 		if err != nil {
 			return employeeRow{}, err
 		}
 		e.Email = &v
 	}
 	if phone.Valid {
-		v, err := decryptIfEncrypted(cipher, phone.String, piiEncrypted)
+		v, err := decrypt("phone", phone.String)
 		if err != nil {
 			return employeeRow{}, err
 		}
 		e.Phone = &v
 	}
-	if dob.Valid {
+	// Prefer the encrypted column (migration 106); fall back to the legacy DATE
+	// for rows the backfill has not reached. The two are mutually exclusive on
+	// every row this handler writes — Create/Update NULL the DATE.
+	switch {
+	case dobEncrypted.Valid && dobEncrypted.String != "":
+		v, err := decrypt("date_of_birth", dobEncrypted.String)
+		if err != nil {
+			return employeeRow{}, err
+		}
+		e.DateOfBirth = &v
+	case dob.Valid:
 		e.DateOfBirth = dateToString(&dob.Time)
 	}
 	if hireDate.Valid {
@@ -127,7 +174,7 @@ func scanEmployee(row pgx.Row, cipher *crypto.Cipher) (employeeRow, error) {
 		e.BackgroundCheckDate = dateToString(&bgDate.Time)
 	}
 	if licNumber.Valid {
-		v, err := decryptIfEncrypted(cipher, licNumber.String, piiEncrypted)
+		v, err := decrypt("license_number", licNumber.String)
 		if err != nil {
 			return employeeRow{}, err
 		}
@@ -140,7 +187,7 @@ func scanEmployee(row pgx.Row, cipher *crypto.Cipher) (employeeRow, error) {
 		e.LicenseExpiry = dateToString(&licExpiry.Time)
 	}
 	if insPolicy.Valid {
-		v, err := decryptIfEncrypted(cipher, insPolicy.String, piiEncrypted)
+		v, err := decrypt("insurance_policy_number", insPolicy.String)
 		if err != nil {
 			return employeeRow{}, err
 		}
@@ -153,13 +200,26 @@ func scanEmployee(row pgx.Row, cipher *crypto.Cipher) (employeeRow, error) {
 	return e, nil
 }
 
-// decryptIfEncrypted returns plaintext when piiEncrypted is true, otherwise
-// returns the value untouched so legacy rows keep working.
-func decryptIfEncrypted(cipher *crypto.Cipher, value string, piiEncrypted bool) (string, error) {
-	if !piiEncrypted || value == "" {
+// decryptEmployeePII resolves one stored PII column to plaintext.
+//
+// It deliberately takes NO pii_encrypted_v1 argument. The predecessor of this
+// function branched on that flag, which is per ROW while encryption is per
+// COLUMN: a row re-written through the encrypting update path is flagged TRUE
+// even when a sibling column is still the plaintext the backfill never
+// revisited, so the flag both decrypts plaintext (error) and passes ciphertext
+// through (leak) depending on which way it is wrong. Per-value authentication
+// cannot drift that way — see migration 098 and
+// crypto.DecryptStringOrPassthrough.
+func decryptEmployeePII(cipher *crypto.Cipher, value string) (string, error) {
+	if value == "" {
 		return value, nil
 	}
-	return cipher.DecryptString(value)
+	if cipher == nil {
+		// No key at all: we cannot tell ciphertext from plaintext, and emitting
+		// a possible ciphertext is the failure mode being prevented.
+		return "", fmt.Errorf("%w: no PII cipher configured for provider_employees", crypto.ErrKeyMissing)
+	}
+	return cipher.DecryptStringOrPassthrough(value)
 }
 
 // encryptIfNonEmpty returns base64 ciphertext for non-empty s, or "" for
@@ -172,11 +232,16 @@ func encryptIfNonEmpty(cipher *crypto.Cipher, s string) (string, error) {
 	return cipher.EncryptString(s)
 }
 
+// employeeColumns is the shared projection for every read and every
+// INSERT/UPDATE ... RETURNING. date_of_birth_encrypted is appended LAST so the
+// scan order in scanEmployee stays aligned; pii_encrypted_v1 is kept purely for
+// observability (nothing branches on it — see decryptEmployeePII).
 const employeeColumns = `id, provider_id, first_name, last_name, email, phone,
         date_of_birth, role, status, hire_date,
         background_check_status, background_check_date,
         license_number, license_state, license_expiry,
-        insurance_policy_number, insurance_expiry, created_at, pii_encrypted_v1`
+        insurance_policy_number, insurance_expiry, created_at, pii_encrypted_v1,
+        date_of_birth_encrypted`
 
 // List handles GET /api/v1/providers/me/employees.
 func (h *EmployeesHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -282,16 +347,27 @@ func (h *EmployeesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create employee")
 		return
 	}
+	// Migration 106: the date of birth is sealed into date_of_birth_encrypted
+	// and the plaintext DATE column is written NULL. A DATE cannot hold base64
+	// secretbox output, hence the sibling column rather than a type change.
+	encDOB, err := encryptIfNonEmpty(h.cipher, isoDate(dob))
+	if err != nil {
+		slog.Error("encrypt employee date_of_birth", "user_id", claims.UserID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create employee")
+		return
+	}
 
 	row := h.db.QueryRow(r.Context(),
 		`INSERT INTO provider_employees (
-            provider_id, first_name, last_name, email, phone, date_of_birth,
+            provider_id, first_name, last_name, email, phone,
+            date_of_birth, date_of_birth_encrypted,
             role, status, license_number, license_state, license_expiry,
             pii_encrypted_v1
-        ) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, 'active',
+        ) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''),
+                  NULL, NULLIF($6, ''), $7, 'active',
                   NULLIF($8, ''), NULLIF($9, ''), $10, TRUE)
         RETURNING `+employeeColumns,
-		claims.UserID, body.FirstName, body.LastName, encEmail, encPhone, dob,
+		claims.UserID, body.FirstName, body.LastName, encEmail, encPhone, encDOB,
 		body.Role, encLicense, body.LicenseState, licExpiry,
 	)
 	emp, err := scanEmployee(row, h.cipher)
@@ -365,17 +441,51 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// date_of_birth was previously bound straight from the request body as a
+	// raw *string and cast with $7::date — unlike Create, which runs the same
+	// field through parseDate. A malformed date therefore reached Postgres and
+	// surfaced as a 500 instead of a 400. Validate it here on the same path as
+	// Create, then seal it (migration 106).
+	dob, err := parseDate(derefOrEmpty(body.DateOfBirth))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid date_of_birth (expected YYYY-MM-DD)")
+		return
+	}
+	var encDOB *string
+	if body.DateOfBirth != nil {
+		ct, err := encryptIfNonEmpty(h.cipher, isoDate(dob))
+		if err != nil {
+			slog.Error("encrypt update date_of_birth", "user_id", claims.UserID, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to update employee")
+			return
+		}
+		encDOB = &ct
+	}
+	if body.LicenseExpiry != nil {
+		if _, err := parseDate(*body.LicenseExpiry); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid license_expiry (expected YYYY-MM-DD)")
+			return
+		}
+	}
+
 	// COALESCE on each column so callers can patch any subset. Whenever any
 	// PII column is touched the row is re-flagged TRUE, which is safe even
 	// if the column itself wasn't included in this patch (existing
-	// ciphertext stays valid; new plaintext PII is now ciphertext).
+	// ciphertext stays valid; new plaintext PII is now ciphertext). The flag
+	// is advisory only — no read path branches on it.
+	//
+	// When a new date of birth IS supplied it lands in date_of_birth_encrypted
+	// and the legacy plaintext DATE is cleared in the same statement, so a row
+	// can never carry both. When it is not supplied both columns are untouched,
+	// leaving a not-yet-backfilled legacy DATE readable.
 	row := h.db.QueryRow(r.Context(), `
         UPDATE provider_employees SET
             first_name = COALESCE($3, first_name),
             last_name = COALESCE($4, last_name),
             email = COALESCE(NULLIF($5, ''), email),
             phone = COALESCE(NULLIF($6, ''), phone),
-            date_of_birth = COALESCE($7::date, date_of_birth),
+            date_of_birth_encrypted = COALESCE(NULLIF($7, ''), date_of_birth_encrypted),
+            date_of_birth = CASE WHEN NULLIF($7, '') IS NOT NULL THEN NULL ELSE date_of_birth END,
             role = COALESCE($8, role),
             status = COALESCE($9, status),
             license_number = COALESCE(NULLIF($10, ''), license_number),
@@ -385,7 +495,7 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
         WHERE id = $1 AND provider_id = $2
         RETURNING `+employeeColumns,
 		id, claims.UserID,
-		body.FirstName, body.LastName, encEmail, encPhone, body.DateOfBirth,
+		body.FirstName, body.LastName, encEmail, encPhone, encDOB,
 		body.Role, body.Status, encLicense, body.LicenseState, body.LicenseExpiry,
 	)
 	emp, err := scanEmployee(row, h.cipher)
@@ -400,6 +510,15 @@ func (h *EmployeesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"employee": emp})
+}
+
+// derefOrEmpty flattens an optional PATCH field to a string; a nil pointer
+// (field absent) reads as "" so parseDate treats it as "no change requested".
+func derefOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // encryptOptional handles a *string from a PATCH body: nil → nil (no change

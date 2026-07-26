@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -12,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
@@ -21,15 +24,45 @@ import (
 // authorized; §5: parameterized SQL only). It is a gateway-level concern stored
 // directly in PostgreSQL (the provider_licenses table from migration 062), not
 // routed through a downstream gRPC service — mirroring FeatureFlagHandler.
+//
+// license_number is PII at rest as of migration 106: it is sealed with
+// nacl/secretbox on write and opened on read. Migration 062 stored it in clear
+// while its own inline comment called it "sensitive", and the identically-named
+// provider_employees.license_number has been encrypted since migration 033.
 type ProviderLicenseHandler struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
 // NewProviderLicenseHandler creates a new ProviderLicenseHandler.
 // If db is nil (e.g. DATABASE_URL not set) the endpoints fail closed with 503
 // for writes and return empty lists for reads, never panicking.
-func NewProviderLicenseHandler(db *pgxpool.Pool) *ProviderLicenseHandler {
-	return &ProviderLicenseHandler{db: db}
+//
+// cipher is variadic so the existing single-argument composition root keeps
+// compiling; callers SHOULD pass the gateway's shared piiCipher (the same one
+// handed to NewEmployeesHandler) so licences are sealed and opened under
+// exactly the process-wide key. The fallback reads the same
+// ENCRYPTION_KEY / ENCRYPTION_KEY_PREVIOUS pair and therefore yields an
+// identical cipher everywhere but development, where FromEnv mints an
+// ephemeral key — that divergence is dev-only and WARN-logged. Mirrors
+// NewDataExportHandler.
+func NewProviderLicenseHandler(db *pgxpool.Pool, cipher ...*crypto.Cipher) *ProviderLicenseHandler {
+	h := &ProviderLicenseHandler{db: db}
+	if len(cipher) > 0 && cipher[0] != nil {
+		h.cipher = cipher[0]
+		return h
+	}
+	c, err := crypto.FromEnv()
+	if err != nil {
+		// Outside development FromEnv fails closed on a missing key. Leaving the
+		// cipher nil makes every licence write a 503 and every licence read a
+		// 500 rather than persisting or emitting a plaintext licence number.
+		slog.Error("provider licenses: no PII cipher; licence endpoints will fail closed", "error", err)
+		return h
+	}
+	slog.Warn("provider licenses: constructed its own cipher from env; pass the shared piiCipher to NewProviderLicenseHandler for guaranteed key parity")
+	h.cipher = c
+	return h
 }
 
 const (
@@ -65,6 +98,11 @@ func licenseJSON(id, providerID, licenseType, licenseNumber, jurisdiction, statu
 
 // maskLicenseNumber reduces a license number to a last-4 projection for the
 // PUBLIC read path so the full number is never leaked to anonymous callers.
+//
+// MUST be applied to the PLAINTEXT, after decryption. Masking the stored
+// ciphertext would publish the last four base64 characters of a random nonce —
+// which mask nothing about the licence and are not even stable across a
+// re-encrypt — while the caller believes they are seeing a real last-4.
 func maskLicenseNumber(n string) string {
 	n = strings.TrimSpace(n)
 	if len(n) <= 4 {
@@ -113,15 +151,30 @@ func (h *ProviderLicenseHandler) SubmitLicense(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// PII at rest (migration 106): the licence number is sealed before it ever
+	// reaches Postgres. Fail closed when no key is configured rather than
+	// silently persisting a plaintext licence number.
+	if h.cipher == nil {
+		slog.Error("provider license submit blocked: no PII cipher configured", "provider_id", claims.UserID)
+		writeError(w, http.StatusServiceUnavailable, "license submission is temporarily unavailable")
+		return
+	}
+	encLicenseNumber, err := h.cipher.EncryptString(req.LicenseNumber)
+	if err != nil {
+		slog.Error("failed to encrypt provider license number", "error", err, "provider_id", claims.UserID)
+		writeError(w, http.StatusInternalServerError, "failed to submit license")
+		return
+	}
+
 	var (
 		id                   string
 		createdAt, updatedAt time.Time
 	)
-	err := h.db.QueryRow(r.Context(),
+	err = h.db.QueryRow(r.Context(),
 		`INSERT INTO provider_licenses (provider_id, license_type, license_number, jurisdiction, status)
 		 VALUES ($1, $2, $3, $4, 'pending')
 		 RETURNING id, created_at, updated_at`,
-		claims.UserID, req.LicenseType, req.LicenseNumber, req.Jurisdiction,
+		claims.UserID, req.LicenseType, encLicenseNumber, req.Jurisdiction,
 	).Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
 		slog.Error("failed to insert provider license", "error", err, "provider_id", claims.UserID)
@@ -163,7 +216,7 @@ func (h *ProviderLicenseHandler) ListMyLicenses(w http.ResponseWriter, r *http.R
 	}
 	defer rows.Close()
 
-	licenses, err := scanLicenseRows(rows, false)
+	licenses, err := scanLicenseRows(r.Context(), h.cipher, rows, false)
 	if err != nil {
 		slog.Error("failed to scan provider licenses", "error", err, "provider_id", claims.UserID)
 		writeError(w, http.StatusInternalServerError, "failed to list licenses")
@@ -204,7 +257,7 @@ func (h *ProviderLicenseHandler) ListProviderVerifiedLicenses(w http.ResponseWri
 	}
 	defer rows.Close()
 
-	licenses, err := scanLicenseRows(rows, true)
+	licenses, err := scanLicenseRows(r.Context(), h.cipher, rows, true)
 	if err != nil {
 		slog.Error("failed to scan verified licenses", "error", err, "provider_id", providerID)
 		writeError(w, http.StatusInternalServerError, "failed to list licenses")
@@ -270,7 +323,7 @@ func (h *ProviderLicenseHandler) ListPendingLicenses(w http.ResponseWriter, r *h
 	}
 	defer rows.Close()
 
-	licenses, err := scanLicenseRows(rows, false)
+	licenses, err := scanLicenseRows(r.Context(), h.cipher, rows, false)
 	if err != nil {
 		slog.Error("failed to scan admin licenses", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to list licenses")
@@ -358,10 +411,19 @@ func (h *ProviderLicenseHandler) ReviewLicense(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// This RETURNING clause is the one licence read that does NOT go through
+	// scanLicenseRows, so it needs its own decrypt. Admin projection → unmasked.
+	plainLicenseNumber, err := openLicenseNumber(r.Context(), h.cipher, licenseNumber)
+	if err != nil {
+		slog.Error("failed to decrypt reviewed license number", "error", err, "license_id", licenseID)
+		writeError(w, http.StatusInternalServerError, "failed to review license")
+		return
+	}
+
 	slog.Info("provider license reviewed",
 		"license_id", id, "provider_id", providerID, "status", newStatus, "reviewer", claims.UserID)
 	writeJSON(w, http.StatusOK, licenseJSON(
-		id, providerID, licenseType, licenseNumber, jurisdiction, newStatus,
+		id, providerID, licenseType, plainLicenseNumber, jurisdiction, newStatus,
 		verifiedBy, verifiedAt, createdAt, updatedAt))
 }
 
@@ -435,9 +497,41 @@ func (h *ProviderLicenseHandler) ListLegalCategories(w http.ResponseWriter, r *h
 	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"categories": cats}, 300, 3600)
 }
 
+// openLicenseNumber turns the stored license_number column into plaintext.
+//
+// Detection is per VALUE, by AUTHENTICATION — never by a per-row flag.
+// provider_licenses deliberately has no pii_encrypted_v1 column and must not
+// gain one: a flag is per ROW while encryption is per COLUMN, so a flag can
+// read TRUE over a column the backfill never reached (migration 098).
+// DecryptStringOrPassthrough gives the three outcomes this needs:
+//
+//	opens under a configured key → the plaintext
+//	not our wire format at all   → legacy plaintext (migration 062 seeds, and
+//	                               any row written before 106), passed through
+//	our wire format, unopenable  → an error; the raw base64 is NEVER emitted
+//
+// The last case is a KEY problem, so it is escalated to the caller rather than
+// degraded: license_number is NOT NULL and load-bearing in every projection,
+// and returning a "licence" that is actually a nonce is worse than a 500.
+func openLicenseNumber(ctx context.Context, cipher *crypto.Cipher, stored string) (string, error) {
+	if cipher == nil {
+		// No key at all: we cannot distinguish ciphertext from plaintext, and
+		// emitting a possible ciphertext is exactly the bug being fixed.
+		return "", fmt.Errorf("%w: no PII cipher configured for provider_licenses.license_number", crypto.ErrKeyMissing)
+	}
+	plain, err := cipher.DecryptStringOrPassthrough(stored)
+	if err != nil {
+		slog.ErrorContext(ctx, "provider license number is secretbox-shaped but no configured key opens it", "error", err)
+		return "", fmt.Errorf("decrypt provider license number: %w", err)
+	}
+	return plain, nil
+}
+
 // scanLicenseRows materializes rows into JSON projections. When mask is true,
 // license_number is reduced to a last-4 projection (public read path).
-func scanLicenseRows(rows pgx.Rows, mask bool) ([]map[string]interface{}, error) {
+//
+// Decryption happens BEFORE masking — see maskLicenseNumber.
+func scanLicenseRows(ctx context.Context, cipher *crypto.Cipher, rows pgx.Rows, mask bool) ([]map[string]interface{}, error) {
 	licenses := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var (
@@ -450,9 +544,12 @@ func scanLicenseRows(rows pgx.Rows, mask bool) ([]map[string]interface{}, error)
 			&verifiedBy, &verifiedAt, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		number := licenseNumber
+		number, err := openLicenseNumber(ctx, cipher, licenseNumber)
+		if err != nil {
+			return nil, err
+		}
 		if mask {
-			number = maskLicenseNumber(licenseNumber)
+			number = maskLicenseNumber(number)
 		}
 		licenses = append(licenses, licenseJSON(
 			id, providerID, licenseType, number, jurisdiction, status,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -1129,28 +1130,28 @@ func scanUserFromRows(rows pgx.Rows, cipher *crypto.Cipher) (*domain.User, error
 	return &u, nil
 }
 
-// decryptUserPII assigns Phone / MFASecret from raw column values, decrypting
-// when the row is flagged as encrypted. mfa_backup_codes are argon2id hashes
-// (one-way) and are left as-is.
+// decryptUserPII assigns Phone / MFASecret from raw column values
+// (migration 031). mfa_backup_codes are argon2id hashes (one-way) and are
+// left as-is.
+//
+// Detection is PER VALUE (crypto.DecryptStringOrPassthrough), not per row via
+// pii_encrypted_v1 — see decryptPropertyFields and scanProviderProfile for the
+// same correction. On `users` the drift is easy to produce: enrolling in MFA
+// writes an encrypted mfa_secret and flips the flag TRUE while phone stays the
+// legacy plaintext the backfill never reached, and disabling MFA leaves the
+// flag TRUE with mfa_secret NULL. The flag stays in the projection because
+// operators use it, but nothing reads it to decide how to interpret a value.
 func decryptUserPII(u *domain.User, phone, mfaSecret *string, piiEncrypted bool, cipher *crypto.Cipher) error {
-	if !piiEncrypted {
-		if phone != nil {
-			u.Phone = *phone
-		}
-		if mfaSecret != nil {
-			u.MFASecret = *mfaSecret
-		}
-		return nil
-	}
+	_ = piiEncrypted // retained in the projection for observability; not load-bearing
 	if phone != nil && *phone != "" {
-		decrypted, err := cipher.DecryptString(*phone)
+		decrypted, err := cipher.DecryptStringOrPassthrough(*phone)
 		if err != nil {
 			return fmt.Errorf("decrypt phone: %w", err)
 		}
 		u.Phone = decrypted
 	}
 	if mfaSecret != nil && *mfaSecret != "" {
-		decrypted, err := cipher.DecryptString(*mfaSecret)
+		decrypted, err := cipher.DecryptStringOrPassthrough(*mfaSecret)
 		if err != nil {
 			return fmt.Errorf("decrypt mfa secret: %w", err)
 		}
@@ -1893,9 +1894,9 @@ func parseIP(s string) net.IP {
 // --- Property Repository Methods ---
 
 func (r *PostgresRepository) CreateProperty(ctx context.Context, input domain.CreatePropertyInput) (*domain.Property, error) {
-	// Encrypt address + notes before write. city/state/zip/location stay
-	// plaintext for indexed search and PostGIS proximity queries (see
-	// migration 033 comment).
+	// Encrypt address + notes before write. city/state/zip stay plaintext
+	// deliberately — they back indexed search (idx_properties_zip) and are the
+	// coarse location the product already shows (migration 033/105).
 	encAddress, err := r.cipher.EncryptString(input.Address)
 	if err != nil {
 		return nil, fmt.Errorf("create property: encrypt address: %w", err)
@@ -1905,26 +1906,41 @@ func (r *PostgresRepository) CreateProperty(ctx context.Context, input domain.Cr
 		return nil, fmt.Errorf("create property: encrypt notes: %w", err)
 	}
 
+	// The geometry column is written COARSE (migration 105); the exact point
+	// goes in encrypted alongside it. Writing the exact point here would leave
+	// a plaintext copy of the street address we just encrypted, reachable by
+	// reverse geocoding. Nothing indexes or measures this column, so the
+	// coarsening costs no query — see migration 105's header for the trace.
+	coarseLat, coarseLng := domain.CoarsenPoint(input.Latitude, input.Longitude)
+	encLocation, err := r.cipher.EncryptString(domain.FormatExactPoint(input.Latitude, input.Longitude))
+	if err != nil {
+		return nil, fmt.Errorf("create property: encrypt location: %w", err)
+	}
+
 	p := &domain.Property{}
 	var addrCol, notesCol string
+	var locationEncrypted *string
 	var piiEncrypted bool
 	err = r.pool.QueryRow(ctx, `
-		INSERT INTO properties (user_id, nickname, address, city, state, zip_code, location, notes, is_primary, pii_encrypted_v1)
-		VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, TRUE)
+		INSERT INTO properties (user_id, nickname, address, city, state, zip_code, location, location_encrypted, notes, is_primary, pii_encrypted_v1)
+		VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, TRUE)
 		RETURNING id, user_id, nickname, address, city, state, zip_code,
-		          ST_X(location) AS longitude, ST_Y(location) AS latitude,
+		          ST_X(location) AS longitude, ST_Y(location) AS latitude, location_encrypted,
 		          COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1`,
 		input.UserID, input.Nickname, encAddress, input.City, input.State, input.ZipCode,
-		input.Longitude, input.Latitude, encNotes, input.IsPrimary,
+		coarseLng, coarseLat, encLocation, encNotes, input.IsPrimary,
 	).Scan(
 		&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
-		&p.Longitude, &p.Latitude,
+		&p.Longitude, &p.Latitude, &locationEncrypted,
 		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create property: %w", err)
 	}
 	if err := decryptPropertyFields(&p.Address, &p.Notes, addrCol, notesCol, piiEncrypted, r.cipher); err != nil {
+		return nil, fmt.Errorf("create property: %w", err)
+	}
+	if err := resolvePropertyLocation(ctx, p, locationEncrypted, r.cipher); err != nil {
 		return nil, fmt.Errorf("create property: %w", err)
 	}
 
@@ -1945,7 +1961,7 @@ func (r *PostgresRepository) CreateProperty(ctx context.Context, input domain.Cr
 func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) ([]domain.Property, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
-		       ST_X(location) AS longitude, ST_Y(location) AS latitude,
+		       ST_X(location) AS longitude, ST_Y(location) AS latitude, location_encrypted,
 		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1
 		FROM properties
 		WHERE user_id = $1 AND deleted_at IS NULL
@@ -1959,10 +1975,11 @@ func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) 
 	for rows.Next() {
 		var p domain.Property
 		var addrCol, notesCol string
+		var locationEncrypted *string
 		var piiEncrypted bool
 		err := rows.Scan(
 			&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
-			&p.Longitude, &p.Latitude,
+			&p.Longitude, &p.Latitude, &locationEncrypted,
 			&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
 		)
 		if err != nil {
@@ -1971,7 +1988,13 @@ func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) 
 		if err := decryptPropertyFields(&p.Address, &p.Notes, addrCol, notesCol, piiEncrypted, r.cipher); err != nil {
 			return nil, fmt.Errorf("list properties decrypt: %w", err)
 		}
+		if err := resolvePropertyLocation(ctx, &p, locationEncrypted, r.cipher); err != nil {
+			return nil, fmt.Errorf("list properties decrypt: %w", err)
+		}
 		properties = append(properties, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list properties rows: %w", err)
 	}
 
 	return properties, nil
@@ -2057,15 +2080,16 @@ func (r *PostgresRepository) DeleteProperty(ctx context.Context, propertyID stri
 func (r *PostgresRepository) getPropertyByID(ctx context.Context, propertyID string) (*domain.Property, error) {
 	p := &domain.Property{}
 	var addrCol, notesCol string
+	var locationEncrypted *string
 	var piiEncrypted bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
-		       ST_X(location) AS longitude, ST_Y(location) AS latitude,
+		       ST_X(location) AS longitude, ST_Y(location) AS latitude, location_encrypted,
 		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1
 		FROM properties
 		WHERE id = $1 AND deleted_at IS NULL`, propertyID).Scan(
 		&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
-		&p.Longitude, &p.Latitude,
+		&p.Longitude, &p.Latitude, &locationEncrypted,
 		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
 	)
 	if err != nil {
@@ -2077,27 +2101,74 @@ func (r *PostgresRepository) getPropertyByID(ctx context.Context, propertyID str
 	if err := decryptPropertyFields(&p.Address, &p.Notes, addrCol, notesCol, piiEncrypted, r.cipher); err != nil {
 		return nil, fmt.Errorf("get property: %w", err)
 	}
+	if err := resolvePropertyLocation(ctx, p, locationEncrypted, r.cipher); err != nil {
+		return nil, fmt.Errorf("get property: %w", err)
+	}
 	return p, nil
 }
 
-// decryptPropertyFields fills addressOut/notesOut from raw column values,
-// decrypting via cipher when piiEncrypted is true. Pre-033 rows pass through
-// untouched so the repository keeps working before the backfill.
-func decryptPropertyFields(addressOut, notesOut *string, addrCol, notesCol string, piiEncrypted bool, cipher *crypto.Cipher) error {
-	if !piiEncrypted {
-		*addressOut = addrCol
-		*notesOut = notesCol
+// resolvePropertyLocation overwrites p.Latitude / p.Longitude — scanned from
+// the (coarsened, migration 105) location geometry — with the EXACT point
+// preserved in properties.location_encrypted, when that column is populated.
+//
+// Three cases, deliberately distinguished:
+//
+//   - column NULL/empty → the row predates migration 105 and its geometry
+//     still holds the exact point. Keep the scanned ordinates; the owner's pin
+//     stays exact. (pii_exact_geometry_audit lists these rows.)
+//   - decrypt fails → the value IS secretbox-shaped but no configured key
+//     opens it. That is a KEY problem, and it is returned as an error. Falling
+//     back here would hide a key misconfiguration behind a pin that silently
+//     moved up to ~0.79 km, which is exactly the class of failure the crypto
+//     package's DecryptStringOrPassthrough contract exists to prevent.
+//   - decrypts but does not parse as a point → corruption of a value we can
+//     read, which the coarse geometry can cover. Log WARN and fall back rather
+//     than fail a customer's property list over one bad row.
+func resolvePropertyLocation(ctx context.Context, p *domain.Property, locationEncrypted *string, cipher *crypto.Cipher) error {
+	if locationEncrypted == nil || *locationEncrypted == "" {
 		return nil
 	}
+	plain, err := cipher.DecryptStringOrPassthrough(*locationEncrypted)
+	if err != nil {
+		return fmt.Errorf("decrypt location: %w", err)
+	}
+	lat, lng, err := domain.ParseExactPoint(plain)
+	if err != nil {
+		slog.WarnContext(ctx, "property location_encrypted did not parse as a point; falling back to the coarsened geometry",
+			"property_id", p.ID,
+			"error", err,
+		)
+		return nil
+	}
+	p.Latitude = lat
+	p.Longitude = lng
+	return nil
+}
+
+// decryptPropertyFields fills addressOut/notesOut from raw column values
+// (migration 033).
+//
+// Detection is PER VALUE (crypto.DecryptStringOrPassthrough), not per row via
+// pii_encrypted_v1 — the same correction scanProviderProfile already carries.
+// The flag is a row-level boolean but encryption is a column-level property,
+// and UpdateProperty sets it TRUE whenever notes are written, so a row can
+// legitimately be flagged TRUE while address is still the plaintext the
+// backfill never revisited. Branching on the flag would hand that plaintext
+// back through DecryptString, which fails on a value that is not our wire
+// format — a customer's own address becoming an error. The inverse drift is
+// worse: a FALSE row holding ciphertext would have its base64 returned to the
+// caller as if it were an address.
+func decryptPropertyFields(addressOut, notesOut *string, addrCol, notesCol string, piiEncrypted bool, cipher *crypto.Cipher) error {
+	_ = piiEncrypted // retained in the projection for observability; not load-bearing
 	if addrCol != "" {
-		dec, err := cipher.DecryptString(addrCol)
+		dec, err := cipher.DecryptStringOrPassthrough(addrCol)
 		if err != nil {
 			return fmt.Errorf("decrypt address: %w", err)
 		}
 		*addressOut = dec
 	}
 	if notesCol != "" {
-		dec, err := cipher.DecryptString(notesCol)
+		dec, err := cipher.DecryptStringOrPassthrough(notesCol)
 		if err != nil {
 			return fmt.Errorf("decrypt notes: %w", err)
 		}

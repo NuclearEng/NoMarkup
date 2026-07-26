@@ -32,6 +32,7 @@ import (
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
 	"github.com/nomarkup/nomarkup/services/job/internal/client"
 	"github.com/nomarkup/nomarkup/services/job/internal/config"
+	"github.com/nomarkup/nomarkup/services/job/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	grpcserver "github.com/nomarkup/nomarkup/services/job/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/job/internal/observability"
@@ -152,8 +153,19 @@ func main() {
 			slog.Info("listings search index ready", "url", meiliURL, "trust_ranking", trustRanking)
 		}
 	}
+	// Build the PII cipher (libsodium-compatible nacl/secretbox). It protects
+	// jobs.service_address — a CUSTOMER HOME address — and the exact service
+	// point in jobs.service_location_encrypted (migration 104). Outside
+	// development a missing or invalid ENCRYPTION_KEY is fatal; in development
+	// crypto.FromEnv generates an ephemeral key and logs a WARN. See CLAUDE.md §6.
+	cipher, err := crypto.FromEnv()
+	if err != nil {
+		slog.Error("failed to initialize PII cipher", "error", err)
+		os.Exit(1)
+	}
+
 	// Wire up dependencies.
-	repo := repository.NewPostgresRepository(pool)
+	repo := repository.NewPostgresRepository(pool, cipher)
 	jobService := service.NewJobService(repo, searchEngine)
 
 	// Wire up ListingService with the listings Meilisearch indexer. The

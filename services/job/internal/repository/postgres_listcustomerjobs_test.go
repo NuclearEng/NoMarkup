@@ -21,8 +21,21 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/services/job/internal/crypto"
 	"github.com/stretchr/testify/require"
 )
+
+// testCipher builds the PII cipher the repository needs for
+// jobs.service_address and jobs.service_location_encrypted (migration 104).
+// With no ENCRYPTION_KEY set, crypto.FromEnv falls back to an ephemeral
+// development key, which is all these tests need: rows they read were written
+// either as legacy plaintext (passthrough) or by this same process.
+func testCipher(t *testing.T) *crypto.Cipher {
+	t.Helper()
+	c, err := crypto.FromEnv()
+	require.NoError(t, err, "build PII cipher")
+	return c
+}
 
 // seededCustomerID is the customer-role user planted by `make seed`.
 const seededCustomerID = "00000000-0000-0000-0000-000000000002"
@@ -46,7 +59,7 @@ func repoTestDB(t *testing.T) *pgxpool.Pool {
 //   of destinations, got 42 and 45
 func TestListCustomerJobs_ColumnParity(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	jobs, pagination, err := repo.ListCustomerJobs(ctx, seededCustomerID, nil, nil, 1, 20)
@@ -75,7 +88,7 @@ func TestListCustomerJobs_ColumnParity(t *testing.T) {
 // must execute without a scan error (the loop simply won't run).
 func TestListDrafts_ColumnParity(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	_, err := repo.ListDrafts(ctx, seededCustomerID)
@@ -87,7 +100,7 @@ func TestListDrafts_ColumnParity(t *testing.T) {
 // this one; T1's regression sweep caught it.
 func TestAdminListJobs_ColumnParity(t *testing.T) {
 	pool := repoTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
 	jobs, pagination, err := repo.AdminListJobs(ctx, nil, nil, nil, 1, 20)

@@ -75,16 +75,16 @@ func (h *OffersHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
 // ─────────────────────────────────────────────────────────────────────────
 
 type offerJSON struct {
-	ID             string     `json:"id"`
-	ListingID      string     `json:"listing_id"`
-	BuyerID        string     `json:"buyer_id"`
-	AmountCents    int64      `json:"amount_cents"`
-	Status         string     `json:"status"`
-	ParentOfferID  *string    `json:"parent_offer_id"`
-	ExpiresAt      time.Time  `json:"expires_at"`
-	Message        *string    `json:"message"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID            string    `json:"id"`
+	ListingID     string    `json:"listing_id"`
+	BuyerID       string    `json:"buyer_id"`
+	AmountCents   int64     `json:"amount_cents"`
+	Status        string    `json:"status"`
+	ParentOfferID *string   `json:"parent_offer_id"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	Message       *string   `json:"message"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type createOfferRequest struct {
@@ -330,8 +330,8 @@ func effectiveOfferStatus(rawStatus string, expiresAt time.Time) string {
 
 // UpdateOffer dispatches an offer-state-machine action. Permissions:
 //
-//   accept | reject | counter   — seller only
-//   withdraw                    — buyer only
+//	accept | reject | counter   — seller only
+//	withdraw                    — buyer only
 //
 // Accept flips the listing to 'sold' and mints a listing_orders row in
 // escrow_status='pending_payment' atomically (MON-06). Counter creates a
@@ -571,8 +571,8 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		)
 
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
-			"offer":          h.loadOffer(r.Context(), newID),
-			"parent_offer":   h.loadOffer(r.Context(), offerID),
+			"offer":        h.loadOffer(r.Context(), newID),
+			"parent_offer": h.loadOffer(r.Context(), offerID),
 		})
 		return
 
@@ -708,9 +708,9 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		}
 
 		resp := map[string]interface{}{
-			"offer":         h.loadOffer(r.Context(), offerID),
-			"order_id":      orderID,
-			"escrow_status": "pending_payment",
+			"offer":            h.loadOffer(r.Context(), offerID),
+			"order_id":         orderID,
+			"escrow_status":    "pending_payment",
 			"payment_required": true,
 		}
 		if h.paymentClient != nil {
@@ -722,7 +722,21 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 				resp["charge_error"] = "payment setup failed; retry charge for this order"
 			} else {
 				resp["payment_intent_id"] = charge.GetPaymentIntentId()
-				resp["client_secret"] = charge.GetClientSecret()
+				// Return the client_secret ONLY to the party who actually pays.
+				// Acceptance is authorized on whoever the offer AWAITS, so when a
+				// buyer makes an offer it awaits the SELLER — and the seller
+				// accepting it was handed the BUYER's PaymentIntent client_secret.
+				// That is a payment credential belonging to the counterparty:
+				// Stripe's contract is that it goes only to the customer whose
+				// payment it is, because it authorizes confirming and inspecting
+				// that intent.
+				//
+				// It is also useless to the seller — 3DS cannot be completed on
+				// someone else's behalf — so withholding it costs nothing. The
+				// buyer collects it from their own order surface instead.
+				if claims.UserID == buyerID {
+					resp["client_secret"] = charge.GetClientSecret()
+				}
 			}
 		}
 		writeJSON(w, http.StatusOK, resp)

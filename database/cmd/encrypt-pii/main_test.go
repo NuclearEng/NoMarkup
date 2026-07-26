@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -281,6 +282,200 @@ func TestReconcileBackupCodeIdempotent(t *testing.T) {
 	}
 }
 
+// ── DATE columns draining into sibling TEXT columns (migration 106) ──────
+
+var testDateSpec = dateColSpec{dateCol: "dob", encCol: "dob_encrypted"}
+
+// TestReconcileDatePair covers every combination of (DATE present?) x (what the
+// sibling ciphertext column holds). The invariant across all of them: the tool
+// never asks for the DATE to be cleared without a readable ciphertext for it
+// existing in the same UPDATE.
+func TestReconcileDatePair(t *testing.T) {
+	t.Parallel()
+	primary, previous := mustKey(t), mustKey(t)
+	kr := keyring{primary: primary, previous: previous}
+	const dob = "1985-03-14"
+	const otherDOB = "1990-11-02"
+
+	tests := []struct {
+		name string
+		pair datePair
+		// want* describe the decision.
+		wantWrite     bool
+		wantEncrypted bool
+		wantRekeyed   bool
+		wantWarn      bool
+		// wantPlain is what the resulting ciphertext must unseal to.
+		wantPlain string
+	}{
+		{
+			name: "nothing set at all",
+			pair: datePair{},
+		},
+		{
+			name:          "first backfill: plaintext DATE, no ciphertext",
+			pair:          datePair{date: strp(dob)},
+			wantWrite:     true,
+			wantEncrypted: true,
+			wantPlain:     dob,
+		},
+		{
+			name:      "already drained: DATE NULL, ciphertext current",
+			pair:      datePair{enc: strp(mustEncrypt(t, primary, dob))},
+			wantPlain: dob,
+		},
+		{
+			// Partially applied earlier run. The ciphertext wins; the DATE is
+			// cleared; the operator is told.
+			name:      "both present: ciphertext wins and the DATE is cleared",
+			pair:      datePair{date: strp(otherDOB), enc: strp(mustEncrypt(t, primary, dob))},
+			wantWrite: true,
+			wantWarn:  true,
+			wantPlain: dob,
+		},
+		{
+			name:        "rotation: DATE NULL, ciphertext under PREVIOUS",
+			pair:        datePair{enc: strp(mustEncrypt(t, previous, dob))},
+			wantWrite:   true,
+			wantRekeyed: true,
+			wantPlain:   dob,
+		},
+		{
+			name:        "rotation on a row the backfill never finished",
+			pair:        datePair{date: strp(otherDOB), enc: strp(mustEncrypt(t, previous, dob))},
+			wantWrite:   true,
+			wantRekeyed: true,
+			wantWarn:    true,
+			wantPlain:   dob,
+		},
+		{
+			name:          "sibling column holds an unencrypted date",
+			pair:          datePair{enc: strp(dob)},
+			wantWrite:     true,
+			wantEncrypted: true,
+			wantPlain:     dob,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d, err := reconcileDatePair(kr, testDateSpec, tc.pair)
+			if err != nil {
+				t.Fatalf("reconcileDatePair: %v", err)
+			}
+			if d.write != tc.wantWrite {
+				t.Errorf("write = %v, want %v", d.write, tc.wantWrite)
+			}
+			if d.encrypted != tc.wantEncrypted {
+				t.Errorf("encrypted = %v, want %v", d.encrypted, tc.wantEncrypted)
+			}
+			if d.rekeyed != tc.wantRekeyed {
+				t.Errorf("rekeyed = %v, want %v", d.rekeyed, tc.wantRekeyed)
+			}
+			if (d.warn != "") != tc.wantWarn {
+				t.Errorf("warn = %q, wantWarn = %v", d.warn, tc.wantWarn)
+			}
+			if tc.wantPlain == "" {
+				if d.enc != nil {
+					t.Errorf("enc = %q, want nil", *d.enc)
+				}
+				return
+			}
+			if d.enc == nil {
+				t.Fatal("enc is nil; expected a ciphertext")
+			}
+			got, ok := open(primary, *d.enc)
+			if !ok {
+				t.Fatal("result does not open under the primary key")
+			}
+			if got != tc.wantPlain {
+				t.Fatalf("one unseal yields %q, want %q (a double encryption would show base64)", got, tc.wantPlain)
+			}
+		})
+	}
+}
+
+// TestReconcileDatePairNeverClearsADateWithoutPreservingIt is the safety
+// invariant, stated directly: updateSQL writes `dob = NULL` unconditionally, so
+// any decision that permits a write while a DATE is present MUST carry a
+// ciphertext that unseals to a date.
+func TestReconcileDatePairNeverClearsADateWithoutPreservingIt(t *testing.T) {
+	t.Parallel()
+	primary, previous := mustKey(t), mustKey(t)
+	kr := keyring{primary: primary, previous: previous}
+	const dob = "1985-03-14"
+
+	pairs := []datePair{
+		{date: strp(dob)},
+		{date: strp(dob), enc: strp(mustEncrypt(t, primary, "1990-11-02"))},
+		{date: strp(dob), enc: strp(mustEncrypt(t, previous, "1990-11-02"))},
+		{date: strp(dob), enc: strp("1990-11-02")},
+	}
+	for _, p := range pairs {
+		d, err := reconcileDatePair(kr, testDateSpec, p)
+		if err != nil {
+			t.Fatalf("reconcileDatePair: %v", err)
+		}
+		if !d.write {
+			t.Fatal("a surviving plaintext DATE must always produce a write")
+		}
+		if d.enc == nil {
+			t.Fatal("the DATE would be cleared with nothing preserving it")
+		}
+		if _, ok := open(primary, *d.enc); !ok {
+			t.Fatal("the value replacing the DATE does not open under the primary key")
+		}
+	}
+}
+
+// TestReconcileDatePairIsIdempotent: feed the decision back in as the database
+// would hold it. A second pass must write nothing and must not re-seal.
+func TestReconcileDatePairIsIdempotent(t *testing.T) {
+	t.Parallel()
+	primary := mustKey(t)
+	kr := keyring{primary: primary}
+	const dob = "1985-03-14"
+
+	d, err := reconcileDatePair(kr, testDateSpec, datePair{date: strp(dob)})
+	if err != nil {
+		t.Fatalf("pass 1: %v", err)
+	}
+	stored := *d.enc
+
+	for i := 2; i <= 5; i++ {
+		// The DATE is now NULL, exactly as the UPDATE left it.
+		d, err = reconcileDatePair(kr, testDateSpec, datePair{enc: strp(stored)})
+		if err != nil {
+			t.Fatalf("pass %d: %v", i, err)
+		}
+		if d.write {
+			t.Fatalf("pass %d issued a write; repeat runs must be free", i)
+		}
+		if *d.enc != stored {
+			t.Fatalf("pass %d mutated the ciphertext", i)
+		}
+		if got, ok := open(primary, *d.enc); !ok || got != dob {
+			t.Fatalf("pass %d: unseal = (%q, %v), want %q — DOUBLE ENCRYPTION", i, got, ok, dob)
+		}
+	}
+}
+
+func TestReconcileDatePairRefusesUnknownKey(t *testing.T) {
+	t.Parallel()
+	primary, foreign := mustKey(t), mustKey(t)
+	kr := keyring{primary: primary}
+
+	_, err := reconcileDatePair(kr, testDateSpec, datePair{
+		date: strp("1985-03-14"),
+		enc:  strp(mustEncrypt(t, foreign, "1990-11-02")),
+	})
+	if !errors.Is(err, errUnknownKey) {
+		t.Fatalf("err = %v, want errUnknownKey", err)
+	}
+}
+
 // ── key handling ─────────────────────────────────────────────────────────
 
 func TestDecodeKey(t *testing.T) {
@@ -338,11 +533,37 @@ func TestSpecsAreWellFormed(t *testing.T) {
 					t.Errorf("updateSQL does not set %q", col)
 				}
 			}
-			if !strings.Contains(s.selectSQL, "pii_encrypted_v1") {
-				t.Error("selectSQL must project pii_encrypted_v1")
+			// The legacy advisory flag exists on the 031/033 tables only.
+			// `jobs` and `provider_licenses` deliberately have no such column
+			// (migrations 104/106) and the SQL must not reference one.
+			if s.hasFlag {
+				if !strings.Contains(s.selectSQL, "pii_encrypted_v1") {
+					t.Error("selectSQL must project pii_encrypted_v1")
+				}
+				if !strings.Contains(s.updateSQL, "pii_encrypted_v1 = TRUE") {
+					t.Error("updateSQL must set pii_encrypted_v1")
+				}
+			} else {
+				if strings.Contains(s.selectSQL, "pii_encrypted_v1") ||
+					strings.Contains(s.updateSQL, "pii_encrypted_v1") {
+					t.Error("this table has no pii_encrypted_v1 column; the SQL must not reference one")
+				}
 			}
-			if !strings.Contains(s.updateSQL, "pii_encrypted_v1 = TRUE") {
-				t.Error("updateSQL must set pii_encrypted_v1")
+			// Each DATE column is projected as text beside its ciphertext
+			// sibling, and the update clears it in the SAME statement that
+			// writes the ciphertext. That co-location is what makes "a non-NULL
+			// DATE means unprocessed" true, which is what pii_plaintext_audit
+			// (migration 107) tests.
+			for _, dc := range s.dateCols {
+				if !strings.Contains(s.selectSQL, "to_char("+dc.dateCol+", 'YYYY-MM-DD')") {
+					t.Errorf("selectSQL must project %q as YYYY-MM-DD text", dc.dateCol)
+				}
+				if !strings.Contains(s.selectSQL, dc.encCol) {
+					t.Errorf("selectSQL does not project %q", dc.encCol)
+				}
+				if !strings.Contains(s.updateSQL, dc.dateCol+" = NULL, "+dc.encCol+" = $") {
+					t.Errorf("updateSQL must clear %q and write %q in the same statement", dc.dateCol, dc.encCol)
+				}
 			}
 			// Keyset pagination must be present or scanTable loops forever.
 			if !strings.Contains(s.selectSQL, "$1") || !strings.Contains(s.selectSQL, "ORDER BY id::text") {
@@ -351,6 +572,19 @@ func TestSpecsAreWellFormed(t *testing.T) {
 			// The update must be single-row scoped.
 			if !strings.Contains(s.updateSQL, "WHERE id::text = $1") {
 				t.Error("updateSQL must be scoped to one id")
+			}
+			// The bind list is assembled positionally in reconcileTable as
+			// id, pii..., dates..., hashes... — so the statement must have
+			// exactly that many placeholders, numbered contiguously. Adding a
+			// column to one side and not the other is the drift this catches.
+			wantBinds := 1 + len(s.piiCols) + len(s.dateCols) + len(s.hashCols)
+			for i := 1; i <= wantBinds; i++ {
+				if !strings.Contains(s.updateSQL, "$"+strconv.Itoa(i)) {
+					t.Errorf("updateSQL is missing placeholder $%d", i)
+				}
+			}
+			if strings.Contains(s.updateSQL, "$"+strconv.Itoa(wantBinds+1)) {
+				t.Errorf("updateSQL binds more than the %d values reconcileTable supplies", wantBinds)
 			}
 		})
 	}

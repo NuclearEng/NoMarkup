@@ -36,10 +36,15 @@ func testPool(t *testing.T) *pgxpool.Pool {
 
 // reset clears the tables the reconciler walks so each test sees only its own
 // fixture. Scratch-database only — guarded by the env var above.
+//
+// Order matters: children before parents. service_categories is deliberately
+// NOT cleared — the migrations seed it and jobs.category_id references it.
 func reset(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
 	for _, stmt := range []string{
+		`DELETE FROM jobs`,
+		`DELETE FROM provider_licenses`,
 		`DELETE FROM provider_employees`,
 		`DELETE FROM properties`,
 		`DELETE FROM provider_profiles`,
