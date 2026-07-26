@@ -49,6 +49,21 @@ fn tier_to_proto(t: UnderwritingTier) -> ProtoTier {
 
 #[tonic::async_trait]
 impl UnderwritingService for UnderwritingServer {
+    // A credit decision: the attributes recorded are exactly the ones needed
+    // to reconstruct *why* a provider was approved or declined, without
+    // re-running the model. `decision_hash` ties the span back to the audit
+    // record. The model itself stays an uninstrumented pure function.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            provider_id = tracing::field::Empty,
+            approved = tracing::field::Empty,
+            tier = tracing::field::Empty,
+            risk_score = tracing::field::Empty,
+            binding_gate = tracing::field::Empty,
+            decision_hash = tracing::field::Empty,
+        )
+    )]
     async fn underwrite(
         &self,
         request: Request<UnderwriteRequest>,
@@ -63,6 +78,14 @@ impl UnderwritingService for UnderwritingServer {
         }
 
         let d = model::underwrite(&model::Features::from(features));
+
+        let span = tracing::Span::current();
+        span.record("provider_id", d.provider_id.as_str());
+        span.record("approved", d.approved);
+        span.record("tier", tracing::field::debug(d.tier));
+        span.record("risk_score", d.risk_score);
+        span.record("binding_gate", d.binding_gate.as_str());
+        span.record("decision_hash", d.decision_hash.as_str());
 
         let resp = UnderwriteResponse {
             provider_id: d.provider_id,

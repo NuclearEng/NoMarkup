@@ -53,6 +53,21 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // The fraud pipeline's money path (p99 < 50ms, CLAUDE.md §8). `skip_all`
+    // is load-bearing here, not stylistic: auto-recorded arguments would put
+    // the raw IP address and device fingerprint on the span, and both are PII
+    // that must not reach the collector. Only the derived score and decision
+    // are recorded.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            user_id = %user_id,
+            amount_cents,
+            risk_score = tracing::field::Empty,
+            decision = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_transaction(
         &self,
         user_id: Uuid,
@@ -150,6 +165,10 @@ impl FraudDetector {
         let mut result = CheckResult::from_score(score);
         result.reasons = reasons;
 
+        let span = tracing::Span::current();
+        span.record("risk_score", score);
+        span.record("decision", tracing::field::debug(result.decision));
+
         tracing::info!(
             user_id = %user_id,
             score = score,
@@ -172,6 +191,19 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // `email_domain`, never `email`: the domain is what every heuristic here
+    // actually keys on (disposable-provider lists, domain-wide abuse), while
+    // the local part is a direct personal identifier with no diagnostic value.
+    // See `email_domain` for the full reasoning.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            email_domain = email_domain(email),
+            risk_score = tracing::field::Empty,
+            decision = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_registration(
         &self,
         email: &str,
@@ -271,8 +303,14 @@ impl FraudDetector {
         let mut result = CheckResult::from_score(score);
         result.reasons = reasons;
 
+        let span = tracing::Span::current();
+        span.record("risk_score", score);
+        span.record("decision", tracing::field::debug(result.decision));
+
         tracing::info!(
-            email = email,
+            // Was `email = email`: a second copy of the same PII defect as the
+            // gRPC layer, shipping a full address to logs on every signup.
+            email_domain = email_domain(email),
             score = score,
             decision = ?result.decision,
             "registration check completed"
@@ -291,6 +329,19 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // Runs inline on the bidding path, so it inherits the p99 < 1ms bid budget
+    // on top of its own. Same PII rule as `check_transaction`: no raw IP or
+    // fingerprint on the span.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            provider_id = %provider_id,
+            customer_id = %customer_id,
+            risk_score = tracing::field::Empty,
+            shill_bid_detected = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_bid(
         &self,
         provider_id: Uuid,
@@ -413,6 +464,10 @@ impl FraudDetector {
             behavioral::AutoAction::Block | behavioral::AutoAction::Challenge
         );
 
+        let span = tracing::Span::current();
+        span.record("risk_score", composite.score);
+        span.record("shill_bid_detected", result.shill_bid_detected);
+
         tracing::info!(
             provider_id = %provider_id,
             customer_id = %customer_id,
@@ -519,6 +574,8 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // Batch size is the single attribute that explains this span's duration.
+    #[tracing::instrument(skip_all, fields(batch_size = signals.len()), err)]
     #[allow(clippy::too_many_arguments)]
     pub async fn batch_record_signals(
         &self,
@@ -833,6 +890,10 @@ impl FraudDetector {
     /// - Number of signals (weighted by recency)
     /// - Severity distribution
     /// - Active vs dismissed ratio
+    // Four sequential severity counts over a 90-day window — the usual
+    // suspect when a profile lookup is slow, and invisible from the outside
+    // without its own span.
+    #[tracing::instrument(skip_all, fields(user_id = %user_id), err)]
     async fn calculate_risk_score(&self, user_id: Uuid) -> Result<f64, FraudError> {
         // Count signals by severity in last 90 days.
         let high: CountRow = sqlx::query_as(
@@ -1264,6 +1325,29 @@ fn parse_fingerprint_attributes(
 // Disposable email domain detection
 // ---------------------------------------------------------------------------
 
+/// The domain half of an email address, for logs and spans.
+///
+/// Registration checks used to log the full address, which put a personal
+/// identifier into structured logs and — once the engines started exporting
+/// spans — would have shipped it to the OpenTelemetry collector too. The
+/// domain is the part every heuristic in this module actually keys on
+/// (disposable providers, domain-wide abuse patterns); the local part is pure
+/// PII with no diagnostic value, so it is dropped rather than hashed.
+///
+/// Anything that is not a plausible address collapses to `"invalid"` rather
+/// than echoing the input back into the log — a malformed "email" is exactly
+/// where an attacker would try to smuggle a payload.
+pub fn email_domain(email: &str) -> &str {
+    match email.split_once('@') {
+        Some((local, domain))
+            if !local.is_empty() && !domain.is_empty() && !domain.contains('@') =>
+        {
+            domain
+        }
+        _ => "invalid",
+    }
+}
+
 /// Simple heuristic for disposable/temporary email providers.
 fn is_disposable_email(email: &str) -> bool {
     const DISPOSABLE_DOMAINS: &[&str] = &[
@@ -1337,6 +1421,42 @@ fn i32_from_i64(v: i64) -> i32 {
 mod tests {
     use super::*;
     use crate::models::{CheckResult, FraudDecision, RiskLevel, SignalType};
+
+    // ------------------------------------------------------------------
+    // email_domain (PII redaction)
+    // ------------------------------------------------------------------
+
+    /// Regression guard for a real defect: `check_registration` and its gRPC
+    /// wrapper both put the caller's full email address on a `tracing` field.
+    /// Once the engines started exporting spans that stopped being a local log
+    /// line and became PII shipped to the collector. The local part must never
+    /// survive.
+    #[test]
+    fn email_domain_never_leaks_the_local_part() {
+        for (email, expected) in [
+            ("alice@example.com", "example.com"),
+            ("Bob.Smith+tag@Mail.example.co.uk", "Mail.example.co.uk"),
+            ("x@mailinator.com", "mailinator.com"),
+        ] {
+            let domain = super::email_domain(email);
+            assert_eq!(domain, expected);
+            let local = email.split('@').next().expect("split always yields one");
+            assert!(
+                !domain.contains(local),
+                "local part {local:?} leaked into {domain:?}"
+            );
+        }
+    }
+
+    /// Malformed input must collapse to a constant, not be echoed back into
+    /// the log where it would be both useless and attacker-controlled.
+    #[test]
+    fn email_domain_rejects_malformed_addresses() {
+        for bad in ["", "no-at-sign", "trailing@", "@leading", "a@b@c"] {
+            let domain = super::email_domain(bad);
+            assert_eq!(domain, "invalid", "input {bad:?} should not be echoed");
+        }
+    }
 
     // ------------------------------------------------------------------
     // is_disposable_email

@@ -26,7 +26,7 @@ use tonic::{Request, Response, Status};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::engine::FraudDetector;
+use crate::engine::{FraudDetector, email_domain};
 use crate::models::{
     FraudError, FraudSignalRow, RiskLevel, SignalType, UserRiskProfileData, UserSessionRow,
 };
@@ -108,7 +108,12 @@ impl FraudService for FraudServiceImpl {
         {
             Ok(result) => {
                 info!(
-                    email = %req.email,
+                    // Was `email = %req.email`. Now that the engines export
+                    // spans, a `tracing` field is not just a log line — it is
+                    // shipped to the OpenTelemetry collector and fans out to
+                    // every downstream trace backend. The domain carries the
+                    // diagnostic signal; the address is PII.
+                    email_domain = %email_domain(&req.email),
                     decision = ?result.decision,
                     risk_level = ?result.risk_level,
                     "grpc check_registration completed"
@@ -120,7 +125,7 @@ impl FraudService for FraudServiceImpl {
                 }))
             }
             Err(e) => {
-                warn!(email = %req.email, error = %e, "grpc check_registration failed");
+                warn!(email_domain = %email_domain(&req.email), error = %e, "grpc check_registration failed");
                 Err(fraud_error_to_status(e))
             }
         }

@@ -2337,9 +2337,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
+ "nomarkup-engine-telemetry",
  "prometheus",
  "proptest",
  "prost",
@@ -2356,9 +2354,26 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomarkup-engine-telemetry"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "futures-util",
+ "http 1.4.0",
+ "nomarkup-engine-telemetry",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "pin-project-lite",
+ "tokio",
+ "tower 0.4.13",
+ "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
@@ -2372,9 +2387,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
+ "nomarkup-engine-telemetry",
  "prometheus",
  "proptest",
  "prost",
@@ -2390,8 +2403,6 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -2409,9 +2420,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "image",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
+ "nomarkup-engine-telemetry",
  "prometheus",
  "proptest",
  "prost",
@@ -2426,8 +2435,6 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -2438,6 +2445,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "http 1.4.0",
+ "nomarkup-engine-telemetry",
  "proptest",
  "prost",
  "prost-types",
@@ -2449,7 +2457,6 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2463,9 +2470,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
+ "nomarkup-engine-telemetry",
  "prometheus",
  "proptest",
  "prost",
@@ -2481,8 +2486,6 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -2497,6 +2500,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "nomarkup-engine-telemetry",
  "once_cell",
  "prometheus",
  "proptest",
@@ -2511,7 +2515,6 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

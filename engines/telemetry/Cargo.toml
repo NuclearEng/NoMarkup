@@ -1,0 +1,39 @@
+[package]
+name = "nomarkup-engine-telemetry"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "engine_telemetry"
+path = "src/lib.rs"
+
+[dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+http.workspace = true
+tower.workspace = true
+pin-project-lite.workspace = true
+futures-util = { version = "0.3", default-features = false, features = ["alloc"], optional = true }
+
+[features]
+# Enables `test_support::CollectingExporter`, used only by this crate's own
+# tests and benches (see the dev-dependency self-reference below).
+test-util = ["dep:futures-util"]
+
+[dev-dependencies]
+tokio.workspace = true
+# Self-reference so tests/benches get the `test-util` module; downstream
+# engines depend on this crate without the feature and never compile it.
+nomarkup-engine-telemetry = { path = ".", features = ["test-util"] }
+criterion = "0.5"
+
+[[bench]]
+name = "span_overhead"
+harness = false

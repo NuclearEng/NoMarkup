@@ -46,18 +46,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use opentelemetry::KeyValue;
-use opentelemetry::global;
-use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_otlp::SpanExporter;
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::runtime::Tokio;
-use opentelemetry_sdk::trace::TracerProvider;
 use tokio::signal::unix::{SignalKind, signal};
-use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+use engine_telemetry::GrpcTraceLayer;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::engine::ImagePipeline;
@@ -251,57 +242,9 @@ fn shutdown_grace(environment: Environment) -> Duration {
     Duration::from_secs(secs)
 }
 
-fn init_tracing(service_name: &str) {
-    let env_filter = EnvFilter::from_default_env();
-    let fmt_layer = fmt::layer().json();
-
-    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok();
-
-    if let Some(endpoint) = endpoint {
-        let Ok(exporter) = SpanExporter::builder()
-            .with_tonic()
-            .with_endpoint(&endpoint)
-            .build()
-        else {
-            tracing::warn!("failed to create OTLP exporter, continuing without tracing export");
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(fmt_layer)
-                .init();
-            return;
-        };
-
-        let name = std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| service_name.to_string());
-
-        let provider = TracerProvider::builder()
-            .with_batch_exporter(exporter, Tokio)
-            .with_resource(Resource::new([KeyValue::new("service.name", name.clone())]))
-            .build();
-
-        global::set_tracer_provider(provider.clone());
-
-        let otel_layer = OpenTelemetryLayer::new(provider.tracer(name));
-
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(fmt_layer)
-            .with(otel_layer)
-            .init();
-
-        tracing::info!("tracing enabled with OTLP exporter");
-    } else {
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(fmt_layer)
-            .init();
-
-        tracing::info!("tracing enabled (local only, no OTLP exporter)");
-    }
-}
-
 #[tokio::main]
 async fn main() -> ExitCode {
-    init_tracing("imaging-service");
+    engine_telemetry::init("imaging-service");
 
     let code = match run().await {
         Ok(()) => ExitCode::SUCCESS,
@@ -312,7 +255,7 @@ async fn main() -> ExitCode {
         }
     };
 
-    global::shutdown_tracer_provider();
+    engine_telemetry::shutdown();
     code
 }
 
@@ -397,6 +340,9 @@ async fn run() -> anyhow::Result<()> {
     );
 
     tonic::transport::Server::builder()
+        // Outermost, so the span also covers requests the panic boundary below
+        // turns into `grpc-status: 13`.
+        .layer(GrpcTraceLayer)
         .layer(CatchPanicLayer::custom(handle_panic))
         .add_service(health_service)
         .add_service(ImagingServiceServer::new(service))

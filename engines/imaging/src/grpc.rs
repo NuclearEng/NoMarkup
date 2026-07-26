@@ -109,11 +109,20 @@ impl ImagingService for ImagingServiceImpl {
         }))
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            batch_size = tracing::field::Empty,
+            succeeded = tracing::field::Empty,
+            failed = tracing::field::Empty,
+        )
+    )]
     async fn batch_process_images(
         &self,
         request: Request<imaging_proto::BatchProcessImagesRequest>,
     ) -> Result<Response<imaging_proto::BatchProcessImagesResponse>, Status> {
         let req = request.into_inner();
+        tracing::Span::current().record("batch_size", req.images.len());
         if req.images.is_empty() {
             return Err(Status::invalid_argument(
                 "at least one image request is required",
@@ -181,6 +190,10 @@ impl ImagingService for ImagingServiceImpl {
                 }
             }
         }
+
+        let span = tracing::Span::current();
+        span.record("succeeded", succeeded);
+        span.record("failed", failed);
 
         Ok(Response::new(imaging_proto::BatchProcessImagesResponse {
             results,

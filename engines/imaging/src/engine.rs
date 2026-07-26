@@ -84,17 +84,43 @@ where
 ///
 /// Returns an `Arc` so the multi-variant pipelines can hand the same decoded
 /// image to several blocking renders without re-decoding or deep-copying it.
+// Split out from the render spans because the batch pipelines decode once and
+// render many: when a batch is slow, this span answers whether the cost was
+// the single decode or the N renders that followed.
+#[tracing::instrument(skip_all, fields(input_bytes = raw.len()), err)]
 pub async fn decode_shared(raw: Vec<u8>) -> Result<Arc<DynamicImage>, ImagingError> {
     run_cpu(move || decode_image(&raw).map(Arc::new)).await
 }
 
 /// Full single-image render — validate, decode, resize, encode, and optionally
 /// compute the `BlurHash` — in one trip to the blocking pool.
+// The engine's real cost centre: ~29.5ms of CPU for one 1080p → 800px WebP
+// (p99 < 200ms, CLAUDE.md §8). The span deliberately wraps the *async* fn
+// rather than the closure inside `run_cpu`, for two reasons: `spawn_blocking`
+// moves the closure to another thread where the tracing context does not
+// follow, and wrapping out here also captures time spent *queued* for a
+// blocking worker — which is precisely how this engine degrades under load,
+// and would be invisible from inside the closure.
+#[tracing::instrument(
+    skip_all,
+    fields(
+        input_bytes = raw.len(),
+        format = ?opts.format,
+        quality = opts.quality,
+        blur_hash = opts.generate_blur_hash,
+        source_width = tracing::field::Empty,
+        source_height = tracing::field::Empty,
+        output_width = tracing::field::Empty,
+        output_height = tracing::field::Empty,
+        output_bytes = tracing::field::Empty,
+    ),
+    err
+)]
 pub async fn render_processed(
     raw: Vec<u8>,
     opts: ProcessingOptions,
 ) -> Result<ProcessedRender, ImagingError> {
-    run_cpu(move || {
+    let rendered = run_cpu(move || {
         validate_image_format(&raw)?;
 
         let img = decode_image_with_orientation(&raw, opts.auto_orient)?;
@@ -124,10 +150,28 @@ pub async fn render_processed(
             blur_hash,
         })
     })
-    .await
+    .await?;
+
+    // Dimensions are the difference between "a slow engine" and "someone
+    // uploaded a 40-megapixel photo", which is the first question an operator
+    // asks about a slow image request.
+    let span = tracing::Span::current();
+    span.record("source_width", rendered.original_width);
+    span.record("source_height", rendered.original_height);
+    span.record("output_width", rendered.image.width);
+    span.record("output_height", rendered.image.height);
+    span.record("output_bytes", rendered.image.data.len());
+
+    Ok(rendered)
 }
 
 /// Resize and encode one variant of an already-decoded image, off the runtime.
+// Per *variant*, not per pixel or per row.
+#[tracing::instrument(
+    skip_all,
+    fields(max_width = max_w, max_height = max_h, format = ?fmt, quality),
+    err
+)]
 pub async fn render_variant(
     img: Arc<DynamicImage>,
     max_w: u32,
@@ -176,6 +220,7 @@ pub async fn render_full_size(
 }
 
 /// Compute the `BlurHash` off the runtime (a 32x32 downscale plus a DCT).
+#[tracing::instrument(skip_all, err)]
 pub async fn render_blur_hash(img: Arc<DynamicImage>) -> Result<String, ImagingError> {
     run_cpu(move || Ok(compute_blur_hash(&img))).await
 }
@@ -220,6 +265,11 @@ impl ImagePipeline {
 
     /// Process a single image: download, resize/reformat, optionally compute
     /// `BlurHash`, upload the result, and return the variant metadata.
+    // One span per image, so a batch RPC shows N children and a slow batch can
+    // be attributed to a specific source object. The S3 round trips and the
+    // CPU render each get their own child span underneath, which is what
+    // separates "storage is slow" from "the encode is slow".
+    #[tracing::instrument(skip_all, fields(source_key = %source_key, format = ?opts.format), err)]
     pub async fn process_image(
         &self,
         source_key: &str,

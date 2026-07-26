@@ -129,6 +129,22 @@ impl TrustScorer {
     /// # Errors
     ///
     /// Returns `TrustError` on database or validation errors.
+    // The trust computation (p99 < 5ms, CLAUDE.md §8). One span for the whole
+    // computation — the four component scorers underneath are pure arithmetic
+    // over already-fetched rows, and a span each would cost more than it
+    // explains. The component *values* are recorded as attributes instead,
+    // which is what actually answers "why did this user's tier move?".
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            user_id = %user_id,
+            trigger_reason,
+            composite_score = tracing::field::Empty,
+            tier = tracing::field::Empty,
+            tier_changed = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn compute_score(
         &self,
         user_id: Uuid,
@@ -271,6 +287,11 @@ impl TrustScorer {
 
         let tier_changed = new_tier.as_db_str() != previous_tier;
 
+        let span = tracing::Span::current();
+        span.record("composite_score", overall);
+        span.record("tier", new_tier.as_db_str());
+        span.record("tier_changed", tier_changed);
+
         crate::metrics::TRUST_SCORES_RECOMPUTED_TOTAL.inc();
 
         tracing::info!(
@@ -290,6 +311,19 @@ impl TrustScorer {
     /// # Errors
     ///
     /// Returns `TrustError` on database errors.
+    // Sequential, so duration scales with `batch_size` — the one attribute
+    // that separates "the batch was huge" from "each score got slow". Each
+    // iteration's `compute_score` span nests under this one, so a single slow
+    // user is still findable inside a large batch.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            batch_size = user_ids.len(),
+            computed = tracing::field::Empty,
+            tier_changes = tracing::field::Empty,
+        ),
+        err
+    )]
     #[allow(clippy::cast_possible_truncation)]
     pub async fn batch_compute(&self, user_ids: &[Uuid]) -> Result<(i32, i32), TrustError> {
         let mut computed = 0i32;
@@ -308,6 +342,10 @@ impl TrustScorer {
                 }
             }
         }
+
+        let span = tracing::Span::current();
+        span.record("computed", computed);
+        span.record("tier_changes", tier_changes);
 
         Ok((computed, tier_changes))
     }

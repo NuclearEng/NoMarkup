@@ -124,6 +124,13 @@ pub fn should_extend_for_snipe(
 ///
 /// Returns `BidError` when the listing is missing/closed, the amount fails
 /// the forward-direction check, or the database call fails.
+// The goods-side twin of `BiddingEngine::place_bid`, and equally latency
+// critical — same span shape so one dashboard covers both auction directions.
+#[tracing::instrument(
+    skip_all,
+    fields(listing_id = %listing_id, bidder_id = %bidder_id, amount_cents),
+    err
+)]
 pub async fn place_forward_bid(
     pool: &PgPool,
     listing_id: Uuid,

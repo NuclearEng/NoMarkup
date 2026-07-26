@@ -6,7 +6,8 @@ use std::time::Duration;
 use tokio::signal::unix::{SignalKind, signal};
 use tonic::transport::Server;
 use tower_http::catch_panic::CatchPanicLayer;
-use tracing_subscriber::EnvFilter;
+
+use engine_telemetry::GrpcTraceLayer;
 
 use underwriting::grpc::UnderwritingServer;
 use underwriting::proto::underwriting_service_server::UnderwritingServiceServer;
@@ -125,10 +126,7 @@ fn shutdown_grace() -> Duration {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .json()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    engine_telemetry::init("underwriting-engine");
 
     let port: u16 = std::env::var("UNDERWRITING_ENGINE_PORT")
         .ok()
@@ -175,13 +173,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "underwriting engine listening"
     );
 
-    Server::builder()
+    let serve = Server::builder()
+        // Outermost, so the span also covers requests the panic boundary below
+        // turns into `grpc-status: 13`.
+        .layer(GrpcTraceLayer)
         .layer(CatchPanicLayer::custom(handle_panic))
         .add_service(health_service)
         .add_service(UnderwritingServiceServer::new(UnderwritingServer))
         .serve_with_shutdown(addr, shutdown)
-        .await?;
+        .await;
 
-    tracing::info!("underwriting engine shut down cleanly");
+    if serve.is_ok() {
+        tracing::info!("underwriting engine shut down cleanly");
+    }
+
+    // Flush buffered spans on the failure path too: a server that died is
+    // exactly when its last spans matter most.
+    engine_telemetry::shutdown();
+    serve?;
     Ok(())
 }

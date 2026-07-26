@@ -26,6 +26,13 @@ impl BiddingEngine {
     ///
     /// Returns `BidError` if the auction is not active, the provider already bid,
     /// or the amount is invalid.
+    // The p99 < 1ms path (CLAUDE.md §8). `skip_all` keeps the `&self` pool out
+    // of the span; `err` marks the span failed without a second log line.
+    #[tracing::instrument(
+        skip_all,
+        fields(job_id = %job_id, provider_id = %provider_id, amount_cents),
+        err
+    )]
     pub async fn place_bid(
         &self,
         job_id: Uuid,
@@ -511,6 +518,11 @@ impl BiddingEngine {
     /// # Errors
     ///
     /// Returns `BidError` if validation fails or the transaction cannot complete.
+    #[tracing::instrument(
+        skip_all,
+        fields(job_id = %job_id, bid_id = %bid_id, customer_id = %customer_id),
+        err
+    )]
     pub async fn award_bid(
         &self,
         job_id: Uuid,
@@ -616,6 +628,19 @@ impl BiddingEngine {
     /// # Errors
     ///
     /// Returns `BidError` if the job is not found or the user doesn't own it.
+    // `bid_count` is the candidate count an operator needs to tell "this
+    // auction has 4000 bids" apart from "the database is slow" — it is filled
+    // in after the query below.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            job_id = %job_id,
+            sort_field,
+            sort_direction,
+            bid_count = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn list_bids_for_job(
         &self,
         job_id: Uuid,
@@ -665,6 +690,8 @@ impl BiddingEngine {
             .bind(job_id)
             .fetch_all(&self.pool)
             .await?;
+
+        tracing::Span::current().record("bid_count", bids.len());
 
         Ok(bids)
     }
@@ -856,6 +883,16 @@ impl BiddingEngine {
     /// # Errors
     ///
     /// Returns `BidError` on database errors.
+    // The sweep: an unbounded scan whose cost is driven by how many auctions
+    // it finds, so the counts are the whole diagnostic story.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            expired_count = tracing::field::Empty,
+            closing_soon_count = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_auction_deadlines(
         &self,
         before: DateTime<Utc>,
@@ -885,6 +922,10 @@ impl BiddingEngine {
 
         let expired_ids: Vec<Uuid> = expired.into_iter().map(|r| r.id).collect();
         let closing_ids: Vec<Uuid> = closing_soon.into_iter().map(|r| r.id).collect();
+
+        let span = tracing::Span::current();
+        span.record("expired_count", expired_ids.len());
+        span.record("closing_soon_count", closing_ids.len());
 
         Ok((expired_ids, closing_ids))
     }

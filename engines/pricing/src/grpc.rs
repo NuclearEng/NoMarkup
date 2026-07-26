@@ -39,11 +39,26 @@ impl From<&ProtoTxn> for model::Txn {
 
 #[tonic::async_trait]
 impl PricingService for PricingServer {
+    // Instrumented here rather than inside `model::fair_price`: the model is a
+    // pure numeric kernel with a criterion bench on it, and the counts an
+    // operator needs (how many transactions were in the comparable set, which
+    // geographic level the estimator fell back to) are only visible once the
+    // request is decoded. No span inside the per-transaction loop.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            transaction_count = tracing::field::Empty,
+            has_data = tracing::field::Empty,
+            level_used = tracing::field::Empty,
+            n_eff = tracing::field::Empty,
+        )
+    )]
     async fn compute_fair_price(
         &self,
         request: Request<ComputeFairPriceRequest>,
     ) -> Result<Response<ComputeFairPriceResponse>, Status> {
         let req = request.into_inner();
+        tracing::Span::current().record("transaction_count", req.transactions.len());
         let q = req
             .query
             .ok_or_else(|| Status::invalid_argument("query is required"))?;
@@ -62,6 +77,11 @@ impl PricingService for PricingServer {
         let txns: Vec<model::Txn> = req.transactions.iter().map(model::Txn::from).collect();
 
         let fp = model::fair_price(&txns, &query);
+
+        let span = tracing::Span::current();
+        span.record("has_data", fp.has_data);
+        span.record("level_used", fp.level_used);
+        span.record("n_eff", fp.n_eff);
 
         Ok(Response::new(ComputeFairPriceResponse {
             has_data: fp.has_data,
