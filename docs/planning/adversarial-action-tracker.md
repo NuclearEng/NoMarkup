@@ -20,15 +20,24 @@
 
 ## Summary dashboard
 
-| Priority | Open | Done / Demoted | Total |
-|----------|------|----------------|-------|
-| P0 | 28 | 0 | 28 |
-| P1 | 32 | 0 | 32 |
-| P2 | 24 | 0 | 24 |
-| DOC | 0 | **18 Demoted** (2026-07-09 docs truth pass) | 18 |
-| **All** | **84 code/ops** | **18 DOC demoted** | **102** |
+**Recounted 2026-07-25 by parsing the tables below** (the previous dashboard — P0 28 / P1 32 /
+P2 24 / 102 total — did not match the rows it summarised; the tables actually hold 140 code/ops rows).
 
-*(DOC rows demoted by language-only truth pass; code items stay Open until code lands. Recompute when updating status.)*
+| Section | Open | Partial | Done | Demoted | Founder-Action | Total |
+|---------|------|---------|------|---------|----------------|-------|
+| P0 — Money integrity | 11 | 1 | 15 | 1 | 0 | 28 |
+| P0 — Security fail-closed | 4 | 1 | 9 | 3 | 1 | 18 |
+| P0 — Production deploy / ops | 16 | 2 | 10 | 0 | 0 | 28 |
+| P1 — North Star performance | 11 | 0 | 0 | 5 | 0 | 16 |
+| P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
+| P1 — Frontend / a11y / honesty | 11 | 0 | 0 | 5 | 0 | 16 |
+| P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
+| **All** | **74** | **4** | **36** | **25** | **1** | **140** |
+
+The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
+reflected in the `Demoted` column above — it is not 18 additional items.
+
+*(Recompute by re-parsing the Status cell when updating rows; do not hand-maintain these totals.)*
 
 ---
 
@@ -36,19 +45,19 @@
 
 | ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
 |----|-------|-----|------|----------|--------|--------|--------|-------|
-| **GAP-001** / MON-01 | Services `CreateTransfer` lacks Stripe idempotency key | BLOCKER | payment | `services/payment/internal/service/stripe.go` | Add deterministic `IdempotencyKey` on every transfer (e.g. `escrow-release:<paymentID>`) | Concurrent `ReleaseEscrow`×2 → exactly one Stripe transfer | Open | |
-| **GAP-001** / MON-02 | Services `CreateRefund` lacks Stripe idempotency key | BLOCKER | payment | `stripe.go` CreateRefund | Add key e.g. `refund:<paymentID>:<amount>:<n>` or single full-refund key | Concurrent full refund×2 → total ≤ amount_cents | Open | |
-| **GAP-001** / MON-03 | `ReleaseEscrow` check-then-act; status UPDATE not CAS | BLOCKER | payment | `service.go` ReleaseEscrow; `postgres.go` UpdatePaymentStatus | `UPDATE … WHERE status='escrow' RETURNING`; reject if 0 rows | Race test: only one release wins | Open | |
-| MON-04 | Services Connect model: destination charge + second transfer | BLOCKER | payment | `stripe.go` CreatePaymentIntent + ReleaseEscrow | Pick one model (manual capture + delayed transfer **or** destination charge without second transfer); fix `SourceTransaction` to charge id | Stripe test-mode: funds move exactly once | Open | |
-| **GAP-002** / MON-05 | Goods auction close creates `held` order without charging buyer | BLOCKER | job | `listing_repo.go` close path; `auction_close_cron.go` | Start as `pending_payment`; call charge path before `held` | Close → PI required → no free held order | Open | |
-| **GAP-002** / MON-06 | Buy-It-Now creates `held` without PaymentIntent | BLOCKER | gateway | `listings_bid.go` BuyItNow | Require payment before held escrow | BIN without card → 4xx; never free held | Open | |
-| **GAP-002** / MON-07 | `ChargeListingWinner` not wired on live close/BIN paths | BLOCKER | job/payment | `listing_charge.go` | Wire into close/BIN/award flows | E2E: charge → held → release | Open | |
-| **GAP-002** / MON-08 | Marketplace transfer Destination = user UUID not Connect `acct_*` | BLOCKER | payment | `listing_charge.go` CreateMarketplaceTransfer callers | Resolve seller → Stripe Connect account id | Live/test: Destination is `acct_*` | Open | |
-| **GAP-003** / MON-09 | Instant payout returns `payout_dev_*` even with `sk_live` | BLOCKER | gateway | `payment.go` `executeStripeInstantPayout` | Implement real payout in **payment service** (not gateway stub); or hard-disable feature until wired | With live key → real payout id or 503 (never fake success) | Open | |
-| MON-10 | Instant payout eligibility filters `COMPLETED` but release sets `released` | BLOCKER | gateway | `payment.go` eligibility query | Include `released` / map statuses correctly | Eligible balance includes released escrow | Open | |
-| MON-11 | Instant payout: Stripe call before durable ledger claim | MAJOR | gateway | `payment.go` InstantPayout handler | Claim ledger/advisory lock **then** Stripe with same idempotency key | Crash after Stripe: no double on retry | Open | |
-| **GAP-004** / MON-12 | Webhook dedup swallows retries after failed processing | BLOCKER | payment | `webhook.go` + `RecordStripeEventStart` | Skip only when `processed_at IS NOT NULL` (or lease) | Fail handler → Stripe retry reprocesses | Open | |
-| MON-13 | Concurrent services refund can over-capture | BLOCKER | payment | CreateRefund path | Row lock / CAS on refunded amount + Stripe key | Concurrent refunds total ≤ amount | Open | |
+| **GAP-001** / MON-01 | Services `CreateTransfer` lacks Stripe idempotency key | BLOCKER | payment | `services/payment/internal/service/stripe.go` | Add deterministic `IdempotencyKey` on every transfer (e.g. `escrow-release:<paymentID>`) | Concurrent `ReleaseEscrow`×2 → exactly one Stripe transfer | **Done** 2026-07-25 — `services/payment/internal/service/service.go:522` `escrow-release:<paymentID>` key | |
+| **GAP-001** / MON-02 | Services `CreateRefund` lacks Stripe idempotency key | BLOCKER | payment | `stripe.go` CreateRefund | Add key e.g. `refund:<paymentID>:<amount>:<n>` or single full-refund key | Concurrent full refund×2 → total ≤ amount_cents | **Done** 2026-07-25 — `service.go:623` `refund:<paymentID>:<total>` key | |
+| **GAP-001** / MON-03 | `ReleaseEscrow` check-then-act; status UPDATE not CAS | BLOCKER | payment | `service.go` ReleaseEscrow; `postgres.go` UpdatePaymentStatus | `UPDATE … WHERE status='escrow' RETURNING`; reject if 0 rows | Race test: only one release wins | **Done** 2026-07-25 — `repository/postgres.go:145-166` ClaimPaymentStatus CAS + `service.go:410-418` | |
+| MON-04 | Services Connect model: destination charge + second transfer | BLOCKER | payment | `stripe.go` CreatePaymentIntent + ReleaseEscrow | Pick one model (manual capture + delayed transfer **or** destination charge without second transfer); fix `SourceTransaction` to charge id | Stripe test-mode: funds move exactly once | **Done** 2026-07-25 — `stripe.go:542` manual capture; `:605-628` SourceTransaction = charge id | |
+| **GAP-002** / MON-05 | Goods auction close creates `held` order without charging buyer | BLOCKER | job | `listing_repo.go` close path; `auction_close_cron.go` | Start as `pending_payment`; call charge path before `held` | Close → PI required → no free held order | **Done** 2026-07-25 — `services/job/internal/repository/listing_repo.go:693-701` inserts `pending_payment` | |
+| **GAP-002** / MON-06 | Buy-It-Now creates `held` without PaymentIntent | BLOCKER | gateway | `listings_bid.go` BuyItNow | Require payment before held escrow | BIN without card → 4xx; never free held | **Done** 2026-07-25 — `gateway/internal/handler/listings_bid.go:1196-1206` BIN is `pending_payment` + PI | |
+| **GAP-002** / MON-07 | `ChargeListingWinner` not wired on live close/BIN paths | BLOCKER | job/payment | `listing_charge.go` | Wire into close/BIN/award flows | E2E: charge → held → release | **Done** 2026-07-25 — ChargeListingWinner wired on close/BIN paths | |
+| **GAP-002** / MON-08 | Marketplace transfer Destination = user UUID not Connect `acct_*` | BLOCKER | payment | `listing_charge.go` CreateMarketplaceTransfer callers | Resolve seller → Stripe Connect account id | Live/test: Destination is `acct_*` | **Done** 2026-07-25 — `listing_charge.go:439-486` resolveSellerConnectAccount rejects non-`acct_*` | |
+| **GAP-003** / MON-09 | Instant payout returns `payout_dev_*` even with `sk_live` | BLOCKER | gateway | `payment.go` `executeStripeInstantPayout` | Implement real payout in **payment service** (not gateway stub); or hard-disable feature until wired | With live key → real payout id or 503 (never fake success) | **Done** 2026-07-25 — `gateway/internal/handler/payment.go:775-781` live key → 503, never `payout_dev_*` | |
+| MON-10 | Instant payout eligibility filters `COMPLETED` but release sets `released` | BLOCKER | gateway | `payment.go` eligibility query | Include `released` / map statuses correctly | Eligible balance includes released escrow | **Done** 2026-07-25 — `payment.go` eligibility includes released escrow | |
+| MON-11 | Instant payout: Stripe call before durable ledger claim | MAJOR | gateway | `payment.go` InstantPayout handler | Claim ledger/advisory lock **then** Stripe with same idempotency key | Crash after Stripe: no double on retry | **Done** 2026-07-25 — `payment.go:787-799` ledger claimed under advisory lock before Stripe | |
+| **GAP-004** / MON-12 | Webhook dedup swallows retries after failed processing | BLOCKER | payment | `webhook.go` + `RecordStripeEventStart` | Skip only when `processed_at IS NOT NULL` (or lease) | Fail handler → Stripe retry reprocesses | **Done** 2026-07-25 — `services/payment/internal/service/webhook.go:70-135` skips only when `processed_at` set | |
+| MON-13 | Concurrent services refund can over-capture | BLOCKER | payment | CreateRefund path | Row lock / CAS on refunded amount + Stripe key | Concurrent refunds total ≤ amount | **Done** 2026-07-25 — `service.go:636-644` UpdateRefundCAS | |
 | MON-14 | `CapturePaymentIntent` / `ProcessPayment` no idempotency + race | MAJOR | payment | `stripe.go`, `service.go` | Key capture; CAS status pending→processing | Double ProcessPayment → one capture | Open | |
 | MON-15 | BNPL: provider paid before first customer charge; off-session PI unkeyed | MAJOR | payment | `installment.go`, `CreateOffSessionPaymentIntent` | Charge/authorize customer first **or** compensate; add Stripe keys | Cron retry does not double-charge | Open | |
 | MON-16 | Working capital `RequestAdvance` credit TOCTOU | MAJOR | payment | `advance.go` | Advisory lock / serializable credit check | Concurrent RequestAdvance ≤ line | Open | |
@@ -57,10 +66,10 @@
 | MON-19 | Services award missing `job.status == active` under lock | MAJOR | bidding | `engines/bidding/src/engine.rs` | Check job active under FOR UPDATE | Cannot award non-active job | Open | |
 | MON-20 | Goods fee 5% vs README 8%+2%; fee not always persisted on charge | MAJOR | product/payment | gateway fee bps; listing_charge | Align fee policy; persist fee_cents on charge | Charged fee = released fee | Open | |
 | MON-21 | Client can under-pay contract (amount ≤ contract, no cumulative check) | MAJOR | payment | CreatePayment | Enforce milestone/total paid ≤ contract | Underpay path rejected or tracked | Open | |
-| MON-22 | Listing bids / BIN / offers lack **required** Idempotency-Key | MAJOR | gateway | router + listings_bid + offers | Require middleware on money closeouts (or document optional) | Missing key → 400 if claim retained | Open | |
+| MON-22 | Listing bids / BIN / offers lack **required** Idempotency-Key | MAJOR | gateway | router + listings_bid + offers | Require middleware on money closeouts (or document optional) | Missing key → 400 if claim retained | **Done** 2026-07-25 — `gateway/internal/router/router.go:740-797` RequireIdempotencyKey on bid/BIN/offers | |
 | MON-23 | Contract tip records cents without Stripe rail | MAJOR | gateway | `quote_templates.go` | Wire PI or remove tip ledger until paid | Tip never creates unfunded liability | Open | |
-| MON-24 | Fee math via float64 truncation | MINOR | payment | advance/platform fee paths | Integer basis-points only | Property: fee_cents exact | Open | |
-| MON-25 | CI: concurrent money races not in pipeline | BLOCKER | ci | `tests/integration/*` excluded | Run double-spend / release races in CI | Required check green | Open | |
+| MON-24 | Fee math via float64 truncation | MINOR | payment | advance/platform fee paths | Integer basis-points only | Property: fee_cents exact | **Partial** 2026-07-25 — integer bps in `money.go:65-84` + `sales_tax.go:113-123`; `advance.go:130-135,192-195` still float64 | |
+| MON-25 | CI: concurrent money races not in pipeline | BLOCKER | ci | `tests/integration/*` excluded | Run double-spend / release races in CI | Required check green | **Done** 2026-07-25 — `.github/workflows/ci.yml` `fullstack-security-test` boots the compose stack and runs `tests/integration/` (double-spend + ownership + auth bypass) and the live-stack payment idempotency test; hard `needs:` of `build` | |
 | MON-26 | Sequential-only refund tests insufficient | MAJOR | test | payment security tests | Add concurrent refund/release tests | Tests fail on current code | Open | |
 | MON-27 | Working capital fee story: factor 1.06–1.18 vs 3%+APR booking | DOC/P1 | product | README + `RequestAdvance` | One fee model in product + code + Fees table | Docs match booking path | **Demoted** 2026-07-09 (docs: factor=limit, 3%+APR=booking) | |
 | MON-28 | Platform transfer paths that already key well — preserve | — | payment | CreatePlatformTransfer, marketplace keys | Do not regress existing keys on advance/marketplace | Regression suite green | Open | |
@@ -71,24 +80,24 @@
 
 | ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
 |----|-------|-----|------|----------|--------|--------|--------|-------|
-| **GAP-005** / SEC-01 | Feature flags fail-open on money surfaces | BLOCKER | gateway | `feature_flag.go`; BNPL/advances/insurance/instant routes | Production: fail-closed on missing flag / DB error for financial keys | DB down / missing row → **503** | Open | |
-| SEC-02 | UI `useFeatureFlag` defaults `?? true` (fail-open) | MAJOR | web | feature flag hooks | Match server: unknown flag hidden/disabled for money UI | UI does not show gated money when flag missing | Open | |
-| **GAP-006** / SEC-03 | `INTERNAL_WS_SECRET` empty → trust any `user_id` | BLOCKER | chat | `secret.go`; k8s Deployments | Refuse start in production if empty; inject secret on gateway+chat | Empty secret → process exit / all WS 401 | Open | |
-| SEC-04 | Chat backend `InsecureSkipVerify: true` origin | MAJOR | chat | `ws/handler.go` | Rely on secret + network policy; document; optional origin check | No CSWSH if port exposed | Open | |
+| **GAP-005** / SEC-01 | Feature flags fail-open on money surfaces | BLOCKER | gateway | `feature_flag.go`; BNPL/advances/insurance/instant routes | Production: fail-closed on missing flag / DB error for financial keys | DB down / missing row → **503** | **Done** 2026-07-25 — `gateway/internal/middleware/feature_flag.go:112-166`: fails closed in prod on nil DB, DB error, and missing row (`interpretFlagState`) | |
+| SEC-02 | UI `useFeatureFlag` defaults `?? true` (fail-open) | MAJOR | web | feature flag hooks | Match server: unknown flag hidden/disabled for money UI | UI does not show gated money when flag missing | **Done** 2026-07-25 — `web/src/hooks/useFeatureFlags.ts:60-64,109-112` financial keys default false | |
+| **GAP-006** / SEC-03 | `INTERNAL_WS_SECRET` empty → trust any `user_id` | BLOCKER | chat | `secret.go`; k8s Deployments | Refuse start in production if empty; inject secret on gateway+chat | Empty secret → process exit / all WS 401 | **Done** 2026-07-25 — `services/chat/internal/ws/secret.go:46-58` + `cmd/server/main.go:45`; secret injected in k8s | |
+| SEC-04 | Chat backend `InsecureSkipVerify: true` origin | MAJOR | chat | `ws/handler.go` | Rely on secret + network policy; document; optional origin check | No CSWSH if port exposed | **Done** 2026-07-25 — `services/chat/internal/ws/handler.go:185-190` OriginPatterns replaces InsecureSkipVerify | |
 | SEC-05 | Plaintext gRPC mesh vs “TLS 1.3 everywhere” | BLOCKER (claim) / MAJOR (code) | gateway | `main.go` insecure credentials | mTLS mesh **or** demote claim to “TLS at edge; mesh private network” | Claim matches threat model | **Demoted** claim 2026-07-09; mTLS code still Open | |
-| SEC-06 | Auth TierAuth missing `register-phone`, `resend-verification`, OAuth | MAJOR | gateway | `ratelimit.go` | Map to TierAuth (5/15m) | 429 after budget | Open | |
+| SEC-06 | Auth TierAuth missing `register-phone`, `resend-verification`, OAuth | MAJOR | gateway | `ratelimit.go` | Map to TierAuth (5/15m) | 429 after budget | **Done** 2026-07-25 — `gateway/internal/router/router.go:216-227` register-phone / resend-verification / oauth / callback → TierAuth | |
 | SEC-07 | Edge middleware `has_session=1` forgeable | MAJOR | web | `middleware.ts` | Document soft gate; never treat as auth; consider signed cookie | AI routes still JWT-only (keep) | Open | |
-| SEC-08 | Unauthenticated `/metrics` | MAJOR | gateway | `router.go` | Network-isolate + optional basic auth | External scrape blocked | Open | |
-| SEC-09 | Jobs mutations lack gateway `RequireOwnership` | MAJOR | gateway | jobs routes | Apply ownership middleware like contracts | IDOR regression suite | Open | |
-| SEC-10 | Chat typing indicator no membership check | MAJOR | chat | `service.go` SendTypingIndicator | Require channel membership | Non-member → PermissionDenied | Open | |
+| SEC-08 | Unauthenticated `/metrics` | MAJOR | gateway | `router.go` | Network-isolate + optional basic auth | External scrape blocked | **Done** 2026-07-25 — `router.go:148` + `protectMetrics` (bearer token or loopback in production) | |
+| SEC-09 | Jobs mutations lack gateway `RequireOwnership` | MAJOR | gateway | jobs routes | Apply ownership middleware like contracts | IDOR regression suite | **Done** 2026-07-25 — `router.go:227,244-252` RequireOwnership on job update/delete/publish/close/cancel | |
+| SEC-10 | Chat typing indicator no membership check | MAJOR | chat | `service.go` SendTypingIndicator | Require channel membership | Non-member → PermissionDenied | **Done** 2026-07-25 — `services/chat/internal/service/service.go:219-226` IsChannelMember check | |
 | SEC-11 | CSP `style-src 'unsafe-inline'`; claim says none | MAJOR | web/gateway | `middleware.ts`, `security.go` | Nonce styles or demote CLAUDE claim | Prod CSP matches docs | **Demoted** claim 2026-07-09; style nonce still Open | |
 | SEC-12 | `connect-src` allows bare `ws:`/`wss:` | MINOR | web | `middleware.ts` | Restrict to API hosts | CSP hardened | Open | |
 | SEC-13 | PII claim AES-256-GCM/libsodium vs secretbox; email plaintext | MAJOR | docs/crypto | user/payment crypto | Fix docs; expand encryption if product requires | Docs = cipher; inventory of plaintext fields | **Demoted** docs 2026-07-09; expand encryption still Open if product requires | |
 | SEC-14 | No `// @public` markers (CLAUDE process claim) | MAJOR | gateway | router | Annotate public routes or demote rule | Audit checklist enforceable | Open | |
 | SEC-15 | Rate limit / idle session Redis fail-open | MINOR | gateway | cache, idle_session | Document; consider fail-closed auth in prod | Policy explicit | Open | |
-| SEC-16 | JWT alg = any RSA method not RS256-only | MINOR | gateway | auth middleware | Pin RS256 only | Non-RS256 rejected | Open | |
+| SEC-16 | JWT alg = any RSA method not RS256-only | MINOR | gateway | auth middleware | Pin RS256 only | Non-RS256 rejected | **Partial** 2026-07-25 — `gateway/internal/middleware/auth.go:151-161` pins RS256/384/512 (alg-confusion closed); not RS256-only as the Verify column asks | |
 | SEC-17 | Founder: rotate `Password123!` history credentials | BLOCKER | ops | docs/TODOS S1 | Rotate all seeded/QA accounts | Old password fails | Founder-Action | |
-| SEC-18 | `analyze-listing-image` missing same-origin check (job has it) | MINOR | web | AI routes | Mirror job route origin gate | Cross-origin blocked | Open | |
+| SEC-18 | `analyze-listing-image` missing same-origin check (job has it) | MINOR | web | AI routes | Mirror job route origin gate | Cross-origin blocked | **Done** 2026-07-25 — `web/src/app/api/analyze-listing-image/route.ts:79-105` same-origin gate | |
 
 ---
 
@@ -96,33 +105,33 @@
 
 | ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
 |----|-------|-----|------|----------|--------|--------|--------|-------|
-| **GAP-007** / OPS-01 | Deploy pipeline is placeholder | BLOCKER | ci | `.github/workflows/deploy.yml` | Real: build/push → migrate → apply → smoke | Tag deploy changes prod | Open | |
+| **GAP-007** / OPS-01 | Deploy pipeline is placeholder | BLOCKER | ci | `.github/workflows/deploy.yml` | Real: build/push → migrate → apply → smoke | Tag deploy changes prod | **Done** 2026-07-25 — `.github/workflows/deploy.yml` build/push (:87) → migrate (:170) → apply (:242) → smoke (:266) → rollback (:340) | |
 | OPS-02 | `deploy/terraform/` empty | BLOCKER | infra | `deploy/terraform/` | IaC for cluster + Postgres/PostGIS + Redis + S3 (or document external) | `terraform plan` meaningful | Open | Founder-Action |
-| OPS-03 | No migration Job / init on deploy | BLOCKER | k8s | deploy/k8s | Job or init-container `migrate up` | Schema applies on deploy | Open | |
+| OPS-03 | No migration Job / init on deploy | BLOCKER | k8s | deploy/k8s | Job or init-container `migrate up` | Schema applies on deploy | **Done** 2026-07-25 — `deploy/k8s/base/migration-job.yaml` + `deploy.yml:177-238` per-release Job, waited on | |
 | OPS-04 | No in-repo secret provisioning (ESO/Vault CR) | BLOCKER | k8s | SECRETS.md only | ExternalSecret / sealed secrets manifests | Secrets present pre-start | Open | Founder-Action |
-| OPS-05 | NetworkPolicy selects `app: gateway` but pods use `app.kubernetes.io/name` | BLOCKER | k8s | `network-policy.yaml` | Fix selectors; allow ingress-nginx → gateway + web | kind/CNI: traffic works | Open | |
-| OPS-06 | No NetworkPolicy allow for web / ingress controller | BLOCKER | k8s | network-policy | Allow ingress→web, ingress→gateway | Public pages reachable | Open | |
+| OPS-05 | NetworkPolicy selects `app: gateway` but pods use `app.kubernetes.io/name` | BLOCKER | k8s | `network-policy.yaml` | Fix selectors; allow ingress-nginx → gateway + web | kind/CNI: traffic works | **Done** 2026-07-25 — `deploy/k8s/base/network-policy.yaml:21` selects `app.kubernetes.io/name: gateway` | |
+| OPS-06 | No NetworkPolicy allow for web / ingress controller | BLOCKER | k8s | network-policy | Allow ingress→web, ingress→gateway | Public pages reachable | **Done** 2026-07-25 — `deploy/k8s/base/network-policy.yaml:40` `allow-ingress-to-web` | |
 | OPS-07 | Domain split-brain: checklist `nomarkup.com` vs owned `no-markup.com` | BLOCKER | docs/ops | launch-checklist, ingress | **Only** `no-markup.com`; purge wrong domain | DNS + smoke match owned zone | **Done** (docs 2026-07-09); confirm ingress/k8s manifests separately | |
 | OPS-08 | Production overlay `REPLACE_ME_*` / placeholder image tags | BLOCKER | k8s | production kustomization | Real image tags + Google client id | No REPLACE_ME in prod | Open | Founder-Action |
 | OPS-09 | OTel collector exports **debug only** (discards) | BLOCKER | k8s | otel-collector config | Export to real backend | Traces visible in backend | Open | |
 | OPS-10 | Prometheus/Grafana/Alertmanager not in k8s | BLOCKER | k8s | deploy/monitoring only | Deploy stack or drop claim | Alerts fire on test | Open | |
-| OPS-11 | Metrics scrape ports wrong; engine `*_METRICS_PORT` unset | BLOCKER | k8s | Deployments annotations | Scrape HTTP metrics ports; set engine env | Prometheus has bid/payment series | Open | |
+| OPS-11 | Metrics scrape ports wrong; engine `*_METRICS_PORT` unset | BLOCKER | k8s | Deployments annotations | Scrape HTTP metrics ports; set engine env | Prometheus has bid/payment series | **Partial** 2026-07-25 — bidding/fraud/trust/imaging scrape true with real `*_METRICS_PORT`; pricing + underwriting still `scrape: "false"` (see OPS-18) | |
 | OPS-12 | Payment failure alert P2/info @ 5% (not P0) | MAJOR | monitoring | alerts.yml | P0 on payment/webhook failure thresholds | Alert severity matches money risk | Open | |
-| OPS-13 | Zero PodDisruptionBudgets | BLOCKER | k8s | manifests | PDB for gateway, payment, user, job, web, bidding | `kubectl get pdb` | Open | |
+| OPS-13 | Zero PodDisruptionBudgets | BLOCKER | k8s | manifests | PDB for gateway, payment, user, job, web, bidding | `kubectl get pdb` | **Done** 2026-07-25 — `deploy/k8s/base/pdb.yaml` (13 PDBs) | |
 | OPS-14 | HPA only gateway + bidding | MAJOR | k8s | production overlay | HPA for payment, user, job, web, chat | HPA objects exist | Open | |
-| OPS-15 | No K8s `securityContext` (runAsNonRoot etc.) | MAJOR | k8s | Deployments | Pod security context | Cannot run as root in cluster | Open | |
-| OPS-16 | `INTERNAL_WS_SECRET` / `APP_VERSION` not injected | BLOCKER | k8s | Deployments | Wire secrets + APP_VERSION for cache bust | Env present on pods | Open | |
+| OPS-15 | No K8s `securityContext` (runAsNonRoot etc.) | MAJOR | k8s | Deployments | Pod security context | Cannot run as root in cluster | **Done** 2026-07-25 — pod + container `securityContext: runAsNonRoot` across `deploy/k8s/base/*/deployment.yaml` | |
+| OPS-16 | `INTERNAL_WS_SECRET` / `APP_VERSION` not injected | BLOCKER | k8s | Deployments | Wire secrets + APP_VERSION for cache bust | Env present on pods | **Done** 2026-07-25 — `deploy/k8s/base/{gateway,chat}/deployment.yaml` inject `INTERNAL_WS_SECRET` + `APP_VERSION` | |
 | OPS-17 | Launch checklist ~1/~280 checked; migration count stale (18 vs 73) | BLOCKER | docs | launch-checklist.md | Rewrite against reality; track in this file | Checklist = live runbook | **Done** 2026-07-09 (truth pass: `no-markup.com`, migrations 073, demoted fiction) | |
 | OPS-18 | pricing/underwriting lack OTel | MAJOR | engines | pricing, underwriting | Add tracing like other engines | Spans exported | Open | |
 | OPS-19 | No egress NetworkPolicies | MAJOR | k8s | network-policy | Egress allowlist for Stripe, DB, Redis, S3 | Default-deny egress tested | Open | |
 | OPS-20 | Staging `namePrefix` breaks service DNS | MAJOR | k8s | staging overlay | Fix or document required overrides | Staging boots | Open | |
 | OPS-21 | Docker main “push” does not login/push | MAJOR | ci | ci.yml | docker login + push or rename step | Images in registry | Open | |
-| OPS-22 | Missing runbooks: Redis, Meili, ingress/TLS, migration fail | MAJOR | docs | runbooks/ | Add runbooks | Linked from alerts | Open | |
+| OPS-22 | Missing runbooks: Redis, Meili, ingress/TLS, migration fail | MAJOR | docs | runbooks/ | Add runbooks | Linked from alerts | **Partial** 2026-07-25 — `docs/runbooks/07-redis-degraded.md`, `08-meilisearch-degraded.md`, `09-migration-job.md` shipped; ingress/TLS runbook still missing | |
 | OPS-23 | Alert runbook URLs point off-repo | MINOR | monitoring | alerts.yml | Point to `docs/runbooks/` | Links resolve | Open | |
 | OPS-24 | Cloudflare CDN claim with zero config in repo | DOC | ops | CLAUDE / checklist | Add CF config or demote claim | Edge rules documented | Open | Founder-Action |
 | OPS-25 | Vault client exists; no prod wiring | MAJOR | gateway | vault package | Wire ESO/Vault for secrets | Prod secrets not file-mounted only | Open | Founder-Action |
 | OPS-26 | 99.9% / 10k concurrent unproven | DOC/P1 | claims | README/PRD | Load proof + HA design or demote | k6/report artifacts | Open | |
-| OPS-27 | Gateway probes shallow (no DB/Redis ready) | MINOR | k8s | gateway probes | Optional deep ready | Fail unready on DB down | Open | |
+| OPS-27 | Gateway probes shallow (no DB/Redis ready) | MINOR | k8s | gateway probes | Optional deep ready | Fail unready on DB down | **Done** 2026-07-25 — gateway readinessProbe is `/readyz` (`deploy/k8s/base/gateway/deployment.yaml:127-131`) and `readinessHandler` pings Postgres + Redis (`router.go:147`) | |
 | OPS-28 | Go service metrics on +1000 port unused by probes | MINOR | k8s | probes | Align probes with /readyz where useful | Ready reflects DB | Open | |
 
 ---
@@ -162,10 +171,10 @@
 | QA-06 | E2E full funnel not in CI (backendless; dogfood excluded) | BLOCKER | ci | e2e-test job | Boot stack + SEED_PASSWORD dogfood **or** demote funnel claim | register→job→bid→pay→chat in CI | **Demoted** claim 2026-07-09; CI funnel still Open if desired | |
 | QA-07 | Vacuous E2E asserts (`expect(a\|\|b\|\|c)`) | MAJOR | web | e2e specs | Assert real outcomes | Fail on broken UI | Open | |
 | QA-08 | Chromium-only E2E in CI | MINOR | ci | playwright | Optional webkit/firefox nightly | Cross-browser job | Open | |
-| QA-09 | `verify-proto` not in `build.needs` | MINOR | ci | ci.yml | Add needs edge | Proto drift blocks build | Open | |
+| QA-09 | `verify-proto` not in `build.needs` | MINOR | ci | ci.yml | Add needs edge | Proto drift blocks build | **Done** 2026-07-25 — `.github/workflows/ci.yml` `build.needs` includes `verify-proto` | |
 | QA-10 | security-scan not coupled to CI build | MAJOR | ci | branch protection | Require security jobs for merge | Proven required checks | Open | Founder-Action |
 | QA-11 | Integration: chat/notification excluded | MAJOR | ci | go-integration-test | Add suites or document gap | Coverage map honest | Open | |
-| QA-12 | `-short` skips bid-race + payment idempotency live tests | MAJOR | ci | integration job | Run non-short for money races (dedicated job) | Race tests execute | Open | |
+| QA-12 | `-short` skips bid-race + payment idempotency live tests | MAJOR | ci | integration job | Run non-short for money races (dedicated job) | Race tests execute | **Done** 2026-07-25 — `fullstack-security-test` runs the live-stack `TestIdempotency_PaymentDoubleSubmit` non-short; `money-race-tests` now passes `-tags integration` so it at least compiles on every PR | |
 | QA-13 | payment `repository/` ~0 tests | MAJOR | payment | repository/ | Repo tests for money SQL | Coverage on repos | Open | |
 | QA-14 | Claude-only hooks not git-enforced | MINOR | tooling | .claude/hooks | Document scope; optional pre-commit | Team knows bypass | Open | |
 | QA-15 | npm audit high+ prod only | MINOR | ci | security-scan | Consider moderate / dev policy | Document residual | Open | |
@@ -292,6 +301,8 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-09 | **Implementation wave** (agent teams): money CAS/idempotency, goods pending_payment + ChargeListingWinner gRPC wire, prod flag fail-closed, WS secret, NetworkPolicy/deploy/terraform, web RSC/vitals, docs truth. |
 | 2026-07-09 | **Post-impl adversarial re-audit:** GAP-001–007,009 **PASS**; GAP-008 **PARTIAL**. Verdict upgraded **NO-GO → CONDITIONAL-GO**. Residual: live InstantPayout product path, auction auto-charge, deploy not provisioned, partial-refund Stripe-before-CAS, field LCP unproven. |
 | 2026-07-09 | **Docs truth pass:** DOC-01…DOC-18 → **Demoted** (README, CLAUDE.md, architecture, performance, launch-checklist, investor-faq). Code/ops rows remain **Open**. OPS-17 checklist migration count/domain fixed in launch-checklist. |
+| 2026-07-25 | **Row-by-row status pass.** The 2026-07-09 "Post-implementation validation" section warned the rows above were stale; they were. 38 rows updated against the current tree, each with file:line evidence in its Status cell: **Done** — MON-01…13, MON-22, MON-25, SEC-01/GAP-005, SEC-02, SEC-03, SEC-04, SEC-06, SEC-08, SEC-09, SEC-10, SEC-18, OPS-01, OPS-03, OPS-05, OPS-06, OPS-13, OPS-15, OPS-16, OPS-27, QA-09, QA-12. **Partial** — MON-24 (advance fee math still float64), SEC-16 (RS384/512 still accepted), OPS-11 (pricing/underwriting unscraped), OPS-22 (ingress/TLS runbook still missing). Confirmed **still Open**: SEC-11 (`style-src 'unsafe-inline'`, `web/src/middleware.ts:161`), OPS-09 (otel-collector `exporters: [debug]` only, `deploy/k8s/base/otel-collector/configmap.yaml:46-54`), OPS-18, OPS-28. Summary dashboard recomputed by parsing the tables. |
+| 2026-07-25 | **MON-25 / QA-12 closed by CI change:** `.github/workflows/ci.yml` gains `fullstack-security-test`, which boots the docker-compose stack (`tests/integration/docker-compose.ci.yml` overlay) and runs the Tier-1 suites — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit`. Before this, every one of those tests was behind `//go:build integration` and ran in **no** CI job. Also fixes N11 and (partly) N7/N9's execution venue. |
 
 ---
 
@@ -313,7 +324,11 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 
 ## Post-implementation validation (2026-07-09)
 
-Hostile re-audit after agent-team implementation. Evidence-based; tracker rows above may still say Open — use this section as the source of truth until a full row-by-row status pass.
+Hostile re-audit after agent-team implementation. Evidence-based.
+
+> **Superseded 2026-07-25.** The row-by-row status pass this section was waiting on has been done —
+> the Status cells in the tables above now carry file:line evidence and are the source of truth.
+> This section is kept as the historical GAP-level verdict.
 
 ### GAP results
 

@@ -149,9 +149,8 @@ jobs:
   #                      skips the live-gateway bid-race test)
   #   services/payment — -short skips the live-gateway idempotency test
   # NOTE: the tests/integration module drives a LIVE full stack over HTTP
-  # (gateway + all services + Stripe mocks) and is intentionally NOT run
-  # here — it belongs to a future full-stack job that boots the whole
-  # docker-compose stack.
+  # (gateway + all services), so it is not runnable here — it runs in the
+  # `fullstack-security-test` job below, which boots the docker-compose stack.
 
   go-integration-test:
     name: Go Integration Tests
@@ -214,6 +213,209 @@ jobs:
       - name: Payment service integration tests
         run: cd services/payment && go test -tags integration -short -count=1 ./...
 
+  # ── Full-stack Tier-1 security tests ──────────────────────────
+  # The suites in `tests/integration/` are the highest-value tests in the repo
+  # — TestAuthBypass_* (4), TestDoubleSpend_ParallelAwardsCreateOneContract,
+  # TestOwnership_CrossAccountReadIsRejected — and until this job existed they
+  # ran NOWHERE: every file is behind `//go:build integration`, so plain
+  # `go test ./...` reports "matched no packages" and auth-bypass, double-spend
+  # and IDOR were unverified on every commit.
+  #
+  # They drive a LIVE stack over HTTP (tests/integration/common_test.go:5-14),
+  # so this job boots the real docker-compose stack on the runner:
+  #
+  #   infra (postgres/pgbouncer/redis/meilisearch/jaeger) -> wait for real
+  #   readiness -> migrate -> seed -> app services + gateway -> wait for
+  #   gateway /readyz AND the gateway->user gRPC login path -> run the suites.
+  #
+  # Scope: `web`, `chat`, `imaging` and `minio` are deliberately NOT started —
+  # no test touches them, the gateway dials backends lazily, and skipping
+  # imaging avoids pulling in minio. The Rust engines all come out of the one
+  # multi-target engines.Dockerfile, which compiles the workspace once, so the
+  # extra engines cost almost nothing on top of the first.
+  #
+  # Cost: this is the long pole of CI (Docker build of 5 Go services + the Rust
+  # workspace). That is the price of the Tier-1 security tests actually running;
+  # "we know it's untested" is not the same as tested.
+
+  fullstack-security-test:
+    name: Full-Stack Tier-1 Security Tests
+    needs: [gateway-test, services-test, engines-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Both compose files for every `docker compose` invocation in this job.
+      # The project directory is the first file's directory (repo root), so the
+      # overlay living under tests/integration/ does not move build contexts.
+      COMPOSE_FILE: docker-compose.yml:tests/integration/docker-compose.ci.yml
+      COMPOSE_PROJECT_NAME: nomarkup-ci
+      # engines.Dockerfile uses `# syntax=docker/dockerfile:1` and
+      # `--mount=type=cache`, which require BuildKit. It is the default on
+      # current runners; set explicitly so a daemon-default change can't
+      # silently break the build.
+      DOCKER_BUILDKIT: "1"
+      # Host-side DSN. docker-compose.yml publishes postgres on 5433 (not 5432)
+      # and uses the throwaway `nomarkup:password` credential for the ephemeral
+      # local/CI database only. The @localhost host matters twice over: it is
+      # what tests/integration/common_test.go:44-49 expects, and it keeps
+      # database/cmd/seed in local-dev mode so the seeded accounts get the
+      # well-known dev password the suite logs in with (no SEED_PASSWORD
+      # secret needed for a throwaway database).
+      DATABASE_URL: postgres://nomarkup:password@localhost:5433/nomarkup?sslmode=disable
+      # common_test.go defaults to :8081 (the bin/dev layout); compose publishes
+      # the gateway on :8080.
+      NOMARKUP_GATEWAY_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            tests/integration/go.sum
+            services/payment/go.sum
+            database/go.sum
+
+      # keys/ is gitignored (.gitignore:30) and bind-mounted into the user +
+      # gateway containers by docker-compose.yml, so CI must mint its own.
+      - name: Generate throwaway JWT keypair
+        run: |
+          set -euo pipefail
+          mkdir -p keys
+          openssl genrsa -out keys/private.pem 4096
+          openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+          # The containers run as uid 10001 (deploy/docker/user.Dockerfile:41-44,
+          # gateway.Dockerfile:41-44); openssl's default 0600 would make the
+          # bind-mounted key unreadable inside them.
+          chmod 0644 keys/private.pem keys/public.pem
+          # Lets TestAuthBypass_ExpiredJWTRejected mint a validly-signed but
+          # expired token instead of t.Skip()-ing (common_test.go:167-185).
+          echo "JWT_PRIVATE_KEY_PATH=${GITHUB_WORKSPACE}/keys/private.pem" >> "$GITHUB_ENV"
+
+      # Both are `${VAR:-}` in docker-compose.yml, i.e. EMPTY unless exported
+      # here, and both are startup-fatal:
+      #   SESSION_SECRET        — services/user/cmd/server/main.go:133-137
+      #   STRIPE_WEBHOOK_SECRET — services/payment/cmd/server/main.go:144-148
+      # Generated fresh per run; never committed, never reused.
+      - name: Generate throwaway stack secrets
+        run: |
+          set -euo pipefail
+          {
+            echo "SESSION_SECRET=$(openssl rand -hex 32)"
+            echo "STRIPE_WEBHOOK_SECRET=whsec_$(openssl rand -hex 24)"
+          } >> "$GITHUB_ENV"
+
+      - name: Build stack images
+        run: |
+          set -euo pipefail
+          docker compose build --progress plain \
+            gateway user job payment notification \
+            bidding fraud trust underwriting pricing
+
+      - name: Start infrastructure
+        run: docker compose up -d --no-deps postgres pgbouncer redis meilisearch jaeger
+
+      # Real readiness, never `sleep N`. Each probe uses a tool guaranteed to
+      # exist where it runs (inside the container for pg/redis/pgbouncer, on the
+      # runner for HTTP) and fails with an ::error:: naming the component.
+      - name: Wait for infrastructure
+        run: |
+          set -euo pipefail
+          wait_for() { # name  attempts  cmd...
+            local name="$1" tries="$2"; shift 2
+            local i
+            for i in $(seq 1 "$tries"); do
+              if "$@" >/dev/null 2>&1; then
+                echo "ready: ${name} (attempt ${i})"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "::error::${name} never became ready after $((tries * 2))s"
+            return 1
+          }
+          wait_for postgres    60 docker compose exec -T postgres pg_isready -U nomarkup -d nomarkup
+          wait_for pgbouncer   60 docker compose exec -T pgbouncer pg_isready -h 127.0.0.1 -p 5432
+          wait_for redis       30 docker compose exec -T redis redis-cli ping
+          wait_for meilisearch 60 curl -fsS http://localhost:7700/health
+
+      # Same pinned migrate version as go-integration-test.
+      - name: Install golang-migrate (pinned)
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: Run migrations
+        run: migrate -path database/migrations -database "$DATABASE_URL" up
+      # Seeds the accounts the suite logs in as (admin/customer/provider/
+      # provider2), the plumbing category + property the double-spend test
+      # posts against, and the contracts the ownership + payment-idempotency
+      # tests look for.
+      - name: Seed database
+        run: cd database && go run ./cmd/seed
+
+      - name: Start application services
+        run: |
+          set -euo pipefail
+          # --no-deps: infra is already up and verified above. It also stops
+          # compose from pulling in `imaging` -> `minio`, which no Tier-1 test
+          # touches. Backend gRPC dials are lazy, so the gateway boots fine
+          # without chat/imaging.
+          docker compose up -d --no-deps \
+            notification user job payment bidding fraud trust underwriting pricing
+          docker compose up -d --no-deps gateway
+          docker compose ps
+
+      - name: Wait for gateway and user service
+        run: |
+          set -euo pipefail
+          # 1. Gateway process + its own Postgres/Redis dependencies
+          #    (gateway/internal/router/router.go:147 readinessHandler).
+          code=""
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/readyz || true)
+            [ "$code" = "200" ] && { echo "gateway /readyz 200 (attempt ${i})"; break; }
+            [ "$i" -eq 90 ] && { echo "::error::gateway /readyz never returned 200 (last=${code})"; exit 1; }
+            sleep 2
+          done
+          # 2. The gateway -> user-service gRPC path, which /readyz does NOT
+          #    cover. A deliberately bogus account must come back 401/404
+          #    (writeGRPCError maps Unauthenticated->401, NotFound->404); while
+          #    the user service is unreachable the same call is 503
+          #    (codes.Unavailable). No real credential is used by this probe.
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H 'Content-Type: application/json' \
+              -d '{"email":"readiness-probe@invalid.test","password":"readiness-probe-not-a-credential"}' \
+              http://localhost:8080/api/v1/auth/login || true)
+            case "$code" in
+              401|404) echo "gateway->user login path live (attempt ${i}, status ${code})"; break ;;
+            esac
+            [ "$i" -eq 90 ] && { echo "::error::gateway->user login path not ready (last=${code})"; exit 1; }
+            sleep 2
+          done
+
+      # The whole point of this job: auth bypass, double spend, IDOR.
+      - name: Tier-1 security suites (auth bypass / double spend / ownership)
+        run: cd tests/integration && go test -tags=integration -count=1 -timeout=20m -v ./...
+
+      # TestIdempotency_PaymentDoubleSubmit lives in services/payment behind the
+      # same `integration` tag but is a LIVE-STACK test (it logs in through the
+      # gateway and POSTs /api/v1/payments five times —
+      # services/payment/internal/service/idempotency_test.go:96-142). It is
+      # skipped by -short in go-integration-test and never compiled at all by
+      # money-race-tests, so this is the only place it actually executes.
+      - name: Payment idempotency (live stack)
+        run: |
+          cd services/payment
+          go test -tags integration -race -run 'Idempotency' -count=1 -timeout=10m ./internal/service/...
+
+      - name: Stack state on failure
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --no-color --timestamps --tail 400 || true
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v --remove-orphans || true
+
   # ── Rust Engines ──────────────────────────────────────────────
 
   engines-test:
@@ -270,13 +472,25 @@ jobs:
             exit 0
           }
 
-  # ── Money-path race / idempotency tests ───────────────────────
-  # Focused payment-service suite: concurrent access, double-submit,
-  # and idempotency regressions. Runs with -race on the service package
-  # subset matching Concurrent|Race|Double|Idempotency test names.
+  # ── Money-path race / idempotency tests (in-process) ──────────
+  # Focused payment-service suite: concurrent access, double-submit and
+  # idempotency regressions that run entirely in-process against fakes —
+  # TestReleaseEscrow_Concurrent_ExactlyOneTransfer,
+  # TestCreateRefund_Concurrent_{No,Partial}OverRefund,
+  # TestProcessPayment_Concurrent_ExactlyOneCapture, the deterministic
+  # Stripe-key tests, TestDevStore_ConcurrentAccess. No database, no stack.
+  #
+  # `-tags integration` is passed deliberately even though nothing tagged runs
+  # here: without it, idempotency_test.go is not part of the build at all, so a
+  # compile error or signature drift in the one test named after this job's
+  # purpose would go unnoticed until the full-stack job ran. `-short` then makes
+  # it skip at runtime (idempotency_test.go:97-99) because it needs a live
+  # gateway + seeded contract, not just a DATABASE_URL — giving it a Postgres
+  # service container here would NOT be enough. It executes for real in
+  # `fullstack-security-test`.
 
   money-race-tests:
-    name: Payment Money Race Tests
+    name: Payment Money Race Tests (in-process)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -288,7 +502,8 @@ jobs:
         run: |
           set -euo pipefail
           cd services/payment
-          go test ./internal/service/ -race -run 'Concurrent|Race|Double|Idempotency' -count=1 -timeout=10m
+          go test ./internal/service/ -tags integration -short -race \
+            -run 'Concurrent|Race|Double|Idempotency' -count=1 -timeout=10m
 
   # ── Optional Lighthouse placeholder ───────────────────────────
   # Field LCP gates live in docs/performance.md. Wire a real Lighthouse CI
@@ -309,13 +524,16 @@ jobs:
 
   build:
     name: Build All
-    # go-integration-test transitively requires gateway-test + services-test,
-    # giving the CLAUDE.md §10 order: lint → unit → integration → build.
-    # verify-proto + money-race-tests are hard gates before image build.
+    # go-integration-test and fullstack-security-test transitively require
+    # gateway-test + services-test (+ engines-test), giving the CLAUDE.md §10
+    # order: lint → unit → integration → build. verify-proto,
+    # money-race-tests and the Tier-1 auth-bypass / double-spend / IDOR suites
+    # are hard gates before any image is built.
     needs:
       - web-test
       - e2e-test
       - go-integration-test
+      - fullstack-security-test
       - engines-test
       - verify-proto
       - money-race-tests

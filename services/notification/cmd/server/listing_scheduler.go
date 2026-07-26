@@ -282,6 +282,16 @@ func runOutbidPubsubLoop(ctx context.Context, redisURL string, svc *service.Serv
 		slog.Error("outbid pubsub: invalid REDIS_URL", "error", err)
 		return
 	}
+	// Deliberately NOT wrapped in redisotel.InstrumentTracing.
+	//
+	// This client exists solely to hold a long-lived PSubscribe. Tracing a
+	// blocking subscriber produces a single span that lives for the entire
+	// process lifetime — unbounded duration, no useful parent, and it never
+	// closes — which is worse than no span at all. Every other Redis client in
+	// the tree IS instrumented (gateway, user, job, chat); an audit that counts
+	// files will flag this one as the odd service out, so: it is intentional.
+	//
+	// If this client ever gains a request-scoped command, instrument it then.
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
 
@@ -376,4 +386,3 @@ func handleOutbidMessage(ctx context.Context, msg *redis.Message, svc *service.S
 		)
 	}
 }
-

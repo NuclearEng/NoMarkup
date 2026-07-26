@@ -31,11 +31,11 @@ import (
 // a new listing goes active. Kept in sync with services/job/internal/service/listing.go
 // publishListingCreated — extra fields are ignored here.
 type sellerNewListingPayload struct {
-	Type         string `json:"type"`
-	ListingID    string `json:"listing_id"`
-	SellerID     string `json:"seller_id"`
-	Title        string `json:"title"`
-	StartingCents int64 `json:"starting_price_cents,omitempty"`
+	Type          string `json:"type"`
+	ListingID     string `json:"listing_id"`
+	SellerID      string `json:"seller_id"`
+	Title         string `json:"title"`
+	StartingCents int64  `json:"starting_price_cents,omitempty"`
 }
 
 // runFollowsPubsubScheduler subscribes to `notify:seller_new_listing:*`
@@ -65,6 +65,16 @@ func runFollowsPubsubLoop(ctx context.Context, pool *pgxpool.Pool, svc *service.
 		slog.Error("follows pubsub: invalid REDIS_URL", "error", err)
 		return
 	}
+	// Deliberately NOT wrapped in redisotel.InstrumentTracing.
+	//
+	// This client exists solely to hold a long-lived PSubscribe. Tracing a
+	// blocking subscriber produces a single span that lives for the entire
+	// process lifetime — unbounded duration, no useful parent, and it never
+	// closes — which is worse than no span at all. Every other Redis client in
+	// the tree IS instrumented (gateway, user, job, chat); an audit that counts
+	// files will flag this one as the odd service out, so: it is intentional.
+	//
+	// If this client ever gains a request-scoped command, instrument it then.
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
 

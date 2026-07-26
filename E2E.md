@@ -7,16 +7,34 @@ and verifies state after every mutation.
 
 ---
 
+## What actually runs in CI (verified against `.github/workflows/ci.yml`, 2026-07-25)
+
+This file is a **manual dogfood prompt**, not a CI job. Nothing below is executed by a workflow.
+What CI does cover, so you know what this prompt is *adding* on top:
+
+| CI job | What it really runs | Limits |
+|---|---|---|
+| `e2e-test` | `npx playwright test --project=chromium` in `web/` | **Chromium only**, and there is **no backend stack in that job** — the specs are written backend-tolerant. It is a render/smoke gate, not a funnel test. |
+| `fullstack-security-test` | Boots the docker-compose stack (minus `web`, `chat`, `imaging`, `minio`) and runs `tests/integration/` — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit` | Real auth, real DB writes, real gRPC fanout. Does **not** drive the browser, WebSocket frames, MinIO uploads, trust/fraud recomputation, or any admin flow. |
+| `go-integration-test` | Tagged suites in `gateway`, `services/{user,job,payment}` against a PostGIS service container, with `-short` | `-short` skips the live-gateway bid-race and payment-idempotency tests (those run in `fullstack-security-test`). |
+| `money-race-tests` | In-process payment concurrency/idempotency subset with `-race` | No DB, no stack. |
+
+So the browser-driven funnel below — WebSocket bidding frames, MinIO/imaging uploads, trust-score
+recomputation, admin/fraud/dispute flows, per-step screenshots — is still **manual only**. Running
+it in CI is tracked as QA-06 in `docs/planning/adversarial-action-tracker.md`.
+
+---
+
 ## Prerequisites
 
 Bring up the full stack first:
 
 ```bash
-cd /Users/nuclearisotope/Projects/NoMarkup
+cd /Users/nuclearisotope/Projects/Personal/NoMarkup
 bin/dev up infra      # postgres :5433, redis :6379, meili :7700, minio :9000
 bin/dev up services   # user, job, payment, chat, notification
 bin/dev up engines    # bidding, fraud, trust, imaging
-bin/dev up gateway    # gateway :8081
+bin/dev up gateway    # gateway :8080 (bin/dev:46 default; override with GATEWAY_PORT)
 make seed             # 4 users, 3 jobs, 4 bids, 2 contracts, etc.
 cd web && npm run dev # web :3000
 ```
@@ -36,8 +54,8 @@ Or set `SEED_PASSWORD` before running `make seed` to use a fixed password.
 
 ```
 Run a comprehensive end-to-end functional test of NoMarkup against the live
-local stack at /Users/nuclearisotope/Projects/NoMarkup. The stack is already
-up (infra + Go services + Rust engines + gateway :8081 + web :3000). DB is
+local stack at /Users/nuclearisotope/Projects/Personal/NoMarkup. The stack is already
+up (infra + Go services + Rust engines + gateway :8080 + web :3000). DB is
 seeded.
 
 Seed accounts (password: read /tmp/nomarkup-tour/seed-pw.txt or
@@ -47,7 +65,7 @@ $SEED_PASSWORD if set):
 - provider@nomarkup.com  (provider)
 - provider2@nomarkup.com (provider)
 
-Use Playwright via /Users/nuclearisotope/Projects/NoMarkup/web/node_modules
+Use Playwright via /Users/nuclearisotope/Projects/Personal/NoMarkup/web/node_modules
 (model on /tmp/nomarkup-tour/tour.mjs but DO NOT use any mock layer — every
 request must hit the real gateway). For each persona, drive the actual
 business flow and verify state in Postgres after each mutation.
@@ -114,7 +132,8 @@ REPORT (don't be polite — be honest):
 - For each step, mark PASS / PARTIAL / FAIL with the exact failure (HTTP
   status, console error, postgres row count delta)
 - After mutations, query postgres directly to verify state
-  (psql postgres://nomarkup:nomarkup@localhost:5433/nomarkup) and report
+  (psql "$DATABASE_URL", i.e. postgresql://nomarkup:password@localhost:5433/nomarkup
+  — user/password per bin/dev:62-65, NOT nomarkup:nomarkup) and report
   row counts before/after
 - Capture WebSocket frames during the bidding test to confirm real-time
   delivery — use page.on('websocket', ws => ws.on('framesent', ...))
@@ -154,7 +173,7 @@ the verdict and the SQL query used to confirm.
 ## Suggested invocation
 
 ```bash
-cd /Users/nuclearisotope/Projects/NoMarkup
+cd /Users/nuclearisotope/Projects/Personal/NoMarkup
 claude --dangerously-skip-permissions < E2E.md
 ```
 
