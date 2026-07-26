@@ -64,30 +64,24 @@ func (h *BidHandler) SetUserClient(c userv1.UserServiceClient) {
 }
 
 // resolveProviderNames resolves a set of provider user ids to their public
-// display_name + avatar_url via the user service, deduping ids so a bid list
-// makes at most one GetUser call per unique provider. Fail-soft: a nil client or
-// any lookup error simply omits that provider (the card falls back to a blank
-// name), never failing the bid list.
+// display_name + avatar_url via the user service, deduping ids and resolving
+// them in ONE batched round trip (chunked at the server's cap) rather than one
+// sequential GetUser per unique provider — a job with 50 unique bidders used to
+// cost 50 serial calls and blew the p95 budget on its own. Fail-soft: a nil
+// client or a failed lookup simply omits that provider (the card falls back to a
+// blank name), never failing the bid list.
 func (h *BidHandler) resolveProviderNames(ctx context.Context, ids []string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
 	if h.userClient == nil {
 		return out
 	}
-	seen := make(map[string]struct{})
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		if _, dup := seen[id]; dup {
-			continue
-		}
-		seen[id] = struct{}{}
-		resp, err := h.userClient.GetUser(ctx, &userv1.GetUserRequest{UserId: id})
-		if err != nil {
-			slog.WarnContext(ctx, "bid list: resolve provider name failed", "provider_id", id, "error", err)
-			continue
-		}
-		u := resp.GetUser()
+
+	users, err := batchGetUsers(ctx, h.userClient, ids)
+	if err != nil {
+		// Partial result: the successful chunks are still in users.
+		slog.WarnContext(ctx, "bid list: resolve provider names failed", "error", err)
+	}
+	for id, u := range users {
 		out[id] = map[string]string{
 			"display_name": u.GetDisplayName(),
 			"avatar_url":   u.GetAvatarUrl(),

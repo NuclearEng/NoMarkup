@@ -692,11 +692,12 @@ func protoChannelToJSON(ch *chatv1.Channel, names map[string]string) map[string]
 }
 
 // resolveParticipantNames resolves a set of user ids to their public display
-// names via the user gRPC service. It dedupes ids (so a list with N channels
-// makes at most one GetUser call per unique participant, not N×2) and is
-// fail-soft: a lookup error or empty display_name leaves that id out of the
-// returned map rather than failing the whole channel response. Only the
-// public-safe display_name is surfaced — no other PII.
+// names via the user gRPC service. It dedupes ids and resolves them in ONE
+// batched round trip (chunked at the server's cap) — a channel list with N
+// channels used to cost up to N×2 sequential GetUser calls — and is fail-soft: a
+// lookup error or empty display_name leaves that id out of the returned map
+// rather than failing the whole channel response. Only the public-safe
+// display_name is surfaced — no other PII.
 //
 // Returns nil when there is no user client configured or no ids to resolve.
 func (h *ChatHandler) resolveParticipantNames(ctx context.Context, ids ...string) map[string]string {
@@ -704,27 +705,15 @@ func (h *ChatHandler) resolveParticipantNames(ctx context.Context, ids ...string
 		return nil
 	}
 
-	unique := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		if id != "" {
-			unique[id] = struct{}{}
-		}
-	}
+	unique := dedupeUserIDs(ids)
 	if len(unique) == 0 {
 		return nil
 	}
 
-	names := make(map[string]string, len(unique))
-	for id := range unique {
-		resp, err := h.userClient.GetUser(ctx, &userv1.GetUserRequest{UserId: id})
-		if err != nil {
-			slog.WarnContext(ctx, "chat: resolve participant name failed",
-				"user_id", id, "error", err)
-			continue // fail soft — omit this name
-		}
-		if name := resp.GetUser().GetDisplayName(); name != "" {
-			names[id] = name
-		}
+	names, err := batchGetDisplayNames(ctx, h.userClient, unique)
+	if err != nil {
+		// fail soft — the failed chunk's names are simply absent.
+		slog.WarnContext(ctx, "chat: resolve participant names failed", "error", err)
 	}
 
 	return names

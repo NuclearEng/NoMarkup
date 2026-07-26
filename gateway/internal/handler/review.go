@@ -43,38 +43,26 @@ func NewReviewHandler(reviewClient reviewv1.ReviewServiceClient, trustClient tru
 }
 
 // resolveReviewerNames resolves a set of user ids → public display_name via the
-// user gRPC service, deduping ids so a list makes at most one GetUser call per
-// unique user (mirrors the chat and contract enrichment). It is fail-soft: a
-// lookup error or empty display_name leaves that id out of the map rather than
-// failing the review response. Only the public-safe display_name is surfaced —
-// no other PII. Returns nil when there is no user client configured or no ids to
-// resolve.
+// user gRPC service, deduping ids and resolving them in ONE batched round trip
+// (chunked at the server's cap) rather than one sequential GetUser per unique
+// user (mirrors the chat and contract enrichment). It is fail-soft: a lookup
+// error or empty display_name leaves that id out of the map rather than failing
+// the review response. Only the public-safe display_name is surfaced — no other
+// PII. Returns nil when there is no user client configured or no ids to resolve.
 func (h *ReviewHandler) resolveReviewerNames(ctx context.Context, ids ...string) map[string]string {
 	if h.userClient == nil {
 		return nil
 	}
 
-	unique := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		if id != "" {
-			unique[id] = struct{}{}
-		}
-	}
+	unique := dedupeUserIDs(ids)
 	if len(unique) == 0 {
 		return nil
 	}
 
-	names := make(map[string]string, len(unique))
-	for id := range unique {
-		resp, err := h.userClient.GetUser(ctx, &userv1.GetUserRequest{UserId: id})
-		if err != nil {
-			slog.WarnContext(ctx, "review: resolve reviewer name failed",
-				"user_id", id, "error", err)
-			continue // fail soft — omit this name
-		}
-		if name := resp.GetUser().GetDisplayName(); name != "" {
-			names[id] = name
-		}
+	names, err := batchGetDisplayNames(ctx, h.userClient, unique)
+	if err != nil {
+		// fail soft — the failed chunk's names are simply absent.
+		slog.WarnContext(ctx, "review: resolve reviewer names failed", "error", err)
 	}
 
 	return names
