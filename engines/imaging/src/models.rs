@@ -172,6 +172,23 @@ pub const ALLOWED_MIME_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp
 /// Maximum upload file size: 10 MB.
 pub const MAX_FILE_SIZE_BYTES: i64 = 10_485_760;
 
+/// Maximum width or height accepted by the decoder, in pixels.
+///
+/// A compressed image bounded by [`MAX_FILE_SIZE_BYTES`] can still describe
+/// enormous dimensions — that is the decompression-bomb shape — and the
+/// decoder allocates the full uncompressed buffer before any of our code
+/// runs. 20 000 px is roughly 4x the long edge of a 100 MP sensor, so it
+/// rejects bombs without touching real photographs.
+pub const MAX_DECODE_DIMENSION: u32 = 20_000;
+
+/// Hard ceiling on decoder allocation: 256 MB.
+///
+/// Backstop for dimension combinations that individually pass the width and
+/// height caps (e.g. 20 000 x 20 000 x 4 bytes ≈ 1.6 GB). An allocator abort
+/// is one of the few failures a `catch_unwind` boundary cannot rescue, so it
+/// would take the whole process down rather than failing one request.
+pub const MAX_DECODE_ALLOC_BYTES: u64 = 256 * 1024 * 1024;
+
 /// Default JPEG/WebP quality.
 pub const DEFAULT_QUALITY: u8 = 85;
 

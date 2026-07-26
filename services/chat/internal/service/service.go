@@ -50,8 +50,22 @@ func (s *Service) CreateChannel(ctx context.Context, jobID, customerID, provider
 	}
 
 	// FR-8.1: For post-bid chat, verify the provider has an active bid on the job.
-	// Fail closed: if bid verification is unavailable, deny access.
-	if channelType == "pre_award" && s.bidChecker != nil {
+	//
+	// Fail closed, and note what that means precisely: a MISSING checker is a
+	// denial, not a skip. This guard previously read `... && s.bidChecker !=
+	// nil`, and SetBidChecker had no call sites anywhere in the repo — so the
+	// checker was permanently nil, the whole branch was dead, and any provider
+	// could open a pre-award channel on any job without ever bidding. A
+	// nil-check that disables the control it guards is worse than no control,
+	// because the surrounding comment claims coverage.
+	if channelType == "pre_award" {
+		if s.bidChecker == nil {
+			slog.Error("bid checker is not configured; refusing pre-award chat access",
+				"job_id", jobID,
+				"provider_id", providerID,
+			)
+			return nil, fmt.Errorf("create channel: bid verification unavailable")
+		}
 		hasBid, err := s.bidChecker.HasActiveBid(ctx, jobID, providerID)
 		if err != nil {
 			slog.Error("failed to check bid status for chat access",

@@ -216,10 +216,18 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// Limit to 10MB per the security rules.
+	// Limit to 10MB per the security rules (CLAUDE.md §6).
+	//
+	// ParseMultipartForm's argument is maxMEMORY, not a request-size cap: Go
+	// spools anything larger to a temp file and returns no error, so on its
+	// own it enforced nothing and the "bounded by maxUploadSize" claim below
+	// was false. http.MaxBytesReader is the actual cap — it makes the read
+	// fail once the body exceeds the limit, and closes the connection so the
+	// client cannot keep streaming.
 	const maxUploadSize = 10 << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid multipart form or file too large (max 10MB)")
+		writeError(w, http.StatusRequestEntityTooLarge, "invalid multipart form or file too large (max 10MB)")
 		return
 	}
 
@@ -263,7 +271,9 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 		UserId:        claims.UserID,
 		Filename:      filename,
 		MimeType:      detectedMIME,
-		FileSizeBytes: int32(header.Size), //nolint:gosec // file size bounded by maxUploadSize
+		// Safe conversion: MaxBytesReader above caps the body at 10MB, so
+		// header.Size cannot exceed that and cannot overflow int32.
+		FileSizeBytes: int32(header.Size), //nolint:gosec // bounded by MaxBytesReader(maxUploadSize)
 		// Completion (before/after) photos are job evidence; the imaging service
 		// only accepts a fixed set of contexts (avatar, portfolio, job_photo,
 		// document, review_photo, listing). "completion_photo" is not one of them

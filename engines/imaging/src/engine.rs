@@ -20,13 +20,13 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use image::imageops::FilterType;
 use image::metadata::Orientation;
-use image::{DynamicImage, GenericImageView, ImageDecoder, ImageFormat as ImgFmt, ImageReader};
+use image::{DynamicImage, GenericImageView, ImageDecoder, ImageFormat as ImgFmt, ImageReader, Limits};
 use uuid::Uuid;
 
 use crate::models::{
     ALLOWED_MIME_TYPES, DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
-    MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS, ProcessedJobPhoto, ProcessingOptions, ResizeMode,
-    UploadContext,
+    MAX_DECODE_ALLOC_BYTES, MAX_DECODE_DIMENSION, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
+    ProcessedJobPhoto, ProcessingOptions, ResizeMode, UploadContext,
 };
 
 /// Core image pipeline — stateless beyond the S3 client handle.
@@ -426,12 +426,23 @@ impl ImagePipeline {
             .build()
             .map_err(|e| ImagingError::S3Error(format!("presign config: {e}")))?;
 
+        // Bind the declared size INTO the signature.
+        //
+        // `file_size` is supplied by the client and was only ever compared
+        // against MAX_FILE_SIZE_BYTES before signing — it never constrained
+        // the upload itself. A caller could declare 1 KB, receive a valid
+        // presigned URL, and then PUT gigabytes: S3 honours the signature, not
+        // our earlier check. Signing `content_length` makes S3 reject any body
+        // whose length differs from what was authorized, so the size limit is
+        // enforced by the storage layer rather than on trust.
+        let signed_len = file_size;
         let presigned = self
             .s3_client
             .put_object()
             .bucket(&self.bucket)
             .key(&object_key)
             .content_type(mime_type)
+            .content_length(signed_len)
             .presigned(presign_config)
             .await
             .map_err(|e| ImagingError::S3Error(format!("presign PUT: {e}")))?;
@@ -636,9 +647,23 @@ fn decode_image_with_orientation(
     data: &[u8],
     auto_orient: bool,
 ) -> Result<DynamicImage, ImagingError> {
-    let mut decoder = ImageReader::new(Cursor::new(data))
+    // Bound the decode. Without explicit limits a small, well-formed
+    // "decompression bomb" (a few KB of PNG describing enormous dimensions)
+    // allocates its full uncompressed size before anything else runs — and an
+    // allocator abort is one of the few failures a catch_unwind boundary
+    // cannot rescue, so it takes the whole process down rather than one
+    // request. The caps below sit far above any legitimate photo.
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_DECODE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC_BYTES);
+
+    let mut reader = ImageReader::new(Cursor::new(data))
         .with_guessed_format()
-        .map_err(|e| ImagingError::DecodeError(e.to_string()))?
+        .map_err(|e| ImagingError::DecodeError(e.to_string()))?;
+    reader.limits(limits);
+
+    let mut decoder = reader
         .into_decoder()
         .map_err(|e| ImagingError::DecodeError(e.to_string()))?;
 

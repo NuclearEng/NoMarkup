@@ -168,6 +168,12 @@ func TestCreateChannel(t *testing.T) {
 			t.Parallel()
 			repo := newMockRepo()
 			svc := New(repo, nil)
+			// FR-8.1 is fail-closed: a pre-award channel needs a bid checker
+			// that confirms the provider bid. These cases exercise argument
+			// validation and the happy path, so give them a checker that says
+			// yes. The authorization behaviour itself is covered by
+			// TestCreateChannel_bidVerification below.
+			svc.SetBidChecker(stubBidChecker{hasBid: true})
 
 			ch, err := svc.CreateChannel(context.Background(), tt.jobID, tt.customerID, tt.providerID, tt.channelType)
 			if tt.wantErr {

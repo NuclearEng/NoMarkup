@@ -141,6 +141,11 @@ func main() {
 	// "your email and phone stay private until you reply"). DB-backed; safe to
 	// run unconditionally — it degrades to masking when no alias row exists.
 	svc.SetRelay(service.NewPGAliasLookup(pool))
+	// FR-8.1: a provider may only open a pre-award channel on a job they have
+	// bid on. CreateChannel now REFUSES when this is unset, so leaving it
+	// unwired denies access rather than silently disabling the check — which
+	// is what happened before: SetBidChecker had no callers at all.
+	svc.SetBidChecker(service.NewPGBidChecker(pool))
 	srv := chatgrpc.NewServer(svc)
 
 	// Create WebSocket hub and handler.
