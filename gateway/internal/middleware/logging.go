@@ -66,7 +66,7 @@ func Logging(next http.Handler) http.Handler {
 			"remote_addr", r.RemoteAddr,
 		}
 
-		if q := r.URL.RawQuery; q != "" {
+		if q := redactQuery(r.URL.RawQuery); q != "" {
 			attrs = append(attrs, "query", q)
 		}
 

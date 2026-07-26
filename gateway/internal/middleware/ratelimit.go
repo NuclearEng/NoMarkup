@@ -340,16 +340,52 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Per-user check: if the request has authenticated claims, also apply
-		// a per-user rate limit (same tier limits). This prevents a single
-		// user from consuming the entire IP bucket (e.g., shared office IP).
-		if claims, ok := GetClaims(r.Context()); ok && claims.UserID != "" {
-			userKey := tierName + ":user:" + claims.UserID
-			allowed, retryAfter = rl.allow(userKey, limit, window)
-			if !allowed {
-				writeRateLimitResponse(w, ip, path, tierName, limit, retryAfter)
-				return
-			}
+		// NOTE: the per-user check is deliberately NOT here. This middleware is
+		// registered with r.Use() on the top-level mux, which chi runs BEFORE
+		// any per-route auth middleware — so GetClaims would always miss and
+		// the branch would be dead code. Per-user limiting lives in
+		// UserMiddleware, applied inside the authenticated route groups.
+		next.ServeHTTP(w, r)
+	})
+}
+
+// UserMiddleware enforces the per-user half of the rate limit. It MUST be
+// mounted after the auth middleware that populates claims — mounting it before
+// makes it silently inert.
+//
+// This exists separately from Middleware because the IP limiter runs on the
+// top-level mux (it must cover unauthenticated routes such as /auth/login,
+// which is the one that most needs it) while claims only exist inside the
+// authenticated groups. Previously both checks lived in Middleware, so the
+// per-user bucket — whose stated purpose is stopping one account from
+// consuming the whole IP allowance on a shared office or CGNAT address —
+// never ran at all.
+//
+// A request with no claims is passed through untouched: the IP limiter has
+// already covered it, and this middleware is not an authentication gate.
+func (rl *RateLimiter) UserMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		tier := tierForPath(path)
+		if tier == TierNone {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		claims, ok := GetClaims(r.Context())
+		if !ok || claims.UserID == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		limit := rl.limitForTier(tier)
+		window := windowForTier(tier)
+		tierName := tierString(tier)
+
+		userKey := tierName + ":user:" + claims.UserID
+		if allowed, retryAfter := rl.allow(userKey, limit, window); !allowed {
+			writeRateLimitResponse(w, ClientIP(r), path, tierName, limit, retryAfter)
+			return
 		}
 
 		next.ServeHTTP(w, r)

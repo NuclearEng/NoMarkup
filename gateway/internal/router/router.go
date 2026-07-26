@@ -414,6 +414,12 @@ func New(
 	// Protected API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMW.Handler)
+		// Per-user rate limiting must run AFTER auth populates claims. The
+		// IP limiter is registered on the top-level mux above, which chi runs
+		// before any route middleware — so the per-user bucket has to be
+		// mounted here or it never sees a claim. This stops one account from
+		// consuming the whole IP allowance on a shared office/CGNAT address.
+		r.Use(rateLimiter.UserMiddleware)
 		// Authed responses are per-user: default to `private, no-store` so
 		// no shared cache (CDN/proxy) ever stores them. Set BEFORE handlers
 		// run, so a handler that sets its own Cache-Control overwrites the

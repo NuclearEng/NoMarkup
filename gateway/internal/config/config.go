@@ -11,7 +11,7 @@ import (
 // Config holds all gateway configuration loaded from environment variables.
 type Config struct {
 	Port               int
-	Environment        string // "production", "staging", or "development" (default)
+	Environment        string // "production", "staging", or "development" (required, validated)
 	DatabaseURL        string
 	DatabaseReadURL    string // replica for reads (search, analytics, profiles, public catalog). Falls back to DatabaseURL.
 	RedisURL           string
@@ -45,9 +45,29 @@ func Load() (*Config, error) {
 
 	origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3002")
 
+	// ENVIRONMENT drives a surprising amount of security behaviour: rate-limit
+	// multipliers (dev limits are 10x), the DATABASE_URL/REDIS_URL fail-fast,
+	// feature-flag fail-closed, /metrics exposure, and the PII-cipher
+	// fail-closed. Defaulting it to "development" meant an unset, misspelled,
+	// or "prod"-valued variable silently relaxed all of them at once — the
+	// single highest-leverage misconfiguration in the gateway.
+	//
+	// Follow the payment service (services/payment/cmd/server/main.go): no
+	// default, validated against a fixed set, fail closed. Values are trimmed
+	// and lower-cased so a stray space or capital letter in a ConfigMap is a
+	// clean startup failure rather than a silent downgrade.
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENVIRONMENT")))
+	switch env {
+	case "development", "staging", "production":
+	case "":
+		return nil, fmt.Errorf("ENVIRONMENT is required (development|staging|production)")
+	default:
+		return nil, fmt.Errorf("ENVIRONMENT must be one of development|staging|production, got %q", env)
+	}
+
 	cfg := &Config{
 		Port:               port,
-		Environment:        getEnv("ENVIRONMENT", "development"),
+		Environment:        env,
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
 		DatabaseReadURL:    getEnv("DATABASE_URL_REPLICA", getEnv("DATABASE_URL", "")),
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),

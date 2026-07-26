@@ -17,7 +17,7 @@ env:
   # bare minor (e.g. "1.26") can resolve to an older patch whose stdlib carries
   # vulns fixed in later patches (GO-2026-5039/-5037 fixed in 1.26.4).
   # Bump this in lockstep with the toolchain directive.
-  GO_VERSION: "1.26.4"
+  GO_VERSION: "1.26.5"
   NODE_VERSION: 22
 
 jobs:

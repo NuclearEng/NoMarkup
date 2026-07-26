@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,14 +26,29 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/services/user/internal/crypto"
 	grpcserver "github.com/nomarkup/nomarkup/services/user/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
 	"github.com/nomarkup/nomarkup/services/user/internal/service"
 )
+
+// isDevelopmentEnv reports whether this process is running in development.
+// Honors both ENVIRONMENT (service config convention) and APP_ENV (Sentry
+// convention), matching gateway/internal/handler/ws_origins.go. Comparison is
+// case- and whitespace-insensitive so "Development" or a stray trailing space
+// in a ConfigMap cannot silently flip a security decision — note that anything
+// that is NOT recognizably development is treated as production, which is the
+// fail-closed direction.
+func isDevelopmentEnv() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("ENVIRONMENT")), "development") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "development")
+}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -173,11 +189,28 @@ func main() {
 	}
 
 	// Wire up dependencies.
-	// When no notification service is configured, auto-verify emails on registration
-	// so users are not blocked from logging in.
-	skipEmailVerification := notifClient == nil
+	//
+	// Email verification may only be skipped in development, where there is no
+	// notification service to send the mail. Deriving it from
+	// `notifClient == nil` alone made it activate on ABSENCE: an unset or
+	// typo'd NOTIFICATION_SERVICE_ADDR — and the variable is currently set on
+	// the gateway deployment only, not on this service or the shared
+	// ConfigMap — silently marked every new account email_verified=true with
+	// no mail ever sent. That is the control gating account identity, password
+	// reset, and every downstream trust signal; registering as
+	// victim@example.com would have yielded a pre-verified account.
+	//
+	// Outside development a missing notification service is fatal instead:
+	// registration that cannot send a verification email must not proceed.
+	skipEmailVerification := notifClient == nil && isDevelopmentEnv()
+	if notifClient == nil && !isDevelopmentEnv() {
+		slog.Error("notification service is not configured; refusing to start outside development because email verification could not be enforced",
+			"env", strings.TrimSpace(os.Getenv("ENVIRONMENT")),
+		)
+		os.Exit(1)
+	}
 	if skipEmailVerification {
-		slog.Warn("email verification will be skipped on registration (no notification service)")
+		slog.Warn("DEVELOPMENT ONLY: email verification will be skipped on registration (no notification service)")
 	}
 
 	// Build the PII cipher (libsodium-compatible nacl/secretbox). In
@@ -239,6 +272,17 @@ func main() {
 	)
 	grpcserver.Register(s, srv)
 
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/user/deployment.yaml) uses native
+	// gRPC liveness/readiness probes, and kubelet queries the EMPTY service
+	// name. Without this registration every probe returns UNIMPLEMENTED,
+	// readiness never passes and liveness restarts the pod (CrashLoopBackOff).
+	// Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus(userv1.UserService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -265,6 +309,10 @@ func main() {
 
 	<-sigCtx.Done()
 	slog.Info("shutting down user service")
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs
+	// finish.
+	healthSrv.Shutdown()
 	s.GracefulStop()
 	slog.Info("user service stopped")
 }

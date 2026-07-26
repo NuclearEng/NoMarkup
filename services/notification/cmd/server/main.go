@@ -20,7 +20,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	notificationgrpc "github.com/nomarkup/nomarkup/services/notification/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/notification/internal/repository"
 	"github.com/nomarkup/nomarkup/services/notification/internal/service"
@@ -182,6 +185,17 @@ func main() {
 	)
 	notificationgrpc.Register(s, srv)
 
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/notification/deployment.yaml) uses
+	// native gRPC liveness/readiness probes, and kubelet queries the EMPTY
+	// service name. Without this registration every probe returns
+	// UNIMPLEMENTED, readiness never passes and liveness restarts the pod
+	// (CrashLoopBackOff). Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus(notificationv1.NotificationService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+
 	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
 	startObservabilityServer(ctx, "notification-service", port, pool)
 
@@ -195,6 +209,10 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down notification service")
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs
+	// finish.
+	healthSrv.Shutdown()
 	s.GracefulStop()
 	slog.Info("notification service stopped")
 }

@@ -22,7 +22,13 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
+	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
 	"github.com/nomarkup/nomarkup/services/job/internal/client"
 	"github.com/nomarkup/nomarkup/services/job/internal/config"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
@@ -232,6 +238,24 @@ func main() {
 	grpcserver.RegisterReview(s, reviewSrv)
 	grpcserver.RegisterAnalytics(s, analyticsSrv)
 
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/job/deployment.yaml) uses native
+	// gRPC liveness/readiness probes, and kubelet queries the EMPTY service
+	// name. Without this registration every probe returns UNIMPLEMENTED,
+	// readiness never passes and liveness restarts the pod (CrashLoopBackOff).
+	// Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	for _, name := range []string{
+		jobv1.JobService_ServiceDesc.ServiceName,
+		contractv1.ContractService_ServiceDesc.ServiceName,
+		reviewv1.ReviewService_ServiceDesc.ServiceName,
+		analyticsv1.AnalyticsService_ServiceDesc.ServiceName,
+	} {
+		healthSrv.SetServingStatus(name, healthpb.HealthCheckResponse_SERVING)
+	}
+
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -261,6 +285,10 @@ func main() {
 
 	<-sigCtx.Done()
 	slog.Info("shutting down job service")
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs
+	// finish.
+	healthSrv.Shutdown()
 	s.GracefulStop()
 	slog.Info("job service stopped")
 }

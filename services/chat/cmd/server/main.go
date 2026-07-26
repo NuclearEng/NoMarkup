@@ -22,7 +22,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	chatgrpc "github.com/nomarkup/nomarkup/services/chat/internal/grpc"
 	"github.com/nomarkup/nomarkup/services/chat/internal/repository"
 	"github.com/nomarkup/nomarkup/services/chat/internal/service"
@@ -158,6 +161,17 @@ func main() {
 	)
 	chatgrpc.Register(s, srv)
 
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/chat/deployment.yaml) uses native
+	// gRPC liveness/readiness probes, and kubelet queries the EMPTY service
+	// name. Without this registration every probe returns UNIMPLEMENTED,
+	// readiness never passes and liveness restarts the pod (CrashLoopBackOff).
+	// Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus(chatv1.ChatService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+
 	// Observability HTTP server (healthz / readyz / metrics + active_websocket_connections gauge).
 	startObservabilityServer(ctx, "chat-service", port, pool, rdb, hub)
 
@@ -195,6 +209,11 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down chat service")
+
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs and
+	// WebSocket connections finish.
+	healthSrv.Shutdown()
 
 	// Close all WebSocket connections gracefully.
 	hub.CloseAll()

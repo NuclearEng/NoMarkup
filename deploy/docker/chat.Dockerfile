@@ -2,7 +2,7 @@
 # Multi-stage build for the Chat Service.
 # Build context must be the repository root.
 
-FROM golang:1.26.4-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 WORKDIR /app
 RUN echo "══════════════════════════════════════════════════════════" && \
     echo "  CHAT-SERVICE · Build started"                            && \
