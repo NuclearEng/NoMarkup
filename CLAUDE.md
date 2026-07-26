@@ -64,7 +64,7 @@ Stripe, WebSocket fan-out, **Meilisearch** coordination, and **PostGIS** geo. Se
 ### Database
 - **PostgreSQL 16 + PostGIS 3.4** (primary) · **Redis 7** (cache/sessions/pubsub) ·
   **Meilisearch 1.x** (search) · S3-compatible storage (MinIO local, AWS S3 prod)
-- Migrations: forward-only in production, reversible in development (currently through **`073_*`**)
+- Migrations: forward-only in production, reversible in development (currently through **`097_*`**)
 
 ### Infrastructure
 - Docker + Compose (local) · Kubernetes **manifests** (prod path) · GitHub Actions CI/CD
@@ -131,9 +131,12 @@ in prod**; `?` + `.context()`. Zero-copy/pre-alloc in hot paths; `Arc` not `Rc`.
 exist for hot paths — run locally / nightly; **not enforced in CI**. Tokio — never block the runtime
 (`spawn_blocking` for CPU).
 
-**SQL**: snake_case plural tables; UUID v7 `id`; `{singular}_id` FKs; UTC `created_at`/`updated_at`;
+**SQL**: snake_case plural tables; UUID `id` (**gen_random_uuid() = v4 in every table today**; v7 is
+the stated preference but no generator exists in the DB — do not claim v7 ordering guarantees); `{singular}_id` FKs; UTC `created_at`/`updated_at`;
 soft-delete via `deleted_at` (not boolean); **money is BIGINT cents** (never DECIMAL/FLOAT); PostGIS
-`geometry(Point,4326)`; index every FK + WHERE/ORDER BY column (`idx_{table}_{cols}`); one operation
+`geometry(Point,4326)`; index every FK + WHERE/ORDER BY column (`idx_{table}_{cols}`) — 26 cold audit/taxonomy FKs are
+deliberately exempt, listed in migration `083`'s header; note a partial index only covers an FK
+check when its predicate is exactly `col IS NOT NULL`; one operation
 per migration, every migration has a down; never edit a deployed migration.
 
 **Protobuf**: gRPC v3 under `/proto/{service}/v1/`; package `nomarkup.{service}.v1`; `{Service}Service`;
@@ -161,8 +164,17 @@ These are non-negotiable. The hooks enforce many automatically.
 
 ### Data Protection
 - **PII at rest:** selected fields encrypted with **XSalsa20-Poly1305** (`nacl/secretbox`). Inventory
-  includes phone, MFA secret, provider service address, EIN/TIN, insurance policy number (see
-  migrations `031`/`033`). **Email remains plaintext** for auth lookup. Not AES-256-GCM whole-row.
+  includes phone, MFA secret, provider service address (see migrations `031`/`033`). **Email remains
+  plaintext** for auth lookup. Not AES-256-GCM whole-row.
+  **Known gaps — do not claim these are covered:** `ein_tin` and `insurance_policy_number` are
+  encrypted by the one-shot backfill tool ONLY, with no runtime write path, so new rows land in
+  plaintext. `properties.location` / `service_location` geometry is unencrypted next to the
+  encrypted address, and reverse-geocodes back to it. `jobs.service_address` (a customer home
+  address), `ssn_last_four`, `users.dob`, and provider licence numbers are in neither migration.
+  The `/users/me/export` GDPR handler holds no cipher and returns ciphertext.
+  **Key handling:** `ENCRYPTION_KEY` is mandatory outside development — the ephemeral-key fallback
+  is gated on "is this development?", not "is this production?", because staging runs multiple
+  replicas and a per-pod key silently corrupts PII.
 - **TLS:** public edge **TLS 1.3** (ingress/CDN). **gRPC mesh is currently insecure credentials
   (plaintext) on the private network**; target is mTLS — do not claim "TLS 1.3 for all connections."
 - CORS: explicit origin allowlist, no wildcards in prod.
@@ -170,7 +182,12 @@ These are non-negotiable. The hooks enforce many automatically.
   **`style-src` allows `'unsafe-inline'`** (Next.js / tooling injects styles). Do not claim
   "no unsafe-inline" without the style exception.
 - Rate limiting: per-IP tiers. Stricter on auth endpoints (5 attempts/15 min target).
-- File uploads: validate MIME server-side (don't trust Content-Type). Max 10MB images, 25MB docs.
+- File uploads: validate MIME server-side (don't trust Content-Type). **10MB for every context,
+  documents included** — there is no separate 25MB doc path (`MAX_FILE_SIZE_BYTES`). Enforced in
+  three places: `http.MaxBytesReader` on the gateway multipart route (`ParseMultipartForm`'s
+  argument is a memory budget, NOT a cap), `content_length` bound into the presigned S3 PUT
+  signature (the declared size is client-supplied and cannot be trusted), and decoder width/height/
+  allocation limits in the imaging engine.
 
 ### Payment Security
 - All price calculations server-side. Client displays only.
@@ -178,14 +195,17 @@ These are non-negotiable. The hooks enforce many automatically.
 - Idempotency keys on payment mutations (required on critical paths; remaining gaps tracked in
   `docs/planning/adversarial-action-tracker.md`).
 - PCI DSS: never touch raw card numbers — Stripe Elements/PaymentIntent only.
-- Escrow: funds held in Stripe Connect Express. Released only on completion confirmation (services /
+- Escrow: funds held in Stripe Connect Express. Release and refund carry an **actor**: the provider
+  may never release their own escrow, and a refund after payout is admin-only (it draws on the
+  platform balance). Note contract completion still does not itself trigger release (services /
   goods paths as implemented).
 
 ### Feature flags
 - Admin-togglable keys; `RequireFlag` → **503 when the flag row exists and `enabled=false`**.
-- **Current:** missing flag row or DB error **fails open** (feature treated as enabled).
-- **Production target for financial keys:** fail-closed on missing row / DB error (SEC-01). Document
-  both until the code change lands.
+- **Fails closed in production** (SEC-01, shipped): missing flag row, DB error, and nil DB all →
+  503 when `ENVIRONMENT=production`. Non-production keeps fail-open for missing/error only.
+- **Caveat:** only 6 route groups call `RequireFlag`. Of the 13 flags in the DB, 7 have no backend
+  enforcement at all and gate UI only — toggling those off does not close the API.
 
 ### Secrets Management
 - No secrets in code. Ever. Claude Code hooks detect many patterns. Dev: `.env.local` (gitignored).
@@ -196,8 +216,9 @@ These are non-negotiable. The hooks enforce many automatically.
 
 ## 7. Testing Standards
 
-- **Web coverage floors** (Vitest v8, whole-app include — see `web/vitest.config.mts`): branches **71**,
-  functions **75**, lines **77**, statements **76**. Ratchet up; do not claim blanket "80% all stacks."
+- **Web coverage floors** (Vitest v8, whole-app include — see `web/vitest.config.mts`): branches **76**,
+  functions **80**, lines **80**, statements **80** — these are the values the config actually
+  enforces. Ratchet up; do not claim blanket "80% all stacks" (Go/Rust are not gated).
 - **Go / Rust coverage:** strong unit + proptest culture; **not** CI-gated at 80% today.
 - **Frontend** (Vitest + RTL + Playwright): test behavior not implementation; `user-event` preferred;
   data-fetching components should cover loading/success/error/empty. **E2E in CI:** Chromium,
@@ -257,8 +278,17 @@ JS <200KB gz · per-route <50KB gz · hero image <200KB (WebP/AVIF).
 Structured JSON logs everywhere — no `fmt.Println`, no `console.log`. Every entry: timestamp, level,
 service, request_id, message, fields. Every HTTP/gRPC call logged with method/path/status/duration_ms/
 request_id. OpenTelemetry spans across all services (trace ID via `traceparent`); every external call
-(DB, Redis, Stripe, S3) gets its own span. Prometheus counters/histograms on requests, bid/trust
-durations, active WS connections, Stripe webhook processing.
+(DB via otelpgx, Redis, Stripe, Meilisearch) gets its own span, and the gateway emits an inbound
+HTTP root span so the user-facing request appears in the trace. **No S3 spans** — no AWS SDK exists
+in any Go module. `request_id` seeds the request context, flows outward as gRPC metadata, and is
+stamped onto every `slog.*Context` record by a handler decorator; plain `slog.Info` calls without a
+ctx still do not carry it. Prometheus counters/histograms on requests, outbound gRPC calls,
+bid/trust durations, active WS connections, and Stripe event processing (including
+`stripe_webhook_event_lag_seconds`, which is the backlog signal — processing duration stays flat
+while lag climbs).
+**Scrape auth:** `/metrics` 401s every non-loopback request in production unless
+`METRICS_BEARER_TOKEN` is set on the gateway AND mirrored to Prometheus. Without it every alert
+built on `http_requests_total` silently never fires, including both P0 payment alerts.
 
 → **Full metric list: `docs/conventions.md`.**
 
@@ -320,7 +350,7 @@ criterion for new work — do not claim the North Star is shipped.
    reads use `writeCachedJSON` (`gateway/internal/handler/response.go`): `public, s-maxage +
    stale-while-revalidate + stale-if-error` + strong `ETag`/`304`. Authed reads stay uncached. This
    DATA-layer CDN cache **is real and shipped**.
-2. **On interactive pages, RSC wins LCP/SEO, not bundle size.** Shared First Load is ~183 kB (the
+2. **On interactive pages, RSC wins LCP/SEO, not bundle size.** Shared First Load is ~195 kB measured (the
    React floor); heavy deps like mapbox are already lazy. Don't promise a JS cut from RSC on an
    interactive surface.
 
