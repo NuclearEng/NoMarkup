@@ -344,8 +344,19 @@ func main() {
 	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
 	featureFlagHandler := handler.NewFeatureFlagHandler(dbReadPool, cacheClient) // public flags + admin are safe on replica (small table)
+	// Construct the PII cipher BEFORE any handler that needs it. Several
+	// handlers take it as a variadic and fall back to building their own from
+	// the environment — which is not a security regression (FromEnv still
+	// fails closed outside development) but means each one silently owns a
+	// separate cipher, and a future change to key loading would have to be
+	// found in four places instead of one. Pass the shared instance.
+	piiCipher, err := gatewaycrypto.FromEnv()
+	if err != nil {
+		slog.Error("crypto: load encryption key", "error", err)
+		os.Exit(1)
+	}
 	insuranceCompetitionHandler := handler.NewInsuranceCompetitionHandler(dbPool)
-	providerLicenseHandler := handler.NewProviderLicenseHandler(dbPool)
+	providerLicenseHandler := handler.NewProviderLicenseHandler(dbPool, piiCipher)
 	pricingHandler := handler.NewPricingHandler(dbReadPool) // fair price + analytics reads
 	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
 	challengeHandler := handler.NewChallengeHandler(dbPool)
@@ -354,11 +365,6 @@ func main() {
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, contractClient, cacheClient)
 	disputeHandler := handler.NewDisputeHandler(contractClient, dbPool)
-	piiCipher, err := gatewaycrypto.FromEnv()
-	if err != nil {
-		slog.Error("crypto: load encryption key", "error", err)
-		os.Exit(1)
-	}
 	employeesHandler := handler.NewEmployeesHandler(dbPool, piiCipher)
 	adminMarketplaceHandler := handler.NewAdminMarketplaceHandler(dbPool)
 	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
@@ -376,7 +382,7 @@ func main() {
 	listingsHandler.SetPaymentClient(paymentClient)
 	followsHandler := handler.NewFollowsHandler(dbPool)
 	pushSubscriptionsHandler := handler.NewPushSubscriptionsHandler(dbPool)
-	complianceHandler := handler.NewComplianceHandler(dbPool)
+	complianceHandler := handler.NewComplianceHandler(dbPool, piiCipher)
 	bidBondHandler := handler.NewBidBondHandler(dbPool, paymentClient)
 	offersHandler := handler.NewOffersHandler(dbPool)
 	// Wire ChargeListingWinner for offer-accept closeouts (same MON-06 rule).
@@ -405,7 +411,7 @@ func main() {
 	categoryQuestionsHandler := handler.NewCategoryQuestionsHandler(dbPool)
 	quoteTemplatesHandler := handler.NewQuoteTemplatesHandler(dbPool)
 	contractTipHandler := handler.NewContractTipHandler(dbPool)
-	calendarExportHandler := handler.NewCalendarExportHandler(dbPool, publicKey)
+	calendarExportHandler := handler.NewCalendarExportHandler(dbPool, publicKey, piiCipher)
 	marketsHandler := handler.NewMarketsHandler(dbPool)
 	adminMarketsHandler := handler.NewAdminMarketsHandler(dbPool)
 
