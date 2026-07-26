@@ -301,6 +301,28 @@ fn init_tracing(service_name: &str) {
     }
 }
 
+/// Maximum sqlx pool connections, from `DB_MAX_CONNS`.
+///
+/// Previously hardcoded to 20. Stock PostgreSQL allows roughly 90 usable
+/// connections, and the Go tier alone already budgets ~78 across 13 pools
+/// (see `services/*/internal/observability`). Three engines x 20 x 2 replicas
+/// adds another 120, so the mesh as a whole overshot the server limit and
+/// Postgres would begin refusing connections under load — the engines just
+/// happened to be the ones nobody had counted.
+///
+/// 6 matches the Go tier's per-pool budget. An invalid or zero value falls
+/// back to the default rather than failing startup: this is a capacity knob,
+/// not a security control, and refusing to boot over a typo'd tuning value
+/// would be worse than using a sane default.
+fn db_max_connections() -> u32 {
+    const DEFAULT_MAX_CONNS: u32 = 6;
+    std::env::var("DB_MAX_CONNS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_MAX_CONNS)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     init_tracing("fraud-engine");
@@ -330,7 +352,7 @@ async fn run() -> anyhow::Result<()> {
     let addr = format!("0.0.0.0:{port}").parse()?;
 
     let pool = PgPoolOptions::new()
-        .max_connections(20)
+        .max_connections(db_max_connections())
         .connect_lazy(&database_url)?;
 
     let engine = Arc::new(FraudDetector::new(pool));
