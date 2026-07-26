@@ -45,13 +45,17 @@ import (
 	gatewaycrypto "github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/handler"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"github.com/nomarkup/nomarkup/gateway/internal/observability"
 	"github.com/nomarkup/nomarkup/gateway/internal/router"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	// The ContextHandler decorator stamps request_id / trace_id / span_id onto
+	// every record logged with a *Context variant, so existing call sites become
+	// correlatable without touching them.
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	cfg, err := config.Load()
@@ -104,8 +108,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Shared dial options for every backend connection. otelgrpc's stats handler
+	// continues the inbound HTTP server span across the hop; the interceptors
+	// observe the outbound gRPC metrics and forward the request id as metadata.
+	grpcDialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithUnaryInterceptor(middleware.GRPCClientInterceptor),
+		grpc.WithStreamInterceptor(middleware.GRPCStreamClientInterceptor),
+	}
+
 	// Connect to User Service via gRPC.
-	userConn, err := grpc.NewClient(cfg.UserServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	userConn, err := grpc.NewClient(cfg.UserServiceAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to user service", "addr", cfg.UserServiceAddr, "error", err)
 		os.Exit(1)
@@ -115,7 +129,7 @@ func main() {
 	userClient := userv1.NewUserServiceClient(userConn)
 
 	// Connect to Job Service via gRPC.
-	jobConn, err := grpc.NewClient(cfg.JobServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	jobConn, err := grpc.NewClient(cfg.JobServiceAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to job service", "addr", cfg.JobServiceAddr, "error", err)
 		os.Exit(1)
@@ -128,7 +142,7 @@ func main() {
 	contractClient := contractv1.NewContractServiceClient(jobConn)
 
 	// Connect to Bid Engine via gRPC.
-	bidConn, err := grpc.NewClient(cfg.BidEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	bidConn, err := grpc.NewClient(cfg.BidEngineAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to bid engine", "addr", cfg.BidEngineAddr, "error", err)
 		os.Exit(1)
@@ -138,7 +152,7 @@ func main() {
 	bidClient := bidv1.NewBidServiceClient(bidConn)
 
 	// Connect to Payment Service via gRPC.
-	paymentConn, err := grpc.NewClient(cfg.PaymentServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	paymentConn, err := grpc.NewClient(cfg.PaymentServiceAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to payment service", "addr", cfg.PaymentServiceAddr, "error", err)
 		os.Exit(1)
@@ -148,7 +162,7 @@ func main() {
 	paymentClient := paymentv1.NewPaymentServiceClient(paymentConn)
 
 	// Connect to Chat Service via gRPC.
-	chatConn, err := grpc.NewClient(cfg.ChatServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	chatConn, err := grpc.NewClient(cfg.ChatServiceAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to chat service", "addr", cfg.ChatServiceAddr, "error", err)
 		os.Exit(1)
@@ -158,7 +172,7 @@ func main() {
 	chatClient := chatv1.NewChatServiceClient(chatConn)
 
 	// Connect to Trust Engine via gRPC.
-	trustConn, err := grpc.NewClient(cfg.TrustEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	trustConn, err := grpc.NewClient(cfg.TrustEngineAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to trust engine", "addr", cfg.TrustEngineAddr, "error", err)
 		os.Exit(1)
@@ -168,7 +182,7 @@ func main() {
 	trustClient := trustv1.NewTrustServiceClient(trustConn)
 
 	// Connect to Fraud Engine via gRPC.
-	fraudConn, err := grpc.NewClient(cfg.FraudEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	fraudConn, err := grpc.NewClient(cfg.FraudEngineAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to fraud engine", "addr", cfg.FraudEngineAddr, "error", err)
 		os.Exit(1)
@@ -178,7 +192,7 @@ func main() {
 	fraudClient := fraudv1.NewFraudServiceClient(fraudConn)
 
 	// Connect to Notification Service via gRPC.
-	notifConn, err := grpc.NewClient(cfg.NotificationServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	notifConn, err := grpc.NewClient(cfg.NotificationServiceAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to notification service", "addr", cfg.NotificationServiceAddr, "error", err)
 		os.Exit(1)
@@ -188,7 +202,7 @@ func main() {
 	notifClient := notificationv1.NewNotificationServiceClient(notifConn)
 
 	// Connect to Imaging Service via gRPC.
-	imagingConn, err := grpc.NewClient(cfg.ImagingServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	imagingConn, err := grpc.NewClient(cfg.ImagingServiceAddr, grpcDialOpts...)
 	if err != nil {
 		slog.Error("failed to connect to imaging service", "addr", cfg.ImagingServiceAddr, "error", err)
 		os.Exit(1)
@@ -207,7 +221,7 @@ func main() {
 	// The pool is nil-safe — handlers degrade gracefully if DATABASE_URL is not set.
 	var dbPool *pgxpool.Pool
 	if cfg.DatabaseURL != "" {
-		dbPool, err = pgxpool.New(context.Background(), cfg.DatabaseURL)
+		dbPool, err = observability.NewPGXPool(context.Background(), cfg.DatabaseURL)
 		if err != nil {
 			slog.Error("failed to connect to database", "error", err)
 			os.Exit(1)
@@ -223,7 +237,7 @@ func main() {
 	var dbReadPool *pgxpool.Pool
 	readURL := cfg.DatabaseReadURL
 	if readURL != "" && readURL != cfg.DatabaseURL {
-		dbReadPool, err = pgxpool.New(context.Background(), readURL)
+		dbReadPool, err = observability.NewPGXPool(context.Background(), readURL)
 		if err != nil {
 			slog.Error("failed to connect to database replica", "error", err)
 			os.Exit(1)
@@ -385,7 +399,12 @@ func main() {
 	// production: booting green with search silently dead is fail-open.
 	var meiliClient meilisearch.ServiceManager
 	if meiliURL := config.ResolveMeilisearchURL(); meiliURL != "" {
-		meiliClient = meilisearch.New(meiliURL, meilisearch.WithAPIKey(os.Getenv("MEILISEARCH_API_KEY")))
+		meiliClient = meilisearch.New(meiliURL,
+			meilisearch.WithAPIKey(os.Getenv("MEILISEARCH_API_KEY")),
+			// Traced transport: Meilisearch has no OTel integration of its own,
+			// so without this a slow search is an unexplained gap in the trace.
+			meilisearch.WithCustomClient(observability.NewTracedHTTPClient("meilisearch")),
+		)
 		slog.Info("meilisearch client initialized", "url", meiliURL)
 	} else if cfg.IsProduction() {
 		slog.Error("MEILISEARCH_URL is required in production (search would be silently disabled)")

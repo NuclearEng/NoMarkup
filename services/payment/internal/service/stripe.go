@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/nomarkup/nomarkup/services/payment/internal/observability"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/account"
 	"github.com/stripe/stripe-go/v82/accountlink"
@@ -28,6 +30,13 @@ import (
 type StripeService struct {
 	devMode bool
 	dev     *DevStore
+	// devOnce guards the lazy initialization of dev. Without it, DevStore()
+	// was an unsynchronized check-then-set: two goroutines could both observe
+	// a nil dev and each install their own store, so concurrent refunds and
+	// escrow releases recorded their idempotency keys into DIFFERENT maps and
+	// the dedup silently stopped working. `go test -race` reported it on every
+	// run — which is why the money-race CI job had never passed.
+	devOnce sync.Once
 }
 
 // NewStripeService creates a new StripeService for the given deployment
@@ -65,9 +74,11 @@ func (s *StripeService) IsDevMode() bool { return s.devMode }
 // initializes if a caller (e.g. tests) constructed StripeService directly
 // without NewStripeService.
 func (s *StripeService) DevStore() *DevStore {
-	if s.dev == nil {
-		s.dev = newDevStore()
-	}
+	s.devOnce.Do(func() {
+		if s.dev == nil {
+			s.dev = newDevStore()
+		}
+	})
 	return s.dev
 }
 
@@ -120,7 +131,9 @@ func (s *StripeService) CreateStripeAccount(ctx context.Context, email, business
 		}
 	}
 
-	acct, err := account.New(params)
+	acct, err := observability.TraceStripeCall(ctx, "Account.Create", func(context.Context) (*stripe.Account, error) {
+		return account.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create stripe account: %w", err)
 	}
@@ -141,7 +154,9 @@ func (s *StripeService) GetOnboardingLink(ctx context.Context, accountID, return
 		RefreshURL: stripe.String(refreshURL),
 	}
 
-	link, err := accountlink.New(params)
+	link, err := observability.TraceStripeCall(ctx, "AccountLink.Create", func(context.Context) (*stripe.AccountLink, error) {
+		return accountlink.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("get onboarding link: %w", err)
 	}
@@ -160,7 +175,9 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 		}, nil
 	}
 
-	acct, err := account.GetByID(accountID, nil)
+	acct, err := observability.TraceStripeCall(ctx, "Account.Get", func(context.Context) (*stripe.Account, error) {
+		return account.GetByID(accountID, nil)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("get account status: %w", err)
 	}
@@ -190,7 +207,9 @@ func (s *StripeService) GetDashboardLink(ctx context.Context, accountID string) 
 		Account: stripe.String(accountID),
 	}
 
-	link, err := loginlink.New(params)
+	link, err := observability.TraceStripeCall(ctx, "LoginLink.Create", func(context.Context) (*stripe.LoginLink, error) {
+		return loginlink.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("get dashboard link: %w", err)
 	}
@@ -212,7 +231,9 @@ func (s *StripeService) CreateSetupIntent(ctx context.Context, customerID string
 		params.AddMetadata("platform_customer_id", customerID)
 	}
 
-	si, err := setupintent.New(params)
+	si, err := observability.TraceStripeCall(ctx, "SetupIntent.Create", func(context.Context) (*stripe.SetupIntent, error) {
+		return setupintent.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create setup intent: %w", err)
 	}
@@ -273,8 +294,10 @@ func (s *StripeService) GetSetupIntentStatus(ctx context.Context, clientSecret, 
 		return SetupIntentStatus{}, fmt.Errorf("get setup intent status: malformed client secret")
 	}
 
-	si, err := setupintent.Get(id, &stripe.SetupIntentParams{
-		ClientSecret: stripe.String(clientSecret),
+	si, err := observability.TraceStripeCall(ctx, "SetupIntent.Get", func(context.Context) (*stripe.SetupIntent, error) {
+		return setupintent.Get(id, &stripe.SetupIntentParams{
+			ClientSecret: stripe.String(clientSecret),
+		})
 	})
 	if err != nil {
 		return SetupIntentStatus{}, fmt.Errorf("get setup intent status: %w", err)
@@ -306,6 +329,11 @@ func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID
 		Type:     stripe.String(string(stripe.PaymentMethodTypeCard)),
 	}
 
+	// The span covers the whole iteration, not each page: the Stripe iterator
+	// fetches lazily, so ending it at List() would report ~0ms and hide the
+	// actual pagination cost.
+	_, span := observability.StartStripeSpan(ctx, "PaymentMethod.List")
+
 	var methods []domain.PaymentMethod
 	i := paymentmethod.List(params)
 	for i.Next() {
@@ -323,8 +351,10 @@ func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID
 		methods = append(methods, m)
 	}
 	if err := i.Err(); err != nil {
+		observability.EndStripeSpan(span, err)
 		return nil, fmt.Errorf("list payment methods: %w", err)
 	}
+	observability.EndStripeSpan(span, nil)
 	return methods, nil
 }
 
@@ -335,7 +365,9 @@ func (s *StripeService) DeletePaymentMethod(ctx context.Context, paymentMethodID
 		return nil
 	}
 
-	_, err := paymentmethod.Detach(paymentMethodID, nil)
+	_, err := observability.TraceStripeCall(ctx, "PaymentMethod.Detach", func(context.Context) (*stripe.PaymentMethod, error) {
+		return paymentmethod.Detach(paymentMethodID, nil)
+	})
 	if err != nil {
 		return fmt.Errorf("delete payment method: %w", err)
 	}
@@ -375,7 +407,9 @@ func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := paymentintent.New(params)
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+		return paymentintent.New(params)
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("create payment intent: %w", err)
 	}
@@ -396,7 +430,9 @@ func (s *StripeService) CapturePaymentIntent(ctx context.Context, paymentIntentI
 
 	params := &stripe.PaymentIntentCaptureParams{}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
-	_, err := paymentintent.Capture(paymentIntentID, params)
+	_, err := observability.TraceStripeCall(ctx, "PaymentIntent.Capture", func(context.Context) (*stripe.PaymentIntent, error) {
+		return paymentintent.Capture(paymentIntentID, params)
+	})
 	if err != nil {
 		return fmt.Errorf("capture payment intent: %w", err)
 	}
@@ -424,7 +460,9 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	if strings.HasPrefix(paymentIntentID, "pi_") {
 		getParams := &stripe.PaymentIntentParams{}
 		getParams.AddExpand("latest_charge")
-		pi, err := paymentintent.Get(paymentIntentID, getParams)
+		pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(context.Context) (*stripe.PaymentIntent, error) {
+			return paymentintent.Get(paymentIntentID, getParams)
+		})
 		if err != nil {
 			return "", fmt.Errorf("create transfer: resolve payment intent for charge: %w", err)
 		}
@@ -454,7 +492,9 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	t, err := transfer.New(params)
+	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(context.Context) (*stripe.Transfer, error) {
+		return transfer.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create transfer: %w", err)
 	}
@@ -486,7 +526,9 @@ func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents 
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	t, err := transfer.New(params)
+	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(context.Context) (*stripe.Transfer, error) {
+		return transfer.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create platform transfer: %w", err)
 	}
@@ -513,7 +555,9 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	r, err := refund.New(params)
+	r, err := observability.TraceStripeCall(ctx, "Refund.Create", func(context.Context) (*stripe.Refund, error) {
+		return refund.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create refund: %w", err)
 	}
@@ -551,7 +595,9 @@ func (s *StripeService) CreateConnectInstantPayout(ctx context.Context, amountCe
 	params.SetStripeAccount(connectAccountID)
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	p, err := payout.New(params)
+	p, err := observability.TraceStripeCall(ctx, "Payout.Create", func(context.Context) (*stripe.Payout, error) {
+		return payout.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create connect instant payout: %w", err)
 	}
@@ -562,13 +608,13 @@ func (s *StripeService) CreateConnectInstantPayout(ctx context.Context, amountCe
 // after attaching an external bank account to the platform account. Raw
 // account/routing numbers are never present.
 type StripeExternalBankAccount struct {
-	ID            string // ba_...
-	BankName      string
-	Last4         string
-	RoutingLast4  string
-	Currency      string
-	Country       string
-	Status        string
+	ID           string // ba_...
+	BankName     string
+	Last4        string
+	RoutingLast4 string
+	Currency     string
+	Country      string
+	Status       string
 }
 
 // CreatePlatformExternalBankAccount attaches an external bank account to the
@@ -594,7 +640,9 @@ func (s *StripeService) CreatePlatformExternalBankAccount(ctx context.Context, b
 	}
 
 	// Resolve the platform's own account (the account tied to the secret key).
-	platformAcct, err := account.Get()
+	platformAcct, err := observability.TraceStripeCall(ctx, "Account.Get", func(context.Context) (*stripe.Account, error) {
+		return account.Get()
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create platform external bank account: resolve platform account: %w", err)
 	}
@@ -610,7 +658,9 @@ func (s *StripeService) CreatePlatformExternalBankAccount(ctx context.Context, b
 		params.AccountHolderType = stripe.String(holderType)
 	}
 
-	ba, err := bankaccount.New(params)
+	ba, err := observability.TraceStripeCall(ctx, "BankAccount.Create", func(context.Context) (*stripe.BankAccount, error) {
+		return bankaccount.New(params)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create platform external bank account: %w", err)
 	}
@@ -642,7 +692,9 @@ func (s *StripeService) DeletePlatformExternalBankAccount(ctx context.Context, e
 		return nil
 	}
 
-	platformAcct, err := account.Get()
+	platformAcct, err := observability.TraceStripeCall(ctx, "Account.Get", func(context.Context) (*stripe.Account, error) {
+		return account.Get()
+	})
 	if err != nil {
 		return fmt.Errorf("delete platform external bank account: resolve platform account: %w", err)
 	}
@@ -650,7 +702,9 @@ func (s *StripeService) DeletePlatformExternalBankAccount(ctx context.Context, e
 	params := &stripe.BankAccountParams{
 		Account: stripe.String(platformAcct.ID),
 	}
-	if _, err := bankaccount.Del(externalAccountID, params); err != nil {
+	if _, err := observability.TraceStripeCall(ctx, "BankAccount.Delete", func(context.Context) (*stripe.BankAccount, error) {
+		return bankaccount.Del(externalAccountID, params)
+	}); err != nil {
 		return fmt.Errorf("delete platform external bank account: %w", err)
 	}
 	return nil
@@ -699,7 +753,9 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := paymentintent.New(params)
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+		return paymentintent.New(params)
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("create marketplace payment intent: %w", err)
 	}
@@ -750,7 +806,9 @@ func (s *StripeService) CreateMarketplaceTransfer(
 		if strings.HasPrefix(paymentIntentID, "pi_") {
 			getParams := &stripe.PaymentIntentParams{}
 			getParams.AddExpand("latest_charge")
-			pi, err := paymentintent.Get(paymentIntentID, getParams)
+			pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(context.Context) (*stripe.PaymentIntent, error) {
+				return paymentintent.Get(paymentIntentID, getParams)
+			})
 			if err != nil {
 				return "", fmt.Errorf("create marketplace transfer: resolve charge: %w", err)
 			}
@@ -764,7 +822,9 @@ func (s *StripeService) CreateMarketplaceTransfer(
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	t, err := transfer.New(params)
+	t, err := observability.TraceStripeCall(ctx, "Transfer.Create", func(context.Context) (*stripe.Transfer, error) {
+		return transfer.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create marketplace transfer: %w", err)
 	}
@@ -799,7 +859,9 @@ func (s *StripeService) CreateMarketplaceRefund(
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	r, err := refund.New(params)
+	r, err := observability.TraceStripeCall(ctx, "Refund.Create", func(context.Context) (*stripe.Refund, error) {
+		return refund.New(params)
+	})
 	if err != nil {
 		return "", fmt.Errorf("create marketplace refund: %w", err)
 	}
@@ -834,7 +896,9 @@ func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amoun
 	}
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := paymentintent.New(params)
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+		return paymentintent.New(params)
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("create off-session payment intent: %w", err)
 	}
@@ -859,7 +923,9 @@ func (s *StripeService) CreateInsurancePaymentIntent(ctx context.Context, amount
 	params.AddMetadata("policy_id", policyID)
 	params.IdempotencyKey = stripe.String(idempotencyKey)
 
-	pi, err := paymentintent.New(params)
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Create", func(context.Context) (*stripe.PaymentIntent, error) {
+		return paymentintent.New(params)
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("create insurance payment intent: %w", err)
 	}
@@ -888,7 +954,9 @@ func (s *StripeService) CreateStripeSubscription(ctx context.Context, customerID
 	params.AddExpand("latest_invoice.payment_intent")
 	params.AddMetadata("platform_customer_id", customerID)
 
-	sub, err := stripesub.New(params)
+	sub, err := observability.TraceStripeCall(ctx, "Subscription.Create", func(context.Context) (*stripe.Subscription, error) {
+		return stripesub.New(params)
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("create stripe subscription: %w", err)
 	}
@@ -909,7 +977,9 @@ func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubs
 	}
 
 	if cancelImmediately {
-		_, err := stripesub.Cancel(stripeSubscriptionID, nil)
+		_, err := observability.TraceStripeCall(ctx, "Subscription.Cancel", func(context.Context) (*stripe.Subscription, error) {
+			return stripesub.Cancel(stripeSubscriptionID, nil)
+		})
 		if err != nil {
 			return fmt.Errorf("cancel stripe subscription: %w", err)
 		}
@@ -917,7 +987,9 @@ func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubs
 		params := &stripe.SubscriptionParams{
 			CancelAtPeriodEnd: stripe.Bool(true),
 		}
-		_, err := stripesub.Update(stripeSubscriptionID, params)
+		_, err := observability.TraceStripeCall(ctx, "Subscription.Update", func(context.Context) (*stripe.Subscription, error) {
+			return stripesub.Update(stripeSubscriptionID, params)
+		})
 		if err != nil {
 			return fmt.Errorf("cancel stripe subscription at period end: %w", err)
 		}
@@ -938,7 +1010,9 @@ func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubs
 	}
 
 	// Get current subscription to find the item ID.
-	sub, err := stripesub.Get(stripeSubscriptionID, nil)
+	sub, err := observability.TraceStripeCall(ctx, "Subscription.Get", func(context.Context) (*stripe.Subscription, error) {
+		return stripesub.Get(stripeSubscriptionID, nil)
+	})
 	if err != nil {
 		return "", 0, fmt.Errorf("get stripe subscription for update: %w", err)
 	}
@@ -959,7 +1033,9 @@ func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubs
 		ProrationBehavior: stripe.String("create_prorations"),
 	}
 
-	updated, err := stripesub.Update(stripeSubscriptionID, params)
+	updated, err := observability.TraceStripeCall(ctx, "Subscription.Update", func(context.Context) (*stripe.Subscription, error) {
+		return stripesub.Update(stripeSubscriptionID, params)
+	})
 	if err != nil {
 		return "", 0, fmt.Errorf("update stripe subscription: %w", err)
 	}
@@ -978,6 +1054,9 @@ func (s *StripeService) ListStripeInvoices(ctx context.Context, stripeSubscripti
 		Subscription: stripe.String(stripeSubscriptionID),
 	}
 	params.Filters.AddFilter("limit", "", "50")
+
+	// One span for the whole iteration — see ListPaymentMethods for why.
+	_, span := observability.StartStripeSpan(ctx, "Invoice.List")
 
 	var invoices []*domain.Invoice
 	i := invoice.List(params)
@@ -1009,8 +1088,10 @@ func (s *StripeService) ListStripeInvoices(ctx context.Context, stripeSubscripti
 		invoices = append(invoices, di)
 	}
 	if err := i.Err(); err != nil {
+		observability.EndStripeSpan(span, err)
 		return nil, fmt.Errorf("list stripe invoices: %w", err)
 	}
+	observability.EndStripeSpan(span, nil)
 
 	return invoices, nil
 }

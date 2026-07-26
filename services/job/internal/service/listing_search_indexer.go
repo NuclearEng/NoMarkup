@@ -10,12 +10,12 @@
 //
 // Lifecycle hooks are fired by ListingService:
 //
-//   create          → status='active' && Publish=true → IndexListing
-//   update          → only re-indexes when status='active'
-//   cancel          → RemoveListing
-//   close (sold)    → RemoveListing  (sold listings shouldn't show up
-//                                     in browse/autocomplete)
-//   close (no bids) → RemoveListing  (status flips to 'expired')
+//	create          → status='active' && Publish=true → IndexListing
+//	update          → only re-indexes when status='active'
+//	cancel          → RemoveListing
+//	close (sold)    → RemoveListing  (sold listings shouldn't show up
+//	                                  in browse/autocomplete)
+//	close (no bids) → RemoveListing  (status flips to 'expired')
 //
 // The retry pattern (3-attempt exponential backoff, fire-and-forget
 // goroutine) is identical to JobService.indexJobWithRetry — see
@@ -33,6 +33,7 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
+	"github.com/nomarkup/nomarkup/services/job/internal/observability"
 )
 
 const listingsIndexUID = "listings"
@@ -50,7 +51,12 @@ type ListingSearchEngine struct {
 // NewListingSearchEngine creates a new Meilisearch search engine for listings.
 // Returns an error if Meilisearch is unreachable or index configuration fails.
 func NewListingSearchEngine(host, apiKey string) (*ListingSearchEngine, error) {
-	client := meilisearch.New(host, meilisearch.WithAPIKey(apiKey))
+	client := meilisearch.New(host,
+		meilisearch.WithAPIKey(apiKey),
+		// Traced transport: Meilisearch has no OTel integration of its own,
+		// so without this a slow search is an unexplained gap in the trace.
+		meilisearch.WithCustomClient(observability.NewTracedHTTPClient("meilisearch")),
+	)
 
 	se := &ListingSearchEngine{client: client}
 	if err := se.ConfigureIndex(); err != nil {
@@ -147,24 +153,24 @@ func defaultMeiliRankingRules() []string {
 // responsible for hydrating them. When fields are unknown at indexing time
 // they are omitted from the document — Meilisearch tolerates absent fields.
 type ListingIndexDocument struct {
-	ID                 string  `json:"id"`
-	SellerID           string  `json:"seller_id"`
-	CategoryID         string  `json:"category_id"`
-	CategoryName       string  `json:"category_name,omitempty"`
-	CategorySlug       string  `json:"category_slug,omitempty"`
-	Title              string  `json:"title"`
-	Description        string  `json:"description,omitempty"`
-	StartingPriceCents int64   `json:"starting_price_cents"`
-	CurrentBidCents    int64   `json:"current_bid_cents"`
-	PickupZip          string  `json:"pickup_zip,omitempty"`
-	PickupCity         string  `json:"pickup_city,omitempty"`
-	PickupState        string  `json:"pickup_state,omitempty"`
-	BidCount           int32   `json:"bid_count"`
+	ID                  string `json:"id"`
+	SellerID            string `json:"seller_id"`
+	CategoryID          string `json:"category_id"`
+	CategoryName        string `json:"category_name,omitempty"`
+	CategorySlug        string `json:"category_slug,omitempty"`
+	Title               string `json:"title"`
+	Description         string `json:"description,omitempty"`
+	StartingPriceCents  int64  `json:"starting_price_cents"`
+	CurrentBidCents     int64  `json:"current_bid_cents"`
+	PickupZip           string `json:"pickup_zip,omitempty"`
+	PickupCity          string `json:"pickup_city,omitempty"`
+	PickupState         string `json:"pickup_state,omitempty"`
+	BidCount            int32  `json:"bid_count"`
 	SnipeExtensionCount int32  `json:"snipe_extension_count"`
-	WatcherCount       int32   `json:"watcher_count,omitempty"`
-	Status             string  `json:"status"`
-	Condition          string  `json:"condition,omitempty"`
-	AuctionEndsAt      int64   `json:"auction_ends_at,omitempty"` // epoch seconds
+	WatcherCount        int32  `json:"watcher_count,omitempty"`
+	Status              string `json:"status"`
+	Condition           string `json:"condition,omitempty"`
+	AuctionEndsAt       int64  `json:"auction_ends_at,omitempty"` // epoch seconds
 	// _geo is the magic field name Meilisearch reads for geosearch.
 	Geo *MeiliGeo `json:"_geo,omitempty"`
 }

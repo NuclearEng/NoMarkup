@@ -32,6 +32,7 @@ import (
 
 	"github.com/nomarkup/nomarkup/services/job/internal/config"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
+	"github.com/nomarkup/nomarkup/services/job/internal/observability"
 	"github.com/nomarkup/nomarkup/services/job/internal/service"
 )
 
@@ -54,7 +55,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dbURL)
+	pool, err := observability.NewPGXPool(ctx, dbURL)
 	if err != nil {
 		slog.Error("connect to database", "error", err)
 		os.Exit(2)

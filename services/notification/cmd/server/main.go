@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -25,14 +24,15 @@ import (
 
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	notificationgrpc "github.com/nomarkup/nomarkup/services/notification/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/notification/internal/observability"
 	"github.com/nomarkup/nomarkup/services/notification/internal/repository"
 	"github.com/nomarkup/nomarkup/services/notification/internal/service"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	port := os.Getenv("NOTIFICATION_SERVICE_PORT")
@@ -74,7 +74,7 @@ func main() {
 	defer stop()
 
 	// Initialize PostgreSQL connection pool.
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to create database pool", "error", err)
 		os.Exit(1)
@@ -180,8 +180,8 @@ func main() {
 
 	s := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpc.ChainStreamInterceptor(loggingStreamInterceptor),
+		grpc.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
+		grpc.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
 	)
 	notificationgrpc.Register(s, srv)
 

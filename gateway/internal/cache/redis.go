@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -30,6 +31,16 @@ func New(redisURL string) *Client {
 	}
 
 	rdb := redis.NewClient(opts)
+
+	// Emit a child span per Redis command so a cache stall is attributable
+	// instead of showing up as unexplained gap inside the handler span.
+	// Command arguments are not recorded (redisotel's default) — cache keys
+	// embed user and listing ids.
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		// Tracing is best-effort: a caching layer must never fail to start
+		// because instrumentation could not be attached.
+		slog.Warn("cache: redis tracing instrumentation failed", "error", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

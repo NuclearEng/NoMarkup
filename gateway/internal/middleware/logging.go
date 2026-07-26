@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"crypto/rand"
-	"encoding/hex"
+	"github.com/nomarkup/nomarkup/gateway/internal/observability"
 )
 
 type wrappedWriter struct {
@@ -44,15 +43,20 @@ func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		requestID := r.Header.Get("X-Request-ID")
+		// RequestID runs earlier in the chain and is the single source of truth:
+		// it seeds the context so handlers and downstream services share this id.
+		// The fallback keeps Logging usable standalone (and in its own tests).
+		requestID := observability.RequestIDFromContext(r.Context())
 		if requestID == "" {
-			b := make([]byte, 8)
-			_, _ = rand.Read(b)
-			requestID = hex.EncodeToString(b)
+			requestID = observability.SanitizeRequestID(r.Header.Get(observability.HeaderRequestID))
+			if requestID == "" {
+				requestID = observability.NewRequestID()
+			}
+			r = r.WithContext(observability.ContextWithRequestID(r.Context(), requestID))
 		}
 
 		wrapped := &wrappedWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		wrapped.Header().Set("X-Request-ID", requestID)
+		wrapped.Header().Set(observability.HeaderRequestID, requestID)
 
 		next.ServeHTTP(wrapped, r)
 

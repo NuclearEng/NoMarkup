@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/nomarkup/nomarkup/services/payment/internal/observability"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/account"
 	"github.com/stripe/stripe-go/v82/customer"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // StripeDeleter performs the GDPR/CCPA Stripe-side erasure: deleting the
@@ -92,7 +94,9 @@ func (d *StripeDeleter) DeleteCustomer(ctx context.Context, customerID string) (
 		return "skipped_no_client", nil
 	}
 
+	span := startDeleteSpan(ctx, "Customer.Delete")
 	_, err := d.customerClient.Del(customerID, nil)
+	observability.EndStripeSpan(span, err)
 	if err == nil {
 		return "deleted", nil
 	}
@@ -115,7 +119,9 @@ func (d *StripeDeleter) DeleteConnectAccount(ctx context.Context, accountID stri
 		return "skipped_no_client", nil
 	}
 
+	span := startDeleteSpan(ctx, "Account.Delete")
 	_, err := d.accountClient.Del(accountID, nil)
+	observability.EndStripeSpan(span, err)
 	if err == nil {
 		return "deleted", nil
 	}
@@ -125,6 +131,14 @@ func (d *StripeDeleter) DeleteConnectAccount(ctx context.Context, accountID stri
 		return outcome, nil
 	}
 	return "", err
+}
+
+// startDeleteSpan opens the Stripe client span for a GDPR deletion call. The
+// deleter uses injected client interfaces rather than the package-level SDK
+// functions, so it cannot use the TraceStripeCall wrapper's closure form.
+func startDeleteSpan(ctx context.Context, op string) trace.Span {
+	_, span := observability.StartStripeSpan(ctx, op)
+	return span
 }
 
 type classifyKind int

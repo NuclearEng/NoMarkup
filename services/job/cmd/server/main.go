@@ -13,6 +13,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -33,14 +34,15 @@ import (
 	"github.com/nomarkup/nomarkup/services/job/internal/config"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	grpcserver "github.com/nomarkup/nomarkup/services/job/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/job/internal/observability"
 	"github.com/nomarkup/nomarkup/services/job/internal/repository"
 	"github.com/nomarkup/nomarkup/services/job/internal/service"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	port := os.Getenv("JOB_SERVICE_PORT")
@@ -80,7 +82,7 @@ func main() {
 
 	// Connect to PostgreSQL.
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -172,6 +174,9 @@ func main() {
 		} else {
 			rdb := redis.NewClient(opt)
 			defer func() { _ = rdb.Close() }()
+			if err := redisotel.InstrumentTracing(rdb); err != nil {
+				slog.Warn("redis tracing instrumentation failed", "error", err)
+			}
 			listingService = listingService.WithRedis(rdb)
 			slog.Info("auction-close: redis notification seam enabled")
 		}
@@ -230,8 +235,8 @@ func main() {
 
 	s := grpclib.NewServer(
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
-		grpclib.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(loggingStreamInterceptor),
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
 	)
 	grpcserver.Register(s, srv)
 	grpcserver.RegisterContract(s, contractSrv)

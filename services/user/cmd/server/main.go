@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -34,6 +34,7 @@ import (
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/services/user/internal/crypto"
 	grpcserver "github.com/nomarkup/nomarkup/services/user/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/user/internal/observability"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
 	"github.com/nomarkup/nomarkup/services/user/internal/service"
 )
@@ -51,9 +52,9 @@ func isDevelopmentEnv() bool {
 }
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	port := os.Getenv("USER_SERVICE_PORT")
@@ -105,7 +106,7 @@ func main() {
 
 	// Connect to PostgreSQL.
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -148,6 +149,9 @@ func main() {
 	}
 	rdb := redis.NewClient(redisOpts)
 	defer rdb.Close()
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		slog.Warn("redis tracing instrumentation failed", "error", err)
+	}
 
 	for attempt := 1; ; attempt++ {
 		if err := rdb.Ping(ctx).Err(); err != nil {
@@ -267,8 +271,8 @@ func main() {
 
 	s := grpclib.NewServer(
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
-		grpclib.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(loggingStreamInterceptor),
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
 	)
 	grpcserver.Register(s, srv)
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
+	"github.com/nomarkup/nomarkup/services/job/internal/observability"
 )
 
 const jobsIndexUID = "jobs"
@@ -19,7 +20,12 @@ type SearchEngine struct {
 
 // NewSearchEngine creates a new Meilisearch search engine.
 func NewSearchEngine(host, apiKey string) (*SearchEngine, error) {
-	client := meilisearch.New(host, meilisearch.WithAPIKey(apiKey))
+	client := meilisearch.New(host,
+		meilisearch.WithAPIKey(apiKey),
+		// Traced transport: Meilisearch has no OTel integration of its own,
+		// so without this a slow search is an unexplained gap in the trace.
+		meilisearch.WithCustomClient(observability.NewTracedHTTPClient("meilisearch")),
+	)
 
 	se := &SearchEngine{client: client}
 	if err := se.ConfigureIndex(); err != nil {

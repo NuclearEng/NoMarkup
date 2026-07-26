@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stripe/stripe-go/v82"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -30,14 +29,18 @@ import (
 	paymentclient "github.com/nomarkup/nomarkup/services/payment/internal/client"
 	"github.com/nomarkup/nomarkup/services/payment/internal/crypto"
 	paymentgrpc "github.com/nomarkup/nomarkup/services/payment/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/payment/internal/observability"
 	"github.com/nomarkup/nomarkup/services/payment/internal/repository"
 	"github.com/nomarkup/nomarkup/services/payment/internal/service"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	// The ContextHandler decorator stamps request_id / trace_id / span_id onto
+	// every record logged with a *Context variant, so existing call sites become
+	// correlatable without touching them.
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	port := os.Getenv("PAYMENT_SERVICE_PORT")
@@ -92,7 +95,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	pool, err := pgxpool.New(context.Background(), databaseURL)
+	pool, err := observability.NewPGXPool(context.Background(), databaseURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -242,8 +245,10 @@ func main() {
 
 	s := grpclib.NewServer(
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
-		grpclib.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(loggingStreamInterceptor),
+		// RequestID first: it seeds the context the logging interceptor and
+		// every downstream slog.*Context call read.
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
 	)
 	paymentgrpc.Register(s, grpcServer)
 	paymentgrpc.RegisterSubscription(s, subscriptionGRPCServer)

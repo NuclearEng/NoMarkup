@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -27,15 +27,16 @@ import (
 
 	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	chatgrpc "github.com/nomarkup/nomarkup/services/chat/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/chat/internal/observability"
 	"github.com/nomarkup/nomarkup/services/chat/internal/repository"
 	"github.com/nomarkup/nomarkup/services/chat/internal/service"
 	"github.com/nomarkup/nomarkup/services/chat/internal/ws"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	// SEC-03 / GAP-006: refuse to start outside development without the
@@ -96,7 +97,7 @@ func main() {
 	defer stop()
 
 	// Initialize PostgreSQL connection pool.
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to create database pool", "error", err)
 		os.Exit(1)
@@ -125,6 +126,9 @@ func main() {
 	}
 	rdb := redis.NewClient(redisOpts)
 	defer rdb.Close()
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		slog.Warn("redis tracing instrumentation failed", "error", err)
+	}
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		slog.Warn("failed to ping redis, pub/sub disabled", "error", err)
@@ -161,8 +165,8 @@ func main() {
 
 	s := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpc.ChainStreamInterceptor(loggingStreamInterceptor),
+		grpc.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, loggingUnaryInterceptor),
+		grpc.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, loggingStreamInterceptor),
 	)
 	chatgrpc.Register(s, srv)
 

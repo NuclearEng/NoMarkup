@@ -11,32 +11,17 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// stripeWebhookProcessingDuration measures end-to-end Stripe webhook
-// processing time per event type and outcome (success / signature_failed /
-// processing_error). Required by CLAUDE.md §11. Observed by the gateway
-// webhook handler and the payment service event handler.
-//
-// The metric is exported in this package to keep it co-located with the
-// payment service main.go. Other modules import via the package path.
-var stripeWebhookProcessingDuration = promauto.NewHistogramVec(
-	prometheus.HistogramOpts{
-		Name:    "stripe_webhook_processing_duration_seconds",
-		Help:    "End-to-end Stripe webhook processing duration in seconds.",
-		Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
-	},
-	[]string{"event_type", "outcome"},
-)
-
-// ObserveStripeWebhook records a Stripe webhook processing observation.
-// Exported so the payment service handler package can call it.
-func ObserveStripeWebhook(eventType, outcome string, duration time.Duration) {
-	stripeWebhookProcessingDuration.WithLabelValues(eventType, outcome).Observe(duration.Seconds())
-}
+// stripe_webhook_processing_duration_seconds and
+// stripe_webhook_event_lag_seconds used to be declared here, in package main,
+// alongside an ObserveStripeWebhook recorder that no package could import and
+// that consequently had zero call sites. They now live in
+// internal/observability and are recorded by the code that actually processes
+// the events -- internal/service/webhook.go, immediately around its mandatory
+// stripe.webhooks.constructEvent() verification. They still appear on this
+// server's /metrics because promauto registers them on the default registry.
 
 // startObservabilityServer launches the observability HTTP server.
 // See user service for full rationale. METRICS_PORT defaults to {SERVICE_PORT}+1000.

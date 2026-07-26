@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/nomarkup/nomarkup/services/payment/internal/observability"
 	"github.com/stripe/stripe-go/v82"
+	// stripe.webhooks.constructEvent() — mandatory signature verification,
+	// wrapped by StripeWebhookValidator below.
 	"github.com/stripe/stripe-go/v82/webhook"
 )
 
@@ -68,41 +71,63 @@ func (s *PaymentService) SetWebhookValidator(v WebhookEventValidator) {
 // processed_at NULL means a prior attempt failed — we reprocess so Stripe
 // retries are not swallowed. MarkStripeEventProcessed stamps processed_at
 // only after the handler succeeds.
+//
+// Observability: every exit path records stripe_webhook_processing_duration_seconds
+// with the event type and an outcome label, so signature rejections, duplicate
+// redeliveries and handler failures are each separately visible. The event's
+// Stripe-side creation time also feeds stripe_webhook_event_lag_seconds, which
+// is the only signal that shows a delivery backlog building. Nothing is
+// recorded against a caller-supplied event type until
+// stripe.webhooks.constructEvent() has verified the payload.
 func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, signature string) error {
+	start := time.Now()
+
 	if s.webhookValidator == nil {
 		// Fail closed: without a validator we cannot verify signatures, so we
 		// must refuse all events. The service startup path is responsible for
 		// wiring this in; reaching here indicates a misconfiguration.
-		slog.Error("webhook validator not configured, refusing event")
+		slog.ErrorContext(ctx, "webhook validator not configured, refusing event")
+		observability.ObserveStripeWebhook("", observability.OutcomeNotConfigured, time.Since(start))
 		return fmt.Errorf("webhook validator not configured")
 	}
 
+	// Mandatory signature verification — stripe.webhooks.constructEvent().
 	event, err := s.webhookValidator.ConstructEvent(payload, signature)
 	if err != nil {
 		// A missing/malformed/mismatched signature is client-side bad input, not
 		// a server fault. Wrap a distinguishable sentinel so the gRPC/gateway
 		// layer can return 400 rather than a misleading 500 (CLAUDE.md §15).
+		// The event type is deliberately left unknown here: the payload is
+		// untrusted until the signature verifies, so labelling the metric from
+		// the body would let an attacker mint arbitrary Prometheus labels.
+		observability.ObserveStripeWebhook("", observability.OutcomeSignatureFailed, time.Since(start))
 		return fmt.Errorf("%w: %v", domain.ErrWebhookSignature, err)
 	}
+
+	eventType := string(event.Type)
+	observability.ObserveStripeWebhookLag(eventType, event.Created)
 
 	// Dedup: record the event.id before processing. If it already exists,
 	// a prior delivery was already handled — return nil so Stripe gets 200 OK
 	// and doesn't retry.
-	alreadyProcessed, err := s.repo.RecordStripeEventStart(ctx, event.ID, string(event.Type))
+	alreadyProcessed, err := s.repo.RecordStripeEventStart(ctx, event.ID, eventType)
 	if err != nil {
+		observability.ObserveStripeWebhook(eventType, observability.OutcomeProcessingError, time.Since(start))
 		return fmt.Errorf("record stripe event: %w", err)
 	}
 	if alreadyProcessed {
-		slog.Info("stripe event already processed, skipping", "event_id", event.ID, "type", event.Type)
+		slog.InfoContext(ctx, "stripe event already processed, skipping", "event_id", event.ID, "type", event.Type)
+		observability.ObserveStripeWebhook(eventType, observability.OutcomeDuplicate, time.Since(start))
 		return nil
 	}
 
-	slog.Info("processing webhook event", "type", event.Type, "id", event.ID)
+	slog.InfoContext(ctx, "processing webhook event", "type", event.Type, "id", event.ID)
 
 	if err := s.dispatchWebhookEvent(ctx, event); err != nil {
 		// Don't mark processed_at on failure — Stripe will retry. The dedup
 		// row still exists (missing processed_at marks it as in-flight/failed,
 		// which a background job could revisit for alerting).
+		observability.ObserveStripeWebhook(eventType, observability.OutcomeProcessingError, time.Since(start))
 		return err
 	}
 
@@ -110,9 +135,10 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, sign
 		// Event succeeded functionally but we failed to stamp processed_at.
 		// Log and continue — returning an error would cause Stripe to retry a
 		// successful operation. The dedup row still blocks duplicate work.
-		slog.Error("failed to mark stripe event processed", "event_id", event.ID, "error", err)
+		slog.ErrorContext(ctx, "failed to mark stripe event processed", "event_id", event.ID, "error", err)
 	}
 
+	observability.ObserveStripeWebhook(eventType, observability.OutcomeSuccess, time.Since(start))
 	return nil
 }
 

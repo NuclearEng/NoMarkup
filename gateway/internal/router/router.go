@@ -123,6 +123,13 @@ func New(
 	// middleware.GetHead misses subrouter-root "/" registrations like
 	// /api/v1/categories and /api/v1/jobs, so we rewrite unconditionally here.)
 	r.Use(headAsGet)
+	// RequestID must precede Tracing and Logging: it seeds the correlation id
+	// that both read, and that GRPCClientInterceptor forwards to the services.
+	r.Use(middleware.RequestID)
+	// Tracing opens the inbound server span that roots the whole trace. It sits
+	// above Metrics/Logging so their work is inside the span, and below
+	// Recovery so a panic still produces a 500 rather than an orphaned span.
+	r.Use(middleware.Tracing)
 	r.Use(middleware.Metrics)
 	r.Use(middleware.Logging)
 	r.Use(middleware.CORS(allowedOrigins, production))
