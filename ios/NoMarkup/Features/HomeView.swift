@@ -90,7 +90,7 @@ struct HomeView: View {
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Eyebrow pill
-            Text("REVERSE AUCTION · NO MIDDLEMAN")
+            Text("MARKET TERMINAL · REVERSE AUCTION")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .tracking(1.4)
                 .foregroundStyle(BrandTheme.goldBright)
