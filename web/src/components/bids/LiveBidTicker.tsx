@@ -55,8 +55,8 @@ export function LiveBidTicker({
         <span
           className={cn(
             'text-4xl font-bold tracking-tight tabular-nums transition-colors duration-300 sm:text-5xl',
-            flash && direction === 'down' && 'text-emerald-500',
-            flash && direction === 'up' && 'text-red-500',
+            flash && direction === 'down' && 'text-bid-winning',
+            flash && direction === 'up' && 'text-destructive',
             !flash && 'text-foreground',
           )}
           role="status"
@@ -70,8 +70,8 @@ export function LiveBidTicker({
             className={cn(
               'flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm font-semibold',
               direction === 'down'
-                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
-                : 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400',
+                ? 'bg-bid-winning/10 text-bid-winning'
+                : 'bg-destructive/10 text-destructive',
             )}
           >
             <TrendingDown

@@ -36,9 +36,9 @@ function calculateTimeRemaining(completedAt: string): TimeRemaining {
 
 function getColorClass(totalMs: number): string {
   const totalHours = totalMs / (1000 * 60 * 60);
-  if (totalHours > 72) return 'text-yellow-600';
-  if (totalHours >= 24) return 'text-orange-600';
-  return 'text-red-600';
+  if (totalHours > 72) return 'text-trust-medium';
+  if (totalHours >= 24) return 'text-status-disputed';
+  return 'text-destructive';
 }
 
 function pad(n: number): string {
@@ -78,16 +78,19 @@ export function AutoReleaseTimer({ completedAt }: AutoReleaseTimerProps) {
   // match. The effect above flips `mounted` and fills in the live time after.
   if (!mounted) {
     return (
-      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4" suppressHydrationWarning>
-        <p className="text-sm font-medium text-yellow-800">Auto-Release Countdown</p>
+      <div
+        className="rounded-lg border border-trust-medium/30 bg-trust-medium/10 p-4"
+        suppressHydrationWarning
+      >
+        <p className="text-sm font-medium text-trust-medium">Auto-Release Countdown</p>
       </div>
     );
   }
 
   if (timeRemaining.totalMs <= 0) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50 p-4">
-        <p className="text-sm font-medium text-green-700">
+      <div className="rounded-lg border border-status-completed/30 bg-status-completed/10 p-4">
+        <p className="text-sm font-medium text-status-completed">
           Payment has been auto-released.
         </p>
       </div>
@@ -98,16 +101,19 @@ export function AutoReleaseTimer({ completedAt }: AutoReleaseTimerProps) {
   const { days, hours, minutes, seconds } = timeRemaining;
 
   return (
-    <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+    <div className="rounded-lg border border-trust-medium/30 bg-trust-medium/10 p-4">
       <div className="flex items-start gap-3">
-        <AlertTriangle className={cn('h-5 w-5 shrink-0 mt-0.5', colorClass)} aria-hidden="true" />
+        <AlertTriangle className={cn('mt-0.5 h-5 w-5 shrink-0', colorClass)} aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-yellow-800">Auto-Release Countdown</p>
-          <p className={cn('text-lg font-bold tabular-nums mt-1', colorClass)} aria-label="Auto-release countdown">
+          <p className="text-sm font-medium text-trust-medium">Auto-Release Countdown</p>
+          <p
+            className={cn('mt-1 text-lg font-bold tabular-nums', colorClass)}
+            aria-label="Auto-release countdown"
+          >
             {days > 0 ? `${String(days)}d ` : ''}
             {pad(hours)}:{pad(minutes)}:{pad(seconds)}
           </p>
-          <p className="mt-1 text-xs text-yellow-700">
+          <p className="mt-1 text-xs text-trust-medium">
             Payment will be automatically released to the provider if no action is taken within{' '}
             {String(AUTO_RELEASE_DAYS)} days of completion.
           </p>

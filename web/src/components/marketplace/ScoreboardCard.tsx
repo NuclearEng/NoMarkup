@@ -27,8 +27,8 @@ const CONDITION_LABELS: Record<NonNullable<Listing['condition']>, string> = {
 };
 
 const CONDITION_CLASSES: Record<NonNullable<Listing['condition']>, string> = {
-  new: 'border-[var(--brand-gold)]/40 bg-[var(--brand-gold)]/15 text-[var(--brand-gold)]',
-  like_new: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+  new: 'border-brand-gold/40 bg-brand-gold/15 text-brand-gold',
+  like_new: 'border-trust-high/40 bg-trust-high/15 text-trust-high',
   very_good: 'border-zinc-600 bg-zinc-700/40 text-zinc-200',
   good: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
   acceptable: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
@@ -99,10 +99,10 @@ export function ScoreboardCard({
 
   const borderClass =
     urgency === 'critical'
-      ? 'border-red-500/50 shadow-[0_0_30px_rgba(239,68,68,0.18)] hover:shadow-[0_0_40px_rgba(239,68,68,0.32)]'
+      ? 'border-destructive/50 shadow-[0_0_30px_hsl(var(--status-disputed)/0.18)] hover:shadow-[0_0_40px_hsl(var(--status-disputed)/0.32)]'
       : urgency === 'urgent'
-        ? 'border-[var(--brand-gold)]/40 shadow-[0_0_24px_rgba(212,175,55,0.16)] hover:shadow-[0_0_36px_rgba(212,175,55,0.28)]'
-        : 'border-[var(--brand-gold)]/10 hover:border-[var(--brand-gold)]/25';
+        ? 'border-brand-gold/40 shadow-[0_0_24px_var(--brand-gold-glow)] hover:shadow-[0_0_36px_var(--brand-gold-glow)]'
+        : 'border-brand-gold/10 hover:border-brand-gold/25';
 
   return (
     <Link
@@ -136,21 +136,21 @@ export function ScoreboardCard({
             className={cn(
               'absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase',
               urgency === 'critical'
-                ? 'bg-red-500 text-white'
-                : 'bg-[var(--brand-gold)] text-black',
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-brand-gold text-background',
             )}
           >
             <span className="relative flex h-2 w-2">
               <span
                 className={cn(
                   'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
-                  urgency === 'critical' ? 'bg-red-300' : 'bg-amber-700',
+                  urgency === 'critical' ? 'bg-destructive/60' : 'bg-brand-gold-dim',
                 )}
               />
               <span
                 className={cn(
                   'relative inline-flex h-2 w-2 rounded-full',
-                  urgency === 'critical' ? 'bg-red-200' : 'bg-amber-800',
+                  urgency === 'critical' ? 'bg-destructive/40' : 'bg-brand-gold-dim',
                 )}
               />
             </span>
@@ -160,7 +160,7 @@ export function ScoreboardCard({
 
         {/* Snipe-extension badge */}
         {listing.snipe_extension_count > 0 ? (
-          <span className="absolute top-2 right-12 inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+          <span className="absolute top-2 right-12 inline-flex items-center gap-1 rounded-full bg-bid-winning/20 px-2 py-0.5 text-[10px] font-semibold text-bid-winning">
             +30s ×{listing.snipe_extension_count}
           </span>
         ) : null}
@@ -178,7 +178,7 @@ export function ScoreboardCard({
             className={cn(
               'absolute top-2 right-2 inline-flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md transition-colors',
               watching
-                ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
+                ? 'border-destructive/50 bg-destructive/20 text-destructive hover:bg-destructive/30'
                 : 'border-white/10 bg-black/30 text-white/80 hover:border-white/30 hover:text-white',
               watchMutation.isPending ? 'opacity-60' : '',
             )}

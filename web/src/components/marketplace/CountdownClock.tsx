@@ -69,10 +69,10 @@ export function CountdownClock({ endsAt, className }: CountdownClockProps) {
 
   const color =
     urgency === 'critical'
-      ? 'text-red-300 animate-pulse'
+      ? 'text-destructive animate-pulse'
       : urgency === 'urgent'
-        ? 'text-amber-300'
-        : 'text-emerald-300';
+        ? 'text-trust-medium'
+        : 'text-bid-winning';
 
   const display =
     hours > 0

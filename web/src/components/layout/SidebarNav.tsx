@@ -189,13 +189,13 @@ export function SidebarNav() {
               className={cn(
                 'relative flex min-h-[44px] items-center gap-3 rounded-r-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                 active
-                  ? 'rounded-l-none border-l-2 border-[var(--brand-gold)] bg-[var(--brand-gold)]/10 pl-[10px] text-[var(--brand-gold)] shadow-[inset_0_1px_0_rgba(201,168,76,0.1)]'
-                  : 'rounded-lg text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/40',
+                  ? 'rounded-l-none border-l-2 border-brand-gold bg-brand-gold/10 pl-[10px] text-brand-gold shadow-[inset_0_1px_0_var(--brand-gold-glow)]'
+                  : 'rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/40',
               )}
               aria-current={active ? 'page' : undefined}
             >
               <item.icon
-                className={cn('h-4 w-4', active ? 'text-[var(--brand-gold)]' : '')}
+                className={cn('h-4 w-4', active ? 'text-brand-gold' : '')}
                 style={{ opacity: active ? 1 : 0.6 }}
                 aria-hidden="true"
               />
@@ -206,7 +206,7 @@ export function SidebarNav() {
         <div className="glass-divider my-2" aria-hidden="true" />
         <Link
           href={'/demo/auction' as Route}
-          className="relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-all duration-200 hover:bg-amber-500/10 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
+          className="relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-brand-gold transition-all duration-200 hover:bg-brand-gold/10 hover:text-brand-gold-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/40"
         >
           <Zap className="h-4 w-4" aria-hidden="true" />
           Live Demo

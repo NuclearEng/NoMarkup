@@ -10,6 +10,8 @@ struct NoMarkupApp: App {
             RootView()
                 .environmentObject(authViewModel)
                 .environmentObject(featureFlags)
+                // Brand gold from AccentColor.colorset (web --brand-gold: #c9a84c / #d4af57).
+                .tint(Color("AccentColor"))
                 .task {
                     await featureFlags.refresh()
                 }

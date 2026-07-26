@@ -23,9 +23,9 @@ import type { AlertStatus, FraudAlert, FraudSignal } from '@/types';
 import { ALERT_STATUS } from '@/types';
 
 function confidenceColor(confidence: number): string {
-  if (confidence >= 0.8) return 'bg-red-500';
-  if (confidence >= 0.5) return 'bg-orange-500';
-  return 'bg-yellow-500';
+  if (confidence >= 0.8) return 'bg-destructive';
+  if (confidence >= 0.5) return 'bg-status-disputed';
+  return 'bg-trust-medium';
 }
 
 function formatSignalType(type: string): string {
@@ -293,7 +293,7 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
             ) : null}
 
             {reviewMutation.isSuccess ? (
-              <p className="text-sm text-green-600">
+              <p className="text-sm text-trust-high">
                 Alert reviewed successfully.
               </p>
             ) : null}

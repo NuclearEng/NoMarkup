@@ -84,7 +84,11 @@ function Stat({
   tone: 'red' | 'amber' | 'emerald';
 }) {
   const color =
-    tone === 'red' ? 'text-red-300' : tone === 'amber' ? 'text-amber-300' : 'text-emerald-300';
+    tone === 'red'
+      ? 'text-destructive'
+      : tone === 'amber'
+        ? 'text-trust-medium'
+        : 'text-bid-winning';
 
   // No role on the wrapper div: a <div> child of <dl> is only valid (HTML spec
   // + axe definition-list/dlitem) when it is a ROLE-LESS wrapper grouping a

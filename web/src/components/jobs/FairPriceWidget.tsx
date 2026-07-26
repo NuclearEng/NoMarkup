@@ -15,9 +15,9 @@ function getBidPositionColor(
   highCents: number,
 ): string {
   if (!lowestBidCents) return 'text-zinc-400';
-  if (lowestBidCents < medianCents) return 'text-emerald-400';
-  if (lowestBidCents <= highCents) return 'text-amber-400';
-  return 'text-red-400';
+  if (lowestBidCents < medianCents) return 'text-bid-winning';
+  if (lowestBidCents <= highCents) return 'text-trust-medium';
+  return 'text-destructive';
 }
 
 export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPriceWidgetProps) {
@@ -63,7 +63,7 @@ export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPrice
         role="presentation"
         aria-hidden="true"
       >
-        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-emerald-500/40 via-amber-500/40 to-red-500/40" />
+        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-bid-winning/40 via-trust-medium/40 to-destructive/40" />
         {indicatorPercent !== null ? (
           <div
             className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-2.5 rounded-full bg-white border border-zinc-800 shadow"

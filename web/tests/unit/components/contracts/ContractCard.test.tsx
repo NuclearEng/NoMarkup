@@ -208,7 +208,7 @@ describe('ContractCard', () => {
     expect(screen.getByText('custom thing')).toBeDefined();
   });
 
-  it('renders 100% completion progress with the emerald gradient bar', () => {
+  it('renders 100% completion progress with the status-completed gradient bar', () => {
     const contract = makeContract({
       milestones: [makeMilestone({ id: 'm-1', status: 'approved' })],
     });
@@ -216,9 +216,10 @@ describe('ContractCard', () => {
     expect(screen.getByText('100%')).toBeDefined();
     const bar = screen.getByRole('progressbar');
     expect(bar.getAttribute('aria-valuenow')).toBe('100');
+    expect(bar.className).toContain('from-status-completed');
   });
 
-  it('renders mid-range completion (>= 60%) with blue-emerald gradient', () => {
+  it('renders mid-range completion (>= 60%) with status-open gradient', () => {
     const contract = makeContract({
       milestones: [
         makeMilestone({ id: 'm-1', status: 'approved' }),

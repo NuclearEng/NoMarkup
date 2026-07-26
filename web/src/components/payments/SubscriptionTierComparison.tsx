@@ -60,7 +60,7 @@ const FEATURE_ROWS: FeatureRow[] = [
 function CellValue({ value }: { value: string | boolean }) {
   if (typeof value === 'boolean') {
     return value ? (
-      <Check className="mx-auto h-4 w-4 text-emerald-500" aria-label="Included" />
+      <Check className="mx-auto h-4 w-4 text-trust-high" aria-label="Included" />
     ) : (
       <X className="mx-auto h-4 w-4 text-muted-foreground/40" aria-label="Not included" />
     );

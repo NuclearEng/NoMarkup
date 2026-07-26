@@ -151,7 +151,7 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
         {!expired && (isCustomer || isProvider) ? (
           <div className="space-y-3 border-t pt-4">
             {currentUserAccepted ? (
-              <div className="flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm text-green-700">
+              <div className="flex items-center gap-2 rounded-lg border border-status-completed/30 bg-status-completed/10 p-3 text-sm text-status-completed">
                 <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
                 You have already accepted this contract. Waiting for the other party.
               </div>

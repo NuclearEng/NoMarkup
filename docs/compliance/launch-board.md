@@ -4,7 +4,8 @@
 **Updated:** 2026-07-26  
 **Current stage:** **Stage C partial** — B0–B4 + B3+/write + **Rail A Apple Pay** + B6 docs + free-tier cut; residual: **B6 ops** (signing, screenshots, ASC, merchant ID) + live review backend + **device smoke**  
 **Binary readiness:** **NOT READY** for App Review (ASC assets, team signing, Apple Pay merchant + Stripe key on device, smoke not signed off)  
-**v1 digital cut:** **free-tier-only** (StoreKit deferred) — [`v1-ios-product-cut.md`](./v1-ios-product-cut.md)
+**v1 digital cut:** **free-tier-only** (StoreKit deferred) — [`v1-ios-product-cut.md`](./v1-ios-product-cut.md)  
+**Brand:** App Icon **SOTA seal** shipped (gold N + double ring on navy); design-system **AccentColor / brand-gold** token pass in progress (iOS gold CTAs aligned to web `--brand-gold`)
 
 ---
 
@@ -73,7 +74,8 @@ cd ios && xcodebuild -scheme NoMarkup -project NoMarkup.xcodeproj \
 
 1. Apple Developer team + bundle id + SIWA App ID (`APPLE_NATIVE_CLIENT_ID`)  
 2. Apple Pay merchant ID `merchant.com.nomarkup.app` + Stripe Dashboard Apple Pay + `NOMARKUP_STRIPE_PUBLISHABLE_KEY`  
-3. Capture screenshots from Simulator; App Icon placeholder present — replace if marketing ships final art  
+3. Capture screenshots from Simulator; App Icon is SOTA seal (gold N) — re-capture if seal revises; finish design-system token pass if any residual system tints remain  
+
 4. Paste free-tier-only Review Notes (cut is **documented** — confirm in ASC)  
 5. Staging always-on for App Review  
 6. Execute Stage C **device smoke matrix** (incl. Buy now / Orders pay) and sign off

@@ -108,23 +108,23 @@ export function BuyItNowButton({ listing, className }: BuyItNowButtonProps) {
     <>
       <div
         className={cn(
-          'rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] p-4',
+          'rounded-xl border border-bid-winning/30 bg-bid-winning/[0.06] p-4',
           'shadow-[0_0_24px_-12px_rgba(16,185,129,0.5)]',
           className,
         )}
       >
         <div className="flex items-start gap-3">
           <ShoppingBag
-            className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300"
+            className="mt-0.5 h-5 w-5 shrink-0 text-bid-winning"
             aria-hidden="true"
           />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold tracking-wide text-emerald-200/80 uppercase">
+            <p className="text-xs font-semibold tracking-wide text-bid-winning/80 uppercase">
               Buy it now
             </p>
             <p className="mt-1 text-sm text-zinc-300">
               Skip the auction and own it for{' '}
-              <span className="font-semibold text-emerald-100 tabular-nums">
+              <span className="font-semibold text-bid-winning tabular-nums">
                 {buyNowDisplay}
               </span>
               .
@@ -135,7 +135,7 @@ export function BuyItNowButton({ listing, className }: BuyItNowButtonProps) {
           type="button"
           onClick={handleClick}
           disabled={buyNow.isPending}
-          className="mt-3 min-h-[44px] w-full bg-emerald-500 text-emerald-50 hover:bg-emerald-400"
+          className="mt-3 min-h-[44px] w-full bg-bid-winning text-background hover:bg-bid-winning/90"
           aria-label={`Buy now for ${buyNowDisplay}`}
         >
           {buyNow.isPending ? (
@@ -175,7 +175,7 @@ export function BuyItNowButton({ listing, className }: BuyItNowButtonProps) {
               type="button"
               onClick={handleConfirm}
               disabled={buyNow.isPending}
-              className="min-h-[44px] bg-emerald-500 text-emerald-50 hover:bg-emerald-400"
+              className="min-h-[44px] bg-bid-winning text-background hover:bg-bid-winning/90"
             >
               {buyNow.isPending ? (
                 <>

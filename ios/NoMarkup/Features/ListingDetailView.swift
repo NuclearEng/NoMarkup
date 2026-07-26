@@ -233,6 +233,7 @@ struct ListingDetailView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(Color("AccentColor"))
                     .disabled(isBuyingNow || isPlacingBid)
                     .accessibilityLabel("Buy now for \(priceLabel) with Apple Pay")
                 }
@@ -292,6 +293,7 @@ struct ListingDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(Color("AccentColor"))
                 .disabled(
                     isPlacingBid
                         || isBuyingNow

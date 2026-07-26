@@ -198,7 +198,7 @@ function ResolveForm({ dispute }: ResolveFormProps) {
         <p
           id={`resolve-error-${dispute.id}`}
           role="alert"
-          className="text-sm text-red-300"
+          className="text-sm text-destructive"
         >
           {error}
         </p>
@@ -238,7 +238,7 @@ function DisputeCard({ dispute }: DisputeCardProps) {
           className={cn(
             'text-xs',
             DISPUTE_STATUS_CLASSES[dispute.status] ??
-              'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
+              'bg-muted text-muted-foreground border-border',
           )}
         >
           {statusLabel(dispute.status)}

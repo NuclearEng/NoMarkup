@@ -85,7 +85,7 @@ export function NotificationItem({ notification, variant = 'full', onMarkRead }:
         <span
           className={cn(
             'block h-2 w-2 rounded-full',
-            notification.is_read ? 'bg-transparent' : 'bg-blue-500',
+            notification.is_read ? 'bg-transparent' : 'bg-bid-active',
           )}
           aria-hidden="true"
         />

@@ -116,7 +116,7 @@ export function SubscriptionTierCard({
             <li key={feature.label} className="flex items-center gap-2 text-sm">
               {feature.included ? (
                 <Check
-                  className="h-4 w-4 shrink-0 text-emerald-500"
+                  className="h-4 w-4 shrink-0 text-trust-high"
                   aria-hidden="true"
                 />
               ) : (

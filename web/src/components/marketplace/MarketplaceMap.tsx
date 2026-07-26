@@ -299,7 +299,7 @@ export function MarketplaceMap({
         el.setAttribute('data-listing-id', l.id);
         el.setAttribute('aria-label', `${l.title} — ${formatCents(l.current_bid_cents)}`);
         el.className =
-          'cursor-pointer rounded-full border border-amber-300/60 bg-zinc-900/90 px-2 py-1 text-[11px] font-bold text-amber-300 shadow-md hover:bg-zinc-900';
+          'cursor-pointer rounded-full border border-trust-medium/60 bg-zinc-900/90 px-2 py-1 text-[11px] font-bold text-trust-medium shadow-md hover:bg-zinc-900';
         el.textContent = formatCents(l.current_bid_cents);
 
         const popup = new mapboxgl.Popup({ offset: 16, closeButton: true });
@@ -318,7 +318,7 @@ export function MarketplaceMap({
         titleEl.textContent = l.title;
         popupEl.appendChild(titleEl);
         const priceEl = document.createElement('p');
-        priceEl.className = 'm-0 mt-1 text-xs text-amber-300';
+        priceEl.className = 'm-0 mt-1 text-xs text-trust-medium';
         priceEl.textContent = `Current bid: ${formatCents(l.current_bid_cents)}`;
         popupEl.appendChild(priceEl);
         if (l.auction_ends_at) {

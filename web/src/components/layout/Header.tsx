@@ -80,14 +80,14 @@ export function Header() {
                   visitors can find and watch live auctions. */}
               <Link
                 href={'/marketplace' as Route}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
                 Marketplace
               </Link>
               <Link
                 href={'/marketplace/map' as Route}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                 Map
@@ -95,7 +95,7 @@ export function Header() {
               {legalEnabled ? (
                 <Link
                   href={'/legal' as Route}
-                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <Scale className="h-3.5 w-3.5" aria-hidden="true" />
                   Legal
@@ -103,7 +103,7 @@ export function Header() {
               ) : null}
               <Link
                 href="/demo/auction"
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-brand-gold transition-colors hover:bg-brand-gold/10 hover:text-brand-gold-bright"
               >
                 <Zap className="h-3.5 w-3.5" aria-hidden="true" />
                 Live Demo
@@ -121,7 +121,7 @@ export function Header() {
         {/* Mobile hamburger */}
         <button
           type="button"
-          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070b14] md:hidden"
+          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:hidden"
           onClick={() => {
             setMobileMenuOpen((prev) => !prev);
           }}
@@ -152,7 +152,7 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav id="mobile-menu" className="glass-elevated animate-fade-in max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-none border-t border-white/10 px-4 py-4 md:hidden" aria-label="Mobile">
+        <nav id="mobile-menu" className="glass-elevated animate-fade-in max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-none border-t border-border px-4 py-4 md:hidden" aria-label="Mobile">
           <div className="flex flex-col gap-3">
             {/* Current-city switcher — full width so it's easy to reach on mobile. */}
             <MarketChip className="w-full" />
@@ -160,8 +160,8 @@ export function Header() {
               <>
                 {/* Account utilities — primary destinations live in MobileTabBar.
                     Keep Support/Privacy reachable from the menu on every device. */}
-                <div className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2.5">
-                  <span className="truncate text-sm font-medium text-zinc-200">
+                <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2.5">
+                  <span className="truncate text-sm font-medium text-foreground">
                     {user?.displayName ?? user?.email}
                   </span>
                   <NotificationBell />
@@ -179,7 +179,7 @@ export function Header() {
                 </Button>
                 <Link
                   href={'/marketplace' as Route}
-                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   <Gavel className="h-4 w-4" aria-hidden="true" />
@@ -187,21 +187,21 @@ export function Header() {
                 </Link>
                 <Link
                   href="/support"
-                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   Support
                 </Link>
                 <Link
                   href="/privacy"
-                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   Privacy
                 </Link>
                 <Link
                   href="/settings/account"
-                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   Account settings
@@ -222,7 +222,7 @@ export function Header() {
               <>
                 <Link
                   href={'/marketplace' as Route}
-                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   <Gavel className="h-4 w-4" aria-hidden="true" />
@@ -230,7 +230,7 @@ export function Header() {
                 </Link>
                 <Link
                   href={'/marketplace/map' as Route}
-                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   <MapPin className="h-4 w-4" aria-hidden="true" />
@@ -238,7 +238,7 @@ export function Header() {
                 </Link>
                 <Link
                   href={'/jobs' as Route}
-                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   Browse jobs
@@ -246,37 +246,37 @@ export function Header() {
                 {legalEnabled ? (
                   <Link
                     href={'/legal' as Route}
-                    className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                    className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                     onClick={() => { setMobileMenuOpen(false); }}
                   >
-                    <Scale className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
+                    <Scale className="h-4 w-4 text-brand-gold/60" aria-hidden="true" />
                     Legal services
                   </Link>
                 ) : null}
                 <Link
                   href="/support"
-                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   Support
                 </Link>
                 <Link
                   href="/privacy"
-                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   Privacy
                 </Link>
                 <Link
                   href="/terms"
-                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   Terms
                 </Link>
                 <Link
                   href="/demo/auction"
-                  className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/20 hover:text-amber-300"
+                  className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-brand-gold/20 bg-brand-gold/10 px-3 py-2 text-sm font-semibold text-brand-gold transition-colors hover:bg-brand-gold/20 hover:text-brand-gold-bright"
                   onClick={() => { setMobileMenuOpen(false); }}
                 >
                   <Zap className="h-3.5 w-3.5" aria-hidden="true" />

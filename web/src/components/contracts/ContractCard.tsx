@@ -13,6 +13,10 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useAcceptanceExpired } from '@/hooks/useContracts';
 import { api, getApiErrorMessage } from '@/lib/api';
+import {
+  CONTRACT_STATUS_CLASSES,
+  DEFAULT_STATUS_CLASS,
+} from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { Contract, ContractTipResponse } from '@/types';
 import { CONTRACT_STATUS, MILESTONE_STATUS, PAYMENT_TIMING } from '@/types';
@@ -45,24 +49,7 @@ function getStatusVariant(status: string): 'default' | 'secondary' | 'destructiv
 
 /** Background tint colors for status badges to add visual weight */
 function getStatusBadgeTint(status: string): string {
-  switch (status) {
-    case CONTRACT_STATUS.ACTIVE:
-      return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
-    case CONTRACT_STATUS.PENDING_ACCEPTANCE:
-      return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
-    case CONTRACT_STATUS.COMPLETED:
-      return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
-    case CONTRACT_STATUS.CANCELLED:
-    case CONTRACT_STATUS.VOIDED:
-    case CONTRACT_STATUS.ABANDONED:
-      return 'bg-red-500/15 text-red-400 border-red-500/30';
-    case CONTRACT_STATUS.DISPUTED:
-      return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
-    case CONTRACT_STATUS.SUSPENDED:
-      return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30';
-    default:
-      return '';
-  }
+  return CONTRACT_STATUS_CLASSES[status] ?? DEFAULT_STATUS_CLASS;
 }
 
 function getStatusLabel(status: string): string {
@@ -107,9 +94,9 @@ function getPaymentTimingLabel(timing: string): string {
 
 /** Gradient color for progress bar based on completion */
 function getProgressGradient(percent: number): string {
-  if (percent >= 100) return 'bg-gradient-to-r from-emerald-500 to-emerald-400';
-  if (percent >= 60) return 'bg-gradient-to-r from-blue-500 to-emerald-500';
-  return 'bg-gradient-to-r from-blue-500 to-blue-400';
+  if (percent >= 100) return 'bg-gradient-to-r from-status-completed to-trust-high';
+  if (percent >= 60) return 'bg-gradient-to-r from-status-open to-status-completed';
+  return 'bg-gradient-to-r from-status-open to-bid-active';
 }
 
 export function ContractCard({ contract }: ContractCardProps) {
@@ -132,8 +119,8 @@ export function ContractCard({ contract }: ContractCardProps) {
         <CardHeader className="relative z-[2] pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <FileText className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden="true" />
-              <h3 className="truncate text-base font-semibold text-zinc-100">
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <h3 className="truncate text-base font-semibold text-foreground">
                 {contract.contract_number}
               </h3>
             </div>
@@ -142,7 +129,7 @@ export function ContractCard({ contract }: ContractCardProps) {
               className={cn(
                 'shrink-0 border font-medium',
                 expired
-                  ? 'border-zinc-500/30 bg-zinc-500/15 text-zinc-400'
+                  ? CONTRACT_STATUS_CLASSES.expired
                   : getStatusBadgeTint(contract.status),
               )}
             >
@@ -153,13 +140,10 @@ export function ContractCard({ contract }: ContractCardProps) {
         <CardContent className="relative z-[2] space-y-3">
           {/* Amount and payment timing */}
           <div className="flex items-baseline justify-between">
-            <p
-              className="text-2xl font-bold tracking-tight text-zinc-100 tabular-nums"
-              style={{ textShadow: '0 0 16px rgba(16,185,129,0.15)' }}
-            >
+            <p className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
               {formatCents(contract.amount_cents)}
             </p>
-            <div className="flex items-center gap-1 text-sm text-zinc-400">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               {getPaymentTimingLabel(contract.payment_timing)}
             </div>
@@ -168,29 +152,23 @@ export function ContractCard({ contract }: ContractCardProps) {
           {/* Milestone progress with gradient bar on glass */}
           {totalMilestones > 0 ? (
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-zinc-400">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span className="font-medium">Milestones</span>
                 <span className="flex items-center gap-1.5">
                   <span>
                     {String(approvedCount)} / {String(totalMilestones)} completed
                   </span>
-                  <span className="font-semibold text-zinc-200">{String(progressPercent)}%</span>
+                  <span className="font-semibold text-foreground">{String(progressPercent)}%</span>
                 </span>
               </div>
               {/* Progress bar with glow against glass */}
-              <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+              <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className={cn(
                     'h-full rounded-full transition-all duration-500',
                     getProgressGradient(progressPercent),
                   )}
-                  style={{
-                    width: `${String(progressPercent)}%`,
-                    boxShadow:
-                      progressPercent >= 100
-                        ? '0 0 8px rgba(16, 185, 129, 0.4)'
-                        : '0 0 6px rgba(59, 130, 246, 0.3)',
-                  }}
+                  style={{ width: `${String(progressPercent)}%` }}
                   role="progressbar"
                   aria-valuenow={progressPercent}
                   aria-valuemin={0}
@@ -199,7 +177,7 @@ export function ContractCard({ contract }: ContractCardProps) {
                 {/* Glow dot at the progress edge */}
                 {progressPercent > 0 && progressPercent < 100 ? (
                   <div
-                    className="progress-glow-dot absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-[0_0_6px_rgba(59,130,246,0.5)]"
+                    className="progress-glow-dot absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-foreground"
                     style={{ left: `calc(${String(progressPercent)}% - 6px)` }}
                     aria-hidden="true"
                   />
@@ -212,7 +190,7 @@ export function ContractCard({ contract }: ContractCardProps) {
               the window is open, a muted "expired" note once it has closed. */}
           {contract.status === CONTRACT_STATUS.PENDING_ACCEPTANCE ? (
             expired ? (
-              <p className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                 Acceptance window expired
               </p>
@@ -222,7 +200,7 @@ export function ContractCard({ contract }: ContractCardProps) {
           ) : null}
 
           {/* Job title reference */}
-          <p className="truncate text-xs text-zinc-400">
+          <p className="truncate text-xs text-muted-foreground">
             {contract.job_title || `Job: ${contract.job_id.slice(0, 8)}...`}
           </p>
 
@@ -239,7 +217,7 @@ export function ContractCard({ contract }: ContractCardProps) {
           ) : null}
 
           {(contract.tip_amount_cents ?? 0) > 0 ? (
-            <p className="text-xs text-emerald-400">
+            <p className="text-xs text-trust-high">
               Tip: {formatCents(contract.tip_amount_cents ?? 0)} — thanks for the love
             </p>
           ) : null}
@@ -308,7 +286,7 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
 
   if (success) {
     return (
-      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-300">
+      <div className="rounded-md border border-trust-high/30 bg-trust-high/10 p-2 text-xs text-trust-high">
         Thanks! Your tip is on its way.
       </div>
     );
@@ -322,10 +300,10 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
           stop(e);
           setOpen(true);
         }}
-        className="hover:bg-muted/50 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-dashed border-zinc-600 p-2 text-xs text-zinc-300 transition-colors"
+        className="hover:bg-muted/50 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-dashed border-border p-2 text-xs text-muted-foreground transition-colors"
         aria-label="Tip your provider"
       >
-        <Heart className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+        <Heart className="h-3.5 w-3.5 text-brand-gold" aria-hidden="true" />
         Tip your provider?
       </button>
     );
@@ -333,11 +311,11 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
 
   return (
     <div
-      className="space-y-2 rounded-md border border-zinc-700 bg-zinc-900/50 p-2"
+      className="space-y-2 rounded-md border border-border bg-card/50 p-2"
       role="group"
       aria-label="Tip composer"
     >
-      <p className="text-xs font-medium text-zinc-200">Add a tip</p>
+      <p className="text-xs font-medium text-foreground">Add a tip</p>
       <div className="flex flex-wrap gap-1.5">
         {presets.map((p) => (
           <Button

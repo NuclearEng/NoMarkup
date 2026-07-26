@@ -92,7 +92,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
           <h3 className="text-lg font-semibold">Job Completion</h3>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm text-green-700">
+          <div className="flex items-center gap-2 rounded-lg border border-status-completed/30 bg-status-completed/10 p-3 text-sm text-status-completed">
             <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
             All milestones have been approved.
           </div>
@@ -146,7 +146,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
           <h3 className="text-lg font-semibold">Job Completion</h3>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm text-green-700">
+          <div className="flex items-center gap-2 rounded-lg border border-status-completed/30 bg-status-completed/10 p-3 text-sm text-status-completed">
             <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
             You have marked this work as complete. Waiting for customer approval.
           </div>
@@ -164,7 +164,7 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
           <h3 className="text-lg font-semibold">Job Completion</h3>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-2 rounded-lg border bg-blue-50 p-3 text-sm text-blue-700">
+          <div className="flex items-center gap-2 rounded-lg border border-status-open/30 bg-status-open/10 p-3 text-sm text-status-open">
             <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
             The provider has marked this work as complete. Please review and approve or request a
             revision.

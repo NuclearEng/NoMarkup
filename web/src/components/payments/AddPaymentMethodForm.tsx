@@ -169,7 +169,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
 
   return (
     <form onSubmit={(e) => { void handleSubmit(e); }} className="space-y-4">
-      <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+      <div className="rounded-md border border-trust-medium/30 bg-trust-medium/10 px-3 py-2 text-xs text-trust-medium">
         Dev mode — no Stripe keys configured. Cards are stored in the payment
         service&apos;s in-memory store and reset on restart.
       </div>
@@ -180,7 +180,7 @@ function DevCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
           id="dev-brand"
           value={brand}
           onChange={(e) => { setBrand(e.target.value); }}
-          className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 text-sm focus:ring-2 focus:outline-none [&>option]:bg-[#0c0f18] [&>option]:text-white"
+          className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 text-sm focus:ring-2 focus:outline-none [&>option]:bg-background [&>option]:text-foreground"
         >
           {CARD_BRANDS.map((b) => (
             <option key={b} value={b}>

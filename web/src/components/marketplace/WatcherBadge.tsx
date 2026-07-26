@@ -25,10 +25,10 @@ export function WatcherBadge({ count, className }: WatcherBadgeProps) {
 
   const styles =
     tier === 'hot'
-      ? 'bg-red-500/15 text-red-300 border-red-500/30'
+      ? 'bg-destructive/15 text-destructive border-destructive/30'
       : tier === 'warm'
-        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-        : 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20';
+        ? 'bg-trust-medium/15 text-trust-medium border-trust-medium/30'
+        : 'bg-muted text-muted-foreground border-border';
 
   return (
     <span

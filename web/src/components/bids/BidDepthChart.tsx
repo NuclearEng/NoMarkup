@@ -334,7 +334,7 @@ export function BidDepthChart({
               x={lowestX}
               y={padding.top - 4}
               textAnchor="middle"
-              className="fill-amber-400 text-[9px] font-bold"
+              className="fill-trust-medium text-[9px] font-bold"
             >
               {formatPrice(currentLowest)}
             </text>

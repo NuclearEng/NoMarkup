@@ -139,7 +139,7 @@ describe('FraudAlertDetail', () => {
     expect(screen.getByText('Confirmed real account.')).toBeDefined();
   });
 
-  it('uses the high-risk red-500 progress class for confidence >= 0.8', () => {
+  it('uses the high-risk destructive progress class for confidence >= 0.8', () => {
     const { container } = render(
       createElement(FraudAlertDetail, {
         alert: makeAlert({
@@ -147,12 +147,12 @@ describe('FraudAlertDetail', () => {
         }),
       }),
     );
-    // The Progress bar gets the bg-red-500 class via cn() when confidence >= 0.8
-    const redProgress = container.querySelector('.bg-red-500');
+    // The Progress bar gets bg-destructive via cn() when confidence >= 0.8
+    const redProgress = container.querySelector('.bg-destructive');
     expect(redProgress).not.toBeNull();
   });
 
-  it('uses the medium-risk orange-500 progress class for confidence between 0.5 and 0.8', () => {
+  it('uses the medium-risk status-disputed progress class for confidence between 0.5 and 0.8', () => {
     const { container } = render(
       createElement(FraudAlertDetail, {
         alert: makeAlert({
@@ -160,11 +160,11 @@ describe('FraudAlertDetail', () => {
         }),
       }),
     );
-    const orangeProgress = container.querySelector('.bg-orange-500');
+    const orangeProgress = container.querySelector('.bg-status-disputed');
     expect(orangeProgress).not.toBeNull();
   });
 
-  it('falls back to the low-risk yellow-500 progress class for confidence below 0.5', () => {
+  it('falls back to the low-risk trust-medium progress class for confidence below 0.5', () => {
     const { container } = render(
       createElement(FraudAlertDetail, {
         alert: makeAlert({
@@ -172,7 +172,7 @@ describe('FraudAlertDetail', () => {
         }),
       }),
     );
-    const yellowProgress = container.querySelector('.bg-yellow-500');
+    const yellowProgress = container.querySelector('.bg-trust-medium');
     expect(yellowProgress).not.toBeNull();
   });
 

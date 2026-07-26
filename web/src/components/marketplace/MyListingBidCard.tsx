@@ -76,7 +76,7 @@ export const MyListingBidCard = memo(function MyListingBidCard({ entry }: MyList
           <span
             className={
               listing.is_user_winning
-                ? 'font-semibold text-emerald-400 tabular-nums'
+                ? 'font-semibold text-bid-winning tabular-nums'
                 : 'font-semibold text-zinc-100 tabular-nums'
             }
           >

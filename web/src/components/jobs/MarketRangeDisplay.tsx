@@ -18,10 +18,10 @@ function getConfidence(sampleSize: number): {
   dotColor: string;
 } {
   if (sampleSize < 5) {
-    return { label: 'Limited data', color: 'text-amber-600 dark:text-amber-400', dotColor: 'bg-amber-500 dark:bg-amber-400' };
+    return { label: 'Limited data', color: 'text-trust-medium', dotColor: 'bg-trust-medium' };
   }
   if (sampleSize >= 20) {
-    return { label: 'High confidence', color: 'text-green-600 dark:text-green-400', dotColor: 'bg-green-500 dark:bg-green-400' };
+    return { label: 'High confidence', color: 'text-bid-winning', dotColor: 'bg-bid-winning' };
   }
   return { label: 'Moderate confidence', color: 'text-zinc-500 dark:text-zinc-400', dotColor: 'bg-zinc-400' };
 }
@@ -79,7 +79,8 @@ export function MarketRangeDisplay({
             <div
               className="absolute inset-0 rounded-full"
               style={{
-                background: 'linear-gradient(to right, #22c55e, #fbbf24, #f87171)',
+                background:
+                  'linear-gradient(to right, hsl(var(--bid-winning)), hsl(var(--trust-medium)), var(--destructive))',
               }}
             />
             {/* Median marker */}
@@ -93,7 +94,9 @@ export function MarketRangeDisplay({
                 className="absolute -top-0.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-white shadow-lg"
                 style={{
                   left: `${String(bidPosition)}%`,
-                  backgroundColor: isBelowMedian ? '#22c55e' : '#f87171',
+                  backgroundColor: isBelowMedian
+                    ? 'hsl(var(--bid-winning))'
+                    : 'var(--destructive)',
                 }}
               />
             ) : null}
@@ -102,21 +105,21 @@ export function MarketRangeDisplay({
 
         {/* Price labels */}
         <div className="flex items-center justify-between text-[10px]">
-          <span className="font-medium text-green-600 dark:text-green-400">{formatCents(low_cents)}</span>
+          <span className="font-medium text-bid-winning">{formatCents(low_cents)}</span>
           <span className="text-zinc-500">{formatCents(median_cents)}</span>
-          <span className="font-medium text-red-600 dark:text-red-400">{formatCents(high_cents)}</span>
+          <span className="font-medium text-destructive">{formatCents(high_cents)}</span>
         </div>
 
         {/* Savings indicator */}
         {savingsPercent !== null && savingsPercent > 0 ? (
           <div className="mt-2 text-center">
             {isBelowMedian ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-600 dark:text-green-400">
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-bid-winning">
                 <TrendingDown className="h-2.5 w-2.5" aria-hidden="true" />
                 {String(savingsPercent)}% below market
               </span>
             ) : isAboveMedian ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-trust-medium">
                 <TrendingUp className="h-2.5 w-2.5" aria-hidden="true" />
                 {String(savingsPercent)}% above market
               </span>
@@ -193,7 +196,7 @@ export function MarketRangeDisplay({
               style={{ left: `${String(bidPosition)}%` }}
             >
               <span
-                className={`text-[10px] font-bold ${isBelowMedian ? 'text-green-600 dark:text-green-400' : isAboveMedian ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-white'}`}
+                className={`text-[10px] font-bold ${isBelowMedian ? 'text-bid-winning' : isAboveMedian ? 'text-destructive' : 'text-zinc-900 dark:text-white'}`}
               >
                 {formatCents(currentBidCents)}
               </span>
@@ -234,7 +237,7 @@ export function MarketRangeDisplay({
               {/* Pulsing glow for below-median bids */}
               {isBelowMedian ? (
                 <span
-                  className="absolute inset-0 animate-ping rounded-full bg-green-400/40"
+                  className="absolute inset-0 animate-ping rounded-full bg-bid-winning/40"
                   aria-hidden="true"
                 />
               ) : null}
@@ -242,10 +245,10 @@ export function MarketRangeDisplay({
                 className="absolute inset-0 rounded-full border-2 border-zinc-100 shadow-lg shadow-black/20 dark:border-white dark:shadow-black/50"
                 style={{
                   backgroundColor: isBelowMedian
-                    ? '#22c55e'
+                    ? 'hsl(var(--bid-winning))'
                     : isAboveMedian
-                      ? '#f87171'
-                      : '#fbbf24',
+                      ? 'var(--destructive)'
+                      : 'hsl(var(--trust-medium))',
                 }}
               />
             </div>
@@ -256,14 +259,14 @@ export function MarketRangeDisplay({
         <div className="mt-2.5 flex items-center justify-between">
           <div className="text-left">
             <p className="text-[10px] font-medium tracking-wider text-zinc-400 dark:text-zinc-600 uppercase">Low</p>
-            <p className="text-sm font-bold text-green-600 dark:text-green-400">{formatCents(low_cents)}</p>
+            <p className="text-sm font-bold text-bid-winning">{formatCents(low_cents)}</p>
           </div>
           <div className="text-center">
             <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{formatCents(median_cents)}</p>
           </div>
           <div className="text-right">
             <p className="text-[10px] font-medium tracking-wider text-zinc-400 dark:text-zinc-600 uppercase">High</p>
-            <p className="text-sm font-bold text-red-600 dark:text-red-400">{formatCents(high_cents)}</p>
+            <p className="text-sm font-bold text-destructive">{formatCents(high_cents)}</p>
           </div>
         </div>
       </div>
@@ -272,16 +275,16 @@ export function MarketRangeDisplay({
       {savingsPercent !== null && savingsPercent > 0 ? (
         <div className="mt-3 flex items-center justify-center">
           {isBelowMedian ? (
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-3 py-1">
-              <TrendingDown className="h-3.5 w-3.5 text-green-400" aria-hidden="true" />
-              <span className="text-xs font-bold text-green-400">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-bid-winning/10 px-3 py-1">
+              <TrendingDown className="h-3.5 w-3.5 text-bid-winning" aria-hidden="true" />
+              <span className="text-xs font-bold text-bid-winning">
                 {String(savingsPercent)}% below market
               </span>
             </div>
           ) : isAboveMedian ? (
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1">
-              <TrendingUp className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
-              <span className="text-xs font-bold text-amber-400">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1">
+              <TrendingUp className="h-3.5 w-3.5 text-trust-medium" aria-hidden="true" />
+              <span className="text-xs font-bold text-trust-medium">
                 {String(savingsPercent)}% above market
               </span>
             </div>

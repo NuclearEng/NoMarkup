@@ -79,8 +79,9 @@ struct LoginView: View {
             } label: {
                 Group {
                     if auth.isLoading {
+                        // Dark spinner for contrast on brand-gold filled button.
                         ProgressView()
-                            .tint(.white)
+                            .tint(Color.primary)
                     } else {
                         Text("Sign in")
                             .fontWeight(.semibold)
@@ -90,6 +91,7 @@ struct LoginView: View {
                 .frame(minHeight: 48)
             }
             .buttonStyle(.borderedProminent)
+            .tint(Color("AccentColor"))
             .disabled(auth.isLoading)
             .accessibilityLabel("Sign in with email and password")
 

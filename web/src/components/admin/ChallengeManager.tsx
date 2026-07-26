@@ -44,7 +44,7 @@ function ChallengeRow({ challenge }: { challenge: AdminChallenge }) {
     <div className="flex items-center gap-4 rounded-md border p-4">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
         {challenge.is_active ? (
-          <CheckCircle2 className="h-5 w-5 text-green-600" aria-hidden="true" />
+          <CheckCircle2 className="h-5 w-5 text-trust-high" aria-hidden="true" />
         ) : (
           <Circle className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
         )}

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useApproveMilestone, useRequestRevision, useSubmitMilestone } from '@/hooks/useContracts';
+import { MILESTONE_STATUS_DOT_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import { revisionNotesSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
@@ -24,22 +25,7 @@ interface MilestoneTrackerProps {
 const MAX_REVISIONS = 3;
 
 function getMilestoneStatusColor(status: string): string {
-  switch (status) {
-    case MILESTONE_STATUS.PENDING:
-      return 'bg-gray-400';
-    case MILESTONE_STATUS.IN_PROGRESS:
-      return 'bg-blue-500';
-    case MILESTONE_STATUS.SUBMITTED:
-      return 'bg-yellow-500';
-    case MILESTONE_STATUS.APPROVED:
-      return 'bg-green-500';
-    case MILESTONE_STATUS.REVISION_REQUESTED:
-      return 'bg-orange-500';
-    case MILESTONE_STATUS.DISPUTED:
-      return 'bg-red-500';
-    default:
-      return 'bg-gray-400';
-  }
+  return MILESTONE_STATUS_DOT_CLASSES[status] ?? MILESTONE_STATUS_DOT_CLASSES.pending ?? 'bg-muted-foreground';
 }
 
 function getMilestoneStatusBadgeVariant(
@@ -157,7 +143,9 @@ function MilestoneCard({
           <div
             className={cn(
               'min-h-[24px] w-0.5 flex-1',
-              statusColor === 'bg-green-500' ? 'bg-green-300' : 'bg-gray-200',
+              milestone.status === MILESTONE_STATUS.APPROVED
+                ? 'bg-status-completed/40'
+                : 'bg-border',
             )}
           />
         ) : null}
@@ -190,12 +178,12 @@ function MilestoneCard({
 
           {/* Revision notes from last request */}
           {milestone.status === MILESTONE_STATUS.REVISION_REQUESTED && milestone.revision_notes ? (
-            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-orange-700">
+            <div className="rounded-lg border border-status-disputed/30 bg-status-disputed/10 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-status-disputed">
                 <MessageSquare className="h-3 w-3" aria-hidden="true" />
                 Revision Notes
               </div>
-              <p className="mt-1 text-sm text-orange-800">{milestone.revision_notes}</p>
+              <p className="mt-1 text-sm text-status-disputed">{milestone.revision_notes}</p>
             </div>
           ) : null}
 

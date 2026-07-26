@@ -54,35 +54,35 @@ function getUrgencyLevel(totalMs: number): UrgencyLevel {
 }
 
 const URGENCY_COLORS: Record<UrgencyLevel, string> = {
-  [URGENCY_LEVEL.CALM]: 'text-emerald-500',
-  [URGENCY_LEVEL.ACTIVE]: 'text-blue-500',
-  [URGENCY_LEVEL.URGENT]: 'text-amber-500',
-  [URGENCY_LEVEL.CRITICAL]: 'text-orange-500',
-  [URGENCY_LEVEL.FINAL]: 'text-red-500',
+  [URGENCY_LEVEL.CALM]: 'text-bid-winning',
+  [URGENCY_LEVEL.ACTIVE]: 'text-bid-active',
+  [URGENCY_LEVEL.URGENT]: 'text-trust-medium',
+  [URGENCY_LEVEL.CRITICAL]: 'text-status-in-progress',
+  [URGENCY_LEVEL.FINAL]: 'text-destructive',
 };
 
 const URGENCY_RING_COLORS: Record<UrgencyLevel, string> = {
-  [URGENCY_LEVEL.CALM]: 'stroke-emerald-500',
-  [URGENCY_LEVEL.ACTIVE]: 'stroke-blue-500',
-  [URGENCY_LEVEL.URGENT]: 'stroke-amber-500',
-  [URGENCY_LEVEL.CRITICAL]: 'stroke-orange-500',
-  [URGENCY_LEVEL.FINAL]: 'stroke-red-500',
+  [URGENCY_LEVEL.CALM]: 'stroke-bid-winning',
+  [URGENCY_LEVEL.ACTIVE]: 'stroke-bid-active',
+  [URGENCY_LEVEL.URGENT]: 'stroke-trust-medium',
+  [URGENCY_LEVEL.CRITICAL]: 'stroke-status-in-progress',
+  [URGENCY_LEVEL.FINAL]: 'stroke-destructive',
 };
 
 const URGENCY_RING_TRACK: Record<UrgencyLevel, string> = {
-  [URGENCY_LEVEL.CALM]: 'stroke-emerald-500/15',
-  [URGENCY_LEVEL.ACTIVE]: 'stroke-blue-500/15',
-  [URGENCY_LEVEL.URGENT]: 'stroke-amber-500/15',
-  [URGENCY_LEVEL.CRITICAL]: 'stroke-orange-500/15',
-  [URGENCY_LEVEL.FINAL]: 'stroke-red-500/15',
+  [URGENCY_LEVEL.CALM]: 'stroke-bid-winning/15',
+  [URGENCY_LEVEL.ACTIVE]: 'stroke-bid-active/15',
+  [URGENCY_LEVEL.URGENT]: 'stroke-trust-medium/15',
+  [URGENCY_LEVEL.CRITICAL]: 'stroke-status-in-progress/15',
+  [URGENCY_LEVEL.FINAL]: 'stroke-destructive/15',
 };
 
 const _URGENCY_GLOW_COLORS: Record<UrgencyLevel, string> = {
   [URGENCY_LEVEL.CALM]: '',
-  [URGENCY_LEVEL.ACTIVE]: 'shadow-blue-500/20',
-  [URGENCY_LEVEL.URGENT]: 'shadow-amber-500/20',
-  [URGENCY_LEVEL.CRITICAL]: 'shadow-orange-500/25',
-  [URGENCY_LEVEL.FINAL]: 'shadow-red-500/30',
+  [URGENCY_LEVEL.ACTIVE]: 'shadow-bid-active/20',
+  [URGENCY_LEVEL.URGENT]: 'shadow-trust-medium/20',
+  [URGENCY_LEVEL.CRITICAL]: 'shadow-status-in-progress/25',
+  [URGENCY_LEVEL.FINAL]: 'shadow-destructive/30',
 };
 
 function pad(n: number): string {
@@ -405,7 +405,7 @@ export const AuctionTimer = memo(function AuctionTimer({
         {/* Glow background for final 15 seconds */}
         {isFinal15 ? (
           <div
-            className="pointer-events-none absolute -inset-2 -z-10 rounded-full bg-red-500 opacity-20 blur-xl"
+            className="pointer-events-none absolute -inset-2 -z-10 rounded-full bg-destructive opacity-20 blur-xl"
             aria-hidden="true"
           />
         ) : null}

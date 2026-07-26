@@ -174,7 +174,7 @@ export function AuctionReplay({ listingId }: AuctionReplayProps) {
     <div className="border-border/50 bg-card overflow-hidden rounded-xl border shadow-lg">
       <div className="border-border/30 flex items-center justify-between border-b px-4 py-3 sm:px-6">
         <div className="flex items-center gap-2.5">
-          <Zap className="h-5 w-5 text-blue-400" aria-hidden="true" />
+          <Zap className="h-5 w-5 text-bid-active" aria-hidden="true" />
           <h2 className="text-foreground text-sm font-bold tracking-widest uppercase">
             Auction Replay
           </h2>
@@ -190,7 +190,7 @@ export function AuctionReplay({ listingId }: AuctionReplayProps) {
       {/* Hero price */}
       <div className="px-4 pt-5 pb-2 text-center sm:px-6 sm:pt-6">
         <p
-          className="text-4xl font-black tracking-tight text-emerald-400 sm:text-5xl"
+          className="text-4xl font-black tracking-tight text-bid-winning sm:text-5xl"
           role="status"
           aria-live="polite"
         >
@@ -291,9 +291,9 @@ export function AuctionReplay({ listingId }: AuctionReplayProps) {
       {/* Completion celebration */}
       {isComplete ? (
         <div className="border-border/30 border-t px-4 py-4 text-center sm:px-6">
-          <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-4 py-2">
-            <Trophy className="h-5 w-5 text-emerald-400" aria-hidden="true" />
-            <span className="text-sm font-bold text-emerald-400">
+          <div className="inline-flex items-center gap-2 rounded-full bg-bid-winning/15 px-4 py-2">
+            <Trophy className="h-5 w-5 text-bid-winning" aria-hidden="true" />
+            <span className="text-sm font-bold text-bid-winning">
               Auction complete
             </span>
           </div>

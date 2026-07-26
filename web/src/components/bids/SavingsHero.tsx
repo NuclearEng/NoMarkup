@@ -129,7 +129,7 @@ export function SavingsHero({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-4 sm:px-6 sm:py-5',
+        'relative overflow-hidden rounded-xl border border-bid-winning/15 bg-bid-winning/[0.04] px-4 py-4 sm:px-6 sm:py-5',
         isGreatDeal && 'animate-savings-sparkle',
         isAnimating && 'scale-[1.02] transition-transform duration-300',
         className,
@@ -153,20 +153,20 @@ export function SavingsHero({
         className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 opacity-[0.04] sm:right-8"
         aria-hidden="true"
       >
-        <ArrowDown className="h-24 w-24 text-emerald-500 sm:h-32 sm:w-32" strokeWidth={1.5} />
+        <ArrowDown className="h-24 w-24 text-bid-winning sm:h-32 sm:w-32" strokeWidth={1.5} />
       </div>
 
       <div className="relative flex flex-col items-center gap-2 text-center">
         {/* Incredible deal badge with pulsing ring */}
         {isIncredibleDeal ? (
-          <div className="relative inline-flex items-center gap-1.5 rounded-full bg-orange-500/15 px-3.5 py-1.5 text-xs font-bold text-orange-500">
+          <div className="relative inline-flex items-center gap-1.5 rounded-full bg-trust-medium/15 px-3.5 py-1.5 text-xs font-bold text-trust-medium">
             {/* Pulsing rings around badge */}
             <span
-              className="animate-savings-ring-pulse absolute inset-0 rounded-full border border-orange-500/30"
+              className="animate-savings-ring-pulse absolute inset-0 rounded-full border border-trust-medium/30"
               aria-hidden="true"
             />
             <span
-              className="animate-savings-ring-pulse absolute -inset-1 rounded-full border border-orange-500/15"
+              className="animate-savings-ring-pulse absolute -inset-1 rounded-full border border-trust-medium/15"
               style={{ animationDelay: '0.3s' }}
               aria-hidden="true"
             />
@@ -176,14 +176,14 @@ export function SavingsHero({
         ) : null}
 
         {/* Main savings label */}
-        <p className="text-sm font-medium text-emerald-600 dark:text-emerald-300">
+        <p className="text-sm font-medium text-bid-winning dark:text-bid-winning">
           You&apos;re saving
         </p>
 
         {/* Hero savings amount with green glow */}
         <div className="flex items-baseline gap-2.5">
           <span
-            className="text-3xl font-black tracking-tight text-emerald-400 sm:text-4xl"
+            className="text-3xl font-black tracking-tight text-bid-winning sm:text-4xl"
             style={{
               textShadow: '0 0 20px rgba(34,197,94,0.5), 0 0 40px rgba(34,197,94,0.2)',
             }}
@@ -194,8 +194,8 @@ export function SavingsHero({
           <span
             className={cn(
               'flex items-center gap-1 rounded-full px-3 py-1 text-sm font-extrabold',
-              'bg-emerald-500/25 text-emerald-600 dark:text-emerald-400',
-              'border border-emerald-400/30',
+              'bg-bid-winning/25 text-bid-winning dark:text-bid-winning',
+              'border border-bid-winning/30',
             )}
           >
             {trendUp ? (
@@ -215,7 +215,7 @@ export function SavingsHero({
 
         {/* Trend indicator */}
         {trendUp ? (
-          <p className="mt-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          <p className="mt-0.5 text-xs font-medium text-bid-winning dark:text-bid-winning">
             Savings just increased — prices are dropping
           </p>
         ) : null}

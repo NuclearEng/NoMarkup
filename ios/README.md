@@ -60,7 +60,7 @@ xcodebuild \
 
 Then run from Xcode (**⌘R**) on any iPhone or iPad simulator.
 
-## App Icon
+## App Icon & brand
 
 Single-size universal asset (Xcode 14+ single-size catalog):
 
@@ -68,31 +68,19 @@ Single-size universal asset (Xcode 14+ single-size catalog):
 |------|------|
 | `NoMarkup/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` | 1024×1024 RGB PNG (no alpha) — App Store + home-screen source |
 | `NoMarkup/Assets.xcassets/AppIcon.appiconset/Contents.json` | References the 1024 universal iOS slot |
+| `NoMarkup/Assets.xcassets/AccentColor.colorset` | Brand gold accent (CTAs / tint) |
+| `brand/app-icon-1024.png` | Canonical master art (monorepo root) |
 
-**Brand (placeholder ops mark):** dark navy `#070b14` background, gold `#c9a84c` “NM” monogram with ring. Opaque RGB only (App Store rejects transparency). Replace with final marketing art before ASC upload if design ships a refined mark.
+**Brand mark (SOTA seal):** dark navy field, **3D gold “N” monogram** inside a **double gold ring** with a diamond at the crown — not the flat Pillow “NM” script monogram used in early scaffolding. Opaque RGB only (App Store rejects transparency). Keep `AppIcon-1024.png` and `brand/app-icon-1024.png` in sync when marketing revises the seal.
 
-Regenerate with Python + Pillow from the monorepo root:
+**Accent / design-system tokens (aligned with web `globals.css`):**
 
-```bash
-python3 - <<'PY'
-from PIL import Image, ImageDraw, ImageFont
-import os
-out = "ios/NoMarkup/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
-size, bg, gold = 1024, (0x07, 0x0b, 0x14), (0xc9, 0xa8, 0x4c)
-img = Image.new("RGB", (size, size), bg)
-d = ImageDraw.Draw(img)
-cx = cy = size // 2
-for r, w, col in [(380, 28, (0xa8, 0x8a, 0x3a)), (320, 8, gold)]:
-    for i in range(w):
-        d.ellipse([cx - r + i, cy - r + i, cx + r - i, cy + r - i], outline=col)
-font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Avenir Next.ttc", 340)
-bbox = d.textbbox((0, 0), "NM", font=font)
-tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-d.text(((size - tw) / 2 - bbox[0], (size - th) / 2 - bbox[1] - 20), "NM", font=font, fill=gold)
-img.save(out, format="PNG", optimize=True)
-print("wrote", out)
-PY
-```
+| Token | Light | Dark | iOS use |
+|-------|-------|------|---------|
+| Brand gold (`--brand-gold`) | `#c9a84c` | `#d4af57` | `AccentColor` → `.borderedProminent` CTAs (Buy now, Place bid, Sign in, Pay), tab/link tint |
+| Navy field (icon) | `#070b14`–deep navy | — | App icon background only (not a separate colorset) |
+
+Primary money and auth CTAs use `.buttonStyle(.borderedProminent)` + `Color("AccentColor")` / app-level `.tint` — do not invent ad-hoc hex colors in SwiftUI.
 
 ## Device smoke
 
@@ -198,7 +186,7 @@ First binary should keep regulated digital-adjacent flags off per `ios-payment-r
 - [ ] CoreLocation market picker + job check-in with pre-prompts
 - [ ] Photo picker / camera capture paths
 - [ ] Account export (`GET /api/v1/me/export`) + real deletion schedule path
-- [x] App icon 1024×1024 asset (placeholder brand mark in AppIcon catalog)
+- [x] App icon 1024×1024 SOTA seal (gold N monogram + rings; AccentColor brand gold)
 - [ ] Organization team signing + App Store Connect record
 - [ ] Human-execute device smoke checklist and sign launch-board
 - [ ] Stage B2 StoreKit only when digital unlocks ship

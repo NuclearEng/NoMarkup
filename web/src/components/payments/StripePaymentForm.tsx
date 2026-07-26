@@ -61,8 +61,8 @@ export interface StripePaymentFormProps {
 }
 
 const TONE_CLASSES: Record<ReturnType<typeof outcomeTone>, string> = {
-  success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
-  pending: 'border-amber-500/30 bg-amber-500/10 text-amber-200',
+  success: 'border-status-completed/30 bg-status-completed/10 text-status-completed',
+  pending: 'border-trust-medium/30 bg-trust-medium/10 text-trust-medium',
   danger: 'border-destructive/40 bg-destructive/10 text-destructive',
 };
 

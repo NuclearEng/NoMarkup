@@ -105,6 +105,7 @@ struct MyOrdersView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(Color("AccentColor"))
                 .disabled(payingOrderID != nil)
                 .accessibilityHint("Opens Apple Pay or card checkout for this order")
             }

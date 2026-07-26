@@ -82,7 +82,7 @@ function PaymentRow({ payment }: { payment: Payment }) {
               </div>
 
               {payment.refund_amount_cents > 0 ? (
-                <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
+                <div className="flex items-center justify-between text-trust-medium">
                   <span>Refunded</span>
                   <span>{formatCents(payment.refund_amount_cents)}</span>
                 </div>
@@ -96,7 +96,7 @@ function PaymentRow({ payment }: { payment: Payment }) {
               ) : null}
 
               {payment.failure_reason ? (
-                <div className="flex items-center justify-between text-red-600 dark:text-red-400">
+                <div className="flex items-center justify-between text-destructive">
                   <span>Failure reason</span>
                   <span className="text-right">{payment.failure_reason}</span>
                 </div>

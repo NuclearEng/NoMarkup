@@ -47,7 +47,7 @@ export function TrendingRail({ className, limit = 12 }: TrendingRailProps) {
       <header className="mb-3 flex items-baseline justify-between gap-3">
         <div className="flex items-center gap-2">
           <Flame
-            className="h-4 w-4 text-amber-300"
+            className="h-4 w-4 text-trust-medium"
             aria-hidden="true"
           />
           <h2 className="text-sm font-semibold tracking-wide text-zinc-200 uppercase">
@@ -94,7 +94,7 @@ function TrendingCard({
     <li className="w-44 shrink-0 snap-start" data-testid="trending-card">
       <Link
         href={(`/marketplace/${listing.id}`) as Route}
-        className="glass glass-highlight group block overflow-hidden rounded-lg border border-white/[0.06] transition hover:border-amber-400/30"
+        className="glass glass-highlight group block overflow-hidden rounded-lg border border-white/[0.06] transition hover:border-trust-medium/30"
       >
         <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-900">
           {photo ? (

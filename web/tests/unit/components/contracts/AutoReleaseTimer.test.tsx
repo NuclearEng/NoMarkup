@@ -31,29 +31,29 @@ describe('AutoReleaseTimer', () => {
     expect(screen.getByText(/Payment has been auto-released/i)).toBeDefined();
   });
 
-  it('renders countdown in yellow when more than 72h remain', () => {
-    // Completed 1 day ago → ~6 days left → > 72h → yellow-600
+  it('renders countdown in trust-medium when more than 72h remain', () => {
+    // Completed 1 day ago → ~6 days left → > 72h → trust-medium
     render(createElement(AutoReleaseTimer, { completedAt: '2026-04-23T12:00:00Z' }));
     const countdown = screen.getByLabelText('Auto-release countdown');
-    expect(countdown.className).toContain('text-yellow-600');
+    expect(countdown.className).toContain('text-trust-medium');
     // Days portion shown
     expect(countdown.textContent).toMatch(/^[56]d /);
   });
 
-  it('renders countdown in orange when between 24h and 72h remain', () => {
+  it('renders countdown in status-disputed when between 24h and 72h remain', () => {
     // Completed 5 days, 12 hours ago → ~36h left
     const completedAt = new Date(Date.now() - (5 * 24 + 12) * 60 * 60 * 1000).toISOString();
     render(createElement(AutoReleaseTimer, { completedAt }));
     const countdown = screen.getByLabelText('Auto-release countdown');
-    expect(countdown.className).toContain('text-orange-600');
+    expect(countdown.className).toContain('text-status-disputed');
   });
 
-  it('renders countdown in red when fewer than 24h remain', () => {
+  it('renders countdown in destructive when fewer than 24h remain', () => {
     // Completed ~6 days, 18 hours ago → ~6h left
     const completedAt = new Date(Date.now() - (6 * 24 + 18) * 60 * 60 * 1000).toISOString();
     render(createElement(AutoReleaseTimer, { completedAt }));
     const countdown = screen.getByLabelText('Auto-release countdown');
-    expect(countdown.className).toContain('text-red-600');
+    expect(countdown.className).toContain('text-destructive');
     // No days segment when < 1 day remains
     expect(countdown.textContent).not.toMatch(/d /);
   });

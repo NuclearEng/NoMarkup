@@ -59,10 +59,10 @@ function PaymentUnavailable({ message }: { message: string }) {
   return (
     <div
       role="alert"
-      className="flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-foreground"
+      className="flex items-start gap-3 rounded-md border border-trust-medium/30 bg-trust-medium/10 p-4 text-sm text-foreground"
     >
       <AlertTriangle
-        className="mt-0.5 h-4 w-4 shrink-0 text-amber-400"
+        className="mt-0.5 h-4 w-4 shrink-0 text-trust-medium"
         aria-hidden="true"
       />
       <div className="space-y-1">

@@ -15,11 +15,11 @@ function StatusIndicator({ enabled, label }: { enabled: boolean; label: string }
   return (
     <div className="flex items-center gap-2 text-sm">
       {enabled ? (
-        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden="true" />
+        <CheckCircle2 className="h-4 w-4 text-trust-high" aria-hidden="true" />
       ) : (
         <XCircle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
       )}
-      <span className={enabled ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground'}>{label}</span>
+      <span className={enabled ? 'text-trust-high' : 'text-muted-foreground'}>{label}</span>
     </div>
   );
 }
@@ -161,7 +161,7 @@ export function StripeOnboarding() {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" aria-hidden="true" />
+          <CheckCircle2 className="h-5 w-5 text-trust-high" aria-hidden="true" />
           <h3 className="text-lg font-semibold">Stripe Connected</h3>
         </div>
         <p className="text-sm text-muted-foreground">

@@ -113,14 +113,14 @@ export function BidPlacementPanel({
           <span
             className={cn(
               'font-semibold',
-              savings > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+              savings > 0 ? 'text-bid-winning dark:text-bid-winning' : 'text-muted-foreground',
             )}
           >
             {savings}% below starting price
           </span>
         </div>
         {isBelowCurrent && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+          <div className="mt-1 flex items-center gap-1 text-xs text-bid-winning dark:text-bid-winning">
             <Zap className="h-3 w-3" aria-hidden="true" />
             This would be the new lowest bid!
           </div>
@@ -131,7 +131,7 @@ export function BidPlacementPanel({
       <Button
         onClick={() => onPlaceBid?.(bidCents)}
         disabled={!isValid || isSubmitting}
-        className="h-12 w-full rounded-xl bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-700 active:scale-[0.98]"
+        className="h-12 w-full rounded-xl bg-bid-winning text-base font-semibold text-background hover:bg-bid-winning/90 active:scale-[0.98]"
       >
         {isSubmitting ? 'Placing bid...' : <>Place bid — ${(bidCents / 100).toFixed(2)}</>}
       </Button>

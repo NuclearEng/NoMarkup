@@ -47,14 +47,14 @@ function getStatusVariant(
 function getStatusBorderColor(status: string): string {
   switch (status) {
     case LISTING_STATUS.ACTIVE:
-      return 'border-l-emerald-500 dark:border-l-emerald-400';
+      return 'border-l-trust-high';
     case LISTING_STATUS.SOLD:
-      return 'border-l-blue-500 dark:border-l-blue-400';
+      return 'border-l-status-completed';
     case LISTING_STATUS.CANCELLED:
     case LISTING_STATUS.EXPIRED:
-      return 'border-l-red-400 dark:border-l-red-500';
+      return 'border-l-destructive';
     case LISTING_STATUS.ENDED:
-      return 'border-l-zinc-400 dark:border-l-zinc-500';
+      return 'border-l-muted-foreground';
     default:
       return 'border-l-border';
   }
@@ -112,7 +112,7 @@ export const ListingCard = memo(function ListingCard({
           />
           {listing.is_user_winning ? (
             <span
-              className="absolute top-2 left-2 inline-flex items-center rounded-full bg-emerald-500/90 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-emerald-950 shadow-md"
+              className="absolute top-2 left-2 inline-flex items-center rounded-full bg-bid-winning/90 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-background shadow-md"
               role="status"
             >
               You&rsquo;re winning
@@ -120,7 +120,7 @@ export const ListingCard = memo(function ListingCard({
           ) : null}
           {listing.was_outbid ? (
             <span
-              className="absolute top-2 left-2 inline-flex items-center rounded-full bg-red-500/90 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-red-950 shadow-md"
+              className="absolute top-2 left-2 inline-flex items-center rounded-full bg-destructive/90 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-background shadow-md"
               role="status"
             >
               Outbid

@@ -37,29 +37,29 @@ describe('AcceptanceCountdown', () => {
     expect(screen.getByText('Deadline Expired')).toBeDefined();
   });
 
-  it('uses yellow color when between 1 and 24 hours remain', () => {
+  it('uses trust-medium color when between 1 and 24 hours remain', () => {
     // deadline 5 hours from now
     const { container } = render(
       createElement(AcceptanceCountdown, { deadline: '2026-04-24T17:00:00Z' }),
     );
-    // 1 <= totalHours <= 24 → yellow
-    expect(container.querySelector('.text-yellow-600')).not.toBeNull();
+    // 1 <= totalHours <= 24 → trust-medium (warning)
+    expect(container.querySelector('.text-trust-medium')).not.toBeNull();
   });
 
-  it('uses red color when less than 1 hour remains', () => {
+  it('uses destructive color when less than 1 hour remains', () => {
     // deadline 30 min from now
     const { container } = render(
       createElement(AcceptanceCountdown, { deadline: '2026-04-24T12:30:00Z' }),
     );
-    // < 1 hour → red
-    expect(container.querySelector('.text-red-600')).not.toBeNull();
+    // < 1 hour → destructive
+    expect(container.querySelector('.text-destructive')).not.toBeNull();
   });
 
-  it('uses green color when more than 24 hours remain', () => {
+  it('uses trust-high color when more than 24 hours remain', () => {
     const { container } = render(
       createElement(AcceptanceCountdown, { deadline: '2026-04-26T15:00:00Z' }),
     );
-    expect(container.querySelector('.text-green-600')).not.toBeNull();
+    expect(container.querySelector('.text-trust-high')).not.toBeNull();
   });
 
   it('compact mode formats hours when no days remain', () => {

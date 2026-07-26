@@ -226,7 +226,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                     className={cn(
                       'inline-flex h-11 w-11 items-center justify-center rounded-full border transition-colors',
                       isWatching
-                        ? 'border-red-400/50 bg-red-500/20 text-red-300 hover:bg-red-500/30'
+                        ? 'border-destructive/50 bg-destructive/20 text-destructive hover:bg-destructive/30'
                         : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/30 hover:text-white',
                       watchMutation.isPending ? 'opacity-60' : '',
                     )}
@@ -242,7 +242,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                   <ReportListingButton
                     listingId={listingId}
                     listingTitle={listing.title}
-                    className="text-zinc-400 hover:text-red-300"
+                    className="text-zinc-400 hover:text-destructive"
                   />
                 ) : null}
                 <Badge variant={listing.status === 'active' ? 'active' : 'secondary'}>
@@ -322,7 +322,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                       <span className="truncate text-zinc-300">
                         {bid.bidder_display_name}{' '}
                         {bid.is_winning ? (
-                          <span className="ml-1 text-[10px] font-semibold text-emerald-400 uppercase">
+                          <span className="ml-1 text-[10px] font-semibold text-bid-winning uppercase">
                             Winning
                           </span>
                         ) : null}
@@ -380,7 +380,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                 <div className="mt-2">
                   <Badge
                     variant="outline"
-                    className="border-amber-500/30 bg-amber-500/10 text-amber-200"
+                    className="border-trust-medium/30 bg-trust-medium/10 text-trust-medium"
                   >
                     Reserve not met
                   </Badge>
@@ -417,7 +417,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                   <span
                     className={
                       liveConnected
-                        ? 'inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400'
+                        ? 'inline-block h-2 w-2 animate-pulse rounded-full bg-bid-winning'
                         : 'inline-block h-2 w-2 rounded-full bg-zinc-600'
                     }
                     aria-hidden="true"

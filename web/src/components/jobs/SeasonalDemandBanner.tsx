@@ -79,14 +79,14 @@ export function SeasonalDemandBanner({ categorySlug }: SeasonalDemandBannerProps
     <div
       role="status"
       aria-live="polite"
-      className="flex items-center gap-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-300"
+      className="flex items-center gap-3 rounded-lg border border-trust-medium/20 bg-trust-medium/10 px-4 py-3 text-sm text-trust-medium"
     >
-      <Zap className="h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />
+      <Zap className="h-4 w-4 shrink-0 text-trust-medium" aria-hidden="true" />
       <p className="flex-1">{rule.message}</p>
       <button
         type="button"
         onClick={handleDismiss}
-        className="shrink-0 rounded p-1 hover:bg-amber-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        className="shrink-0 rounded p-1 hover:bg-trust-medium/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-trust-medium"
         aria-label="Dismiss seasonal demand notice"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />

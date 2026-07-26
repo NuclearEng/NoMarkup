@@ -33,9 +33,9 @@ function calculateTimeRemaining(deadline: string): TimeRemaining {
 
 function getColorClass(totalMs: number): string {
   const totalHours = totalMs / (1000 * 60 * 60);
-  if (totalHours > 24) return 'text-green-600 dark:text-emerald-400';
-  if (totalHours >= 1) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
+  if (totalHours > 24) return 'text-trust-high';
+  if (totalHours >= 1) return 'text-trust-medium';
+  return 'text-destructive';
 }
 
 function pad(n: number): string {

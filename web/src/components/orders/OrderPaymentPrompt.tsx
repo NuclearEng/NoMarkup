@@ -99,7 +99,7 @@ export function OrderPaymentPrompt({
           <p
             role="status"
             aria-live="polite"
-            className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
+            className="rounded-md border border-status-completed/30 bg-status-completed/10 px-3 py-2 text-sm text-status-completed"
           >
             Payment received. Funds are held in escrow until you confirm pickup.
           </p>
@@ -111,11 +111,11 @@ export function OrderPaymentPrompt({
   return (
     <Card
       variant="glass"
-      className={cn('border-amber-500/30', className)}
+      className={cn('border-trust-medium/30', className)}
       data-testid="order-payment-prompt"
     >
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base text-amber-200">
+        <CardTitle className="flex items-center gap-2 text-base text-trust-medium">
           <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
           Payment required
         </CardTitle>

@@ -361,7 +361,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
                 x={cx}
                 y={labelY}
                 textAnchor="middle"
-                className="fill-green-400 font-bold"
+                className="fill-bid-winning font-bold"
                 style={{
                   fontSize: '9px',
                   opacity: mounted ? 1 : 0,

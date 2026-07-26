@@ -51,9 +51,9 @@ export function BidActivityFeed({
       {showHeader && (
         <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
           <h3 className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">Live Activity</h3>
-          <span className="flex items-center gap-1.5 text-xs text-green-400">
+          <span className="flex items-center gap-1.5 text-xs text-bid-winning">
             <span
-              className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-bid-winning"
               aria-hidden="true"
             />
             Live
@@ -91,11 +91,11 @@ export function BidActivityFeed({
                   <span className="text-sm font-medium text-zinc-100">{activity.providerName}</span>
                   {activity.isLowest && (
                     <span
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-bid-winning/20 border border-bid-winning/20 px-1.5 py-0.5 text-[10px] font-bold text-bid-winning"
                       style={{ animation: 'lowestGlow 3s ease-in-out infinite', boxShadow: '0 0 8px rgba(34,197,94,0.3)' }}
                     >
                       <span
-                        className="h-1.5 w-1.5 rounded-full bg-emerald-400"
+                        className="h-1.5 w-1.5 rounded-full bg-bid-winning"
                         aria-hidden="true"
                       />
                       Lowest

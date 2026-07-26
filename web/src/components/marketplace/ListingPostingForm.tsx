@@ -707,7 +707,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                     {lowQualityCount > 0 ? (
                       <p
                         role="alert"
-                        className="mt-2 text-sm text-amber-400"
+                        className="mt-2 text-sm text-trust-medium"
                       >
                         Replace {String(lowQualityCount)} low-quality photo
                         {lowQualityCount === 1 ? '' : 's'} before publishing.
@@ -860,7 +860,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                 </ReviewRow>
 
                 {form.formState.errors.root ? (
-                  <p className="text-sm text-red-400" role="alert">
+                  <p className="text-sm text-destructive" role="alert">
                     {form.formState.errors.root.message}
                   </p>
                 ) : null}

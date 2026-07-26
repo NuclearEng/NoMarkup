@@ -88,7 +88,7 @@ export function MobileTabBar() {
       />
 
       <nav
-        className="glass-nav fixed bottom-0 left-0 right-0 z-50 flex items-stretch border-t border-white/10 lg:hidden"
+        className="glass-nav fixed bottom-0 left-0 right-0 z-50 flex items-stretch border-t border-border lg:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         aria-label="Main navigation"
       >
@@ -99,15 +99,15 @@ export function MobileTabBar() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[0.625rem] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-gold)]/60',
-                active ? 'text-[var(--brand-gold)]' : 'text-zinc-400 active:text-zinc-200',
+                'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[0.625rem] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-gold/60',
+                active ? 'text-brand-gold' : 'text-muted-foreground active:text-foreground',
               )}
               aria-current={active ? 'page' : undefined}
             >
               <item.icon
                 className={cn(
                   'h-5 w-5 transition-transform duration-150',
-                  active ? 'text-[var(--brand-gold)] scale-110' : 'text-zinc-400',
+                  active ? 'text-brand-gold scale-110' : 'text-muted-foreground',
                 )}
                 aria-hidden="true"
               />
@@ -120,8 +120,8 @@ export function MobileTabBar() {
           ref={moreTriggerRef}
           type="button"
           className={cn(
-            'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[0.625rem] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-gold)]/60',
-            moreOpen ? 'text-[var(--brand-gold)]' : 'text-zinc-400 active:text-zinc-200',
+            'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[0.625rem] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-gold/60',
+            moreOpen ? 'text-brand-gold' : 'text-muted-foreground active:text-foreground',
           )}
           onClick={() => { setMoreOpen(true); }}
           aria-expanded={moreOpen}
@@ -129,7 +129,7 @@ export function MobileTabBar() {
           aria-label="More navigation options"
         >
           <Menu
-            className={cn('h-5 w-5', moreOpen ? 'text-[var(--brand-gold)]' : 'text-zinc-400')}
+            className={cn('h-5 w-5', moreOpen ? 'text-brand-gold' : 'text-muted-foreground')}
             aria-hidden="true"
           />
           <span>More</span>
@@ -139,7 +139,7 @@ export function MobileTabBar() {
       {moreOpen ? (
         <>
           <div
-            className="fixed inset-0 z-[60] bg-black/60 lg:hidden"
+            className="fixed inset-0 z-[60] bg-background/80 lg:hidden"
             aria-hidden="true"
             onClick={() => {
               setMoreOpen(false);
@@ -147,18 +147,18 @@ export function MobileTabBar() {
             }}
           />
           <div
-            className="fixed bottom-0 left-0 right-0 z-[70] animate-fade-in rounded-t-2xl border-t border-white/10 bg-[#0c0f18] px-4 pt-4 lg:hidden"
+            className="fixed bottom-0 left-0 right-0 z-[70] animate-fade-in rounded-t-2xl border-t border-border bg-card px-4 pt-4 lg:hidden"
             style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
             role="dialog"
             aria-label="More navigation"
             aria-modal="true"
           >
             <div className="mb-4 flex items-center justify-between">
-              <span className="text-sm font-semibold text-zinc-100">All Pages</span>
+              <span className="text-sm font-semibold text-foreground">All Pages</span>
               <button
                 ref={moreCloseRef}
                 type="button"
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/60"
                 onClick={() => {
                   setMoreOpen(false);
                   moreTriggerRef.current?.focus();
@@ -177,10 +177,10 @@ export function MobileTabBar() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-xl p-2 text-[0.65rem] font-medium leading-tight transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-gold)]/60',
+                      'flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-xl p-2 text-[0.65rem] font-medium leading-tight transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/60',
                       active
-                        ? 'bg-[var(--brand-gold)]/10 text-[var(--brand-gold)]'
-                        : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-zinc-100',
+                        ? 'bg-brand-gold/10 text-brand-gold'
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
                     )}
                     onClick={() => { setMoreOpen(false); }}
                     aria-current={active ? 'page' : undefined}
@@ -193,7 +193,7 @@ export function MobileTabBar() {
 
               <Link
                 href={'/demo/auction' as Route}
-                className="flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-xl bg-amber-500/10 p-2 text-[0.65rem] font-semibold leading-tight text-amber-400 transition-colors hover:bg-amber-500/20 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+                className="flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-xl bg-brand-gold/10 p-2 text-[0.65rem] font-semibold leading-tight text-brand-gold transition-colors hover:bg-brand-gold/20 hover:text-brand-gold-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/60"
                 onClick={() => { setMoreOpen(false); }}
               >
                 <Zap className="h-5 w-5 shrink-0" aria-hidden="true" />

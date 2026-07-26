@@ -217,6 +217,7 @@ struct JobDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(Color("AccentColor"))
                 .disabled(isPlacingBid || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         } header: {

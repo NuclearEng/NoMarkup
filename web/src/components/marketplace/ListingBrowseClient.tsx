@@ -393,9 +393,9 @@ function Section({
 }) {
   const accent =
     tone === 'critical'
-      ? 'text-red-300'
+      ? 'text-destructive'
       : tone === 'urgent'
-        ? 'text-amber-300'
+        ? 'text-trust-medium'
         : 'text-zinc-400';
   return (
     <section aria-labelledby={`section-${title.replace(/\s+/g, '-')}`}>

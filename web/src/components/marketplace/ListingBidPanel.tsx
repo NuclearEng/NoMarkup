@@ -213,10 +213,10 @@ export function ListingBidPanel({
         <div
           role="status"
           aria-live="polite"
-          className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-100"
+          className="flex items-center gap-2 rounded-md border border-trust-medium/30 bg-trust-medium/10 px-2.5 py-1.5 text-xs text-trust-medium"
           data-testid="snipe-extension-flash"
         >
-          <Zap className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />
+          <Zap className="h-3.5 w-3.5 text-trust-medium" aria-hidden="true" />
           <span className="font-semibold">+30s — auction extended</span>
         </div>
       ) : null}
@@ -229,16 +229,16 @@ export function ListingBidPanel({
         <div
           role="status"
           aria-live="polite"
-          className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100"
+          className="rounded-md border border-trust-medium/30 bg-trust-medium/5 p-3 text-xs text-trust-medium"
           data-testid="bid-bond-prompt-host"
         >
           <div className="mb-2 flex items-start gap-2">
-            <ShieldCheck className="mt-0.5 h-4 w-4 text-amber-300" aria-hidden="true" />
+            <ShieldCheck className="mt-0.5 h-4 w-4 text-trust-medium" aria-hidden="true" />
             <div>
-              <p className="font-semibold text-amber-100">
+              <p className="font-semibold text-trust-medium">
                 One-time bid bond ({formatCents(bidBondRequirement.bond_amount_cents)})
               </p>
-              <p className="mt-1 text-amber-100/80">
+              <p className="mt-1 text-trust-medium/80">
                 First-time bidders post a small bond to keep auctions honest.
                 Refunded the moment you complete or lose the auction.
               </p>
@@ -260,7 +260,7 @@ export function ListingBidPanel({
         </p>
         {isUserWinning ? (
           <span
-            className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-300"
+            className="inline-flex items-center rounded-full bg-bid-winning/15 px-2 py-0.5 text-[11px] font-semibold text-bid-winning"
             role="status"
           >
             You&rsquo;re winning
@@ -270,11 +270,11 @@ export function ListingBidPanel({
 
       {isUserWinning && typeof userMaxBidCents === 'number' && userMaxBidCents > currentBidCents ? (
         <div
-          className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1.5 text-xs text-emerald-200"
+          className="flex items-center gap-2 rounded-md border border-bid-winning/20 bg-bid-winning/5 px-2.5 py-1.5 text-xs text-bid-winning"
           data-testid="autobid-active-label"
           aria-live="polite"
         >
-          <Zap className="h-3.5 w-3.5 text-emerald-300" aria-hidden="true" />
+          <Zap className="h-3.5 w-3.5 text-bid-winning" aria-hidden="true" />
           <span>Auto-bidding active up to {formatCents(userMaxBidCents)}</span>
         </div>
       ) : null}
@@ -342,7 +342,7 @@ export function ListingBidPanel({
       </div>
 
       {error ? (
-        <p id="listing-bid-error" className="text-sm text-red-400" role="alert">
+        <p id="listing-bid-error" className="text-sm text-destructive" role="alert">
           {error}
         </p>
       ) : null}

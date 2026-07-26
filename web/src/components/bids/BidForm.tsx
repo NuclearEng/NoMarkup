@@ -182,7 +182,7 @@ export function BidForm({
         <div className="bg-muted/50 rounded-lg border p-4">
           <div className="flex items-center gap-2">
             <CheckCircle
-              className="h-4 w-4 text-green-600 dark:text-emerald-400"
+              className="h-4 w-4 text-bid-winning"
               aria-hidden="true"
             />
             <p className="text-sm font-medium">Your Current Bid</p>
@@ -367,20 +367,20 @@ export function BidForm({
 
       {/* Accept Offer section */}
       {offerAcceptedCents && !existingBid ? (
-        <div className="space-y-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
+        <div className="space-y-3 rounded-lg border border-bid-winning/30 bg-bid-winning/10 p-4">
           <div className="flex items-center gap-2">
-            <Zap className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden="true" />
-            <h4 className="text-sm font-medium text-green-800 dark:text-green-200">
+            <Zap className="h-4 w-4 text-bid-winning" aria-hidden="true" />
+            <h4 className="text-sm font-medium text-bid-winning">
               Instant Accept
             </h4>
           </div>
-          <p className="text-sm text-green-700 dark:text-green-300">
+          <p className="text-sm text-bid-winning/90">
             Accept this job at the customer&apos;s instant price of{' '}
             <span className="font-semibold">{formatCents(offerAcceptedCents)}</span>.
           </p>
           {showAcceptConfirm ? (
             <div className="space-y-3">
-              <p className="text-sm font-medium text-green-800 dark:text-green-200">
+              <p className="text-sm font-medium text-bid-winning">
                 Are you sure? This will place a bid at {formatCents(offerAcceptedCents)}.
               </p>
               <div className="flex gap-3">
@@ -418,7 +418,7 @@ export function BidForm({
           ) : (
             <Button
               variant="outline"
-              className="min-h-[44px] w-full border-green-300 text-green-700 hover:bg-green-100 dark:border-green-800 dark:text-green-300 dark:hover:bg-green-900"
+              className="min-h-[44px] w-full border-bid-winning/40 text-bid-winning hover:bg-bid-winning/10"
               onClick={handleAcceptOffer}
             >
               <Zap className="h-4 w-4" aria-hidden="true" />

@@ -56,18 +56,18 @@ function getStatusVariant(
 function getStatusBorderColor(status: string): string {
   switch (status) {
     case JOB_STATUS.ACTIVE:
-      return 'border-l-emerald-500 dark:border-l-emerald-400';
+      return 'border-l-trust-high';
     case JOB_STATUS.AWARDED:
     case JOB_STATUS.CONTRACT_PENDING:
-      return 'border-l-blue-500 dark:border-l-blue-400';
+      return 'border-l-trust-elite';
     case JOB_STATUS.IN_PROGRESS:
-      return 'border-l-amber-500 dark:border-l-amber-400';
+      return 'border-l-status-in-progress';
     case JOB_STATUS.COMPLETED:
     case JOB_STATUS.REVIEWED:
-      return 'border-l-emerald-600 dark:border-l-emerald-500';
+      return 'border-l-status-completed';
     case JOB_STATUS.CANCELLED:
     case JOB_STATUS.EXPIRED:
-      return 'border-l-red-400 dark:border-l-red-500';
+      return 'border-l-destructive';
     default:
       return 'border-l-border';
   }
@@ -201,9 +201,9 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
             <div className="flex items-baseline gap-1.5">
               <span className="text-xs font-medium text-zinc-500">Lowest:</span>
               <span
-                className="text-lg font-bold text-emerald-400 tabular-nums"
+                className="text-lg font-bold text-bid-winning tabular-nums"
                 style={{
-                  textShadow: '0 0 16px rgba(16,185,129,0.3), 0 0 32px rgba(16,185,129,0.1)',
+                  textShadow: '0 0 16px hsl(var(--bid-winning) / 0.3), 0 0 32px hsl(var(--bid-winning) / 0.1)',
                 }}
               >
                 {formatCents(job.lowest_bid_cents)}
@@ -247,10 +247,10 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
               className={cn(
                 'animate-auction-elapsed h-full rounded-r-full transition-colors duration-300',
                 elapsedPercent >= 80
-                  ? 'bg-red-500/70'
+                  ? 'bg-destructive/70'
                   : elapsedPercent >= 50
-                    ? 'bg-amber-500/60'
-                    : 'bg-emerald-500/50',
+                    ? 'bg-trust-medium/60'
+                    : 'bg-bid-winning/50',
               )}
               style={{ width: `${String(elapsedPercent)}%` }}
             />
