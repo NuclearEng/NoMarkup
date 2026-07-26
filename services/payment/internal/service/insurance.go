@@ -98,12 +98,14 @@ func (s *InsuranceService) GetInsuranceQuote(ctx context.Context, productID stri
 		return nil, fmt.Errorf("get insurance quote: %w", domain.ErrInsuranceProductNotFound)
 	}
 
-	// Base premium = contract_amount * base_rate_bps / 10000
-	premium := contractAmountCents * int64(product.BaseRateBPS) / 10000
+	// Base premium = contract_amount * base_rate_bps / 10000.
+	// MONEY: integer bps math throughout; a fractional cent rounds UP so the
+	// premium never under-collects (see money.go for the convention).
+	premium := feeFromBPS(contractAmountCents, int64(product.BaseRateBPS))
 
-	// Apply category risk multiplier.
-	categoryMultiplier := categoryRiskMultiplier(categorySlug)
-	premium = int64(float64(premium) * categoryMultiplier)
+	// Apply category risk multiplier, itself expressed in basis points so the
+	// multiply stays in int64 (1.5x == 15000 bps).
+	premium = feeFromBPS(premium, categoryRiskMultiplierBps(categorySlug))
 
 	// Enforce min_premium_cents floor.
 	if premium < product.MinPremiumCents {
@@ -581,8 +583,10 @@ func (s *InsuranceService) applyTrustDiscount(ctx context.Context, quote *domain
 	}
 }
 
-// categoryRiskMultiplier returns a risk multiplier based on service category.
-func categoryRiskMultiplier(categorySlug string) float64 {
+// categoryRiskMultiplierBps returns a risk multiplier based on service
+// category, in basis points (10000 bps == 1.0x). MONEY: expressed in bps so
+// the premium multiply never leaves int64.
+func categoryRiskMultiplierBps(categorySlug string) int64 {
 	slug := strings.ToLower(categorySlug)
 
 	// Higher risk categories.
@@ -592,7 +596,7 @@ func categoryRiskMultiplier(categorySlug string) float64 {
 		"plumbing":   true,
 	}
 	if highRiskCategories[slug] {
-		return 1.5
+		return 15000 // 1.5x
 	}
 
 	// Lower risk categories.
@@ -601,9 +605,9 @@ func categoryRiskMultiplier(categorySlug string) float64 {
 		"landscaping": true,
 	}
 	if lowRiskCategories[slug] {
-		return 0.8
+		return 8000 // 0.8x
 	}
 
 	// Default multiplier.
-	return 1.0
+	return 10000 // 1.0x
 }

@@ -114,10 +114,16 @@ func ComputeTaxCents(subtotalCents int64, stateCode string) int64 {
 	if rate <= 0 {
 		return 0
 	}
-	// Half-up rounding via add 0.5 then truncate. We multiply in float64;
-	// for any realistic merchandise price (under ~$10M) this stays well
-	// below the 2^53 integer-precision boundary.
-	return int64(float64(subtotalCents)*rate + 0.5)
+	// MONEY: integer basis points, half-up to the nearest cent. Sales tax is
+	// the one place that must NOT use the ceiling convention the platform's own
+	// fees use — statutory rates are specified half-up, and rounding tax up
+	// systematically over-collects a remittance liability rather than platform
+	// revenue. See money.go.
+	//
+	// The float64 multiply this replaces was correct for realistic prices but
+	// carried a silent precision cliff above 2^53 cents, and it was the last
+	// float in the package's money path.
+	return roundHalfUpFromBPS(subtotalCents, rateToBPS(rate))
 }
 
 // stateFromZip is a coarse v1 zip-code -> state mapping. Each state owns

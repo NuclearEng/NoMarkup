@@ -69,8 +69,31 @@ func RequireIdempotencyKey(cacheClient *cache.Client) func(http.Handler) http.Ha
 			}
 
 			ctx := r.Context()
-			redisKey := cache.Key(idempotencyPrefix, key)
-			pendingKey := cache.Key(idempotencyPrefix, "pending", key)
+
+			// Scope the cache key to the CALLER and the ROUTE.
+			//
+			// Previously the key was the client-supplied Idempotency-Key alone,
+			// so the namespace was global: the full cached response body was
+			// replayed for 24h to whoever presented the same key next, across
+			// users and across routes. POST /api/v1/payments returns a Stripe
+			// client_secret, so a collision handed one user a live PaymentIntent
+			// secret belonging to another. The first-party web client uses
+			// crypto.randomUUID(), but the API is public and any third-party or
+			// curl client picks its own key — low-entropy keys collide.
+			//
+			// Scoping by subject makes a cross-user collision impossible rather
+			// than improbable. Scoping by route stops the same key replaying a
+			// /payments response to a /subscriptions call. Unauthenticated
+			// callers fall back to a fixed marker so behaviour is unchanged for
+			// any route that does not require auth.
+			scope := "anon"
+			if claims, ok := GetClaims(ctx); ok && claims.UserID != "" {
+				scope = claims.UserID
+			}
+			route := r.Method + " " + normalizePath(r.URL.Path)
+
+			redisKey := cache.Key(idempotencyPrefix, scope, route, key)
+			pendingKey := cache.Key(idempotencyPrefix, "pending", scope, route, key)
 
 			if cacheClient != nil {
 				// 1. Check for a completed (cached) response first.

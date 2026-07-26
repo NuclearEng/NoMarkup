@@ -199,8 +199,16 @@ func TestInstallmentService_CreateInstallmentPlan(t *testing.T) {
 		// $100.00 × 5% fee = $5.00 → $105.00 / 6 = $17.50 each.
 		// Per-installment = 105_00 / 6 = 1750 (integer division).
 		// 1750 × 6 = 10500 — exactly evenly divisible. No remainder here.
-		// Pick an amount that DOES produce a remainder: $100.01 × 5% = $5.00 (rounded down)
-		// → totalWithFee = $105.01 = 10501 cents / 6 = 1750. 1750*6 = 10500. Remainder = 1.
+		// Pick an amount that DOES produce a remainder: $100.01 × 5% = $5.005.
+		// MONEY: the fee now rounds UP to $5.01 (501 cents) rather than
+		// truncating to $5.00. That is a deliberate 1-cent change — the whole
+		// package moved to integer basis points with a single ceiling
+		// convention for platform take (see money.go), because the previous
+		// float truncation disagreed with the goods fee that services/job
+		// already PERSISTS on listing_orders.fee_cents using round-up. Two code
+		// paths computing the same fee to different answers is the actual bug;
+		// the cent is the cost of fixing it.
+		// → totalWithFee = $105.02 = 10502 cents / 6 = 1750, remainder 2.
 		var captured []domain.ScheduledInstallment
 		repo := &mockPaymentRepo{
 			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
@@ -233,8 +241,8 @@ func TestInstallmentService_CreateInstallmentPlan(t *testing.T) {
 		for _, inst := range captured {
 			sum += inst.AmountCents
 		}
-		// 10001 + (10001 * 0.05) = 10001 + 500 = 10501.
-		assert.Equal(t, int64(10501), sum,
+		// 10001 + ceil(10001 * 500bps / 10000) = 10001 + 501 = 10502.
+		assert.Equal(t, int64(10502), sum,
 			"sum of installments must equal totalWithFee = principal + fee")
 		// First 5 installments are equal; last absorbs remainder.
 		for i := 0; i < 5; i++ {

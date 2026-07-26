@@ -168,17 +168,24 @@ func (noopMarketplaceNotifier) NotifyDisputeResolved(_ context.Context, _, _, _,
 type MarketplaceConfig struct {
 	AutoReleaseAfter      time.Duration // default 14d
 	DisputeWindowAfter    time.Duration // dispute allowed up to: pickup_confirmed_at + this duration (default 24h)
-	// MarketplaceFeePercent is the combined seller-side take (platform + guarantee).
-	// MON-20: aligned with services 8% + 2% = 10% (0.10). Single fee_cents column.
-	MarketplaceFeePercent float64
+	// MarketplaceFeeBps is the combined seller-side take (platform + guarantee)
+	// in integer basis points. MON-20: aligned with services 8% + 2% = 10%
+	// (1000 bps). Single fee_cents column.
+	//
+	// MONEY: this MUST stay identical to `feeBps` in
+	// services/job/internal/repository/listing_repo.go, which computes and
+	// PERSISTS listing_orders.fee_cents at auction close using the same
+	// round-fractional-cent-UP rule. The two paths compute the same number; if
+	// they disagree the buyer is charged a total that contradicts the order row.
+	MarketplaceFeeBps int64
 }
 
 // DefaultMarketplaceConfig returns the v1 defaults.
 func DefaultMarketplaceConfig() MarketplaceConfig {
 	return MarketplaceConfig{
-		AutoReleaseAfter:      14 * 24 * time.Hour,
-		DisputeWindowAfter:    24 * time.Hour,
-		MarketplaceFeePercent: 0.10, // 8% platform + 2% guarantee (MON-20)
+		AutoReleaseAfter:   14 * 24 * time.Hour,
+		DisputeWindowAfter: 24 * time.Hour,
+		MarketplaceFeeBps:  1000, // 8% platform + 2% guarantee (MON-20)
 	}
 }
 
@@ -230,8 +237,8 @@ func (s *MarketplaceService) SetConfig(cfg MarketplaceConfig) {
 	if cfg.DisputeWindowAfter > 0 {
 		s.cfg.DisputeWindowAfter = cfg.DisputeWindowAfter
 	}
-	if cfg.MarketplaceFeePercent > 0 {
-		s.cfg.MarketplaceFeePercent = cfg.MarketplaceFeePercent
+	if cfg.MarketplaceFeeBps > 0 {
+		s.cfg.MarketplaceFeeBps = cfg.MarketplaceFeeBps
 	}
 }
 
@@ -293,10 +300,11 @@ func (s *MarketplaceService) ChargeListingWinner(ctx context.Context, orderID st
 
 	// Compute fee + tax. The fee may already be on the order (if marketplace
 	// service computed it), but recompute here as the source of truth.
-	feeCents := int64(float64(order.AmountCents) * s.cfg.MarketplaceFeePercent)
-	if feeCents < 0 {
-		feeCents = 0
-	}
+	// MONEY: integer bps math with the fractional cent rounded UP — byte-for-byte
+	// the rule used by listing_repo.CloseListing when it persisted
+	// listing_orders.fee_cents. Previously this truncated, so the buyer's total
+	// could be 1c below the fee already recorded on the order.
+	feeCents := feeFromBPS(order.AmountCents, s.cfg.MarketplaceFeeBps)
 	taxState, taxCents := ComputeTaxCentsForZip(order.AmountCents, order.PickupZipCode)
 	totalCents := order.AmountCents + feeCents + taxCents
 

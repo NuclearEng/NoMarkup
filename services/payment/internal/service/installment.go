@@ -21,16 +21,29 @@ func NewInstallmentService(repo domain.PaymentRepository, stripe *StripeService)
 	return &InstallmentService{repo: repo, stripe: stripe}
 }
 
-// feeRateForCount returns the BNPL fee rate for a given installment count.
-func feeRateForCount(count int) (float64, error) {
+// feeBpsForCount returns the BNPL fee rate for a given installment count in
+// integer basis points. MONEY: bps is the authoritative form — the float rate
+// below is derived from it purely for the display/audit column.
+func feeBpsForCount(count int) (int64, error) {
 	switch count {
 	case 3:
-		return 0.03, nil // 3%
+		return 300, nil // 3%
 	case 6:
-		return 0.05, nil // 5%
+		return 500, nil // 5%
 	default:
 		return 0, domain.ErrInvalidInstallmentCount
 	}
+}
+
+// feeRateForCount returns the BNPL fee rate as a fraction, for the
+// installment_plans.fee_rate display column only. Never use it to compute
+// cents — use feeBpsForCount with feeFromBPS.
+func feeRateForCount(count int) (float64, error) {
+	bps, err := feeBpsForCount(count)
+	if err != nil {
+		return 0, err
+	}
+	return float64(bps) / float64(bpsScale), nil
 }
 
 // CreateInstallmentPlan creates a BNPL installment plan, pays the provider
@@ -62,10 +75,11 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 	input.ProviderID = contract.ProviderID
 
 	// Calculate fee.
-	feeRate, err := feeRateForCount(input.InstallmentCount)
+	feeBps, err := feeBpsForCount(input.InstallmentCount)
 	if err != nil {
 		return nil, "", fmt.Errorf("create installment plan fee rate: %w", err)
 	}
+	feeRate := float64(feeBps) / float64(bpsScale) // display/audit column only
 
 	// Fail closed: at most one ACTIVE plan per contract. CreateInstallmentPlan
 	// pays the provider in full immediately, so a second plan for the same
@@ -83,7 +97,8 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 		return nil, "", fmt.Errorf("create installment plan: %w", domain.ErrInstallmentPlanExists)
 	}
 
-	bnplFeeCents := int64(float64(input.TotalAmountCents) * feeRate)
+	// MONEY: integer bps math, fractional cent rounds UP (see money.go).
+	bnplFeeCents := feeFromBPS(input.TotalAmountCents, feeBps)
 	totalWithFeeCents := input.TotalAmountCents + bnplFeeCents
 
 	// Calculate per-installment amount. Distribute evenly, adjust last for rounding.

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -203,4 +204,114 @@ func TestIdempotency_different_keys_produce_different_responses(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rec2.Code)
 	assert.Contains(t, rec2.Body.String(), `"id":"pay_2"`)
 	assert.Equal(t, 2, requestNum, "handler should have been called twice for different keys")
+}
+
+// withUser returns a copy of req carrying authenticated claims for userID.
+func withUser(req *http.Request, userID string) *http.Request {
+	return req.WithContext(
+		context.WithValue(req.Context(), ClaimsContextKey, &Claims{UserID: userID}),
+	)
+}
+
+// TestIdempotency_keyIsScopedPerUser is the regression guard for a
+// cross-account response leak.
+//
+// The cache key used to be the client-supplied Idempotency-Key alone, so the
+// namespace was global: the full cached response body was replayed for 24h to
+// whoever presented that key next. POST /api/v1/payments returns a Stripe
+// client_secret, so a collision handed one user a live PaymentIntent secret
+// belonging to another. The first-party web client mints a random UUID, but the
+// API is public and any third-party client picks its own key.
+func TestIdempotency_keyIsScopedPerUser(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	sharedKey := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	var serving string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"client_secret":"secret_for_` + serving + `"}`))
+	})
+	handler := mw(inner)
+
+	// Alice posts with the shared key.
+	serving = "alice"
+	rec1 := httptest.NewRecorder()
+	req1 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "alice")
+	req1.Header.Set(idempotencyKeyHeader, sharedKey)
+	handler.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusCreated, rec1.Code)
+	require.Contains(t, rec1.Body.String(), "secret_for_alice")
+
+	// Bob presents the SAME key on the SAME route. He must reach the handler
+	// and get his own response — never Alice's cached body.
+	serving = "bob"
+	rec2 := httptest.NewRecorder()
+	req2 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "bob")
+	req2.Header.Set(idempotencyKeyHeader, sharedKey)
+	handler.ServeHTTP(rec2, req2)
+
+	assert.Contains(t, rec2.Body.String(), "secret_for_bob")
+	assert.NotContains(t, rec2.Body.String(), "secret_for_alice",
+		"Bob must never receive Alice's cached client_secret")
+	assert.Empty(t, rec2.Header().Get("X-Idempotency-Replayed"),
+		"Bob's request is not a replay — it is a different caller")
+}
+
+// A genuine retry by the SAME user on the SAME route must still replay, or the
+// middleware would stop doing its job.
+func TestIdempotency_sameUserSameRouteStillReplays(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	calls := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"pay_1"}`))
+	}))
+
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "alice")
+		req.Header.Set(idempotencyKeyHeader, key)
+		handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusCreated, rec.Code)
+	}
+	assert.Equal(t, 1, calls, "the retry must be served from cache, not re-executed")
+}
+
+// The same user reusing one key across DIFFERENT routes must not have a
+// /payments response replayed for a /subscriptions call.
+func TestIdempotency_keyIsScopedPerRoute(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	var serving string
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"route":"` + serving + `"}`))
+	}))
+
+	serving = "payments"
+	rec1 := httptest.NewRecorder()
+	req1 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "alice")
+	req1.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec1, req1)
+	require.Contains(t, rec1.Body.String(), "payments")
+
+	serving = "subscriptions"
+	rec2 := httptest.NewRecorder()
+	req2 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions", nil), "alice")
+	req2.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec2, req2)
+
+	assert.Contains(t, rec2.Body.String(), "subscriptions",
+		"a different route must not replay the previous route's response")
 }

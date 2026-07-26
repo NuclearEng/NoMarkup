@@ -142,32 +142,36 @@ func newTestInsuranceService(repo *mockInsuranceRepo) *InsuranceService {
 	return NewInsuranceService(repo, ss)
 }
 
-// --- categoryRiskMultiplier ---
+// --- categoryRiskMultiplierBps ---
 
-func TestCategoryRiskMultiplier(t *testing.T) {
+// The multiplier moved from a float64 factor to integer basis points so the
+// premium computation never leaves int64 (CLAUDE.md §5). 10000 bps == 1.0x.
+// Exact equality replaces the old InDelta: integers have no tolerance to
+// spend, and a multiplier that is off by one bps is a real pricing change.
+func TestCategoryRiskMultiplierBps(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		slug string
-		want float64
+		want int64
 	}{
-		{"roofing", 1.5},
-		{"electrical", 1.5},
-		{"plumbing", 1.5},
-		{"ROOFING", 1.5}, // case-insensitive
-		{"Plumbing", 1.5},
-		{"cleaning", 0.8},
-		{"landscaping", 0.8},
-		{"painting", 1.0}, // not in either list
-		{"", 1.0},
-		{"unknown_xyz", 1.0},
+		{"roofing", 15000},
+		{"electrical", 15000},
+		{"plumbing", 15000},
+		{"ROOFING", 15000}, // case-insensitive
+		{"Plumbing", 15000},
+		{"cleaning", 8000},
+		{"landscaping", 8000},
+		{"painting", 10000}, // not in either list
+		{"", 10000},
+		{"unknown_xyz", 10000},
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.slug, func(t *testing.T) {
 			t.Parallel()
-			got := categoryRiskMultiplier(tt.slug)
-			assert.InDelta(t, tt.want, got, 0.0001)
+			got := categoryRiskMultiplierBps(tt.slug)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

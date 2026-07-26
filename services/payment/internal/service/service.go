@@ -114,8 +114,13 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 		}
 	}
 
-	// Calculate platform fee: max(minFee, min(maxFee, amount * feePercentage))
-	platformFee := int64(float64(amountCents) * feeConfig.FeePercentage)
+	// Calculate platform fee: max(minFee, min(maxFee, amount * feePercentage)).
+	//
+	// MONEY: computed in integer basis points (see money.go). The stored rate is
+	// a NUMERIC(5,4) column that pgx hands us as a float64; rateToBPS converts it
+	// to exact basis points at this read boundary and every cent below is int64.
+	// Fractional cents round UP so the platform never under-collects.
+	platformFee := feeFromBPS(amountCents, rateToBPS(feeConfig.FeePercentage))
 	if platformFee < feeConfig.MinFeeCents {
 		platformFee = feeConfig.MinFeeCents
 	}
@@ -127,7 +132,7 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 	}
 
 	// Calculate guarantee fee.
-	guaranteeFee := int64(float64(amountCents) * feeConfig.GuaranteePercentage)
+	guaranteeFee := feeFromBPS(amountCents, rateToBPS(feeConfig.GuaranteePercentage))
 
 	// Calculate lead-gen fee: an ADDITIONAL provider-side deduction, clamped the
 	// same way as the platform fee. Disabled => zero, leaving payout unchanged.
@@ -135,7 +140,7 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 	var leadGenPercentage float64
 	if feeConfig.LeadGenEnabled {
 		leadGenPercentage = feeConfig.LeadGenPercentage
-		leadGenFee = int64(float64(amountCents) * feeConfig.LeadGenPercentage)
+		leadGenFee = feeFromBPS(amountCents, rateToBPS(feeConfig.LeadGenPercentage))
 		if leadGenFee < feeConfig.LeadGenMinFeeCents {
 			leadGenFee = feeConfig.LeadGenMinFeeCents
 		}
@@ -332,8 +337,10 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, paymentID string, p
 	return s.repo.GetPayment(ctx, paymentID)
 }
 
-// advanceRepaymentRate is the percentage of provider payout deducted for advance repayment.
-const advanceRepaymentRate = 0.20
+// advanceRepaymentRateBps is the share of provider payout withheld for advance
+// repayment, in integer basis points (2000 bps = 20%). MONEY: kept in bps, not
+// as a float rate, so the withholding is computed entirely in int64 cents.
+const advanceRepaymentRateBps int64 = 2000
 
 // ReleaseEscrow creates a Stripe transfer to the provider and updates status.
 // If the provider has active advances, a portion of the payout is withheld for repayment.
@@ -447,7 +454,7 @@ func (s *PaymentService) ReleaseEscrow(ctx context.Context, paymentID string, re
 	// back.
 	var totalRepayment int64
 	if len(activeAdvances) > 0 {
-		repaymentPool := int64(float64(payment.ProviderPayoutCents) * advanceRepaymentRate)
+		repaymentPool := feeFromBPS(payment.ProviderPayoutCents, advanceRepaymentRateBps)
 
 		// Deduct from oldest advances first.
 		for _, advance := range activeAdvances {
