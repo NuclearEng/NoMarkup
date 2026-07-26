@@ -103,7 +103,9 @@
 | Wordmark | `web/src/components/layout/Logo.tsx` | No + gold Markup, Syne |
 | iOS theme | `ios/NoMarkup/Core/BrandTheme.swift` | Hex table above |
 | Design system notes | `docs/design-system.md` | Points here for brand |
-| App icon | Terminal amber **N** on black (see `brand/`) | Not jewelry diamond as sole story |
+| App icon | Terminal amber **N** on black (see `brand/ICON_DECISION.md` master 37) | Not jewelry diamond as sole story |
+| Landing hero | `web/src/app/(public)/LandingPageClient.tsx` | Tagline + Instrument display + mono labels |
+| iOS home / login | `HomeView.swift`, `LoginView.swift` | Same voice as showcase |
 
 ---
 

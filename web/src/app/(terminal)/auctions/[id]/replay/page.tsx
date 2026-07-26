@@ -117,7 +117,7 @@ function CompletionOverlay({
       aria-modal="true"
       aria-label="Auction replay complete"
     >
-      <div className="mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-[#0c0f18] p-8 shadow-2xl">
+      <div className="mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-[#14161e] p-8 shadow-2xl">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15">
             <Trophy className="h-8 w-8 text-emerald-400" aria-hidden="true" />

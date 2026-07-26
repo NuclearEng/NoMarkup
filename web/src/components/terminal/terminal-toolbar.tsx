@@ -105,7 +105,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
   return (
     <div
       className={cn(
-        'flex h-10 items-center gap-1.5 rounded-2xl border border-[var(--brand-gold)]/10 bg-[#0c0f18] px-3',
+        'flex h-10 items-center gap-1.5 rounded-2xl border border-[var(--brand-gold)]/10 bg-[#14161e] px-3',
         className,
       )}
     >

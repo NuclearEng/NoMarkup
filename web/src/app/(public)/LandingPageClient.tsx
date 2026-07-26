@@ -328,7 +328,7 @@ export function LandingPageClient() {
 
       <section
         ref={statsSection.ref}
-        className="border-b border-white/[0.06] bg-[#0c0f18] py-10 sm:py-16"
+        className="border-b border-white/[0.06] bg-card py-10 sm:py-16"
         aria-label="Platform statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -370,16 +370,21 @@ export function LandingPageClient() {
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
+            <p
+              className={`font-mono text-[0.7rem] font-medium tracking-[0.2em] text-brand-gold uppercase transition-all duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+            >
+              How NoMarkup Works
+            </p>
             <h2
               id="how-it-works-heading"
-              className={`text-3xl font-black tracking-tight transition-all duration-700 sm:text-4xl ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
+              className={`mt-3 font-display text-3xl tracking-tight transition-all duration-700 sm:text-4xl ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
             >
               How it works
             </h2>
             <p
               className={`text-muted-foreground mt-5 text-lg transition-all delay-100 duration-700 ${howItWorks.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
             >
-              Three simple steps to better prices on home services.
+              Customers post jobs. Providers compete. Prices drop to fair market rates.
             </p>
           </div>
 
@@ -390,21 +395,21 @@ export function LandingPageClient() {
                 icon: Megaphone,
                 title: 'Post your job',
                 description:
-                  'Describe the work you need done. Add photos, set your budget range, and pick a timeline.',
+                  'Describe the home-service work you need. Add photos, set a budget range, and pick a timeline.',
               },
               {
                 step: 2,
                 icon: Users,
                 title: 'Providers compete',
                 description:
-                  'Qualified, verified providers see your job and bid against each other in a live reverse auction.',
+                  'Qualified providers enter a real-time reverse auction. Bids go down — not up.',
               },
               {
                 step: 3,
                 icon: BadgeCheck,
-                title: 'Pick the best deal',
+                title: 'Award at market rate',
                 description:
-                  'Compare bids, read reviews, and choose the provider that fits your budget and standards.',
+                  'Pick on price, quality, and trust. Pay with milestones and the NoMarkup Guarantee.',
               },
             ].map((item, i) => (
               <div
@@ -434,7 +439,7 @@ export function LandingPageClient() {
       </section>
 
       <section
-        className="bg-[#0c0f18] py-16 sm:py-36"
+        className="bg-card py-16 sm:py-36"
         aria-label="Customer testimonial and trust signals"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -524,17 +529,17 @@ export function LandingPageClient() {
         </div>
       </section>
 
-      <section className="bg-[#0c0f18] py-16 sm:py-36" aria-labelledby="cta-heading">
+      <section className="bg-card py-16 sm:py-36" aria-labelledby="cta-heading">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="glass glass-elevated glass-highlight glass-tinted-gold glass-specular-anim mx-auto max-w-2xl rounded-2xl p-6 text-center sm:p-14">
             <h2
               id="cta-heading"
-              className="relative z-[3] text-3xl font-black tracking-tight sm:text-4xl"
+              className="relative z-[3] font-display text-3xl tracking-tight sm:text-4xl"
             >
-              Ready to save?
+              The market sets the price.
             </h2>
             <p className="text-muted-foreground relative z-[3] mt-5 text-lg">
-              Join thousands of homeowners who stopped overpaying for quality service.
+              Post a job. Watch providers compete. Fair market rates — not the markup.
             </p>
             <div className="relative z-[3] mt-8 sm:mt-12">
               <Button

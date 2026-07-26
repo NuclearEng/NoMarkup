@@ -85,7 +85,7 @@ export function LoginForm() {
 
   if (mfaStep) {
     return (
-      <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <Card className="border border-[rgba(201,168,76,0.12)] bg-[#14161e] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
         <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
         <CardHeader className="relative z-[2] text-center">
           <CardTitle className="text-2xl font-bold tracking-tight text-white">
@@ -153,11 +153,13 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <Card className="border border-[rgba(201,168,76,0.12)] bg-[#14161e] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-3xl font-bold tracking-tight text-white">Welcome back</CardTitle>
-        <CardDescription className="text-sm text-white/65">Sign in to your account</CardDescription>
+        <CardDescription className="text-sm text-white/65">
+          Sign in — the market sets the price, not the markup.
+        </CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">
         <OAuthButtons />

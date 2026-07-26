@@ -14,11 +14,11 @@ const DEFAULT_PAGE_SIZE = 12;
 export const metadata: Metadata = {
   title: 'Find Jobs · NoMarkup',
   description:
-    'Browse open home-service jobs on NoMarkup. Providers compete on price in reverse auctions — no lead-gen markup.',
+    'Browse open home-service jobs. Qualified providers compete in reverse auctions — fair market rates, not the markup.',
   openGraph: {
     title: 'Find Jobs · NoMarkup',
     description:
-      'Browse open home-service jobs. Providers compete on price — no lead-gen markup.',
+      'Reverse-auction home services. Providers compete on price. The market sets the rate — not the markup.',
     type: 'website',
   },
 };

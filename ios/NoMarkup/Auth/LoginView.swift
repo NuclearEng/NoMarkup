@@ -38,11 +38,22 @@ struct LoginView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(AppConfig.appDisplayName)
-                .font(.largeTitle.weight(.bold))
+        VStack(alignment: .leading, spacing: 10) {
+            (
+                Text("No")
+                    .foregroundColor(BrandTheme.textPrimary)
+                + Text("Markup")
+                    .foregroundColor(BrandTheme.gold)
+            )
+            .font(.largeTitle.weight(.heavy))
+            .accessibilityLabel("NoMarkup")
+
+            Text("The Market Sets The Price. Not The Markup.")
+                .font(.system(.title3, design: .serif).weight(.semibold))
                 .foregroundStyle(BrandTheme.textPrimary)
-            Text("Local services marketplace — jobs reverse-auction, goods forward-auction. Native chrome scaffold (not a web wrapper).")
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Reverse-auction services. Local goods with escrow. Fair market rates — everyone wins except the middleman.")
                 .font(.subheadline)
                 .foregroundStyle(BrandTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

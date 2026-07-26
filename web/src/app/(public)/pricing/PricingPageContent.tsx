@@ -283,7 +283,7 @@ export function PricingPageContent() {
       {/* ============================================================ */}
       <section
         ref={statsSection.ref}
-        className="border-y border-white/[0.05] bg-[#0c0f18] py-8 sm:py-12"
+        className="border-y border-white/[0.05] bg-[#14161e] py-8 sm:py-12"
         aria-label="Pricing index statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">

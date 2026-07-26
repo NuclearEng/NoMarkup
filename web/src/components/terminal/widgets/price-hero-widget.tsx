@@ -23,7 +23,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
     sim.currentLowest > 0 ? Math.round((savingsCents / startingPriceCents) * 100) : 0;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl bg-[#0c0f18] border border-[var(--brand-gold)]/15 shadow-[0_0_0_1px_rgba(201,168,76,0.06),0_20px_50px_-12px_rgba(0,0,0,0.6)]">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl bg-[#14161e] border border-[var(--brand-gold)]/15 shadow-[0_0_0_1px_rgba(201,168,76,0.06),0_20px_50px_-12px_rgba(0,0,0,0.6)]">
       {/* Animated gold accent line at top */}
       <div className="hero-gold-line-animated h-[2px] shrink-0" />
 

@@ -93,13 +93,16 @@ describe('(public)/page (landing) — structure & static content', () => {
   it('renders the hero headline and primary CTAs', () => {
     render(createElement(LandingPage));
 
-    expect(screen.getByRole('heading', { name: /Home services at/i })).toBeDefined();
+    // Showcase hero: "The Market Sets The Price. Not The Markup."
+    const hero = screen.getByRole('heading', { level: 1, name: /The Market Sets/i });
+    expect(hero).toBeDefined();
+    expect(hero.textContent).toMatch(/Not The Markup/i);
     expect(screen.getByRole('link', { name: /Get started/i })).toBeDefined();
     expect(screen.getByRole('link', { name: /Browse jobs/i })).toBeDefined();
     expect(screen.getByRole('link', { name: /Try Live Demo/i })).toBeDefined();
     expect(screen.getByRole('heading', { name: /How it works/i })).toBeDefined();
     expect(screen.getByRole('heading', { name: /Popular categories/i })).toBeDefined();
-    expect(screen.getByRole('heading', { name: /Ready to save\?/i })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 2, name: /The market sets the price/i })).toBeDefined();
   });
 
   it('renders the mocked hero children (ticker, mesh, auction demo)', () => {
@@ -123,7 +126,7 @@ describe('(public)/page (landing) — structure & static content', () => {
     render(createElement(LandingPage));
     expect(screen.getByRole('heading', { name: /Post your job/i })).toBeDefined();
     expect(screen.getByRole('heading', { name: /Providers compete/i })).toBeDefined();
-    expect(screen.getByRole('heading', { name: /Pick the best deal/i })).toBeDefined();
+    expect(screen.getByRole('heading', { name: /Award at market rate/i })).toBeDefined();
   });
 
   it('renders all eight category links pointing at /jobs', () => {
