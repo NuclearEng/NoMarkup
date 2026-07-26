@@ -28,3 +28,17 @@ Do **not** reintroduce the old flat “NM rings” Pillow monogram.
 ## Wordmark
 
 In-product: `web/src/components/layout/Logo.tsx` + `BrandMark.tsx` (SVG mark + Syne wordmark, gold gradient on “Markup”).
+
+## v3 — Frontier home-screen icon (current)
+
+**Master:** `brand/app-icon-1024.png` / iOS AppIcon / web PWA
+
+Design rules that won the home-screen fight:
+
+1. **Full gold field** (never dark navy tile) — competes with Tips / Instagram chroma  
+2. **Huge navy N** — thick geometric strokes; silhouette first at ~60pt  
+3. **Large brilliant diamond** at 12 o’clock — white flash + prism fire  
+4. **Dual thin rings** — brand seal without noise  
+5. **RGB 1024, no alpha** — App Store compliant  
+
+Preview at home-screen scale: `brand/app-icon-preview-120.png`
