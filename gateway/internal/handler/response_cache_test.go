@@ -17,10 +17,10 @@ import (
 )
 
 // wantPublicPolicy is the exact Cache-Control the §14 DATA-layer CDN cache
-// depends on. It is asserted literally, not by substring, so a hit-rate
-// regression (a dropped directive, a shortened s-maxage) fails loudly rather
-// than silently halving the edge cache.
-const wantPublicPolicy = "public, max-age=0, s-maxage=60, stale-while-revalidate=300, stale-if-error=86400"
+// depends on for the common (sMaxAge=60, swr=300) call pattern. stale-if-error
+// is bounded relative to those windows (max(60*10, 300*2)=600), not a flat day.
+// Asserted literally so a hit-rate regression fails loudly.
+const wantPublicPolicy = "public, max-age=0, s-maxage=60, stale-while-revalidate=300, stale-if-error=600"
 
 // strongETagRe matches a correctly-formed STRONG validator: a quoted opaque
 // token with no `W/` weakness prefix. 32 hex chars = the first 16 bytes of the
@@ -439,9 +439,10 @@ func TestPublicCachePolicyDirectives(t *testing.T) {
 		swr     int
 		want    string
 	}{
-		{"listing detail", 15, 60, "public, max-age=0, s-maxage=15, stale-while-revalidate=60, stale-if-error=86400"},
+		{"listing detail", 15, 60, "public, max-age=0, s-maxage=15, stale-while-revalidate=60, stale-if-error=150"},
 		{"search results", 60, 300, wantPublicPolicy},
-		{"near static catalog", 300, 3600, "public, max-age=0, s-maxage=300, stale-while-revalidate=3600, stale-if-error=86400"},
+		// max(300*10, 3600*2)=7200, hard-capped at 3600.
+		{"near static catalog", 300, 3600, "public, max-age=0, s-maxage=300, stale-while-revalidate=3600, stale-if-error=3600"},
 	}
 
 	for _, tc := range tests {
@@ -478,11 +479,19 @@ func TestAnonymousCacheabilityMatrix(t *testing.T) {
 			writeCachedJSON(rec, req, http.StatusOK, samplePayload(), p.sMaxAge, p.swr)
 
 			got := rec.Header().Get("Cache-Control")
-			// Computed independently of publicCachePolicy so a change to that
-			// helper cannot make this assertion agree with itself.
+			// Compute SIE independently of publicCachePolicy so a change to
+			// that helper cannot make this assertion agree with itself. Must
+			// stay in lockstep with staleIfErrorSeconds (max(s*10, swr*2), cap 1h).
+			sie := p.sMaxAge * 10
+			if alt := p.swr * 2; alt > sie {
+				sie = alt
+			}
+			if sie > 3600 {
+				sie = 3600
+			}
 			want := fmt.Sprintf(
-				"public, max-age=0, s-maxage=%d, stale-while-revalidate=%d, stale-if-error=86400",
-				p.sMaxAge, p.swr,
+				"public, max-age=0, s-maxage=%d, stale-while-revalidate=%d, stale-if-error=%d",
+				p.sMaxAge, p.swr, sie,
 			)
 			t.Logf("anonymous Cache-Control: %s", got)
 			assert.Equal(t, want, got)

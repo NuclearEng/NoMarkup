@@ -70,18 +70,50 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
 }
 
+// staleIfErrorSeconds bounds how long a CDN may serve a stale public response
+// when the origin is down. It is derived from the fresh (s-maxage) and
+// revalidation (swr) windows rather than a flat constant.
+//
+// Why not a flat 86400: feature flags use writeCachedJSON(…, 60, 300). With a
+// day-long stale-if-error an admin could disable a financial flag and then an
+// origin blip would keep the old "enabled" map at the edge for up to 24h —
+// and RequireFlag fails open on a missing row outside production. Bounding
+// SIE to a small multiple of s-maxage keeps outage resilience without pinning
+// a short-TTL control plane payload for a day.
+//
+// Formula: max(sMaxAge*10, swr*2), hard-capped at 1 hour. Flags (60/300) →
+// 600s; listing detail (15/60) → 150s; near-static catalog (300/3600) → 1h.
+func staleIfErrorSeconds(sMaxAge, swr int) int {
+	if sMaxAge < 0 {
+		sMaxAge = 0
+	}
+	if swr < 0 {
+		swr = 0
+	}
+	sie := sMaxAge * 10
+	if alt := swr * 2; alt > sie {
+		sie = alt
+	}
+	const hardCap = 3600
+	if sie > hardCap {
+		return hardCap
+	}
+	return sie
+}
+
 // publicCachePolicy is the shared-cache policy writeCachedJSON emits for a
 // request the gateway has NOT associated with any user.
 //
 //   - s-maxage:                CDN may serve the cached copy for this many seconds.
 //   - stale-while-revalidate:  serve stale instantly while refreshing in the bg.
-//   - stale-if-error (1d):     serve stale if the origin is down — resilience.
+//   - stale-if-error:          serve stale if the origin is down — bounded by
+//     staleIfErrorSeconds relative to s-maxage/swr (not a flat day).
 //   - max-age=0:               browsers always revalidate, so a user never sees
 //     stale on refresh; the CDN absorbs the origin load.
 func publicCachePolicy(sMaxAge, swr int) string {
 	return fmt.Sprintf(
-		"public, max-age=0, s-maxage=%d, stale-while-revalidate=%d, stale-if-error=86400",
-		sMaxAge, swr,
+		"public, max-age=0, s-maxage=%d, stale-while-revalidate=%d, stale-if-error=%d",
+		sMaxAge, swr, staleIfErrorSeconds(sMaxAge, swr),
 	)
 }
 

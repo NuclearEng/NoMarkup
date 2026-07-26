@@ -29,10 +29,10 @@ func TestPrivateNoStore(t *testing.T) {
 				// Mirrors writeCachedJSON: an explicit per-handler policy
 				// must overwrite the subtree default.
 				w.Header().Set("Cache-Control",
-					"public, max-age=0, s-maxage=60, stale-while-revalidate=300, stale-if-error=86400")
+					"public, max-age=0, s-maxage=60, stale-while-revalidate=300, stale-if-error=600")
 				w.WriteHeader(http.StatusOK)
 			},
-			want: "public, max-age=0, s-maxage=60, stale-while-revalidate=300, stale-if-error=86400",
+			want: "public, max-age=0, s-maxage=60, stale-while-revalidate=300, stale-if-error=600",
 		},
 		{
 			name: "handler-set private policy with max-age wins",
