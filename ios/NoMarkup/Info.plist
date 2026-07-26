@@ -47,9 +47,14 @@
 	</array>
 	<key>UIRequiresFullScreen</key>
 	<false/>
-	<!-- Release/API override. Debug falls back to http://localhost:8080 via AppConfig when unset. -->
+	<!--
+	  API base for physical device + Release packaging.
+	  Simulator DEBUG ignores this and uses http://localhost:8080 (see AppConfig).
+	  For on-device testing against the Mac native stack, point at the Mac LAN IP
+	  (Gateway :8080). Switch back to https://api.no-markup.com when DNS/prod is live.
+	-->
 	<key>APIBaseURL</key>
-	<string>https://api.no-markup.com</string>
+	<string>http://192.168.1.101:8081</string>
 	<!-- Stripe publishable key (pk_test_… / pk_live_…). Override with NOMARKUP_STRIPE_PUBLISHABLE_KEY. -->
 	<key>StripePublishableKey</key>
 	<string></string>

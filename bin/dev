@@ -556,8 +556,10 @@ start_go_service() {
         build_go_service "$name" "$dir"
     fi
 
-    # Common env
+    # Common env — ENVIRONMENT is mandatory for Go services (and for user
+    # fail-closed notification wiring outside development).
     local env_args=(
+        "ENVIRONMENT=${ENVIRONMENT:-development}"
         "DATABASE_URL=$DATABASE_URL"
         "REDIS_URL=redis://localhost:$REDIS_PORT"
         "OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP"
@@ -597,6 +599,7 @@ start_rust_engine() {
     fi
 
     local env_args=(
+        "ENVIRONMENT=${ENVIRONMENT:-development}"
         "DATABASE_URL=$DATABASE_URL"
         "RUST_LOG=info"
         "OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP"
@@ -655,7 +658,8 @@ start_services() {
 
     start_go_service user "$ROOT/services/user" "$USER_PORT" \
         "USER_SERVICE_PORT=$USER_PORT" \
-        "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem"
+        "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem" \
+        "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT"
 
     start_go_service job "$ROOT/services/job" "$JOB_PORT" \
         "JOB_SERVICE_PORT=$JOB_PORT" \
@@ -786,7 +790,8 @@ cmd_up() {
         user)
             start_go_service user "$ROOT/services/user" "$USER_PORT" \
                 "USER_SERVICE_PORT=$USER_PORT" \
-                "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem"
+                "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem" \
+                "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT"
             ;;
         job)
             start_go_service job "$ROOT/services/job" "$JOB_PORT" \
