@@ -1,7 +1,9 @@
 'use client';
 
+import { ReportButton } from '@/components/chat/ReportButton';
 import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
 import { VerifiedBarBadge } from '@/components/providers/VerifiedBarBadge';
+import { FlagReviewButton } from '@/components/reviews/FlagReviewButton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FollowButton } from '@/components/users/FollowButton';
@@ -99,13 +101,21 @@ export function ProviderProfileClient({
               </div>
             ) : null}
             {provider.user_id ? (
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <FollowButton
                   sellerId={provider.user_id}
                   initialFollowing={provider.is_following ?? false}
                   followerCount={provider.follower_count}
                   currentUserId={currentUserId}
                 />
+                {/* ASR-1.2.b — report provider user (hidden for self). */}
+                {currentUserId && currentUserId !== provider.user_id ? (
+                  <ReportButton
+                    userId={provider.user_id}
+                    displayName={provider.business_name ?? provider.display_name}
+                    className="text-zinc-400 hover:text-red-300"
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -204,6 +214,11 @@ export function ProviderProfileClient({
                       Provider Response
                     </p>
                     <p className="text-zinc-400">{review.response.comment}</p>
+                  </div>
+                ) : null}
+                {currentUserId && !review.is_flagged && currentUserId !== review.reviewer_id ? (
+                  <div className="mt-2">
+                    <FlagReviewButton reviewId={review.id} />
                   </div>
                 ) : null}
                 {idx < reviews.length - 1 ? (

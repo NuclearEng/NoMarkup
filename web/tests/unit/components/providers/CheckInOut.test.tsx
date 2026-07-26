@@ -41,6 +41,8 @@ describe('CheckInOut', () => {
   it('renders the Check In button when no session is active', () => {
     render(<CheckInOut contractId="c-1" />);
     expect(screen.getByRole('button', { name: /Check in to this job/ })).toBeDefined();
+    // ASR-5.1.5 purpose string before GPS check-in
+    expect(screen.getByText(/Location confirms you arrived at the job site/i)).toBeDefined();
   });
 
   it('renders skeleton in loading state', () => {

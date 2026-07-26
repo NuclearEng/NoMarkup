@@ -286,14 +286,28 @@ export function RegisterForm() {
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
-        <p className="text-sm text-white/65">
+      <CardFooter className="relative z-[2] flex-col gap-3 border-t border-white/10 pt-6">
+        <p className="text-center text-sm text-white/65">
           Already have an account?{' '}
           <Link
             href="/login"
             className="font-medium text-[var(--brand-gold)] underline-offset-4 hover:underline"
           >
             Sign in
+          </Link>
+        </p>
+        <p className="text-center text-xs text-white/45">
+          By creating an account you agree to our{' '}
+          <Link href="/terms" className="underline-offset-4 hover:text-white/70 hover:underline">
+            Terms
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy" className="underline-offset-4 hover:text-white/70 hover:underline">
+            Privacy Policy
+          </Link>
+          .{' '}
+          <Link href="/support" className="underline-offset-4 hover:text-white/70 hover:underline">
+            Support
           </Link>
         </p>
       </CardFooter>

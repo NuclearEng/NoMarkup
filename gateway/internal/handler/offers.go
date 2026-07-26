@@ -164,6 +164,25 @@ func (h *OffersHandler) CreateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ASR-1.2.c — refuse offers when either party has blocked the other.
+	// Fail closed: DB error → 503; block present → 403.
+	blocked, berr := areUsersBlocked(r.Context(), h.db, claims.UserID, sellerID)
+	if berr != nil {
+		slog.ErrorContext(r.Context(), "create offer: block check failed",
+			"error", berr, "listing_id", listingID, "buyer_id", claims.UserID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return
+	}
+	if blocked {
+		writeError(w, http.StatusForbidden, "blocked")
+		return
+	}
+
+	// ASR-1.2.a — pre-post UGC filter on optional offer note.
+	if rejectProhibitedUGC(w, r, req.Message) {
+		return
+	}
+
 	message := strings.TrimSpace(req.Message)
 	var msgArg interface{}
 	if message != "" {
@@ -432,6 +451,27 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "only the participant who made this offer can withdraw it")
 			return
 		}
+	}
+
+	// ASR-1.2.c — mutual block ends marketplace negotiation (accept/counter/
+	// reject). withdraw is still allowed so a blocked party can pull their
+	// own open offer. Fail closed on query error.
+	if action == "accept" || action == "reject" || action == "counter" {
+		blocked, berr := areUsersBlocked(r.Context(), h.db, buyerID, sellerID)
+		if berr != nil {
+			slog.ErrorContext(r.Context(), "update offer: block check failed",
+				"error", berr, "offer_id", offerID)
+			writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+			return
+		}
+		if blocked {
+			writeError(w, http.StatusForbidden, "blocked")
+			return
+		}
+	}
+	// ASR-1.2.a — filter free-text on counter messages.
+	if action == "counter" && rejectProhibitedUGC(w, r, req.Message) {
+		return
 	}
 
 	// Only pending or countered offers can transition. counter-on-counter

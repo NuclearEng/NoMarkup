@@ -171,6 +171,10 @@ func (h *ListingsHandler) CreateListing(w http.ResponseWriter, r *http.Request) 
 			fmt.Sprintf("description must be at most %d characters", maxListingDescriptionLen))
 		return
 	}
+	// ASR-1.2.a / 1.1.3.b / 1.4.3.c / 1.1.4 — pre-post UGC filter.
+	if rejectProhibitedUGC(w, r, title, req.Description) {
+		return
+	}
 	if strings.TrimSpace(req.CategoryID) == "" {
 		writeError(w, http.StatusBadRequest, "category_id is required")
 		return
@@ -425,6 +429,19 @@ func (h *ListingsHandler) UpdateListing(w http.ResponseWriter, r *http.Request) 
 	if req.Title != nil && strings.TrimSpace(*req.Title) == "" {
 		writeError(w, http.StatusBadRequest, "title cannot be empty")
 		return
+	}
+	// ASR-1.2.a — pre-post UGC filter on title/description when present.
+	{
+		var parts []string
+		if req.Title != nil {
+			parts = append(parts, *req.Title)
+		}
+		if req.Description != nil {
+			parts = append(parts, *req.Description)
+		}
+		if len(parts) > 0 && rejectProhibitedUGC(w, r, parts...) {
+			return
+		}
 	}
 	if req.StartingPriceCents != nil && *req.StartingPriceCents <= 0 {
 		writeError(w, http.StatusBadRequest, "starting_price_cents must be positive")

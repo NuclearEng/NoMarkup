@@ -1,28 +1,9 @@
-# PLACEHOLDER — replace with the real Apple Pay merchant-ID domain association cert.
-#
-# To enable Apple Pay on the web in production, the production domain must
-# be registered with Stripe as an Apple Pay domain:
-#
-#   1. From the Stripe dashboard: Settings → Payments → Apple Pay
-#   2. Click "Add a new domain" and enter the production hostname
-#      (e.g. nomarkup.com).
-#   3. Stripe issues a verification file. Download it and replace the
-#      contents of THIS file with the bytes Stripe provided. The file must
-#      be served at https://<domain>/.well-known/apple-developer-merchantid-domain-association
-#      with Content-Type text/plain and a 200 status. Next.js serves
-#      anything under /web/public/ at the corresponding root path, so a
-#      direct file replacement is enough.
-#   4. Click "Verify" in the Stripe dashboard.
-#
-# The placeholder content here is intentionally non-cert text so a careless
-# deploy can't pass Apple's verification with a stale demo file. Apple Pay
-# falls back gracefully to other wallets when the domain isn't verified, so
-# the PaymentRequest button still renders Google Pay / browser-saved cards
-# without this file in place.
-#
-# References:
-#   - https://docs.stripe.com/apple-pay
-#   - https://docs.stripe.com/payments/payment-request-button
-#
-# TODO(prod): replace this file with the bytes Stripe issues during the
-# Apple Pay domain verification step before launch.
+PLACEHOLDER — replace before production Apple Pay
+
+This file must be replaced with the Apple Pay domain association content
+provided by Stripe (Dashboard → Settings → Payment methods → Apple Pay →
+Add domain) or Apple Developer. Until then, Apple Pay domain verification
+will fail.
+
+ASR-5.1.2.vii. Do not ship this placeholder to a production domain that claims
+Apple Pay support.

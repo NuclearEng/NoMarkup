@@ -46,17 +46,19 @@ function EmailVerificationBanner() {
       </p>
       {!resent ? (
         <button
+          type="button"
           onClick={() => { void handleResend(); }}
           disabled={resending}
-          className="shrink-0 text-xs font-medium text-amber-400 underline-offset-2 hover:underline disabled:opacity-50"
+          className="min-h-[44px] shrink-0 px-2 text-xs font-medium text-amber-400 underline-offset-2 hover:underline disabled:opacity-50"
         >
           {resending ? 'Sending…' : 'Resend email'}
         </button>
       ) : null}
       <button
+        type="button"
         onClick={() => { setDismissed(true); }}
         aria-label="Dismiss verification notice"
-        className="shrink-0 rounded p-0.5 text-amber-400/60 hover:text-amber-400"
+        className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded text-amber-400/60 hover:text-amber-400"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
@@ -67,16 +69,16 @@ function EmailVerificationBanner() {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
-      <div className="flex min-h-screen flex-col bg-background">
+      <div className="flex min-h-[100dvh] flex-col overflow-x-clip bg-background">
         <Header />
         <EmailVerificationBanner />
 
-        <div className="flex flex-1">
+        <div className="flex min-w-0 flex-1">
           {/* Desktop sidebar — hidden on mobile. Shared with the marketplace. */}
           <SidebarNav />
 
           <WebSocketProvider>
-            <div className="dashboard-ambient min-w-0 flex-1 px-3 pt-3 sm:px-4 sm:pt-4 md:px-6 md:pt-6">
+            <div className="dashboard-ambient min-w-0 flex-1 overflow-x-clip px-3 pt-3 pb-2 sm:px-4 sm:pt-4 md:px-6 md:pt-6">
               {children}
             </div>
           </WebSocketProvider>

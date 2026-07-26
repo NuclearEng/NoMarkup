@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, Download, ShieldX, Undo2 } from 'lucide-react';
 
@@ -198,6 +199,44 @@ export default function AccountSettingsPage() {
 
   return (
     <div className="space-y-6">
+      <Card className="glass border border-[var(--brand-gold)]/10">
+        <CardHeader>
+          <CardTitle className="text-lg text-zinc-100">Privacy &amp; legal</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-zinc-300">
+          <p>
+            Learn how we handle your data, the rules of the platform, and how to
+            get help. Full policies live on public pages (no login required).
+          </p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+            <li>
+              <Link
+                href="/privacy"
+                className="min-h-[44px] inline-flex items-center text-[var(--brand-gold)] underline-offset-4 hover:underline"
+              >
+                Privacy Policy
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/terms"
+                className="min-h-[44px] inline-flex items-center text-[var(--brand-gold)] underline-offset-4 hover:underline"
+              >
+                Terms of Service
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/support"
+                className="min-h-[44px] inline-flex items-center text-[var(--brand-gold)] underline-offset-4 hover:underline"
+              >
+                Support
+              </Link>
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
+
       <Card className="glass border border-[var(--brand-gold)]/10">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg text-zinc-100">

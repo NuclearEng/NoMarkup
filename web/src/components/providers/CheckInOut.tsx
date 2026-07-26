@@ -113,9 +113,14 @@ export function CheckInOut({ contractId, className }: CheckInOutProps) {
     );
   }
 
-  // Not started
+  // Not started — ASR-5.1.5: purpose string before GPS check-in.
+  // No manual / note-only check-in API exists; GPS is required.
   return (
     <div className={className}>
+      <p className="mb-2 text-xs text-zinc-400">
+        Location confirms you arrived at the job site. It is stored with the
+        contract for dispute protection. GPS is required to check in.
+      </p>
       <Button
         className="min-h-[44px] w-full"
         onClick={() => { checkIn.mutate(); }}

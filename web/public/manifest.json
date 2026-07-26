@@ -5,7 +5,7 @@
   "start_url": "/marketplace",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#070b14",
   "theme_color": "#070b14",
   "categories": ["shopping", "business", "productivity"],

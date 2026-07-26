@@ -64,8 +64,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Allow pinch-zoom (a11y). Cover + safe-area for notched iPhones.
   viewportFit: 'cover',
   themeColor: '#070b14',
+  // Keep form fields visible when the iOS keyboard opens.
+  interactiveWidget: 'resizes-content',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

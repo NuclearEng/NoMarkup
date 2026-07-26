@@ -4,6 +4,23 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* iPhone / iPad: prevent horizontal rubber-band scroll from full-bleed sections;
+   keep form controls ≥16px so iOS does not auto-zoom on focus (Input/Textarea already use text-base). */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  overflow-x: clip;
+  overscroll-behavior-y: none;
+}
+/* Prefer dynamic viewport units where supported (mobile browser chrome). */
+@supports (height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+}
+
 :root {
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);

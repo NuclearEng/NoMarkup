@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { changePasswordSchema } from '@/lib/validations';
 import type { ChangePasswordFormValues } from '@/lib/validations';
+import { ConnectedAccounts } from '@/components/settings/ConnectedAccounts';
 import { useProfile } from '@/hooks/useProfile';
 import {
   useEnableMFA,
@@ -486,6 +487,11 @@ export default function SecuritySettingsPage() {
 
       {/* MFA */}
       <MFASection />
+
+      <div className="glass-divider" role="separator" />
+
+      {/* Connected OAuth accounts (ASR-5.1.1.v) */}
+      <ConnectedAccounts />
 
       <div className="glass-divider" role="separator" />
 

@@ -98,6 +98,11 @@ func (h *ReviewHandler) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ASR-1.2.a — pre-post UGC filter on review comment.
+	if rejectProhibitedUGC(w, r, req.Comment) {
+		return
+	}
+
 	grpcReq := &reviewv1.CreateReviewRequest{
 		ContractId:    contractID,
 		ReviewerId:    claims.UserID,
@@ -292,6 +297,11 @@ func (h *ReviewHandler) RespondToReview(w http.ResponseWriter, r *http.Request) 
 
 	var req respondToReviewRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	// ASR-1.2.a — pre-post UGC filter on response text.
+	if rejectProhibitedUGC(w, r, req.Comment) {
 		return
 	}
 

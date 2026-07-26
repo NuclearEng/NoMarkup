@@ -73,13 +73,45 @@ export interface ConfirmBidBondResponse {
 // Cookie consent
 // ─────────────────────────────────────────────────────────────────────────
 
-const CONSENT_COOKIE_NAME = 'nm:consent';
+/** Canonical consent cookie name — keep in sync with instrumentation-client.ts. */
+export const CONSENT_COOKIE_NAME = 'nm:consent';
 const CONSENT_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 365; // 12 months
 
 /** True when the user has saved their consent on this device. */
 export function hasConsentCookie(): boolean {
   if (typeof document === 'undefined') return false;
   return document.cookie.split(';').some((c) => c.trim().startsWith(`${CONSENT_COOKIE_NAME}=`));
+}
+
+/**
+ * Read the stored consent payload from `nm:consent`. Returns null when the
+ * cookie is missing or malformed (treat as no consent — opt-in posture).
+ * ASR-5.1.1.ii / ASR-5.1.2.i.
+ */
+export function readConsentCookie(): CookieConsentInput | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie
+    .split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${CONSENT_COOKIE_NAME}=`));
+  if (!match) return null;
+  const raw = match.slice(`${CONSENT_COOKIE_NAME}=`.length);
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw)) as Partial<CookieConsentInput>;
+    return {
+      necessary: parsed.necessary === true,
+      analytics: parsed.analytics === true,
+      marketing: parsed.marketing === true,
+      ...(typeof parsed.session_id === 'string' ? { session_id: parsed.session_id } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** True only when the user explicitly opted in to analytics cookies. */
+export function hasAnalyticsConsent(): boolean {
+  return readConsentCookie()?.analytics === true;
 }
 
 /** Persist consent locally so the banner doesn't re-render every page. */

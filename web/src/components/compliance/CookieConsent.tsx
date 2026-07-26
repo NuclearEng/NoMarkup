@@ -24,7 +24,8 @@ import {
 
 export function CookieConsent() {
   const [visible, setVisible] = useState(false);
-  const [analytics, setAnalytics] = useState(true);
+  // ASR-5.1.1.ii / ASR-5.1.2.i — analytics is opt-in (default off). Marketing too.
+  const [analytics, setAnalytics] = useState(false);
   const [marketing, setMarketing] = useState(false);
   const log = useLogCookieConsent();
 
@@ -54,7 +55,11 @@ export function CookieConsent() {
       aria-label="Cookie preferences"
       aria-modal="false"
       data-testid="cookie-consent-banner"
-      className="fixed inset-x-3 bottom-3 z-[60] mx-auto max-w-md rounded-2xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl backdrop-blur-md sm:inset-x-auto sm:bottom-6 sm:left-6 sm:mx-0 sm:p-5"
+      className="fixed inset-x-3 z-[60] mx-auto max-w-md rounded-2xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl backdrop-blur-md sm:inset-x-auto sm:left-6 sm:mx-0 sm:p-5"
+      style={{
+        // Clear iPhone home indicator + authenticated bottom tab bar when present
+        bottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
+      }}
     >
       <h2 className="mb-1 text-sm font-semibold text-white">Cookie preferences</h2>
       <p className="text-xs text-zinc-400">
@@ -63,7 +68,7 @@ export function CookieConsent() {
       </p>
 
       <div className="mt-3 space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs text-zinc-300">
-        <label className="flex items-center justify-between gap-3">
+        <label className="flex min-h-[44px] items-center justify-between gap-3 py-1">
           <span>
             <span className="font-medium text-zinc-200">Necessary</span>
             <span className="ml-2 text-zinc-500">Required for sign-in & checkout</span>
@@ -73,10 +78,10 @@ export function CookieConsent() {
             checked
             disabled
             aria-label="Necessary cookies (always on)"
-            className="h-4 w-4 accent-[var(--brand-gold)]"
+            className="h-5 w-5 shrink-0 accent-[var(--brand-gold)]"
           />
         </label>
-        <label className="flex items-center justify-between gap-3">
+        <label className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 py-1">
           <span>
             <span className="font-medium text-zinc-200">Analytics</span>
             <span className="ml-2 text-zinc-500">Helps us improve the product</span>
@@ -89,10 +94,10 @@ export function CookieConsent() {
             onChange={(e) => {
               setAnalytics(e.target.checked);
             }}
-            className="h-4 w-4 accent-[var(--brand-gold)]"
+            className="h-5 w-5 shrink-0 accent-[var(--brand-gold)]"
           />
         </label>
-        <label className="flex items-center justify-between gap-3">
+        <label className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 py-1">
           <span>
             <span className="font-medium text-zinc-200">Marketing</span>
             <span className="ml-2 text-zinc-500">Personalized recommendations</span>
@@ -105,7 +110,7 @@ export function CookieConsent() {
             onChange={(e) => {
               setMarketing(e.target.checked);
             }}
-            className="h-4 w-4 accent-[var(--brand-gold)]"
+            className="h-5 w-5 shrink-0 accent-[var(--brand-gold)]"
           />
         </label>
       </div>

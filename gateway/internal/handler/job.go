@@ -244,6 +244,10 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("description must be at most %d characters", maxJobDescriptionLen))
 		return
 	}
+	// ASR-1.2.a / 1.1.3.b / 1.4.3.c / 1.1.4 — pre-post UGC filter.
+	if rejectProhibitedUGC(w, r, req.Title, req.Description) {
+		return
+	}
 
 	grpcReq := &jobv1.CreateJobRequest{
 		CustomerId:           claims.UserID,
@@ -324,6 +328,20 @@ func (h *JobHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var req updateJobRequest
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	// ASR-1.2.a — pre-post UGC filter on title/description when present.
+	{
+		var parts []string
+		if req.Title != nil {
+			parts = append(parts, *req.Title)
+		}
+		if req.Description != nil {
+			parts = append(parts, *req.Description)
+		}
+		if len(parts) > 0 && rejectProhibitedUGC(w, r, parts...) {
+			return
+		}
 	}
 
 	grpcReq := &jobv1.UpdateJobRequest{

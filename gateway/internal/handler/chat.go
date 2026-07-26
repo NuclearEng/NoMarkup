@@ -263,9 +263,17 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Block check (Wave 5 / Agent P): if EITHER party of this channel has
-	// blocked the sender, refuse with 403 before forwarding to the chat
-	// service. The query joins chat_channels → user_blocks via the OR over
+	// ASR-1.2.a — pre-post UGC filter (in addition to contact-info detection
+	// in the chat service).
+	if rejectProhibitedUGC(w, r, req.Content) {
+		return
+	}
+
+	// Block check (Wave 5 / Agent P / ASR-1.2.c): if EITHER party of this
+	// channel has blocked the sender, refuse with 403 before forwarding to
+	// the chat service. Fail CLOSED on DB error (503) — App Store UGC safety
+	// requires we never deliver through a broken block check.
+	// The query joins chat_channels → user_blocks via the OR over
 	// (customer_id, provider_id) so we need just one round-trip.
 	if h.db != nil {
 		var blocked bool
@@ -284,9 +292,8 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		case err != nil:
 			slog.ErrorContext(r.Context(), "send message: block check failed",
 				"channel_id", channelID, "sender_id", claims.UserID, "error", err)
-			// Fail open here: if the block-check query is broken, prefer
-			// chat continuity over a hard block. The chat service still
-			// enforces channel membership, so a stranger can't sneak in.
+			writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+			return
 		case blocked:
 			writeError(w, http.StatusForbidden, "blocked")
 			return

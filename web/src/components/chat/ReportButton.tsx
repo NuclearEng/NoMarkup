@@ -92,7 +92,7 @@ export function ReportButton({
           type="button"
           variant="ghost"
           size="sm"
-          className={className}
+          className={className ?? 'min-h-[44px]'}
           aria-label="Report user"
         >
           <Flag className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />

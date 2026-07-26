@@ -165,7 +165,7 @@ func (h *ComplianceHandler) GetCurrentToS(w http.ResponseWriter, r *http.Request
 		fallback := tosVersionJSON{
 			Version:     "1.0",
 			EffectiveAt: time.Now(),
-			BodyURL:     stringPtr("/legal/terms"),
+			BodyURL:     stringPtr("/terms"),
 		}
 		writeCachedJSON(w, r, http.StatusOK, fallback, 60, 300)
 		return
@@ -185,10 +185,11 @@ func (h *ComplianceHandler) GetCurrentToS(w http.ResponseWriter, r *http.Request
 		}
 		// Fallback to the seeded default so public pages (incl. login + refresh)
 		// don't spam 5xx / console errors while DB is being brought up.
+		// body_url points at the public ToS page (not /legal attorney marketplace).
 		fallback := tosVersionJSON{
 			Version:     "1.0",
 			EffectiveAt: time.Now(),
-			BodyURL:     stringPtr("/legal/terms"),
+			BodyURL:     stringPtr("/terms"),
 		}
 		writeCachedJSON(w, r, http.StatusOK, fallback, 60, 300)
 		return

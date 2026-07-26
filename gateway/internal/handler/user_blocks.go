@@ -7,11 +7,11 @@ package handler
 //   1. Mutes incoming chat from blocked_id to blocker_id. The chat
 //      SendMessage path (gateway/internal/handler/chat.go) checks this
 //      table and returns 403 with "blocked" before forwarding to the chat
-//      gRPC service.
+//      gRPC service. Fail-closed on DB error (ASR-1.2.c): 503.
 //
-//   2. Prevents blocked_id from bidding on any of blocker_id's listings.
-//      That second check is enforced by the listings_bid handler — but
-//      surfacing the table here keeps the data model in one migration.
+//   2. Prevents either party from bidding on / offering against the other's
+//      listings when a block exists in either direction (listings_bid +
+//      offers). Fail-closed on query error (503).
 //
 // Routes:
 //
@@ -20,17 +20,52 @@ package handler
 //   GET    /api/v1/me/blocks          MyBlocks   (auth, paginated)
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// blockQuerier is the minimal DB surface areUsersBlocked needs so unit tests
+// can inject a fake without a live Postgres.
+type blockQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// areUsersBlocked reports whether either user has blocked the other
+// (user_blocks in either direction). Callers must fail closed on err != nil
+// (prefer HTTP 503) and return 403 when blocked is true.
+//
+// Empty ids or identical ids short-circuit to (false, nil) — self-blocks are
+// rejected at write time and never need a round-trip here.
+func areUsersBlocked(ctx context.Context, db blockQuerier, userA, userB string) (blocked bool, err error) {
+	if db == nil {
+		return false, errors.New("database unavailable")
+	}
+	if userA == "" || userB == "" || userA == userB {
+		return false, nil
+	}
+	err = db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			  FROM user_blocks
+			 WHERE (blocker_id = $1 AND blocked_id = $2)
+			    OR (blocker_id = $2 AND blocked_id = $1)
+		)`, userA, userB).Scan(&blocked)
+	if err != nil {
+		return false, err
+	}
+	return blocked, nil
+}
 
 // UserBlocksHandler exposes the block/unblock surface. A nil db
 // short-circuits every endpoint to a 503.

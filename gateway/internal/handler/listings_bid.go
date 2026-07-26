@@ -314,6 +314,37 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// ASR-1.2.c — refuse bids when either party has blocked the other.
+	// Look up seller first (cheap) then bidirectional user_blocks check.
+	// Fail closed: DB error → 503; block present → 403.
+	{
+		var sellerID string
+		err := h.db.QueryRow(r.Context(),
+			`SELECT seller_id::text FROM listings WHERE id = $1`, id,
+		).Scan(&sellerID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "listing not found")
+			return
+		}
+		if err != nil {
+			slog.ErrorContext(r.Context(), "place bid: seller lookup failed",
+				"error", err, "listing_id", id)
+			writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+			return
+		}
+		blocked, berr := areUsersBlocked(r.Context(), h.db, claims.UserID, sellerID)
+		if berr != nil {
+			slog.ErrorContext(r.Context(), "place bid: block check failed",
+				"error", berr, "listing_id", id, "bidder_id", claims.UserID)
+			writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+			return
+		}
+		if blocked {
+			writeError(w, http.StatusForbidden, "blocked")
+			return
+		}
+	}
+
 	// Capture the previous high bidder BEFORE the cascade runs so the
 	// notification scheduler can fan an outbid event out to them. This is
 	// best-effort: a missed lookup just suppresses the notify; a slightly
@@ -1145,6 +1176,22 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 			"error", err, "listing_id", id)
 		writeError(w, http.StatusInternalServerError, "failed to lock listing")
 		return
+	}
+
+	// ASR-1.2.c — refuse buy-now when either party has blocked the other.
+	// Fail closed on query error (503).
+	{
+		blocked, berr := areUsersBlocked(r.Context(), h.db, claims.UserID, sellerID)
+		if berr != nil {
+			slog.ErrorContext(r.Context(), "buy-now: block check failed",
+				"error", berr, "listing_id", id, "buyer_id", claims.UserID)
+			writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+			return
+		}
+		if blocked {
+			writeError(w, http.StatusForbidden, "blocked")
+			return
+		}
 	}
 
 	if sellerID == claims.UserID {

@@ -30,8 +30,8 @@ export function Header() {
   }
 
   return (
-    <header className="glass-nav sticky top-0 z-40">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <header className="glass-nav sticky top-0 z-40 supports-[padding:max(0px)]:pt-[env(safe-area-inset-top,0px)]">
+      <div className="mx-auto flex h-14 min-h-[44px] max-w-7xl items-center justify-between px-3 sm:h-16 sm:px-6 lg:px-8">
         {/* Logo links to dashboard when authenticated, landing page otherwise */}
         {isAuthenticated ? (
           <Link href={'/dashboard' as Route} className="inline-flex min-h-[44px] items-center text-foreground no-underline" aria-label="Go to Dashboard">
@@ -158,9 +158,8 @@ export function Header() {
             <MarketChip className="w-full" />
             {isHydrating ? null : isAuthenticated ? (
               <>
-                {/* Account utilities only — the bottom tab bar (MobileTabBar) is
-                    the single mobile navigation system, so the header menu no
-                    longer repeats the nav links. */}
+                {/* Account utilities — primary destinations live in MobileTabBar.
+                    Keep Support/Privacy reachable from the menu on every device. */}
                 <div className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2.5">
                   <span className="truncate text-sm font-medium text-zinc-200">
                     {user?.displayName ?? user?.email}
@@ -168,16 +167,82 @@ export function Header() {
                   <NotificationBell />
                 </div>
 
+                <Button className="min-h-[44px] w-full" asChild>
+                  <Link
+                    href={'/jobs/new' as Route}
+                    className="gap-1.5"
+                    onClick={() => { setMobileMenuOpen(false); }}
+                  >
+                    <PlusCircle className="h-4 w-4" aria-hidden="true" />
+                    Post a Job
+                  </Link>
+                </Button>
+                <Link
+                  href={'/marketplace' as Route}
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  <Gavel className="h-4 w-4" aria-hidden="true" />
+                  Marketplace
+                </Link>
+                <Link
+                  href="/support"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  Support
+                </Link>
+                <Link
+                  href="/privacy"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  Privacy
+                </Link>
+                <Link
+                  href="/settings/account"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  Account settings
+                </Link>
+
                 <Button
                   variant="outline"
                   className="min-h-[44px] w-full"
-                  onClick={() => void handleLogout()}
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    void handleLogout();
+                  }}
                 >
                   Sign out
                 </Button>
               </>
             ) : (
               <>
+                <Link
+                  href={'/marketplace' as Route}
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  <Gavel className="h-4 w-4" aria-hidden="true" />
+                  Marketplace
+                </Link>
+                <Link
+                  href={'/marketplace/map' as Route}
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  <MapPin className="h-4 w-4" aria-hidden="true" />
+                  Map
+                </Link>
+                <Link
+                  href={'/jobs' as Route}
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  Browse jobs
+                </Link>
                 {legalEnabled ? (
                   <Link
                     href={'/legal' as Route}
@@ -185,9 +250,30 @@ export function Header() {
                     onClick={() => { setMobileMenuOpen(false); }}
                   >
                     <Scale className="h-4 w-4 text-[var(--brand-gold)]/60" aria-hidden="true" />
-                    Legal
+                    Legal services
                   </Link>
                 ) : null}
+                <Link
+                  href="/support"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  Support
+                </Link>
+                <Link
+                  href="/privacy"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  Privacy
+                </Link>
+                <Link
+                  href="/terms"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+                  onClick={() => { setMobileMenuOpen(false); }}
+                >
+                  Terms
+                </Link>
                 <Link
                   href="/demo/auction"
                   className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/20 hover:text-amber-300"

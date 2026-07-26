@@ -16,6 +16,13 @@
  *   framework itself under both webpack and Turbopack. `sentry.client.config.ts`
  *   has been deleted so exactly one init path exists.
  *
+ * CONSENT GATE (ASR-5.1.1.ii / ASR-5.1.2.i):
+ *   Sentry is classified as opt-in analytics in CookieConsent. We read the
+ *   `nm:consent` cookie (same JSON shape as useCompliance.writeConsentCookie).
+ *   When missing or analytics=false, Sentry stays disabled and beforeSend
+ *   drops every event. When analytics=true, production behavior is unchanged.
+ *   Keep cookie name + JSON fields in lockstep with useCompliance.ts.
+ *
  * SESSION REPLAY IS DELIBERATELY NOT ENABLED.
  *   The previous config set `replaysSessionSampleRate` / `replaysOnErrorSampleRate`
  *   without ever registering `replayIntegration`, so those numbers were inert —
@@ -38,13 +45,38 @@
  */
 import * as Sentry from '@sentry/nextjs';
 
+/** Mirrors `CONSENT_COOKIE_NAME` in hooks/useCompliance.ts — do not drift. */
+const CONSENT_COOKIE_NAME = 'nm:consent';
+
+/**
+ * Parse `nm:consent` for analytics opt-in. Defaults to false (opt-in posture).
+ * ASR-5.1.1.ii / ASR-5.1.2.i.
+ */
+function hasAnalyticsConsentFromCookie(): boolean {
+  if (typeof document === 'undefined') return false;
+  const match = document.cookie
+    .split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${CONSENT_COOKIE_NAME}=`));
+  if (!match) return false;
+  const raw = match.slice(`${CONSENT_COOKIE_NAME}=`.length);
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw)) as { analytics?: boolean };
+    return parsed.analytics === true;
+  } catch {
+    return false;
+  }
+}
+
+const analyticsConsentGranted = hasAnalyticsConsentFromCookie();
+
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
 
-  // Only enable in production.
-  enabled: process.env.NODE_ENV === 'production',
+  // Production + explicit analytics consent only (ASR-5.1.1.ii / 5.1.2.i).
+  enabled: process.env.NODE_ENV === 'production' && analyticsConsentGranted,
 
-  // Performance monitoring — sample 10% of transactions.
+  // Performance monitoring — sample 10% of transactions when enabled.
   tracesSampleRate: 0.1,
 
   // Filter out known non-issues.
@@ -55,7 +87,13 @@ Sentry.init({
   ],
 
   beforeSend(event: Sentry.ErrorEvent) {
+    // Defense in depth: even if enabled flips later in-session, re-check
+    // consent on every event so Reject-all after Accept-all cannot leave
+    // residual telemetry until reload.
     if (process.env.NODE_ENV !== 'production') {
+      return null;
+    }
+    if (!hasAnalyticsConsentFromCookie()) {
       return null;
     }
     return event;

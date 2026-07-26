@@ -28,6 +28,7 @@ const stubModule = (testid: string) => () =>
 vi.mock('@/components/bids/BidActivityFeed', () => ({ BidActivityFeed: stubModule('bid-activity') }));
 vi.mock('@/components/bids/BidForm', () => ({ BidForm: stubModule('bid-form') }));
 vi.mock('@/components/bids/BidList', () => ({ BidList: stubModule('bid-list') }));
+vi.mock('@/components/chat/ReportButton', () => ({ ReportButton: stubModule('report-button') }));
 // BidPlacementPanel stub forwards onPlaceBid via a button so we can fire the
 // page's placeBid.mutate handler from a test.
 vi.mock('@/components/bids/BidPlacementPanel', () => ({

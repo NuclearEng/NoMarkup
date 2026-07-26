@@ -3,8 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { InsuranceClaimForm } from '@/components/insurance/InsuranceClaimForm';
-
 beforeAll(() => {
   // Radix Select uses ResizeObserver/PointerEvent — stub in jsdom.
   globalThis.ResizeObserver = class {
@@ -24,20 +22,33 @@ beforeAll(() => {
       value: () => {},
     });
   }
-  // Stub URL.createObjectURL for evidence file upload tests.
-  Object.defineProperty(globalThis.URL, 'createObjectURL', {
-    configurable: true,
-    writable: true,
-    value: vi.fn((_blob: Blob) => 'blob:evidence-mock'),
-  });
 });
 
 vi.mock('@/hooks/useInsurance', () => ({
   useFileInsuranceClaim: vi.fn(),
 }));
 
+const uploadMock = vi.fn();
+
+vi.mock('@/hooks/useImageUpload', () => ({
+  useImageUpload: () => ({
+    upload: uploadMock,
+    status: 'idle',
+    progress: 0,
+    error: null,
+    reset: vi.fn(),
+  }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+import { InsuranceClaimForm } from '@/components/insurance/InsuranceClaimForm';
+
 const { useFileInsuranceClaim } = await import('@/hooks/useInsurance');
 const useFile = vi.mocked(useFileInsuranceClaim);
+const { toast } = await import('sonner');
 
 function defaultFile() {
   return {
@@ -51,6 +62,13 @@ describe('InsuranceClaimForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useFile.mockReturnValue(defaultFile());
+    uploadMock.mockImplementation(async (file: File) => ({
+      ok: true as const,
+      result: {
+        objectKey: `claims/${file.name}`,
+        confirmedUrl: `https://cdn.example.com/claims/${file.name}`,
+      },
+    }));
   });
 
   it('renders the claim form with the coverage limit', () => {
@@ -167,7 +185,7 @@ describe('InsuranceClaimForm', () => {
     expect(submit.disabled).toBe(true);
   });
 
-  it('displays evidence file count after upload', () => {
+  it('uploads evidence via useImageUpload and shows file count', async () => {
     const { container } = render(
       createElement(InsuranceClaimForm, {
         policyId: 'pol-1',
@@ -186,10 +204,15 @@ describe('InsuranceClaimForm', () => {
     });
     fireEvent.change(fileInput as HTMLInputElement);
 
-    expect(screen.getByText(/2 files attached/)).toBeDefined();
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText(/2 files attached/)).toBeDefined();
+    expect(uploadMock.mock.calls[0]?.[0]).toBe(f1);
+    expect(uploadMock.mock.calls[1]?.[0]).toBe(f2);
   });
 
-  it('handleFileUpload returns early when no files are selected', () => {
+  it('handleFileUpload returns early when no files are selected', async () => {
     const { container } = render(
       createElement(InsuranceClaimForm, {
         policyId: 'pol-1',
@@ -202,10 +225,13 @@ describe('InsuranceClaimForm', () => {
       value: [],
     });
     fireEvent.change(fileInput as HTMLInputElement);
+    await waitFor(() => {
+      expect(uploadMock).not.toHaveBeenCalled();
+    });
     expect(screen.queryByText(/files attached/)).toBeNull();
   });
 
-  it('shows singular "file attached" copy when one file is uploaded', () => {
+  it('shows singular "file attached" copy when one file is uploaded', async () => {
     const { container } = render(
       createElement(InsuranceClaimForm, {
         policyId: 'pol-1',
@@ -219,7 +245,33 @@ describe('InsuranceClaimForm', () => {
       value: [f],
     });
     fireEvent.change(fileInput as HTMLInputElement);
-    expect(screen.getByText(/1 file attached/)).toBeDefined();
+    expect(await screen.findByText(/1 file attached/)).toBeDefined();
+  });
+
+  it('toasts an error when an evidence upload fails', async () => {
+    uploadMock.mockResolvedValueOnce({
+      ok: false as const,
+      error: 'Max 10 MB — this file is 12.0 MB.',
+    });
+
+    const { container } = render(
+      createElement(InsuranceClaimForm, {
+        policyId: 'pol-1',
+        coverageAmountCents: 1_000_00,
+      }),
+    );
+    const fileInput = container.querySelector('#claim-evidence');
+    const f = new File(['a'], 'big.png', { type: 'image/png' });
+    Object.defineProperty(fileInput as HTMLInputElement, 'files', {
+      configurable: true,
+      value: [f],
+    });
+    fireEvent.change(fileInput as HTMLInputElement);
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Max 10 MB — this file is 12.0 MB.');
+    });
+    expect(screen.queryByText(/files attached/)).toBeNull();
   });
 
   it('renders the loading spinner when filing is pending', () => {
@@ -293,7 +345,7 @@ describe('InsuranceClaimForm', () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it('submits successfully and invokes onSuccess when no errors', async () => {
+  it('submits successfully with confirmed evidence URLs', async () => {
     const user = userEvent.setup();
     const longDescription = 'c'.repeat(120);
     const onSuccess = vi.fn();
@@ -311,13 +363,23 @@ describe('InsuranceClaimForm', () => {
       isError: false,
     } as unknown as ReturnType<typeof useFileInsuranceClaim>);
 
-    render(
+    const { container } = render(
       createElement(InsuranceClaimForm, {
         policyId: 'pol-1',
         coverageAmountCents: 1_000_00,
         onSuccess,
       }),
     );
+
+    // Upload evidence first so mutate payload includes confirmed S3 URLs.
+    const fileInput = container.querySelector('#claim-evidence');
+    const f = new File(['a'], 'proof.png', { type: 'image/png' });
+    Object.defineProperty(fileInput as HTMLInputElement, 'files', {
+      configurable: true,
+      value: [f],
+    });
+    fireEvent.change(fileInput as HTMLInputElement);
+    await screen.findByText(/1 file attached/);
 
     // Choose claim type
     await user.click(screen.getByRole('combobox'));
@@ -335,6 +397,9 @@ describe('InsuranceClaimForm', () => {
     expect((vars as { policy_id: string }).policy_id).toBe('pol-1');
     expect((vars as { claim_type: string }).claim_type).toBe('property_damage');
     expect((vars as { claimed_amount_cents: number }).claimed_amount_cents).toBe(5000);
+    expect((vars as { evidence_urls: string[] }).evidence_urls).toEqual([
+      'https://cdn.example.com/claims/proof.png',
+    ]);
   });
 
   it('does not call onSuccess if it is undefined when mutation succeeds', async () => {
@@ -417,10 +482,7 @@ describe('InsuranceClaimForm', () => {
 
     // Submit via form.requestSubmit (button is disabled by exceedsCoverage).
     const form = container.querySelector('form');
-    expect(form).not.toBeNull();
-    if (form) {
-      fireEvent.submit(form);
-    }
+    form?.requestSubmit();
     await waitFor(() => {
       expect(mutate).not.toHaveBeenCalled();
     });

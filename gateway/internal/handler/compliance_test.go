@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -148,5 +149,32 @@ func TestComplianceRoutingDBNil(t *testing.T) {
 				t.Errorf("%s %s: got %d, want %d (body=%s)", tc.method, tc.path, rec.Code, tc.wantStatus, rec.Body.String())
 			}
 		})
+	}
+}
+
+// TestGetCurrentToSNilDBBodyURL pins the public ToS document path used when
+// the DB is unavailable. Must be /terms (public legal page), never /legal/terms
+// (/legal is the attorney marketplace product surface).
+func TestGetCurrentToSNilDBBodyURL(t *testing.T) {
+	t.Parallel()
+	h := NewComplianceHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tos/current", nil)
+	rec := httptest.NewRecorder()
+	h.GetCurrentToS(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Version string  `json:"version"`
+		BodyURL *string `json:"body_url"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if payload.BodyURL == nil || *payload.BodyURL != "/terms" {
+		t.Errorf("body_url = %v, want /terms", payload.BodyURL)
+	}
+	if payload.Version != "1.0" {
+		t.Errorf("version = %q, want 1.0", payload.Version)
 	}
 }

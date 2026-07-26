@@ -59,7 +59,7 @@ beforeEach(() => {
 describe('ToSReaccept', () => {
   it('does not render when current.version === mine.tos_version', async () => {
     api.get
-      .mockResolvedValueOnce({ version: '1.0', effective_at: '2026-01-01', body_url: '/legal/terms' })
+      .mockResolvedValueOnce({ version: '1.0', effective_at: '2026-01-01', body_url: '/terms' })
       .mockResolvedValueOnce({ tos_version: '1.0', accepted_at: '2026-04-01' });
     const { queryByTestId } = render(
       <Wrapper>
@@ -76,7 +76,7 @@ describe('ToSReaccept', () => {
 
   it('renders the modal when versions differ', async () => {
     api.get
-      .mockResolvedValueOnce({ version: '2.0', effective_at: '2026-04-15', body_url: '/legal/terms' })
+      .mockResolvedValueOnce({ version: '2.0', effective_at: '2026-04-15', body_url: '/terms' })
       .mockResolvedValueOnce({ tos_version: '1.0', accepted_at: '2026-01-01' });
     render(
       <Wrapper>
@@ -92,7 +92,7 @@ describe('ToSReaccept', () => {
 
   it('renders the first-time copy when user has never accepted', async () => {
     api.get
-      .mockResolvedValueOnce({ version: '2.0', effective_at: '2026-04-15', body_url: '/legal/terms' })
+      .mockResolvedValueOnce({ version: '2.0', effective_at: '2026-04-15', body_url: '/terms' })
       .mockResolvedValueOnce({ tos_version: null, accepted_at: null });
     render(
       <Wrapper>
@@ -107,7 +107,7 @@ describe('ToSReaccept', () => {
 
   it('POSTs the version when the user clicks Accept', async () => {
     api.get
-      .mockResolvedValueOnce({ version: '2.0', effective_at: '2026-04-15', body_url: '/legal/terms' })
+      .mockResolvedValueOnce({ version: '2.0', effective_at: '2026-04-15', body_url: '/terms' })
       .mockResolvedValueOnce({ tos_version: '1.0', accepted_at: '2026-01-01' });
     api.post.mockResolvedValue({ accepted: true, tos_version: '2.0' });
     const user = userEvent.setup();

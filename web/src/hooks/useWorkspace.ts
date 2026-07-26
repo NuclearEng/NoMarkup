@@ -74,11 +74,12 @@ export function useCheckIn(contractId: string) {
               });
           },
           (err) => {
+            // ASR-5.1.5 — GPS is required for check-in (no note-only API).
             reject(
               new Error(
                 err.code === err.PERMISSION_DENIED
-                  ? 'Location access was denied. Please enable location in your browser settings.'
-                  : 'Unable to determine your location. Please try again.',
+                  ? 'GPS is required for check-in so we can confirm you arrived at the job site (stored with the contract for dispute protection). Enable location access and try again.'
+                  : 'GPS is required for check-in. We could not read your location — check that location services are on, then try again.',
               ),
             );
           },

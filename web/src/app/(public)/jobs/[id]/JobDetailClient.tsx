@@ -24,6 +24,7 @@ import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
+import { ReportButton } from '@/components/chat/ReportButton';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { BidPushPrompt } from '@/components/jobs/BidPushPrompt';
@@ -660,6 +661,16 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 {String(job.customer_jobs_posted)} job{job.customer_jobs_posted !== 1 ? 's' : ''}{' '}
                 posted
               </p>
+              {/* ASR-1.2.b — no job-level report API; user report on the poster. */}
+              {isAuthenticated && !isJobOwner ? (
+                <div className="pt-1">
+                  <ReportButton
+                    userId={job.customer_id}
+                    displayName={job.customer_display_name}
+                    className="text-muted-foreground hover:text-destructive"
+                  />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>

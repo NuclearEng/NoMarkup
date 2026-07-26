@@ -13,6 +13,7 @@ import { CounterOfferBanner } from '@/components/marketplace/CounterOfferBanner'
 import { ListingBidPanel } from '@/components/marketplace/ListingBidPanel';
 import { OfferModal } from '@/components/marketplace/OfferModal';
 import { ListingPhotoCarousel } from '@/components/marketplace/ListingPhotoCarousel';
+import { ReportListingButton } from '@/components/marketplace/ReportListingButton';
 import { SimilarListings } from '@/components/marketplace/SimilarListings';
 import { SnipeExtensionBanner } from '@/components/marketplace/SnipeExtensionBanner';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
@@ -235,6 +236,14 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                       aria-hidden="true"
                     />
                   </button>
+                ) : null}
+                {/* ASR-1.2.b — report listing (hidden for the seller). */}
+                {!isOwnListing ? (
+                  <ReportListingButton
+                    listingId={listingId}
+                    listingTitle={listing.title}
+                    className="text-zinc-400 hover:text-red-300"
+                  />
                 ) : null}
                 <Badge variant={listing.status === 'active' ? 'active' : 'secondary'}>
                   {listing.status.replace(/_/g, ' ')}

@@ -11,6 +11,8 @@ import {
   useConfirmBidBond,
   useCreateBidBond,
   useCurrentToS,
+  hasAnalyticsConsent,
+  readConsentCookie,
   useLogCookieConsent,
   useMyAgeStatus,
   useMyToSAcceptance,
@@ -124,6 +126,24 @@ describe('useCompliance', () => {
       expect(hasConsentCookie()).toBe(true);
     });
 
+    it('readConsentCookie returns null without a cookie', () => {
+      expect(readConsentCookie()).toBeNull();
+    });
+
+    it('readConsentCookie / hasAnalyticsConsent reflect stored opt-in', () => {
+      expect(hasAnalyticsConsent()).toBe(false);
+      writeConsentCookie({ necessary: true, analytics: false, marketing: false });
+      expect(readConsentCookie()).toEqual({
+        necessary: true,
+        analytics: false,
+        marketing: false,
+      });
+      expect(hasAnalyticsConsent()).toBe(false);
+      writeConsentCookie({ necessary: true, analytics: true, marketing: true });
+      expect(hasAnalyticsConsent()).toBe(true);
+      expect(readConsentCookie()?.marketing).toBe(true);
+    });
+
     it('useLogCookieConsent POSTs to the consent endpoint', async () => {
       api.post.mockResolvedValue({ recorded: true });
       const qc = createTestQueryClient();
@@ -154,7 +174,7 @@ describe('useCompliance', () => {
 
   describe('ToS', () => {
     it('useCurrentToS hits /api/v1/tos/current', async () => {
-      api.get.mockResolvedValue({ version: '1.0', effective_at: '2026-01-01', body_url: '/legal/terms' });
+      api.get.mockResolvedValue({ version: '1.0', effective_at: '2026-01-01', body_url: '/terms' });
       const qc = createTestQueryClient();
       const { result } = renderHook(() => useCurrentToS(), { wrapper: createWrapper(qc) });
       await waitFor(() => {

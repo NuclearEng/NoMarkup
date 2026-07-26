@@ -112,6 +112,18 @@ describe('CookieConsent', () => {
     });
   });
 
+  it('defaults analytics and marketing checkboxes to off (opt-in)', () => {
+    render(
+      <Wrapper>
+        <CookieConsent />
+      </Wrapper>,
+    );
+    const analytics = screen.getByTestId('cookie-consent-analytics') as HTMLInputElement;
+    const marketing = screen.getByTestId('cookie-consent-marketing') as HTMLInputElement;
+    expect(analytics.checked).toBe(false);
+    expect(marketing.checked).toBe(false);
+  });
+
   it('Save preferences POSTs the user-selected toggles', async () => {
     api.post.mockResolvedValue({ recorded: true });
     const user = userEvent.setup();
@@ -120,13 +132,30 @@ describe('CookieConsent', () => {
         <CookieConsent />
       </Wrapper>,
     );
-    // Toggle marketing on (analytics defaults on already).
+    // Analytics defaults off (opt-in); enable analytics + marketing then save.
+    await user.click(screen.getByTestId('cookie-consent-analytics'));
     await user.click(screen.getByTestId('cookie-consent-marketing'));
     await user.click(screen.getByTestId('cookie-consent-save'));
     expect(api.post).toHaveBeenCalledWith('/api/v1/cookie-consent', {
       necessary: true,
       analytics: true,
       marketing: true,
+    });
+  });
+
+  it('Save with defaults POSTs analytics=false marketing=false', async () => {
+    api.post.mockResolvedValue({ recorded: true });
+    const user = userEvent.setup();
+    render(
+      <Wrapper>
+        <CookieConsent />
+      </Wrapper>,
+    );
+    await user.click(screen.getByTestId('cookie-consent-save'));
+    expect(api.post).toHaveBeenCalledWith('/api/v1/cookie-consent', {
+      necessary: true,
+      analytics: false,
+      marketing: false,
     });
   });
 });

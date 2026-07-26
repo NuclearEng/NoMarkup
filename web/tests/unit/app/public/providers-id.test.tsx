@@ -62,6 +62,14 @@ vi.mock('@/components/providers/VerifiedBarBadge', () => ({
   VerifiedBarBadge: () => null,
 }));
 
+// Report / flag controls use mutations (QueryClient) — stub presentation only.
+vi.mock('@/components/chat/ReportButton', () => ({
+  ReportButton: () => createElement('button', { type: 'button', 'data-testid': 'report-provider' }, 'Report'),
+}));
+vi.mock('@/components/reviews/FlagReviewButton', () => ({
+  FlagReviewButton: () => createElement('button', { type: 'button', 'data-testid': 'flag-review' }, 'Report'),
+}));
+
 vi.mock('@/hooks/useProviders', () => ({
   usePublicProviderProfile: vi.fn(),
 }));

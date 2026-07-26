@@ -439,6 +439,9 @@ func New(
 			r.Patch("/me", userHandler.UpdateMe)
 			r.Post("/me/roles", userHandler.EnableRole)
 			r.Get("/me/savings", userHandler.GetSavings)
+			// ASR-5.1.1.v — list / unlink linked OAuth providers (lockout-safe).
+			r.Get("/me/oauth-accounts", userHandler.ListOAuthAccounts)
+			r.Delete("/me/oauth-accounts/{provider}", userHandler.UnlinkOAuthAccount)
 			// GDPR Art. 15 / CCPA right-to-access — self-service "download my
 			// data". Strictly owner-scoped: the handler keys off claims.UserID
 			// only (no {id}), so a caller can only ever export their own data.

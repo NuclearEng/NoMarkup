@@ -254,7 +254,7 @@ export function MarketSelector({
         className="w-[--radix-popover-trigger-width] min-w-[280px] max-w-[calc(100vw-2rem)] p-0"
         align="start"
       >
-        {/* Use my location — the primary path */}
+        {/* Use my location — the primary path. ASR-5.1.5 purpose string. */}
         <div className="border-b p-2">
           <Button
             type="button"
@@ -265,6 +265,9 @@ export function MarketSelector({
             <LocateFixed className={cn('h-4 w-4', locating && 'animate-pulse')} aria-hidden="true" />
             {locating ? 'Locating…' : 'Use my location'}
           </Button>
+          <p className="mt-1.5 px-1 text-xs text-muted-foreground">
+            Used to find your nearest NoMarkup market. You can pick a city instead.
+          </p>
           {locateError ? (
             <p className="mt-1 px-1 text-xs text-destructive" role="alert">{locateError}</p>
           ) : null}
