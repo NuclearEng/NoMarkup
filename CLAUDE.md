@@ -350,7 +350,7 @@ criterion for new work — do not claim the North Star is shipped.
    reads use `writeCachedJSON` (`gateway/internal/handler/response.go`): `public, s-maxage +
    stale-while-revalidate + stale-if-error` + strong `ETag`/`304`. Authed reads stay uncached. This
    DATA-layer CDN cache **is real and shipped**.
-2. **On interactive pages, RSC wins LCP/SEO, not bundle size.** Shared First Load is ~195 kB measured (the
+2. **On interactive pages, RSC wins LCP/SEO, not bundle size.** Shared First Load is ~187 kB measured (the
    React floor); heavy deps like mapbox are already lazy. Don't promise a JS cut from RSC on an
    interactive surface.
 

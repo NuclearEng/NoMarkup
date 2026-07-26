@@ -11,6 +11,7 @@
  *
  * Call once from a client provider (see WebVitalsReporter).
  */
+import { metrics } from '@sentry/nextjs';
 
 export type WebVitalName = 'CLS' | 'LCP' | 'INP' | 'FCP' | 'TTFB';
 
@@ -57,24 +58,28 @@ function emit(sink: MetricSink, name: WebVitalName, value: number, unit: WebVita
 }
 
 function sendToSentry(metric: WebVitalMetric): void {
-  // Dynamic import — no-op safe if Sentry is unavailable or metrics API changes.
-  void import('@sentry/nextjs')
-    .then((mod) => {
-      const metrics = (
-        mod as {
-          metrics?: {
-            distribution?: (name: string, value: number, opts?: Record<string, unknown>) => void;
-          };
-        }
-      ).metrics;
-      metrics?.distribution?.(`web_vital.${metric.name.toLowerCase()}`, metric.value, {
-        unit: metric.unit === 'ms' ? 'millisecond' : 'none',
-        tags: { rating: metric.rating },
-      });
-    })
-    .catch(() => {
-      // no-op
-    });
+  // Static named import rather than `import('@sentry/nextjs')`.
+  //
+  // A namespace dynamic import of a barrel cannot be tree-shaken, so it was
+  // emitting a SECOND copy of the entire browser SDK — a lazily loaded ~202 KB
+  // chunk including the rrweb replay recorder we do not even register. The
+  // package is already in the client graph, statically imported by
+  // `src/instrumentation-client.ts` to call Sentry.init, so importing the one
+  // symbol we need deduplicates into that existing module instead of
+  // duplicating it.
+  //
+  // Still no-op safe without the optional chaining: with no DSN configured,
+  // Sentry.init leaves a no-op client in place and distribution() discards the
+  // metric internally. The chaining was only meaningful while the module shape
+  // was untyped, and the linter correctly flags it as dead once it is not.
+  // `attributes`, not `tags`. The previous dynamic import cast the module to a
+  // hand-written shape, which silenced the type error — so every web vital was
+  // shipped with its rating SILENTLY DROPPED, leaving no way to tell a "good"
+  // LCP from a "poor" one in Sentry. Typing the call surfaced it immediately.
+  metrics.distribution(`web_vital.${metric.name.toLowerCase()}`, metric.value, {
+    unit: metric.unit === 'ms' ? 'millisecond' : 'none',
+    attributes: { rating: metric.rating },
+  });
 }
 
 function defaultSink(metric: WebVitalMetric): void {
