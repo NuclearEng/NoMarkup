@@ -138,6 +138,15 @@ jobs:
           cache-dependency-path: services/${{ matrix.service }}/go.sum
       - run: cd services/${{ matrix.service }} && go vet ./...
       - run: cd services/${{ matrix.service }} && go test ./... -race
+      # The database module holds a THIRD copy of the geo-coarsening code
+      # (database/cmd/encrypt-pii/geo.go) whose golden-vector guard must
+      # bit-match the other two and the SQL function. CI ran `go run` in
+      # that module but never `go test`, so that guard would never have
+      # executed — a guard that does not run is decoration. Pinned to one
+      # matrix leg so it runs exactly once rather than five times.
+      - name: Database module tests (geo golden vectors)
+        if: matrix.service == 'user'
+        run: cd database && go vet ./... && go test ./... -race
 
   # ── Go Integration Tests ──────────────────────────────────────
   # Runs the 15 `//go:build integration` suites that previously never ran in

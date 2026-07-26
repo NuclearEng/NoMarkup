@@ -1,0 +1,42 @@
+# Golden vectors for coordinate coarsening.
+#
+# WHY BIT-EXACT, AND WHY A SHARED FILE
+#
+# The same coordinate is coarsened in four places that must agree exactly:
+#   services/job/internal/domain/geo.go      (CoarsenPoint)
+#   services/user/internal/domain/geo.go     (CoarsenPoint)
+#   database/cmd/encrypt-pii/geo.go          (coarsenPoint — unexported CLI copy)
+#   database/migrations/104_*.up.sql         (pii_coarsen_ordinate)
+#
+# Go cannot share an internal package across module boundaries, so these are
+# separate implementations kept in agreement by hand. Drift does not fail
+# loudly: it snaps a point into a NEIGHBOURING grid cell, and the symptom is a
+# listing quietly missing from a radius search, or the exact-vs-coarsened
+# privacy invariant breaking. Nobody gets an error.
+#
+# The residue is the trap. math.Round(v/0.01)*0.01 leaves a binary residue —
+# -97.74 becomes -97.74000000000001 — which looks like a bug and is not.
+# "Cleaning it up" by re-rounding is exactly what breaks bit-equality with
+# Postgres, so the expected values below are recorded as raw IEEE-754 bits and
+# not as decimal literals. A decimal literal in a test cannot express the
+# difference and would let the drift through.
+#
+# Columns: input_lat, input_lng, want_lat_bits, want_lng_bits
+# Bits are the big-endian hex of math.Float64bits(want).
+# Regenerate deliberately, never to "make the test pass".
+#
+#
+# NOTE ON 0.145 -> 0.14 (not 0.15): 0.145 is not exactly representable, so
+# v/0.01 is 14.499999... and Round gives 14. This is correct and is the single
+# best reason these vectors are recorded as bits rather than decimals — a
+# decimal expectation of "0.15" would look obviously right and be wrong.
+# lat,lng,lat_bits,lng_bits
+30.265,-97.745,403E451EB851EB85,C058700000000000
+30.27,-97.74,403E451EB851EB85,C0586F5C28F5C290
+0.145,-0.145,3FC1EB851EB851EC,BFC1EB851EB851EC
+0.135,0.155,3FC1EB851EB851EC,3FC47AE147AE147B
+0,0,0000000000000000,0000000000000000
+-33.8688,151.2093,C040EF5C28F5C28F,4062E6B851EB851F
+51.5074,-0.1278,4049C147AE147AE1,BFC0A3D70A3D70A4
+-90,-180,C056800000000000,C066800000000000
+90,180,4056800000000000,4066800000000000
