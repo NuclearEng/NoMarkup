@@ -1,4 +1,5 @@
 import { resolveWsBase } from './constants';
+import { ConnectionStability, backoffDelayMs } from '@/lib/ws-backoff';
 
 // ─── Wire-format types (mirror gateway/internal/handler/marketplace_spectator_ws.go) ───
 
@@ -54,6 +55,7 @@ export class MarketplaceSpectatorClient {
   private connectionListeners: Set<ConnectionListener> = new Set();
   private status: MarketplaceConnectionStatus = 'disconnected';
   private reconnectAttempts = 0;
+  private readonly stability = new ConnectionStability();
   private readonly maxReconnectAttempts = 10;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private connectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -94,7 +96,13 @@ export class MarketplaceSpectatorClient {
     }
 
     this.ws.onopen = () => {
-      this.reconnectAttempts = 0;
+      // Do NOT reset the attempt counter here. The gateway accepts the
+      // upgrade before dialing the backend, so during an outage the browser
+      // sees onopen immediately followed by onclose — resetting here pinned
+      // the delay at ~1s and produced a reconnect hot loop. The reset happens
+      // in onclose, and only if the socket stayed open long enough to count
+      // as a real connection. See @/lib/ws-backoff.
+      this.stability.opened();
       this.updateStatus('connected');
     };
 
@@ -104,6 +112,12 @@ export class MarketplaceSpectatorClient {
 
     this.ws.onclose = () => {
       this.updateStatus('disconnected');
+      // Reset the backoff only for a connection that survived the stability
+      // window. An open that closed immediately was a failed attempt and must
+      // keep escalating — see @/lib/ws-backoff.
+      if (this.stability.closed()) {
+        this.reconnectAttempts = 0;
+      }
       if (!this.explicitlyClosed) {
         this.scheduleReconnect();
       }
@@ -177,7 +191,7 @@ export class MarketplaceSpectatorClient {
     if (!this.listingId) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
 
-    const delayMs = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30_000);
+    const delayMs = backoffDelayMs(this.reconnectAttempts);
     this.reconnectAttempts += 1;
 
     this.reconnectTimer = setTimeout(() => {

@@ -1,4 +1,5 @@
 import { resolveWsBase } from './constants';
+import { ConnectionStability, backoffDelayMs } from '@/lib/ws-backoff';
 
 export type AuctionMessageType = 'bid_event' | 'auction_state' | 'snipe_extended' | 'auction_ended';
 
@@ -36,6 +37,7 @@ class AuctionWebSocketManager {
   private messageListeners: Set<AuctionMessageListener> = new Set();
   private statusListeners: Set<StatusListener> = new Set();
   private reconnectAttempts = 0;
+  private readonly stability = new ConnectionStability();
   private maxReconnectAttempts = 10;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private status: AuctionConnectionStatus = 'disconnected';
@@ -83,7 +85,13 @@ class AuctionWebSocketManager {
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      this.reconnectAttempts = 0;
+      // Do NOT reset the attempt counter here. The gateway accepts the
+      // upgrade before dialing the backend, so during an outage the browser
+      // sees onopen immediately followed by onclose — resetting here pinned
+      // the delay at ~1s and produced a reconnect hot loop. The reset happens
+      // in onclose, and only if the socket stayed open long enough to count
+      // as a real connection. See @/lib/ws-backoff.
+      this.stability.opened();
       this.updateStatus('connected');
     };
 
@@ -111,6 +119,12 @@ class AuctionWebSocketManager {
       // job), so a dropped auction socket would never actually re-dial.
       this.ws = null;
       this.updateStatus('disconnected');
+      // Reset the backoff only for a connection that survived the stability
+      // window. An open that closed immediately was a failed attempt and must
+      // keep escalating — see @/lib/ws-backoff.
+      if (this.stability.closed()) {
+        this.reconnectAttempts = 0;
+      }
       if (!this.auctionEnded) {
         this.attemptReconnect();
       }
@@ -148,7 +162,7 @@ class AuctionWebSocketManager {
     const freshToken = this.tokenGetter ? this.tokenGetter() : null;
     if (!freshToken) return;
 
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    const delay = backoffDelayMs(this.reconnectAttempts);
     this.reconnectAttempts++;
 
     // Capture the hooks now: doConnect() calls disconnect() first, which nulls

@@ -1,6 +1,13 @@
 import { attemptRefresh } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { resolveWsBase } from '@/lib/constants';
+import {
+  ConnectionStability,
+  INITIAL_RECONNECT_DELAY_MS,
+  MAX_RECONNECT_DELAY_MS,
+  RECONNECT_BACKOFF_MULTIPLIER,
+  jitter,
+} from '@/lib/ws-backoff';
 
 // ─── WebSocket message types (Client → Server) ───────────────────
 const WS_CLIENT_MSG = {
@@ -69,9 +76,6 @@ type MessageListener = (message: WsServerMessage) => void;
 type StatusListener = (status: ConnectionStatus) => void;
 
 // ─── Configuration ───────────────────────────────────────────────
-const INITIAL_RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_DELAY_MS = 30000;
-const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
 /**
  * Debounce delay for connect(). This absorbs React StrictMode's
@@ -87,6 +91,7 @@ class WebSocketManager {
   private statusListeners: Set<StatusListener> = new Set();
   private status: ConnectionStatus = CONNECTION_STATUS.DISCONNECTED;
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+  private readonly stability = new ConnectionStability();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private outboundQueue: WsClientMessage[] = [];
@@ -115,7 +120,10 @@ class WebSocketManager {
    */
   connect(): void {
     // If already connected or mid-handshake, nothing to do.
-    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.socket &&
+      (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -145,7 +153,10 @@ class WebSocketManager {
     }
 
     // Guard against double-open.
-    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.socket &&
+      (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -158,14 +169,24 @@ class WebSocketManager {
 
     // Derive WebSocket URL. Prefer the shared resolver so everything (chat,
     // auction, spectator, marketplace) uses same-origin proxy when possible.
-    const wsBase = resolveWsBase() || (typeof window !== 'undefined'
-      ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
-      : '');
+    const wsBase =
+      resolveWsBase() ||
+      (typeof window !== 'undefined'
+        ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+        : '');
     this.socket = new WebSocket(`${wsBase}/ws/chat?token=${encodeURIComponent(token)}`);
 
     this.socket.onopen = () => {
       this.setStatus(CONNECTION_STATUS.CONNECTED);
-      this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+      // Deliberately NOT resetting the backoff here. The gateway accepts the
+      // upgrade before dialing the chat backend, so during a backend outage
+      // the browser sees onopen followed immediately by onclose — resetting
+      // here kept the delay pinned at 1s forever, and because the reconnect
+      // path also calls attemptRefresh(), each open tab generated ~2 gateway
+      // requests per second for the duration of the outage. The reset now
+      // happens in onclose, only if the socket stayed open long enough to
+      // count as a real connection.
+      this.stability.opened();
       // Re-establish subscriptions FIRST (before flushing the disconnect-time
       // queue) so a reconnected socket is subscribed to the active channel(s)
       // even when nothing was queued. Without this the socket shows
@@ -188,6 +209,13 @@ class WebSocketManager {
     this.socket.onclose = () => {
       this.socket = null;
       this.setStatus(CONNECTION_STATUS.DISCONNECTED);
+
+      // A connection that survived the stability window was genuinely healthy,
+      // so the next outage starts from the base delay again. One that closed
+      // immediately was a failed attempt and must keep escalating.
+      if (this.stability.closed()) {
+        this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+      }
 
       if (!this.intentionalClose) {
         this.scheduleReconnect();
@@ -220,6 +248,13 @@ class WebSocketManager {
 
     this.outboundQueue = [];
     this.activeSubscriptions.clear();
+    // An explicit disconnect ends the session, so a later connect() is a fresh
+    // start and must not inherit backoff accumulated during an old outage.
+    // This used to happen implicitly because onopen reset the delay on every
+    // open; now that the reset is gated on a stably-held connection, the
+    // teardown path has to do it explicitly.
+    this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+    this.stability.reset();
     this.setStatus(CONNECTION_STATUS.DISCONNECTED);
   }
 
@@ -284,7 +319,7 @@ class WebSocketManager {
           this.connect();
         }
       });
-    }, this.reconnectDelay);
+    }, jitter(this.reconnectDelay));
 
     this.reconnectDelay = Math.min(
       this.reconnectDelay * RECONNECT_BACKOFF_MULTIPLIER,
