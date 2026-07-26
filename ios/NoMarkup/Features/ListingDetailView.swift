@@ -1,14 +1,22 @@
 import SwiftUI
 
-/// Listing detail for a single goods auction. Public read; report on web for now.
+/// Listing detail for a single goods auction. Public read; native report + optional bid.
 struct ListingDetailView: View {
     let listingID: String
     var preview: ListingSummary?
 
+    @EnvironmentObject private var auth: AuthViewModel
+
     @State private var detail: ListingDetail?
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var showReportSafari = false
+    @State private var showReportSheet = false
+    @State private var showWebSafari = false
+
+    @State private var bidAmountText = ""
+    @State private var isPlacingBid = false
+    @State private var bidStatusMessage: String?
+    @State private var bidStatusIsError = false
 
     init(listingID: String, preview: ListingSummary? = nil) {
         self.listingID = listingID
@@ -53,12 +61,17 @@ struct ListingDetailView: View {
         #endif
         .task { await load() }
         .refreshable { await load() }
-        .sheet(isPresented: $showReportSafari) {
+        .sheet(isPresented: $showReportSheet) {
+            ListingReportSheet(listingID: listingID) {
+                showReportSheet = false
+            }
+        }
+        .sheet(isPresented: $showWebSafari) {
             NavigationStack {
-                LegalWebView(title: "Report on web", url: webListingURL)
+                LegalWebView(title: "Listing on web", url: webListingURL)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showReportSafari = false }
+                            Button("Done") { showWebSafari = false }
                                 .frame(minHeight: 44)
                         }
                     }
@@ -145,19 +158,118 @@ struct ListingDetailView: View {
                 }
             }
 
+            placeBidSection(listing)
+
             Section {
-                Text("Report a problem with this listing on the website for now. In-app reporting ships later.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
                 Button {
-                    showReportSafari = true
+                    showReportSheet = true
                 } label: {
-                    Label("Report on web", systemImage: "safari")
+                    Label("Report listing", systemImage: "flag")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+
+                Button {
+                    showWebSafari = true
+                } label: {
+                    Label("Open on web", systemImage: "safari")
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder
+    private func placeBidSection(_ listing: ListingDetail) -> some View {
+        Section {
+            if !auth.isAuthenticated {
+                Text("Sign in to place a bid on this listing.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if auth.isScaffoldSession {
+                Text("Scaffold session has no API credentials. Sign in against a live gateway to place bids.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                TextField("Bid amount (USD)", text: $bidAmountText)
+                    .keyboardType(.decimalPad)
+                    .textContentType(.none)
+                    .disabled(true)
+                    .frame(minHeight: 44)
+                Button("Place bid") {}
+                    .disabled(true)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            } else {
+                Text("Enter your bid in dollars. Current price is \(listing.displayPrice).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                TextField("Bid amount (USD)", text: $bidAmountText)
+                    .keyboardType(.decimalPad)
+                    .textContentType(.none)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Bid amount in dollars")
+
+                if let bidStatusMessage {
+                    Text(bidStatusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(bidStatusIsError ? .red : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    Task { await placeListingBid() }
+                } label: {
+                    if isPlacingBid {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Text("Place bid")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isPlacingBid || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        } header: {
+            Text("Place a bid")
+        }
+    }
+
+    @MainActor
+    private func placeListingBid() async {
+        bidStatusMessage = nil
+        bidStatusIsError = false
+
+        guard !auth.isScaffoldSession else {
+            bidStatusIsError = true
+            bidStatusMessage =
+                "Scaffold session has no API credentials. Sign in against a live gateway to place bids."
+            return
+        }
+
+        guard let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) else {
+            bidStatusIsError = true
+            bidStatusMessage = "Enter a valid bid amount in dollars (for example 25.00)."
+            return
+        }
+
+        isPlacingBid = true
+        defer { isPlacingBid = false }
+
+        do {
+            _ = try await APIClient.shared.placeListingBid(listingId: listingID, amountCents: cents)
+            bidStatusIsError = false
+            bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: cents))."
+            bidAmountText = ""
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            bidStatusIsError = true
+            bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            bidStatusIsError = true
+            bidStatusMessage = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -172,6 +284,110 @@ struct ListingDetailView: View {
             if detail == nil {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+}
+
+// MARK: - Report sheet
+
+private struct ListingReportSheet: View {
+    let listingID: String
+    var onDone: () -> Void
+
+    @State private var reason: ListingReportReason = .misleading
+    @State private var descriptionText = ""
+    @State private var isSubmitting = false
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Reason", selection: $reason) {
+                        ForEach(ListingReportReason.allCases) { item in
+                            Text(item.displayName).tag(item)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Report reason")
+                } header: {
+                    Text("Why are you reporting this?")
+                }
+
+                Section {
+                    TextEditor(text: $descriptionText)
+                        .frame(minHeight: 120)
+                        .accessibilityLabel("Additional details")
+                } header: {
+                    Text("Details (optional)")
+                } footer: {
+                    Text("Reports help keep the marketplace safe. False reports may lead to account action.")
+                }
+
+                if let statusMessage {
+                    Section {
+                        Text(statusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(statusIsError ? .red : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        if isSubmitting {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Submit report")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSubmitting)
+                }
+            }
+            .navigationTitle("Report listing")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onDone() }
+                        .frame(minHeight: 44)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func submit() async {
+        statusMessage = nil
+        statusIsError = false
+        isSubmitting = true
+        defer { isSubmitting = false }
+
+        do {
+            let response = try await APIClient.shared.reportListing(
+                id: listingID,
+                reason: reason.rawValue,
+                description: descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            statusIsError = false
+            statusMessage = response.userFacingMessage
+            // Brief pause so the user can read the confirmation, then dismiss.
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            onDone()
+        } catch let error as APIClientError where error.isUnauthorized {
+            // Report allows anonymous; 401 would be unexpected. Surface clearly.
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 }
@@ -210,5 +426,6 @@ struct ListingDetailView: View {
                 updatedAt: nil
             )
         )
+        .environmentObject(AuthViewModel())
     }
 }

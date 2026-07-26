@@ -272,7 +272,54 @@ actor APIClient {
         )
     }
 
+    // MARK: - Mutations (report + bids)
+
+    /// POST `/api/v1/listings/{id}/report` — optional auth (Bearer attached when present).
+    /// Body: `{ "reason": "...", "description": "..." }`
+    @discardableResult
+    func reportListing(id: String, reason: String, description: String) async throws -> ListingReportResponse {
+        let body = ListingReportRequestBody(reason: reason, description: description)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "listings", id, "report"],
+            body: body,
+            authorized: .optional
+        )
+    }
+
+    /// POST `/api/v1/jobs/{id}/bids` — auth required (provider role on server).
+    /// Body: `{ "amount_cents": N }`
+    @discardableResult
+    func placeJobBid(jobId: String, amountCents: Int64) async throws -> Data {
+        let body = AmountCentsBody(amountCents: amountCents)
+        return try await postData(
+            pathComponents: ["api", "v1", "jobs", jobId, "bids"],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/listings/{id}/bids` — auth required.
+    /// Body: `{ "amount_cents": N }` (optional `max_bid_cents` omitted for MVP).
+    @discardableResult
+    func placeListingBid(listingId: String, amountCents: Int64) async throws -> Data {
+        let body = AmountCentsBody(amountCents: amountCents)
+        return try await postData(
+            pathComponents: ["api", "v1", "listings", listingId, "bids"],
+            body: body,
+            authorized: .required
+        )
+    }
+
     // MARK: - Helpers
+
+    private enum AuthMode {
+        /// Never attach Bearer; public endpoint.
+        case none
+        /// Attach Bearer when a token exists; do not fail if missing.
+        case optional
+        /// Require a non-empty access token; throw `.unauthorized` otherwise.
+        case required
+    }
 
     /// JSON GET with path components + query. When `authorized` is true, attaches Bearer.
     private func getJSON<T: Decodable>(
@@ -280,6 +327,56 @@ actor APIClient {
         query: [URLQueryItem] = [],
         authorized: Bool = false
     ) async throws -> T {
+        let data = try await perform(
+            method: "GET",
+            pathComponents: pathComponents,
+            query: query,
+            body: nil as EmptyBody?,
+            auth: authorized ? .required : .none
+        )
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
+        }
+    }
+
+    private func postJSON<Body: Encodable, T: Decodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode
+    ) async throws -> T {
+        let data = try await postData(pathComponents: pathComponents, body: body, authorized: authorized)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            // Some mutation endpoints return flexible shapes; prefer empty success over hard fail
+            // when status was already 2xx. Fall through only if decode fails entirely.
+            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
+        }
+    }
+
+    private func postData<Body: Encodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode
+    ) async throws -> Data {
+        try await perform(
+            method: "POST",
+            pathComponents: pathComponents,
+            query: [],
+            body: body,
+            auth: authorized
+        )
+    }
+
+    private func perform<Body: Encodable>(
+        method: String,
+        pathComponents: [String],
+        query: [URLQueryItem],
+        body: Body?,
+        auth: AuthMode
+    ) async throws -> Data {
         var url = AppConfig.apiBaseURL
         for component in pathComponents {
             url = url.appending(path: component)
@@ -294,21 +391,28 @@ actor APIClient {
             throw APIClientError.unreachable
         }
 
-        let request: URLRequest
-        if authorized {
-            var authorizedRequest = try authorizedRequest(url: finalURL, method: "GET")
-            authorizedRequest.timeoutInterval = 20
-            // authorizedRequest already sets Accept; ensure Bearer was present when required.
-            if authorizedRequest.value(forHTTPHeaderField: "Authorization") == nil {
+        var request: URLRequest
+        switch auth {
+        case .none:
+            request = URLRequest(url: finalURL)
+            request.httpMethod = method
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        case .optional:
+            request = try authorizedRequest(url: finalURL, method: method)
+        case .required:
+            request = try authorizedRequest(url: finalURL, method: method)
+            if request.value(forHTTPHeaderField: "Authorization") == nil {
                 throw APIClientError.unauthorized
             }
-            request = authorizedRequest
-        } else {
-            var publicRequest = URLRequest(url: finalURL)
-            publicRequest.httpMethod = "GET"
-            publicRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-            publicRequest.timeoutInterval = 20
-            request = publicRequest
+        }
+        request.timeoutInterval = 20
+
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let encoder = JSONEncoder()
+            // Gateway expects snake_case keys (amount_cents, etc.).
+            encoder.keyEncodingStrategy = .convertToSnakeCase
+            request.httpBody = try encoder.encode(body)
         }
 
         let data: Data
@@ -319,11 +423,7 @@ actor APIClient {
             throw APIClientError.unreachable
         }
         try Self.throwIfNeeded(response: response, data: data)
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
-        }
+        return data
     }
 
     private static func throwIfNeeded(response: URLResponse, data: Data) throws {
@@ -334,11 +434,31 @@ actor APIClient {
             if http.statusCode == 401 {
                 throw APIClientError.unauthorized
             }
+            // Prefer gateway `{ "error": "..." }` message when present.
+            if let apiMessage = Self.extractAPIErrorMessage(from: data), !apiMessage.isEmpty {
+                throw APIClientError.httpStatus(http.statusCode, detail: apiMessage)
+            }
             let snippet = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
             throw APIClientError.httpStatus(http.statusCode, detail: String(snippet))
         }
     }
+
+    private static func extractAPIErrorMessage(from data: Data) -> String? {
+        struct APIErrorBody: Decodable {
+            let error: String?
+            let message: String?
+        }
+        guard let body = try? JSONDecoder().decode(APIErrorBody.self, from: data) else {
+            return nil
+        }
+        if let error = body.error, !error.isEmpty { return error }
+        if let message = body.message, !message.isEmpty { return message }
+        return nil
+    }
 }
+
+/// Empty body placeholder for GET-style `perform` calls.
+private struct EmptyBody: Encodable {}
 
 // MARK: - Models
 
@@ -405,6 +525,36 @@ private struct DeletionRequestBody: Encodable {
     let confirmation: String
 }
 
+private struct ListingReportRequestBody: Encodable {
+    let reason: String
+    let description: String
+}
+
+private struct AmountCentsBody: Encodable {
+    let amountCents: Int64
+}
+
+/// Flexible decode for `POST /listings/{id}/report` success / already_reported shapes.
+struct ListingReportResponse: Codable, Sendable {
+    let id: String?
+    let status: String?
+    let message: String?
+
+    var isAlreadyReported: Bool {
+        status == "already_reported"
+    }
+
+    var userFacingMessage: String {
+        if isAlreadyReported {
+            return message ?? "You've already flagged this listing."
+        }
+        if let message, !message.isEmpty {
+            return message
+        }
+        return "Thanks — your report was submitted."
+    }
+}
+
 enum APIClientError: Error, LocalizedError {
     case unreachable
     case unauthorized
@@ -421,9 +571,14 @@ enum APIClientError: Error, LocalizedError {
         case .unreachable:
             return "Could not reach the NoMarkup API at \(AppConfig.apiBaseURLString)."
         case .unauthorized:
-            return "Session expired. Please sign in again."
+            return "Sign in required. Your session is missing or expired — please sign in again."
         case .httpStatus(let code, let detail):
-            return detail.isEmpty ? "API error (\(code))." : "API error (\(code)): \(detail)"
+            if code == 403 {
+                return detail.isEmpty
+                    ? "You don’t have permission for this action."
+                    : detail
+            }
+            return detail.isEmpty ? "API error (\(code))." : detail
         case .decoding(let message):
             return message
         }

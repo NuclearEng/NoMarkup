@@ -1,14 +1,21 @@
 import SwiftUI
 
-/// Job detail for a single services reverse-auction. Public read.
+/// Job detail for a single services reverse-auction. Public read; native place-bid for providers.
 struct JobDetailView: View {
     let jobID: String
     var preview: JobSummary?
+
+    @EnvironmentObject private var auth: AuthViewModel
 
     @State private var detail: JobDetail?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showWebSafari = false
+
+    @State private var bidAmountText = ""
+    @State private var isPlacingBid = false
+    @State private var bidStatusMessage: String?
+    @State private var bidStatusIsError = false
 
     init(jobID: String, preview: JobSummary? = nil) {
         self.jobID = jobID
@@ -144,8 +151,10 @@ struct JobDetailView: View {
                 }
             }
 
+            placeBidSection(job)
+
             Section {
-                Text("Bidding and contracts stay on the website for now. Open the full job page for actions.")
+                Text("Contracts and advanced auction tools remain on the website.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Button {
@@ -157,6 +166,107 @@ struct JobDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder
+    private func placeBidSection(_ job: JobDetail) -> some View {
+        Section {
+            if !auth.isAuthenticated {
+                Text("Sign in as a provider to place a bid on this job.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if auth.isScaffoldSession {
+                Text("Scaffold session has no API credentials. Sign in against a live gateway to place bids.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                TextField("Bid amount (USD)", text: $bidAmountText)
+                    .keyboardType(.decimalPad)
+                    .disabled(true)
+                    .frame(minHeight: 44)
+                Button("Place bid") {}
+                    .disabled(true)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            } else {
+                Text(bidHint(for: job))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                TextField("Bid amount (USD)", text: $bidAmountText)
+                    .keyboardType(.decimalPad)
+                    .textContentType(.none)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Bid amount in dollars")
+
+                if let bidStatusMessage {
+                    Text(bidStatusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(bidStatusIsError ? .red : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    Task { await placeJobBid() }
+                } label: {
+                    if isPlacingBid {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Text("Place bid")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isPlacingBid || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        } header: {
+            Text("Place a bid")
+        } footer: {
+            Text("Services are reverse auctions — lower bids compete. Provider role required.")
+        }
+    }
+
+    private func bidHint(for job: JobDetail) -> String {
+        if let price = job.displayPrice {
+            return "Enter your bid in dollars. Starting / accepted price: \(price)."
+        }
+        return "Enter your bid in dollars. Provider accounts only."
+    }
+
+    @MainActor
+    private func placeJobBid() async {
+        bidStatusMessage = nil
+        bidStatusIsError = false
+
+        guard !auth.isScaffoldSession else {
+            bidStatusIsError = true
+            bidStatusMessage =
+                "Scaffold session has no API credentials. Sign in against a live gateway to place bids."
+            return
+        }
+
+        guard let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) else {
+            bidStatusIsError = true
+            bidStatusMessage = "Enter a valid bid amount in dollars (for example 75.00)."
+            return
+        }
+
+        isPlacingBid = true
+        defer { isPlacingBid = false }
+
+        do {
+            _ = try await APIClient.shared.placeJobBid(jobId: jobID, amountCents: cents)
+            bidStatusIsError = false
+            bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: cents))."
+            bidAmountText = ""
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            bidStatusIsError = true
+            bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            bidStatusIsError = true
+            bidStatusMessage = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -215,5 +325,6 @@ struct JobDetailView: View {
                 photoUrls: nil
             )
         )
+        .environmentObject(AuthViewModel())
     }
 }

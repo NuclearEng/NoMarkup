@@ -8,6 +8,50 @@ enum MoneyFormat {
         let dollars = Decimal(cents) / 100
         return dollars.formatted(.currency(code: "USD"))
     }
+
+    /// Parses a user-entered dollar amount into integer cents.
+    /// Accepts `"12"`, `"12.5"`, `"12.50"`, optional `$` / commas. Rounds half-up to nearest cent.
+    /// Returns `nil` for empty, non-numeric, zero, or negative input.
+    static func cents(fromDollarsText text: String) -> Int64? {
+        var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        cleaned = cleaned.replacingOccurrences(of: "$", with: "")
+        cleaned = cleaned.replacingOccurrences(of: ",", with: "")
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty, let decimal = Decimal(string: cleaned), decimal > 0 else {
+            return nil
+        }
+        var product = decimal * 100
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &product, 0, .plain)
+        let value = NSDecimalNumber(decimal: rounded).int64Value
+        guard value > 0 else { return nil }
+        return value
+    }
+}
+
+// MARK: - Listing report reasons
+
+/// Valid `reason` values for `POST /api/v1/listings/{id}/report`.
+enum ListingReportReason: String, CaseIterable, Identifiable, Sendable {
+    case stolen
+    case counterfeit
+    case prohibited
+    case misleading
+    case spam
+    case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .stolen: return "Stolen goods"
+        case .counterfeit: return "Counterfeit"
+        case .prohibited: return "Prohibited item"
+        case .misleading: return "Misleading"
+        case .spam: return "Spam"
+        case .other: return "Other"
+        }
+    }
 }
 
 // MARK: - Pagination
