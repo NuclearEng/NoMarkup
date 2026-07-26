@@ -879,8 +879,18 @@ func (h *ListingsHandler) bidBondCheck(ctx context.Context, userID, listingID st
 	return true, required
 }
 
-// MyListings handles GET /api/v1/listings/me — seller's own listings.
+// MyListings handles GET /api/v1/listings/mine — seller's own listings.
+//
+// Also reached via GetListing when id=="mine" (chi route-collision workaround
+// for a public /listings/{id} mount). That public path is outside the
+// PrivateNoStore authenticated subtree, so we stamp private, no-store here
+// ourselves. Without it, an optionalAuth wrapper on the public path would
+// emit a per-user body with no cache header.
 func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
+	// Always first: this body is per-seller. Set before any early return so a
+	// 401/empty-db response is not accidentally cacheable either.
+	w.Header().Set("Cache-Control", privateCachePolicy)
+
 	if h.db == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"listings":   []listingJSON{},

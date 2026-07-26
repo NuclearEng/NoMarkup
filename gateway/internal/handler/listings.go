@@ -505,16 +505,17 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 // ─────────────────────────────────────────────────────────────────────────
 
 func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeError(w, http.StatusServiceUnavailable, "database unavailable")
-		return
-	}
 	id := chi.URLParam(r, "id")
 	// Path collision: /api/v1/listings/mine is registered as an auth-protected
-	// route BUT chi matches `/listings/{id}` first (different mount points).
-	// Delegate to MyListings, which enforces the auth check itself.
+	// route BUT chi may match `/listings/{id}` first (different mount points).
+	// Delegate to MyListings before the nil-DB check so the per-user
+	// Cache-Control stamp and auth gate still run when this collision fires.
 	if id == "mine" {
 		h.MyListings(w, r)
+		return
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
 	if !isValidUUID(id) {
