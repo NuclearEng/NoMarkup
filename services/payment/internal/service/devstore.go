@@ -57,12 +57,15 @@ type DevStore struct {
 }
 
 // devPaymentIntent is the subset of a Stripe PaymentIntent the dev off-session
-// confirm path needs.
+// confirm path needs. ClientSecret is stored so idempotent re-entry of
+// ChargeListingWinner can hand the browser a usable secret on retry — Stripe
+// returns it from PaymentIntent.Get; the order row only keeps the PI id.
 type devPaymentIntent struct {
-	ID         string
-	CustomerID string
-	AmountCts  int64
-	Status     string
+	ID           string
+	CustomerID   string
+	AmountCts    int64
+	Status       string
+	ClientSecret string
 }
 
 // devConfirmResult is a memoized confirm outcome keyed by idempotency key.
@@ -205,19 +208,38 @@ func (d *DevStore) SetDeclineRule(paymentMethodID string, err error) {
 
 // --- Payment intents (off-session confirm) ---
 
-// RecordPaymentIntent registers a dev PaymentIntent so it can later be confirmed.
-func (d *DevStore) RecordPaymentIntent(piID, customerStripeID string, amountCts int64) {
+// RecordPaymentIntent registers a dev PaymentIntent so it can later be confirmed
+// and so its client_secret can be re-read on ChargeListingWinner re-entry.
+// clientSecret may be empty for older call sites that only need confirm; the
+// marketplace charge path always supplies one.
+func (d *DevStore) RecordPaymentIntent(piID, customerStripeID string, amountCts int64, clientSecret string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if _, ok := d.paymentIntents[piID]; ok {
+	if existing, ok := d.paymentIntents[piID]; ok {
+		// Fill a secret if a later call knows it and the first registration did not.
+		if existing.ClientSecret == "" && clientSecret != "" {
+			existing.ClientSecret = clientSecret
+		}
 		return
 	}
 	d.paymentIntents[piID] = &devPaymentIntent{
-		ID:         piID,
-		CustomerID: customerStripeID,
-		AmountCts:  amountCts,
-		Status:     "requires_payment_method",
+		ID:           piID,
+		CustomerID:   customerStripeID,
+		AmountCts:    amountCts,
+		Status:       "requires_payment_method",
+		ClientSecret: clientSecret,
 	}
+}
+
+// PaymentIntentClientSecret returns the stored client_secret for a dev PI, or
+// "" if the intent is unknown / was recorded without one.
+func (d *DevStore) PaymentIntentClientSecret(piID string) string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if pi, ok := d.paymentIntents[piID]; ok {
+		return pi.ClientSecret
+	}
+	return ""
 }
 
 // ConfirmPaymentIntent simulates an off-session confirmation.

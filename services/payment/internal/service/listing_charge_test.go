@@ -814,12 +814,24 @@ func TestChargeListingWinner_idempotent_reentry(t *testing.T) {
 
 	res1, err := svc.ChargeListingWinner(context.Background(), o.ID)
 	require.NoError(t, err)
+	require.NotEmpty(t, res1.ClientSecret,
+		"first charge must return a client_secret the browser can confirm")
+	// Shape must match web hasConfirmablePayment (pi_<id>_secret_<secret>,
+	// id segment has no underscores) — the historical pi_listing_dev_secret_
+	// form was silently unusable in the pay UI.
+	assert.Regexp(t, `^pi_[^_\s]+_secret_\S+$`, res1.ClientSecret)
 
-	// Second call returns same PI (idempotent).
+	// Second call returns same PI (idempotent) AND the same client_secret.
+	// Without the secret, POST /orders/{id}/pay hands the browser nothing and
+	// SCA / dismissed-sheet recovery is impossible.
 	res2, err := svc.ChargeListingWinner(context.Background(), o.ID)
 	require.NoError(t, err)
 	assert.Equal(t, res1.PaymentIntentID, res2.PaymentIntentID)
 	assert.Equal(t, int64(625), res2.TaxCents) // 10000 * 0.0625
+	assert.Equal(t, res1.ClientSecret, res2.ClientSecret,
+		"re-entry must re-read ClientSecret; empty secret is the bug this test pins")
+	assert.NotEmpty(t, res2.ClientSecret)
+	assert.Equal(t, res1.TotalCents, res2.TotalCents)
 }
 
 // ====== Full lifecycle: charged → confirmed → released ======

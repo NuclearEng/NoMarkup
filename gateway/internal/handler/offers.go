@@ -722,6 +722,11 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 				resp["charge_error"] = "payment setup failed; retry charge for this order"
 			} else {
 				resp["payment_intent_id"] = charge.GetPaymentIntentId()
+				// total_cents is not a payment credential — both parties may see
+				// what the buyer will be charged (item + fee + tax).
+				if charge.GetTotalCents() > 0 {
+					resp["total_cents"] = charge.GetTotalCents()
+				}
 				// Return the client_secret ONLY to the party who actually pays.
 				// Acceptance is authorized on whoever the offer AWAITS, so when a
 				// buyer makes an offer it awaits the SELLER — and the seller
@@ -733,7 +738,8 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 				//
 				// It is also useless to the seller — 3DS cannot be completed on
 				// someone else's behalf — so withholding it costs nothing. The
-				// buyer collects it from their own order surface instead.
+				// buyer collects it from their own order surface instead
+				// (POST /orders/{id}/pay).
 				if claims.UserID == buyerID {
 					resp["client_secret"] = charge.GetClientSecret()
 				}

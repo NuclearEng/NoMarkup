@@ -96,19 +96,22 @@ func (h *ListingsHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
 }
 
 // chargeListingOrder calls ChargeListingWinner for a pending_payment order.
-// Returns ("","",nil) when no payment client is configured. Errors from the
+// Returns zero values when no payment client is configured. Errors from the
 // payment service are returned to the caller (order remains pending_payment).
-func (h *ListingsHandler) chargeListingOrder(ctx context.Context, orderID string) (piID, clientSecret string, err error) {
+// totalCents is the amount actually charged (item + fee + tax) so buy-now
+// responses can label the confirm button with a real number rather than
+// "Pay now".
+func (h *ListingsHandler) chargeListingOrder(ctx context.Context, orderID string) (piID, clientSecret string, totalCents int64, err error) {
 	if h.paymentClient == nil || orderID == "" {
-		return "", "", nil
+		return "", "", 0, nil
 	}
 	resp, err := h.paymentClient.ChargeListingWinner(ctx, &paymentv1.ChargeListingWinnerRequest{
 		OrderId: orderID,
 	})
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
-	return resp.GetPaymentIntentId(), resp.GetClientSecret(), nil
+	return resp.GetPaymentIntentId(), resp.GetClientSecret(), resp.GetTotalCents(), nil
 }
 
 // sellerTrust fetches a seller's real computed trust score from the trust

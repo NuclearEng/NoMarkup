@@ -246,13 +246,10 @@ export interface PaymentIntentEnvelope {
   payment_intent_id?: string;
   /**
    * Amount actually being charged (item + platform fee + sales tax), in cents.
-   *
-   * GATEWAY GAP: buy-now and offer-accept do NOT return this today even though
-   * ChargeListingWinner computes it (`ChargeListingWinnerResponse.total_cents`)
-   * — the handlers copy only `payment_intent_id` and `client_secret` into the
-   * response. Until that is forwarded, the UI must not print a total it cannot
-   * verify, so every consumer treats this as optional and degrades to a
-   * "Pay now" label rather than showing the item price as if it were the total.
+   * Forwarded from ChargeListingWinner on buy-now, offer-accept (when the
+   * acceptor is the buyer), and POST /orders/{id}/pay. Optional so older
+   * responses without the field still degrade to a "Pay now" label rather than
+   * showing the item price as if it were the total.
    */
   total_cents?: number;
   /** Gateway says the buyer still owes money — escrow is NOT funded. */

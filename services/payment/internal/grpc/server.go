@@ -686,6 +686,19 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "stripe account not found")
 	case errors.Is(err, domain.ErrPlatformBankAccountNotFound):
 		return status.Error(codes.NotFound, "platform bank account not found")
+	// Goods marketplace sentinels (listing_charge.go). Without these, every
+	// ChargeListingWinner / ConfirmPickup domain rejection collapsed to
+	// codes.Internal → HTTP 500, so the pay route could not return 403/404/409.
+	case errors.Is(err, service.ErrListingOrderNotFound):
+		return status.Error(codes.NotFound, "listing order not found")
+	case errors.Is(err, service.ErrNotBuyer):
+		return status.Error(codes.PermissionDenied, "only the buyer on this order can perform this action")
+	case errors.Is(err, service.ErrInvalidEscrowState):
+		return status.Error(codes.FailedPrecondition, "order is not in a state that allows this action")
+	case errors.Is(err, service.ErrDisputeWindowClosed):
+		return status.Error(codes.FailedPrecondition, "dispute window closed")
+	case errors.Is(err, service.ErrDisputeAlreadyOpen):
+		return status.Error(codes.AlreadyExists, "dispute already open for this order")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

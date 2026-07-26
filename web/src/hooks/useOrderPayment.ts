@@ -17,22 +17,17 @@
 //   The third case is why a client-side pay surface is mandatory rather than
 //   nice-to-have: no amount of backend retrying can complete an SCA payment.
 //
-// CONTRACT (assumed — see the report; this route does not exist yet):
+// CONTRACT (gateway ListingOrdersHandler.PayOrder):
 //   POST /api/v1/orders/{id}/pay
-//     → 200 { client_secret, payment_intent_id, total_cents?, escrow_status }
-//   The gateway is expected to re-enter ChargeListingWinner, which is already
-//   idempotent per order (services/payment/internal/service/listing_charge.go
-//   returns the existing PaymentIntent when one is attached).
+//     → 200 { client_secret, payment_intent_id, total_cents, amount_cents,
+//             fee_cents, tax_cents, escrow_status, order_id }
+//   Re-enters ChargeListingWinner, which is idempotent per order and re-reads
+//   ClientSecret from Stripe (or the dev store) on retry so SCA / dismissed-
+//   sheet recovery works.
 //
-//   KNOWN BACKEND GAP: that idempotent re-entry branch returns the PI id but
-//   leaves ClientSecret EMPTY, so a naive wiring of this route would hand the
-//   browser nothing to confirm. The handler must re-read the secret from
-//   Stripe (or persist it) for retries to work. This hook therefore treats a
-//   missing/blank secret as a first-class, explained failure rather than
-//   assuming success.
-//
-//   Until the route ships, callers get a clear "not available yet" message
-//   instead of a raw 404 — the feature degrades, it does not crash.
+//   Empty client_secret on a 200 is treated as failure by hasConfirmablePayment
+//   and the gateway now fails closed with 503 instead of returning one. 404 /
+//   405 / 501 still map to "not available yet" for older deploys.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 

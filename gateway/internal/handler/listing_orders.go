@@ -17,6 +17,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -40,11 +44,21 @@ import (
 // Thread-safe; the handler holds no per-request mutable state.
 type ListingOrdersHandler struct {
 	db *pgxpool.Pool
+	// paymentClient re-enters ChargeListingWinner for POST /orders/{id}/pay so
+	// a buyer whose off-session charge failed (or who dismissed 3DS) can still
+	// fund escrow. Optional: nil → 503 on the pay route (never a silent 200).
+	paymentClient paymentv1.PaymentServiceClient
 }
 
 // NewListingOrdersHandler creates a new handler.
 func NewListingOrdersHandler(db *pgxpool.Pool) *ListingOrdersHandler {
 	return &ListingOrdersHandler{db: db}
+}
+
+// SetPaymentClient wires ChargeListingWinner for the buyer pay-retry surface.
+// Safe to leave unset in tests that never hit POST /orders/{id}/pay.
+func (h *ListingOrdersHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
+	h.paymentClient = c
 }
 
 // confirmPickupRequest captures the buyer-side handshake — pickup code
@@ -906,6 +920,124 @@ const orderSelectFrom = `
 	JOIN listings l ON l.id = o.listing_id
 	JOIN users su ON su.id = o.seller_id
 	LEFT JOIN zip_codes zc ON zc.zip = l.pickup_zip_code`
+
+// payOrderResponse is the contract web/src/hooks/useOrderPayment.ts expects
+// from POST /api/v1/orders/{id}/pay. total_cents is required so the button
+// can show the real charged amount (item + fee + tax), not just "Pay now".
+type payOrderResponse struct {
+	OrderID         string `json:"order_id"`
+	PaymentIntentID string `json:"payment_intent_id"`
+	ClientSecret    string `json:"client_secret"`
+	AmountCents     int64  `json:"amount_cents"`
+	FeeCents        int64  `json:"fee_cents"`
+	TaxCents        int64  `json:"tax_cents"`
+	TotalCents      int64  `json:"total_cents"`
+	EscrowStatus    string `json:"escrow_status"`
+}
+
+// PayOrder handles POST /api/v1/orders/{id}/pay.
+//
+// Re-enters ChargeListingWinner for a pending_payment order so the buyer can
+// complete (or resume) payment after an off-session failure, a dismissed 3DS
+// challenge, or a buy-now where they closed the sheet. Buyer-only. Idempotent
+// at the payment service (same PI + re-read client_secret).
+//
+// Status map matches useOrderPayment.describeOrderPaymentFailure:
+//
+//	401 missing claims
+//	400 bad id
+//	403 not the buyer
+//	404 order missing
+//	409 not pending_payment (already held / failed / released)
+//	503 payment service unwired or returned no client_secret
+func (h *ListingOrdersHandler) PayOrder(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	orderID := chi.URLParam(r, "id")
+	if !isValidUUID(orderID) {
+		writeError(w, http.StatusBadRequest, "invalid order id")
+		return
+	}
+
+	if h.paymentClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "payments are temporarily unavailable")
+		return
+	}
+
+	// Ownership + status from the order row before we touch Stripe. Never
+	// charge on the strength of a client-supplied order id alone.
+	var buyerID, escrowStatus string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT buyer_id::text, escrow_status FROM listing_orders WHERE id = $1`,
+		orderID,
+	).Scan(&buyerID, &escrowStatus)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "order not found")
+			return
+		}
+		slog.ErrorContext(r.Context(), "pay order: select", "order_id", orderID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	if buyerID != claims.UserID {
+		// Do not distinguish "exists but not yours" from missing for non-
+		// participants beyond 403 — the buyer-only message is intentional and
+		// matches the web surface. Sellers get 403, not a charge.
+		writeError(w, http.StatusForbidden, "only the buyer on this order can pay for it")
+		return
+	}
+
+	if escrowStatus != "pending_payment" {
+		// Already funded, failed, refunded, etc. 409 so the UI can refresh.
+		writeError(w, http.StatusConflict, "this order is no longer awaiting payment")
+		return
+	}
+
+	resp, err := h.paymentClient.ChargeListingWinner(r.Context(), &paymentv1.ChargeListingWinnerRequest{
+		OrderId: orderID,
+	})
+	if err != nil {
+		// Map FailedPrecondition (wrong escrow state race) to 409 so a
+		// concurrent webhook that just funded the order does not look like a
+		// generic 422/500 to the buyer.
+		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
+			writeError(w, http.StatusConflict, "this order is no longer awaiting payment")
+			return
+		}
+		writeGRPCError(w, err)
+		return
+	}
+
+	clientSecret := resp.GetClientSecret()
+	if clientSecret == "" {
+		// Re-entry used to return an empty secret permanently; if it still
+		// does, fail closed rather than rendering a payment form that cannot
+		// confirm. 503 matches the web "temporarily unavailable" copy.
+		slog.ErrorContext(r.Context(), "pay order: ChargeListingWinner returned empty client_secret",
+			"order_id", orderID,
+			"payment_intent_id", resp.GetPaymentIntentId(),
+		)
+		writeError(w, http.StatusServiceUnavailable, "payments are temporarily unavailable")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, payOrderResponse{
+		OrderID:         orderID,
+		PaymentIntentID: resp.GetPaymentIntentId(),
+		ClientSecret:    clientSecret,
+		AmountCents:     resp.GetAmountCents(),
+		FeeCents:        resp.GetFeeCents(),
+		TaxCents:        resp.GetTaxCents(),
+		TotalCents:      resp.GetTotalCents(),
+		EscrowStatus:    "pending_payment",
+	})
+}
 
 // GetOrder handles GET /api/v1/orders/{id}.
 //

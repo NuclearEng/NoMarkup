@@ -1108,9 +1108,23 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 			"customer", buyerStripeCustomerID,
 			"idem", idempotencyKey,
 		)
+		// PI id keeps the historical pi_listing_dev_ prefix (tests and logs).
+		// client_secret must match Stripe's pi_<id>_secret_<secret> shape (id
+		// segment has no underscores) so web hasConfirmablePayment accepts it —
+		// the previous "pi_listing_dev_secret_..." form failed that guard and
+		// every buy-now/pay retry in dev silently looked unusable.
 		piID := "pi_listing_dev_" + idempotencyKey
-		s.DevStore().RecordPaymentIntent(piID, buyerStripeCustomerID, totalCents)
-		return piID, "pi_listing_dev_secret_" + idempotencyKey, nil
+		safeIdem := strings.Map(func(r rune) rune {
+			switch r {
+			case '_', ':', ' ', '/':
+				return '-'
+			default:
+				return r
+			}
+		}, idempotencyKey)
+		clientSecret := "pi_listingdev_secret_" + safeIdem
+		s.DevStore().RecordPaymentIntent(piID, buyerStripeCustomerID, totalCents, clientSecret)
+		return piID, clientSecret, nil
 	}
 
 	params := &stripe.PaymentIntentParams{
@@ -1136,6 +1150,38 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 		return "", "", fmt.Errorf("create marketplace payment intent: %w", err)
 	}
 	return pi.ID, pi.ClientSecret, nil
+}
+
+// GetPaymentIntentClientSecret re-reads a PaymentIntent's client_secret.
+//
+// ChargeListingWinner only persists the PI id on listing_orders. Idempotent
+// re-entry (buyer retries pay, settlement sweeper re-visits an attached order)
+// must still hand the browser a secret for on-session confirm / SCA. Stripe
+// exposes it on PaymentIntent.Get; in dev mode the DevStore records it at
+// create time.
+func (s *StripeService) GetPaymentIntentClientSecret(ctx context.Context, paymentIntentID string) (string, error) {
+	if paymentIntentID == "" {
+		return "", fmt.Errorf("get payment intent client secret: id required")
+	}
+	if s.devMode {
+		if secret := s.DevStore().PaymentIntentClientSecret(paymentIntentID); secret != "" {
+			return secret, nil
+		}
+		return "", fmt.Errorf("get payment intent client secret: unknown intent %s", paymentIntentID)
+	}
+
+	getParams := &stripe.PaymentIntentParams{}
+	pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+		getParams.Context = ctx
+		return paymentintent.Get(paymentIntentID, getParams)
+	})
+	if err != nil {
+		return "", fmt.Errorf("get payment intent client secret: %w", err)
+	}
+	if pi.ClientSecret == "" {
+		return "", fmt.Errorf("get payment intent client secret: stripe returned empty secret for %s", paymentIntentID)
+	}
+	return pi.ClientSecret, nil
 }
 
 // ConfirmOffSessionPaymentIntent confirms an EXISTING PaymentIntent against a

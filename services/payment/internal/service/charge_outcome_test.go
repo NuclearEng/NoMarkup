@@ -253,7 +253,7 @@ func TestConfirmOffSessionPaymentIntent_IdempotencyKeyReplaysOriginalOutcome(t *
 	t.Parallel()
 	ss := &StripeService{devMode: true}
 	store := ss.DevStore()
-	store.RecordPaymentIntent("pi_1", "cus_1", 1000)
+	store.RecordPaymentIntent("pi_1", "cus_1", 1000, "pi_listingdev_secret_test")
 
 	declined := &stripe.Error{Code: stripe.ErrorCodeCardDeclined, DeclineCode: stripe.DeclineCodeInsufficientFunds}
 	store.SetDeclineRule("pm_1", declined)

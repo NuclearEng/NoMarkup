@@ -1243,8 +1243,8 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 
 	// Attach a PaymentIntent when the payment service is wired. Failure here
 	// does not roll back the sold listing / pending_payment order — the buyer
-	// (or a retry) can re-charge via ChargeListingWinner.
-	if piID, clientSecret, cerr := h.chargeListingOrder(r.Context(), orderID); cerr != nil {
+	// (or a retry) can re-charge via ChargeListingWinner / POST /orders/{id}/pay.
+	if piID, clientSecret, totalCents, cerr := h.chargeListingOrder(r.Context(), orderID); cerr != nil {
 		slog.ErrorContext(r.Context(), "buy-now: charge listing winner failed",
 			"error", cerr, "order_id", orderID)
 		resp["payment_required"] = true
@@ -1253,6 +1253,11 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 		resp["payment_intent_id"] = piID
 		resp["client_secret"] = clientSecret
 		resp["payment_required"] = true
+		// Forward total_cents so the UI can show the real charge (item + fee +
+		// tax). Dropping it forced every button to say "Pay now" with no amount.
+		if totalCents > 0 {
+			resp["total_cents"] = totalCents
+		}
 	} else {
 		// No payment client (dev without payment service): still never
 		// pretend the order is held — client must complete payment later.

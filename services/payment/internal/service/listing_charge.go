@@ -441,20 +441,43 @@ func (s *MarketplaceService) ChargeListingWinner(ctx context.Context, orderID st
 	}
 
 	// Idempotent re-entry: if the order already has a PI, return it.
+	//
+	// ClientSecret is NOT on the order row — only the PI id is. Without re-
+	// reading it from Stripe (or the dev store), a buyer whose first charge
+	// attempt left them with SCA / a dismissed sheet gets an empty secret on
+	// POST /orders/{id}/pay and cannot complete payment. Settlement only needs
+	// the PI id; empty secret on held is fine, but pending_payment re-entry
+	// must populate it when Stripe will still hand it out.
 	if order.PaymentIntentID != "" && (order.EscrowStatus == "pending_payment" || order.EscrowStatus == "held") {
 		slog.Info("charge listing winner: existing payment intent",
 			"order_id", orderID,
 			"pi_id", order.PaymentIntentID,
 			"status", order.EscrowStatus,
 		)
-		return &ChargeListingResult{
+		result := &ChargeListingResult{
 			OrderID:         order.ID,
 			PaymentIntentID: order.PaymentIntentID,
 			AmountCents:     order.AmountCents,
 			FeeCents:        order.FeeCents,
 			TaxCents:        order.TaxCents,
 			TotalCents:      order.AmountCents + order.FeeCents + order.TaxCents,
-		}, nil
+		}
+		if order.EscrowStatus == "pending_payment" {
+			secret, secErr := s.stripe.GetPaymentIntentClientSecret(ctx, order.PaymentIntentID)
+			if secErr != nil {
+				// Do not fail the whole charge: the settlement sweeper re-enters
+				// here with only the PI id. Log loudly so a pay-route empty
+				// secret is diagnosable rather than silent.
+				slog.WarnContext(ctx, "charge listing winner: could not re-read client secret",
+					"order_id", orderID,
+					"pi_id", order.PaymentIntentID,
+					"error", secErr,
+				)
+			} else {
+				result.ClientSecret = secret
+			}
+		}
+		return result, nil
 	}
 
 	if order.EscrowStatus != "pending_payment" {

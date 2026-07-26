@@ -700,6 +700,11 @@ func New(
 		r.Route("/orders", func(r chi.Router) {
 			// Read: buyer/seller/admin only (handler enforces 403/404/400).
 			r.Get("/{id}", listingOrdersHandler.GetOrder)
+			// Pay retry — money mutation: Idempotency-Key required (MON-06/22).
+			// Re-enters ChargeListingWinner so auction winners / dismissed-sheet
+			// buyers can fund escrow. See listing_orders.go::PayOrder.
+			r.With(middleware.RequireIdempotencyKey(cacheClient)).
+				Post("/{id}/pay", listingOrdersHandler.PayOrder)
 			r.Post("/{id}/confirm-pickup", listingOrdersHandler.ConfirmPickup)
 			r.Post("/{id}/file-dispute", listingOrdersHandler.FileListingDispute)
 			// Wave 5 polish — mutual handshake + no-show counters.

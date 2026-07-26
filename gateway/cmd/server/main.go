@@ -368,6 +368,10 @@ func main() {
 	employeesHandler := handler.NewEmployeesHandler(dbPool, piiCipher)
 	adminMarketplaceHandler := handler.NewAdminMarketplaceHandler(dbPool)
 	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
+	// Wire ChargeListingWinner for POST /orders/{id}/pay (buyer pay-retry /
+	// SCA resume). Without this the route returns 503 and the web surface
+	// degrades to "not available yet".
+	listingOrdersHandler.SetPaymentClient(paymentClient)
 	listingsHandler := handler.NewListingsHandler(dbPool, cacheClient)
 	watchlistHandler := handler.NewWatchlistHandler(dbPool, cacheClient)
 	wishlistHandler := handler.NewWishlistHandler(dbPool)
