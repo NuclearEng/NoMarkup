@@ -50,6 +50,10 @@ const config: Config = {
           'gold-dim': 'var(--brand-gold-dim)',
           'gold-bright': 'var(--brand-gold-bright)',
           'gold-glow': 'var(--brand-gold-glow)',
+          teal: 'var(--brand-teal)',
+          'teal-dim': 'var(--brand-teal-dim)',
+          green: 'var(--brand-green)',
+          'green-dim': 'var(--brand-green-dim)',
         },
         // NoMarkup-specific semantic tokens (HSL channel vars → hsl())
         trust: {
@@ -74,6 +78,14 @@ const config: Config = {
         lg: '0.75rem',
         md: '0.5rem',
         sm: '0.25rem',
+      },
+      // Showcase type stack — docs/brand/showcase-ssot.md
+      fontFamily: {
+        sans: ['var(--font-outfit)', 'Outfit', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        heading: ['var(--font-syne)', 'Syne', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['var(--font-instrument)', 'Instrument Serif', 'Georgia', 'serif'],
+        mono: ['var(--font-jetbrains)', 'JetBrains Mono', 'ui-monospace', 'monospace'],
+        brand: ['var(--font-syne)', 'Syne', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       // Strict type scale — only these sizes (docs/design-system.md)
       fontSize: {

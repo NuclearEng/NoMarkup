@@ -89,11 +89,11 @@ struct HomeView: View {
 
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Eyebrow pill
-            Text("MARKET TERMINAL · REVERSE AUCTION")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(1.4)
-                .foregroundStyle(BrandTheme.goldBright)
+            // Eyebrow — showcase section-label voice
+            Text("REVERSE-AUCTION SERVICE MARKETPLACE")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .tracking(1.6)
+                .foregroundStyle(BrandTheme.gold)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
@@ -106,18 +106,23 @@ struct HomeView: View {
                 )
                 .padding(.bottom, 18)
 
-            Text("Costs down.\nFair pay up.")
-                .font(.system(size: 34, weight: .bold, design: .default))
-                .foregroundStyle(BrandTheme.textPrimary)
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.bottom, 12)
-
+            // Showcase hero: "The Market Sets The Price. Not The Markup."
             (
-                Text("Providers compete so you stop overpaying — price bids ")
-                    + Text("down").foregroundColor(BrandTheme.goldBright).fontWeight(.semibold)
-                    + Text(". Independent contractors and small businesses earn without lead-gen markup. Escrow keeps both sides safe.")
+                Text("The Market Sets\nThe Price.\n")
+                    .foregroundColor(BrandTheme.textPrimary)
+                + Text("Not The Markup.")
+                    .foregroundColor(BrandTheme.goldBright)
+                    .italic()
+            )
+            .font(.system(size: 32, weight: .bold, design: .serif))
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityLabel("The Market Sets The Price. Not The Markup.")
+            .padding(.bottom, 12)
+
+            Text(
+                "Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates. Everyone wins except the middleman."
             )
             .font(.system(size: 16, weight: .regular))
             .foregroundStyle(BrandTheme.textSecondary)

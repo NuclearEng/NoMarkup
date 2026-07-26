@@ -40,11 +40,15 @@ body {
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
 
-  /* NoMarkup brand */
+  /* NoMarkup brand — SSOT: qa/showcase/index.html + docs/brand/showcase-ssot.md */
   --brand-gold: #c9a84c;
   --brand-gold-dim: #a08839;
-  --brand-gold-bright: #e0c060;
+  --brand-gold-bright: #e4c566;
   --brand-gold-glow: rgba(201, 168, 76, 0.4);
+  --brand-teal: #4ecdc4;
+  --brand-teal-dim: #2a9d8f;
+  --brand-green: #22c55e;
+  --brand-green-dim: #16a34a;
 
   /* NoMarkup trust tier colors */
   --trust-low: 0 84% 60%;
@@ -113,30 +117,30 @@ body {
   /* Tell the browser this surface is dark so native UI (scrollbars, form
      controls, spinners) renders its dark-aware variant — a visible light
      thumb instead of a near-black one that vanishes on --background
-     (#070b14). Root-cause fix for low-contrast native scrollbars on the
+     (#07080b). Root-cause fix for low-contrast native scrollbars on the
      horizontal rails (e.g. "You may also like"). WCAG 2.2 SC 1.4.11. */
   color-scheme: dark;
 
-  /* Vivid dark terminal palette — matches demo/auction */
-  --background: #070b14;
-  --foreground: oklch(0.95 0 0);
-  --card: #0c0f18;
-  --card-foreground: oklch(0.95 0 0);
-  --popover: #0c0f18;
-  --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: #141826;
-  --secondary-foreground: oklch(0.95 0 0);
-  --muted: #141826;
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: #141826;
-  --accent-foreground: oklch(0.95 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  /* Showcase terminal palette — qa/showcase/index.html (docs/brand/showcase-ssot.md) */
+  --background: #07080b;
+  --foreground: #e8ecf1;
+  --card: #14161e;
+  --card-foreground: #e8ecf1;
+  --popover: #14161e;
+  --popover-foreground: #e8ecf1;
+  --primary: #e8ecf1;
+  --primary-foreground: #07080b;
+  --secondary: #0e1017;
+  --secondary-foreground: #e8ecf1;
+  --muted: #0e1017;
+  --muted-foreground: #8b949e;
+  --accent: #1a1d28;
+  --accent-foreground: #e8ecf1;
+  --destructive: #ef4444;
   --destructive-foreground: 0 0% 98%;
-  --border: oklch(1 0 0 / 8%);
+  --border: oklch(1 0 0 / 6%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.556 0 0);
+  --ring: #c9a84c;
 
   /* Apple System Colors — Dark */
   --apple-blue: #0a84ff;
@@ -153,10 +157,15 @@ body {
   --apple-gray5: #2c2c2e;
   --apple-gray6: #1c1c1e;
 
-  --brand-gold: #d4af57;
-  --brand-gold-dim: #b89a45;
-  --brand-gold-bright: #e8c76e;
-  --brand-gold-glow: rgba(212, 175, 87, 0.4);
+  /* Brand gold — same scale as light / showcase (no dark-mode gold shift) */
+  --brand-gold: #c9a84c;
+  --brand-gold-dim: #a08839;
+  --brand-gold-bright: #e4c566;
+  --brand-gold-glow: rgba(201, 168, 76, 0.4);
+  --brand-teal: #4ecdc4;
+  --brand-teal-dim: #2a9d8f;
+  --brand-green: #22c55e;
+  --brand-green-dim: #16a34a;
 
   --trust-low: 0 63% 45%;
   --trust-medium: 38 80% 45%;
@@ -184,14 +193,14 @@ body {
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #0a0e19;
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: #141826;
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #0e1017;
+  --sidebar-foreground: #e8ecf1;
+  --sidebar-primary: #c9a84c;
+  --sidebar-primary-foreground: #07080b;
+  --sidebar-accent: #1a1d28;
+  --sidebar-accent-foreground: #e8ecf1;
+  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-ring: #c9a84c;
 }
 
 body {
@@ -207,7 +216,7 @@ body {
 
 /* Visible scrollbar for horizontal rails on dark surfaces.
    The native scrollbar thumb (the "slider" users drag) was rendering
-   near-black against --background (#070b14) and was effectively
+   near-black against --background (#07080b) and was effectively
    invisible. color-scheme: dark (above) handles most browsers; this
    makes the thumb an explicit, design-token muted gray so it always
    clears WCAG 2.2 SC 1.4.11 (>=3:1 non-text contrast) in WebKit too.
@@ -287,11 +296,23 @@ body {
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Brand gold — utilities: bg-brand-gold, text-brand-gold, etc. */
+  /* Brand gold / teal / green — utilities: bg-brand-gold, text-brand-teal, … */
   --color-brand-gold: var(--brand-gold);
   --color-brand-gold-dim: var(--brand-gold-dim);
   --color-brand-gold-bright: var(--brand-gold-bright);
   --color-brand-gold-glow: var(--brand-gold-glow);
+  --color-brand-teal: var(--brand-teal);
+  --color-brand-teal-dim: var(--brand-teal-dim);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-dim: var(--brand-green-dim);
+
+  /* Showcase type stack (next/font variables on <html>) */
+  --font-sans: var(--font-outfit), 'Outfit', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-syne), 'Syne', ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-instrument), 'Instrument Serif', Georgia, serif;
+  --font-mono: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, monospace;
+  /* Legacy alias used by Logo / Header wordmark */
+  --font-brand: var(--font-syne), 'Syne', ui-sans-serif, system-ui, sans-serif;
 
   /* Trust tiers — bg-trust-high, text-trust-low, … */
   --color-trust-low: hsl(var(--trust-low));
@@ -1194,7 +1215,7 @@ body {
 
 /* Hero-to-stats gradient bridge */
 .hero-stats-bridge {
-  background: linear-gradient(to bottom, #070b14 0%, var(--background) 100%);
+  background: linear-gradient(to bottom, #07080b 0%, var(--background) 100%);
 }
 
 /* Auction card outer glow halo */
@@ -1957,7 +1978,7 @@ body {
     radial-gradient(ellipse 80% 50% at 20% 20%, rgba(201, 168, 76, 0.03) 0%, transparent 60%),
     radial-gradient(ellipse 60% 40% at 80% 60%, rgba(139, 92, 246, 0.03) 0%, transparent 60%),
     radial-gradient(ellipse 50% 50% at 50% 80%, rgba(16, 185, 129, 0.025) 0%, transparent 50%),
-    #070b14;
+    #07080b;
 }
 
 /* ─── Glass sidebar panel ─── */

@@ -35,7 +35,7 @@ export function Header() {
         {/* Logo links to dashboard when authenticated, landing page otherwise */}
         {isAuthenticated ? (
           <Link href={'/dashboard' as Route} className="inline-flex min-h-[44px] items-center text-foreground no-underline" aria-label="Go to Dashboard">
-            <span className="font-[var(--font-brand),sans-serif] text-xl font-extrabold -tracking-[0.02em]">
+            <span className="font-[var(--font-syne),var(--font-brand),sans-serif] text-xl font-extrabold -tracking-[0.02em]">
               No<span className="gold-text">Markup</span>
             </span>
           </Link>

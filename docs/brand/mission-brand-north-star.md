@@ -49,10 +49,16 @@ UHNW *can* use the platform; the **brand must still make sense for a solo electr
 
 ## Copy voice
 
-- “Providers compete. You save.”  
-- “Fair work. Fair price.”  
+**Canonical (showcase):** *The Market Sets The Price. Not The Markup.*
+
+Supporting lines:
+
+- “Customers post jobs. Providers compete. Fair market rates.”  
+- “Everyone wins except the middleman.”  
 - “No lead-gen markup.”  
 - Not: “Private market for serious value” as the *only* line (too exclusive).
+
+Visual tokens + full SSOT: **`docs/brand/showcase-ssot.md`** (do not invent a second palette).
 
 ---
 

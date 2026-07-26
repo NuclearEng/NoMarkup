@@ -181,7 +181,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
   // ── Live auction: full terminal overlay ────────────────────────────────────
   if (isLiveAuction) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+      <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
         {/* Animated gradient mesh */}
         <GradientMesh />
 
@@ -192,7 +192,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         />
 
         {/* Sticky top bar */}
-        <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+        <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#07080b]/90 backdrop-blur-md">
           <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
             <div className="flex items-center gap-3">
               <Link
@@ -295,7 +295,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
 
         {/* Provider bid form — pinned to bottom for providers who can bid */}
         {canBid ? (
-          <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-[#070b14]/95 backdrop-blur-md">
+          <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-[#07080b]/95 backdrop-blur-md">
             <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
               <BidForm
                 jobId={jobId}
@@ -309,7 +309,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             </div>
           </div>
         ) : !isAuthenticated ? (
-          <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-[#070b14]/95 backdrop-blur-md">
+          <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-[#07080b]/95 backdrop-blur-md">
             <div className="mx-auto flex max-w-[1400px] items-center justify-center gap-3 px-4 py-4 sm:px-6">
               <p className="text-sm text-white/65">Sign in to place a bid on this auction</p>
               <Link href={'/login' as Route}>

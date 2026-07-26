@@ -5,43 +5,46 @@ import UIKit
 
 // MARK: - Brand palette
 //
-// Aligned with web `globals.css` dark terminal tokens and the App Store seal:
-// navy field `#070b14`, card `#0c0f18`, gold `#c9a84c` / bright `#d4af57`.
-// Auction / trust semantics mirror web HSL tokens (`--bid-active`, `--bid-winning`,
-// `--trust-high`, `--trust-medium`, `--trust-elite`) so native chips match the site.
+// SSOT: `qa/showcase/index.html` + `docs/brand/showcase-ssot.md`
+// Web: `web/src/styles/globals.css` (`.dark` terminal shell).
+// navy `#07080b`, card `#14161e`, gold `#c9a84c` / bright `#e4c566`,
+// text `#e8ecf1` / `#8b949e`, green `#22c55e`.
 // Prefer these tokens over system gray list chrome so the native shell matches
-// the luxury brand mark (not a plain iOS settings list).
+// the showcase brand (not a plain iOS settings list).
 
 enum BrandTheme {
     // MARK: Colors — core chrome
 
-    /// App icon / dark terminal background — `#070b14`.
-    static let navy = Color(red: 0x07 / 255, green: 0x0B / 255, blue: 0x14 / 255)
+    /// App / dark terminal background — showcase `--bg-primary` `#07080b`.
+    static let navy = Color(red: 0x07 / 255, green: 0x08 / 255, blue: 0x0B / 255)
 
-    /// Elevated card / grouped list row surface — `#0c0f18`.
-    static let navyElevated = Color(red: 0x0C / 255, green: 0x0F / 255, blue: 0x18 / 255)
+    /// Card / grouped list row surface — showcase `--bg-card` `#14161e`.
+    static let navyElevated = Color(red: 0x14 / 255, green: 0x16 / 255, blue: 0x1E / 255)
 
-    /// Surface one step above `navyElevated` (raised cards, incoming chat) — `#141824`.
-    static let surfaceRaised = Color(red: 0x14 / 255, green: 0x18 / 255, blue: 0x24 / 255)
+    /// Surface one step above card (raised panels) — showcase `--bg-card-hover` `#1a1d28`.
+    static let surfaceRaised = Color(red: 0x1A / 255, green: 0x1D / 255, blue: 0x28 / 255)
 
-    /// Brand gold (light token / primary CTA fill) — `#c9a84c`.
+    /// Brand gold (primary CTA fill) — showcase `--gold` `#c9a84c`.
     /// Prefer `Color("AccentColor")` for interactive tint so the asset catalog stays authoritative.
     static let gold = Color(red: 0xC9 / 255, green: 0xA8 / 255, blue: 0x4C / 255)
 
-    /// Brand gold bright (dark-mode / emphasis) — `#d4af57`.
-    static let goldBright = Color(red: 0xD4 / 255, green: 0xAF / 255, blue: 0x57 / 255)
+    /// Brand gold bright (emphasis / labels) — showcase `--gold-bright` `#e4c566`.
+    static let goldBright = Color(red: 0xE4 / 255, green: 0xC5 / 255, blue: 0x66 / 255)
 
-    /// Primary body text on navy — near-white for Dynamic Type / contrast — `#f2f4f8`.
-    static let textPrimary = Color(red: 0xF2 / 255, green: 0xF4 / 255, blue: 0xF8 / 255)
+    /// Primary body text on navy — showcase `--text-primary` `#e8ecf1`.
+    static let textPrimary = Color(red: 0xE8 / 255, green: 0xEC / 255, blue: 0xF1 / 255)
 
-    /// Secondary / muted copy on navy — `#9aa3b5`.
-    static let textSecondary = Color(red: 0x9A / 255, green: 0xA3 / 255, blue: 0xB5 / 255)
+    /// Secondary / muted copy — showcase `--text-secondary` `#8b949e`.
+    static let textSecondary = Color(red: 0x8B / 255, green: 0x94 / 255, blue: 0x9E / 255)
 
-    /// Success status (healthy API, signed-in) — `#34c759`.
-    static let success = Color(red: 0x34 / 255, green: 0xC7 / 255, blue: 0x59 / 255)
+    /// Success status — showcase `--green` `#22c55e`.
+    static let success = Color(red: 0x22 / 255, green: 0xC5 / 255, blue: 0x5E / 255)
 
-    /// Destructive / error status — `#ff453a`.
-    static let destructive = Color(red: 0xFF / 255, green: 0x45 / 255, blue: 0x3A / 255)
+    /// Destructive / error status — showcase `--red` `#ef4444`.
+    static let destructive = Color(red: 0xEF / 255, green: 0x44 / 255, blue: 0x44 / 255)
+
+    /// Live / data accent — showcase `--teal` `#4ecdc4`.
+    static let teal = Color(red: 0x4E / 255, green: 0xCD / 255, blue: 0xC4 / 255)
 
     // MARK: Colors — auction / marketplace semantics (web parity)
 
@@ -52,9 +55,8 @@ enum BrandTheme {
     /// Alias of `bidLeading` for “live auction / your bid is active” chips.
     static let bidActive = bidLeading
 
-    /// Winning bid / high-trust emerald ≈ web `--bid-winning` / `--trust-high`
-    /// (hsl 142 60% 40%) — `#2fbf6b`.
-    static let bidWinning = Color(red: 0x2F / 255, green: 0xBF / 255, blue: 0x6B / 255)
+    /// Winning bid / high-trust emerald — showcase green `#22c55e`.
+    static let bidWinning = success
 
     /// Savings / positive delta (same emerald as winning for consistency).
     static let savings = bidWinning
@@ -65,7 +67,7 @@ enum BrandTheme {
     /// Subtle blue border for incoming chat (not gold) — derived from `bidActive` at low opacity use sites.
     static let chatIncomingBorder = bidActive.opacity(0.35)
 
-    /// **Label / icon on gold filled CTAs** — navy (`#070b14`), not pure black and not white.
+    /// **Label / icon on gold filled CTAs** — navy (`#07080b`), not pure black and not white.
     /// Gold `#c9a84c` needs dark text for WCAG contrast; muted-gold + black failures are a known miss.
     static let ctaLabelOnGold = navy
 
@@ -95,9 +97,9 @@ enum BrandTheme {
     static var gradientCardFace: LinearGradient {
         LinearGradient(
             colors: [
-                Color(red: 0x12 / 255, green: 0x16 / 255, blue: 0x22 / 255),
+                Color(red: 0x1E / 255, green: 0x21 / 255, blue: 0x30 / 255), // bg-elevated
                 navyElevated,
-                Color(red: 0x0A / 255, green: 0x0D / 255, blue: 0x16 / 255),
+                Color(red: 0x0E / 255, green: 0x10 / 255, blue: 0x17 / 255), // bg-surface
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing

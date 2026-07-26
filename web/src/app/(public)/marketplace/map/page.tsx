@@ -69,7 +69,7 @@ export default function MarketplaceMapPage() {
   }, [listings, bounds]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col bg-[#070b14] lg:h-[calc(100vh-4rem)]">
+    <div className="flex h-[calc(100vh-4rem)] flex-col bg-[#07080b] lg:h-[calc(100vh-4rem)]">
       {/* Header strip */}
       <div className="border-b border-white/5 px-4 py-3 sm:px-6">
         <div className="flex items-center justify-between gap-3">
@@ -130,7 +130,7 @@ export default function MarketplaceMapPage() {
 
         {/* Side panel — desktop */}
         <aside
-          className="hidden w-full max-w-md overflow-y-auto border-l border-white/5 bg-[#070b14] lg:block lg:w-[420px]"
+          className="hidden w-full max-w-md overflow-y-auto border-l border-white/5 bg-[#07080b] lg:block lg:w-[420px]"
           aria-label="Listings in current map view"
         >
           <SidePanelList
@@ -141,7 +141,7 @@ export default function MarketplaceMapPage() {
 
         {/* Mobile swipe-up sheet */}
         <div
-          className={`lg:hidden ${sheetOpen ? 'h-[60vh]' : 'h-[80px]'} relative w-full overflow-hidden border-t border-white/10 bg-[#070b14] transition-[height] duration-200`}
+          className={`lg:hidden ${sheetOpen ? 'h-[60vh]' : 'h-[80px]'} relative w-full overflow-hidden border-t border-white/10 bg-[#07080b] transition-[height] duration-200`}
           aria-hidden={false}
         >
           <button

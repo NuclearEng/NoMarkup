@@ -32,7 +32,7 @@ export function Logo({
   const content = (
     <span
       className={cn(
-        'inline-flex items-center gap-2 font-[var(--font-brand),sans-serif] font-extrabold -tracking-[0.02em]',
+        'inline-flex items-center gap-2 font-[var(--font-syne),var(--font-brand),sans-serif] font-extrabold -tracking-[0.02em]',
         sizeClasses[size],
         className,
       )}

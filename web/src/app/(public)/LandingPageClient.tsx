@@ -215,34 +215,26 @@ export function LandingPageClient() {
         <div className="relative z-[2] mx-auto max-w-7xl px-4 pt-12 pb-16 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8 lg:pt-28 lg:pb-36">
           <div className="grid items-center gap-8 sm:gap-14 lg:grid-cols-2 lg:gap-20">
             <div className="mx-auto max-w-xl text-center lg:mx-0 lg:text-left">
-              <div className="glass-pill animate-fade-in mb-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm text-white/70 sm:mb-8">
-                <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
-                <span>Providers compete. You save.</span>
+              <div className="animate-fade-in mb-4 inline-flex items-center gap-2 sm:mb-8">
+                <span className="font-mono text-[0.7rem] font-medium tracking-[0.2em] text-brand-gold uppercase">
+                  Reverse-Auction Service Marketplace
+                </span>
               </div>
 
-              <h1 className="animate-fade-in-up text-4xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl">
-                Home services at{' '}
-                <span
-                  className="bg-clip-text text-transparent"
-                  style={{
-                    backgroundImage:
-                      'linear-gradient(135deg, #f0d97a, #c9a84c, #a08839, #c9a84c, #f0d97a)',
-                    backgroundSize: '300% 300%',
-                    animation: 'gradient-shift 5s ease infinite',
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  market prices
-                </span>
+              <h1 className="animate-fade-in-up font-display text-4xl leading-[1.1] tracking-tight text-foreground sm:text-6xl lg:text-7xl">
+                The Market Sets
+                <br />
+                The Price.
+                <br />
+                <em className="text-brand-gold-bright">Not The Markup.</em>
               </h1>
 
               <p
-                className="animate-fade-in-up mt-4 text-base leading-relaxed text-white/65 sm:mt-8 sm:text-xl sm:leading-relaxed"
+                className="animate-fade-in-up mt-4 text-base leading-relaxed text-muted-foreground sm:mt-8 sm:text-xl sm:leading-relaxed"
                 style={{ animationDelay: '100ms' }}
               >
-                Post what you need, then watch qualified providers compete for your business. A
-                reverse auction means the price goes{' '}
-                <span className="font-semibold text-white/90">down</span>, not up.
+                Customers post home-service jobs. Qualified providers compete in real-time reverse
+                auctions. Prices drop to fair market rates. Everyone wins except the middleman.
               </p>
 
               <div

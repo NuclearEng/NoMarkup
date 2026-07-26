@@ -179,7 +179,7 @@ export function MarketplaceMap({
                 30,
               ],
               'circle-stroke-width': 2,
-              'circle-stroke-color': '#070b14',
+              'circle-stroke-color': '#07080b',
               'circle-opacity': 0.85,
             },
           });
@@ -193,7 +193,7 @@ export function MarketplaceMap({
               'text-field': ['get', 'point_count_abbreviated'],
               'text-size': 12,
             },
-            paint: { 'text-color': '#070b14' },
+            paint: { 'text-color': '#07080b' },
           });
 
           // Unclustered: small dot. We render the price-chip via custom DOM

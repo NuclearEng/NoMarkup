@@ -3,13 +3,13 @@ import type { Metadata } from 'next';
 import { LandingPageClient } from './LandingPageClient';
 
 export const metadata: Metadata = {
-  title: 'NoMarkup — fair prices, no lead-gen markup',
+  title: 'NoMarkup — The Market Sets The Price',
   description:
-    'Reverse-auction marketplace for home services. Providers compete on price — no lead-gen markup. Plus a local goods marketplace with escrow and verified sellers.',
+    'Reverse-auction service marketplace. Customers post jobs, providers compete on price. Fair market rates — not the markup. Plus local goods with escrow.',
   openGraph: {
-    title: 'NoMarkup — fair prices, no lead-gen markup',
+    title: 'NoMarkup — The Market Sets The Price. Not The Markup.',
     description:
-      'Post a job and let verified providers compete on price. Plus a local goods marketplace with escrow.',
+      'Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates.',
     type: 'website',
   },
 };

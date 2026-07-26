@@ -12,7 +12,7 @@ export default function Icon() {
     (
       <div
         style={{
-          background: '#070b14',
+          background: '#07080b',
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -40,7 +40,7 @@ export default function Icon() {
             width: 22,
             height: 22,
             borderRadius: '9999px',
-            border: '1.5px solid #d4af57',
+            border: '1.5px solid #e4c566',
             display: 'flex',
           }}
         />

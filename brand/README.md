@@ -1,5 +1,19 @@
 # NoMarkup brand assets
 
+## Single source of truth
+
+| Layer | Path |
+|-------|------|
+| **Visual + narrative master** | `qa/showcase/index.html` |
+| **Token tables** | `docs/brand/showcase-ssot.md` |
+| **Mission pillars** | `docs/brand/mission-brand-north-star.md` |
+
+**Tagline:** The Market Sets The Price. Not The Markup.  
+**Wordmark:** `No` + gold **Markup** (Syne).  
+**Shell:** `#07080b` · gold `#c9a84c` / `#e4c566` · type Instrument Serif / Syne / Outfit / JetBrains Mono.
+
+---
+
 ## App icon (master)
 
 | Asset | Path | Spec |
@@ -9,36 +23,24 @@
 | **PWA** | `web/public/icons/icon-{192,512,maskable-512}.png` | generated from master |
 | **Archive** | `brand/app-icon-1024.png` | source of truth copy |
 
-### Design intent
+### Design intent (current)
 
-Champagne-gold **embossed N** inside dual precision rings with a **large brilliant-cut diamond** at 12 o’clock on void navy (`#070b14`). v2 home-screen pop: **full champagne-gold field** with oversized navy **N** + diamond — dark navy tiles vanish next to Instagram/Tips; gold fill competes at a glance. Not a flat monogram sticker.
+**Terminal amber N** on void black / navy (`#07080b`) — Bloomberg-grade monogram, optional down-chevron for reverse-auction “price down.” Not a jewelry diamond as the sole brand story (see mission north star).
 
 Apple applies the home-screen mask; the PNG is full-bleed square.
 
 ### Regeneration
 
-Prefer regenerating from the design session masters under Grok session `images/`, or re-run the pipeline that:
+Prefer regenerating from approved session masters under Grok session `images/`, or re-run the pipeline that:
 
-1. Starts from the approved photoreal master
-2. Forces outer canvas to navy (squircle exterior only)
-3. Exports RGB 1024 with no alpha
+1. Starts from the approved terminal monogram master  
+2. Forces outer canvas to showcase navy `#07080b`  
+3. Exports RGB 1024 with no alpha  
 
-Do **not** reintroduce the old flat “NM rings” Pillow monogram.
+Do **not** reintroduce diamond-only jewelry marks as the product icon without an explicit brand decision.
+
+---
 
 ## Wordmark
 
-In-product: `web/src/components/layout/Logo.tsx` + `BrandMark.tsx` (SVG mark + Syne wordmark, gold gradient on “Markup”).
-
-## v3 — Frontier home-screen icon (current)
-
-**Master:** `brand/app-icon-1024.png` / iOS AppIcon / web PWA
-
-Design rules that won the home-screen fight:
-
-1. **Full gold field** (never dark navy tile) — competes with Tips / Instagram chroma  
-2. **Huge navy N** — thick geometric strokes; silhouette first at ~60pt  
-3. **Large brilliant diamond** at 12 o’clock — white flash + prism fire  
-4. **Dual thin rings** — brand seal without noise  
-5. **RGB 1024, no alpha** — App Store compliant  
-
-Preview at home-screen scale: `brand/app-icon-preview-120.png`
+In-product: `web/src/components/layout/Logo.tsx` + `BrandMark.tsx` (SVG mark + Syne wordmark, gold on “Markup”).

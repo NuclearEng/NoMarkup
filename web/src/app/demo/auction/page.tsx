@@ -245,7 +245,7 @@ export default function AuctionDemoPage() {
     sim.currentLowest > 0 ? Math.round((savingsCents / STARTING_PRICE_CENTS) * 100) : 0;
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
       {/* Animated gradient mesh — same as landing page */}
       <GradientMesh />
 
@@ -256,7 +256,7 @@ export default function AuctionDemoPage() {
       />
 
       {/* ─── Sticky top bar ─── */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#07080b]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link

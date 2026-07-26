@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Syne } from 'next/font/google';
+import { Instrument_Serif, JetBrains_Mono, Outfit, Syne } from 'next/font/google';
 import { headers } from 'next/headers';
 import { preconnect } from 'react-dom';
 import '@/styles/globals.css';
@@ -14,10 +14,33 @@ import { InstallPrompt } from '@/components/pwa/InstallPrompt';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import { Toaster } from 'sonner';
 
+// Showcase type stack — docs/brand/showcase-ssot.md (qa/showcase/index.html)
+const instrument = Instrument_Serif({
+  subsets: ['latin'],
+  weight: '400',
+  style: ['normal', 'italic'],
+  variable: '--font-instrument',
+  display: 'swap',
+});
+
 const syne = Syne({
   subsets: ['latin'],
   weight: ['500', '600', '700', '800'],
-  variable: '--font-brand',
+  variable: '--font-syne',
+  display: 'swap',
+});
+
+const outfit = Outfit({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-outfit',
+  display: 'swap',
+});
+
+const jetbrains = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-jetbrains',
   display: 'swap',
 });
 
@@ -27,9 +50,12 @@ const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: 'NoMarkup', template: '%s | NoMarkup' },
+  title: {
+    default: 'NoMarkup — The Market Sets The Price',
+    template: '%s | NoMarkup',
+  },
   description:
-    'Reverse-auction marketplace for home services. Providers compete on price — no lead-gen markup. Plus a local goods marketplace with escrow and verified sellers.',
+    'Reverse-auction service marketplace. Customers post jobs, providers compete on price. Fair market rates — not the markup. Plus local goods with escrow.',
   applicationName: 'NoMarkup',
   manifest: '/manifest.json',
   keywords: [
@@ -39,20 +65,22 @@ export const metadata: Metadata = {
     'fair price',
     'local marketplace',
     'verified providers',
+    'no markup',
   ],
   alternates: { canonical: '/' },
   openGraph: {
     type: 'website',
     siteName: 'NoMarkup',
-    title: 'NoMarkup — fair prices, no lead-gen markup',
+    title: 'NoMarkup — The Market Sets The Price. Not The Markup.',
     description:
-      'Post a job and let verified providers compete on price. Plus a local goods marketplace with escrow.',
+      'Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates.',
     url: SITE_URL,
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'NoMarkup — fair prices, no lead-gen markup',
-    description: 'Verified providers compete on price. A local marketplace with escrow + trust.',
+    title: 'NoMarkup — The Market Sets The Price',
+    description:
+      'Reverse auctions for home services. Fair market rates — everyone wins except the middleman.',
   },
   appleWebApp: {
     capable: true,
@@ -66,7 +94,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Allow pinch-zoom (a11y). Cover + safe-area for notched iPhones.
   viewportFit: 'cover',
-  themeColor: '#070b14',
+  themeColor: '#07080b',
   // Keep form fields visible when the iOS keyboard opens.
   interactiveWidget: 'resizes-content',
 };
@@ -98,7 +126,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   preconnect('https://images.unsplash.com');
 
   return (
-    <html lang="en" className={`dark ${syne.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark ${instrument.variable} ${syne.variable} ${outfit.variable} ${jetbrains.variable}`}
+      suppressHydrationWarning
+    >
       <body className="bg-background min-h-screen font-sans antialiased">
         <a
           href="#main-content"

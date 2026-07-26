@@ -3,7 +3,7 @@ import { GradientMesh } from '@/components/landing/GradientMesh';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#070b14] px-4 py-8">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#07080b] px-4 py-8">
       {/* Animated gradient mesh background — same as hero */}
       <GradientMesh className="z-0" />
 

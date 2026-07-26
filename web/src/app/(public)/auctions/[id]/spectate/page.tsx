@@ -36,7 +36,7 @@ export default function SpectatorPage() {
 
   if (isLoading) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+      <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
         <GradientMesh />
         <div
           className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
@@ -55,7 +55,7 @@ export default function SpectatorPage() {
 
   if (isError || !job) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+      <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
         <GradientMesh />
         <div
           className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
@@ -80,7 +80,7 @@ export default function SpectatorPage() {
   }
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-[#07080b]">
       {/* Animated gradient mesh */}
       <GradientMesh />
 
@@ -91,7 +91,7 @@ export default function SpectatorPage() {
       />
 
       {/* Sticky top bar */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#07080b]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link

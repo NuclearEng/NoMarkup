@@ -3,6 +3,15 @@
 > Offloaded from `CLAUDE.md` §4 to keep the always-loaded rules file lean. CLAUDE.md keeps the
 > WCAG AA mandate and the token/component rule bullets; full detail lives here.
 
+## Brand SSOT
+
+**Visual + narrative source of truth:** `qa/showcase/index.html`  
+**Token tables + change control:** `docs/brand/showcase-ssot.md`
+
+Type stack: **Instrument Serif** (display) · **Syne** (heading / wordmark) · **Outfit** (body) · **JetBrains Mono** (data / labels).  
+Primary tagline: *The Market Sets The Price. Not The Markup.*  
+Wordmark: `No` + gold **`Markup`**.
+
 ## Design Philosophy
 Follow platform-native quality. The web app must feel as polished as a native iOS/Android app.
 
@@ -13,7 +22,7 @@ Follow platform-native quality. The web app must feel as polished as a native iO
 - **Direct manipulation**: Manipulate content directly rather than through abstract controls.
 - **Feedback**: Acknowledge every action. Highlight results. Indicate progress.
 - **Consistency**: Use familiar patterns. Same action = same result everywhere.
-- **Typography**: System font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`). Only 3-4 font sizes per page.
+- **Typography**: Product uses the showcase stack (Instrument Serif / Syne / Outfit / JetBrains Mono) loaded via `next/font` in `web/src/app/layout.tsx`. Only 3-4 font sizes per page.
 - **Touch targets**: Minimum 44x44px for all interactive elements (Apple's 44pt minimum).
 
 ## Material Design 3 Principles (applied to web)
@@ -73,7 +82,7 @@ HSL channel vars (`--trust-low: 0 84% 60%`) are wrapped as `hsl(var(--trust-*))`
 - Shadows: `--elevation-1`…`5` → `shadow-elevation-1`…`5`
 - Enter: `--duration-enter: 250ms` + `--ease-enter` → `duration-enter` / `ease-enter`
 - Exit: `--duration-exit: 200ms` + `--ease-exit` → `duration-exit` / `ease-exit`
-- Dark terminal palette background remains `#070b14` (`.dark`)
+- Dark terminal palette follows **showcase SSOT** (`docs/brand/showcase-ssot.md`): background `#07080b`, cards `#14161e`, gold `#c9a84c` / bright `#e4c566` (`.dark` in `globals.css`)
 
 ### Type scale (strict — xs…4xl only)
 ```typescript

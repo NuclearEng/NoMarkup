@@ -77,8 +77,8 @@ Single-size universal asset (Xcode 14+ single-size catalog):
 
 | Token | Light | Dark | iOS use |
 |-------|-------|------|---------|
-| Brand gold (`--brand-gold`) | `#c9a84c` | `#d4af57` | `AccentColor` → `.borderedProminent` CTAs (Buy now, Place bid, Sign in, Pay), tab/link tint |
-| Navy field (icon) | `#070b14`–deep navy | — | App icon background only (not a separate colorset) |
+| Brand gold (showcase `--gold`) | `#c9a84c` | `#c9a84c` (same; bright label `#e4c566` via `BrandTheme.goldBright`) | `AccentColor` → CTAs / tab tint |
+| Navy field (showcase `--bg-primary`) | `#07080b` | — | App chrome + icon field (`BrandTheme.navy`) |
 
 Primary money and auth CTAs use `.buttonStyle(.borderedProminent)` + `Color("AccentColor")` / app-level `.tint` — do not invent ad-hoc hex colors in SwiftUI.
 

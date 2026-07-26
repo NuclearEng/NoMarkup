@@ -23,7 +23,7 @@ export interface Column<T> {
  * Opaque backgrounds for pinned cells. They MUST be fully opaque — a
  * semi-transparent sticky cell lets the horizontally-scrolled content bleed
  * through. These values are the effective (flattened) card colors:
- *   - card glass: rgba(13,17,32,0.92) over --background #070b14 ≈ #0d111f
+ *   - card glass: rgba(13,17,32,0.92) over --background #07080b ≈ #0d111f
  *   - header row: bg-white/[0.03] layered over that ≈ #141826
  */
 const STICKY_BODY_BG = 'bg-[#0d111f]';

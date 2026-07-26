@@ -181,12 +181,12 @@ export function PricingPageContent() {
       : 0;
 
   return (
-    <div className="min-h-screen bg-[#070b14]">
+    <div className="min-h-screen bg-[#07080b]">
 
       {/* ============================================================ */}
       {/* HERO SECTION                                                  */}
       {/* ============================================================ */}
-      <section className="relative isolate overflow-hidden bg-[#070b14] pb-10 pt-14 sm:pb-16 sm:pt-20">
+      <section className="relative isolate overflow-hidden bg-[#07080b] pb-10 pt-14 sm:pb-16 sm:pt-20">
         {/* Ambient gradient background */}
         <div
           className="pointer-events-none absolute inset-0 z-0"
