@@ -39,6 +39,7 @@ Status: `todo` · `in_progress` · `done` · `deferred` · `accepted_risk`
 | mTLS mesh | — | Packaging | **deferred** | Residual RISK (SEC-05 demoted claim) |
 | DEPLOY_PROVISIONED | — | Packaging | **deferred** | Checklist only |
 | Mobile web iPhone/iPad | P0 | UX | **done** | `ios-mobile-web-readiness.md`; nav/safe-area/dialog/TOC |
+| Apple docs review | P1 | Process | **done** (Stage A) | Ph 0–4 logs + inventory + matrix; `launch-board.md` |
 
 ## Verification (2026-07-26)
 

@@ -77,3 +77,9 @@ npm-debug.log*
 .gstack/
 .vite/
 .claude/scheduled_tasks.lock
+
+# iOS (native client)
+ios/build/
+ios/**/xcuserdata/
+**/DerivedData/
+*.xcuserstate

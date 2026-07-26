@@ -3,7 +3,8 @@
 **Status:** DEFERRED packaging — design only. **Do not stub StoreKit.**  
 **Related ASR:** ASR-3.1.1.* (IAP), ASR-3.1.3.e (marketplace), ASR-3.2.1.viii
 (licenses), ASR-5.1.1.ix (regulated).  
-**Date:** 2026-07-26
+**Last updated:** 2026-07-26  
+**Phase reviews:** `review-logs/phase-4a.md` (Rail A), `review-logs/phase-4b.md` (Rail B)
 
 ---
 
@@ -101,11 +102,67 @@ iOS packaging is a **separate** configuration, not a silent change to web defaul
 
 ---
 
+## Multiplatform digital entitlement decision
+
+**Guideline:** App Review **3.1.3(b)** (multiplatform services).  
+**Full options analysis:** `docs/compliance/review-logs/phase-4b.md` §3.
+
+| Option | Summary |
+|--------|---------|
+| **A — recommended** | Honor active **web Stripe** Pro/Business entitlements on iOS **and** offer the same digital tiers as **StoreKit IAP** for in-app purchase |
+| B — not recommended | Ignore web subscription on iOS; force StoreKit re-subscribe for the same features |
+
+**Chosen: Option A.**
+
+Rationale (short):
+
+1. Matches multiplatform rule: users may access web-acquired subscriptions/features **if** the same items are also available as IAP in the app.
+2. Avoids double payment for the same digital unlocks when a provider already pays on web.
+3. Keeps purchase-path compliance: **inside the iOS binary**, digital tier sales use StoreKit only — never Stripe Checkout for analytics / featured / limits.
+4. Entitlement service (future): grant features if **either** verified Stripe subscription **or** verified StoreKit transaction maps to the tier slug.
+
+**Copy / external purchase:** No global in-app “buy cheaper on the website” CTA for digital tiers. US storefront and External Purchase Link entitlements (3.1.1(a)) are narrow exceptions — default is no external digital purchase steering. See Phase 4B §4.
+
+**Do not stub StoreKit.** No fake product IDs, no CI that claims IAP works without App Store products + server verification.
+
+---
+
+## Apple documentation citations
+
+| Topic | URL | How NoMarkup uses it |
+|-------|-----|----------------------|
+| App Review Guidelines — Payments (§3.1) | https://developer.apple.com/app-store/review/guidelines/#payments | Source of 3.1.1, 3.1.1(a), 3.1.2, 3.1.3(b), 3.1.3(e) |
+| StoreKit | https://developer.apple.com/documentation/storekit | Rail B client APIs (products, purchase, restore, manage subscriptions) |
+| In-App Purchase (StoreKit) | https://developer.apple.com/documentation/storekit/in-app_purchase | IAP purchase / subscription flows |
+| Auto-renewable subscriptions (App Store) | https://developer.apple.com/app-store/subscriptions/ | Groups, offers, retention, disclosures |
+| External Purchase | https://developer.apple.com/documentation/storekit/external_purchase | Entitlements / storefront-limited external digital purchase links — **not** default UX |
+| PassKit (Apple Pay and Wallet) | https://developer.apple.com/documentation/passkit | Apple Pay wallet path for **Rail A** only |
+| App Store Server API | https://developer.apple.com/documentation/appstoreserverapi/ | Server-side subscription status / history |
+| App Store Server Notifications | https://developer.apple.com/documentation/appstoreservernotifications/ | Real-time entitlement lifecycle (ASN v2) |
+| Apple Pay marketing | https://developer.apple.com/apple-pay/marketing/ | Button/mark usage when Apple Pay ships |
+| Schedule 2 (subscription info) | https://developer.apple.com/support/terms/apple-developer-program-license-agreement/#S2 | Required pre-subscribe disclosures (via 3.1.2(c)) |
+
+Guideline anchors used in this design:
+
+- **3.1.1** — Digital feature unlocks → IAP inside the app.  
+- **3.1.1(a)** — External purchase links / storefront caveats (no global cheaper-on-web CTA).  
+- **3.1.2** / **3.1.2(a–c)** — Auto-renewable subscriptions, ongoing value, upgrade/downgrade, clear information.  
+- **3.1.3(b)** — Multiplatform: honor other-platform purchases **if** also sold as IAP → **Option A**.  
+- **3.1.3(e)** — Physical goods & offline services → non-IAP (Stripe / Apple Pay).
+
+---
+
 ## Acceptance when this is un-deferred
 
-1. ASC IAP products + server receipt verification for every digital tier.
+1. ASC IAP products + server JWS / ASN verification for every digital tier
+   (no stub products).
 2. Feature matrix test: iOS build cannot purchase digital tier via Stripe
    in-app; web still can.
-3. Rail A E2E on device (job escrow or goods order) still Stripe.
-4. Regulated flags off **or** counsel-approved license evidence attached to
+3. Multiplatform **Option A**: active web Stripe tier grants same digital
+   features on iOS; StoreKit available for users who buy on iOS.
+4. Rail A E2E on device (job escrow or goods order) still Stripe (+ Apple Pay
+   when domain association is production).
+5. Regulated flags off **or** counsel-approved license evidence attached to
    review notes.
+6. Paywall meets Schedule 2 / 3.1.2(c) disclosure requirements; Restore +
+   Manage Subscriptions present.

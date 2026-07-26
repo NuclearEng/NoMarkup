@@ -482,6 +482,29 @@ func appleJWKS(ctx context.Context) (keyfunc.Keyfunc, error) {
 	return appleJWKSInstance, appleJWKSErr
 }
 
+// appleAudienceClientIDs returns allowed id_token `aud` values.
+// Web SIWA uses APPLE_CLIENT_ID (Services ID). Native SIWA uses the app bundle
+// id via APPLE_NATIVE_CLIENT_ID (or APPLE_CLIENT_ID when they share one).
+func appleAudienceClientIDs() []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, raw := range []string{
+		os.Getenv("APPLE_CLIENT_ID"),
+		os.Getenv("APPLE_NATIVE_CLIENT_ID"),
+	} {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
 // verifyAppleIDToken validates the signature, issuer, audience, and expiry of
 // an Apple ID token. It fetches Apple's JWKS (cached + auto-refreshed) and
 // validates `kid` + RS256 signature. On any validation failure it returns an
@@ -491,8 +514,8 @@ func appleJWKS(ctx context.Context) (keyfunc.Keyfunc, error) {
 // If expectedNonce is non-empty, the nonce claim on the token must match
 // (binds the token to the original authorization request). Pass "" to skip.
 func verifyAppleIDToken(ctx context.Context, rawToken, expectedNonce string) (*appleIDTokenClaims, error) {
-	clientID := strings.TrimSpace(os.Getenv("APPLE_CLIENT_ID"))
-	if clientID == "" {
+	audiences := appleAudienceClientIDs()
+	if len(audiences) == 0 {
 		return nil, errors.New("APPLE_CLIENT_ID not configured")
 	}
 
@@ -501,30 +524,129 @@ func verifyAppleIDToken(ctx context.Context, rawToken, expectedNonce string) (*a
 		return nil, err
 	}
 
-	claims := &appleIDTokenClaims{}
-	token, err := jwt.ParseWithClaims(
-		rawToken,
-		claims,
-		jwks.Keyfunc,
-		jwt.WithIssuer(appleIDTokenIssuer),
-		jwt.WithAudience(clientID),
-		jwt.WithValidMethods([]string{"RS256"}),
-	)
+	var lastErr error
+	for _, clientID := range audiences {
+		claims := &appleIDTokenClaims{}
+		token, err := jwt.ParseWithClaims(
+			rawToken,
+			claims,
+			jwks.Keyfunc,
+			jwt.WithIssuer(appleIDTokenIssuer),
+			jwt.WithAudience(clientID),
+			jwt.WithValidMethods([]string{"RS256"}),
+		)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if !token.Valid {
+			lastErr = errors.New("apple id_token invalid")
+			continue
+		}
+		if claims.Subject == "" {
+			return nil, errors.New("apple id_token missing sub claim")
+		}
+		if expectedNonce != "" && claims.Nonce != expectedNonce {
+			return nil, errors.New("apple id_token nonce mismatch")
+		}
+		// Email can be missing on subsequent sign-ins (Apple only sends it the
+		// first time). The caller falls back gracefully when empty.
+		return claims, nil
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("verify apple id_token: %w", lastErr)
+	}
+	return nil, errors.New("apple id_token audience mismatch")
+}
+
+// nativeAppleSignInRequest is the body for POST /api/v1/auth/apple/native
+// (AuthenticationServices identityToken exchange).
+type nativeAppleSignInRequest struct {
+	IdentityToken string `json:"identity_token"`
+	// FullName is optional — Apple only provides it on first authorization.
+	FullName string `json:"full_name"`
+	// Nonce is optional; when set it must match the id_token nonce claim.
+	Nonce string `json:"nonce"`
+}
+
+// NativeAppleSignIn exchanges a Sign in with Apple identity token from a
+// native iOS client for the standard access/refresh token pair (JSON, not
+// cookies/redirect). Used by Stage B1 AuthenticationServices.
+func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request) {
+	var req nativeAppleSignInRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	idToken := strings.TrimSpace(req.IdentityToken)
+	if idToken == "" {
+		writeError(w, http.StatusBadRequest, "identity_token is required")
+		return
+	}
+
+	claims, err := verifyAppleIDToken(r.Context(), idToken, strings.TrimSpace(req.Nonce))
 	if err != nil {
-		return nil, fmt.Errorf("verify apple id_token: %w", err)
+		slog.Warn("native apple sign-in: id_token verification failed",
+			"error", err,
+			"code", "oauth_invalid_signature",
+		)
+		writeError(w, http.StatusUnauthorized, "invalid apple identity token")
+		return
 	}
-	if !token.Valid {
-		return nil, errors.New("apple id_token invalid")
+
+	name := strings.TrimSpace(req.FullName)
+	if name == "" {
+		name = claims.Email
+		for i := 0; i < len(name); i++ {
+			if name[i] == '@' {
+				name = name[:i]
+				break
+			}
+		}
 	}
-	if claims.Subject == "" {
-		return nil, errors.New("apple id_token missing sub claim")
+
+	result, err := h.userClient.FindOrCreateByOAuth(r.Context(), &userv1.FindOrCreateByOAuthRequest{
+		Provider:   "apple",
+		ProviderId: claims.Subject,
+		Email:      claims.Email,
+		Name:       name,
+		AvatarUrl:  "",
+	})
+	if err != nil {
+		slog.Error("native apple sign-in: find or create user failed", "error", err)
+		writeGRPCError(w, err)
+		return
 	}
-	if expectedNonce != "" && claims.Nonce != expectedNonce {
-		return nil, errors.New("apple id_token nonce mismatch")
+
+	// Mobile clients need the refresh token in the JSON body (no cookie jar
+	// reliance). Still set cookies for any hybrid webview callers.
+	h.completeOAuthLoginJSON(w, r, result)
+}
+
+// completeOAuthLoginJSON returns the token pair as JSON (native clients).
+func (h *OAuthHandler) completeOAuthLoginJSON(w http.ResponseWriter, r *http.Request, result *userv1.FindOrCreateByOAuthResponse) {
+	refreshMaxAge := 7 * 24 * 60 * 60
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    result.GetRefreshToken(),
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   refreshMaxAge,
+	})
+
+	expiresAt := ""
+	if result.GetAccessTokenExpiresAt() != nil {
+		expiresAt = result.GetAccessTokenExpiresAt().AsTime().UTC().Format(time.RFC3339)
 	}
-	// Email can be missing on subsequent sign-ins (Apple only sends it the
-	// first time). The caller falls back gracefully when empty.
-	return claims, nil
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"access_token":            result.GetAccessToken(),
+		"refresh_token":           result.GetRefreshToken(),
+		"access_token_expires_at": expiresAt,
+		"is_new_user":             result.GetIsNewUser(),
+		"user_id":                 result.GetUserId(),
+	})
 }
 
 // --- Google ID token verification ---

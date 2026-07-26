@@ -167,6 +167,8 @@ func New(
 		r.Get("/callback/google", oauthHandler.GoogleOAuthCallback)
 		r.Get("/oauth/apple", oauthHandler.InitAppleOAuth)
 		r.Post("/callback/apple", oauthHandler.AppleOAuthCallback)
+		// Native SIWA (AuthenticationServices identityToken → JWT pair).
+		r.Post("/apple/native", oauthHandler.NativeAppleSignIn)
 		r.Get("/oauth/facebook", oauthHandler.InitFacebookOAuth)
 		r.Get("/callback/facebook", oauthHandler.FacebookOAuthCallback)
 
