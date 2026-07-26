@@ -108,10 +108,18 @@ func TestIdempotency_DELETE_passes_without_key(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestIdempotency_POST_with_key_proceeds_no_cache(t *testing.T) {
+func TestIdempotency_NoStore_RefusesMoneyMutation(t *testing.T) {
 	t.Parallel()
 
-	// nil cache — key accepted, handler runs, no caching.
+	// This test previously asserted the OPPOSITE: with a nil cache the handler
+	// ran anyway and the response was simply not cached. That is fail-open on
+	// a money path — the caller is required to send an Idempotency-Key, is
+	// therefore entitled to assume the call is safe to retry, and the
+	// guarantee is silently absent. A retried payment then charges twice, and
+	// the customer discovers it rather than we do.
+	//
+	// 503 with Retry-After is the right answer: a retry is safe, a duplicate
+	// charge is not.
 	mw := RequireIdempotencyKey(nil)
 	handler := mw(jsonHandler(http.StatusCreated, `{"id":"pay_1"}`))
 
@@ -121,9 +129,24 @@ func TestIdempotency_POST_with_key_proceeds_no_cache(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusCreated, rec.Code)
-	assert.Contains(t, rec.Body.String(), "pay_1")
-	assert.Empty(t, rec.Header().Get("X-Idempotency-Replayed"))
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "pay_1", "the handler must not have run")
+	assert.NotEmpty(t, rec.Header().Get("Retry-After"), "client needs to know it may retry")
+}
+
+// Safe methods and unguarded routes must be unaffected — the refusal is
+// deliberately narrow to routes that already demand an Idempotency-Key.
+func TestIdempotency_NoStore_LeavesSafeMethodsAlone(t *testing.T) {
+	t.Parallel()
+
+	mw := RequireIdempotencyKey(nil)
+	handler := mw(jsonHandler(http.StatusOK, `{"ok":true}`))
+
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(method, "/api/v1/payments", nil))
+		assert.Equal(t, http.StatusOK, rec.Code, "%s must pass through", method)
+	}
 }
 
 func TestIdempotency_cached_response_replayed(t *testing.T) {

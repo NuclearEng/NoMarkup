@@ -7,8 +7,31 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 )
+
+// idempotencyStoreUnavailable counts money mutations refused because the
+// idempotency store could not be reached. This should be flat at zero; any
+// non-zero rate means customers are being told to retry payments, which is a
+// page-worthy condition rather than a log line.
+var idempotencyStoreUnavailable = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "idempotency_store_unavailable_total",
+		Help: "Money mutations refused because the idempotency store was unreachable.",
+	},
+	[]string{"path"},
+)
+
+// writeIdempotencyError emits a JSON error with the shape the rest of the API
+// uses, so a client parsing errors does not need a special case here.
+func writeIdempotencyError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_, _ = w.Write([]byte(`{"error":"` + msg + `"}`))
+}
 
 // Wiring instructions for router.go:
 //
@@ -29,11 +52,11 @@ import (
 // handlers or add the middleware to the relevant sub-router.
 
 const (
-	idempotencyKeyHeader     = "Idempotency-Key"
-	idempotencyPrefix        = "idempotency"
-	idempotencyTTL           = 24 * time.Hour
-	maxIdempotencyCacheSize  = 1 << 20 // 1MB — skip caching responses larger than this
-	idempotencyPendingTTL    = 30 * time.Second
+	idempotencyKeyHeader    = "Idempotency-Key"
+	idempotencyPrefix       = "idempotency"
+	idempotencyTTL          = 24 * time.Hour
+	maxIdempotencyCacheSize = 1 << 20 // 1MB — skip caching responses larger than this
+	idempotencyPendingTTL   = 30 * time.Second
 )
 
 // cachedResponse is the JSON structure persisted in Redis for replayed responses.
@@ -95,7 +118,23 @@ func RequireIdempotencyKey(cacheClient *cache.Client) func(http.Handler) http.Ha
 			redisKey := cache.Key(idempotencyPrefix, scope, route, key)
 			pendingKey := cache.Key(idempotencyPrefix, "pending", scope, route, key)
 
-			if cacheClient != nil {
+			// No store at all means no deduplication whatsoever — the header
+			// is demanded and then ignored, which is worse than not requiring
+			// it, because the client is told the call is idempotent when it is
+			// not. Same reasoning as the store-error branch below: refuse the
+			// money mutation rather than silently drop the guarantee.
+			if cacheClient == nil {
+				slog.ErrorContext(ctx, "idempotency store not configured; refusing money mutation",
+					"path", r.URL.Path,
+				)
+				idempotencyStoreUnavailable.WithLabelValues(normalizePath(r.URL.Path)).Inc()
+				w.Header().Set("Retry-After", "5")
+				writeIdempotencyError(w, http.StatusServiceUnavailable,
+					"payment safety checks are temporarily unavailable, please retry in a moment")
+				return
+			}
+
+			{
 				// 1. Check for a completed (cached) response first.
 				var resp cachedResponse
 				if cacheClient.GetJSON(ctx, redisKey, &resp) {
@@ -116,11 +155,30 @@ func RequireIdempotencyKey(cacheClient *cache.Client) func(http.Handler) http.Ha
 				// with an identical value. This is safe for idempotent handlers.
 				claimed, err := cacheClient.Redis().SetNX(ctx, pendingKey, "processing", idempotencyPendingTTL).Result()
 				if err != nil {
-					slog.Warn("idempotency: failed to claim pending key, proceeding without lock",
-						"key", key,
+					// FAIL CLOSED. This middleware guards money mutations, and
+					// its entire purpose is to stop a retry becoming a second
+					// charge. If the store backing that guarantee is
+					// unreachable, we cannot make the guarantee — and the old
+					// behaviour ("better to risk a duplicate than to block")
+					// traded a customer being charged twice for a moment of
+					// availability. That is the wrong side of the trade on a
+					// payment path: 503 tells the client to retry, and a retry
+					// is safe; a duplicate charge is not, and is discovered by
+					// the customer rather than by us.
+					//
+					// This is deliberately narrow. It only fires on routes that
+					// already REQUIRE an Idempotency-Key — i.e. money mutations
+					// the caller has been told are idempotent. Reads and
+					// unguarded routes are unaffected.
+					slog.ErrorContext(ctx, "idempotency store unavailable; refusing money mutation rather than risking a duplicate",
+						"path", r.URL.Path,
 						"error", err,
 					)
-					// Fall through — better to risk a duplicate than to block.
+					idempotencyStoreUnavailable.WithLabelValues(normalizePath(r.URL.Path)).Inc()
+					w.Header().Set("Retry-After", "2")
+					writeIdempotencyError(w, http.StatusServiceUnavailable,
+						"payment safety checks are temporarily unavailable, please retry in a moment")
+					return
 				} else if !claimed {
 					// Another request is currently processing this key.
 					// Check once more if the result was cached in the
@@ -191,9 +249,9 @@ func replayCachedResponse(w http.ResponseWriter, resp cachedResponse, key string
 // they can be stored in Redis for future replay.
 type idempotencyRecorder struct {
 	http.ResponseWriter
-	statusCode    int
-	body          *bytes.Buffer
-	wroteHeader   bool
+	statusCode  int
+	body        *bytes.Buffer
+	wroteHeader bool
 }
 
 func (r *idempotencyRecorder) WriteHeader(code int) {
