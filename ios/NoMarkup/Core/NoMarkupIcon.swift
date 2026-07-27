@@ -83,10 +83,10 @@ struct NoMarkupIcon: View {
                         .foregroundStyle(
                             AngularGradient(
                                 colors: [
-                                    .cyan.opacity(0.9),
-                                    .magenta.opacity(0.85),
-                                    .yellow.opacity(0.9),
-                                    .cyan.opacity(0.9),
+                                    Color(red: 0.0, green: 0.95, blue: 1.0).opacity(0.9),
+                                    Color(red: 1.0, green: 0.0, blue: 0.85).opacity(0.85),
+                                    Color(red: 1.0, green: 0.92, blue: 0.2).opacity(0.9),
+                                    Color(red: 0.0, green: 0.95, blue: 1.0).opacity(0.9),
                                 ],
                                 center: .center
                             )
