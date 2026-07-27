@@ -445,6 +445,11 @@ message ProviderProfile {
   TrustScoreSummary trust_score = 22;
   ReviewSummary review_summary = 23;
   google.protobuf.Timestamp member_since = 24;
+  // Owner-only PII (CLAUDE.md §6 / migration 031). Encrypted at rest in
+  // provider_profiles; gateway must strip these from public GET /providers/{id}.
+  // Empty string means "not set". Never expose on unauthenticated surfaces.
+  string ein_tin = 25;
+  string insurance_policy_number = 26;
 }
 
 message MilestoneTemplate {
@@ -504,6 +509,10 @@ message UpdateProviderProfileRequest {
   optional string service_address = 4;
   optional nomarkup.common.v1.Location service_location = 5;
   optional double service_radius_km = 6;
+  // PII-at-rest (migration 031). When set (including empty string to clear),
+  // the user service encrypts before write. Omitted = leave existing value.
+  optional string ein_tin = 7;
+  optional string insurance_policy_number = 8;
 }
 
 message UpdateProviderProfileResponse {

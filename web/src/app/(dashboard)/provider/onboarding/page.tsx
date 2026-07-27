@@ -193,16 +193,18 @@ function BusinessInfoStep({
     },
   });
 
-  // Prefill form when existing profile data arrives
+  // Prefill form when existing profile data arrives. EIN/TIN and policy number
+  // are owner-only PII returned by GET /providers/me (C2). Carrier name /
+  // expiry / coverage are still UI-only until a later contract extension.
   useEffect(() => {
     if (existingProfile) {
       form.reset({
         businessName: existingProfile.business_name ?? '',
         bio: existingProfile.bio ?? '',
         serviceAddress: existingProfile.service_address ?? '',
-        einTin: '',
+        einTin: existingProfile.ein_tin ?? '',
         insuranceProvider: '',
-        insurancePolicyNumber: '',
+        insurancePolicyNumber: existingProfile.insurance_policy_number ?? '',
         insuranceExpiry: '',
         insuranceCoverageDollars: undefined,
       });
@@ -210,11 +212,28 @@ function BusinessInfoStep({
   }, [existingProfile, form]);
 
   async function onSubmit(values: BusinessInfoFormValues) {
-    await updateProvider.mutateAsync({
+    // Only send PII fields when the user entered a value so an empty form
+    // field does not wipe a previously stored EIN/policy on re-submit.
+    const payload: {
+      business_name: string;
+      bio?: string;
+      service_address?: string;
+      ein_tin?: string;
+      insurance_policy_number?: string;
+    } = {
       business_name: values.businessName,
       bio: values.bio || undefined,
       service_address: values.serviceAddress || undefined,
-    });
+    };
+    const ein = values.einTin?.trim();
+    if (ein) {
+      payload.ein_tin = ein;
+    }
+    const policy = values.insurancePolicyNumber?.trim();
+    if (policy) {
+      payload.insurance_policy_number = policy;
+    }
+    await updateProvider.mutateAsync(payload);
     onNext();
   }
 

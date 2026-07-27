@@ -225,6 +225,16 @@ export interface ProviderProfile {
    * public provider profiles.
    */
   schedule?: ProviderAvailabilityWindow[];
+  /**
+   * Owner GET/PATCH only. Encrypted at rest (secretbox). Never on public
+   * `GET /providers/{id}`. Empty string when not set.
+   */
+  ein_tin?: string | null;
+  /**
+   * Owner GET/PATCH only. Encrypted at rest (secretbox). Never on public
+   * profiles. Empty string when not set.
+   */
+  insurance_policy_number?: string | null;
   jobs_completed: number;
   avg_response_time_minutes: number | null;
   on_time_rate: number | null;
@@ -277,6 +287,10 @@ export interface UpdateProviderInput {
   service_address?: string;
   service_location?: { latitude: number; longitude: number };
   service_radius_km?: number;
+  /** EIN/TIN — PII at rest; omit to leave unchanged; empty string clears. */
+  ein_tin?: string;
+  /** Insurance policy number — PII at rest; omit to leave unchanged. */
+  insurance_policy_number?: string;
 }
 
 export interface GlobalTermsInput {

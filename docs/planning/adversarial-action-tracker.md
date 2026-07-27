@@ -20,18 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-27 MON-15 close by parsing the tables below** (140 code/ops rows).
+**Recounted 2026-07-27 C2 + tracker honesty (MON-20/21/28, SEC-12/14/15, OPS-12)** (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
-| P0 — Money integrity | 3 | 0 | 24 | 1 | 0 | 28 |
-| P0 — Security fail-closed | 3 | 0 | 11 | 3 | 1 | 18 |
-| P0 — Production deploy / ops | 16 | 2 | 10 | 0 | 0 | 28 |
+| P0 — Money integrity | 0 | 0 | 27 | 1 | 0 | 28 |
+| P0 — Security fail-closed | 0 | 0 | 14 | 3 | 1 | 18 |
+| P0 — Production deploy / ops | 15 | 2 | 11 | 0 | 0 | 28 |
 | P1 — North Star performance | 11 | 0 | 0 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
 | P1 — Frontend / a11y / honesty | 9 | 0 | 2 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
-| **All** | **63** | **2** | **49** | **25** | **1** | **140** |
+| **All** | **56** | **2** | **56** | **25** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -63,15 +63,15 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | MON-17 | Goods dispute resolve does not stamp `stripe_transfer_id` | MAJOR | payment | `listing_charge.go` dispute path | Use same stamp path as release; single idempotency key family | Dispute transfer once; no re-pay race | **Done** 2026-07-27 — `listing_charge.go` ResolveListingDispute uses `listing-release:<orderID>` + `MarkListingOrderTransferred`; test asserts stamp | |
 | MON-18 | Goods auto-release vs dispute file race (no FOR UPDATE) | MAJOR | payment/job | AutoRelease + FileListingDispute | Lock order row before act | Concurrent release+dispute → safe end state | **Done** 2026-07-27 — `ClaimListingOrderForDispute` freezes under FOR UPDATE; release stamps durable `pending:<orderID>` claim before Stripe; tests `dispute_fails_closed_after_release_claim` / `release_claim_fails_after_dispute_freeze` | |
 | MON-19 | Services award missing `job.status == active` under lock | MAJOR | bidding | `engines/bidding/src/engine.rs` | Check job active under FOR UPDATE | Cannot award non-active job | **Done** 2026-07-27 — `engines/bidding/src/engine.rs` award_bid FOR UPDATE + `job.status != "active"` → AuctionNotActive | |
-| MON-20 | Goods fee 5% vs README 8%+2%; fee not always persisted on charge | MAJOR | product/payment | gateway fee bps; listing_charge | Align fee policy; persist fee_cents on charge | Charged fee = released fee | Open | |
-| MON-21 | Client can under-pay contract (amount ≤ contract, no cumulative check) | MAJOR | payment | CreatePayment | Enforce milestone/total paid ≤ contract | Underpay path rejected or tracked | Open | |
+| MON-20 | Goods fee 5% vs README 8%+2%; fee not always persisted on charge | MAJOR | product/payment | gateway fee bps; listing_charge | Align fee policy; persist fee_cents on charge | Charged fee = released fee | **Done** 2026-07-27 — `listingPlatformFeeBpsDefault` 1000 bps (8%+2%); charge path `resolveMarketplaceFeeCents` + persist fee_cents (`listing_charge.go`); tests `TestListingPlatformFeeCents`, listing_lifecycle fee assert | |
+| MON-21 | Client can under-pay contract (amount ≤ contract, no cumulative check) | MAJOR | payment | CreatePayment | Enforce milestone/total paid ≤ contract | Underpay path rejected or tracked | **Done** 2026-07-27 — `service.go` `paymentCountsTowardContractCap` + cumulative reject; soft-replay exception; `security_fixes_test.go` MON-21 cases | |
 | MON-22 | Listing bids / BIN / offers lack **required** Idempotency-Key | MAJOR | gateway | router + listings_bid + offers | Require middleware on money closeouts (or document optional) | Missing key → 400 if claim retained | **Done** 2026-07-25 — `gateway/internal/router/router.go:740-797` RequireIdempotencyKey on bid/BIN/offers | |
 | MON-23 | Contract tip records cents without Stripe rail | MAJOR | gateway | `quote_templates.go` | Wire PI or remove tip ledger until paid | Tip never creates unfunded liability | **Done** | ChargeContractTip off-session + transfer + CAS tip_amount; RequireIdempotencyKey |
 | MON-24 | Fee math via float64 truncation | MINOR | payment | advance/platform fee paths | Integer basis-points only | Property: fee_cents exact | **Done** 2026-07-27 — advance APR/service fee + instant payout use integer half-up/`feeFromBPS` (`advance.go`, `domain/advance_pricing.go`, `instant_payout.go`; gateway mirrors) | |
 | MON-25 | CI: concurrent money races not in pipeline | BLOCKER | ci | `tests/integration/*` excluded | Run double-spend / release races in CI | Required check green | **Done** 2026-07-25 — `.github/workflows/ci.yml` `fullstack-security-test` boots the compose stack and runs `tests/integration/` (double-spend + ownership + auth bypass) and the live-stack payment idempotency test; hard `needs:` of `build` | |
 | MON-26 | Sequential-only refund tests insufficient | MAJOR | test | payment security tests | Add concurrent refund/release tests | Tests fail on current code | **Done** 2026-07-27 — `money_concurrency_test.go` Concurrent ReleaseEscrow / CreateRefund full+partial / ProcessPayment | |
 | MON-27 | Working capital fee story: factor 1.06–1.18 vs 3%+APR booking | DOC/P1 | product | README + `RequestAdvance` | One fee model in product + code + Fees table | Docs match booking path | **Demoted** 2026-07-09 (docs: factor=limit, 3%+APR=booking) | |
-| MON-28 | Platform transfer paths that already key well — preserve | — | payment | CreatePlatformTransfer, marketplace keys | Do not regress existing keys on advance/marketplace | Regression suite green | Open | |
+| MON-28 | Platform transfer paths that already key well — preserve | — | payment | CreatePlatformTransfer, marketplace keys | Do not regress existing keys on advance/marketplace | Regression suite green | **Done** 2026-07-27 — `CreatePlatformTransfer` requires non-empty key + dedup tests in `security_fixes_test.go`; marketplace `listing-release:` family preserved | |
 
 ---
 
@@ -90,10 +90,10 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | SEC-09 | Jobs mutations lack gateway `RequireOwnership` | MAJOR | gateway | jobs routes | Apply ownership middleware like contracts | IDOR regression suite | **Done** 2026-07-25 — `router.go:227,244-252` RequireOwnership on job update/delete/publish/close/cancel | |
 | SEC-10 | Chat typing indicator no membership check | MAJOR | chat | `service.go` SendTypingIndicator | Require channel membership | Non-member → PermissionDenied | **Done** 2026-07-25 — `services/chat/internal/service/service.go:219-226` IsChannelMember check | |
 | SEC-11 | CSP `style-src 'unsafe-inline'`; claim says none | MAJOR | web/gateway | `middleware.ts`, `security.go` | Nonce styles or demote CLAUDE claim | Prod CSP matches docs | **Demoted** claim 2026-07-09; style nonce still Open | |
-| SEC-12 | `connect-src` allows bare `ws:`/`wss:` | MINOR | web | `middleware.ts` | Restrict to API hosts | CSP hardened | Open | |
+| SEC-12 | `connect-src` allows bare `ws:`/`wss:` | MINOR | web | `middleware.ts` | Restrict to API hosts | CSP hardened | **Done** 2026-07-27 — `middleware.ts` connect-src = `'self'` + explicit API/WS origins only; comment blocks bare `ws:`/`wss:` | |
 | SEC-13 | PII claim AES-256-GCM/libsodium vs secretbox; email plaintext | MAJOR | docs/crypto | user/payment crypto | Fix docs; expand encryption if product requires | Docs = cipher; inventory of plaintext fields | **Demoted** docs 2026-07-09; expand encryption still Open if product requires | |
-| SEC-14 | No `// @public` markers (CLAUDE process claim) | MAJOR | gateway | router | Annotate public routes or demote rule | Audit checklist enforceable | Open | |
-| SEC-15 | Rate limit / idle session Redis fail-open | MINOR | gateway | cache, idle_session | Document; consider fail-closed auth in prod | Policy explicit | Open | |
+| SEC-14 | No `// @public` markers (CLAUDE process claim) | MAJOR | gateway | router | Annotate public routes or demote rule | Audit checklist enforceable | **Done** 2026-07-27 — `gateway/internal/router/router.go` annotates public catalog/auth/webhook/market/etc. with `// @public` | |
+| SEC-15 | Rate limit / idle session Redis fail-open | MINOR | gateway | cache, idle_session | Document; consider fail-closed auth in prod | Policy explicit | **Done** 2026-07-27 (policy) — rate limit falls back to per-pod memory (not open; `ratelimit_fallback_test.go`); idle session intentionally fail-open as defense-in-depth only (`idle_session.go` contract). JWT remains primary gate. | |
 | SEC-16 | JWT alg = any RSA method not RS256-only | MINOR | gateway | auth middleware | Pin RS256 only | Non-RS256 rejected | **Done** 2026-07-27 — `gateway/internal/middleware/auth.go` `WithValidMethods([]string{"RS256"})` only; RS384/RS512 rejected in middleware tests | |
 | SEC-17 | Founder: rotate `Password123!` history credentials | BLOCKER | ops | docs/TODOS S1 | Rotate all seeded/QA accounts | Old password fails | Founder-Action | |
 | SEC-18 | `analyze-listing-image` missing same-origin check (job has it) | MINOR | web | AI routes | Mirror job route origin gate | Cross-origin blocked | **Done** 2026-07-25 — `web/src/app/api/analyze-listing-image/route.ts:79-105` same-origin gate | |
@@ -115,7 +115,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | OPS-09 | OTel collector exports **debug only** (discards) | BLOCKER | k8s | otel-collector config | Export to real backend | Traces visible in backend | Open | |
 | OPS-10 | Prometheus/Grafana/Alertmanager not in k8s | BLOCKER | k8s | deploy/monitoring only | Deploy stack or drop claim | Alerts fire on test | Open | |
 | OPS-11 | Metrics scrape ports wrong; engine `*_METRICS_PORT` unset | BLOCKER | k8s | Deployments annotations | Scrape HTTP metrics ports; set engine env | Prometheus has bid/payment series | **Partial** 2026-07-25 — bidding/fraud/trust/imaging scrape true with real `*_METRICS_PORT`; pricing + underwriting still `scrape: "false"` (see OPS-18) | |
-| OPS-12 | Payment failure alert P2/info @ 5% (not P0) | MAJOR | monitoring | alerts.yml | P0 on payment/webhook failure thresholds | Alert severity matches money risk | Open | |
+| OPS-12 | Payment failure alert P2/info @ 5% (not P0) | MAJOR | monitoring | alerts.yml | P0 on payment/webhook failure thresholds | Alert severity matches money risk | **Done** 2026-07-27 — `NoMarkupPaymentFailureSpike` + `NoMarkupPaymentPathDown` are severity critical / priority P0 | |
 | OPS-13 | Zero PodDisruptionBudgets | BLOCKER | k8s | manifests | PDB for gateway, payment, user, job, web, bidding | `kubectl get pdb` | **Done** 2026-07-25 — `deploy/k8s/base/pdb.yaml` (13 PDBs) | |
 | OPS-14 | HPA only gateway + bidding | MAJOR | k8s | production overlay | HPA for payment, user, job, web, chat | HPA objects exist | Open | |
 | OPS-15 | No K8s `securityContext` (runAsNonRoot etc.) | MAJOR | k8s | Deployments | Pod security context | Cannot run as root in cluster | **Done** 2026-07-25 — pod + container `securityContext: runAsNonRoot` across `deploy/k8s/base/*/deployment.yaml` | |

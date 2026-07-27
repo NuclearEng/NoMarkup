@@ -2801,8 +2801,13 @@ type ProviderProfile struct {
 	TrustScore         *TrustScoreSummary        `protobuf:"bytes,22,opt,name=trust_score,json=trustScore,proto3" json:"trust_score,omitempty"`
 	ReviewSummary      *ReviewSummary            `protobuf:"bytes,23,opt,name=review_summary,json=reviewSummary,proto3" json:"review_summary,omitempty"`
 	MemberSince        *timestamppb.Timestamp    `protobuf:"bytes,24,opt,name=member_since,json=memberSince,proto3" json:"member_since,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Owner-only PII (CLAUDE.md §6 / migration 031). Encrypted at rest in
+	// provider_profiles; gateway must strip these from public GET /providers/{id}.
+	// Empty string means "not set". Never expose on unauthenticated surfaces.
+	EinTin                string `protobuf:"bytes,25,opt,name=ein_tin,json=einTin,proto3" json:"ein_tin,omitempty"`
+	InsurancePolicyNumber string `protobuf:"bytes,26,opt,name=insurance_policy_number,json=insurancePolicyNumber,proto3" json:"insurance_policy_number,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ProviderProfile) Reset() {
@@ -3001,6 +3006,20 @@ func (x *ProviderProfile) GetMemberSince() *timestamppb.Timestamp {
 		return x.MemberSince
 	}
 	return nil
+}
+
+func (x *ProviderProfile) GetEinTin() string {
+	if x != nil {
+		return x.EinTin
+	}
+	return ""
+}
+
+func (x *ProviderProfile) GetInsurancePolicyNumber() string {
+	if x != nil {
+		return x.InsurancePolicyNumber
+	}
+	return ""
 }
 
 type MilestoneTemplate struct {
@@ -3507,8 +3526,12 @@ type UpdateProviderProfileRequest struct {
 	ServiceAddress  *string                `protobuf:"bytes,4,opt,name=service_address,json=serviceAddress,proto3,oneof" json:"service_address,omitempty"`
 	ServiceLocation *v1.Location           `protobuf:"bytes,5,opt,name=service_location,json=serviceLocation,proto3,oneof" json:"service_location,omitempty"`
 	ServiceRadiusKm *float64               `protobuf:"fixed64,6,opt,name=service_radius_km,json=serviceRadiusKm,proto3,oneof" json:"service_radius_km,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// PII-at-rest (migration 031). When set (including empty string to clear),
+	// the user service encrypts before write. Omitted = leave existing value.
+	EinTin                *string `protobuf:"bytes,7,opt,name=ein_tin,json=einTin,proto3,oneof" json:"ein_tin,omitempty"`
+	InsurancePolicyNumber *string `protobuf:"bytes,8,opt,name=insurance_policy_number,json=insurancePolicyNumber,proto3,oneof" json:"insurance_policy_number,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *UpdateProviderProfileRequest) Reset() {
@@ -3581,6 +3604,20 @@ func (x *UpdateProviderProfileRequest) GetServiceRadiusKm() float64 {
 		return *x.ServiceRadiusKm
 	}
 	return 0
+}
+
+func (x *UpdateProviderProfileRequest) GetEinTin() string {
+	if x != nil && x.EinTin != nil {
+		return *x.EinTin
+	}
+	return ""
+}
+
+func (x *UpdateProviderProfileRequest) GetInsurancePolicyNumber() string {
+	if x != nil && x.InsurancePolicyNumber != nil {
+		return *x.InsurancePolicyNumber
+	}
+	return ""
 }
 
 type UpdateProviderProfileResponse struct {
@@ -6565,7 +6602,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x16stripe_account_outcome\x18\x04 \x01(\tR\x14stripeAccountOutcome\x1a?\n" +
 	"\x11RowsAffectedEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\x9b\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xec\n" +
 	"\n" +
 	"\x0fProviderProfile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
@@ -6594,7 +6631,9 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\vtrust_score\x18\x16 \x01(\v2#.nomarkup.user.v1.TrustScoreSummaryR\n" +
 	"trustScore\x12F\n" +
 	"\x0ereview_summary\x18\x17 \x01(\v2\x1f.nomarkup.user.v1.ReviewSummaryR\rreviewSummary\x12=\n" +
-	"\fmember_since\x18\x18 \x01(\v2\x1a.google.protobuf.TimestampR\vmemberSince\"U\n" +
+	"\fmember_since\x18\x18 \x01(\v2\x1a.google.protobuf.TimestampR\vmemberSince\x12\x17\n" +
+	"\aein_tin\x18\x19 \x01(\tR\x06einTin\x126\n" +
+	"\x17insurance_policy_number\x18\x1a \x01(\tR\x15insurancePolicyNumber\"U\n" +
 	"\x11MilestoneTemplate\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription\x12\x1e\n" +
 	"\n" +
@@ -6637,19 +6676,24 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x19GetProviderProfileRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\"Y\n" +
 	"\x1aGetProviderProfileResponse\x12;\n" +
-	"\aprofile\x18\x01 \x01(\v2!.nomarkup.user.v1.ProviderProfileR\aprofile\"\xfe\x02\n" +
+	"\aprofile\x18\x01 \x01(\v2!.nomarkup.user.v1.ProviderProfileR\aprofile\"\x81\x04\n" +
 	"\x1cUpdateProviderProfileRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12(\n" +
 	"\rbusiness_name\x18\x02 \x01(\tH\x00R\fbusinessName\x88\x01\x01\x12\x15\n" +
 	"\x03bio\x18\x03 \x01(\tH\x01R\x03bio\x88\x01\x01\x12,\n" +
 	"\x0fservice_address\x18\x04 \x01(\tH\x02R\x0eserviceAddress\x88\x01\x01\x12L\n" +
 	"\x10service_location\x18\x05 \x01(\v2\x1c.nomarkup.common.v1.LocationH\x03R\x0fserviceLocation\x88\x01\x01\x12/\n" +
-	"\x11service_radius_km\x18\x06 \x01(\x01H\x04R\x0fserviceRadiusKm\x88\x01\x01B\x10\n" +
+	"\x11service_radius_km\x18\x06 \x01(\x01H\x04R\x0fserviceRadiusKm\x88\x01\x01\x12\x1c\n" +
+	"\aein_tin\x18\a \x01(\tH\x05R\x06einTin\x88\x01\x01\x12;\n" +
+	"\x17insurance_policy_number\x18\b \x01(\tH\x06R\x15insurancePolicyNumber\x88\x01\x01B\x10\n" +
 	"\x0e_business_nameB\x06\n" +
 	"\x04_bioB\x12\n" +
 	"\x10_service_addressB\x13\n" +
 	"\x11_service_locationB\x14\n" +
-	"\x12_service_radius_km\"\\\n" +
+	"\x12_service_radius_kmB\n" +
+	"\n" +
+	"\b_ein_tinB\x1a\n" +
+	"\x18_insurance_policy_number\"\\\n" +
 	"\x1dUpdateProviderProfileResponse\x12;\n" +
 	"\aprofile\x18\x01 \x01(\v2!.nomarkup.user.v1.ProviderProfileR\aprofile\"\x97\x02\n" +
 	"\x15SetGlobalTermsRequest\x12\x17\n" +

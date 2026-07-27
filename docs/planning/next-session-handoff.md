@@ -116,12 +116,15 @@ PostGIS types. The spatial DDL is untested on the real target version.
 
 ## C. Real code work still open
 
-### C2. The frontend cannot save EIN/TIN or insurance policy number
-`proto/user/v1/user.proto` has no fields for them (re-verified: 0 matches), so the
-encrypt-on-write path is unreachable from the UI —
-`web/src/app/.../provider/onboarding/page.tsx` collects both and silently drops
-them. The load-bearing half is done (those columns can never be written in
-plaintext); the contract is additive work spanning proto → gRPC → gateway → web.
+### C2. The frontend cannot save EIN/TIN or insurance policy number — **shipped 2026-07-27**
+- Proto: `UpdateProviderProfileRequest.ein_tin` / `insurance_policy_number` +
+  owner-response fields on `ProviderProfile` (fields 25–26).
+- User gRPC maps into domain `UpdateProviderInput`; repository encrypts (already).
+- Gateway `PATCH /providers/me` forwards; `protoProviderToJSON(includePII)` —
+  owner true, public GET `/providers/{id}` false (never leaks tax IDs).
+- Web onboarding sends non-empty EIN/policy; prefills from owner GET.
+- Residual: `insurance_provider` / expiry / coverage_cents still UI-only (no
+  domain write path yet; not PII-encrypted columns).
 
 ### C4. No SCA notification type
 The enum has no member for "authentication required", so it reuses
@@ -219,12 +222,14 @@ on new money call sites.
 
 ## Suggested order for the next session
 
-1. **C2** if product needs onboarding EIN/TIN (proto → web contract).
-2. **C4** if SCA UX needs a dedicated notification type.
-3. **C8** if tracing browser → gateway is a release gate.
+1. **C4** if SCA UX needs a dedicated notification type.
+2. **C8** if tracing browser → gateway is a release gate.
+3. Optional: extend provider update for insurance_provider/expiry/coverage.
 4. Otherwise stay on **A** (human) and **B** (staging/Stripe/k6) — those gate
    production claims more than residual C polish.
 5. **C7** only when someone has Cloudflare API access.
+6. Tracker residual often-stale Open rows: OPS-23 runbook URLs, PERF/FE/QA
+   (many ops need Founder-Action or cluster).
 
 ---
 

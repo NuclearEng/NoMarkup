@@ -37,12 +37,14 @@ func NewProviderHandler(userClient userv1.UserServiceClient, trustClient trustv1
 }
 
 type updateProviderRequest struct {
-	BusinessName *string  `json:"business_name,omitempty"`
-	Bio          *string  `json:"bio,omitempty"`
-	Address      *string  `json:"service_address,omitempty"`
-	Latitude     *float64 `json:"latitude,omitempty"`
-	Longitude    *float64 `json:"longitude,omitempty"`
-	RadiusKm     *float64 `json:"service_radius_km,omitempty"`
+	BusinessName          *string  `json:"business_name,omitempty"`
+	Bio                   *string  `json:"bio,omitempty"`
+	Address               *string  `json:"service_address,omitempty"`
+	Latitude              *float64 `json:"latitude,omitempty"`
+	Longitude             *float64 `json:"longitude,omitempty"`
+	RadiusKm              *float64 `json:"service_radius_km,omitempty"`
+	EINTIN                *string  `json:"ein_tin,omitempty"`
+	InsurancePolicyNumber *string  `json:"insurance_policy_number,omitempty"`
 }
 
 type setTermsRequest struct {
@@ -99,7 +101,8 @@ func (h *ProviderHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := protoProviderToJSON(resp.GetProfile())
+	// Owner GET — include encrypted-at-rest PII fields (decrypted by user service).
+	result := protoProviderToJSON(resp.GetProfile(), true)
 	if result == nil {
 		writeError(w, http.StatusInternalServerError, "empty provider profile")
 		return
@@ -129,11 +132,13 @@ func (h *ProviderHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	grpcReq := &userv1.UpdateProviderProfileRequest{
-		UserId:         claims.UserID,
-		BusinessName:   req.BusinessName,
-		Bio:            req.Bio,
-		ServiceAddress: req.Address,
-		ServiceRadiusKm: req.RadiusKm,
+		UserId:                claims.UserID,
+		BusinessName:          req.BusinessName,
+		Bio:                   req.Bio,
+		ServiceAddress:        req.Address,
+		ServiceRadiusKm:       req.RadiusKm,
+		EinTin:                req.EINTIN,
+		InsurancePolicyNumber: req.InsurancePolicyNumber,
 	}
 	if req.Latitude != nil && req.Longitude != nil {
 		grpcReq.ServiceLocation = &commonv1.Location{
@@ -148,7 +153,8 @@ func (h *ProviderHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile()))
+	// Owner update — return PII so the client can confirm what was stored.
+	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile(), true))
 }
 
 // SetGlobalTerms handles PUT /api/v1/providers/me/terms.
@@ -184,7 +190,8 @@ func (h *ProviderHandler) SetGlobalTerms(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile()))
+	// Owner terms update — include PII fields (same as GetMe).
+	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile(), true))
 }
 
 // UpdateCategories handles PUT /api/v1/providers/me/categories.
@@ -403,7 +410,8 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := protoProviderToJSON(resp.GetProfile())
+	// Public GET — never expose EIN/TIN or insurance policy number (C2/PII).
+	result := protoProviderToJSON(resp.GetProfile(), false)
 	if label := h.getResponseTimeLabel(r.Context(), userID); label != nil {
 		result["response_time_label"] = *label
 	}
@@ -893,7 +901,11 @@ func paymentTimingToString(t commonv1.PaymentTiming) string {
 	}
 }
 
-func protoProviderToJSON(p *userv1.ProviderProfile) map[string]interface{} {
+// protoProviderToJSON maps a ProviderProfile to the HTTP JSON shape.
+// includePII must be true only for owner-authenticated surfaces
+// (GET/PATCH /providers/me and other /me mutations). Public GET /providers/{id}
+// must pass false so EIN/TIN and insurance policy numbers never leave the API.
+func protoProviderToJSON(p *userv1.ProviderProfile, includePII bool) map[string]interface{} {
 	if p == nil {
 		return nil
 	}
@@ -915,6 +927,11 @@ func protoProviderToJSON(p *userv1.ProviderProfile) map[string]interface{} {
 		"profile_completeness":       p.GetProfileCompleteness(),
 		"stripe_onboarding_complete": p.GetStripeOnboardingComplete(),
 		"member_since":               formatTimestamp(p.GetMemberSince()),
+	}
+	if includePII {
+		// Decrypted by the user service; owner-only. Empty string = not set.
+		result["ein_tin"] = p.GetEinTin()
+		result["insurance_policy_number"] = p.GetInsurancePolicyNumber()
 	}
 
 	if loc := p.GetServiceLocation(); loc != nil {
